@@ -77,7 +77,7 @@ the drive reads best-effort and replaces with the default when mistyped.
 | `review.sticky_marker` | Text that identifies the reviewer's sticky summary comment. Read only when a reviewer is expected. `DRIVE_PR_STICKY_MARKER` overrides it | `<!-- ai-code-review -->` |
 | `review.reviewed_sha_marker` | Marker the reviewer stamps the commit it reviewed with, inside that comment. Read only when a reviewer is expected. `DRIVE_PR_SHA_MARKER` overrides it | `ai-reviewed-sha` |
 | `review.bots` | The review bots, each a login or `{login, confirmation_marker, chat_marker}`. A comment after a held reply is **transparent** (resolves with the hold, and is never triaged or answered) when no line of it opens with an outcome token and it carries its author's confirmation marker, or, for a listed bot, its chat marker and no severity line of the bot's finding shape. A bot the list leaves out gets no transparent chat follow-ups; CodeRabbit's measured confirmation marker (`<!-- coderabbit-skip-review-comment-follow-up -->`) applies listed or not, and its chat marker (`<!-- coderabbit-ai-generated:v1 -->`) once `coderabbitai[bot]` is listed. To stop CodeRabbit's chat replies at the source, set `chat.auto_reply: false` in its `.coderabbit.yaml`: its reviews, confirmations and tagged commands stay | None: only CodeRabbit's confirmations are transparent |
-| `autonomy.level`, `autonomy.max_level`, `autonomy.park_classes` | How far a pass decides without asking, the repository's ceiling for that, and the decision classes a park may name ([autonomy](../../CONFIGURATION.md#autonomy)). The driver prints the level and its source at the start of every round | `attended`, a ceiling of the repository's own level, and the registry template's classes plus `escalated` and `human-decision` |
+| `autonomy.level`, `autonomy.max_level`, `autonomy.park_classes`, `autonomy.off_hours` | How far a pass decides without asking, the repository's ceiling for that, the decision classes a park may name, and the level for the hours nobody is there to ask ([autonomy](../../CONFIGURATION.md#autonomy)). The driver prints the level and its source at the start of every round, `wide (off_hours)` inside an off-hours window | `attended`, a ceiling of the repository's own level, the registry template's classes plus `escalated` and `human-decision`, and off-hours off |
 | `review.severity_formats` | How a reviewer writes a finding's severity, which the decline ladder and the `severity` line of the loop-economy report read: a list of `{login, shape, severities}`, one entry per login, tried before the built-in formats and read only on comments that login posted ([severity formats](../../EXTENDING.md#severity-formats), [fields](../../CONFIGURATION.md#review)) | None: the built-in formats only |
 | `repository.base_branch` | The integration branch. A round diffs against its pull request's own base (`origin/<base>`), so a stacked layer's plan and change set cover that layer alone; it diffs against this branch only on a branch known to have no pull request (a detached HEAD no attach recorded has to name its pull request). A pull request whose base cannot be read or fetched, or whose repository is not `origin`'s, is refused rather than diffed against another branch. A walk down a stack for its required checks stops here. `DRIVE_PR_BASE_BRANCH` overrides it | Derived: the clone's `origin/HEAD` when it has one, else the `defaultBranchRef` field from `gh repo view`, cached per process |
 | `drive.validation_plan_command` | A command that reads the changed files (one per line) on stdin and prints the validation plan as JSON on stdout: `{validation: {localChecks: [...], verificationChecks: [...], testbox: {required, command, warmupCommand, requiredBy}}, reviewSkills: [...]}`. `round-plan.ts` runs it through the shell from the repository root | Unset: the plan is the single local check `gates.command` |
@@ -443,7 +443,9 @@ mechanical state rather than on anyone's judgement:
   hands your answers to the drive's passes as your verdicts, keeping them in
   the drive's state directory until a pass completes, so a drive that stops
   first still hands them on when it is re-armed. With any item unanswered
-  nothing is unparked and the drive stops `8` again.
+  nothing is unparked and the drive stops `8` again; at the `wide` level,
+  except where every unanswered item has the class `escalated`, which the
+  re-arm hands to the first round to decide provisionally.
 
 A driver that still holds its locks but is stuck can be **taken over**:
 
@@ -491,6 +493,35 @@ rather than risk driving beside another clone. This holds only once every
 driver of the pull request runs a version of the plugin that reads the
 ledger.
 
+### The morning report
+
+After a night of unattended drives, one command says what happened:
+
+```bash
+bun "<skill-dir>/scripts/drives.ts" --report
+```
+
+It covers every pull request this clone's state has news of, and every open
+one your account authored or drove, found through the drive ledger, since
+the last full report (remembered in the state directory only by a report
+with no `--since` that read everything; the last day for a first
+one) or `--since <time>` (a time such as `2026-10-29T06:00Z`, or a span such as `12h`). For
+each it gives the terminal state and what it means for you, the provisional
+decisions first (and whether someone reversed them), the takeovers and
+re-arms, the parked decisions in full, the issues filed and the deferred
+findings not yet filed, with the `file-deferred.ts` command that files them.
+`--json` prints the same as data.
+
+Where your repository has a pre-merge follow-up step, have its list include
+the pull request's provisional decisions, so the person merging reads each
+one, and whether it stands, before the merge. The morning report lists them
+under `provisional` when run with `--since` set to when the pull request
+opened, and `--json`:
+
+```bash
+bun "<skill-dir>/scripts/drives.ts" --report --since <opened-at> --json
+```
+
 ## The exit states — what you do now
 
 | Exit | State | What you do |
@@ -529,6 +560,7 @@ round. A repository that did not is never asked for one.
 - **Resolve an accepted thread before its fix's push is verified** on the remote head — a fix that failed gates is not a fix.
 - **Bypass repository hooks or the emitted validation plan.** There is no `--no-verify` path.
 - **Park a question outside the registry's classes.** It decides it instead, at the repository's autonomy level, and records the decision where you can reverse it: the thread reply, the decision record, the issue, the pull request's `## Deferred` section, and the drive ledger's `## Decisions taken unattended`.
+- **Make a fix on a provisional decision, or decide one again.** At the `wide` level an escalation it may take is answered with a reply outcome only (`rejected`, `wont-fix` or `deferred`), marked `**provisional**`, so the diff never grows. Your comment on that thread reverses it: the next round parks it for you under `human-thread`. Unresolving the thread alone reverses nothing.
 - **Answer a review bot's acknowledgement**, or take a comment it cannot classify as harmless.
 - **Start a second loop on the same PR** — the per-PR lock refuses one from this clone (exit `11`), and the drive ledger one from another clone while it names a running driver there (exit `13`) — see § How to start it.
 

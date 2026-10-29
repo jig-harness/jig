@@ -335,20 +335,26 @@ export interface LedgerPullRequest {
   number: number;
   url: string;
   title: string;
+  /** The pull request's author's login, `''` when the search did not say. */
+  author: string;
+  /** The ledger its comments hold, and the login that wrote it. */
+  ledger: Ledger;
+  ledgerBy: string;
 }
 
-/**
- * The open pull requests of the current repository that carry a drive
- * ledger: the forge's search (the ledger's visible summary names
- * `drive-pr-ledger`, which the search indexes) narrowed to the pull requests
- * whose comments hold a trusted ledger this version reads, since a comment
- * that merely mentions the marker matches the search too. `null` when the
- * search cannot be run. The population a morning report reads; narrowing it
- * to the pull requests this account drove is the report's own step.
- */
-export async function listLedgerPullRequests(): Promise<
-  LedgerPullRequest[] | null
-> {
+export type SearchHit = Omit<LedgerPullRequest, "ledger" | "ledgerBy">;
+
+/** The ledger search's pull requests, and each hit whose comments could not be read. */
+export interface LedgerSearch {
+  found: LedgerPullRequest[];
+  /** One sentence per hit whose ledger could not be read. */
+  unread: string[];
+}
+
+/** The open pull requests of the current repository matching `qualifier`; `null` when the search cannot be run. */
+async function searchOpenPullRequests(
+  qualifier: string,
+): Promise<SearchHit[] | null> {
   const repo = await forge([
     "repo",
     "view",
@@ -359,7 +365,6 @@ export async function listLedgerPullRequests(): Promise<
   ]);
   const name = repo.ok ? repo.stdout.trim() : "";
   if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(name)) return null;
-  const marker = LEDGER_MARKER.replace(/^<!-- | -->$/g, "");
   const r = await forge([
     "api",
     "-X",
@@ -368,34 +373,81 @@ export async function listLedgerPullRequests(): Promise<
     "--slurp",
     "search/issues",
     "-f",
-    `q=repo:${name} is:pr is:open in:comments "${marker}"`,
+    `q=repo:${name} is:pr is:open ${qualifier}`,
     "-f",
     "per_page=100",
   ]);
-  if (!r.ok) return null;
+  return r.ok ? searchResults(json(r.stdout, "the search")) : null;
+}
+
+/**
+ * The open pull requests of the current repository that carry a drive
+ * ledger: the forge's search (the ledger's visible summary names
+ * `drive-pr-ledger`, which the search indexes) narrowed to the pull requests
+ * whose comments hold a trusted ledger this version reads, since a comment
+ * that merely mentions the marker matches the search too. A hit whose
+ * comments could not be read is named in `unread`, never dropped as one
+ * without a ledger. `null` when the search cannot be run. The population a
+ * morning report reads; narrowing it to the pull requests this account
+ * drove is the report's own step.
+ */
+export async function listLedgerPullRequests(): Promise<LedgerSearch | null> {
+  const marker = LEDGER_MARKER.replace(/^<!-- | -->$/g, "");
+  const hits = await searchOpenPullRequests(`in:comments "${marker}"`);
+  if (hits === null) return null;
   const login = await resolveLogin();
   const found: LedgerPullRequest[] = [];
-  for (const hit of searchResults(json(r.stdout, "the search")))
-    if (await carriesLedger(String(hit.number), login)) found.push(hit);
-  return found;
+  const unread: string[] = [];
+  for (const hit of hits) {
+    const held = await ledgerOf(String(hit.number), login);
+    if (typeof held === "string")
+      unread.push(`#${hit.number}'s drive ledger could not be read: ${held}`);
+    else if (held !== null) found.push({ ...hit, ...held });
+  }
+  return { found, unread };
 }
 
-/** Whether the pull request's comments hold a trusted ledger this version reads. */
-async function carriesLedger(
+/** The open pull requests of the current repository `login` authored; `null` when the search cannot be run. */
+export function listAuthoredPullRequests(
+  login: string,
+): Promise<SearchHit[] | null> {
+  return searchOpenPullRequests(`author:${login}`);
+}
+
+/**
+ * The trusted ledger this version reads on the pull request, and its
+ * writer; `null` for none, and why when its comments could not be read or
+ * its canonical ledger cannot be interpreted (a newer version, or malformed).
+ */
+async function ledgerOf(
   pr: string,
   login: string | null,
-): Promise<boolean> {
+): Promise<{ ledger: Ledger; ledgerBy: string } | null | string> {
   const snapshot = await readLedgerSnapshot(pr, login);
-  return (
-    typeof snapshot !== "string" && snapshot.canonical?.parsed.kind === "ledger"
-  );
+  if (typeof snapshot === "string") return snapshot;
+  const canonical = snapshot.canonical;
+  if (canonical === null) return null;
+  const parsed = canonical.parsed;
+  if (parsed.kind === "ledger")
+    return { ledger: parsed.ledger, ledgerBy: canonical.comment.login };
+  return parsed.kind === "unknown-version"
+    ? `its ledger (comment ${canonical.comment.id}) has version ${JSON.stringify(parsed.version)}, which this version does not read`
+    : `its ledger (comment ${canonical.comment.id}) is malformed: ${parsed.reason}`;
 }
 
-/** The pull requests in the search's pages, by number. */
-function searchResults(pages: unknown): LedgerPullRequest[] {
-  const items = (Array.isArray(pages) ? pages : [pages]).flatMap((page) =>
-    isRecord(page) && Array.isArray(page.items) ? page.items : [],
-  );
+/**
+ * The pull requests in the search's pages (`--slurp`: an array of pages,
+ * each with an `items` array), by number; `null` when the response is not
+ * that shape, so an unreadable search is never an empty one.
+ */
+function searchResults(pages: unknown): SearchHit[] | null {
+  if (
+    !Array.isArray(pages) ||
+    pages.length === 0 ||
+    !pages.every((page) => isRecord(page) && Array.isArray(page.items))
+  )
+    return null;
+  const items = pages.flatMap((page) => (page as { items: unknown[] }).items);
   return items
     .filter(
       (
@@ -409,6 +461,10 @@ function searchResults(pages: unknown): LedgerPullRequest[] {
       number: it.number,
       url: it.html_url,
       title: typeof it.title === "string" ? it.title : "",
+      author:
+        isRecord(it.user) && typeof it.user.login === "string"
+          ? it.user.login
+          : "",
     }))
     .sort((a, b) => a.number - b.number);
 }

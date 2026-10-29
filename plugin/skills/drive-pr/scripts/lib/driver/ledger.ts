@@ -64,7 +64,7 @@ import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
 import type { DriveState } from "./../state/schema.ts";
 import type { DriveLock } from "./locks.ts";
 import { driveState } from "./paths.ts";
-import { readDriveState } from "./rearm.ts";
+import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
 import type { TakeoverPlan } from "./takeover.ts";
 
@@ -465,11 +465,13 @@ export async function mirrorNow(pr: string): Promise<void> {
  * ledger is written. Nor is it written while the drive retains its locks
  * (`held` emptied: a pass whose termination was not witnessed may still
  * act): the ledger keeps naming this driver running, its heartbeat ages
- * toward the lease window, and the record stays for that recovery.
+ * toward the lease window, and the record stays for that recovery. The
+ * same holds when the stop cannot be recorded in the drive state first.
  */
 export function ledgerSettlement(
   pr: string,
   held: readonly DriveLock[],
+  dryRun = false,
 ): AsyncDisposable & {
   done(code: number): Promise<number>;
 } {
@@ -488,11 +490,26 @@ export function ledgerSettlement(
       await dropRecord();
       return;
     }
-    if (driver === null) return;
     settled = true;
-    if (held.length === 0) {
+    if (driver !== null && held.length === 0) {
       console.error(
         `ledger: PR #${pr}'s ledger is left naming this driver running: its locks are retained, so its pass may still act.`,
+      );
+      return;
+    }
+    // The exit goes into the state before the ledger's last write, which
+    // mirrors the state's events: an unknown exit names none in the driver
+    // record, so a report reading the ledger falls back to those events, and
+    // the previous run's stop must not be the last of them. A dry run (no
+    // ledger driver either) records nothing. An unrecorded stop writes no
+    // ledger and keeps the record: the recovery (`lib/ledger-stop.ts`)
+    // records the stop and then writes the ledger, in that order.
+    const recorded =
+      dryRun || (await recordDriveEvent(pr, "stop", String(code ?? "unknown")));
+    if (driver === null) return;
+    if (!recorded) {
+      console.error(
+        `ledger: PR #${pr}'s ledger is left naming this driver running: its stop is not in the drive state, so the recovery writes both.`,
       );
       return;
     }

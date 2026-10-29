@@ -563,7 +563,10 @@ describe("the population for the morning report", () => {
       probe.exited,
     ]);
     expectSpawnExit({ stdout, stderr, exitCode }, 0);
-    return JSON.parse(stdout) as Array<{ number: number }> | null;
+    return JSON.parse(stdout) as {
+      found: Array<{ number: number }>;
+      unread: string[];
+    } | null;
   }
 
   function search(forge: ReturnType<typeof fakeForge>, numbers: number[]) {
@@ -600,7 +603,9 @@ describe("the population for the morning report", () => {
         forgeComment(90, ledgerBody(ledger(2)), "drive-by", "NONE"),
       ]),
     );
-    expect((await population(forge))?.map((p) => p.number)).toEqual([7]);
+    const got = await population(forge);
+    expect(got?.found.map((p) => p.number)).toEqual([7]);
+    expect(got?.unread).toEqual([]);
     const query = await Bun.file(join(forge.dir, "search-query")).text();
     expect(query).toBe(
       'q=repo:example-org/example-repo is:pr is:open in:comments "drive-pr-ledger"',
@@ -612,12 +617,52 @@ describe("the population for the morning report", () => {
   it("is empty when the search finds nothing", async () => {
     const forge = fakeForge([]);
     search(forge, []);
-    expect(await population(forge)).toEqual([]);
+    expect(await population(forge)).toEqual({ found: [], unread: [] });
+  });
+
+  it("names a hit whose comments could not be read, never drops it as one without a ledger", async () => {
+    const forge = fakeForge([]);
+    search(forge, [7]);
+    writeFileSync(join(forge.dir, "fail-list-after"), "0");
+    const got = await population(forge);
+    expect(got?.found).toEqual([]);
+    expect(got?.unread).toHaveLength(1);
+    expect(got?.unread[0]).toContain("#7's drive ledger could not be read");
   });
 
   it("is null when the search cannot be run", async () => {
     const forge = fakeForge([]);
     writeFileSync(join(forge.dir, "fail-search"), "");
     expect(await population(forge)).toBeNull();
+  });
+
+  it("is null when the search answers a page it cannot read, never an empty population", async () => {
+    for (const page of [null, {}, { items: "none" }]) {
+      const forge = fakeForge([]);
+      writeFileSync(join(forge.dir, "search.json"), JSON.stringify(page));
+      expect(await population(forge)).toBeNull();
+    }
+  });
+
+  it("names a hit whose canonical ledger this version cannot interpret", async () => {
+    const forge = fakeForge([]);
+    search(forge, [7]);
+    writeFileSync(
+      join(forge.dir, "comments-7.json"),
+      JSON.stringify([
+        forgeComment(
+          70,
+          ledgerBody(ledger(2)).replace(
+            '"ledgerVersion":1',
+            '"ledgerVersion":9',
+          ),
+        ),
+      ]),
+    );
+    const got = await population(forge);
+    expect(got?.found).toEqual([]);
+    expect(got?.unread).toHaveLength(1);
+    expect(got?.unread[0]).toContain("#7's drive ledger could not be read");
+    expect(got?.unread[0]).toContain("does not read");
   });
 });

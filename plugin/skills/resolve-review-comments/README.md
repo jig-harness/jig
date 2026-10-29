@@ -48,6 +48,15 @@ decide the outcome; a person decides only what the arbiter escalates. A thread
 whose outcome changes in a later round gets a new reply with the new outcome,
 so the thread keeps its history.
 
+Under a drive at the `wide` autonomy level, an escalation of the class
+`escalated` with no recorded human decision behind it does not wait for a
+person: it gets a **provisional** `rejected`, `wont-fix` or `deferred`
+(the reply reads `**wont-fix** **provisional** — …`), never a fix, is
+resolved, and is listed first in the morning report. Comment on the thread
+to reverse it; the drive then parks it for you. Unresolving the thread alone
+reverses nothing. `wide` is not yet validated
+([configuration](../../CONFIGURATION.md#autonomy)).
+
 The outcomes that decline a fix look alike and mean different things,
 and confusing them sends the wrong signal:
 

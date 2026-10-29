@@ -44,6 +44,7 @@ import { type TakeoverRecord, isOptionalTakeovers } from "./takeover.ts";
 import { isOptionalRetryCount } from "./deadline-retries.ts";
 import { isOptionalFrame } from "./park-frame.ts";
 import { type UnattendedDecision, isOptionalDecisions } from "./decisions.ts";
+import { type DriveEvent, isOptionalEvents } from "./events.ts";
 import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
 
 /**
@@ -407,6 +408,8 @@ export interface DriveState {
   deadlineRetries?: number;
   /** Decisions the agent took and recorded, oldest first (`decisions.ts`). */
   decisions?: UnattendedDecision[];
+  /** The drive's self-restarts and re-arms, oldest first (`events.ts`). */
+  events?: DriveEvent[];
   /** The review arbiter's ruling per thread (`rulings.ts`). */
   rulings?: ArbiterRuling[];
   [extra: string]: unknown;
@@ -556,6 +559,7 @@ function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
     isOptionalTakeovers(s.takeovers),
     isOptionalRetryCount(s.deadlineRetries),
     isOptionalDecisions(s.decisions),
+    isOptionalEvents(s.events),
     isOptionalRulings(s.rulings),
     s.ledgerGeneration === undefined || isCount(s.ledgerGeneration),
   ].every(Boolean);

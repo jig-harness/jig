@@ -71,6 +71,8 @@ import { driveState, driveTs } from "./paths.ts";
 
 import { QUOTA_PARKED_EXIT } from "./settings.ts";
 
+import { provisionalDuties, provisionalNotice } from "./rearm-provisional.ts";
+
 /** The longest answer body in the notice; the url and the kept file carry the rest. */
 const ANSWER_BODY_MAX = 1500;
 
@@ -184,7 +186,7 @@ export function admitQuotaRearm(
   return QUOTA_PARKED_EXIT;
 }
 
-interface CommentLike {
+export interface CommentLike {
   author: string;
   association: string;
   at: string;
@@ -246,17 +248,29 @@ function isAnswer(c: CommentLike, after: number): boolean {
 }
 
 const THREAD_QUERY =
-  "query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved comments(last:100){nodes{url author{login} authorAssociation createdAt body}}}}}";
+  "query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved comments(first:100){pageInfo{hasNextPage} nodes{url author{login} authorAssociation createdAt body}}}}}";
 
-async function threadComments(key: string): Promise<CommentLike[] | null> {
+/**
+ * One thread's comments, in order; `null` when they could not be read, or
+ * when the thread holds more than one page of them: a partial history is
+ * never read as the whole, since the comment it leaves out may be the one
+ * the caller looks for.
+ */
+export async function threadComments(
+  key: string,
+): Promise<CommentLike[] | null> {
   const res = await ghCall(
     ["api", "graphql", "-f", `query=${THREAD_QUERY}`, "-f", `id=${key}`],
     { stderr: "pipe", env: ghRepoEnv() },
   );
   if (res.code !== 0) return null;
-  let at: unknown = parseJson(res.stdout, "the thread query");
-  for (const key of ["data", "node", "comments", "nodes"])
-    at = isRecord(at) ? at[key] : undefined;
+  let comments: unknown = parseJson(res.stdout, "the thread query");
+  for (const key of ["data", "node", "comments"])
+    comments = isRecord(comments) ? comments[key] : undefined;
+  if (!isRecord(comments)) return null;
+  const page = comments.pageInfo;
+  if (!isRecord(page) || page.hasNextPage !== false) return null;
+  const at = comments.nodes;
   if (!Array.isArray(at)) return null;
   return at.filter(isRecord).map((n) => ({
     author: isRecord(n.author) ? text(n.author.login) : "",
@@ -267,7 +281,7 @@ async function threadComments(key: string): Promise<CommentLike[] | null> {
   }));
 }
 
-async function prComments(pr: string): Promise<CommentLike[] | null> {
+export async function prComments(pr: string): Promise<CommentLike[] | null> {
   const res = await ghCall(
     [
       "api",
@@ -292,12 +306,16 @@ async function prComments(pr: string): Promise<CommentLike[] | null> {
     }));
 }
 
-/** The answers to one parked item; `null` when its comments could not be read. */
+/**
+ * The answers to one parked item, and whether every place an answer could be
+ * (its thread, and the pull request's conversation) was read; `null` when
+ * none could be.
+ */
 async function answersTo(
   item: ParkedItem,
   conversation: CommentLike[] | null,
-): Promise<PendingAnswer[] | null> {
-  if (item.at === undefined) return [];
+): Promise<{ answers: PendingAnswer[]; complete: boolean } | null> {
+  if (item.at === undefined) return { answers: [], complete: true };
   const after = Date.parse(item.at);
   const thread = item.kind === "thread" ? await threadComments(item.key) : [];
   if (thread === null && conversation === null) return null;
@@ -305,9 +323,12 @@ async function answersTo(
     ...(thread ?? []),
     ...(conversation ?? []).filter((c) => answersKey(c.body, item.key)),
   ];
-  return candidates
-    .filter((c) => isAnswer(c, after))
-    .map(({ author, at, url, body }) => ({ author, at, url, body }));
+  return {
+    answers: candidates
+      .filter((c) => isAnswer(c, after))
+      .map(({ author, at, url, body }) => ({ author, at, url, body })),
+    complete: thread !== null && conversation !== null,
+  };
 }
 
 /**
@@ -319,27 +340,42 @@ async function answeredParks(
 ): Promise<PendingVerdict[] | null> {
   const conversation = await prComments(String(state.pr));
   const answered: PendingVerdict[] = [];
-  const waiting: string[] = [];
+  const waiting: ParkedItem[] = [];
+  const unread: ParkedItem[] = [];
   for (const item of state.parked) {
-    const answers = await answersTo(item, conversation);
-    if (answers === null) {
+    const read = await answersTo(item, conversation);
+    if (read === null) {
       console.error(
         `re-arm: could not read the comments that would answer parked ${item.kind} ${item.key}; leaving every item parked.`,
       );
       return null;
     }
-    if (answers.length === 0) waiting.push(`${item.kind} ${item.key}`);
-    else
+    if (read.answers.length > 0)
       answered.push({
         kind: item.kind,
         key: item.key,
         reason: item.reason,
-        answers,
+        answers: read.answers,
       });
+    else {
+      waiting.push(item);
+      if (!read.complete) unread.push(item);
+    }
   }
   if (waiting.length === 0) return answered;
+  // At the wide level, the unanswered items a provisional decision may take:
+  // only once every place a person's answer could be was read, since an
+  // answer in an unread one must never be decided over.
+  if (unread.length > 0) {
+    console.error(
+      `re-arm: could not read every place an answer to ${unread.map((p) => `${p.kind} ${p.key}`).join(", ")} could be; nothing is unparked, and nothing is decided provisionally.`,
+    );
+    return null;
+  }
+  const duties = provisionalDuties(waiting);
+  if (duties !== null) return [...answered, ...duties];
   console.error(
-    `re-arm: ${answered.length} of ${state.parked.length} parked item(s) answered; still waiting on ${waiting.join(", ")}. Nothing is unparked until every one is.`,
+    `re-arm: ${answered.length} of ${state.parked.length} parked item(s) answered; still waiting on ${waiting.map((p) => `${p.kind} ${p.key}`).join(", ")}. Nothing is unparked until every one is.`,
   );
   return null;
 }
@@ -378,7 +414,7 @@ export async function admitAnsweredParks(
     );
   const fresh = state.parked.length === 0 ? [] : await answeredParks(state);
   if (fresh === null || fresh.length === 0)
-    return dryRun ? "" : humanVerdictNotice(carried, file);
+    return dryRun ? "" : rearmNotice(carried, file);
   if (dryRun) {
     console.error(
       `(dry-run) re-arm would unpark ${fresh.length} answered item(s) and hand the answers to the first round.`,
@@ -395,7 +431,7 @@ export async function admitAnsweredParks(
     console.error(
       `re-arm: cannot keep the answers in ${file} (${String(err)}); every item stays parked.`,
     );
-    return humanVerdictNotice(carried, file);
+    return rearmNotice(carried, file);
   }
   // Bound to the parks whose answers were read: a park replaced under the
   // same key, or added, while the comments were read refuses the whole set.
@@ -427,12 +463,80 @@ export async function admitAnsweredParks(
         ? `re-arm: drive-state.ts unpark exited ${res.code}, but the answered items are unparked; handing their answers on.`
         : `re-arm: could not unpark the answered items (drive-state.ts exited ${res.code}); every one stays parked, and the next arm reads their answers again.`,
     );
-    return humanVerdictNotice([...carried, ...gone], file);
+    return rearmNotice([...carried, ...gone], file);
   }
+  await announceUnparked(pr, fresh, file);
+  return rearmNotice([...carried, ...fresh], file);
+}
+
+/** Say what the re-arm unparked, and record it (`events.ts`). */
+async function announceUnparked(
+  pr: string,
+  fresh: readonly PendingVerdict[],
+  file: string,
+): Promise<void> {
+  const duties = fresh.filter((v) => v.provisional === true).length;
   console.error(
-    `re-arm: every parked item on PR #${pr} is answered — unparked ${fresh.length} and handing the answers to the first round as human verdicts (kept in ${file} until a pass completes).`,
+    duties === 0
+      ? `re-arm: every parked item on PR #${pr} is answered — unparked ${fresh.length} and handing the answers to the first round as human verdicts (kept in ${file} until a pass completes).`
+      : `re-arm: PR #${pr} re-armed at the wide level — unparked ${fresh.length}: ${fresh.length - duties} answered, handed on as human verdicts, and ${duties} to decide provisionally (kept in ${file} until a pass completes).`,
   );
-  return humanVerdictNotice([...carried, ...fresh], file);
+  await recordDriveEvent(
+    pr,
+    "rearm",
+    duties === 0 ? "answered" : "provisional",
+  );
+}
+
+/**
+ * Record a self-restart or a re-arm in the drive state (`events.ts`), for
+ * the morning report and `loop-metrics.ts`; best-effort, logged. Returns
+ * whether the event was recorded, for a caller whose next write depends on it.
+ */
+export async function recordDriveEvent(
+  pr: string,
+  kind: "restart" | "rearm" | "stop",
+  cause: string,
+): Promise<boolean> {
+  const res = await run(tsArgv(driveState, ["record-event", pr]), {
+    stdin: JSON.stringify({ kind, cause }),
+    stderr: "inherit",
+    timeoutSec: helperTimeoutSeconds(),
+  });
+  if (res.code === 0) return true;
+  console.error(
+    `drive.ts: could not record the ${kind} (${cause}) in the drive state (exit ${res.code}); driving on.`,
+  );
+  return false;
+}
+
+/** The cause of a re-arm past a quota park (`events.ts`); `null` when there was none. */
+export function quotaRearmCause(
+  state: DriveState,
+  windowReopened: boolean,
+  now: Date,
+): string | null {
+  const park = state.quotaPark;
+  if (park === null) return null;
+  if (park.resetAt !== null && Date.parse(park.resetAt) <= now.getTime())
+    return "quota-reset";
+  return windowReopened ? "window-reopened" : "quota-account";
+}
+
+/** The notice for the answered items, then for those to decide provisionally. */
+function rearmNotice(
+  verdicts: readonly PendingVerdict[],
+  file: string,
+): string {
+  return [
+    humanVerdictNotice(
+      verdicts.filter((v) => v.provisional !== true),
+      file,
+    ),
+    provisionalNotice(verdicts),
+  ]
+    .filter((part) => part !== "")
+    .join("\n\n");
 }
 
 function clip(text: string, max: number, why: string): string {

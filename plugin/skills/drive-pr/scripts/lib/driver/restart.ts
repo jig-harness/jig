@@ -31,7 +31,7 @@ import { driveState } from "./paths.ts";
 
 import { isRecord } from "../../../../../shared/guards.ts";
 
-import { parseJson } from "./rearm.ts";
+import { parseJson, recordDriveEvent } from "./rearm.ts";
 
 /**
  * Admit one more pass-deadline restart within `budget`, counting it in the
@@ -54,7 +54,9 @@ export async function admitDeadlineRestart(
   if (typeof taken !== "number" || !Number.isSafeInteger(taken)) return null;
   if (taken >= budget) return { admitted: false, taken };
   const bumped = await bumpDeadlineRetries(pr);
-  return bumped === null ? null : { admitted: true, taken: bumped };
+  if (bumped === null) return null;
+  await recordDriveEvent(pr, "restart", "pass-deadline");
+  return { admitted: true, taken: bumped };
 }
 
 /**

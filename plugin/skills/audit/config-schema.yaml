@@ -294,6 +294,17 @@ fields:
     read_by: [drive-pr, resolve-review-comments, file-issue, decide]
     repository_only: true
     since: next
+  autonomy.off_hours.level:
+    type: enum
+    values: [attended, unattended, wide]
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    since: next
+  autonomy.off_hours.schedule:
+    type: list
+    items: string
+    nonempty: true
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    since: next
   autonomy.park_classes:
     type: list
     items: { type: string, pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" }

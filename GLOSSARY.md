@@ -1175,11 +1175,32 @@ make, use the entry's term instead.
   `autonomy.park_classes`, and a *PR drive loop* may park only under one of
   them, the class the review arbiter ruled for the thread
   ([configuration](plugin/CONFIGURATION.md#autonomy)).
-- **Autonomy level** — how far an agent may decide without asking a person,
-  set by a repository (`attended`, the default, or `unattended`) and capped
-  by its ceiling, `autonomy.max_level`; a person's own configuration may
-  choose a level up to that ceiling. The level changes nothing the *HITL*
-  registry reserves ([configuration](plugin/CONFIGURATION.md#autonomy)).
+- **Autonomy level** — how far an agent may decide without asking a person:
+  `attended`, the default, `unattended`, or `wide`, which also takes
+  *provisional decisions*. A repository sets it and caps it with its
+  ceiling, `autonomy.max_level`; a person's own configuration may choose a
+  level up to that ceiling, and `autonomy.off_hours` may set a wider one for
+  a drive's passes during the windows of a schedule in the machine's local
+  time (**off-hours**). The level changes nothing the *HITL* registry
+  reserves. `wide` and off-hours are documented as available only once a
+  working repository has validated them
+  ([configuration](plugin/CONFIGURATION.md#autonomy)).
+- **Provisional decision** — a decision only the `wide` *autonomy level*
+  takes without a person, where the review arbiter or `decide` would
+  otherwise escalate a call no *decision class* reserves: a review thread
+  answered with a reply outcome (`rejected`, `wont-fix` or `deferred`, never
+  a fix) marked `**provisional**`, or a `decide` ruling marked so. It is
+  recorded, listed first in the *morning report*, and reversed by a comment
+  from an owner, member or collaborator, after which the drive parks it for
+  that person; unresolving the thread alone reverses nothing. It is
+  admissible because the merge stays a person's
+  ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
+- **Morning report** — what `drives.ts --report` prints for a person after
+  an unattended night: for each pull request this clone drove or the
+  account authored or drove, its terminal state and what it means, the
+  *provisional decisions* first, takeovers and re-arms, parked decisions,
+  issues filed and deferred findings not yet filed
+  ([drive-pr](plugin/skills/drive-pr/README.md)).
 - **Transparent follow-up** — a review bot's comment after a reply the drive
   is holding open until its fix is pushed, which carries no new finding: a
   confirmation marked with the bot's confirmation marker, or a chat

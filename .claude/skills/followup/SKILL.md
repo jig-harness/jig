@@ -320,7 +320,14 @@ request's diff (`origin/main` and its head instead of `SHA^1` and `SHA`) and
 records what the merge will owe, carrying out nothing: the
 `## Out-of-tree follow-ups` section of the description, the deferred
 findings still to file, the site pages the change will reach, the cleanup
-inventory. The post-merge pass then checks a list instead of rebuilding it.
+inventory, and first of all the pull request's **provisional decisions**: the
+calls a drive took at the `wide` autonomy level that a person may still
+reverse before the merge. List them from the morning report
+(`bun plugin/skills/drive-pr/scripts/drives.ts --report --since <when the
+pull request opened> --json`, its `provisional` entries for this pull
+request), each with its thread or record and whether it stands or was
+reversed, so the person merging reads them before they merge. The
+post-merge pass then checks a list instead of rebuilding it.
 
 Building the head for `site-diff.ts` runs the pull request's code (its
 install and the site's build scripts) with your credentials. Run it only on a

@@ -39,6 +39,7 @@ import {
   decisionsSection,
   isUnattendedDecision,
 } from "./decisions.ts";
+import { type DriveEvent, isOptionalEvents } from "./events.ts";
 import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
 
 export const LEDGER_MARKER = "<!-- drive-pr-ledger -->";
@@ -114,6 +115,8 @@ export interface Ledger {
   claims: LedgerClaimRef[];
   /** The decisions the agent took and recorded (`decisions.ts`). */
   decisions: UnattendedDecision[];
+  /** Self-restarts and re-arms (`events.ts`); absent in a ledger written before them. */
+  events?: DriveEvent[];
   /**
    * The review arbiter's rulings (`rulings.ts`), so a drive recovered in
    * another clone parks under the same boundary. Absent in a ledger written
@@ -182,6 +185,7 @@ export function ledgerFromState(
       record: redact(d.record),
       reverse: redact(d.reverse),
     })),
+    events: s.events ?? [],
     rulings: s.rulings ?? [],
     driver: opts.driver,
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
@@ -402,6 +406,7 @@ function ledgerFault(v: Record<string, unknown>): string {
       "decisions",
       Array.isArray(v.decisions) && v.decisions.every(isUnattendedDecision),
     ],
+    ["events", isOptionalEvents(v.events)],
     ["rulings", isOptionalRulings(v.rulings)],
     ["driver", isLedgerDriver(v.driver)],
     ["narrative", Array.isArray(v.narrative) && v.narrative.every(isText)],
@@ -779,6 +784,7 @@ export function seedFromLedger(
       toAccount: null,
     })),
     decisions: l.decisions,
+    events: l.events ?? local.events ?? [],
     ...(l.rulings === undefined ? {} : { rulings: l.rulings }),
     ledgerGeneration: l.generation,
   };

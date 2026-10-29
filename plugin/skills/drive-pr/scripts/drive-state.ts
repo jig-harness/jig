@@ -47,11 +47,13 @@
  *   drive-state.ts reflected    [PR]                 # round a /reflect was last recorded at
  *   drive-state.ts set-reflected [PR]                # record a completed /reflect at the current round
  *   drive-state.ts park         [PR] --key K --kind thread|finding --class C  < record.md
- *   drive-state.ts record-decision [PR]  < {"class","what","reverse","record"?}
+ *   drive-state.ts record-decision [PR]  < {"class","what","reverse","record"?,"key"?,"outcome"?}
+ *   drive-state.ts reverse-decision [PR] < {"key","by","url","at"}
+ *   drive-state.ts record-event [PR]     < {"kind","cause"}
  *   drive-state.ts rule         [PR]  < {"key","verdict","class"?,"humanDecision"?}
  *                                     # the review arbiter's ruling on a thread
  *   drive-state.ts unpark       [PR] --key K [--key K …]   # all, or none
- *   drive-state.ts parked-keys  [PR]                 # newline-delimited keys
+ *   drive-state.ts parked-keys  [PR]  # newline-delimited keys (reversal-parked-keys: reversed provisional decisions')
  *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome accepted|moot
  *                                     [--comment-url URL] [--unconfirmed]
  *                                     (--kind finding also requires the reason body on stdin)
@@ -228,7 +230,8 @@ import {
 } from "./lib/state/ledger-mirror.ts";
 import { quotaPark } from "./lib/state/quota-park.ts";
 import { framedPark } from "./lib/state/framed-park.ts";
-import { recordDecision } from "./lib/state/decisions.ts";
+import * as decisions from "./lib/state/decisions.ts";
+import { recordEvent } from "./lib/state/events.ts";
 import { recordRuling } from "./lib/state/rulings.ts";
 import { deadlineRetries } from "./lib/state/deadline-retries.ts";
 import { unpark } from "./lib/state/unpark.ts";
@@ -347,10 +350,12 @@ function usage(): void {
                                     claim rather than preserving it.
   park         [PR] --key K --kind thread|finding --class C  (decision record on stdin)
   record-decision [PR]              a decision the agent took, JSON on stdin
+  reverse-decision [PR]             a person's reversal of a provisional decision, JSON on stdin
+  record-event [PR]                 a self-restart or re-arm, JSON on stdin
   rule         [PR]                 the arbiter's ruling on a thread, JSON on stdin
   unpark       [PR] --key K [--key K …]  every key, or none when one is not parked
-  parked-keys  [PR]                 newline-delimited keys
-  hold         [PR] --key K --kind thread|finding --outcome accepted|moot
+  parked-keys  [PR]                 newline-delimited keys (reversal-parked-keys: reversed provisional decisions')
+  hold        [PR] --key K --kind thread|finding --outcome accepted|moot
                [--comment-url URL] [--unconfirmed]
                     (--kind finding also requires the reason body on stdin)
                     (--comment-url: REQUIRED for --kind thread — the qualifying comment's url)
@@ -713,7 +718,9 @@ const STDIN_COMMANDS = new Map<
     async (store, raw) => recordTakeover(store, raw, await resolveActor()),
   ],
   ["seed-ledger", seedLedgerCommand],
-  ["record-decision", recordDecision],
+  ["record-decision", decisions.recordDecision],
+  ["reverse-decision", decisions.reverseDecision],
+  ["record-event", recordEvent],
   ["rule", recordRuling],
 ]);
 
@@ -784,6 +791,8 @@ async function main(): Promise<number> {
     "park",
     "unpark",
     "record-decision",
+    "reverse-decision",
+    "record-event",
     "rule",
     "hold",
     "claim-held",
@@ -2156,11 +2165,12 @@ async function main(): Promise<number> {
     case "unpark":
       return unpark(store, a.keys, a.parkedAts, a.every);
 
-    case "parked-keys": {
-      for (const p of store.read().state.parked)
-        process.stdout.write(`${p.key}\n`);
-      return 0;
-    }
+    case "parked-keys":
+    case "reversal-parked-keys":
+      return decisions.printParkedKeys(
+        store.read().state,
+        a.cmd === "reversal-parked-keys",
+      );
 
     case "hold": {
       if (a.key === "")
@@ -2168,11 +2178,10 @@ async function main(): Promise<number> {
           2,
           "hold requires --key (a thread node id or finding fingerprint)",
         );
-      // The SAME newline ban `park` applies, and for the same mechanical
-      // reason: `held-keys` is a line-delimited channel too, so an embedded LF
-      // holds ONE item and emits TWO tokens, the second of which resolves a
-      // thread nobody held. The validator in
-      // schema.ts restates this rather than inventing a weaker one.
+      // The SAME newline ban `park` applies, for the same mechanical reason:
+      // `held-keys` is a line-delimited channel too, so an embedded LF holds
+      // ONE item and emits TWO tokens, the second resolving a thread nobody
+      // held. schema.ts's validator restates this rather than a weaker one.
       if (/[\n\r]/.test(a.key)) {
         fail(
           2,

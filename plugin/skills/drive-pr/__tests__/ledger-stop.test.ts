@@ -14,6 +14,7 @@ import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import { formatClaim } from "../scripts/lib/claim.ts";
 import { worktreePathKey } from "../scripts/lib/state/actor.ts";
+import { type DriveEvent, lastStop } from "../scripts/lib/state/events.ts";
 import {
   type Ledger,
   ledgerFromState,
@@ -263,7 +264,52 @@ describe("recovering the ledger of a driver that could not write it", () => {
       expect(existsSync(join(s.leaf, "ledger-driver-999.json"))).toBe(false);
     }
   });
+
+  it("records the recovered stop locally, so an earlier run's exit never speaks for it", async () => {
+    const s = stage();
+    // The drive converged once, then was re-armed and stopped by a signal.
+    expectSpawnExit(
+      await driveState(
+        s,
+        ["record-event", "999"],
+        '{"kind":"stop","cause":"0"}',
+      ),
+      0,
+    );
+    writeFileSync(
+      join(s.leaf, "ledger-driver-999.json"),
+      JSON.stringify({
+        worktree: s.forge.repo,
+        started: s.started,
+        pid: await deadPid(),
+        host: hostname(),
+      }),
+    );
+    expectSpawnExit(await drives(s, ["--doctor"]), 0);
+    expect(driverOf(s)?.state).toBe("stopped");
+    const got = await driveState(s, ["get", "999"]);
+    expectSpawnExit(got, 0);
+    const events = (JSON.parse(got.stdout).events ?? []) as DriveEvent[];
+    expect(lastStop(events)).toBeNull();
+    expect(events.at(-1)).toMatchObject({ kind: "stop", cause: "unknown" });
+  });
 });
+
+async function driveState(s: Stage, args: string[], stdin = "") {
+  const proc = Bun.spawn(scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args), {
+    cwd: s.forge.repo,
+    env: { ...s.forge.env, DRIVE_PR_STATE_DIR: s.leaf },
+    stdin: new TextEncoder().encode(stdin),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  return { stdout, stderr, exitCode };
+}
 
 describe("a seed the state store refuses", () => {
   it("keeps exit 13 when another working tree holds the pull request", async () => {
