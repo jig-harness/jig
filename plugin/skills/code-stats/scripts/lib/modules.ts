@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { load } from "../../../../shared/yaml.ts";
 import type { Pattern } from "./config.ts";
 import { closeAt } from "./count.ts";
-import { CodeStatsError } from "./errors.ts";
+import { CodeStatsError, unreadableFile } from "./errors.ts";
 import type { Decision } from "./model.ts";
 
 /** Folders whose children are modules when no manifest names any. */
@@ -91,7 +91,12 @@ function withNegations(source: string, members: string[]): MemberList {
 
 function readText(root: string, file: string): string | null {
   const path = join(root, file);
-  return existsSync(path) ? readFileSync(path, "utf8") : null;
+  if (!existsSync(path)) return null;
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    throw unreadableFile(file, error);
+  }
 }
 
 function parsed<T>(file: string, parse: () => T): T {
@@ -191,7 +196,7 @@ export function cargoMembers(text: string): MemberList {
  * blanked, `strings` every comment only, both the length of `text` with its
  * line breaks kept, so a position in one is the same position in the other.
  */
-function gradleLayers(text: string): { code: string; strings: string } {
+export function gradleLayers(text: string): { code: string; strings: string } {
   const code: string[] = [];
   const strings: string[] = [];
   const blank = (s: string) => s.replace(/[^\n]/g, " ");
