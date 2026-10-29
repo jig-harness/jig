@@ -533,25 +533,36 @@ The state's resumable subset also lives on the PR, as the **drive ledger**
 (`lib/state/ledger.ts`): one comment opening with `<!-- drive-pr-ledger -->`,
 carrying `ledgerVersion`, a monotonic `generation`, the round, phase, last
 counted and verified heads, the Ready mark, the parked items with their
-decisions, the held items by key, outcome and pushed commit, the quota park,
+decisions, the held items by key, outcome and pushed commit, the quota park
+without its account,
 the takeover records and the claims in force, an empty section for the
-decisions taken unattended, the driver's tree, hashed account, clone and
+decisions taken unattended, the driver's tree, clone and
 heartbeat, and the handoff narrative's last twenty lines, as JSON inside a
 second HTML comment with every `<` and `>` escaped. A driver publishes itself
 in `$DRIVE_PR_LEDGER_DRIVER` once it holds its locks, and `drive-state.ts`'s `handoff` (every round boundary, after a takeover, and as the driver stops)
 and its `park` write the ledger from the state they hold, so a
 session that is not a drive's child never writes one. Each write is a
-read-modify-write against the canonical comment's `updated_at`: the comments
-are read, the body built, and the comments read again just before the
-`PATCH`; a ledger that moved is rebuilt from the newer read, up to three
-times. The forge has no compare-and-set on a comment, so two writers can
-still interleave inside one request's latency, which the per-round claim
-check below makes a driver that has been taken over stop doing. Two
-creations that race leave two comments: the lower id is canonical, and each
-writer deletes its own higher-id copy on its next write. A ledger is trusted
-only when its author is the drive's own login or carries the owner, member
-or collaborator association; any other comment opening with the marker is
-ignored and reported. The body is cut to the forge's 65,536 limit by dropping
+read-modify-write against the canonical comment: the comments are read, the
+body built, and the comments read again just before the `PATCH`; a ledger
+whose `updated_at` or body moved (the stamp has one-second precision, so the
+body is compared too) is rebuilt from the newer read, up to three times. After
+the `PATCH` the ledger is read back, and a write another writer replaced at
+once is reported rather than counted. The forge has no compare-and-set on a
+comment, so two writers can still interleave inside one request's latency,
+which the per-round claim check below makes a driver that has been taken
+over stop doing. Two creations that race leave two comments: the lower id is
+canonical, and each writer deletes its own higher-id copy on its next write.
+A ledger is trusted only when its author is the drive's own login or carries
+the owner, member or collaborator association; any other comment opening with
+the marker is ignored and reported, and so is a trusted comment opening with
+it whose data does not read (a person's comment, a damaged body), which is
+never taken for the ledger or overwritten. Nothing that identifies an account
+is posted: neither the ledger nor a claim carries an account hash, and
+email-shaped text in the narrative and the parked reasons is replaced with
+`<redacted>`. The driver's last write marks it stopped, naming its exit, on
+a returned exit and on a thrown refusal; a stop by signal or by `drives.ts
+--stop` starts no new command once shutdown begins, so that ledger keeps
+saying "running" until its heartbeat ages past the lease window. The body is cut to the forge's 65,536 limit by dropping
 held items' outcomes first, the narrative second and the visible list of
 parked decisions third; a parked decision is never dropped from the data, so
 a ledger that still does not fit is not written, and says so. A canonical
@@ -561,10 +572,14 @@ At arm, once its locks are held, `drive.ts` seeds this clone's state from a
 trusted ledger whose generation is newer than the state's own
 (`ledgerGeneration`, which a fresh state lacks): `drive-state.ts`'s `seed-ledger`
 lays the resumable subset over the local state under the state lock and
-regenerates the handoff. A held item whose outcome the size cut dropped is not
-seeded, and the round triages it afresh. A `ledgerVersion` it does not read
-refuses with exit `1`, naming the version. A forge that cannot be read starts
-the drive without the ledger, and says so.
+regenerates the handoff. It keeps this clone's own quota park, since the
+ledger carries no account to judge a wall by. A held item whose outcome the
+size cut dropped is not seeded, and the round triages it afresh. A seed the
+state store refuses keeps its exit (`13` when another working tree holds the
+PR). A `ledgerVersion` it does not read refuses with exit `1`, naming the
+version. `drive-state.ts`'s `reset` keeps the generation the state had
+reached, so the next arm does not seed back what the reset forgot. A forge
+that cannot be read starts the drive without the ledger, and says so.
 
 The following properties of that file are load-bearing rather than incidental. Updates
 take a per-PR `mkdir` lock (`$DRIVE_PR_LOCK_TIMEOUT`,
@@ -786,15 +801,21 @@ round from reading `WEDGED`); a fresher heartbeat refuses with exit `11`, and
 no running driver elsewhere is exit `2`. Once it holds its locks the taker
 re-reads the ledger (a heartbeat that moved since refuses with `11`) and
 posts an append-only claim, `<!-- drive-pr-takeover-claim -->` with its tree,
-hashed account, clone, the ledger generation it read and the time. The forge
+clone, the ledger generation it read and the time, and reads the claims
+back; a read-back that fails refuses the takeover with exit `1`, since it
+cannot tell a won claim from a lost one. The forge
 assigns increasing comment ids, so of the claims on one generation the
 earliest wins; a later claimant reads the earlier one back and stands down
 with exit `20`. The winner seeds, completes the takeover as above, and writes
 the ledger at once. A driver's own position is its own claim's id, or the
-highest id among the claims in force when it started; at every round
-boundary it reads the claims and exits `20` when a claim in force from another
-clone is newer than that position, and a write from a pass of that driver
-(a park) is skipped for the same reason. The arbitration holds only once
+highest id among the claims in force when it started (for a driver that
+could not read the comments at arm, the highest at the first round boundary
+that reads them); at every round boundary it reads the claims and exits `20`
+when a claim in force from another clone is newer than that position, or,
+for a driver that took the drive by its own claim, when another clone's
+earlier claim on the same generation shows up after a lagging read hid it.
+A write from a pass of that driver (a park) is skipped for the same
+reasons. The arbitration holds only once
 every driver of a PR runs a plugin version that reads the ledger: an older
 driver writes no heartbeat and reads no claim.
 

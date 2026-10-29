@@ -62,7 +62,6 @@ function ledger(over: Partial<Ledger> = {}): Ledger {
       generation: 4,
       driver: {
         actor: ACTOR_A,
-        account: null,
         clone: "clone-a",
         heartbeat: "2026-10-01T11:00:00.000Z",
         state: "running",
@@ -206,13 +205,64 @@ describe("trust and the canonical ledger", () => {
     expect(snap.duplicates.map((c) => c.id)).toEqual([70]);
     expect(snap.maxGeneration).toBe(6);
   });
+
+  it("never takes a member's comment opening with the marker for the ledger", () => {
+    const snap = snapshotFrom(
+      [
+        comment(20, `${LEDGER_MARKER}\nWhat is this comment for?`),
+        comment(60, body(5)),
+      ],
+      null,
+    );
+    expect(snap.canonical?.comment.id).toBe(60);
+    expect(snap.malformed.map((c) => c.id)).toEqual([20]);
+    expect(snap.duplicates).toEqual([]);
+  });
+});
+
+describe("what is posted", () => {
+  it("carries no account and redacts email-shaped text", () => {
+    const l = ledgerFromState(
+      {
+        ...driveState(),
+        quotaPark: {
+          vendor: "claude",
+          window: "weekly",
+          resetAt: null,
+          at: "2026-10-01T10:00:00.000Z",
+          account: "acct-0123456789abcdef",
+        },
+        parked: [
+          {
+            key: "PRRT_p",
+            kind: "thread",
+            reason: "Ask first.last@example.co.uk",
+            round: 1,
+          },
+        ],
+      },
+      {
+        generation: 1,
+        driver: {
+          actor: ACTOR_A,
+          clone: "clone-a",
+          heartbeat: "2026-10-01T11:00:00.000Z",
+          state: "running",
+        },
+        narrative: ["mailed a.b+c@sub.example.com today"],
+        claims: [],
+      },
+    );
+    expect(l.quotaPark).not.toHaveProperty("account");
+    expect(l.parked[0]?.reason).toBe("Ask <redacted>");
+    expect(l.narrative).toEqual(["mailed <redacted> today"]);
+  });
 });
 
 describe("takeover claims", () => {
   const claimBody = (clone: string, generation: number): string =>
     renderClaim({
       actor: ACTOR_A,
-      account: null,
       clone,
       generation,
       at: "2026-10-01T12:00:00.000Z",
@@ -239,6 +289,24 @@ describe("takeover claims", () => {
     expect(newerClaim(snap.claims, 0, "clone-a")?.id).toBe(150);
     // A driver's own clone's claim never ends it.
     expect(newerClaim(snap.claims, 150, "clone-d")).toBeNull();
+  });
+
+  it("ends a driver whose own claim lost its generation, even to an earlier id", () => {
+    const parsed = parseClaim(claimBody("clone-c", 4));
+    if (parsed === null) throw new Error("the claim does not parse");
+    const own = { id: 200, claim: parsed };
+    const rival = snapshotFrom(
+      [comment(150, claimBody("clone-b", 4))],
+      null,
+    ).claims;
+    // The rival's id is below the driver's own position, and it still wins.
+    expect(newerClaim(rival, 200, "clone-c", own)?.id).toBe(150);
+    // The driver's own winning claim stands against a later rival.
+    const later = snapshotFrom(
+      [comment(250, claimBody("clone-b", 4))],
+      null,
+    ).claims;
+    expect(newerClaim(later, 200, "clone-c", own)).toBeNull();
   });
 });
 

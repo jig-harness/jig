@@ -217,7 +217,11 @@ import {
 } from "./lib/proc.ts";
 import { isActorId, resolveActor } from "./lib/state/actor.ts";
 import { recordTakeover } from "./lib/state/takeover.ts";
-import { mirrorLedger, seedLedgerCommand } from "./lib/state/ledger-mirror.ts";
+import {
+  mirrorLedger,
+  removeStateKeepingLedgerGeneration,
+  seedLedgerCommand,
+} from "./lib/state/ledger-mirror.ts";
 import { quotaPark } from "./lib/state/quota-park.ts";
 import { deadlineRetries } from "./lib/state/deadline-retries.ts";
 import { unpark } from "./lib/state/unpark.ts";
@@ -3527,7 +3531,7 @@ async function main(): Promise<number> {
           return 9;
         }
 
-        rmSync(store.file, { force: true });
+        removeStateKeepingLedgerGeneration(store, Number(pr));
         rmSync(orphanMarkerPath(store.stateDir, pr), { force: true });
         clearPendingVerdicts(store.stateDir, pr);
         await removeHandoff(pr);

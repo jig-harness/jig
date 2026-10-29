@@ -68,7 +68,6 @@ function ledger(
       generation,
       driver: {
         actor: OTHER_ACTOR,
-        account: null,
         clone: "clone-elsewhere",
         heartbeat: new Date().toISOString(),
         state: "stopped",
@@ -100,7 +99,6 @@ function comment(id: number, text: string, association = "MEMBER") {
 function claim(clone: string, generation: number): string {
   return renderClaim({
     actor: OTHER_ACTOR,
-    account: null,
     clone,
     generation,
     at: new Date().toISOString(),
@@ -285,21 +283,16 @@ describe("drive.ts and another clone's driver", () => {
   });
 });
 
-describe("drive.ts stands down at a round boundary on a newer claim", () => {
-  it("exits TAKEN_OVER without another pass once another clone's claim appears", async () => {
-    const { dir, stateDir, tree } = withComments(
-      "boundary",
-      { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] },
-      [],
-    );
-    // The pass stands in for time passing: another clone claims the drive.
-    const claimFile = join(dir, "claim.json");
-    writeFileSync(
-      claimFile,
-      JSON.stringify(comment(99_990, claim("clone-elsewhere", 1))),
-    );
-    const addClaim = `const fs=require("node:fs");const f=${JSON.stringify(join(dir, "issue-comments.json"))};fs.writeFileSync(f,JSON.stringify([...JSON.parse(fs.readFileSync(f,"utf8")),JSON.parse(fs.readFileSync(${JSON.stringify(claimFile)},"utf8"))]))`;
-    const pass = [
+/**
+ * A pass that stands in for time passing: it adds `added` to the pull
+ * request's comments, as another clone claiming the drive would.
+ */
+function passAdding(dir: string, added: unknown) {
+  const claimFile = join(dir, "claim.json");
+  writeFileSync(claimFile, JSON.stringify(added));
+  const addClaim = `const fs=require("node:fs");const f=${JSON.stringify(join(dir, "issue-comments.json"))};fs.writeFileSync(f,JSON.stringify([...JSON.parse(fs.readFileSync(f,"utf8")),JSON.parse(fs.readFileSync(${JSON.stringify(claimFile)},"utf8"))]))`;
+  return {
+    pass: [
       "sh",
       "-c",
       [
@@ -307,19 +300,32 @@ describe("drive.ts stands down at a round boundary on a newer claim", () => {
         'echo "pass for 999: RAN_THE_PASS" >&2',
         `"$LEDGER_TEST_BUN" -e "$LEDGER_TEST_ADD_CLAIM"`,
       ].join("\n"),
-    ];
+    ],
+    env: {
+      DRIVE_PR_LEDGER: "on",
+      LEDGER_TEST_BUN: process.execPath,
+      LEDGER_TEST_ADD_CLAIM: addClaim,
+    },
+  };
+}
+
+describe("drive.ts stands down at a round boundary on a newer claim", () => {
+  it("exits TAKEN_OVER without another pass once another clone's claim appears", async () => {
+    const { dir, stateDir, tree } = withComments(
+      "boundary",
+      { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] },
+      [],
+    );
+    const { pass, env } = passAdding(
+      dir,
+      comment(99_990, claim("clone-elsewhere", 1)),
+    );
     const r = await runDriveIn(
       dir,
       stateDir,
       ["--no-head-sync", "--max-rounds", "3", "--", ...pass],
       tree,
-      {
-        env: {
-          DRIVE_PR_LEDGER: "on",
-          LEDGER_TEST_BUN: process.execPath,
-          LEDGER_TEST_ADD_CLAIM: addClaim,
-        },
-      },
+      { env },
     );
     expectSpawnExit({ ...r, stdout: null }, 20);
     expect(r.stderr).toContain("taken over. Another clone");
@@ -331,5 +337,40 @@ describe("drive.ts stands down at a round boundary on a newer claim", () => {
       .filter((l) => l.includes("drive-pr-ledger"));
     expect(posted.length).toBeGreaterThanOrEqual(1);
     expect(posted.at(-1)).not.toContain('\\"state\\":\\"stopped\\"');
+  }, 120_000);
+
+  it("ends a takeover whose claim a rival's earlier one beat, once a lagging read shows it", async () => {
+    const { dir, stateDir, tree } = withComments(
+      "claim-lag",
+      { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] },
+      [
+        comment(
+          500,
+          body(
+            ledger(4, 3, {
+              state: "running",
+              heartbeat: new Date(Date.now() - 5 * 3600_000).toISOString(),
+            }),
+          ),
+        ),
+      ],
+    );
+    // The rival's claim on the same generation has a lower id than this
+    // driver's (9001) but shows only after the takeover read the claims.
+    const { pass, env } = passAdding(
+      dir,
+      comment(600, claim("clone-rival", 4)),
+    );
+    const r = await runDriveIn(
+      dir,
+      stateDir,
+      ["--take-over", "--no-head-sync", "--max-rounds", "3", "--", ...pass],
+      tree,
+      { env },
+    );
+    expectSpawnExit({ ...r, stdout: null }, 20);
+    expect(r.stderr).toContain("claimed PR #999's drive (comment 9001");
+    expect(r.stderr).toContain("comment 600, which beats");
+    expect(r.stderr.match(/RAN_THE_PASS/g)?.length).toBe(1);
   }, 120_000);
 });

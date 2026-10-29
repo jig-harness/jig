@@ -6,7 +6,7 @@
  * that finds the pull requests carrying a ledger.
  */
 import { describe, expect, it } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
@@ -34,7 +34,6 @@ function ledger(generation: number, round = 2): Ledger {
       generation,
       driver: {
         actor: "wt-aaaaaaaaaaaaaaaa",
-        account: null,
         clone: "clone-a",
         heartbeat: "2026-10-01T11:00:00.000Z",
         state: "running",
@@ -126,6 +125,41 @@ describe("the ledger written from the drive state", () => {
     expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(1);
   });
 
+  it("rebuilds when the ledger moved within the same second", async () => {
+    const forge = fakeForge(
+      [forgeComment(40, ledgerBody(ledger(3)), "maintainer")],
+      { login: "drive-bot" },
+    );
+    writeFileSync(join(forge.dir, "bump-on-list"), "2");
+    writeFileSync(join(forge.dir, "bump-same-second"), "");
+    writeFileSync(
+      join(forge.dir, "bump-body.json"),
+      JSON.stringify({ id: 40, body: ledgerBody(ledger(9)) }),
+    );
+    const r = await handoff(forge);
+    expectSpawnExit(r, 0);
+    expect(ledgersOn(forge).get(40)?.generation).toBe(10);
+  });
+
+  it("reads the ledger back after the write and says when another writer replaced it", async () => {
+    const forge = fakeForge(
+      [forgeComment(40, ledgerBody(ledger(3)), "maintainer")],
+      { login: "drive-bot" },
+    );
+    // The third listing is the read-back: another writer landed right after.
+    writeFileSync(join(forge.dir, "bump-on-list"), "3");
+    writeFileSync(
+      join(forge.dir, "bump-body.json"),
+      JSON.stringify({ id: 40, body: ledgerBody(ledger(9)) }),
+    );
+    const r = await handoff(forge);
+    expectSpawnExit(r, 0);
+    expect(r.stderr).toContain("another writer replaced this write");
+    expect(ledgersOn(forge).get(40)?.generation).toBe(9);
+    const got = await runScript(forge, "drive-state.ts", ["get", "999"]);
+    expect(JSON.parse(got.stdout).ledgerGeneration).toBeUndefined();
+  });
+
   it("leaves the lower id canonical after a creation race, and deletes its own copy on the next write", async () => {
     const forge = fakeForge([], { login: "drive-bot" });
     // Another writer's creation lands, with a lower id, just before ours.
@@ -142,6 +176,75 @@ describe("the ledger written from the drive state", () => {
     expect([...ledgersOn(forge).keys()]).toEqual([40]);
     expect(ledgersOn(forge).get(40)?.generation).toBe(2);
     expect(second.stderr).toContain("deleted this login's duplicate(s) 101");
+  });
+
+  it("posts no account and no email address", async () => {
+    const forge = fakeForge([], { login: "drive-bot" });
+    const hash = "acct-0123456789abcdef";
+    const steps: Array<[string[], string | undefined]> = [
+      [
+        [
+          "park",
+          "999",
+          "--key",
+          "PRRT_x",
+          "--kind",
+          "thread",
+          "--reason",
+          "Ask dev.person@example.com which schema",
+        ],
+        undefined,
+      ],
+      [
+        [
+          "quota-park",
+          "999",
+          "--vendor",
+          "claude",
+          "--window",
+          "weekly",
+          "--account",
+          hash,
+        ],
+        undefined,
+      ],
+      [
+        ["takeover", "999"],
+        JSON.stringify({
+          fromActor: null,
+          fromAccount: hash,
+          toAccount: hash,
+          verdict: "DEAD",
+          reopened: [],
+        }),
+      ],
+    ];
+    for (const [args, stdin] of steps)
+      expectSpawnExit(
+        await runScript(forge, "drive-state.ts", args, {}, stdin),
+        0,
+      );
+    const handoffFile = join(
+      forge.env.DRIVE_PR_HANDOFF_DIR ?? "",
+      "pr-drive-999.md",
+    );
+    writeFileSync(
+      handoffFile,
+      `${readFileSync(handoffFile, "utf8")}\nAsked someone+drive@example.org about it.\n`,
+    );
+    expectSpawnExit(await handoff(forge), 0);
+    const bodies = forge.comments().map((c) => c.body);
+    expect(bodies).toHaveLength(1);
+    const [body] = bodies;
+    expect(body).not.toMatch(/[^\s@<>"]+@[^\s@<>"]+\.[a-z]{2,}/i);
+    expect(body).not.toContain(hash);
+    expect(body).not.toMatch(/"(?:from|to)?[aA]ccount"/);
+    const [posted] = [...ledgersOn(forge).values()];
+    expect(posted?.parked[0]?.reason).toBe("Ask <redacted> which schema");
+    expect(posted?.narrative).toContain("Asked <redacted> about it.");
+    // The local state keeps the account its own re-arm reads.
+    const got = await runScript(forge, "drive-state.ts", ["get", "999"]);
+    expect(JSON.parse(got.stdout).quotaPark.account).toBe(hash);
   });
 
   it("ignores and reports a forged ledger from an unassociated author", async () => {
@@ -178,7 +281,6 @@ describe("the ledger written from the drive state", () => {
   it("skips the write once another clone's claim is newer than this driver's", async () => {
     const claim = renderClaim({
       actor: "wt-cccccccccccccccc",
-      account: null,
       clone: "clone-c",
       generation: 3,
       at: "2026-10-01T12:00:00.000Z",
@@ -220,25 +322,49 @@ describe("seed-ledger", () => {
     expect(older.stdout).toContain("current");
     const got = await runScript(forge, "drive-state.ts", ["get", "999"]);
     expect(JSON.parse(got.stdout).rounds).toBe(6);
+    // The seeded state regenerated the handoff file.
+    const handoffFile = join(
+      forge.env.DRIVE_PR_HANDOFF_DIR ?? "",
+      "pr-drive-999.md",
+    );
+    expect(readFileSync(handoffFile, "utf8")).toContain("**Round**: 6");
+  });
+
+  it("does not seed back what a reset forgot", async () => {
+    const forge = fakeForge([]);
+    const body = ledgerBody(ledger(4, 6));
+    expectSpawnExit(
+      await runScript(
+        forge,
+        "drive-state.ts",
+        ["seed-ledger", "999"],
+        {},
+        body,
+      ),
+      0,
+    );
+    expectSpawnExit(
+      await runScript(forge, "drive-state.ts", ["reset", "999"]),
+      0,
+    );
+    const again = await runScript(
+      forge,
+      "drive-state.ts",
+      ["seed-ledger", "999"],
+      {},
+      body,
+    );
+    expectSpawnExit(again, 0);
+    expect(again.stdout).toContain("current");
+    const got = JSON.parse(
+      (await runScript(forge, "drive-state.ts", ["get", "999"])).stdout,
+    );
+    expect([got.rounds, got.ledgerGeneration]).toEqual([0, 4]);
   });
 });
 
 describe("the population for the morning report", () => {
-  it("lists the repository's open pull requests carrying the ledger marker", async () => {
-    const forge = fakeForge([]);
-    writeFileSync(
-      join(forge.dir, "search.json"),
-      JSON.stringify({
-        items: [
-          {
-            number: 12,
-            html_url: "https://example.invalid/pull/12",
-            title: "b",
-          },
-          { number: 7, html_url: "https://example.invalid/pull/7", title: "a" },
-        ],
-      }),
-    );
+  async function population(forge: ReturnType<typeof fakeForge>) {
     const probe = Bun.spawn(
       [
         process.execPath,
@@ -253,14 +379,61 @@ describe("the population for the morning report", () => {
       probe.exited,
     ]);
     expectSpawnExit({ stdout, stderr, exitCode }, 0);
-    expect(JSON.parse(stdout).map((p: { number: number }) => p.number)).toEqual(
-      [7, 12],
+    return JSON.parse(stdout) as Array<{ number: number }> | null;
+  }
+
+  function search(forge: ReturnType<typeof fakeForge>, numbers: number[]) {
+    writeFileSync(
+      join(forge.dir, "search.json"),
+      JSON.stringify({
+        items: numbers.map((n) => ({
+          number: n,
+          html_url: `https://example.invalid/pull/${n}`,
+          title: `pr ${n}`,
+        })),
+      }),
     );
+  }
+
+  it("lists the open pull requests whose comments hold a trusted ledger", async () => {
+    const forge = fakeForge([]);
+    search(forge, [12, 7, 9]);
+    writeFileSync(
+      join(forge.dir, "comments-7.json"),
+      JSON.stringify([forgeComment(70, ledgerBody(ledger(2)))]),
+    );
+    // A comment that merely mentions the marker matches the search too.
+    writeFileSync(
+      join(forge.dir, "comments-12.json"),
+      JSON.stringify([
+        forgeComment(120, "Is the `drive-pr-ledger` comment current?"),
+      ]),
+    );
+    // A forged ledger from an unassociated author is not one.
+    writeFileSync(
+      join(forge.dir, "comments-9.json"),
+      JSON.stringify([
+        forgeComment(90, ledgerBody(ledger(2)), "drive-by", "NONE"),
+      ]),
+    );
+    expect((await population(forge))?.map((p) => p.number)).toEqual([7]);
     const query = await Bun.file(join(forge.dir, "search-query")).text();
     expect(query).toBe(
       'q=repo:example-org/example-repo is:pr is:open in:comments "drive-pr-ledger"',
     );
     // The search went through the deadlined gh chokepoint, as a GET.
     expect(forge.calls().some((c) => c.startsWith("api -X GET"))).toBe(true);
+  });
+
+  it("is empty when the search finds nothing", async () => {
+    const forge = fakeForge([]);
+    search(forge, []);
+    expect(await population(forge)).toEqual([]);
+  });
+
+  it("is null when the search cannot be run", async () => {
+    const forge = fakeForge([]);
+    writeFileSync(join(forge.dir, "fail-search"), "");
+    expect(await population(forge)).toBeNull();
   });
 });

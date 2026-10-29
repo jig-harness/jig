@@ -547,9 +547,13 @@ you look:
   `lib/state/ledger.ts`): `ledgerVersion` and a monotonic `generation`, the
   round, phase, last counted and verified heads, the Ready mark, every parked
   item with its decision, every held item by key, outcome and pushed commit,
-  the quota park, the takeover records and the claims in force, the decisions
-  taken unattended (empty for now), the driver's tree, hashed account, clone
-  and heartbeat, and the handoff narrative's last twenty lines. A driver writes
+  the quota park (without its account), the takeover records (without
+  theirs) and the claims in force, the decisions taken unattended (empty for
+  now), the driver's tree, clone and heartbeat, and the handoff narrative's
+  last twenty lines. No account hash is posted, and email-shaped text in the
+  narrative and the parked reasons is replaced with `<redacted>`; seeding
+  keeps this clone's own quota park, so a re-arm from another clone simply
+  meets the wall again if it is still there. A driver writes
   it on the path that regenerates the handoff file — `drive-state.ts`'s `handoff`
   at every round boundary, after a takeover and as it stops (naming its exit),
   and its `park` at every park — by read-modify-write against the
@@ -680,9 +684,11 @@ heartbeat (the time of its last write) is older than the lease window, the
 doctor's stall threshold (`DRIVE_PR_STALL_MIN`, floor 240 minutes); a fresher
 one is refused with exit `11`. Once it holds its locks the taker posts an
 append-only claim on the PR (`<!-- drive-pr-takeover-claim -->`: its tree,
-hashed account, clone, the ledger generation it read, the time). Of the
-claims on one generation the earliest comment id wins, and a later claimant
-stands down with exit `20` (`TAKEN_OVER`). The winner seeds this clone's
+clone, the ledger generation it read, the time) and reads the claims back; a
+read-back that fails refuses the takeover (exit `1`). Of the claims on one
+generation the earliest comment id wins, and a later claimant stands down
+with exit `20` (`TAKEN_OVER`): at once when it sees the earlier claim, and at
+its next round boundary when a lagging read hid it. The winner seeds this clone's
 state from the ledger, completes the takeover as above, and writes the
 ledger. Every driver reads the claims at each round boundary and exits `20`,
 without another pass, when a claim in force from another clone is newer than

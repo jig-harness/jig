@@ -64,7 +64,7 @@ import { pickUpDrive } from "./takeover-complete.ts";
 
 import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
-import { armLedger, ledgerIdentity, settleLedger } from "./ledger.ts";
+import { armLedger, ledgerIdentity, ledgerSettlement } from "./ledger.ts";
 
 export async function main(): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
@@ -190,7 +190,7 @@ export async function main(): Promise<number> {
   // A takeover is decided before any lock is taken (`takeover.ts`); its
   // holder is stopped around this tree's lock. Across clones it is decided
   // by the pull request's drive ledger.
-  const ledger = await ledgerIdentity(dryRun, stateDir, agent);
+  const ledger = await ledgerIdentity(dryRun, stateDir);
   const plan = takeOver ? await decideTakeover(pr, ledger) : null;
   const held: DriveLock[] = [];
   using lockResources = new DisposableStack();
@@ -347,11 +347,16 @@ export async function main(): Promise<number> {
   // refuse to drive beside another clone's driver, claim a cross-clone
   // takeover. Then pick the drive up from its durable state: a takeover,
   // parked items a person has answered.
-  const pickup = await armLedger(pr, ledger, plan, state, {
-    agent,
-    windowReopened,
-    takeOverCommand: armCommand(driveTs, pr, botsOnly, " --take-over"),
-  });
+  const pickup = await armLedger(
+    pr,
+    ledger,
+    plan,
+    state,
+    armCommand(driveTs, pr, botsOnly, " --take-over"),
+  );
+  // From here the ledger says this driver is running, so whatever ends the
+  // drive (an exit, a thrown refusal, a stop) marks it stopped.
+  await using settlement = ledgerSettlement(pr);
   const firstPassNotice = await pickUpDrive(pr, plan, pickup, {
     agent,
     botsOnly,
@@ -398,7 +403,7 @@ export async function main(): Promise<number> {
     deadlineRetryBudget,
     firstPassNotice,
   });
-  return settleLedger(pr, roundsExit);
+  return settlement.done(roundsExit);
 }
 
 /** Refuse a pass whose declared target or thread scope differs from the driver. */

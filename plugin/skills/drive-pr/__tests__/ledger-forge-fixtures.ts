@@ -1,11 +1,20 @@
 /**
  * A fake forge for the drive-ledger suites: a `gh` that keeps a pull
- * request's issue comments in a JSON file and answers the calls the ledger
+ * request's issue comments in a JSON file (`comments.json`, or
+ * `comments-<N>.json` for pull request N) and answers the calls the ledger
  * makes (list, post, patch, delete, the signed-in login, the repository and
- * the search), recording each call. Two opt-in files script a race:
- * `race-on-post` inserts a rival ledger with a lower id just before a post
- * lands, and `bump-on-list` rewrites the canonical comment on the listing
- * that number names, as a concurrent writer would.
+ * the search), recording each call. Opt-in files script the races and
+ * failures:
+ *
+ * - `race-on-post` / `race-on-claim`: a rival comment (JSON) inserted, with
+ *   the id it names, just before a ledger / claim post lands.
+ * - `hide-ids`: `{ "ids": [...], "until": n }` hides those comments from
+ *   every listing before the n-th, as a lagging read would.
+ * - `bump-on-list` + `bump-body.json`: a concurrent writer rewrites the
+ *   canonical comment on the listing that number names; with `bump-same-second`
+ *   its `updated_at` does not move.
+ * - `fail-list-after`: every listing after that number fails.
+ * - `fail-search`: the search fails.
  */
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,14 +32,15 @@ const fs = require("node:fs");
 const F = process.env.LEDGER_FAKE_DIR;
 const args = process.argv.slice(2);
 fs.appendFileSync(F + "/calls.log", args.join(" ") + "\\n");
-const file = F + "/comments.json";
-const read = () => JSON.parse(fs.readFileSync(file, "utf8"));
-const save = (c) => fs.writeFileSync(file, JSON.stringify(c));
 const has = (name) => fs.existsSync(F + "/" + name);
-const stamp = () => new Date(Date.now() + read().length * 1000).toISOString();
+const text = (name) => fs.readFileSync(F + "/" + name, "utf8");
+const fileFor = (pr) => F + "/" + (pr !== "" && has("comments-" + pr + ".json") ? "comments-" + pr + ".json" : "comments.json");
+const read = (pr) => JSON.parse(fs.readFileSync(fileFor(pr), "utf8"));
+const save = (pr, c) => fs.writeFileSync(fileFor(pr), JSON.stringify(c));
+const stamp = (pr) => new Date(Date.parse("2026-10-01T11:00:00Z") + (read(pr).length + 1) * 1000).toISOString();
 if (args[0] === "api" && args[1] === "user") {
   if (!has("login")) { process.stderr.write("no login\\n"); process.exit(1); }
-  process.stdout.write(fs.readFileSync(F + "/login", "utf8").trim() + "\\n");
+  process.stdout.write(text("login").trim() + "\\n");
   process.exit(0);
 }
 if (args[0] === "repo" && args[1] === "view") {
@@ -49,48 +59,62 @@ for (let i = 1; i < args.length; i++) {
 }
 const input = args.includes("--input") ? JSON.parse(fs.readFileSync(0, "utf8")) : null;
 if (input !== null && method === "GET") method = "POST";
-const self = has("login") ? fs.readFileSync(F + "/login", "utf8").trim() : "drive-bot";
+const self = has("login") ? text("login").trim() : "drive-bot";
 if (endpoint.startsWith("search/issues")) {
+  if (has("fail-search")) { process.stderr.write("search failed\\n"); process.exit(1); }
   fs.writeFileSync(F + "/search-query", args[args.indexOf("-f") + 1]);
-  process.stdout.write(JSON.stringify([JSON.parse(fs.readFileSync(F + "/search.json", "utf8"))]));
+  process.stdout.write(JSON.stringify([JSON.parse(text("search.json"))]));
   process.exit(0);
 }
 const one = endpoint.match(/issues\\/comments\\/(\\d+)/);
 if (one) {
   const id = Number(one[1]);
-  const all = read();
-  if (method === "DELETE") { save(all.filter((c) => c.id !== id)); process.exit(0); }
+  const all = read("");
+  if (method === "DELETE") { save("", all.filter((c) => c.id !== id)); process.exit(0); }
   if (method === "PATCH") {
     const c = all.find((x) => x.id === id);
     if (!c) process.exit(1);
-    c.body = input.body; c.updated_at = stamp();
-    save(all); process.exit(0);
+    c.body = input.body; c.updated_at = stamp("");
+    save("", all); process.exit(0);
   }
 }
-if (/issues\\/\\d+\\/comments/.test(endpoint)) {
+const list = endpoint.match(/issues\\/(\\d+)\\/comments/);
+if (list) {
+  const pr = list[1];
   if (method === "POST") {
-    const all = read();
-    if (has("race-on-post") && input.body.startsWith("<!-- drive-pr-ledger -->")) {
-      all.push(JSON.parse(fs.readFileSync(F + "/race-on-post", "utf8")));
-      fs.rmSync(F + "/race-on-post");
+    const all = read(pr);
+    const race = input.body.startsWith("<!-- drive-pr-ledger -->") ? "race-on-post" : input.body.startsWith("<!-- drive-pr-takeover-claim -->") ? "race-on-claim" : "";
+    if (race !== "" && has(race)) {
+      all.push(JSON.parse(text(race)));
+      fs.rmSync(F + "/" + race);
     }
     const id = Math.max(100, ...all.map((c) => c.id)) + 1;
-    all.push({ id, body: input.body, user: { login: self }, author_association: "MEMBER", updated_at: stamp() });
-    save(all);
+    all.push({ id, body: input.body, user: { login: self }, author_association: "MEMBER", updated_at: stamp(pr) });
+    save(pr, all);
     process.stdout.write(JSON.stringify({ id, html_url: "https://example.invalid/c/" + id }));
     process.exit(0);
   }
-  let n = has("list-count") ? Number(fs.readFileSync(F + "/list-count", "utf8")) : 0;
+  let n = has("list-count") ? Number(text("list-count")) : 0;
   n += 1;
   fs.writeFileSync(F + "/list-count", String(n));
-  if (has("bump-on-list") && Number(fs.readFileSync(F + "/bump-on-list", "utf8")) === n) {
-    const all = read();
-    const bump = JSON.parse(fs.readFileSync(F + "/bump-body.json", "utf8"));
-    const c = all.find((x) => x.id === bump.id);
-    c.body = bump.body; c.updated_at = "2099-01-01T00:00:00Z";
-    save(all);
+  if (has("fail-list-after") && n > Number(text("fail-list-after"))) {
+    process.stderr.write("listing failed\\n");
+    process.exit(1);
   }
-  process.stdout.write(JSON.stringify([read()]));
+  if (has("bump-on-list") && Number(text("bump-on-list")) === n) {
+    const all = read(pr);
+    const bump = JSON.parse(text("bump-body.json"));
+    const c = all.find((x) => x.id === bump.id);
+    c.body = bump.body;
+    if (!has("bump-same-second")) c.updated_at = "2099-01-01T00:00:00Z";
+    save(pr, all);
+  }
+  let shown = read(pr);
+  if (has("hide-ids")) {
+    const hide = JSON.parse(text("hide-ids"));
+    if (n < hide.until) shown = shown.filter((c) => !hide.ids.includes(c.id));
+  }
+  process.stdout.write(JSON.stringify([shown]));
   process.exit(0);
 }
 process.stderr.write("fake gh: unhandled api " + args.join(" ") + "\\n");
@@ -204,7 +228,6 @@ export function fakeForge(
 export function driverEnv(clone: string, floor = 0, login = "drive-bot") {
   return JSON.stringify({
     actor: "wt-bbbbbbbbbbbbbbbb",
-    account: null,
     clone,
     login,
     floor,
