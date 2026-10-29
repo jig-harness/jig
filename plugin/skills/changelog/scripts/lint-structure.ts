@@ -12,6 +12,8 @@ import {
   inlineLink,
   linkLabel,
   linkText,
+  prose,
+  tokens,
 } from "./markdown-inline.ts";
 
 /** One rule a finding names: its id and where the format's specification states it. */
@@ -117,6 +119,21 @@ export function headingVersion(title: string): HeadingVersion | null {
   return plain?.[1] === undefined
     ? null
     : { version: plain[1], link: "plain", ref: null, rest: plain[2] ?? "" };
+}
+
+/**
+ * Whether a `##` title names the Unreleased section as it renders: written as
+ * a link (`[Unreleased]`), or in brackets escaped to show literally
+ * (`\[Unreleased\]`), or, where `bare` allows it, plain `Unreleased`.
+ */
+export function isUnreleased(title: string, bare: boolean): boolean {
+  const read = tokens(title.trim(), () => true);
+  const only = read.length === 1 ? read[0] : undefined;
+  if (only?.kind === "link") return /^unreleased$/i.test(only.text.trim());
+  const shown = prose(title, () => true).trim();
+  return (
+    /^\[Unreleased\]$/i.test(shown) || (bare && /^Unreleased$/i.test(shown))
+  );
 }
 
 /** Whether a line is part of a link reference definition, which renders as nothing. */

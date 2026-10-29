@@ -21,6 +21,7 @@ import {
   isSemver,
   headingVersion,
   isStable,
+  isUnreleased,
   label,
   type Line,
   paragraphs,
@@ -223,7 +224,7 @@ function refusedHeading(
   changelog: Changelog,
   section: Section,
 ): Finding | null {
-  if (/^\[?Unreleased\]?$/i.test(section.title))
+  if (isUnreleased(section.title, true))
     return finding(
       COMMON_RULES.unreleased,
       changelog,
@@ -449,7 +450,9 @@ function listOf(group: Group): {
       walk.broken = true;
       continue;
     }
-    const item = line.inFence ? null : ITEM.exec(line.text);
+    // A marker at or past the current item's text column nests inside it.
+    const nested = walk.items.length > 0 && indentOf(line.text) >= walk.offset;
+    const item = line.inFence || nested ? null : ITEM.exec(line.text);
     if (item?.[1] !== undefined) {
       walk.items.push({ line: line.n, text: line.text });
       walk.offset = item[1].replaceAll("\t", "    ").length;

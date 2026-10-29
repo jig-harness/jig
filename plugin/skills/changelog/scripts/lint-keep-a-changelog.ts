@@ -14,6 +14,7 @@ import {
   headingVersion,
   isDate,
   isDefinition,
+  isUnreleased,
   label,
   type Rule,
   type Section,
@@ -112,7 +113,8 @@ const TYPES = [
   "Security",
 ];
 
-const UNRELEASED = /^\[Unreleased\]$/i;
+/** `## [Unreleased]`, its brackets a link's or escaped to show. */
+const namesUnreleased = (s: Section): boolean => isUnreleased(s.title, false);
 
 /** A release heading: `version - date`, maybe `[YANKED]`, the version maybe a link. */
 interface Release {
@@ -372,9 +374,9 @@ export function lintKeepAChangelog(
   changelog: Changelog,
   coverage: Coverage,
 ): Finding[] {
-  const unreleased = changelog.sections.filter((s) => UNRELEASED.test(s.title));
+  const unreleased = changelog.sections.filter(namesUnreleased);
   const read = changelog.sections
-    .filter((s) => !UNRELEASED.test(s.title))
+    .filter((s) => !namesUnreleased(s))
     .map((s) => releaseOf(changelog, s));
   const releases = read.filter((r): r is Release => "version" in r);
   return [

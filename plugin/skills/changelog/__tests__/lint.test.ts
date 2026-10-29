@@ -219,6 +219,30 @@ describe("what each format allows", () => {
   });
 });
 
+describe("Unreleased headings and nested changes read as they render", () => {
+  test("an Unreleased heading with escaped brackets is the Unreleased section", () => {
+    expect(keepWith("## [Unreleased]", String.raw`## \[Unreleased\]`)).toEqual(
+      [],
+    );
+    expect(
+      commonWith(
+        "# Changelog\n",
+        String.raw`# Changelog
+
+## \[Unreleased\]
+
+_Next._
+`,
+      ),
+    ).toEqual([COMMON_RULES.unreleased.id]);
+  });
+
+  test("a list nested in a change belongs to it", () => {
+    const item = "- Fix the parser ([#7](https://example.com/o/r/pull/7))";
+    expect(commonWith(item, `${item}\n  - with a detail`)).toEqual([]);
+  });
+});
+
 describe("the format decides which rules run", () => {
   test("a Common Changelog file is never judged by Keep a Changelog's rules", () => {
     const text = fixture("common-changelog", "clean");
