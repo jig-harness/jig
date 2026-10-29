@@ -568,7 +568,11 @@ you look:
   the ledger (`drive-state.ts`'s `seed-ledger`); a `ledgerVersion` it does not
   read refuses with exit `1`, naming the version. The locks stay per clone:
   the ledger seeds and arbitrates (§ Picking up a stopped drive), it does not
-  lock. `DRIVE_PR_LEDGER=off` and `--dry-run` drive without it.
+  lock. `DRIVE_PR_LEDGER=off` and `--dry-run` drive without it. A driver
+  stopped by `drives.ts` `--stop` or a signal cannot write its last ledger
+  itself; `--stop` writes it once the driver is witnessed gone, and after a
+  crash or a kill `--stop` or `--doctor` against the lock whose process is
+  gone does the same, each only while the ledger still names that driver.
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state root,
   preserving one `<clone-key>/` directory per clone (the hash of its persisted
   [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved leaf;

@@ -389,10 +389,9 @@ export async function mirrorNow(pr: string): Promise<void> {
  * code ends it: `done(code)` on a returned exit, the dispose on a thrown
  * refusal or a crash (its exit unknown here, so none is named). Written
  * once; not at all after `TAKEN_OVER`, when the ledger is the successor's.
- * A stop by signal or by `drives.ts --stop` writes nothing: once shutdown
- * begins the process starts no new command (`shared/cleanup.ts`), so its
- * ledger keeps saying "running" until the heartbeat ages past the lease
- * window, as a process killed outright does.
+ * A stop by signal or by `drives.ts --stop` cannot write it here: once
+ * shutdown begins the process starts no new command (`shared/cleanup.ts`).
+ * `drives.ts` writes it from outside instead (`lib/ledger-stop.ts`).
  */
 export function ledgerSettlement(pr: string): AsyncDisposable & {
   done(code: number): Promise<number>;
