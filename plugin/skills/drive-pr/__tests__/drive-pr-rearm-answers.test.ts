@@ -93,6 +93,21 @@ describe("drive-state.ts unpark takes every key or none", () => {
     expect(await parkedKeys(stateDir)).toEqual([]);
   });
 
+  it("with --every, refuses the whole set when another key is parked", async () => {
+    const { stateDir } = writeFixture({}, scratchClean.dir);
+    await park(stateDir, "PRRT_a", "thread");
+    await park(stateDir, "PRRT_new", "thread");
+    const refused = await state(stateDir, [
+      "unpark",
+      "999",
+      "--every",
+      "--key",
+      "PRRT_a",
+    ]);
+    expectSpawnExit({ ...refused, stderr: null }, 1);
+    expect(await parkedKeys(stateDir)).toEqual(["PRRT_a", "PRRT_new"]);
+  });
+
   it("takes only the values the parser consumed as keys", async () => {
     const { stateDir } = writeFixture({}, scratchClean.dir);
     // `--key` is a legal key value: the parser consumes it as one.
@@ -176,6 +191,21 @@ describe("drive.ts keeps a re-arm's answers until a pass completes with them", (
     const third = await runDriveIn(dir, stateDir, args(3, 0));
     expect(third.stderr).toContain("PASS_RAN");
     expect(third.stderr).not.toContain("ANSWER_SEEN");
+  }, 120_000);
+
+  it("stops before any pass when the drive state cannot be read once the locks are held", async () => {
+    const { dir, stateDir } = await answeredPark();
+    writeFileSync(join(stateDir, "drive-pr-999.json"), "{ not json");
+    const run = await runDriveIn(dir, stateDir, [
+      "--no-head-sync",
+      "--max-rounds",
+      "1",
+      "--",
+      ...PASS(0),
+    ]);
+    expectSpawnExit({ ...run, stdout: "" }, 1);
+    expect(run.stderr).toContain("now that its locks are held");
+    expect(run.stderr).not.toContain("PASS_RAN");
   }, 120_000);
 
   it("stops before any pass when the kept answers cannot be read, and keeps the file", async () => {

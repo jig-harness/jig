@@ -39,11 +39,16 @@ describe("headSyncState on the PR head", () => {
     expect(mayEndWithoutWork(0, sync, false)).toBe(false);
   });
 
+  it("owes the round with head sync off too, the local head unread", async () => {
+    expect(await headSyncState(false, HEAD, "", HEAD)).toBe("inherited");
+    expect(await headSyncState(false, HEAD, HEAD, HEAD)).toBe("inherited");
+  });
+
   it("stays in sync when no head is named, or another one is", async () => {
     expect(await headSyncState(true, HEAD, HEAD, "")).toBe("in-sync");
     expect(await headSyncState(true, HEAD, HEAD, "b".repeat(40))).toBe(
       "in-sync",
     );
-    expect(await headSyncState(false, HEAD, HEAD, HEAD)).toBe("in-sync");
+    expect(await headSyncState(false, HEAD, "", "")).toBe("in-sync");
   });
 });

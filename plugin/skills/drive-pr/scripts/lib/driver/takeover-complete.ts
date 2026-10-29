@@ -240,14 +240,14 @@ export async function completeTakeover(
 export async function pickUpDrive(
   pr: string,
   plan: TakeoverPlan | null,
-  state: DriveState | null,
+  state: DriveState,
   opts: { agent: string[]; botsOnly: boolean; dryRun: boolean },
 ): Promise<string> {
   const notices = [
     plan === null
       ? ""
       : await completeTakeover(pr, plan, opts.agent, opts.botsOnly),
-    state === null ? "" : await admitAnsweredParks(state, opts.dryRun),
+    await admitAnsweredParks(state, opts.dryRun),
   ];
   return notices.filter((part) => part !== "").join("\n\n");
 }

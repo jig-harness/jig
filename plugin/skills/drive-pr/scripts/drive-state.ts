@@ -407,6 +407,8 @@ interface Args {
   keys: string[];
   /** Every `--parked-at`, in argv order: `unpark`'s park timestamps, one per `--key`. */
   parkedAts: string[];
+  /** `unpark --every`: the named keys must be every park there is. */
+  every: boolean;
   kind: string;
   reason: string;
   sha: string;
@@ -492,6 +494,7 @@ function parseArgs(argv: string[]): Args {
     key: "",
     keys: [],
     parkedAts: [],
+    every: false,
     kind: "",
     reason: "",
     sha: "",
@@ -547,6 +550,9 @@ function parseArgs(argv: string[]): Args {
         break;
       case "--if-present":
         a.ifPresent = true;
+        break;
+      case "--every":
+        a.every = true;
         break;
       // Repeatable rather than a delimited list: an anchor path is an
       // arbitrary repository path, and every delimiter a list could use is a
@@ -2187,7 +2193,7 @@ async function main(): Promise<number> {
       return park(store, a);
 
     case "unpark":
-      return unpark(store, a.keys, a.parkedAts);
+      return unpark(store, a.keys, a.parkedAts, a.every);
 
     case "parked-keys": {
       for (const p of store.read().state.parked)

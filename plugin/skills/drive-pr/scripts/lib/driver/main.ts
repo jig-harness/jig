@@ -64,6 +64,8 @@ import { pickUpDrive } from "./takeover-complete.ts";
 
 import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
+import type { DriveState } from "./../state/schema.ts";
+
 /**
  * Refuse a PR that is not a canonical number. Digits, checked here rather
  * than at the three places it lands: it is interpolated into a `new RegExp`,
@@ -84,6 +86,28 @@ function requireCanonicalPr(pr: string): void {
       2,
       `drive.ts: write PR #${canonicalPr} as ${canonicalPr} (got '${pr}')`,
     );
+}
+
+/**
+ * The drive state read again once this driver holds the locks, and the
+ * re-arm admission repeated against it: the read before the locks only
+ * refuses early, and a holder that stopped since (a quota wall recorded, a
+ * park added) changed what is admitted. An unreadable state refuses here:
+ * picking the drive up without it would skip the answers a re-arm kept, and
+ * the next completed pass would clear them unread.
+ */
+async function stateUnderLocks(
+  pr: string,
+  agent: string[],
+  windowReopened: boolean,
+): Promise<DriveState | number> {
+  const state = await readDriveState(pr);
+  if (state === null)
+    return fail(
+      1,
+      `drive.ts: cannot read PR #${pr}'s drive state now that its locks are held; refusing to pick the drive up without it`,
+    );
+  return quotaRefusal(state, agent, windowReopened) ?? state;
 }
 
 export async function main(): Promise<number> {
@@ -151,7 +175,8 @@ export async function main(): Promise<number> {
 
   // Everything that can refuse from the arguments and the durable state runs
   // before any lock is taken and before a takeover stops anyone: the pass
-  // command's target and scope, and a re-arm behind a quota wall.
+  // command's target and scope, and a re-arm behind a quota wall. The state
+  // check is repeated once the locks are held (`stateUnderLocks`).
   const state = await readDriveState(pr);
   const refusal =
     validatePassCommand(explicitPr, agent, botsOnly) ??
@@ -359,7 +384,9 @@ export async function main(): Promise<number> {
 
   // Picking the drive up from its durable state: a quota wall another
   // account may pass, a takeover, parked items a person has answered.
-  const firstPassNotice = await pickUpDrive(pr, plan, state, {
+  const current = await stateUnderLocks(pr, agent, windowReopened);
+  if (typeof current === "number") return current;
+  const firstPassNotice = await pickUpDrive(pr, plan, current, {
     agent,
     botsOnly,
     dryRun,

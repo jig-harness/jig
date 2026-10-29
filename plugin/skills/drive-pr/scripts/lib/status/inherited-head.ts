@@ -64,13 +64,13 @@ export async function headSyncState(
   localHead: string,
   inheritedHead: string,
 ): Promise<HeadSync> {
-  if (!headSync) return "in-sync";
   // On the PR head itself, the killed pass left uncommitted edits only: the
-  // round that settles them is still owed.
-  if (apiHead === localHead)
-    return inheritedHead !== "" && inheritedHead === localHead
-      ? "inherited"
-      : "in-sync";
+  // round that settles them is still owed, whether or not the local head is
+  // compared at all (`--no-head-sync` leaves it unread).
+  const local = localHead === "" ? apiHead : localHead;
+  if (inheritedHead !== "" && apiHead === inheritedHead && local === apiHead)
+    return "inherited";
+  if (!headSync || apiHead === localHead) return "in-sync";
   return (await acceptsInheritedHead(apiHead, localHead, inheritedHead))
     ? "inherited"
     : "lagging";

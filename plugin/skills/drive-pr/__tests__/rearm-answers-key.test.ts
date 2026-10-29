@@ -38,6 +38,14 @@ describe("answersKey", () => {
     expect(answersKey(closed.join("\n"), "PRRT_p")).toBe(true);
   });
 
+  it("refuses an answer line in an indented code block", () => {
+    const spaces = "Example:\n\n    answer PRRT_p: choose option B";
+    expect(answersKey(spaces, "PRRT_p")).toBe(false);
+    expect(answersKey("\tanswer PRRT_p: option B", "PRRT_p")).toBe(false);
+    expect(answersKey("  \tanswer PRRT_p: option B", "PRRT_p")).toBe(false);
+    expect(answersKey("   answer PRRT_p: option B", "PRRT_p")).toBe(true);
+  });
+
   it("refuses a quoted line and a mere mention", () => {
     expect(answersKey("> answer PRRT_p: option B", "PRRT_p")).toBe(false);
     expect(answersKey("about PRRT_p: later", "PRRT_p")).toBe(false);

@@ -203,14 +203,23 @@ export function answersKey(body: string, key: string): boolean {
     const marker = /^(`{3,}|~{3,})/.exec(line)?.[1] ?? "";
     if (fence === "") {
       if (marker !== "") fence = marker;
-      else if (
-        line.toLowerCase().startsWith(prefix) &&
-        line.slice(prefix.length).trim() !== ""
-      )
-        return true;
+      else if (isAnswerLine(raw, line, prefix)) return true;
     } else if (closesFence(line, marker, fence)) fence = "";
   }
   return false;
+}
+
+/**
+ * Whether one line outside a fence is the answer: the prefix with a decision
+ * after it, indented less than an indented code block (four spaces or a tab),
+ * which is an example too.
+ */
+function isAnswerLine(raw: string, line: string, prefix: string): boolean {
+  return (
+    !/^( {4}|\t)/.test(raw.replace(/^ {0,3}(?=\t)/, "")) &&
+    line.toLowerCase().startsWith(prefix) &&
+    line.slice(prefix.length).trim() !== ""
+  );
 }
 
 /**
@@ -389,12 +398,13 @@ export async function admitAnsweredParks(
     return humanVerdictNotice(carried, file);
   }
   // Bound to the parks whose answers were read: a park replaced under the
-  // same key while the comments were read refuses the whole set.
+  // same key, or added, while the comments were read refuses the whole set.
   const parkedAt = new Map(state.parked.map((p) => [p.key, p.at ?? ""]));
   const res = await run(
     tsArgv(driveState, [
       "unpark",
       pr,
+      "--every",
       ...fresh.flatMap((v) => [
         "--key",
         v.key,
