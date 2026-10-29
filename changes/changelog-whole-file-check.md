@@ -13,7 +13,10 @@ release: minor
   the version files or the tags name. Each finding gives the file, the line,
   the rule and what to change, with the section of the format's specification
   that states the rule; what a format allows, such as a yanked release or an
-  Unreleased section without a date, is never a finding. The skill's GitHub
+  Unreleased section without a date, is never a finding. The check reads the
+  file through Bun's CommonMark parser, so it judges what the file renders
+  as: a link is one that renders, and text in a comment or a code block is
+  not read as structure. The skill's GitHub
   Action runs it as `command: lint`, after a checkout with `fetch-depth: 0`:
   in a shallow clone the tags are not the whole history, so coverage is not
   checked and the command exits 2. The rules per format are in the

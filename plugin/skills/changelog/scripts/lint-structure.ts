@@ -1,20 +1,18 @@
-// The whole changelog as the format checks read it: its lines with their
-// numbers, its title, the text before the first release, each `##` section
-// with the `###` groups under it, and its link reference definitions. Headings
-// inside fenced code blocks are examples, not structure; inline Markdown is
-// read through markdown-inline.ts, by CommonMark's grammar. Shared by the rules
-// of each format (lint-keep-a-changelog.ts, lint-common-changelog.ts) and the
+// The whole changelog as the format checks read it: the blocks it renders as,
+// read through Bun's own CommonMark parser (markdown-tree.ts), and the line
+// each starts on. Its title, the blocks before the first release, each `##`
+// section with the `###` groups under it. What a rule judges is what renders;
+// the source lines only say where a finding points. Shared by the rules of
+// each format (lint-keep-a-changelog.ts, lint-common-changelog.ts) and the
 // command (lint.ts).
 import { Defect } from "../../../shared/errors.ts";
 import { fenced, heading } from "./markdown-blocks.ts";
 import {
-  definition,
-  inlineLink,
-  linkLabel,
-  linkText,
-  prose,
-  tokens,
-} from "./markdown-inline.ts";
+  type Block,
+  type Inline,
+  parseBlocks,
+  plain,
+} from "./markdown-tree.ts";
 
 /** One rule a finding names: its id and where the format's specification states it. */
 export interface Rule {
@@ -36,242 +34,229 @@ export interface Finding {
   remedy: string;
 }
 
-/** A line of the changelog, numbered from 1. */
-export interface Line {
-  n: number;
-  text: string;
-  inFence: boolean;
-  /** Whether the line opens or closes its fenced code block. */
-  delimiter: "open" | "close" | null;
-  /** Whether the line is part of a link reference definition, which renders as nothing. */
-  definition: boolean;
+/** A top-level block and where it sits among the document's blocks. */
+export interface Part {
+  block: Block;
+  index: number;
 }
 
-/** A `###` heading and the lines under it, up to the next heading of level 3 or less. */
-export interface Group {
+/** A heading: the line it is on, its source title and what it renders as. */
+export interface Heading {
   line: number;
+  /** The heading's text as written, for a message. */
   title: string;
-  body: Line[];
+  inline: Inline[];
+  index: number;
+}
+
+/** A `###` heading and the blocks under it, up to the next heading of level 3 or less. */
+export interface Group extends Heading {
+  body: Part[];
 }
 
 /** A `##` heading and what follows it, up to the next heading of level 2 or less. */
-export interface Section {
-  line: number;
-  title: string;
-  /** The lines before the first `###` heading. */
-  lead: Line[];
+export interface Section extends Heading {
+  /** The blocks before the first `###` heading. */
+  lead: Part[];
   groups: Group[];
 }
 
 export interface Changelog {
   file: string;
-  lines: Line[];
-  /** The first non-blank line, when the file has one. */
-  first: Line | null;
+  /** The source lines, numbered from 1 by their index plus one. */
+  lines: string[];
+  blocks: Block[];
+  /** The line of the first non-blank line, when the file has one. */
+  first: number | null;
   /** The level-1 headings, in order. */
-  titles: Line[];
-  /** The lines between the first line and the first `##` heading. */
-  preamble: Line[];
+  titles: Heading[];
+  /** The blocks between the first block and the first `##` heading, level-1 headings aside. */
+  preamble: Part[];
   sections: Section[];
-  /** Link reference definitions by label, matched without regard to case or spacing as Markdown matches them. */
-  definitions: Map<string, { line: number; url: string }>;
+  /** The line top-level block `index` starts on, or with `item` the line that list item starts on. */
+  lineOf(index: number, item?: number): number;
 }
-
-/** A link label as Markdown matches it: case-folded, inner whitespace collapsed. */
-export const label = (text: string): string =>
-  text.trim().replace(/\s+/g, " ").toLowerCase();
 
 /**
  * The version a release heading opens with and the text after it. The version
- * is plain (`1.0.0`) or a link: inline (`[1.0.0](https://…)`), full reference
- * (`[1.0.0][release]`), collapsed (`[1.0.0][]`) or shortcut (`[1.0.0]`); `ref`
- * is the label a reference link needs a definition for, null for the others.
+ * is plain (`1.0.0`), a link that renders (`linked`, with its destination), or
+ * in brackets that render as text (`unlinked`): a reference link whose label
+ * has no definition, `ref` being that label.
  */
 export interface HeadingVersion {
   version: string;
-  link: "plain" | "inline" | "reference";
+  link: "plain" | "linked" | "unlinked";
+  href: string | null;
   ref: string | null;
   rest: string;
 }
 
-/** A version written as a link, as `[version]` opens `title`. */
-function linkedVersion(
-  title: string,
-  text: { text: string; end: number },
-): HeadingVersion {
-  const version = text.text;
-  const inline = title[text.end] === "(" ? inlineLink(title, text.end) : null;
-  if (inline !== null)
-    return { version, link: "inline", ref: null, rest: title.slice(inline) };
-  const ref = title[text.end] === "[" ? linkLabel(title, text.end) : null;
-  return {
-    version,
-    link: "reference",
-    ref: ref?.text ? ref.text : version,
-    rest: title.slice(ref ? ref.end : text.end),
-  };
-}
-
-export function headingVersion(title: string): HeadingVersion | null {
-  const text = title.startsWith("[") ? linkText(title, 0) : null;
-  if (text?.text) return linkedVersion(title, text);
-  const plain = /^([^\s[\]]+)(.*)$/.exec(title);
-  return plain?.[1] === undefined
+export function headingVersion(inline: Inline[]): HeadingVersion | null {
+  const [head, ...tail] = inline;
+  if (head?.k === "link") {
+    const version = plain(head.inline).trim();
+    return version
+      ? {
+          version,
+          link: "linked",
+          href: head.href,
+          ref: null,
+          rest: plain(tail),
+        }
+      : null;
+  }
+  const text = plain(inline);
+  const bracket = /^\[([^[\]]+)\](?:\[([^[\]]*)\])?/.exec(text);
+  if (bracket?.[1] !== undefined)
+    return {
+      version: bracket[1],
+      link: "unlinked",
+      href: null,
+      ref: bracket[2]?.trim() ? bracket[2] : bracket[1],
+      rest: text.slice(bracket[0].length),
+    };
+  const bare = /^([^\s[\]]+)([\s\S]*)$/.exec(text);
+  return bare?.[1] === undefined
     ? null
-    : { version: plain[1], link: "plain", ref: null, rest: plain[2] ?? "" };
+    : {
+        version: bare[1],
+        link: "plain",
+        href: null,
+        ref: null,
+        rest: bare[2] ?? "",
+      };
 }
 
 /**
- * Whether a `##` title names the Unreleased section as it renders: written as
- * a link (`[Unreleased]`), or in brackets escaped to show literally
- * (`\[Unreleased\]`), or, where `bare` allows it, plain `Unreleased`.
+ * Whether a heading names the Unreleased section as it renders: a link whose
+ * text is `Unreleased`, the same in brackets that render as text (escaped, or
+ * a reference with no definition), or, where `bare` allows it, plain
+ * `Unreleased`.
  */
-export function isUnreleased(title: string, bare: boolean): boolean {
-  const read = tokens(title.trim(), () => true);
-  const only = read.length === 1 ? read[0] : undefined;
-  if (only?.kind === "link") return /^unreleased$/i.test(only.text.trim());
-  const shown = prose(title, () => true).trim();
+export function isUnreleased(inline: Inline[], bare: boolean): boolean {
+  const only = inline.length === 1 ? inline[0] : undefined;
+  if (only?.k === "link")
+    return /^unreleased$/i.test(plain(only.inline).trim());
+  const shown = plain(inline).trim();
   return (
-    /^\[Unreleased\]$/i.test(shown) || (bare && /^Unreleased$/i.test(shown))
+    /^\[Unreleased\](?:\[[^[\]]*\])?$/i.test(shown) ||
+    (bare && /^Unreleased$/i.test(shown))
   );
 }
 
-/** Whether a line is part of a link reference definition, which renders as nothing. */
-export const isDefinition = (line: Line): boolean => line.definition;
-
-/** The lines that render: not blank, not a link reference definition. */
-export const content = (lines: Line[]): Line[] =>
-  lines.filter((l) => l.text.trim() !== "" && !isDefinition(l));
-
-/**
- * The link reference definition that starts at `lines[at]`, read from the
- * lines up to its third (a destination and a title may each take a line of
- * their own), stopping at a blank line or a fence. `lines` is how many lines
- * it takes.
- */
-function definitionAt(
-  lines: Line[],
-  at: number,
-): { name: string; url: string; lines: number } | null {
-  const run: string[] = [];
-  for (const line of lines.slice(at, at + 3)) {
-    if (line.inFence || (run.length > 0 && line.text.trim() === "")) break;
-    run.push(line.text);
-  }
-  const s = run.join("\n");
-  const found = definition(s);
-  return found
-    ? { ...found, lines: s.slice(0, found.end).split("\n").length }
-    : null;
+/** Whether `blocks` holds the block, or the list item, `path` names. */
+function holds(blocks: Block[], [index, item]: number[]): boolean {
+  const block = blocks[index as number];
+  if (!block || item === undefined) return block !== undefined;
+  return block.k === "list" && block.items.length > item;
 }
 
-/** A thematic break: three or more `-`, `*` or `_`, spaces between allowed. */
-export const BREAK = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+/**
+ * The first line whose prefix of the file renders the block `path` names: a
+ * search over the file's prefixes, since the parser reports no positions.
+ */
+function locate(lines: string[], path: number[]): number {
+  let [lo, hi] = [1, lines.length];
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (holds(parseBlocks(lines.slice(0, mid).join("\n")), path)) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo;
+}
 
 /**
- * Whether a paragraph is open after `line`, given whether one was before it.
- * Text opens or continues one; a blank line, a fence, a heading, a thematic
- * break or an indented code block (which takes no lazy continuation) does not.
+ * The lines of the top-level headings of levels 1 to 3, by their index among
+ * the blocks. Where the `#` heading lines outside fenced code are those headings,
+ * level for level, they are their lines; otherwise (a setext heading, or a
+ * heading line that renders as something else) each is located.
  */
-function paragraphAfter(line: Line, open: boolean): boolean {
-  const code = !open && /^(?: {4}|\t)/.test(line.text);
-  return !(
-    line.inFence ||
-    code ||
-    line.text.trim() === "" ||
-    heading(line.text) !== null ||
-    BREAK.test(line.text)
+function headingLines(
+  lines: string[],
+  blocks: Block[],
+  at: (path: number[]) => number,
+): Map<number, number> {
+  const rendered = blocks.flatMap((b, index) =>
+    b.k === "heading" && b.level <= 3 ? [{ index, level: b.level }] : [],
+  );
+  const written = fenced(lines.join("\n")).flatMap((l, i) => {
+    const h = l.inFence ? null : heading(l.line);
+    return h && h.level <= 3 ? [{ n: i + 1, level: h.level }] : [];
+  });
+  const agree =
+    rendered.length === written.length &&
+    rendered.every((r, i) => r.level === written[i]?.level);
+  return new Map(
+    rendered.map((r, i) => [
+      r.index,
+      agree ? (written[i]?.n as number) : at([r.index]),
+    ]),
   );
 }
 
-/**
- * Mark the lines of `lines` that are link reference definitions and return
- * the definitions by label, the first of each label winning as in Markdown. A
- * definition cannot interrupt a paragraph, so one is read only where no
- * paragraph is open.
- */
-function definitionsOf(lines: Line[]): Changelog["definitions"] {
-  const definitions: Changelog["definitions"] = new Map();
-  let paragraph = false;
-  for (let i = 0; i < lines.length; ) {
-    const line = lines[i] as Line;
-    const found = line.inFence || paragraph ? null : definitionAt(lines, i);
-    if (!found) {
-      paragraph = paragraphAfter(line, paragraph);
-      i++;
-      continue;
-    }
-    for (const l of lines.slice(i, i + found.lines)) l.definition = true;
-    if (!definitions.has(label(found.name)))
-      definitions.set(label(found.name), { line: line.n, url: found.url });
-    i += found.lines;
-  }
-  return definitions;
-}
-
-/** Where a line goes when it is a heading of level 1 or 2: a title, or a new section. */
-function placeTop(
-  changelog: Changelog,
-  line: Line,
-  level: number,
-  title: string,
-): void {
-  if (level === 1) changelog.titles.push(line);
-  else changelog.sections.push({ line: line.n, title, lead: [], groups: [] });
-}
-
-/** Where a line under a section goes: a new group, or the text of the group or lead it is in. */
-function placeUnder(
-  section: Section,
-  line: Line,
-  groupTitle: string | null,
-): void {
-  if (groupTitle !== null)
-    section.groups.push({ line: line.n, title: groupTitle, body: [] });
-  else (section.groups.at(-1)?.body ?? section.lead).push(line);
-}
-
-/** Put `line` where it belongs: a title, a section or group heading, or the text under one. */
-function place(changelog: Changelog, line: Line): void {
-  const h = line.inFence ? null : heading(line.text);
-  const section = changelog.sections.at(-1);
-  if (h !== null && h.level <= 2) placeTop(changelog, line, h.level, h.title);
-  else if (section) placeUnder(section, line, h?.level === 3 ? h.title : null);
-  else if (line !== changelog.first) changelog.preamble.push(line);
+/** A heading's title as written on its line, else as it renders. */
+function titleOn(lines: string[], line: number, inline: Inline[]): string {
+  return heading(lines[line - 1] ?? "")?.title ?? plain(inline).trim();
 }
 
 /** The changelog at `file` read from `text`. */
 export function readChangelog(file: string, text: string): Changelog {
-  const lines: Line[] = fenced(text.replace(/\r\n/g, "\n")).map((l, i) => ({
-    n: i + 1,
-    text: l.line,
-    inFence: l.inFence,
-    delimiter: l.delimiter,
-    definition: false,
-  }));
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const blocks = parseBlocks(lines.join("\n"));
+  const located = new Map<string, number>();
+  const at = (path: number[]): number => {
+    const key = path.join(".");
+    const found = located.get(key) ?? locate(lines, path);
+    located.set(key, found);
+    return found;
+  };
+  const headings = headingLines(lines, blocks, at);
+  const firstLine = lines.findIndex((l) => l.trim() !== "");
   const changelog: Changelog = {
     file,
     lines,
-    first: lines.find((l) => l.text.trim() !== "") ?? null,
+    blocks,
+    first: firstLine === -1 ? null : firstLine + 1,
     titles: [],
     preamble: [],
     sections: [],
-    definitions: definitionsOf(lines),
+    lineOf: (index, item) =>
+      item === undefined
+        ? (headings.get(index) ?? at([index]))
+        : at([index, item]),
   };
-  for (const line of lines) place(changelog, line);
+  for (const [index, block] of blocks.entries()) place(changelog, block, index);
   return changelog;
 }
 
-/** Text split into the runs of lines between blank lines. */
-export function paragraphs(lines: Line[]): Line[][] {
-  const runs: Line[][] = [[]];
-  for (const line of lines) {
-    if (isDefinition(line)) continue;
-    if (line.text.trim() === "") runs.push([]);
-    else runs.at(-1)?.push(line);
+/** Put the top-level block at `index` where it belongs: a title, a section or group, or the text under one. */
+function place(changelog: Changelog, block: Block, index: number): void {
+  const section = changelog.sections.at(-1);
+  if (block.k === "heading" && block.level <= 3) {
+    const line = changelog.lineOf(index);
+    const h = {
+      line,
+      title: titleOn(changelog.lines, line, block.inline),
+      inline: block.inline,
+      index,
+    };
+    if (block.level === 1) changelog.titles.push(h);
+    else if (block.level === 2)
+      changelog.sections.push({ ...h, lead: [], groups: [] });
+    else if (section) section.groups.push({ ...h, body: [] });
+    else changelog.preamble.push({ block, index });
+    return;
   }
-  return runs.filter((run) => run.length > 0);
+  const part = { block, index };
+  if (section) (section.groups.at(-1)?.body ?? section.lead).push(part);
+  else if (index > 0) changelog.preamble.push(part);
 }
+
+/** Whether the changelog's first block is a level-1 heading. */
+export const opensWithTitle = (changelog: Changelog): boolean => {
+  const first = changelog.blocks[0];
+  return first?.k === "heading" && first.level === 1;
+};
 
 /**
  * Whether `date` is written year-month-day (`2024-01-31`) and names a day

@@ -222,17 +222,20 @@ The whole changelog against the rules of its format, and of no other: the
 format is `changelog.format`, else the one the file names (`formats.ts`), and
 `lint.ts` runs that format's rules alone. Modules beside it:
 
-- `lint-structure.ts` reads the file into what the rules look at: its lines
-  with their numbers, the title, the text above the first `##` section, each
-  section with its `###` groups, and the link reference definitions, with
-  headings inside fenced code blocks left out; a definition is read as a
-  block, its destination and title allowed on lines of their own. It also
-  holds the date rule (year-month-day, a day that exists) and Semantic
-  Versioning precedence.
-- `markdown-inline.ts` reads inline Markdown by CommonMark's grammar (escapes,
-  code spans, raw HTML, autolinks, links with their destinations and titles),
-  so a rule sees what renders: a version link, a change's references, the
-  prose of the Semantic Versioning statement.
+- `markdown-tree.ts` reads a Markdown document through Bun's own CommonMark
+  parser (`Bun.markdown`) into the blocks it renders as, each heading,
+  paragraph and list item with the text, links and code it shows. A link is
+  one that renders, its destination resolved by the parser, so no rule reads
+  Markdown syntax from the source: a reference with no definition, a
+  definition inside an HTML block, a link in a code span are what they render
+  as.
+- `lint-structure.ts` reads the file into what the rules look at: the title,
+  the blocks above the first `##` section, each section with its `###` groups,
+  and the line each starts on. The parser reports no positions, so the lines
+  come from the `#` heading lines outside fenced code where those are the
+  rendered headings, level for level, and otherwise from a search over the
+  file's prefixes. It also holds the date rule (year-month-day, a day that exists)
+  and Semantic Versioning precedence.
 - `lint-keep-a-changelog.ts` holds Keep a Changelog 1.1.0's rules.
 - `lint-common-changelog.ts` holds Common Changelog's.
 

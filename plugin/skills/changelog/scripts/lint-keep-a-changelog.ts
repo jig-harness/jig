@@ -4,7 +4,6 @@
 // open (the order of the change types, a summary above a release's groups,
 // the text of an entry) is not checked. lint.ts runs these on a changelog
 // whose format is Keep a Changelog and on no other.
-import { heading } from "./markdown-blocks.ts";
 import {
   type Changelog,
   type Coverage,
@@ -13,14 +12,13 @@ import {
   type HeadingVersion,
   headingVersion,
   isDate,
-  isDefinition,
   isUnreleased,
-  label,
+  opensWithTitle,
   type Rule,
   type Section,
   uncovered,
 } from "./lint-structure.ts";
-import { prose } from "./markdown-inline.ts";
+import { plain, prose } from "./markdown-tree.ts";
 
 const SPEC = "https://keepachangelog.com/en/1.1.0/";
 
@@ -114,21 +112,21 @@ const TYPES = [
 ];
 
 /** `## [Unreleased]`, its brackets a link's or escaped to show. */
-const namesUnreleased = (s: Section): boolean => isUnreleased(s.title, false);
+const namesUnreleased = (s: Section): boolean => isUnreleased(s.inline, false);
 
 /** A release heading: `version - date`, maybe `[YANKED]`, the version maybe a link. */
 interface Release {
   section: Section;
   version: string;
   date: string;
-  /** How the version links: not at all, inline, or through the definition of `ref`. */
+  /** How the version renders: plain, as a link, or as brackets that link nowhere (`ref` having no definition). */
   link: HeadingVersion["link"];
   ref: string | null;
 }
 
 /** The release a `##` heading names, or the finding that it does not read as one. */
 function releaseOf(changelog: Changelog, section: Section): Release | Finding {
-  const parts = headingVersion(section.title);
+  const parts = headingVersion(section.inline);
   const date = parts
     ? /^\s+-\s+(\S+)(?:\s+\[YANKED\])?$/.exec(parts.rest)?.[1]
     : undefined;
@@ -150,13 +148,12 @@ function releaseOf(changelog: Changelog, section: Section): Release | Finding {
 }
 
 function titleFindings(changelog: Changelog): Finding[] {
-  const first = changelog.first;
-  if (first && !first.inFence && heading(first.text)?.level === 1) return [];
+  if (opensWithTitle(changelog)) return [];
   return [
     finding(
       KEEP_RULES.title,
       changelog,
-      first?.n ?? 1,
+      changelog.first ?? 1,
       "the file does not open with a first-level heading",
       "start it with `# Changelog`",
     ),
@@ -165,20 +162,15 @@ function titleFindings(changelog: Changelog): Finding[] {
 
 function semverFindings(changelog: Changelog): Finding[] {
   // Only prose that renders counts: an HTML comment, a code example, a link's
-  // destination or a link reference definition states no policy. An HTML
-  // block that opens with a comment runs to the line that closes it.
-  const source = changelog.preamble
-    .filter((l) => !l.inFence && !isDefinition(l))
-    .map((l) => l.text)
-    .join("\n")
-    .replace(/(^|\n) {0,3}<!--[\s\S]*?(?:-->[^\n]*|$)/g, "$1");
-  const text = prose(source, (l) => changelog.definitions.has(label(l)));
-  if (/semantic versioning|semver/i.test(text)) return [];
+  // destination or a link reference definition states no policy. A line
+  // break renders as no text piece, so the two words may meet across one.
+  const text = prose(changelog.preamble.map((p) => p.block));
+  if (/semantic\s*versioning|semver/i.test(text)) return [];
   return [
     finding(
       KEEP_RULES.semver,
       changelog,
-      changelog.first?.n ?? 1,
+      changelog.first ?? 1,
       "the text above the first release does not say whether the project follows Semantic Versioning",
       "say so in the opening paragraph, such as: this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)",
     ),
@@ -265,7 +257,8 @@ function groupFindings(changelog: Changelog, section: Section): Finding[] {
   const findings: Finding[] = [];
   const seen = new Set<string>();
   for (const group of section.groups) {
-    if (!TYPES.includes(group.title))
+    const type = plain(group.inline).trim();
+    if (!TYPES.includes(type))
       findings.push(
         finding(
           KEEP_RULES.type,
@@ -275,7 +268,7 @@ function groupFindings(changelog: Changelog, section: Section): Finding[] {
           `use one of ${TYPES.join(", ")}`,
         ),
       );
-    else if (seen.has(group.title))
+    else if (seen.has(type))
       findings.push(
         finding(
           KEEP_RULES.grouped,
@@ -285,7 +278,7 @@ function groupFindings(changelog: Changelog, section: Section): Finding[] {
           "merge the two into one group",
         ),
       );
-    seen.add(group.title);
+    seen.add(type);
   }
   return findings;
 }
@@ -295,8 +288,7 @@ function versionLinkFindings(
   releases: Release[],
 ): Finding[] {
   return releases.flatMap((r) => {
-    if (r.link === "inline") return [];
-    if (r.ref !== null && changelog.definitions.has(label(r.ref))) return [];
+    if (r.link === "linked") return [];
     return [
       finding(
         KEEP_RULES.versionLink,
@@ -333,17 +325,19 @@ function unreleasedLinkFindings(
   // With no release yet there is nothing to compare: the link is owed from
   // the first release on.
   if (!unreleased || !newest) return [];
-  const def = changelog.definitions.get("unreleased");
-  if (def && comparesWithHead(def.url, newest.version)) return [];
+  // The destination the heading itself links to, however it is written.
+  const [head] = unreleased.inline;
+  const href = head?.k === "link" ? head.href : null;
+  if (href !== null && comparesWithHead(href, newest.version)) return [];
   return [
     finding(
       KEEP_RULES.unreleasedLink,
       changelog,
-      def?.line ?? unreleased.line,
-      def
+      unreleased.line,
+      href !== null
         ? `the [Unreleased] link does not compare the newest release, ${newest.version}, with HEAD`
-        : "[Unreleased] has no link reference definition",
-      def
+        : "[Unreleased] does not link anywhere: it has no link reference definition",
+      href !== null
         ? `point the [Unreleased] link at the comparison of ${newest.version}'s tag with HEAD`
         : `add \`[Unreleased]: <url>\` at the end of the file, comparing ${newest.version}'s tag with HEAD`,
     ),

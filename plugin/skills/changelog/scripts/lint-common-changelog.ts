@@ -6,30 +6,25 @@
 // the project has one contributor, so may leave authors out) is not checked.
 // lint.ts runs these on a changelog whose format is Common Changelog and on no
 // other.
-import { heading } from "./markdown-blocks.ts";
-import { marked } from "./markdown-inline.ts";
 import {
-  BREAK,
   type Changelog,
   type Coverage,
-  content,
   type Finding,
   finding,
   type Group,
-  isDate,
-  isDefinition,
-  isSemver,
   headingVersion,
+  isDate,
+  isSemver,
   isStable,
   isUnreleased,
-  label,
-  type Line,
-  paragraphs,
+  opensWithTitle,
+  type Part,
   precedence,
   type Rule,
   type Section,
   uncovered,
 } from "./lint-structure.ts";
+import { type Block, type Inline, plain } from "./markdown-tree.ts";
 
 const SPEC = "https://common-changelog.org/";
 
@@ -142,41 +137,102 @@ interface Release {
   section: Section;
   version: string;
   date: string;
-  /** The label a reference-style version link needs a definition for; null for a plain or inline one. */
+  /** The label of a version in brackets that link nowhere; null for a plain or linked one. */
   ref: string | null;
 }
 
-/**
- * A list item's start: up to three spaces, `-`, `*` or `+`, then a space;
- * `[1]` is where the item's text starts, the column a line continuing it after
- * a blank line is indented to.
- */
-const ITEM = /^( {0,3}[-*+][ \t]+)\S/;
+const LINK: unique symbol = Symbol("link");
+const OTHER: unique symbol = Symbol("other");
+/** A paragraph as a reference reads it: each character of its text, a link that renders, or anything else shown. */
+type Sym = string | typeof LINK | typeof OTHER;
+
+const symbols = (inline: Inline[]): Sym[] =>
+  inline.flatMap((i): Sym[] =>
+    i.k === "text" ? [...i.v] : [i.k === "link" ? LINK : OTHER],
+  );
+
+const space = (s: Sym | undefined): boolean =>
+  s === " " || s === "\t" || s === "\n";
+
+const skip = (syms: Sym[], i: number): number => {
+  let j = i;
+  while (space(syms[j])) j++;
+  return j;
+};
 
 /**
- * A reference in a change's text as `marked` (markdown-inline.ts) shows it:
- * an opening parenthesis, links separated by commas, the closing parenthesis,
- * spacing within one paragraph. `\uE001` is a link that renders, `\uE002` one
- * that does not.
+ * Text in brackets at `i`, maybe followed by a second pair: how a reference
+ * link whose label has no definition renders. The index after it, or null.
  */
-const REFERENCE =
-  /\([ \t]*\n?[ \t]*[\uE001\uE002](?:[ \t]*\n?[ \t]*,[ \t]*\n?[ \t]*[\uE001\uE002])*[ \t]*\n?[ \t]*\)/g;
+function brackets(syms: Sym[], i: number): number | null {
+  const pair = (j: number): number | null => {
+    if (syms[j] !== "[") return null;
+    let k = j + 1;
+    while (typeof syms[k] === "string" && !"[]()".includes(syms[k] as string))
+      k++;
+    return syms[k] === "]" ? k + 1 : null;
+  };
+  const first = pair(i);
+  return first === null ? null : (pair(first) ?? first);
+}
 
 /**
- * Whether a change's text holds a reference after some text of its own, and
- * every link of every reference renders as a link: inline, an autolink, or by
- * a label `changelog` defines. A link inside a code span or an HTML comment
- * is not one.
+ * The reference that opens with the `(` at `i`: links, or text in brackets,
+ * separated by commas, then `)`. Where it ends and whether every entry is a
+ * link that renders, or null when no reference opens there.
  */
-function referenced(changelog: Changelog, text: string): boolean {
-  const visible = marked(text.replace(/^ {0,3}[-*+][ \t]+/, ""), (l) =>
-    changelog.definitions.has(label(l)),
+function reference(
+  syms: Sym[],
+  i: number,
+): { end: number; linked: boolean } | null {
+  let linked = true;
+  let j = skip(syms, i + 1);
+  for (;;) {
+    const end = syms[j] === LINK ? j + 1 : brackets(syms, j);
+    if (end === null) return null;
+    linked &&= syms[j] === LINK;
+    j = skip(syms, end);
+    if (syms[j] === ")") return { end: j + 1, linked };
+    if (syms[j] !== ",") return null;
+    j = skip(syms, j + 1);
+  }
+}
+
+/** The paragraphs of a list item, its nested lists' included: what a reference may sit in. */
+function paragraphsOf(blocks: Block[]): Inline[][] {
+  return blocks.flatMap((b) =>
+    b.k === "paragraph"
+      ? [b.inline]
+      : b.k === "list"
+        ? b.items.flatMap(paragraphsOf)
+        : b.k === "quote"
+          ? paragraphsOf(b.blocks)
+          : [],
   );
-  const references = [...visible.matchAll(REFERENCE)];
-  return (
-    references.some((r) => visible.slice(0, r.index).trim() !== "") &&
-    references.every((r) => !r[0].includes("\uE002"))
-  );
+}
+
+/**
+ * Whether a change holds a reference after some text of its own, and every
+ * entry of every reference renders as a link: inline, an autolink, or by a
+ * label the changelog defines. A link inside a code span, a code block or
+ * an HTML comment is not one.
+ */
+function referenced(item: Block[]): boolean {
+  let text = false;
+  let after = false;
+  let broken = false;
+  for (const paragraph of paragraphsOf(item)) {
+    const syms = symbols(paragraph);
+    for (let i = 0; i < syms.length; i++) {
+      const ref = syms[i] === "(" ? reference(syms, i) : null;
+      if (ref) {
+        after ||= text;
+        broken ||= !ref.linked;
+        i = ref.end - 1;
+      } else if (!space(syms[i])) text = true;
+    }
+  }
+  return after && !broken;
 }
 
 function fileFindings(changelog: Changelog): Finding[] {
@@ -191,28 +247,28 @@ function fileFindings(changelog: Changelog): Finding[] {
         "rename it CHANGELOG.md, and set changelog.file to the new path",
       ),
     );
-  const first = changelog.first;
-  if (!first || first.inFence || heading(first.text)?.level !== 1)
+  if (!opensWithTitle(changelog))
     findings.push(
       finding(
         COMMON_RULES.title,
         changelog,
-        first?.n ?? 1,
+        changelog.first ?? 1,
         "the file does not start with a first-level heading",
         "start it with `# Changelog`",
       ),
     );
+  const [lead] = changelog.preamble;
   const stray = [
-    ...content(changelog.preamble).slice(0, 1),
-    ...changelog.titles.filter((t) => t !== first),
-  ];
+    ...(lead ? [changelog.lineOf(lead.index)] : []),
+    ...changelog.titles.filter((t) => t.index !== 0).map((t) => t.line),
+  ].sort((a, b) => a - b);
   for (const line of stray)
     findings.push(
       finding(
         COMMON_RULES.content,
         changelog,
-        line.n,
-        `"${line.text.trim()}" is neither the title nor part of a release`,
+        line,
+        `"${changelog.lines[line - 1]?.trim()}" is neither the title nor part of a release`,
         "keep only the title and the releases in the file, say which format it follows in the readme or the contributing guide instead, and set changelog.format to common-changelog, since the file no longer names its format",
       ),
     );
@@ -224,7 +280,7 @@ function refusedHeading(
   changelog: Changelog,
   section: Section,
 ): Finding | null {
-  if (isUnreleased(section.title, true))
+  if (isUnreleased(section.inline, true))
     return finding(
       COMMON_RULES.unreleased,
       changelog,
@@ -232,7 +288,7 @@ function refusedHeading(
       "the format has no Unreleased section",
       "remove it, and list its changes in the release that ships them",
     );
-  if (/\[YANKED\]\s*$/i.test(section.title))
+  if (/\[YANKED\]\s*$/i.test(plain(section.inline)))
     return finding(
       COMMON_RULES.heading,
       changelog,
@@ -249,7 +305,7 @@ function releaseOf(changelog: Changelog, section: Section): Release | Finding {
   if (refused) return refused;
   const fail = (problem: string, remedy: string) =>
     finding(COMMON_RULES.heading, changelog, section.line, problem, remedy);
-  const parts = headingVersion(section.title);
+  const parts = headingVersion(section.inline);
   const date = parts ? /^\s+-\s+(\S+)$/.exec(parts.rest)?.[1] : undefined;
   if (!parts || date === undefined)
     return fail(
@@ -300,7 +356,7 @@ function dateAndOrderFindings(
           "list the releases latest first by version, one section per version, even where a lower version came out later",
         ),
       );
-    if (release.ref !== null && !changelog.definitions.has(label(release.ref)))
+    if (release.ref !== null)
       findings.push(
         finding(
           COMMON_RULES.versionLink,
@@ -314,31 +370,8 @@ function dateAndOrderFindings(
   return findings;
 }
 
-/**
- * Whether a line opens something other than a paragraph: a list, a heading, a
- * fence, a quote, a thematic break.
- */
-const opensBlock = (line: Line): boolean =>
-  line.inFence ||
-  ITEM.test(line.text) ||
-  /^ {0,3}\d+[.)]\s/.test(line.text) ||
-  /^ {0,3}>/.test(line.text) ||
-  BREAK.test(line.text) ||
-  heading(line.text) !== null;
-
-/**
- * Whether a line after a paragraph's first ends it or makes it something
- * else: a block that interrupts a paragraph (an ordered list only from 1), or
- * a setext underline, which turns the paragraph into a heading.
- */
-const breaksParagraph = (line: Line): boolean =>
-  /^ {0,3}(?:=+|-+)[ \t]*$/.test(line.text) ||
-  (opensBlock(line) &&
-    !(/^ {0,3}\d+[.)]\s/.test(line.text) && !/^ {0,3}1[.)]\s/.test(line.text)));
-
 function leadFindings(changelog: Changelog, section: Section): Finding[] {
-  const runs = paragraphs(section.lead);
-  const [notice, ...more] = runs;
+  const [notice, ...more] = section.lead;
   if (!notice)
     return section.groups.length
       ? []
@@ -351,121 +384,34 @@ function leadFindings(changelog: Changelog, section: Section): Finding[] {
             "list its changes under a category, or give it a one-sentence notice saying why there are none",
           ),
         ];
-  const start = notice[0] as Line;
-  const other = opensBlock(start)
-    ? start
-    : notice.slice(1).find(breaksParagraph);
+  const other = section.lead.find((p) => p.block.k !== "paragraph");
   if (other)
     return [
       finding(
         COMMON_RULES.release,
         changelog,
-        other.n,
+        changelog.lineOf(other.index),
         "a release holds only a notice and change groups, and this is neither",
         "put each change in a list under a `###` category, or make this the release's one-sentence notice",
       ),
     ];
-  return more.map((run) =>
+  return more.map((part) =>
     finding(
       COMMON_RULES.notice,
       changelog,
-      (run[0] as Line).n,
+      changelog.lineOf(part.index),
       "a release has one notice, a single paragraph, and this is a second",
       "keep one sentence as the notice and move the rest to an upgrade guide or a change",
     ),
   );
 }
 
-/** A line's indentation in columns, a tab counting as four. */
-const indentOf = (text: string): number =>
-  (/^[ \t]*/.exec(text)?.[0] ?? "").replaceAll("\t", "    ").length;
-
-/**
- * Whether a line other than an item's first belongs to the item whose text
- * starts at column `offset`: indented to that column, or, while a paragraph
- * of the item is open, continuing it at any indentation (a lazy
- * continuation) unless it opens a block of its own.
- */
-const continues = (line: Line, offset: number, paragraph: boolean): boolean =>
-  indentOf(line.text) >= offset || (paragraph && !opensBlock(line));
-
-/** Where a walk down a list stands: the item it is in and what came last. */
-interface ListWalk {
-  items: { line: number; text: string }[];
-  /** The column the current item's text starts at. */
-  offset: number;
-  /** Whether the last line was paragraph text of the item, which a lazy line may continue. */
-  paragraph: boolean;
-  /** Whether a blank line or a block that is not text came since the item's last text. */
-  broken: boolean;
-  /** Whether the fenced code block the walk is in belongs to the item. */
-  fenceInside: boolean;
-}
-
-/** Whether a line that starts no item belongs to the item above it. A fence belongs where its opening line does. */
-function belongs(line: Line, walk: ListWalk): boolean {
-  if (line.inFence && line.delimiter !== "open") return walk.fenceInside;
-  const inside: boolean =
-    walk.items.length > 0 && continues(line, walk.offset, walk.paragraph);
-  if (line.delimiter === "open") walk.fenceInside = inside;
-  return inside;
-}
-
-/** A blank line or a link reference definition, which neither starts nor ends an item. */
-const isGap = (line: Line): boolean =>
-  !line.inFence && (line.text.trim() === "" || isDefinition(line));
-
-/**
- * Add a line that belongs to the current item. Only text that renders as
- * text joins the item's text: a fenced or indented code block shows its
- * content literally, so a link in it is no reference.
- */
-function extend(walk: ListWalk, line: Line): void {
-  const code =
-    line.inFence || (!walk.paragraph && indentOf(line.text) >= walk.offset + 4);
-  const item = walk.items.at(-1) as { text: string };
-  if (!code) item.text += `${walk.broken ? "\n\n" : "\n"}${line.text}`;
-  walk.broken = code;
-  walk.paragraph = !code && !BREAK.test(line.text) && !heading(line.text);
-}
-
-/**
- * A group's top-level list items, each as the text of its lines that renders
- * as text, and the first line that renders outside the list, if one does.
- */
-function listOf(group: Group): {
-  items: { line: number; text: string }[];
-  stray: Line | null;
-} {
-  const walk: ListWalk = {
-    items: [],
-    offset: 0,
-    paragraph: false,
-    broken: false,
-    fenceInside: false,
-  };
-  for (const line of group.body) {
-    if (isGap(line)) {
-      walk.paragraph = false;
-      walk.broken = true;
-      continue;
-    }
-    // A marker at or past the current item's text column nests inside it.
-    const nested = walk.items.length > 0 && indentOf(line.text) >= walk.offset;
-    const item = line.inFence || nested ? null : ITEM.exec(line.text);
-    if (item?.[1] !== undefined) {
-      walk.items.push({ line: line.n, text: line.text });
-      walk.offset = item[1].replaceAll("\t", "    ").length;
-      walk.paragraph = true;
-      walk.broken = false;
-    } else if (belongs(line, walk)) extend(walk, line);
-    else return { items: walk.items, stray: line };
-  }
-  return { items: walk.items, stray: null };
-}
+/** Whether a block is an unnumbered list. */
+const unnumbered = (p: Part): boolean =>
+  p.block.k === "list" && !p.block.ordered;
 
 function listFindings(changelog: Changelog, group: Group): Finding[] {
-  if (!content(group.body).length)
+  if (!group.body.length)
     return [
       finding(
         COMMON_RULES.list,
@@ -475,29 +421,36 @@ function listFindings(changelog: Changelog, group: Group): Finding[] {
         "list its changes under it, or remove the heading",
       ),
     ];
-  const { items, stray } = listOf(group);
-  const findings = stray
-    ? [
-        finding(
-          COMMON_RULES.list,
-          changelog,
-          stray.n,
-          `"${stray.text.trim()}" under "### ${group.title}" is not part of an unnumbered list`,
-          "write each change as a `- ` list item, and nothing else under the heading",
-        ),
-      ]
-    : [];
-  for (const item of items)
-    if (!referenced(changelog, item.text))
-      findings.push(
-        finding(
-          COMMON_RULES.reference,
-          changelog,
-          item.line,
-          "the change references no commit, pull request or issue",
-          "end it with a reference in parentheses that is a Markdown link, such as ([#12](https://…/pull/12)) or ([`abc1234`](https://…/commit/abc1234))",
-        ),
-      );
+  const at = group.body.findIndex((p) => !unnumbered(p));
+  const stray = group.body[at];
+  const findings: Finding[] = [];
+  if (stray) {
+    const line = changelog.lineOf(stray.index);
+    findings.push(
+      finding(
+        COMMON_RULES.list,
+        changelog,
+        line,
+        `"${changelog.lines[line - 1]?.trim()}" under "### ${group.title}" is not part of an unnumbered list`,
+        "write each change as a `- ` list item, and nothing else under the heading",
+      ),
+    );
+  }
+  for (const part of at === -1 ? group.body : group.body.slice(0, at)) {
+    if (part.block.k !== "list") continue;
+    part.block.items.forEach((item, i) => {
+      if (!referenced(item))
+        findings.push(
+          finding(
+            COMMON_RULES.reference,
+            changelog,
+            changelog.lineOf(part.index, i),
+            "the change references no commit, pull request or issue",
+            "end it with a reference in parentheses that is a Markdown link, such as ([#12](https://…/pull/12)) or ([`abc1234`](https://…/commit/abc1234))",
+          ),
+        );
+    });
+  }
   return findings;
 }
 
@@ -505,7 +458,7 @@ function groupFindings(changelog: Changelog, section: Section): Finding[] {
   const findings: Finding[] = [];
   let rank = -1;
   for (const group of section.groups) {
-    const at = CATEGORIES.indexOf(group.title);
+    const at = CATEGORIES.indexOf(plain(group.inline).trim());
     if (at === -1)
       findings.push(
         finding(

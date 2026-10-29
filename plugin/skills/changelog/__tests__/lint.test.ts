@@ -221,9 +221,11 @@ describe("what each format allows", () => {
 
 describe("Unreleased headings and nested changes read as they render", () => {
   test("an Unreleased heading with escaped brackets is the Unreleased section", () => {
-    expect(keepWith("## [Unreleased]", String.raw`## \[Unreleased\]`)).toEqual(
-      [],
-    );
+    // It is the Unreleased section, not a release heading, and its escaped
+    // brackets link nowhere, whatever `[Unreleased]:` defines.
+    expect(keepWith("## [Unreleased]", String.raw`## \[Unreleased\]`)).toEqual([
+      KEEP_RULES.unreleasedLink.id,
+    ]);
     expect(
       commonWith(
         "# Changelog\n",
@@ -534,10 +536,20 @@ describe("changes and notices read as they render", () => {
   });
 
   test("a notice is one paragraph to its end, not only at its first line", () => {
-    for (const after of ["> a quote", "***", "---", "==="])
+    for (const after of ["> a quote", "***"])
       expect(
         commonWith("_First release._", `_First release._\n${after}`),
       ).toEqual([COMMON_RULES.release.id]);
+    // A setext underline makes the notice a heading, which leaves the release
+    // empty and is read as what it renders: a release heading, or a title.
+    expect(commonWith("_First release._", "_First release._\n---")).toEqual([
+      COMMON_RULES.release.id,
+      COMMON_RULES.heading.id,
+    ]);
+    expect(commonWith("_First release._", "_First release._\n===")).toEqual([
+      COMMON_RULES.release.id,
+      COMMON_RULES.content.id,
+    ]);
     expect(
       commonWith("_First release._", "_First release,\nwrapped._"),
     ).toEqual([]);
@@ -586,6 +598,84 @@ describe("orders, links and statements read as they render", () => {
       "and this project adheres to a policy.\n\n[policy]: https://semver.org/",
     ])
       expect(keepWith(statement, hidden)).toEqual([KEEP_RULES.semver.id]);
+  });
+});
+
+describe("the parser decides what renders, not the source", () => {
+  const item = "- Fix the parser ([#7](https://example.com/o/r/pull/7))";
+  const unreleased =
+    "[Unreleased]: https://example.com/r/compare/v1.1.0...HEAD";
+  const compare = "https://example.com/r/compare/v1.1.0...HEAD";
+
+  test("the Unreleased link is the destination its heading links to", () => {
+    const without = (heading: string, definitions: string) =>
+      ruleIds(
+        "keep-a-changelog",
+        fixture("keep-a-changelog", "clean")
+          .replace("## [Unreleased]", heading)
+          .replace(unreleased, definitions),
+      );
+    expect(without(`## [Unreleased](${compare})`, "")).toEqual([]);
+    expect(without("## [Unreleased][next]", `[next]: ${compare}`)).toEqual([]);
+    expect(
+      without(
+        "## [Unreleased][next]",
+        `${unreleased}\n[next]: https://example.com/r/compare/v1.0.0...HEAD`,
+      ),
+    ).toEqual([KEEP_RULES.unreleasedLink.id]);
+  });
+
+  test("a definition is one wherever Markdown reads one, and nowhere else", () => {
+    const release = "[1.0.0]: https://example.com/r/releases/tag/v1.0.0";
+    expect(
+      keepWith(
+        release,
+        '[1.0.0]: https://example.com/r/releases/tag/v1.0.0 "\nfirst\nsecond\nthird\n"',
+      ),
+    ).toEqual([]);
+    expect(
+      keepWith(release, "<!--\n\n[1.0.0]: https://example.com/release\n\n-->"),
+    ).toEqual([KEEP_RULES.versionLink.id]);
+    // A heading line interrupts the paragraph a definition is read from, so
+    // it renders as a release, and the definition after it is paragraph text.
+    expect(
+      ruleIds(
+        "keep-a-changelog",
+        fixture("keep-a-changelog", "clean").replace(
+          release,
+          `${release}\n[meta]: /url "\n## [9.9.9] - 2024-01-01\n"\n[9.9.9]: /release`,
+        ),
+        { current: null, tagged: ["9.9.9"] },
+      ),
+    ).toEqual([KEEP_RULES.versionLink.id]);
+  });
+
+  test("a change's text is what renders: entities, nested links, tabs, comments", () => {
+    for (const broken of [
+      "- Fix the parser ([outer [#7](https://example.com/o/r/pull/7)](https://example.com/outer))",
+      "- Fix the parser ()",
+      "- Fix the parser ()",
+    ])
+      expect(commonWith(item, broken)).toEqual([COMMON_RULES.reference.id]);
+    for (const linked of [
+      "- Fix the parser &#40;[#7](https://example.com/o/r/pull/7)&#41;",
+      "-\tFix the parser\n\n    ([#7](https://example.com/o/r/pull/7))",
+      // An inline comment does not open across a blank line, so the link renders.
+      "- Fix the parser <!--\n\n  ([#7](https://example.com/o/r/pull/7))\n\n  -->",
+    ])
+      expect(commonWith(item, linked)).toEqual([]);
+    expect(
+      keepWith("[Semantic Versioning]", "[Semantic&#32;Versioning]"),
+    ).toEqual([]);
+  });
+
+  test("a reference with many entries is read in linear time", () => {
+    const entries = "\t,[#1](u)".repeat(20_000) + "\t,\uE001".repeat(40);
+    const started = performance.now();
+    expect(commonWith(item, `- Fix the parser (\uE001${entries}`)).toEqual([
+      COMMON_RULES.reference.id,
+    ]);
+    expect(performance.now() - started).toBeLessThan(5_000);
   });
 });
 
