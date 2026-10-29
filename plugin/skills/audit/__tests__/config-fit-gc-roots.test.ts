@@ -1,5 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { runScript, scratchRepo } from "./helpers.ts";
 
 const dirs: string[] = [];
@@ -11,6 +12,11 @@ function messages(config: string): string[] {
   const dir = scratchRepo({ ".config/jig.yaml": config });
   dirs.push(dir);
   const run = runScript("config-fit.ts", ["--offline", "--json"], dir);
+  expectSpawnExit(
+    { exitCode: run.code, stdout: run.out, stderr: run.err },
+    0,
+    "config-fit",
+  );
   const report = JSON.parse(run.out) as {
     findings: { id: string; message: string }[];
   };
