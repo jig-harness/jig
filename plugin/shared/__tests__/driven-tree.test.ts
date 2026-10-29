@@ -15,7 +15,10 @@ import { join } from "node:path";
 import {
   DRIVEN_TREE_FILE,
   type DrivenTree,
+  detachedTreeRecord,
+  detachedTreeRecordSync,
   readDrivenTree,
+  type TreeGitResult,
   writeDrivenTree,
 } from "../driven-tree.ts";
 
@@ -59,4 +62,38 @@ describe("writeDrivenTree", () => {
       expect(readDrivenTree(d)).toEqual(record);
     },
   );
+});
+
+describe("the asynchronous and synchronous readers", () => {
+  /** A detached tree with `record`, whose head the given remote refs hold. */
+  function fakeGit(d: string, holders: string[]) {
+    return (args: string[]): TreeGitResult => {
+      const call = args.join(" ");
+      if (call === "symbolic-ref --quiet HEAD") return { code: 1, stdout: "" };
+      if (call === "rev-parse --absolute-git-dir")
+        return { code: 0, stdout: `${d}\n` };
+      if (call.startsWith("for-each-ref --contains HEAD"))
+        return { code: 0, stdout: holders.map((r) => `${r}\n`).join("") };
+      return { code: 0, stdout: "" };
+    };
+  }
+
+  test.each([
+    ["no remote branch holds the head", [], true],
+    ["its own branch holds the head", ["refs/remotes/origin/feature"], true],
+    [
+      "another branch alone holds the head",
+      ["refs/remotes/origin/stacked"],
+      false,
+    ],
+  ])("agree when %s", async (_what, holders, describes) => {
+    const d = gitDir();
+    writeDrivenTree(d, record);
+    const git = fakeGit(d, holders);
+    const expected = describes ? record : null;
+    expect(detachedTreeRecordSync(git)).toEqual(expected);
+    expect(await detachedTreeRecord(async (args) => git(args))).toEqual(
+      expected,
+    );
+  });
 });

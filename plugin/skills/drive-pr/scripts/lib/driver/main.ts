@@ -54,6 +54,8 @@ import { runDriverRounds } from "./rounds.ts";
 
 import { attachForDrive } from "./../attach.ts";
 
+import { clearDeadlineRetries } from "./restart.ts";
+
 import {
   decideTakeover,
   explainingRefusal,
@@ -240,7 +242,9 @@ export async function main(): Promise<number> {
   const hold = async (lock: DriveLock): Promise<void> => {
     // A refusal names the holder's doctor verdict, and the takeover command
     // when a takeover would be admitted.
-    await explainingRefusal(lock, driveTs, botsOnly, () => acquire(lock, pr));
+    await explainingRefusal(lock, driveTs, botsOnly, { pr, agent }, () =>
+      acquire(lock, pr),
+    );
     held.push(lock);
     lockResources.use(
       registerCleanup(() => {
@@ -255,7 +259,7 @@ export async function main(): Promise<number> {
     pr,
     { tree: treeLock.dir, pr: prLock.dir },
     () => hold(treeLock),
-    armCommand(driveTs, pr, botsOnly),
+    armCommand(driveTs, pr, botsOnly, "", agent),
   );
   // Renewal starts the moment the first lock is held, and runs on its own
   // timer for the rest of the drive — a claim must stay fresh DURING the
@@ -263,18 +267,11 @@ export async function main(): Promise<number> {
   // PR's lock joins it once taken.
   startHeartbeat(held, agent);
   await hold(prLock);
-  // Once both the tree and the PR are ours: the tree is put on the PR's head
-  // (its branch, or the head commit detached when another working tree holds
-  // the branch), so every round's commit lands on what the attach left, no
-  // other driver's tree is ever moved, and no second driver of the PR, in
-  // another tree, attaches beside this one.
-  await attachForDrive(pr, dryRun);
-  createDriverRegistry(held);
-  lockResources.use(driverStopCompletionCleanup(held));
-  driverRuntime.driverLogRotates = true;
 
   // The SESSION every drive-state mutation of this drive belongs to, exported
-  // once the locks are actually held (`lease.ts`). This driver plus
+  // once the locks are actually held and before the first such mutation (the
+  // attach's own state write and its restart-count clear), so no write of this
+  // drive takes a sessionless lease that outlives it (`lease.ts`). This driver plus
   // every round's pass — each a separate agent process, each with an agent pid
   // of its own — must count as ONE session, or round 2's pass would read round
   // 1's lease as a stranger's; and the session has to stay live for the WHOLE
@@ -294,6 +291,24 @@ export async function main(): Promise<number> {
   // `diag.started` as the instance token when correlating a worktree lock to
   // a PR lock; `drives.ts` compares the same value against this variable.
   process.env.DRIVE_PR_SESSION_STARTED = diag.started;
+
+  // Once both the tree and the PR are ours: the tree is put on the PR's head
+  // (its branch, or the head commit detached when another working tree holds
+  // the branch), so every round's commit lands on what the attach left, no
+  // other driver's tree is ever moved, and no second driver of the PR, in
+  // another tree, attaches beside this one. A PR found closed here ends the
+  // drive as the round loop's PR_NOT_OPEN does, restart count included, and
+  // as a failure (exit 1) when that count could not be cleared.
+  await attachForDrive(pr, dryRun, async () => {
+    if (!(await clearDeadlineRetries(pr)))
+      fail(
+        1,
+        `drive.ts: PR #${pr} is not open; its restart count still stands`,
+      );
+  });
+  createDriverRegistry(held);
+  lockResources.use(driverStopCompletionCleanup(held));
+  driverRuntime.driverLogRotates = true;
 
   // The TREE this drive drives, so a pass measures local HEAD there rather
   // than wherever its shell happens to stand. A pass is an agent with a

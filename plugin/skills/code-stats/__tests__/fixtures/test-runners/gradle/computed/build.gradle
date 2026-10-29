@@ -1,0 +1,2 @@
+def testDirs = ['qa', 'more-qa']
+sourceSets.test.java.srcDirs = testDirs.collect { file(it) }

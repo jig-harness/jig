@@ -17,6 +17,7 @@ import {
 } from "./classify.ts";
 import type { CodeStatsConfig } from "./config.ts";
 import { countLines } from "./count.ts";
+import { unreadableFile } from "./errors.ts";
 import type { Attributes } from "./git.ts";
 import {
   ASSET_EXTENSIONS,
@@ -25,6 +26,7 @@ import {
 } from "./languages.ts";
 import type { Classification, FileStats } from "./model.ts";
 import type { ModuleMap } from "./modules.ts";
+import type { Reading } from "./test-runners/index.ts";
 
 /** Text files above this are sized but not line-counted. */
 export const MAX_LINE_COUNT_BYTES = 20 * 1024 * 1024;
@@ -71,6 +73,8 @@ export interface Context {
   attributes: Attributes;
   submodules: ReadonlySet<string>;
   overrides: ReadonlyMap<string, Override>;
+  /** What the repository's test runners' configuration says. */
+  runners: Reading;
 }
 
 export interface AnalyzedFile {
@@ -90,6 +94,7 @@ function result(
     ctx.config,
     ctx.modules,
     ctx.overrides.get(facts.path),
+    ctx.runners,
   ),
 ): AnalyzedFile {
   const { area, kind, language, module } = classification;
@@ -134,7 +139,7 @@ export async function analyzeFile(
   const abs = resolve(ctx.root, relPath);
   const st = await lstat(abs).catch((err: unknown) => {
     if (errnoCode(err) === "ENOENT") return null;
-    throw err;
+    throw unreadableFile(relPath, err);
   });
   if (!st) return null;
   if (ctx.submodules.has(relPath) || st.isDirectory())
@@ -162,7 +167,11 @@ async function readText(
   const relPath = facts.path;
   const file = Bun.file(abs);
   const buf = new Uint8Array(
-    await (whole ? file : file.slice(0, BINARY_PROBE_BYTES)).arrayBuffer(),
+    await (whole ? file : file.slice(0, BINARY_PROBE_BYTES))
+      .arrayBuffer()
+      .catch((err: unknown) => {
+        throw unreadableFile(relPath, err);
+      }),
   );
   if (buf.subarray(0, BINARY_PROBE_BYTES).includes(0))
     return result({ ...facts, shape: "binary" }, ctx, size, ZERO);
@@ -180,6 +189,7 @@ async function readText(
     ctx.config,
     ctx.modules,
     ctx.overrides.get(relPath),
+    ctx.runners,
   );
   const counts = whole
     ? countLines(content, lineStyle(text, classification.language.value))

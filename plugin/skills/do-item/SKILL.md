@@ -614,9 +614,10 @@ routing below remain **exact**.
    or from the predecessor's branch when this change builds on an unmerged
    pull request and `pull_requests.stacking` allows it. When the item already
    has an open pull request, do not delegate: stop here, create no branch
-   and open no pull request, remove `issue.json` and
-   `intent-chain-input.json` (an attach refuses a tree it would move while
-   they are in it), and hand the item to that pull request's drive with
+   and open no pull request, remove the scratch files this procedure wrote
+   (`issue.json`, `comments.json`, `intent-chain-input.json` and
+   `scout-findings.md`, whichever exist; an
+   attach refuses a tree it would move while they are in it), and hand the item to that pull request's drive with
    `/jig:drive-pr <PR>`. Its placement chooses or creates the working tree
    on the pull request's head, so nothing here is pushed or attached.
 
@@ -703,9 +704,10 @@ routing below remain **exact**.
    humans gate *merges*, not *pushes*.
 
    **Change note — only where the repository has opted in.** Run
-   `bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/check.ts" --base origin/<base>`
+   `bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/check.ts" --base <remote>/<base>`
    from the repository root, `<base>` being the branch the pull request
-   merges into. It reads the configuration the base holds, not the branch's
+   merges into and `<remote>` the repository's git remote (`repository.remote`,
+   else `origin`). It reads the configuration the base holds, not the branch's
    own, so a branch that predates the adoption or drops `changelog.file` is
    still asked. When it prints `not configured`, the repository keeps no
    changelog from change notes: write no note, run nothing else of the
@@ -716,7 +718,7 @@ routing below remain **exact**.
    one, never edit the changelog or a version file, and run the same check
    with the other gates, so that a finding is fixed before the push. A branch that already
    edited the changelog or the version is converted first
-   (`bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base origin/<base>`,
+   (`bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base <remote>/<base>`,
    the same base as the check, so a stacked branch moves only its own
    edits), and the result reviewed.
 
@@ -727,9 +729,10 @@ routing below remain **exact**.
    the one the change-area catalog emits for the complete workspace change
    when `drive.change_areas_catalog` is declared, and the repository's gate
    command otherwise; do not substitute a fixed command list. `<base>` below
-   is the branch the PR will target, as `origin/<base>`: the integration
+   is the branch the PR will target, as `<remote>/<base>`: the integration
    branch, or the predecessor's branch for a stacked PR (the `base` that
-   `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` prints).
+   `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` prints), and `<remote>`
+   the git remote it prints (`remote:`: `repository.remote`, else `origin`).
 
    **Skip condition — fewer than 20 non-test lines changed (Tiers 1–3 only):**
 
@@ -834,7 +837,7 @@ routing below remain **exact**.
 
    - **`APPROVED WITH WARNINGS`**: put the Tier 2 warnings verbatim under
      `## Review Notes` in the PR body, then push.
-   - **`APPROVED`**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push -u origin "<branch>"`.
+   - **`APPROVED`**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push -u <remote> "<branch>"`.
 
    Then run `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` and open the PR exactly as it plans
    ([Pull-request policy](#pull-request-policy)). An exit `3` is a policy

@@ -558,18 +558,18 @@ make, use the entry's term instead.
   documents under a path prefix, for a subtree whose vocabulary differs from
   the rest (a runbook directory that must name its service, an archive that
   may hold only archived documents). It can narrow the tree's vocabulary,
-  never widen it ([frontmatter check](modules/M4-docs-governance/reference/frontmatter-check/README.md#path-scoped-rules)).
+  never widen it ([frontmatter check](plugin/skills/docs/scripts/frontmatter-check/README.md#path-scoped-rules)).
 - **Orphan document** — a document no other document lists under `related:`
   in its frontmatter. Ordinary Markdown links are not counted, so an orphan
   may still be linked from a page body; it is a candidate for a declared
   relation or for retiring, not proof that nothing leads to it. An *orphan
   report* lists them as a warning, never a failure
-  ([index generator](modules/M4-docs-governance/reference/index/README.md#orphan-report)).
+  ([index generator](plugin/skills/docs/scripts/index/README.md#orphan-report)).
 - **Sticky stamping** — how a generator dates the documents it writes: the
   `last_updated` date advances, in UTC, only when the output changed, and
   otherwise keeps the date the file already carries. It keeps generated
   documents honest without rewriting files whose only change is the date
-  ([stamp](modules/M4-docs-governance/reference/stamp/README.md)).
+  ([stamp](plugin/skills/docs/scripts/stamp/README.md)).
 - **Codemod** — a one-shot script that rewrites many files mechanically, such
   as bringing every document's frontmatter into line before a validator is
   tightened. Run as survey, plan, then apply, one commit per kind of change
@@ -580,7 +580,7 @@ make, use the entry's term instead.
   **deferral marker** is a configured phrase that makes a block of prose a
   deferral. The static gate checks that a deferral names an item; a scheduled
   check asks the tracker whether the item has closed since
-  ([M4](modules/M4-docs-governance/reference/deferral-references/README.md)).
+  ([M4's deferral check](plugin/skills/docs/scripts/deferral-references/README.md)).
 - **PRD (product requirements document)** — the document defining *what* a
   feature does for users and why — deliberately separate from *how* (the
   architecture doc).
@@ -1048,6 +1048,19 @@ make, use the entry's term instead.
 - **Tiered review** — a review that runs cheap pattern checks first, contract
   checks second, and an expensive semantic review last; each tier can block
   or warn, and a change only pays for the tiers its file types need.
+- **Red-team review** (adversarial review) — a review that reads a document
+  on purpose against it, looking for what is wrong, missing or unclear
+  rather than confirming what is there. The reviewer starts in **fresh
+  context**: a session or subagent that has not seen the document being
+  written, since one that helped write it tends to defend it. Each stage of
+  [M6](modules/M6-feature-delivery-pipeline/README.md)'s pipeline gets one
+  before the next stage consumes its artifact; Jig's `red-team` skill runs it
+  for requirements and architecture documents.
+- **Review persona** — one point of view a *red-team review* reads a
+  document from, written as a brief: who the reader stands for, what they
+  look for, and what a finding from them must carry (a security auditor, a
+  reader who knows no engineering terms, …). Not the user personas a PRD
+  describes, though some review personas speak for them.
 - **Scanner annotation** — a finding a static-analysis tool reports on a pull
   request as a note pinned to a changed line of its check run (a check-run
   annotation), as SonarQube Cloud does. It is neither a review thread, which
@@ -1321,10 +1334,11 @@ make, use the entry's term instead.
   *Avoid*: model level (a *maturity level* is something else).
 - **Route** — the agent, *model tier* and reasoning effort chosen for the
   implementer of one piece of work at its pickup; derived from the item's
-  *work type*, size and labels and the *change-area catalog*'s flags and
-  mandatory reviews, by rules a repository declares, with the reason, the
-  source (the rules, or the person who chose instead) and whether it was
-  applied recorded on the pull request ([design](design/agent-routing.md)).
+  *work type*, size, *flag labels* and the *change-area catalog*'s flags and
+  mandatory reviews, by rules a repository keeps as data, with the rule behind
+  each part, the source (the rules, or the person who chose instead, whose
+  choice always wins) and whether it was applied recorded on the pull request
+  ([design](design/agent-routing.md)).
 - **Judgment tier** — the narrowest *model tier*: the top reasoning model,
   admitted only for a *decision layer* that is judgment-only, low-volume and
   high-leverage, and that a mechanical rule already tried and failed to
@@ -1333,11 +1347,6 @@ make, use the entry's term instead.
   out so that it alone runs on an expensive *model tier* while the evidence
   gathering and ranking around it run on cheaper ones. The unit the *Judgment
   tier* is assigned to, rather than a whole skill or agent.
-- **Route** — the agent, the *model tier* and the effort an item's
-  implementer runs on, derived from the item's *work type*, its *flag
-  labels* and size and the change areas it touches, by rules a repository
-  keeps as data, with the rule behind each part recorded; a person's choice
-  always wins ([design](design/agent-routing.md)).
 - **Family alias** — a model name that selects a model family rather than
   one release (`opus`, `sonnet`). A pin written with it ordinarily resolves to
   the family's current release, though not always: a session already on an
@@ -1778,6 +1787,14 @@ make, use the entry's term instead.
   generated, as documentation, or as written in a named language.
 - **Test fixture** — data a test reads (an input file, a recorded response, a
   snapshot of expected output), as opposed to the test's own code.
+- **Byte order mark** — a few invisible bytes at the very start of a text
+  file that say how its characters are encoded: `EF BB BF` for UTF-8, and
+  `FE FF` or `FF FE` for UTF-16 written with its high or its low byte first.
+  A reader consumes the mark; it is not part of the text.
+- **Internal subset** — the part of an XML document type declaration
+  written between square brackets inside the document itself
+  (`<!DOCTYPE project [ … ]>`), where the document can declare its own
+  entities and element rules instead of only pointing at an outside file.
 - **DDL (data definition language)** — the statements that define a
   database's structure (tables, columns, indexes), as opposed to the queries
   that read and change its data. Schema files and migrations hold it.

@@ -22,7 +22,11 @@ import {
   writeFixture,
 } from "./drive-pr-harness.ts";
 import { runDriveIn, state } from "./drive-loop-harness.ts";
-import { humanVerdictNotice, NOTICE_MAX } from "../scripts/lib/driver/rearm.ts";
+import {
+  humanVerdictNotice,
+  NOTICE_MAX,
+  unparkedAfterFailure,
+} from "../scripts/lib/driver/rearm.ts";
 import {
   answersFile,
   boundPassNotice,
@@ -124,8 +128,8 @@ describe("drive.ts keeps a re-arm's answers until a pass completes with them", (
     "-c",
     [
       ": pass for 999",
-      'echo "pass for 999: PASS_RAN" >&2',
-      'printf "%s" "$DRIVE_PR_PASS_NOTICE" | grep -q "option B" && echo "pass for 999: ANSWER_SEEN" >&2',
+      'echo "pass for 999: PASS""_RAN" >&2',
+      'printf "%s" "$DRIVE_PR_PASS_NOTICE" | grep -q "option B" && echo "pass for 999: ANSWE""R_SEEN" >&2',
       `exit ${code}`,
     ].join("\n"),
   ];
@@ -226,6 +230,31 @@ describe("drive.ts keeps a re-arm's answers until a pass completes with them", (
     );
     expect(await parkedKeys(stateDir)).toEqual(["PRRT_p"]);
   }, 120_000);
+});
+
+describe("unparkedAfterFailure", () => {
+  const verdict = (key: string) => ({
+    kind: "thread" as const,
+    key,
+    reason: "r",
+    answers: [],
+  });
+  const stateParking = (...keys: string[]) =>
+    ({ parked: keys.map((key) => ({ key })) }) as unknown as Parameters<
+      typeof unparkedAfterFailure
+    >[0];
+
+  it("stops when the state after a failed unpark cannot be read", () => {
+    expect(unparkedAfterFailure(null, [verdict("PRRT_a")])).toBeNull();
+  });
+
+  it("hands on the items the state no longer parks, and none it still does", () => {
+    const fresh = [verdict("PRRT_a"), verdict("PRRT_b")];
+    expect(unparkedAfterFailure(stateParking(), fresh)).toEqual(fresh);
+    expect(
+      unparkedAfterFailure(stateParking("PRRT_a", "PRRT_b"), fresh),
+    ).toEqual([]);
+  });
 });
 
 describe("humanVerdictNotice", () => {

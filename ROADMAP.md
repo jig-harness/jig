@@ -18,9 +18,8 @@ issues. It replaces the fixed starter kit the
 [greenfield guide](adoption/greenfield.md) uses today. With it come
 `red-team`, which reviews a requirements or architecture document from
 several hostile points of view in a fresh session; plan review inside
-`review`; a `docs` skill that runs [M4](modules/M4-docs-governance/README.md)'s
-documentation checks; and `upgrade-deps`, which makes grouped dependency
-upgrades an update bot cannot make alone and drives them to merge.
+`review`; and `upgrade-deps`, which makes grouped dependency upgrades an
+update bot cannot make alone and drives them to merge.
 
 ### 7. The Notion store, verified against Notion
 
@@ -61,9 +60,11 @@ keeps a person merging ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
 A few values are still fixed in the skills rather than read from
 [configuration](plugin/CONFIGURATION.md): the review skill's follow-up step
 calls Linear directly with fixed label groups, so a repository on GitHub
-Issues, the default tracker, cannot yet defer a review finding, and the drive assumes a git remote
-named `origin`. They move into configuration, and the follow-up step onto
-the tracker interface, so it files on every tracker Jig supports.
+Issues, the default tracker, cannot yet defer a review finding, and some
+skills outside the delivery loop still assume a git remote named `origin`
+where the rest read [`repository.remote`](plugin/CONFIGURATION.md#repository). They move
+into configuration, and the follow-up step onto the tracker interface, so it
+files on every tracker Jig supports.
 
 ### 12. More tracker adapters
 
@@ -79,12 +80,10 @@ watchdogs for what is deployed (M10, M11), an acceptance stage (M6), a skill
 that runs M7's post-merge stage in any repository, and a generator for the
 model roster (M0).
 
-### 20. `code-stats`: test-runner configuration and audit evidence
+### 20. `code-stats`: a reference set and audit evidence
 
-The [code-stats skill](plugin/skills/code-stats/README.md) learns which
-files are tests from the test runner's own configuration (jest, vitest,
-pytest, Gradle, Maven), is checked against a recorded set of public
-repositories in several languages, and gives
+The [code-stats skill](plugin/skills/code-stats/README.md) is checked
+against a recorded set of public repositories in several languages, and gives
 [`jig:audit`](plugin/skills/audit/README.md) measured evidence: the test to
 code ratio, the generated share and the size of the agent scaffolding.
 

@@ -37,8 +37,7 @@ how much it could not classify, and names the rule behind any file.
   [`code-stats`](plugin/skills/code-stats/README.md)
 - **Practice:** every module's criteria, as
   [principle 6](principles/06-audit-first.md) asks
-- **On the roadmap:** test-runner configuration for `code-stats`, and its
-  figures as audit evidence (item 20)
+- **On the roadmap:** `code-stats` figures as audit evidence (item 20)
 
 ## A work item carried from pickup to merge
 
@@ -146,16 +145,21 @@ The feature pipeline runs from research through requirements and
 architecture to a design loop and an [epic](GLOSSARY.md) of planned work
 items, with a template for each stage
 ([PIPELINE.md](modules/M6-feature-delivery-pipeline/templates/PIPELINE.md)).
+`red-team` reviews a requirements or architecture document adversarially:
+personas, from a critical chief technology officer to a reader who knows no
+engineering terms, each read it in fresh context and report the passage, the
+risk and the question the author must answer, in one report.
 `design-brief-builder` assembles the brief bundle for an external design
 session from the repository's real schema and code, and audits it for
 prescriptions before it leaves. `review` checks each stage's plan or document
 against the repository's decisions.
 
-- **Skills:** [`design-brief-builder`](plugin/skills/design-brief-builder/SKILL.md),
+- **Skills:** [`red-team`](plugin/skills/red-team/SKILL.md),
+  [`design-brief-builder`](plugin/skills/design-brief-builder/SKILL.md),
   [`review`](plugin/skills/review/SKILL.md)
 - **Practice:** [M6](modules/M6-feature-delivery-pipeline/)
-- **On the roadmap:** the greenfield kickoff as skills and an adversarial
-  reviewer (roadmap item 3); epic planning on the tracker (Later)
+- **On the roadmap:** the greenfield kickoff as skills (roadmap item 3); epic
+  planning on the tracker (Later)
 
 ## Gates that ship with their tests, each on a named rung
 
@@ -267,12 +271,16 @@ Instruction files are layered so a rule loads only where it applies, with a
 glossary so parallel agents use one word for one thing. The docs tree is
 governed: a schema, a generated index, and [de-scarring](GLOSSARY.md), which
 `descar` performs by removing review traces, struck corrections and
-superseded statements from a promoted page. `programmatic-execution` runs a
+superseded statements from a promoted page. `docs` checks the whole tree in
+one pass (frontmatter, index, dates, scars and deferrals), flags drafts left
+stale and lists the documents the project's type calls for and the tree
+lacks; its gates run the same way in a repository's hooks and CI. `programmatic-execution` runs a
 bulk read-only check (cross-references, links, a search across many files)
 as one script whose findings are a compact list, instead of reading every
 file into the conversation.
 
-- **Skills:** [`descar`](plugin/skills/descar/SKILL.md),
+- **Skills:** [`docs`](plugin/skills/docs/README.md),
+  [`descar`](plugin/skills/descar/SKILL.md),
   [`programmatic-execution`](plugin/skills/programmatic-execution/SKILL.md)
 - **Practice:** [M0](modules/M0-instruction-architecture/),
   [M4](modules/M4-docs-governance/)

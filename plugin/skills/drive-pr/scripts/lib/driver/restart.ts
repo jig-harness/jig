@@ -11,6 +11,8 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 
+import { shellQuote } from "./../cli.ts";
+
 import {
   git,
   gitCallTimeoutSeconds,
@@ -22,6 +24,8 @@ import {
 } from "./../proc.ts";
 
 import { unpushedRange } from "./../driven-branch.ts";
+
+import { readPrState } from "./../pr-state.ts";
 
 import { handoffPath, NARRATIVE_MARKER } from "./../state/handoff.ts";
 
@@ -72,17 +76,38 @@ async function bumpDeadlineRetries(pr: string): Promise<number | null> {
 
 /**
  * Clear the count once the drive ends (converged, or the PR closed): a later
- * drive of the same PR is a new drive. Best effort; a failure is reported.
+ * drive of the same PR is a new drive. Returns whether the clear landed; on a
+ * failure it prints the command that clears the count, since a count left
+ * standing would spend a later drive's budget, and the caller ends the drive
+ * as a failure rather than as the stop it reached.
  */
-export async function clearDeadlineRetries(pr: string): Promise<void> {
-  const res = await run(
-    tsArgv(driveState, ["deadline-retries", pr, "--set", "clear"]),
-    { stdout: "ignore", stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
+export async function clearDeadlineRetries(pr: string): Promise<boolean> {
+  const argv = tsArgv(driveState, ["deadline-retries", pr, "--set", "clear"]);
+  const res = await run(argv, {
+    stdout: "ignore",
+    stderr: "inherit",
+    timeoutSec: helperTimeoutSeconds(),
+  });
+  if (res.code === 0) return true;
+  console.error(
+    `drive.ts: could not clear the pass-deadline restart count (drive-state.ts exited ${res.code}); clear it before re-arming PR #${pr}: ${argv.map(shellQuote).join(" ")}`,
   );
-  if (res.code !== 0)
-    console.error(
-      `drive.ts: could not clear the pass-deadline restart count (drive-state.ts exited ${res.code}).`,
-    );
+  return false;
+}
+
+/**
+ * Whether a read confirms the PR is closed or merged. A pass that exits 5 is
+ * taken at its word that the PR is not open, but the restart count belongs to
+ * the PR and is cleared only on a closure: an open PR keeps its budget across
+ * a re-arm, and an unreadable state confirms nothing.
+ */
+export async function prReadsClosed(pr: string): Promise<boolean> {
+  const read = await readPrState(pr, { timeoutSec: helperTimeoutSeconds() });
+  if (read.ok && read.state !== "OPEN") return true;
+  console.error(
+    `drive.ts: PR #${pr} is not confirmed closed (${read.ok ? "it reads OPEN" : read.reason}); its restart count stays`,
+  );
+  return false;
 }
 
 /** What a stopped pass left in the driven tree; `null` where a probe failed. */

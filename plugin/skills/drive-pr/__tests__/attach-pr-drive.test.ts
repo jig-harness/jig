@@ -12,6 +12,7 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 import {
   branchOf,
   type Clone,
+  driveState,
   makeClone,
   plantLiveLock,
   worktreeLock,
@@ -64,6 +65,65 @@ describe("drive.ts attaches under both its locks", () => {
     expect(r.stderr).toContain("already holds the PR #42 lock");
     expect(r.stderr).not.toContain("attach:");
     expect(c.git(tree, "rev-parse", "HEAD")).toBe(before);
+  });
+
+  test("ending the drive's restart count when the PR is closed at the attach", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    const bumped = c.script(
+      tree,
+      "drive-state.ts",
+      "deadline-retries",
+      "42",
+      "--set",
+      "bump",
+    );
+    expectSpawnExit(bumped, 0, "drive-state.ts deadline-retries");
+    expect(driveState(c, tree).deadlineRetries).toBe(1);
+    c.pr({ state: "CLOSED" });
+    const r = drive(c, tree);
+    expectSpawnExit(r, 5, "drive.ts");
+    expect(r.stderr).toContain("not OPEN");
+    // A drive of the reopened PR is a new drive, with the whole budget.
+    expect(driveState(c, tree).deadlineRetries ?? 0).toBe(0);
+    // The clear ran as the driver's session, so no lease it took outlives
+    // the driver and blocks the next drive of this tree.
+    const leases = c.script(tree, "drive-state.ts", "lease", "42", "--all");
+    expectSpawnExit(leases, 0, "drive-state.ts lease");
+    expect(JSON.parse(leases.stdout)).toEqual([]);
+  });
+
+  test("reporting a restart count it could not clear, with the command that clears it", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    // A state root that is a plain file: the clear cannot write the state.
+    const notADir = join(c.root, "state-is-a-file");
+    writeFileSync(notADir, "");
+    const restart = join(
+      import.meta.dir,
+      "..",
+      "scripts",
+      "lib",
+      "driver",
+      "restart.ts",
+    );
+    const r = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `const { clearDeadlineRetries } = await import(${JSON.stringify(restart)});
+         process.exit((await clearDeadlineRetries("42")) ? 0 : 7);`,
+      ],
+      {
+        cwd: tree,
+        env: { ...c.env, DRIVE_PR_STATE_DIR: notADir },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expectSpawnExit(r, 7, "clearDeadlineRetries");
+    expect(r.stderr.toString()).toContain("clear it before re-arming PR #42: ");
+    expect(r.stderr.toString()).toContain("deadline-retries 42 --set clear");
   });
 
   test("refusing a PR number #42's own lock would not key", () => {

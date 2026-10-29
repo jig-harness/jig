@@ -44,9 +44,15 @@ export async function acceptsInheritedHead(
 ): Promise<boolean> {
   if (inheritedHead === "" || localHead !== inheritedHead) return false;
   if (apiHead === "" || apiHead === localHead) return false;
+  return isAncestor(apiHead, localHead);
+}
+
+/** Whether `older` is an ancestor of `newer` in the driven tree; `false` when the probe cannot answer. */
+async function isAncestor(older: string, newer: string): Promise<boolean> {
+  if (older === "" || newer === "") return false;
   const anchor = process.env.DRIVE_PR_WORKTREE;
-  const res = await git(["merge-base", "--is-ancestor", apiHead, localHead], {
-    stderr: "ignore",
+  const res = await git(["merge-base", "--is-ancestor", older, newer], {
+    stderr: "pipe",
     env: gitIdentityEnv(),
     timeoutSec: gitCallTimeoutSeconds(),
     ...(anchor ? { cwd: anchor } : {}),
@@ -70,6 +76,11 @@ export async function headSyncState(
   const local = localHead === "" ? apiHead : localHead;
   if (inheritedHead !== "" && apiHead === inheritedHead && local === apiHead)
     return "inherited";
+  // With the local head unread, the witnessed head decides: the round is
+  // still owed until GitHub's head contains it, and a probe that cannot
+  // tell owes it too.
+  if (!headSync && inheritedHead !== "" && inheritedHead !== apiHead)
+    return (await isAncestor(inheritedHead, apiHead)) ? "in-sync" : "inherited";
   if (!headSync || apiHead === localHead) return "in-sync";
   return (await acceptsInheritedHead(apiHead, localHead, inheritedHead))
     ? "inherited"
@@ -90,9 +101,16 @@ export function mayEndWithoutWork(
   return liveWork <= 0 && (sync !== "inherited" || conflicting);
 }
 
-/** What a ready round's reason adds when it pushes an inherited head. */
-export function inheritedReason(sync: HeadSync, localHead: string): string {
+/**
+ * What a ready round's reason adds when it pushes an inherited head, named
+ * by the witnessed head when the local head was not read.
+ */
+export function inheritedReason(
+  sync: HeadSync,
+  localHead: string,
+  inheritedHead = "",
+): string {
   return sync === "inherited"
-    ? ` — local HEAD ${localHead} carries work a killed pass left unpushed or uncommitted; this round settles it`
+    ? ` — local HEAD ${localHead || inheritedHead} carries work a killed pass left unpushed or uncommitted; this round settles it`
     : "";
 }

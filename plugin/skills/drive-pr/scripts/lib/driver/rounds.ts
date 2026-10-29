@@ -23,7 +23,7 @@ import type { DriveRoundContext } from "./round-context.ts";
 
 import { runRoundIteration } from "./round-step.ts";
 
-import { clearDeadlineRetries } from "./restart.ts";
+import { clearDeadlineRetries, prReadsClosed } from "./restart.ts";
 
 import { standDownOnNewerClaim } from "./ledger.ts";
 
@@ -212,11 +212,20 @@ export async function runDriverRounds({
       );
       if (stage === "continue") continue;
       if (stage === null) continue;
-      // The drive is over once it converged or the PR closed: its
-      // pass-deadline restarts stop counting against a later drive.
-      if (!dryRun && (stage === 0 || stage === 5))
-        await clearDeadlineRetries(pr);
-      return stage;
+      return dryRun ? stage : await endDrive(pr, stage);
     }
   }
+}
+
+/**
+ * The drive is over once it converged or the PR closed: its pass-deadline
+ * restarts stop counting against a later drive. A stop 5 clears the count only
+ * when a read confirms the closure, since a pass can exit 5 on its own. A count
+ * that could not be cleared ends the drive as a failure, so it is not reported
+ * over as an ordinary end.
+ */
+async function endDrive(pr: string, stage: number): Promise<number> {
+  if (stage !== 0 && stage !== 5) return stage;
+  if (stage === 5 && !(await prReadsClosed(pr))) return stage;
+  return (await clearDeadlineRetries(pr)) ? stage : 1;
 }

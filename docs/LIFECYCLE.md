@@ -15,12 +15,12 @@ owner's own document, not here. The last stage feeds the first.
 | Stage | Owner | Hands on | Detail |
 |-------|-------|----------|--------|
 | steer | [the plan](../design/plan.md), with the proposals of `/jig:audit` and `/jig:review-reflections` | a ranked list of open work | [design/README.md](../design/README.md) |
-| spec | [the design skeleton](../design/README.md#starting-a-design), `/jig:explain`, `/jig:decide`, `/jig:adr` and `/jig:design-brief-builder` | a reviewed design and the decision records it settles | [M6](../modules/M6-feature-delivery-pipeline/README.md), [M5](../modules/M5-adr-practice/README.md) |
+| spec | [the design skeleton](../design/README.md#starting-a-design), `/jig:explain`, `/jig:decide`, `/jig:adr`, `/jig:red-team` and `/jig:design-brief-builder` | a reviewed design and the decision records it settles | [M6](../modules/M6-feature-delivery-pipeline/README.md), [M5](../modules/M5-adr-practice/README.md) |
 | file | `/jig:file-issue` | a labelled tracker issue | [M9](../modules/M9-tasks-memory/README.md) |
 | plan the epic | `/jig:file-issue` | an epic of ordered, labelled sub-issues | [M9](../modules/M9-tasks-memory/README.md) |
 | pick up | `/jig:do-item`, or `/jig:work-batch` for several small issues from one area | a started issue and a working branch | [do-item](../plugin/skills/do-item/README.md) |
 | implement | `/jig:do-item`, through the agent its routing names | a validated change on the branch | [plugin/AGENTS.md](../plugin/AGENTS.md), [modules/AGENTS.md](../modules/AGENTS.md) |
-| pre-PR gates | `bun run gates`, `/jig:review`, `/jig:change-areas`, `/jig:github-actions` and `/jig:changelog` | a green gate run, a reviewed diff and a change note | [CONTRIBUTING.md](../CONTRIBUTING.md#quality-gates) |
+| pre-PR gates | `bun run gates`, `/jig:review`, `/jig:change-areas`, `/jig:github-actions`, `/jig:docs` and `/jig:changelog` | a green gate run, a reviewed diff and a change note | [CONTRIBUTING.md](../CONTRIBUTING.md#quality-gates) |
 | draft and drive | `/jig:do-item` opens the pull request, `/jig:drive-pr` drives it | a draft pull request with its review loop armed | [CONTRIBUTING.md](../CONTRIBUTING.md#pull-request-lifecycle) |
 | review rounds | `/jig:resolve-review-comments` and `/jig:resolve-conflicts`, run by the drive; `/jig:fix-ci` when a person repairs a red run by hand | every thread resolved with a declared outcome, and green required checks | [drive-pr](../plugin/skills/drive-pr/README.md) |
 | merge | a person; an agent never merges ([ADR-0003](adr/ADR-0003-a-person-merges.md)) | the merged commit | [M7](../modules/M7-pr-lifecycle-review/README.md) |
@@ -36,6 +36,7 @@ between loops.
 | `/jig:reflect` | a session learned something about the instructions, skills or gates |
 | `/jig:promote-memory` | an agent's private lesson has become knowledge the team should share |
 | `/jig:descar` | a document is about to be promoted, or its history has piled up |
+| `/jig:docs` | the docs tree needs a health check, or a plan for the documents it lacks |
 | `/jig:code-stats` | the repository's size and makeup is needed as evidence |
 | `/jig:programmatic-execution` | an analysis reads ten or more files, to run as one script |
 | `/website-update` | the site's sources changed since its last check |
