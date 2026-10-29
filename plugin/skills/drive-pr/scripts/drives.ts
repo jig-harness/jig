@@ -1324,13 +1324,30 @@ export async function forceStopDriver(
   return 0;
 }
 
+/**
+ * Remove `--expect-started ISO` from `argv` and return ISO (`''` when
+ * absent): the acquisition a `--stop` is bound to.
+ */
+function takeExpectStarted(argv: string[]): string {
+  const at = argv.indexOf("--expect-started");
+  if (at < 0) return "";
+  const [, value = ""] = argv.splice(at, 2);
+  if (value === "") fail(2, "--expect-started takes a time");
+  return value;
+}
+
+function requireStopForExpectStarted(expectStarted: string, stopPr: string) {
+  if (expectStarted !== "" && stopPr === "")
+    fail(2, "--expect-started only qualifies --stop");
+}
+
 async function main(): Promise<number> {
   let json = false;
   let hereMode = false;
   let stopPr = "";
-  let expectStarted = "";
   let doctorMode = false;
   const argv = process.argv.slice(2);
+  const expectStarted = takeExpectStarted(argv);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] as string;
     if (a === "--json") json = true;
@@ -1340,9 +1357,6 @@ async function main(): Promise<number> {
       stopPr = argv[i + 1] ?? "";
       i++;
       if (!isDigits(stopPr)) fail(2, "--stop takes a PR number");
-    } else if (a === "--expect-started") {
-      expectStarted = argv[++i] ?? "";
-      if (expectStarted === "") fail(2, "--expect-started takes a time");
     } else {
       fail(
         2,
@@ -1350,8 +1364,7 @@ async function main(): Promise<number> {
       );
     }
   }
-  if (expectStarted !== "" && stopPr === "")
-    fail(2, "--expect-started only qualifies --stop");
+  requireStopForExpectStarted(expectStarted, stopPr);
   // `--doctor` combines with `--json` but is otherwise mutually
   // exclusive with every other mode, on the same terms `--here`/`--json`/
   // `--stop` already are with each other.

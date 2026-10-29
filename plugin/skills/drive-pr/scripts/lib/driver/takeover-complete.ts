@@ -88,31 +88,50 @@ async function reopenHold(pr: string, item: HeldItem): Promise<Reopen> {
   const left = await heldEntry(pr, item.key);
   if (left === "unreadable")
     return done(false, "the held batch could not be read back");
-  if (url === undefined) {
-    if (left !== null) return done(false, "it is still held after the release");
-    return done(
-      true,
-      item.kind === "finding"
-        ? "released; it comes back unaddressed — triage it afresh"
-        : "released; the gate's sweep re-holds it unconfirmed from its last qualifying reply",
-    );
-  }
+  const [ok, what] =
+    url === undefined
+      ? releasedVerdict(item, left)
+      : await reheldVerdict(pr, item, url, left);
+  return done(ok, what);
+}
+
+/** Whether a hold with no reply url was released, as the held batch shows. */
+function releasedVerdict(
+  item: HeldItem,
+  left: HeldItem | null,
+): [boolean, string] {
+  if (left !== null) return [false, "it is still held after the release"];
+  return [
+    true,
+    item.kind === "finding"
+      ? "released; it comes back unaddressed — triage it afresh"
+      : "released; the gate's sweep re-holds it unconfirmed from its last qualifying reply",
+  ];
+}
+
+/** Re-hold a released thread unconfirmed on its reply, and say what took. */
+async function reheldVerdict(
+  pr: string,
+  item: HeldItem,
+  url: string,
+  left: HeldItem | null,
+): Promise<[boolean, string]> {
   if (left !== null && left.commentUrl !== url)
-    return done(
+    return [
       false,
       `it is now held for another reply (${left.commentUrl ?? "no url"}); left as it is`,
-    );
+    ];
   if (left !== null && left.round !== -1)
-    return done(false, "the release did not take; it is held as it was");
+    return [false, "the release did not take; it is held as it was"];
   if (left === null && !(await reholdUnconfirmed(pr, item, url)))
-    return done(
+    return [
       false,
       "it was released, but re-holding it unconfirmed did not take; the gate's sweep re-holds it from its reply",
-    );
-  return done(
+    ];
+  return [
     true,
     `re-held unconfirmed on ${url}; once the fix is in the tree, confirm it with \`drive-state.ts hold ${pr} --key ${item.key} --kind thread --outcome ${item.outcome} --comment-url ${url}\``,
-  );
+  ];
 }
 
 /** Re-hold a released thread unconfirmed on `url`, as the sweep would. */

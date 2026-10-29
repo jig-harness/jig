@@ -6,6 +6,7 @@
  * commits as replication lag and waits out its timeout, and the pass that
  * would push them never runs.
  */
+import { fail } from "../cli.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "../proc.ts";
 
 /** A full object name: SHA-1 or SHA-256. */
@@ -13,6 +14,18 @@ const FULL_SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
 export function isFullSha(value: string): boolean {
   return FULL_SHA.test(value);
+}
+
+/**
+ * Remove `--inherited-head SHA` from `argv` and return SHA (`''` when the
+ * flag is absent); a missing or partial SHA is a usage error.
+ */
+export function takeInheritedHead(argv: string[]): string {
+  const at = argv.indexOf("--inherited-head");
+  if (at < 0) return "";
+  const [, value = ""] = argv.splice(at, 2);
+  if (!isFullSha(value)) fail(2, "--inherited-head takes a full commit SHA");
+  return value;
 }
 
 /**
@@ -39,4 +52,41 @@ export async function acceptsInheritedHead(
     ...(anchor ? { cwd: anchor } : {}),
   });
   return res.code === 0;
+}
+
+/** What the head-sync guard reads: in step, an accepted inherited head, or lag. */
+export type HeadSync = "in-sync" | "inherited" | "lagging";
+
+/** The head-sync guard's reading of the local head against the API head. */
+export async function headSyncState(
+  headSync: boolean,
+  apiHead: string,
+  localHead: string,
+  inheritedHead: string,
+): Promise<HeadSync> {
+  if (!headSync || apiHead === localHead) return "in-sync";
+  return (await acceptsInheritedHead(apiHead, localHead, inheritedHead))
+    ? "inherited"
+    : "lagging";
+}
+
+/**
+ * Whether a gate may end the drive (converged, parked or conflicting): only
+ * with no live work, and never over an inherited head, whose commits a round
+ * must push first, unless the PR conflicts, which its own repair round
+ * handles.
+ */
+export function mayEndWithoutWork(
+  liveWork: number,
+  sync: HeadSync,
+  conflicting: boolean,
+): boolean {
+  return liveWork <= 0 && (sync !== "inherited" || conflicting);
+}
+
+/** What a ready round's reason adds when it pushes an inherited head. */
+export function inheritedReason(sync: HeadSync, localHead: string): string {
+  return sync === "inherited"
+    ? ` — local HEAD ${localHead} carries commits a killed pass left unpushed; this round pushes them`
+    : "";
 }

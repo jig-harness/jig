@@ -483,13 +483,18 @@ const VALUE_FLAGS: Readonly<Record<string, ValueField>> = {
   "--account": "account",
 };
 
+/** Every value `flag` is given in `argv`, in order. */
+function flagValues(argv: string[], flag: string): string[] {
+  return argv.flatMap((arg, i) => (arg === flag ? [argv[i + 1] ?? ""] : []));
+}
+
 function parseArgs(argv: string[]): Args {
   const cmd = argv.shift() ?? "";
   const a: Args = {
     cmd,
     pr: "",
     key: "",
-    keys: [],
+    keys: flagValues(argv, "--key"),
     kind: "",
     reason: "",
     sha: "",
@@ -531,7 +536,6 @@ function parseArgs(argv: string[]): Args {
       : undefined;
     if (field !== undefined) {
       a[field] = take(arg, i++);
-      if (field === "key") a.keys.push(a.key);
       continue;
     }
     switch (arg) {
