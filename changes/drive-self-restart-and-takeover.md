@@ -15,3 +15,8 @@ A drive recovers by itself from the stops that need no decision, and a stopped o
 ### Changed
 
 - An exit-`11` refusal names the holder's `--doctor` verdict and, when the holder is `WEDGED`, prints the `--take-over` command. The rule for a live driver is now "do not stop a driver that is making progress; take over one that is wedged or dead", in `drive-pr` and `do-item` alike.
+- Every re-arm command a stop or refusal prints carries the drive's own pass command after `--`, so a drive whose passes run another agent tool is re-armed with that tool; the Claude Code pass is printed only when the pass command is not known, as for a holder driving another pull request.
+
+### Fixed
+
+- Attaching a pull request no longer refuses a working tree with uncommitted changes that it leaves where it is: a tree detached at or past the head under the pull request's record while another tree holds the branch, or with commits of its own past the head. Re-arming a detached drive after exit `15` or `16` keeps what the killed pass left for the drive to handle, as it already did for a tree on the head branch.

@@ -236,7 +236,9 @@ export async function main(): Promise<number> {
   const hold = async (lock: DriveLock): Promise<void> => {
     // A refusal names the holder's doctor verdict, and the takeover command
     // when a takeover would be admitted.
-    await explainingRefusal(lock, driveTs, botsOnly, () => acquire(lock, pr));
+    await explainingRefusal(lock, driveTs, botsOnly, { pr, agent }, () =>
+      acquire(lock, pr),
+    );
     held.push(lock);
     lockResources.use(
       registerCleanup(() => {
@@ -251,7 +253,7 @@ export async function main(): Promise<number> {
     pr,
     { tree: treeLock.dir, pr: prLock.dir },
     () => hold(treeLock),
-    armCommand(driveTs, pr, botsOnly),
+    armCommand(driveTs, pr, botsOnly, "", agent),
   );
   // Renewal starts the moment the first lock is held, and runs on its own
   // timer for the rest of the drive — a claim must stay fresh DURING the

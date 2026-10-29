@@ -128,8 +128,8 @@ describe("drive.ts keeps a re-arm's answers until a pass completes with them", (
     "-c",
     [
       ": pass for 999",
-      'echo "pass for 999: PASS_RAN" >&2',
-      'printf "%s" "$DRIVE_PR_PASS_NOTICE" | grep -q "option B" && echo "pass for 999: ANSWER_SEEN" >&2',
+      'echo "pass for 999: PASS""_RAN" >&2',
+      'printf "%s" "$DRIVE_PR_PASS_NOTICE" | grep -q "option B" && echo "pass for 999: ANSWE""R_SEEN" >&2',
       `exit ${code}`,
     ].join("\n"),
   ];

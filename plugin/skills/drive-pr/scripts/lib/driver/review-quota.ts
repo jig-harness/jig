@@ -218,7 +218,7 @@ export async function handleQuotaBlock(
     "  Do not re-arm on that account before the reset; a pass billing ANOTHER account may pick it up now:",
   );
   console.error(
-    `    ${armCommand(driveTs, context.pr, passBotsOnly(context.agent))}`,
+    `    ${armCommand(driveTs, context.pr, passBotsOnly(context.agent), "", context.agent)}`,
   );
   // Record the park BEFORE this process exits: once this
   // returns, nothing refreshes this drive's claim any further, and

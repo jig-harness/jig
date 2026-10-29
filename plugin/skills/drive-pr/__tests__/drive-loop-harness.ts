@@ -188,12 +188,14 @@ export async function state(stateDir: string, args: string[], cwd?: string) {
 
 // Every pass command must name PR 999 or drive.ts's mis-targeting guard
 // rejects it — which `refuses a pass command that names a different PR`
-// asserts directly.
+// asserts directly. A marker a test looks for is split in the shell source
+// (`RAN_TH""E_PASS`): a stop prints the re-arm command with this argv, and
+// only the shell running the pass may put the whole marker on stderr.
 export const PASS_NOOP = ["sh", "-c", ": pass for 999; exit 0"];
 export const PASS_LOUD = [
   "sh",
   "-c",
-  'echo "pass for 999: RAN_THE_PASS" >&2; exit 0',
+  'echo "pass for 999: RAN_TH""E_PASS" >&2; exit 0',
 ];
 // Echoes the repair-task channel back. Both variables are always
 // printed, including when unset, so a test can assert their ABSENCE on an

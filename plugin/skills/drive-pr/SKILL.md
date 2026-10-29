@@ -328,8 +328,9 @@ head still descends from that commit and the branch is still on the remote.
 An attach by name removes it. (The drive state's `drivenBranch` mirrors it
 for the handoff file.) It refuses (exit `2`, naming the state) a tree it
 would move that has uncommitted changes or an unfinished git operation (a
-tree already on the head branch, at or past the head, is not moved), a tree
-holding the branch
+tree at or past the head is not moved when it is on the head branch, or
+detached under this PR's record with the branch held elsewhere or commits of
+its own), a tree holding the branch
 that is dirty or has commits the PR's head lacks, a detached head with
 commits no branch or remote holds, a local branch of that name ahead of the
 head that this tree would switch to (a tree already on the branch keeps its

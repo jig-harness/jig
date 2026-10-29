@@ -83,7 +83,7 @@ async function gateRoundStatus(
       );
       console.error("  them and hands the answers to the first round:");
       console.error(
-        `    ${armCommand(driveTs, context.pr, passBotsOnly(context.agent))}`,
+        `    ${armCommand(driveTs, context.pr, passBotsOnly(context.agent), "", context.agent)}`,
       );
       // A park is a finished drive too, and the one whose cost a human is
       // about to weigh by hand — so it gets the same economy block the

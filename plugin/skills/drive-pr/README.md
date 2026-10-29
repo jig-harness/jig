@@ -354,8 +354,9 @@ mirrors it for the handoff file.
 
 It refuses, naming what is in the way, when this tree has uncommitted changes
 or an unfinished merge, rebase or cherry-pick and the attach would move it (a
-tree already on the head branch, at or past the head, is not moved, and what
-it holds uncommitted is the drive's to handle); when the tree holding the
+tree at or past the head is not moved when it is on the head branch, or
+detached under this PR's record with the branch held elsewhere or commits of
+its own, and what it holds uncommitted is the drive's to handle); when the tree holding the
 branch has uncommitted changes or commits the PR's head does not have
 (push them from there first); when this tree's detached head has commits no
 branch or remote holds; when a local branch of that name is ahead of the

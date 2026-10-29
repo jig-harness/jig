@@ -80,15 +80,24 @@ const REASON_MAX = 300;
 /** The length the answer bodies are cut to fit, beside every item's entry. */
 export const NOTICE_MAX = 15_000;
 
-/** The canonical arm command, in the drive's own mode, for a person to copy. */
+/**
+ * The arm command, in the drive's own mode, for a person to copy: with the
+ * drive's own pass command when `agent` holds it, else the documented
+ * Claude Code one.
+ */
 export function armCommand(
   driveTs: string,
   pr: string,
   botsOnly: boolean,
   extra = "",
+  agent: readonly string[] = [],
 ): string {
   const mode = botsOnly ? " --bots-only" : "";
-  return `bun ${shellQuote(driveTs)} ${pr}${extra}${mode} -- claude -p "/jig:drive-pr${mode} ${pr}"`;
+  const pass =
+    agent.length > 0
+      ? agent.map(shellQuote).join(" ")
+      : `claude -p "/jig:drive-pr${mode} ${pr}"`;
+  return `bun ${shellQuote(driveTs)} ${pr}${extra}${mode} -- ${pass}`;
 }
 
 /** Whether a pass command is scoped to bot threads, as `drive.ts` checks it. */
@@ -178,7 +187,7 @@ export function admitQuotaRearm(
     "whose pass bills another account, or after the reset. --window-reopened only if a person",
     "knows the window has reopened: an agent never passes it.",
     `The wall belongs to account ${wall ?? "unrecorded"}. From a session whose pass bills another account:`,
-    `  ${armCommand(driveTs, pr, passBotsOnly(agent))}`,
+    `  ${armCommand(driveTs, pr, passBotsOnly(agent), "", agent)}`,
   ])
     console.error(line);
   return QUOTA_PARKED_EXIT;

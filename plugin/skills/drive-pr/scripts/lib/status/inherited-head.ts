@@ -52,7 +52,7 @@ async function isAncestor(older: string, newer: string): Promise<boolean> {
   if (older === "" || newer === "") return false;
   const anchor = process.env.DRIVE_PR_WORKTREE;
   const res = await git(["merge-base", "--is-ancestor", older, newer], {
-    stderr: "ignore",
+    stderr: "pipe",
     env: gitIdentityEnv(),
     timeoutSec: gitCallTimeoutSeconds(),
     ...(anchor ? { cwd: anchor } : {}),

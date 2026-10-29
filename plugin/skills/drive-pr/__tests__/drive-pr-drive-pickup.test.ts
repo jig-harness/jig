@@ -65,7 +65,7 @@ describe("drive.ts restarts a pass killed at its deadline", () => {
         `if [ ! -e '${marker}' ]; then : > '${marker}'; echo wip > wip.txt; sleep 60; fi`,
         // The retried pass finds the killed one's edit, contents intact.
         '[ "$(cat wip.txt 2>/dev/null)" = wip ] || exit 0',
-        'case "$DRIVE_PR_PASS_NOTICE" in "RESTARTED AFTER A PASS DEADLINE"*) echo "pass for 999: RETRY_PASS_OK" >&2 ;; esac',
+        'case "$DRIVE_PR_PASS_NOTICE" in "RESTARTED AFTER A PASS DEADLINE"*) echo "pass for 999: RETRY_""PASS_OK" >&2 ;; esac',
         "exit 0",
       ].join("\n"),
     ];
@@ -294,7 +294,7 @@ describe("drive.ts re-arms a quota-parked drive only from another account", () =
     expect(r.stderr).toContain(
       `The wall belongs to account ${loginAccount("wall@example.invalid")}`,
     );
-    expect(r.stderr).toMatch(/drive\.ts 999 -- claude -p "\/jig:drive-pr 999"/);
+    expect(r.stderr).toContain("drive.ts 999 -- claude -p '/jig:drive-pr 999'");
   });
 
   it("refuses when the wall's account was not recorded", async () => {
@@ -317,8 +317,8 @@ describe("drive.ts re-arms a HITL-parked drive once every item is answered", () 
     "-c",
     [
       ": pass for 999",
-      'case "$DRIVE_PR_PASS_NOTICE" in "RE-ARMED WITH HUMAN ANSWERS"*) echo "pass for 999: HUMAN_VERDICTS" >&2 ;; esac',
-      'printf "%s" "$DRIVE_PR_PASS_NOTICE" | grep -q "option B" && echo "pass for 999: ANSWER_SEEN" >&2',
+      'case "$DRIVE_PR_PASS_NOTICE" in "RE-ARMED WITH HUMAN ANSWERS"*) echo "pass for 999: HUMAN_V""ERDICTS" >&2 ;; esac',
+      'printf "%s" "$DRIVE_PR_PASS_NOTICE" | grep -q "option B" && echo "pass for 999: ANSWE""R_SEEN" >&2',
       "exit 0",
     ].join("\n"),
   ];
@@ -387,8 +387,8 @@ describe("drive.ts re-arms a HITL-parked drive once every item is answered", () 
       [
         ": pass for 999",
         `if [ ! -e '${marker}' ]; then : > '${marker}'; sleep 60; fi`,
-        'case "$DRIVE_PR_PASS_NOTICE" in "RESTARTED AFTER A PASS DEADLINE"*) echo "pass for 999: RESTART_NOTICE" >&2 ;; esac',
-        'printf "%s" "$DRIVE_PR_PASS_NOTICE" | grep -q "option B" && echo "pass for 999: ANSWER_KEPT" >&2',
+        'case "$DRIVE_PR_PASS_NOTICE" in "RESTARTED AFTER A PASS DEADLINE"*) echo "pass for 999: RESTART""_NOTICE" >&2 ;; esac',
+        'printf "%s" "$DRIVE_PR_PASS_NOTICE" | grep -q "option B" && echo "pass for 999: ANSWE""R_KEPT" >&2',
         "exit 0",
       ].join("\n"),
     ];

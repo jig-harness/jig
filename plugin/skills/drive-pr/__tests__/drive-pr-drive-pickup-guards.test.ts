@@ -350,7 +350,10 @@ describe("drive.ts --take-over admits and refuses by the holder", () => {
       ]);
       expectSpawnExit({ ...r, stdout: null }, 11);
       expect(r.stderr).toContain("Its doctor verdict: WEDGED");
-      expect(r.stderr).toMatch(/999 --take-over --bots-only -- claude -p/);
+      // The holder drives this PR, so the command carries this drive's pass.
+      expect(r.stderr).toContain(
+        "999 --take-over --bots-only -- sh -c ': pass for 999 --bots-only'",
+      );
       expect(alive(owner.pid)).toBe(true);
     } finally {
       owner.kill();
