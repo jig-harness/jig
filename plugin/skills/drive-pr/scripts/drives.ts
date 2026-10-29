@@ -696,6 +696,9 @@ async function gatherDoctorInput(
     passChild,
     quotaPark: snapshot.ok ? snapshot.state.quotaPark : null,
     parkedCount: snapshot.ok ? snapshot.state.parked.length : 0,
+    parkedQuestions: snapshot.ok
+      ? snapshot.state.parked.map((p) => p.reason)
+      : [],
     leftovers,
     stallThresholdMs: stallThresholdMs(),
     pr: row.key,

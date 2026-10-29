@@ -40,7 +40,7 @@ question.
 | `accepted` | The finding is real, and worth fixing in this pull request | A minimal fix, and the same fix on its siblings | Only after the checks pass and the fix is pushed | The fix commit | A hit |
 | `rejected` | The finding is wrong, already handled, or intended | None | At once | The reason, citing the code, decision record or test | A false positive |
 | `wont-fix` | The finding is real but optional: the [triage rubric](references/triage-rubric.md) says the change costs more than it is worth here | None | At once | The rubric row that declined it, and a count in the round report | A hit, on something that did not matter enough |
-| `deferred` | The finding is real and must be fixed some day, but not in this pull request: it widens the scope, needs a decision the agent may not make, or depends on other work | None | At once, once the follow-up issue's link is on the thread | A tracked follow-up issue ([deferral protocol](references/deferral-protocol.md)) | A hit, on work still owed |
+| `deferred` | The finding is real and must be fixed some day, but not in this pull request: it widens the scope, needs a decision the agent may not make, or depends on other work | None | At once, once the follow-up issue's link, or the link to the pull request's `## Deferred` section, is on the thread | A tracked follow-up issue, or an entry in the pull request's `## Deferred` section where no tracker adapter can file ([deferral protocol](references/deferral-protocol.md)) | A hit, on work still owed |
 | `moot` | The finding no longer applies: its code was removed or rewritten, another fix covered it, or it repeats a thread fixed elsewhere | None | At once; if this round's unpushed fix is what made it moot, with that fix | What made it moot | Neither: the reviewer may have been right about code that is gone |
 
 The rubric and the [Review Arbiter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
@@ -58,7 +58,9 @@ and confusing them sends the wrong signal:
   tracker with follow-ups nobody needs.
 - `deferred` says the reviewer was **right** and the work is **owed**. It is
   the only outcome that leaves work behind, so nothing is deferred without a
-  tracked issue.
+  tracked issue, or, where no tracker adapter can file one, an entry in the
+  pull request's own `## Deferred` section that `file-deferred.ts` files
+  later.
 
 ### What the outcomes are for
 
@@ -212,8 +214,20 @@ the [deferral protocol](references/deferral-protocol.md) requires a tracked
 follow-up before a deferred thread resolves. The executable deferral adapter
 files those follow-ups in Linear directly, through Linear's GraphQL API, with
 the credential in `LINEAR_API_TOKEN` or `LINEAR_API_KEY`. It does not go
-through the [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) that `do-item` and `drive-pr` use, so
-another tracker needs its own deferral adapter.
+through the [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) that `do-item` and `drive-pr` use. Where it
+cannot file (another tracker, or no Linear credential), `defer-in-pr.ts`
+records the finding in a `## Deferred` section of the pull request body, by
+read-modify-write against the body's update time so a person's edit there
+survives, and the thread resolves with `**deferred**` linking that section.
+`file-deferred.ts`, run from the repository's post-merge step or on a
+pull request closed without merging, files each entry through the tracker
+interface where an adapter can and replaces it with its issue's link.
+
+A review bot's follow-up to a reply (a confirmation, or a chat
+acknowledgement with no outcome token and no finding) is transparent when the
+bot is listed in `review.bots`: it is never triaged or answered, and a held
+thread resolves over it. A comment the check cannot classify is a new
+comment.
 
 Where the repository turned on the [`changelog`](../changelog/README.md) skill
 (`changelog.file` in the `.config/jig.yaml` its base branch holds), an accepted fix that changes

@@ -144,6 +144,7 @@ One block per thread, nothing else:
 ```text
 thread: <threadId or url>
 verdict: fix-now | rejected | wont-fix | defer | escalate
+class: <escalate only: the decision class that keeps this call a person's>
 rationale: <ONE sentence, concrete, citing the code/rule/priority that decided it>
 reply-draft: <the reply body, opening with the matching outcome token per
   `/jig:resolve-review-comments` § 3. When the verdict came from a `declined`
@@ -160,6 +161,22 @@ reply-draft: <the reply body, opening with the matching outcome token per
 
 The rationale sentence must stand on its own in the PR's audit trail — cite
 `file:line`, an ADR, or a rubric row, not "seems minor".
+
+`class:` appears on an `escalate` ruling only, and names one of the
+repository's park classes (`autonomy.park_classes`, by default the rows of
+its human-in-the-loop registry plus `escalated` and `human-decision`). Pick
+it by these rules, in order:
+
+1. `human-decision` whenever the fix would change a value the PR records as
+   a human decision, or add or change a rule inside a human-decided span
+   (the rule above). Always this class, never another.
+2. The registry row the call belongs to, when one does: `scope` for a fix
+   that widens the PR's scope, `human-thread` for overruling a person's
+   thread, `legal` for a privacy or regulatory call, and so on.
+3. `escalated` for a product or stakeholder call no row names.
+
+The class is your ruling, not the caller's claim: the caller parks the thread
+under it as given. A call that fits no class is not an escalation; rule it.
 
 ## When NOT to be invoked
 

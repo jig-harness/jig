@@ -14,8 +14,21 @@ this `references/` directory. Run the commands from the repository root.
 
 A deferral is the one outcome that leaves work behind after the thread closes.
 That makes it the outcome most likely to be lost, so it is the one with the
-strictest contract: nothing is deferred without a tracked issue, and no thread
-resolves before that issue's link is on it.
+strictest contract: nothing is deferred without a tracked issue, or, where no
+tracker adapter can file one, an entry in the pull request's own
+`## Deferred` section ([Deferral without a tracker](#deferral-without-a-tracker));
+and no thread resolves before the issue's or the entry's link is on it. A
+deferral is therefore never a park.
+
+## Contents
+
+- [When to defer](#when-to-defer)
+- [Who decides a deferral](#who-decides-a-deferral)
+- [Batching is the default](#batching-is-the-default)
+- [Deferral without a tracker](#deferral-without-a-tracker)
+- [Filing the follow-up issue](#filing-the-follow-up-issue)
+- [Worked shape](#worked-shape)
+- [Anti-patterns](#anti-patterns)
 
 ## When to defer
 
@@ -193,6 +206,51 @@ the `--category` option of `triage-ladder.ts` (`unknown` when the reviewer emits
 The batch issue follows every rule below (labels, parent, description fields)
 exactly as an individual follow-up would — the helper applies them
 mechanically; batching changes the issue count, never the contract.
+
+## Deferral without a tracker
+
+The batch step files on Linear only, until the deferral moves onto the tracker
+interface. Before step 1, ask where this deferral goes:
+
+```bash
+bun "<skill-dir>/scripts/defer-in-pr.ts" route
+```
+
+`defer-batch` means step 1 files as above. `pr-body: <why>` (the
+repository's adapter is another, or no Linear credential is set) means record
+the finding in the pull request's own `## Deferred` section instead, at every
+autonomy level. Write the reviewer's finding verbatim to `finding.txt` with
+the file-writing tool, then:
+
+```bash
+bun "<skill-dir>/../../shared/command.ts" --stdin-file finding.txt -- bun "<skill-dir>/scripts/defer-in-pr.ts" <PR#> --thread-url <url> --reason '<why deferred>'
+```
+
+A summary-only finding uses `--comment-url <url> --fingerprint <fp>` in place
+of `--thread-url`, as for `defer-batch.ts`. The script adds the entry (the
+finding quoted, the reason, the source's link) between hidden markers in the
+body, by read-modify-write against the body's `updated_at`, so a person's
+edits to the body survive; a finding already there is not added twice. It
+prints the section's link. Then reply, opening with the `**deferred**` token
+and linking the section, and resolve:
+
+```text
+**deferred** — real, but it needs the connector refactor first; recorded in the pull request's Deferred section: <link>.
+```
+
+The entries are filed later, where an adapter can: `file-deferred.ts`
+files each through the tracker interface (`issue_tracker.adapter`) with the
+`followup` role's label, and replaces it with its issue's link. Run it from
+the repository's own post-merge step, or on a pull request closed without
+merging:
+
+```bash
+bun "<skill-dir>/scripts/file-deferred.ts" <PR#>
+```
+
+It exits `3` when entries remain because no adapter could file them. With no
+tracker at all, the entries stay in the merged pull request's body for a
+person to file.
 
 ## Filing the follow-up issue
 

@@ -55,6 +55,10 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "review.repo_slug",
   "review.repo_label",
   "ci.required_checks",
+  // The repository's autonomy ceiling and its human-in-the-loop classes: a
+  // person may choose a level up to the ceiling, never move it.
+  "autonomy.max_level",
+  "autonomy.park_classes",
   // The changelog skill reads its section from the repository's file alone,
   // so no field of it is one a user file may set.
   "changelog.file",

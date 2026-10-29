@@ -252,7 +252,11 @@ no synonyms. Materiality and scope calls follow the
 decide goes to the [**Review Arbiter**](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) agent
 (`jig:review-arbiter`, shipped with the plugin; in Codex, see the
 [Codex notes](../../README.md#codex-notes)), and only an arbiter escalation
-interrupts the user. When that escalation turns out to be an **architectural**
+interrupts the user. An `escalate` ruling carries a `class:`, the decision
+class of the repository's human-in-the-loop registry that keeps the call a
+person's (`human-decision` for a value the pull request records as a person's
+decision, else the registry row, else `escalated`); under a drive it is the
+class the item is parked under (drive-pr § 4). When that escalation turns out to be an **architectural**
 question rather than a product/scope one — which pattern, which contract
 shape, which boundary — route it through the `decide` skill (`/jig:decide`)
 before interrupting: it checks the question against the repository's
@@ -506,7 +510,11 @@ not being made. It scores as a true positive carrying a materiality signal.
 decides only on arbiter escalation. File the issue — by default an entry in
 the per-PR+Type **batch** issue via `scripts/defer-batch.ts`; an individual
 issue (using the consumer's issue-creation workflow) only when the round report justifies one —
-then reply with its link, then resolve. Follow
+then reply with its link, then resolve. Where no adapter can file
+(`bun "${CLAUDE_SKILL_DIR}/scripts/defer-in-pr.ts" route` prints `pr-body`),
+record the finding in the pull request's own `## Deferred` section with
+`scripts/defer-in-pr.ts` instead and reply with the section's link: a
+deferral is never a park. Follow
 [deferral-protocol.md](references/deferral-protocol.md) exactly — it specifies
 the `pr-followup` label, the epic-parenting rule, and the batch-by-default
 contract (it, not this line, owns the batch key — restating it here is how the
@@ -1010,6 +1018,11 @@ invocation and reported — see below.
 
 Resolving another person's thread is a social act:
 
+- **A bot's transparent follow-up** — a confirmation, or an acknowledgement
+  with no outcome token and no finding, from a bot `review.bots` lists,
+  posted after your reply — is not a new comment: never triage it or answer
+  it ([`review.bots`](../../CONFIGURATION.md#review)). Anything the
+  predicate cannot classify is a new comment.
 - **Bot threads** — address, reject, or defer and resolve freely. The expected identities come from `review.bots`, when set; `--bots-only` uses
   GitHub App authorship rather than a consumer-specific hard-coded list.
 - **Human threads** — address or reply, but prefer to leave the *resolution* to

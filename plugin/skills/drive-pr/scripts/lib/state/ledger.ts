@@ -34,6 +34,11 @@ import {
   isUsableState,
 } from "./schema.ts";
 import { type TakeoverRecord, isTakeoverRecord } from "./takeover.ts";
+import {
+  type UnattendedDecision,
+  decisionsSection,
+  isUnattendedDecision,
+} from "./decisions.ts";
 
 export const LEDGER_MARKER = "<!-- drive-pr-ledger -->";
 export const CLAIM_MARKER = "<!-- drive-pr-takeover-claim -->";
@@ -96,8 +101,8 @@ export interface Ledger {
   quotaPark: QuotaParkRecord | null;
   takeovers: TakeoverRecord[];
   claims: LedgerClaimRef[];
-  /** Decisions taken unattended; empty until the autonomy levels record them. */
-  decisions: unknown[];
+  /** The decisions the agent took and recorded (`decisions.ts`). */
+  decisions: UnattendedDecision[];
   driver: LedgerDriver;
   /** The handoff narrative's last lines. */
   narrative: string[];
@@ -143,7 +148,7 @@ export function ledgerFromState(
     quotaPark: s.quotaPark,
     takeovers: s.takeovers ?? [],
     claims: opts.claims,
-    decisions: [],
+    decisions: s.decisions ?? [],
     driver: opts.driver,
     narrative: opts.narrative.slice(-NARRATIVE_LINES),
     cut: [],
@@ -169,6 +174,11 @@ function commentSafeJson(value: unknown): string {
     .replaceAll(">", "\\u003e");
 }
 
+/** A Markdown line whose agent-authored parts cannot open an HTML tag. */
+function summaryLine(line: string): string {
+  return line.replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
 /** One line of agent-authored text, safe in the visible summary. */
 function summaryText(text: string): string {
   return text
@@ -191,9 +201,11 @@ function ledgerBody(l: Ledger, parkedList: boolean): string {
     lines.push("", "Parked, awaiting a person:");
     for (const p of l.parked)
       lines.push(
-        `- \`${p.key}\` (${p.kind}, round ${p.round}): ${summaryText(p.reason)}`,
+        `- \`${p.key}\` (${p.kind}, ${p.class ?? "no class"}, round ${p.round}): ${summaryText(p.reason)}`,
       );
   }
+  if (l.decisions.length > 0)
+    lines.push("", ...decisionsSection(l.decisions).map(summaryLine));
   if (l.cut.length > 0)
     lines.push(
       "",
@@ -309,7 +321,10 @@ function ledgerFault(v: Record<string, unknown>): string {
       Array.isArray(v.takeovers) && v.takeovers.every(isTakeoverRecord),
     ],
     ["claims", Array.isArray(v.claims) && v.claims.every(isClaimRef)],
-    ["decisions", Array.isArray(v.decisions)],
+    [
+      "decisions",
+      Array.isArray(v.decisions) && v.decisions.every(isUnattendedDecision),
+    ],
     ["driver", isLedgerDriver(v.driver)],
     ["narrative", Array.isArray(v.narrative) && v.narrative.every(isText)],
     ["cut", Array.isArray(v.cut) && v.cut.every(isText)],
@@ -556,6 +571,7 @@ export function seedFromLedger(
     held,
     quotaPark: l.quotaPark,
     takeovers: l.takeovers,
+    decisions: l.decisions,
     ledgerGeneration: l.generation,
   };
   if (!isUsableState(state, local.pr))

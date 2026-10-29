@@ -145,7 +145,7 @@ import { retryAttempts } from "../../../shared/retry.ts";
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isTrustedBotConfirmation } from "./lib/bot-confirmation.ts";
+import { isTransparentFollowUp } from "./lib/bot-confirmation.ts";
 import { fail, isDigits, isGitSha, runMain, short } from "./lib/cli.ts";
 import { hasLeaveOpenMarker, qualifyingOutcome } from "./lib/outcome.ts";
 import {
@@ -828,7 +828,7 @@ async function checkUntriagedThreads(
     return later.every(
       (c) =>
         typeof c.url === "string" &&
-        isTrustedBotConfirmation(
+        isTransparentFollowUp(
           { authorLogin: c.author, body: c.body },
           qualifyingOutcome,
         ),
@@ -842,7 +842,7 @@ async function checkUntriagedThreads(
    * confirmation. `currentReplyOutcome` cannot be reused here:
    * once a confirmation follows the held reply, the literal latest comment
    * IS that confirmation, which carries no outcome token by construction
-   * (`isTrustedBotConfirmation` requires exactly that) — comparing THAT
+   * (`isTransparentFollowUp` requires exactly that) — comparing THAT
    * against the held outcome would always read `null`, defeating the
    * tolerance above at the very next check. This performs the identical
    * "edited in place" catch `currentReplyOutcome` performs for the
@@ -1097,7 +1097,7 @@ async function checkUntriagedThreads(
       // `triage-thread.ts` — is just as broken for a truncated thread as plain
       // `triage-thread.ts` is. The one remedy that actually works is the
       // documented one.
-      return "this thread is comment-truncated (>100 comments) — triage-thread.ts refuses it unconditionally, so the only working remedy is drive-state.ts park [PR] --key <id> --reason '...' (SKILL.md § 4)";
+      return "this thread is comment-truncated (>100 comments) — triage-thread.ts refuses it unconditionally, so the only working remedy is drive-state.ts park [PR] --key <id> --kind thread --class human-thread with its decision record on stdin (SKILL.md § 4)";
     }
     const key = t.threadId;
     const outcome = currentReplyOutcome(t);

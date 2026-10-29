@@ -661,8 +661,8 @@ async function main(): Promise<number> {
       `triage-thread.ts: thread ${threadId} has more than 100 comments (commentsTruncated).`,
       "Per /resolve-review-comments § 2 and SKILL.md § 3, a reply past the cap could",
       "supersede what is visible, so this is never handled automatically. Park it",
-      "instead:",
-      `  drive-state.ts park [PR] --key ${threadId} --kind thread --reason "..."`,
+      "under the class the cap protects, with its decision record on stdin (SKILL.md § 4):",
+      `  drive-state.ts park [PR] --key ${threadId} --kind thread --class human-thread < record.md`,
     );
   }
 

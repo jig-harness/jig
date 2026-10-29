@@ -3,6 +3,7 @@
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
+import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -419,17 +420,9 @@ describe("drive-state.ts durability", () => {
       for (const [i, reason] of reasons.entries()) {
         await state(
           d,
-          [
-            "park",
-            "999",
-            "--key",
-            `PRRT_${i}`,
-            "--kind",
-            "thread",
-            "--reason",
-            reason,
-          ],
+          parkArgs(`PRRT_${i}`, "thread"),
           { DRIVE_PR_HANDOFF_DIR: hd },
+          parkRecord(reason),
         );
       }
       if (previousNarrative !== undefined) {
@@ -445,15 +438,21 @@ describe("drive-state.ts durability", () => {
       const out = await handoff(["choose A | B — a product call"]);
       const row = out.split("\n").find((l) => l.includes("PRRT_0"));
       expect(row).toBeDefined();
-      // Four cells, so the decision is still in the column that states it.
-      expect((row as string).match(/\|/g)?.length).toBe(5);
+      // Five cells, so the decision is still in the column that states it.
+      expect((row as string).match(/\|/g)?.length).toBe(6);
       expect(row).toContain("&#124;");
     });
 
-    it("keeps a MULTILINE reason on one row instead of spilling into prose", async () => {
-      const out = await handoff(["first line\nsecond line"]);
-      const row = out.split("\n").find((l) => l.includes("PRRT_0"));
-      expect(row).toContain("first line second line");
+    it("refuses a MULTILINE question, so no row spills into prose", async () => {
+      const d = stateDirFor("handoff-multiline");
+      const r = await state(
+        d,
+        parkArgs("PRRT_0", "thread"),
+        { DRIVE_PR_HANDOFF_DIR: join(d, "handoff") },
+        parkRecord("first line\nsecond line"),
+      );
+      expect(r.exitCode).toBe(2);
+      expect(r.stderr).toContain("Question must be one line");
     });
 
     it("a reason QUOTING the narrative marker does not move the boundary", async () => {
@@ -477,8 +476,9 @@ describe("drive-state.ts durability", () => {
       const below = out.slice(out.indexOf(marker) + marker.length);
       // The machine block stays above the boundary, in one copy.
       expect(below).not.toContain("PRRT_1");
+      // Its table row and its framed decision, both above the boundary.
       expect(out.split("\n").filter((l) => l.includes("PRRT_1")).length).toBe(
-        1,
+        2,
       );
     });
 
@@ -569,17 +569,9 @@ describe("drive-state.ts durability", () => {
 
       await state(
         d,
-        [
-          "park",
-          "999",
-          "--key",
-          "PRRT_parked",
-          "--kind",
-          "thread",
-          "--reason",
-          "product call",
-        ],
+        parkArgs("PRRT_parked", "thread"),
         env,
+        parkRecord("Is it a product call"),
       );
       out = readFileSync(path, "utf8");
       expect(out).toContain("PRRT_parked");

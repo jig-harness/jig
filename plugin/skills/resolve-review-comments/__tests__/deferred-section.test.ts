@@ -1,0 +1,272 @@
+/**
+ * Deferral without a tracker: a finding recorded in the pull request's
+ * `## Deferred` section by read-modify-write against the body's `updated_at`,
+ * so a person's edit survives, and `file-deferred.ts` filing each entry
+ * through a tracker adapter (the GitHub adapter over a fake transport) and
+ * replacing it with its issue.
+ */
+import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { gitHub, repoLabels } from "../../do-item/__tests__/github-fixtures.ts";
+import { deferInPr, deferralRoute } from "../scripts/defer-in-pr.ts";
+import { fileDeferred } from "../scripts/file-deferred.ts";
+import {
+  deferredEntries,
+  SECTION_END,
+  SECTION_START,
+  withDeferredEntry,
+} from "../scripts/lib/deferred-section.ts";
+import type { PrBody, PrBodyForge } from "../scripts/lib/pr-body.ts";
+
+const PR_URL = "https://github.com/example/project/pull/42";
+const THREAD = `${PR_URL}#discussion_r1001`;
+const FINDING =
+  "The retry budget is read without validation.\n\nIt can go negative.";
+
+/** A pull request body in memory, with a hook that runs before each read. */
+function fakeForge(initial: string): PrBodyForge & {
+  state: PrBody;
+  beforeRead: Array<(s: PrBody) => void>;
+  writes: number;
+} {
+  let clock = 0;
+  const state: PrBody = {
+    body: initial,
+    updatedAt: "2026-10-29T00:00:00Z",
+    url: PR_URL,
+  };
+  const forge = {
+    state,
+    beforeRead: [] as Array<(s: PrBody) => void>,
+    writes: 0,
+    async read() {
+      forge.beforeRead.shift()?.(state);
+      return { ...state };
+    },
+    async write(_pr: string, body: string) {
+      forge.writes += 1;
+      state.body = body;
+      state.updatedAt = `2026-10-29T00:00:0${++clock}Z`;
+    },
+  };
+  return forge;
+}
+
+describe("the deferred section", () => {
+  test("is created at the end of the body and read back", () => {
+    const { body, added } = withDeferredEntry("## Summary\n\nWhat changed.", {
+      source: THREAD,
+      finding: FINDING,
+      reason: "it needs the configuration rework first",
+    });
+    expect(added).toBe(true);
+    expect(body).toStartWith("## Summary\n\nWhat changed.\n\n## Deferred");
+    expect(body).toContain(SECTION_START);
+    expect(body).toContain(SECTION_END);
+    expect(body).toContain("> The retry budget is read without validation.");
+    const [entry] = deferredEntries(body);
+    expect(entry?.source).toBe(THREAD);
+    expect(entry?.filed).toBeUndefined();
+    expect(entry?.text).toContain("it needs the configuration rework first");
+  });
+
+  test("does not add the same finding twice", () => {
+    const once = withDeferredEntry("", {
+      source: THREAD,
+      finding: FINDING,
+      reason: "later",
+    }).body;
+    expect(
+      withDeferredEntry(once, {
+        source: THREAD,
+        finding: FINDING,
+        reason: "later",
+      }).added,
+    ).toBe(false);
+  });
+
+  test("keys a summary finding on its comment and fingerprint", () => {
+    const comment = `${PR_URL}#issuecomment-77`;
+    let body = withDeferredEntry("", {
+      source: comment,
+      fingerprint: "fp-a",
+      finding: "first",
+      reason: "later",
+    }).body;
+    body = withDeferredEntry(body, {
+      source: comment,
+      fingerprint: "fp-b",
+      finding: "second",
+      reason: "later",
+    }).body;
+    expect(deferredEntries(body).map((e) => e.fingerprint)).toEqual([
+      "fp-a",
+      "fp-b",
+    ]);
+  });
+});
+
+describe("written by read-modify-write against updated_at", () => {
+  test("a person's edit between the reads survives, and the entry lands", async () => {
+    const forge = fakeForge("## Summary\n\nWhat changed.");
+    // The second read (just before the write) finds a person's edit.
+    forge.beforeRead.push(
+      (s) => void s,
+      (s) => {
+        s.body = "## Summary\n\nWhat changed, and why, edited by a person.";
+        s.updatedAt = "2026-10-29T00:00:30Z";
+      },
+    );
+    const r = await deferInPr(forge, {
+      pr: "42",
+      source: THREAD,
+      reason: "it needs the configuration rework first",
+      finding: FINDING,
+    });
+    expect(r.added).toBe(true);
+    expect(r.link).toBe(`${PR_URL}#deferred`);
+    expect(forge.writes).toBe(1);
+    expect(forge.state.body).toContain("edited by a person");
+    expect(deferredEntries(forge.state.body)).toHaveLength(1);
+  });
+
+  test("a re-run after the entry landed writes nothing", async () => {
+    const forge = fakeForge("");
+    const args = {
+      pr: "42",
+      source: THREAD,
+      reason: "later",
+      finding: FINDING,
+    };
+    await deferInPr(forge, args);
+    const again = await deferInPr(forge, args);
+    expect(again.added).toBe(false);
+    expect(forge.writes).toBe(1);
+  });
+});
+
+describe("file-deferred.ts files each entry through the tracker", () => {
+  function trackerThatFiles() {
+    let next = 40;
+    return gitHub((c) => {
+      if (c.op === "TrackerRepository") return { repository: { id: "R_1" } };
+      if (c.op === "TrackerLabels") return repoLabels("pr-followup");
+      if (c.op === "TrackerCreate") {
+        next += 1;
+        return {
+          createIssue: {
+            issue: {
+              number: next,
+              url: `https://github.com/acme/app/issues/${next}`,
+            },
+          },
+        };
+      }
+      throw new Error(`unexpected ${c.op}`);
+    });
+  }
+
+  test("replaces each entry with its issue, leaving the rest of the body", async () => {
+    let body = "## Summary\n\nWhat changed.";
+    for (const n of [1, 2])
+      body = withDeferredEntry(body, {
+        source: `${PR_URL}#discussion_r${n}`,
+        finding: `Finding ${n} is real.`,
+        reason: `reason ${n}`,
+      }).body;
+    const forge = fakeForge(body);
+    const { t, calls } = trackerThatFiles();
+    const r = await fileDeferred(forge, t, "42", { label: "pr-followup" });
+    expect(r.filed.map((f) => f.key)).toEqual(["#41", "#42"]);
+    expect(r.remaining).toEqual([]);
+    const entries = deferredEntries(forge.state.body);
+    expect(entries.map((e) => e.filed?.key)).toEqual(["#41", "#42"]);
+    expect(forge.state.body).toStartWith("## Summary\n\nWhat changed.");
+    expect(forge.state.body).toContain(
+      "filed as [#41](https://github.com/acme/app/issues/41)",
+    );
+    const created = calls.filter((c) => c.op === "TrackerCreate");
+    expect(created).toHaveLength(2);
+    const input = created[0]?.variables.input as {
+      title: string;
+      body: string;
+    };
+    expect(input.title).toBe("Deferred from PR #42: Finding 1 is real.");
+    expect(input.body).toContain("Filed by `file-deferred.ts`");
+    expect(input.body).toContain("reason 1");
+  });
+
+  test("a second run files nothing more", async () => {
+    const forge = fakeForge(
+      withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
+        .body,
+    );
+    await fileDeferred(forge, trackerThatFiles().t, "42", {
+      label: "pr-followup",
+    });
+    const { t, calls } = trackerThatFiles();
+    const again = await fileDeferred(forge, t, "42", { label: "pr-followup" });
+    expect(again.filed).toEqual([]);
+    expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(0);
+  });
+
+  test("with no tracker, the entries stay and say why", async () => {
+    const forge = fakeForge(
+      withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
+        .body,
+    );
+    const r = await fileDeferred(forge, null, "42", {
+      label: "pr-followup",
+      noTrackerWhy: "no tracker adapter can file: none configured",
+    });
+    expect(r.remaining).toHaveLength(1);
+    expect(r.why).toContain("none configured");
+    expect(forge.writes).toBe(0);
+  });
+});
+
+describe("the route a deferral takes", () => {
+  test("the pull request body when the adapter is not Linear", () => {
+    expect(deferralRoute({ issue_tracker: { adapter: "github" } }, {})).toEqual(
+      {
+        route: "pr-body",
+        why: "the batch step files on Linear only, and issue_tracker.adapter is github",
+      },
+    );
+    expect(deferralRoute({}, {}).route).toBe("pr-body");
+  });
+
+  test("the pull request body on Linear with no credential", () => {
+    expect(
+      deferralRoute({ issue_tracker: { adapter: "linear" } }, {}).route,
+    ).toBe("pr-body");
+  });
+
+  test("the batch step on Linear with a credential", () => {
+    expect(
+      deferralRoute(
+        { issue_tracker: { adapter: "linear" } },
+        { LINEAR_API_KEY: "x" },
+      ).route,
+    ).toBe("defer-batch");
+  });
+
+  test("the command line prints the route", async () => {
+    const proc = Bun.spawn(
+      scriptArgv(
+        join(import.meta.dir, "..", "scripts", "defer-in-pr.ts"),
+        "route",
+      ),
+      {
+        env: { ...process.env, JIG__ISSUE_TRACKER__ADAPTER: "github" },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const out = await new Response(proc.stdout).text();
+    await expectSpawnExited(proc, 0);
+    expect(out).toStartWith("pr-body: ");
+  });
+});

@@ -1,22 +1,43 @@
 /**
- * The "a comment landing after a held reply is compatible with that reply
- * only when it is a reviewer bot's own automated confirmation" test, shared so
- * `resolve-held-thread.ts` and `finish-round.ts`'s pre-push untriaged-thread
- * guard apply the IDENTICAL predicate. `finish-round.ts`'s
- * `checkUntriagedThreads` runs BEFORE the push; judging strictly against the
- * literal latest comment there would refuse the round on the very
- * confirmation `resolve-held-thread.ts`'s own exception exists to tolerate,
- * making that exception unreachable in the documented finish-round path
- * whenever CodeRabbit's confirmation lands before the push rather than during
- * the post-push AWAITING_REVIEWER wait. A single predicate rules that out by
- * construction — a change to what counts as a trusted confirmation cannot land
- * in one caller and not the other.
+ * Which comments landing after a held reply are transparent to it: a review
+ * bot's follow-up that carries no new finding, so the held thread still
+ * resolves on the verified push and nobody answers the follow-up.
+ *
+ * Two kinds of follow-up land there. A bot's **confirmation** after a push
+ * ("synchronized as addressed") is a review feature and carries the bot's
+ * confirmation marker. A bot's **chat acknowledgement** of a reply
+ * ("acknowledged, nothing further requested") is a chat feature, carries the
+ * bot's generated-reply marker (its chat marker) and lands on every answered
+ * thread every round. Both are transparent when:
+ *
+ *  - the author is a listed review bot (`review.bots`, compared by login
+ *    without regard to case or a `[bot]` suffix; with no list, the built-in
+ *    entries below). An association check cannot tell a bot from a person
+ *    (both read `NONE`), and logins are unique across users and bots;
+ *  - no unquoted line of the body opens with an outcome token;
+ *  - the body carries that bot's confirmation marker, or its chat marker and
+ *    none of the bot's finding shape: no line a severity format for that
+ *    login reads as a severity (`lib/severity-formats.ts`), since a chat
+ *    reply can embed a fresh finding.
+ *
+ * Anything else is a newer comment and is triaged. No override exists for an
+ * agent to assert that a comment is harmless: a comment this predicate
+ * cannot classify is triaged, and a guard that refuses a state the agent has
+ * verified is a finding about the guard, never a reason to pass it.
+ *
+ * `resolve-held-thread.ts`, `finish-round.ts`'s pre-push guard and the
+ * status gate's held-thread check apply this one predicate, so a change to
+ * what counts as transparent cannot land in one caller and not the others.
  */
+import { botEntries, type ReviewBot } from "../../../../shared/consumer.ts";
+import { reviewBotEntries } from "./overlay.ts";
+import {
+  normalizeLogin,
+  type SeverityFormat,
+  severityOf,
+} from "./severity-formats.ts";
 
-/**
- * CodeRabbit's GraphQL `author.login` (plain, no `[bot]` suffix — the same
- * identity `summary-findings.ts` keys its own CodeRabbit matcher on).
- */
+/** CodeRabbit's GraphQL `author.login` (no `[bot]` suffix). */
 export const CODERABBIT_LOGIN = "coderabbitai";
 
 /**
@@ -29,39 +50,109 @@ export const CODERABBIT_CONFIRMATION_MARKER =
   "<!-- coderabbit-skip-review-comment-follow-up -->";
 
 /**
- * Minimal shape both callers' own comment types can supply without
- * reshaping themselves around this module: `resolve-held-thread.ts` reads
- * GraphQL's nested `author{ login }` directly, `finish-round.ts` reads the
- * already-flattened `author` string `list-unresolved-threads.ts` emits. The
- * caller maps its own shape into this at the call site rather than either
- * file adopting the other's.
+ * The marker CodeRabbit writes into every comment it generates, its chat
+ * replies included. Its findings carry it too, which is why a chat
+ * acknowledgement is transparent only with no finding shape in its body.
+ */
+export const CODERABBIT_CHAT_MARKER = "<!-- coderabbit-ai-generated:v1 -->";
+
+/** The markers each known bot uses when its `review.bots` entry names none. */
+const BUILTIN_MARKERS: Readonly<
+  Record<string, { confirmation_marker: string; chat_marker: string }>
+> = {
+  [CODERABBIT_LOGIN]: {
+    confirmation_marker: CODERABBIT_CONFIRMATION_MARKER,
+    chat_marker: CODERABBIT_CHAT_MARKER,
+  },
+};
+
+/** One listed bot with the markers in force for it. */
+export interface BotMarkers {
+  login: string;
+  confirmationMarker: string | null;
+  chatMarker: string | null;
+}
+
+/**
+ * The bots in force and their markers: each `review.bots` entry, a marker it
+ * leaves unset taking the built-in one for that login; with no list, the
+ * built-in entries alone.
+ */
+export function botMarkers(
+  entries: readonly (string | ReviewBot)[] | undefined,
+): BotMarkers[] {
+  const listed: ReviewBot[] =
+    entries === undefined
+      ? Object.keys(BUILTIN_MARKERS).map((login) => ({ login }))
+      : botEntries(entries);
+  return listed.map((e) => {
+    const builtin = BUILTIN_MARKERS[normalizeLogin(e.login)];
+    return {
+      login: normalizeLogin(e.login),
+      confirmationMarker:
+        e.confirmation_marker ?? builtin?.confirmation_marker ?? null,
+      chatMarker: e.chat_marker ?? builtin?.chat_marker ?? null,
+    };
+  });
+}
+
+/**
+ * Minimal shape both callers' comment types can supply:
+ * `resolve-held-thread.ts` reads GraphQL's nested `author{ login }`,
+ * `finish-round.ts` the flattened `author` string
+ * `list-unresolved-threads.ts` emits.
  */
 export interface ConfirmationCandidate {
   authorLogin: string | null;
   body: string | null;
 }
 
-/**
- * Identity AND shape, both required, fail-closed on anything else:
- *  - author is CodeRabbit's account, by login — an association check
- *    cannot tell a bot from a human (both read `NONE`), and logins are
- *    unique across users and bots, so the login alone is the identity;
- *  - the body carries CodeRabbit's confirmation marker, and no outcome
- *    token of its own.
- * `chatgpt-codex-connector` is deliberately absent: no confirmation shape
- * of its own has been observed, and an unrecognized body must refuse.
- *
- * Takes the outcome-parser as a parameter rather than importing
- * `qualifyingOutcome` itself — both current callers already import it from
- * `./outcome.ts` for their own use, and threading it through keeps this
- * module dependency-free of the outcome grammar's own module.
- */
-export function isTrustedBotConfirmation(
-  c: ConfirmationCandidate,
+/** Does any unquoted line of `body` open with an outcome token? */
+function carriesOutcome(
+  body: string,
   qualifyingOutcome: (body: string) => unknown,
 ): boolean {
-  if (c.authorLogin !== CODERABBIT_LOGIN) return false;
+  return body
+    .split("\n")
+    .some(
+      (line) =>
+        !line.trimStart().startsWith(">") && qualifyingOutcome(line) !== null,
+    );
+}
+
+/** Does any line of `body` carry a severity line `login`'s formats read? */
+export function carriesFindingShape(
+  body: string,
+  login: string,
+  formats?: readonly SeverityFormat[],
+): boolean {
+  return body
+    .split("\n")
+    .some((line) => severityOf(line.trim(), login, formats) !== "unknown");
+}
+
+/**
+ * Is this comment, landing after a held reply, transparent to it? See the
+ * module header. `bots` defaults to the configuration's; `formats` to the
+ * severity formats in force.
+ */
+export function isTransparentFollowUp(
+  c: ConfirmationCandidate,
+  qualifyingOutcome: (body: string) => unknown,
+  bots: readonly BotMarkers[] = botMarkers(reviewBotEntries()),
+  formats?: readonly SeverityFormat[],
+): boolean {
+  if (c.authorLogin === null) return false;
+  const author = normalizeLogin(c.authorLogin);
+  const bot = bots.find((b) => b.login === author);
+  if (bot === undefined) return false;
   const body = c.body ?? "";
-  if (!body.includes(CODERABBIT_CONFIRMATION_MARKER)) return false;
-  return qualifyingOutcome(body) === null;
+  if (carriesOutcome(body, qualifyingOutcome)) return false;
+  if (bot.confirmationMarker !== null && body.includes(bot.confirmationMarker))
+    return true;
+  return (
+    bot.chatMarker !== null &&
+    body.includes(bot.chatMarker) &&
+    !carriesFindingShape(body, author, formats)
+  );
 }

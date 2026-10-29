@@ -22,6 +22,8 @@
  * papering over either.
  */
 
+import { framedDecisionLines } from "./park-frame.ts";
+import { decisionsSection } from "./decisions.ts";
 import {
   existsSync,
   lstatSync,
@@ -446,6 +448,26 @@ function drivenFromLine(s: DriveState): string[] {
   ];
 }
 
+/**
+ * The parked items: a table to scan, then each decision in full, so the
+ * person who reads this decides from it.
+ */
+function parkedSection(parked: DriveState["parked"]): string[] {
+  const lines = ["", "## Parked — awaiting a human decision", ""];
+  if (parked.length === 0) return [...lines, "_None._"];
+  lines.push(
+    "| Key | Kind | Class | Round | Decision needed |",
+    "|---|---|---|---|---|",
+  );
+  for (const p of parked)
+    lines.push(
+      `| \`${p.key}\` | ${p.kind} | ${p.class ?? "(none)"} | ${p.round} | ${cell(p.reason)} |`,
+    );
+  for (const p of parked)
+    lines.push("", "```text", ...framedDecisionLines(p), "```");
+  return lines;
+}
+
 export async function renderHandoff(
   pr: string,
   s: DriveState,
@@ -518,17 +540,8 @@ export async function renderHandoff(
       pr,
     )),
   );
-  lines.push("", "## Parked — awaiting a human decision", "");
-  if (s.parked.length === 0) {
-    lines.push("_None._");
-  } else {
-    lines.push("| Key | Kind | Round | Decision needed |", "|---|---|---|---|");
-    for (const p of s.parked) {
-      lines.push(
-        `| \`${p.key}\` | ${p.kind} | ${p.round} | ${cell(p.reason)} |`,
-      );
-    }
-  }
+  lines.push(...parkedSection(s.parked));
+  lines.push("", ...decisionsSection(s.decisions ?? []));
   // The held batch: replied to, deliberately not yet resolved. This is the
   // half of the round that used to exist only in the agent's context, so it
   // is the half a compaction dropped — and dropping it is silent either way

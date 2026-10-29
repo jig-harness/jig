@@ -20,7 +20,8 @@ Contents: [the file](#the-file) ·
 [configuration layers](#configuration-layers) ·
 [what is derived, not declared](#what-is-derived-not-declared) ·
 [`gates`](#gates) · [`review`](#review) · [`repository`](#repository) ·
-[`pull_requests`](#pull_requests) · [`drive`](#drive) · [`ci`](#ci) ·
+[`pull_requests`](#pull_requests) · [`drive`](#drive) ·
+[`autonomy`](#autonomy) · [`ci`](#ci) ·
 [`issue_tracker`](#issue_tracker) · [`do_item`](#do_item) ·
 [`work_batch`](#work_batch) ·
 [`fleet_health`](#fleet_health) · [`verify`](#verify) ·
@@ -54,7 +55,8 @@ Contents: [the file](#the-file) ·
 - **Wrong types** are refused with an error that names the field, except by
   a few best-effort `drive-pr` readers, which treat a wrong-typed value as
   absent and use the default instead: `review.bots` when it is not a list
-  (entries that are not strings are dropped), `drive.escape_baseline_doc`,
+  (entries that are neither a login nor a mapping with a `login` are
+  dropped), `drive.escape_baseline_doc`,
   and the `fleet_health` fields. The checks below report refused values
   only, and only for the fields they print.
 - **Check it.** `bun <plugin>/skills/resolve-review-comments/scripts/jig-config.ts`
@@ -118,13 +120,15 @@ Command-line flags, where a script has them, override all three.
   all three layers.
 - **Fields only a repository sets.** `gates.command`,
   `repository.base_branch`, `issue_tracker.team`, `review.repo_slug`,
-  `review.repo_label`, `ci.required_checks`, every `changelog` field and
-  every `code_stats` field describe one repository. Set in the user file
+  `review.repo_label`, `ci.required_checks`, `autonomy.max_level`,
+  `autonomy.park_classes`, every `changelog` field and every `code_stats`
+  field describe one repository. Set in the user file
   they would apply to every repository on the machine, so the user file
   refuses them with an error naming the field. An environment variable may still override them for one run,
   except the `changelog` fields, which the `changelog` skill reads from the
   repository's own file alone and refuses from any other layer
-  ([`changelog`](#changelog)).
+  ([`changelog`](#changelog)), and `autonomy.max_level`, the ceiling a
+  person's level is capped by ([`autonomy`](#autonomy)).
 - **Fields only a user file sets.** [`clones`](#clones-user-file-only)
   describes one machine, so a repository's file refuses it; an environment
   variable may still set it for one run.
@@ -175,7 +179,7 @@ How review threads are resolved and how the drive recognises its AI reviewer.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `review.bots` | list of logins | No reviewer named: threads are worked whoever wrote them | resolve-review-comments, drive-pr, review | Reviewer accounts (for example `example-review[bot]`) the review skills name as the repository's reviewers. The review skill works every unresolved thread whether or not it is set; `--bots-only` keys on GitHub App authorship, not on this list. Without `review.reviewer_app`, the drive accepts the reviewer's summary comment only from these logins |
+| `review.bots` | list of logins, or of `{login, confirmation_marker, chat_marker}` | No reviewer named: threads are worked whoever wrote them, and only CodeRabbit's follow-ups are transparent | resolve-review-comments, drive-pr, review | Reviewer accounts (for example `example-review[bot]`) the review skills name as the repository's reviewers. The review skill works every unresolved thread whether or not it is set; `--bots-only` keys on GitHub App authorship, not on this list. Without `review.reviewer_app`, the drive accepts the reviewer's summary comment only from these logins. A comment a listed bot posts after a held reply is **transparent**, resolved with the hold and never triaged or answered, when no line of it opens with an outcome token and it carries the entry's `confirmation_marker`, or its `chat_marker` and no severity line of the bot's finding shape (its [severity formats](EXTENDING.md#severity-formats)); anything else is triaged. `coderabbitai[bot]` defaults to the markers `<!-- coderabbit-skip-review-comment-follow-up -->` and `<!-- coderabbit-ai-generated:v1 -->`. CodeRabbit's chat replies can also be turned off at the source with `chat.auto_reply: false` in `.coderabbit.yaml`, which leaves its reviews, confirmations and tagged commands as they are |
 | `review.job_pattern` | regular expression, or `null` | Reviewer checks recognised by name | resolve-review-comments | Which check runs the review skill waits on. Setting it requires `review.required_checks`. `--job-pattern` overrides it |
 | `review.required_checks` | list of distinct check names | none | resolve-review-comments | Reviewer checks that must each complete before a round is judged. Required when `review.job_pattern` is set. Unrelated to `ci.required_checks` |
 | `review.deferral_team` | team key | none: deferring a finding with no originating issue then needs `--team` | resolve-review-comments | Tracker team that deferred findings are filed into. `--team` overrides it |
@@ -315,6 +319,29 @@ not resolve it either.
 | `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops unconverged (exit `6`). The `--max-rounds` flag overrides it for one run. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
 | `drive.pass_deadline_retries` | whole number ≥ 0 | `2` | drive-pr | How many passes killed at their deadline one drive restarts from, counted in the drive state across re-arms and takeovers until the drive converges or the pull request closes: the driver reports what the killed pass left in the tree, leaves it there and starts the next round. Past this many it stops with exit `15` and says the budget is spent; `0` stops at the first. A value that is not a whole number of at least 0 stops the drive |
 | `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
+
+## `autonomy`
+
+How far an agent may decide without asking a person. The level changes
+nothing the repository's human-in-the-loop registry reserves: a park is
+refused outside `park_classes` at every level, and every decision an agent
+takes is recorded where a person can reverse it. The effective level is read
+at each decision point, so a change applies to the next decision; the drive
+prints it, with where it came from, at the start of every round
+(`bun <plugin>/shared/autonomy.ts` prints the same line).
+
+The repository sets `level` and the ceiling `max_level`. A person's user
+file or the environment (`JIG__AUTONOMY__LEVEL`) may choose a level up to the
+ceiling, never above it; a level above it is capped, and the printed line
+says by what. A session with a person in it, rather than a drive's pass
+(`$DRIVE_PR_TARGET` unset), reads `attended` unless that person set a level
+in their own file or the environment.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `autonomy.level` | `attended`, `unattended` or `wide` | `attended`, today's behaviour | drive-pr, resolve-review-comments, file-issue, decide | `attended`: a skill confirms an issue before filing it, and `decide` escalates an underdetermined call. `unattended`: `file-issue` files without the confirmation, its body saying which skill filed it, from which pull request and why; `decide` gathers the evidence an underdetermined call lacks within the round's budget, then applies its ladder. Under both, a deferral no tracker adapter can file goes into the pull request's `## Deferred` section. `wide` is accepted and acts as `unattended`: its column (provisional decisions and off-hours windows) is not built yet |
+| `autonomy.max_level` | `attended`, `unattended` or `wide` | The repository's own `level`, else `attended` | drive-pr, resolve-review-comments, file-issue, decide | The highest level any layer may choose. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error |
+| `autonomy.park_classes` | list of distinct class names (lower-case words joined by hyphens) | `ready`, `merge`, `release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`, `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`, `escalated`, `human-decision` | drive-pr | The decision classes a drive may park on: the rows of the repository's [human-in-the-loop registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md), by default the template's. Set, it replaces the default list; `escalated` and `human-decision`, which the review arbiter emits, are kept whatever it lists. Only the repository's file sets it |
 
 ## `ci`
 
@@ -807,7 +834,11 @@ gc:
 gates:
   command: make check                    # required by resolve-review-comments
 review:
-  bots: ["example-review[bot]"]
+  bots:
+    - example-review[bot]
+    - login: coderabbitai[bot]           # the markers are CodeRabbit's defaults
+      confirmation_marker: "<!-- coderabbit-skip-review-comment-follow-up -->"
+      chat_marker: "<!-- coderabbit-ai-generated:v1 -->"
   deferral_team: ENG
   repo_label: web
   repo_slug: example/web
@@ -851,6 +882,10 @@ drive:
   max_rounds: 10                         # default round budget of a drive; --max-rounds overrides
   pass_deadline_retries: 2               # passes killed at their deadline a drive restarts from
   escape_baseline_doc: docs/review-loop-baseline.md
+autonomy:
+  level: attended                        # attended | unattended | wide
+  max_level: unattended                  # the ceiling a person's layer may choose up to
+  park_classes: [ready, merge, release, scope, human-thread, reviewer-posture, next-item, reopen-or-waive, dark-dial, rules, destructive, legal, copy]
 ci:
   required_checks: [build, test]
   hold_label: ci:hold

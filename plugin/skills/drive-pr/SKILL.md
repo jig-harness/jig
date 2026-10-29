@@ -941,6 +941,36 @@ two (a takeover and the answers a re-arm read):
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed, released and reopened with a superseding reply; a failed reconciliation is said here | Read each listed thread's last reply first. For each, redo the fix and hold it again with a fresh outcome reply, or triage it afresh |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; each answer is quoted with its url | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
 
+### Autonomy: what the pass decides without a person
+
+**exact** — Read the level at each decision point; act on the column it names.
+
+The repository's `autonomy` section sets how far a pass decides without
+asking ([configuration](../../CONFIGURATION.md#autonomy)). Read the level
+afresh before each decision below, never once per round:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/autonomy.ts"
+```
+
+It prints the effective level and where it came from: the repository's
+`level`, a person's own layer or the environment, capped by the repository's
+`max_level`. A session with a person in it (no `$DRIVE_PR_TARGET`) reads
+`attended` unless that person chose a level. `wide` is accepted by the
+configuration and acts as `unattended`.
+
+| Decision | `attended` | `unattended` |
+|---|---|---|
+| File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | `file-issue` confirms first | File it: the body says which skill filed it, from which pull request and why |
+| Defer a finding where no adapter can file | Record it in the pull request's `## Deferred` section ([deferral protocol](../resolve-review-comments/references/deferral-protocol.md#deferral-without-a-tracker)) | Same |
+| A technical choice `decide` rules reversible inside one pull request | Decide and record | Same |
+| A technical choice `decide` would rule underdetermined | Escalate | Gather the missing evidence within the round's budget, then apply the ladder |
+| A bot-review thread the arbiter rules `escalate` | Park under its `class:` (§ 4) | Same |
+
+The registry's classes are on no row: no level decides them, and a park
+outside them is refused (§ 4). Every decision taken is recorded where a
+person can reverse it (§ 8).
+
 ## One round
 
 ### 0. Is this a repair round? (check first)
@@ -1885,21 +1915,64 @@ proof.
 
 ### 4. Park what needs a human
 
-**judgment** — Decide which unresolved question needs a human under the arbiter/rubric rules and frame that decision; record it with the exact command below.
+**judgment** — Decide which unresolved question is a person's under the registry's classes and frame that decision; record it with the exact command below.
 
-An arbiter `escalate`, or any decision the round is not entitled to make, is
-**parked** — recorded durably, not carried in your head:
+A park is reserved for the decision classes of the repository's
+human-in-the-loop registry, `autonomy.park_classes` (`bun "${CLAUDE_SKILL_DIR}/../../shared/autonomy.ts" classes`
+lists them): by default the registry template's rows (`ready`, `merge`,
+`release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`,
+`reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`),
+`escalated` for a product or stakeholder call the arbiter or `decide`
+escalates, and `human-decision` for a value the pull request records as a
+person's decision or a rule inside a human-decided span. An arbiter
+`escalate` carries its `class:`; park under that class, never one you chose.
+A decision outside the classes is yours to take: decide it, and record it
+where a person can reverse it (§ 8). A park with no class is refused with
+"decide and record it", at every autonomy level.
+
+Write the decision record to a file with the file-writing tool, with these
+six sections in this order, following the
+[writing rules for text that asks a human to decide](../decide/references/human-call-elaboration.md#writing-rules-for-text-that-asks-a-human-to-decide):
+
+```markdown
+## Question
+
+<one sentence, ending with ?>
+
+## Options
+
+- **<name>** — Changes: <what it changes>. Costs: <what it costs>.
+- **<name>** — Changes: <…>. Costs: <…>.
+
+## Recommended
+
+**<name>**, because <why>.
+
+## Class
+
+<the class, the same as --class>
+
+## Steps for a person
+
+None. | - <a command, or a named action>
+
+## Already done
+
+<what you did about it so far>
+```
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key PRRT_kwDO... --kind thread --reason "arbiter escalated: product call on whether disposal is reversible"
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/park-record.md -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key PRRT_kwDO... --kind thread --class escalated
 ```
 
-Parked items stop counting as live work, which is what lets the drive reach
-`HITL_PARKED` instead of waking forever against the same undeferrable threads.
-`--reason` is required: a parked item with no framed decision is a dropped
-finding, not a checkpoint. The park records when it was made: a person
+The script checks the sections mechanically and refuses, naming each missing
+or malformed part. Parked items stop counting as live work, and the drive
+keeps working around them: everything a parked item does not block is driven
+to its end before the drive stops, so `HITL_PARKED` means only the parked
+decisions remain. The stop prints each decision in full, and the handoff file
+and the drive ledger carry them. The park records when it was made: a person
 answers on the item's thread, or in a pull-request comment that names its
 key, and once every parked item is answered the next re-arm unparks them all
 and hands the answers to its first round (§ Picking up a stopped drive).
@@ -2368,10 +2441,33 @@ or (with `--round`) `not-due`.
 
 **judgment** — Write a concise outcome report grounded in this round, then refresh machine state with the exact command below.
 
-Summarise by outcome in the same words the replies use. Include any
+Summarise by outcome in the same words the replies use. Open with the
+autonomy level the round decided under and where it came from, as
+`bun "${CLAUDE_SKILL_DIR}/../../shared/autonomy.ts"` prints it (the driver
+prints the same line at the start of every round). Include any
 verification-fit verdict this round recorded, verbatim — the human reading the
 report is the calibration signal's first consumer, and a verdict that only
-lives in the log is a verdict nobody weighs. Then refresh the handoff:
+lives in the log is a verdict nobody weighs.
+
+**Every decision you took without a person is recorded** where a person can
+find and reverse it, in the same step that took it: a thread reply with the
+outcome token and its rationale, a `decide` ruling as its decision-record
+comment, an issue filed with the filed-by line its body carries
+([`file-issue`](../file-issue/SKILL.md)), a deferral as its entry in the pull
+request's `## Deferred` section. Then add it to the drive's
+`## Decisions taken unattended`, one JSON object on stdin with its class
+(`file-issue`, `defer-without-tracker`, `decide-reversible` or
+`decide-underdetermined`), what was decided, the record's url and how to
+reverse it, in one line each:
+
+**exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" record-decision [PR]
+```
+
+The level is recorded with it. A decision with no record is a defect: count
+it in this report, as the handoff does. Then refresh the handoff:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
@@ -3092,6 +3188,8 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
 - **Never re-arm on `HITL_PARKED` before every parked item is answered.**
   Hand back with the decisions framed; the re-arm admits itself only once a
   person has answered every one.
+- **Never park outside the registry's classes.** A question no class covers
+  is yours to decide and record (§ 4, § 8); the park refuses it anyway.
 - **Never resolve an `accepted` thread before its push lands, and never call
   `resolve-thread.ts` directly on a held item.** `resolve-held-thread.ts`
   verifies `--pushed-sha` against the PR's live head *and* this worktree's
@@ -3108,10 +3206,19 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   re-reads the thread and refuses (restoring the hold) when anything landed
   after the held reply, with narrow exceptions for the reviewer bots'
   automated follow-up, which otherwise wins that race on every drain: a thread **already resolved** on GitHub drains without a
-  mutation, and a later comment that is **CodeRabbit's own confirmation**
-  (its `coderabbit-skip-review-comment-follow-up` marker, no outcome token)
-  is compatible with the hold. Any other later comment — human, another bot,
-  an unrecognized body — still refuses.
+  mutation, and a later comment that is **transparent** is compatible with
+  the hold: its author is a bot `review.bots` lists, no line opens with an
+  outcome token, and it carries that bot's confirmation marker, or its chat
+  marker and none of the bot's finding shape (a severity line). Any other
+  later comment — human, an unlisted bot, an unrecognized body, an
+  acknowledgement that embeds a finding — still refuses.
+- **Never answer a transparent comment, and never assert one.** A bot's
+  confirmation or finding-free acknowledgement after a held reply is not
+  work: do not triage it or reply to it. No override lets you declare a
+  comment harmless: one the predicate cannot classify is a newer comment and
+  is triaged. A guard that refuses a state you verified is a
+  [`/jig:reflect`](../reflect/SKILL.md) finding about the guard, filed in the
+  same round, with the item parked (§ 4) under the class the guard protects.
 - **Never keep the held batch in context alone.** `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold` at
   reply time, `held` to read it back. Releasing differs by kind: a `finding`
   needs an explicit `release-held --key K --token T` after

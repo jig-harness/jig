@@ -1160,6 +1160,15 @@ make, use the entry's term instead.
   claim** on the pull request, the earliest claim wins, and every driver
   reads the claims each round and stops when a newer one is there
   ([drive-pr](plugin/skills/drive-pr/README.md#where-its-state-lives)).
+- **Park and framed decision (of a drive)** — a *PR drive loop* **parks** an
+  item when its decision is a person's: it records it and stops counting it
+  as live work. A park is reserved for the decision classes of the *HITL*
+  registry, and carries a **framed decision**: the question in one sentence,
+  each option with what it changes and costs, the recommended option, the
+  class, the steps a person must take and what the agent already did. Any
+  other decision the agent takes itself and records where a person can
+  reverse it
+  ([ADR-0010](docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)).
 - **CI hold** — an opt-in label on a pull request that the repository's
   continuous-integration workflows honour: while it is present they skip
   their expensive jobs and a required check fails or is cancelled (the

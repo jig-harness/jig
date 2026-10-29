@@ -5,6 +5,7 @@
  * markers, a newer claim stopping the write, `seed-ledger`, and the search
  * that finds the pull requests carrying a ledger.
  */
+import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -90,22 +91,14 @@ describe("the ledger written from the drive state", () => {
     const r = await runScript(
       forge,
       "drive-state.ts",
-      [
-        "park",
-        "999",
-        "--key",
-        "PRRT_x",
-        "--kind",
-        "thread",
-        "--reason",
-        "Pick the schema",
-      ],
+      parkArgs("PRRT_x", "thread"),
       { DRIVE_PR_LEDGER_DRIVER: driverEnv(CLONE) },
+      parkRecord("Which schema does the store keep?"),
     );
     expectSpawnExit(r, 0);
     const [l] = [...ledgersOn(forge).values()];
     expect(l?.parked.map((p) => [p.key, p.reason])).toEqual([
-      ["PRRT_x", "Pick the schema"],
+      ["PRRT_x", "Which schema does the store keep?"],
     ]);
   });
 

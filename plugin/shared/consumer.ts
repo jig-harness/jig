@@ -23,8 +23,26 @@ export { OVERLAY_RELPATH };
 const ADOPTION_DOC =
   "https://github.com/jig-harness/jig/blob/main/plugin/README.md#configure-a-repository";
 
+/**
+ * One `review.bots` entry written as a mapping: the login, and the markers
+ * that make its follow-up after a held reply transparent (drive-pr's
+ * `lib/bot-confirmation.ts`).
+ */
+export interface ReviewBot {
+  login: string;
+  confirmation_marker?: string;
+  chat_marker?: string;
+}
+
+const REVIEW_BOT_KEYS = ["login", "confirmation_marker", "chat_marker"];
+
+/** Every `review.bots` entry as a mapping; a plain login names no markers. */
+export function botEntries(bots: readonly (string | ReviewBot)[]): ReviewBot[] {
+  return bots.map((b) => (typeof b === "string" ? { login: b } : b));
+}
+
 export interface ReviewConfig {
-  bots?: string[];
+  bots?: (string | ReviewBot)[];
   job_pattern?: string;
   required_checks?: string[];
   scanner_apps?: string[];
@@ -284,13 +302,28 @@ const DISTINCT_LISTS: Record<string, string> = {
   scanner_apps: "GitHub App slugs",
 };
 
+/** A `review.bots` entry: a nonempty login, or `{login, …markers}`. */
+function isBotEntry(x: unknown): boolean {
+  if (typeof x === "string") return x.trim() !== "";
+  if (!x || typeof x !== "object" || Array.isArray(x)) return false;
+  const entry = x as Record<string, unknown>;
+  return (
+    Object.keys(entry).every((k) => REVIEW_BOT_KEYS.includes(k)) &&
+    typeof entry.login === "string" &&
+    entry.login.trim() !== "" &&
+    ["confirmation_marker", "chat_marker"].every(
+      (k) =>
+        entry[k] === undefined ||
+        (typeof entry[k] === "string" && (entry[k] as string).trim() !== ""),
+    )
+  );
+}
+
 function checkReviewField(key: string, value: unknown): void {
-  if (
-    key === "bots" &&
-    (!Array.isArray(value) ||
-      value.some((x) => typeof x !== "string" || x.trim() === ""))
-  )
-    throw new Error("review.bots must be a list of nonempty reviewer names");
+  if (key === "bots" && (!Array.isArray(value) || !value.every(isBotEntry)))
+    throw new Error(
+      "review.bots must be a list of nonempty reviewer names, or of {login, confirmation_marker, chat_marker} entries",
+    );
   if (
     ["job_pattern", "deferral_team", "repo_label", "repo_slug"].includes(key) &&
     typeof value !== "string"

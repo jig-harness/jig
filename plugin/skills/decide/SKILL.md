@@ -239,6 +239,25 @@ to bottom and take the first row that matches:
 | The choice is reversible inside one pull request, with no persisted-data and no published-contract consequence | `decided` | The architect agent may take it |
 | Anything else | `escalated` | A human |
 
+**The `underdetermined` row depends on the autonomy level.** Read it when you
+reach that row:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/autonomy.ts"
+```
+
+Under `attended` (the default, and every session a person runs unless they
+chose a level), the row stands: name the missing evidence and stop there.
+Under `unattended` (a drive's pass, where the repository allows it), nobody is
+there to gather it: gather the missing evidence yourself within the round's
+remaining budget (read the code, run the measurement, check the record),
+then work the ladder again from the top with it. A call the evidence still
+leaves underdetermined, or that needs more than the round has, takes the next
+row that matches (usually `escalated`), never a guess. Say in the record that
+the evidence was gathered unattended and what it was. Under a drive, add the
+ruling to the drive's decisions taken unattended (drive-pr § 8) with its
+record's link. The escalate rows do not change with the level.
+
 `hitl` marks a human-in-the-loop decision; `hitl:<stakeholder>` names whose
 call it is (the label conventions `/jig:do-item` reads). A repository
 that names the label differently sets it in `issue_tracker.labels.hitl`; read
@@ -297,7 +316,7 @@ average them into a confident recommendation. Two competent passes disagreeing
 | `decided` | A **decision note** comment on the live issue (default). An ADR **only** if it clears the bar below |
 | `escalated` | An issue carrying `hitl` + `hitl:<stakeholder>` (+ any `decide.escalation_labels`), its body in the [decision record](references/decision-record.md) format — plus a decision sheet above the threshold below |
 | `human-decided` | A follow-up **decision note** comment on that same `hitl` issue, folding the human's ruling (and the reasoning behind it) back onto it — not a new issue. If the issue carries a decision sheet, regenerate it so the call shows as decided |
-| `underdetermined` | A spike issue naming the missing evidence and what would settle it |
+| `underdetermined` | A spike issue naming the missing evidence and what would settle it. Under `unattended` this verdict is reached only when the evidence could not be gathered within the round (Phase 3) |
 
 With no issue tracker configured, every outcome lands in the reply, and an
 issue the table asks for is a draft the user files.
@@ -334,6 +353,12 @@ threshold, and a human later asks to see the trade-offs on them**, elaborate per
 [`references/human-call-elaboration.md`](references/human-call-elaboration.md)
 — a distinct, conversational format from the record template above, for
 getting the human to a decision rather than for recording one already made.
+
+**A `decided` ruling under a drive is a decision taken without a person**:
+its decision-record comment is where a person reverses it, and the drive
+records it with that comment's link (drive-pr § 8). An `escalated` verdict
+under a drive is parked under the class `escalated`, with its decision record
+(drive-pr § 4).
 
 **Any text this skill writes to ask a human for a call** — an `escalated`
 record, an elaboration, an `hitl` issue body — follows the

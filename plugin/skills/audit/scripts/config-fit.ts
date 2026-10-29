@@ -157,10 +157,12 @@ type Config = Record<string, unknown>;
  * The text entries of a list field. A field of the wrong type is already a
  * finding of its own; the derivations read only the entries that could work.
  */
-function texts(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((v): v is string => typeof v === "string" && v !== "")
-    : [];
+function texts(value: unknown, key?: string): string[] {
+  if (!Array.isArray(value)) return [];
+  const named = value.map((v) =>
+    key !== undefined && isRecord(v) ? v[key] : v,
+  );
+  return named.filter((v): v is string => typeof v === "string" && v !== "");
 }
 
 /** A word, or a separator between commands. */
@@ -1195,7 +1197,7 @@ function reviewBotFindings(
   report: FitReport,
 ): Finding[] {
   const authors = reviewerCounts(pulls);
-  const declaredBots = texts(at(config, "review.bots"));
+  const declaredBots = texts(at(config, "review.bots"), "login");
   const findings: Finding[] = declaredBots
     .filter((bot) => !authors.has(normalLogin(bot)))
     .map((bot) => ({
