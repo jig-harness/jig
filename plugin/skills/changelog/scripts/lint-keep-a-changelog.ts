@@ -4,11 +4,14 @@
 // open (the order of the change types, a summary above a release's groups,
 // the text of an entry) is not checked. lint.ts runs these on a changelog
 // whose format is Keep a Changelog and on no other.
+import { heading } from "./markdown-blocks.ts";
 import {
   type Changelog,
   type Coverage,
   type Finding,
   finding,
+  type HeadingVersion,
+  headingVersion,
   isDate,
   label,
   type Rule,
@@ -109,19 +112,23 @@ const TYPES = [
 
 const UNRELEASED = /^\[Unreleased\]$/i;
 
-/** A release heading as the format writes it: `[version] - date`, maybe `[YANKED]`. */
+/** A release heading: `version - date`, maybe `[YANKED]`, the version maybe a link. */
 interface Release {
   section: Section;
   version: string;
   date: string;
+  /** How the version links: not at all, inline, or through the definition of `ref`. */
+  link: HeadingVersion["link"];
+  ref: string | null;
 }
 
 /** The release a `##` heading names, or the finding that it does not read as one. */
 function releaseOf(changelog: Changelog, section: Section): Release | Finding {
-  const m = /^\[([^\]]+)\](?:\s+-\s+(\S+))?(\s+\[YANKED\])?$/.exec(
-    section.title,
-  );
-  if (!m?.[1] || m[2] === undefined)
+  const parts = headingVersion(section.title);
+  const date = parts
+    ? /^\s+-\s+(\S+)(?:\s+\[YANKED\])?$/.exec(parts.rest)?.[1]
+    : undefined;
+  if (!parts || date === undefined)
     return finding(
       KEEP_RULES.heading,
       changelog,
@@ -129,12 +136,18 @@ function releaseOf(changelog: Changelog, section: Section): Release | Finding {
       `"## ${section.title}" is not a release heading`,
       "write it as `## [version] - YYYY-MM-DD`, with ` [YANKED]` after the date for a release that was pulled, or `## [Unreleased]`",
     );
-  return { section, version: m[1], date: m[2] };
+  return {
+    section,
+    version: parts.version,
+    date,
+    link: parts.link,
+    ref: parts.ref,
+  };
 }
 
 function titleFindings(changelog: Changelog): Finding[] {
   const first = changelog.first;
-  if (first && /^#\s/.test(first.text) && !first.inFence) return [];
+  if (first && !first.inFence && heading(first.text)?.level === 1) return [];
   return [
     finding(
       KEEP_RULES.title,
@@ -147,7 +160,13 @@ function titleFindings(changelog: Changelog): Finding[] {
 }
 
 function semverFindings(changelog: Changelog): Finding[] {
-  const text = changelog.preamble.map((l) => l.text).join("\n");
+  // Only what renders counts: an HTML comment or a code example states no policy.
+  const text = changelog.preamble
+    .filter((l) => !l.inFence)
+    .map((l) => l.text)
+    .join("\n")
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
+    .replace(/(`+)[\s\S]*?\1/g, "");
   if (/semantic versioning|semver/i.test(text)) return [];
   return [
     finding(
@@ -269,19 +288,35 @@ function versionLinkFindings(
   changelog: Changelog,
   releases: Release[],
 ): Finding[] {
-  return releases.flatMap((r) =>
-    changelog.definitions.has(label(r.version))
-      ? []
-      : [
-          finding(
-            KEEP_RULES.versionLink,
-            changelog,
-            r.section.line,
-            `[${r.version}] has no link reference definition, so the heading shows its brackets and links nowhere`,
-            `add \`[${r.version}]: <url>\` at the end of the file, comparing it with the release before (or its tag, for the first)`,
-          ),
-        ],
-  );
+  return releases.flatMap((r) => {
+    if (r.link === "inline") return [];
+    if (r.ref !== null && changelog.definitions.has(label(r.ref))) return [];
+    return [
+      finding(
+        KEEP_RULES.versionLink,
+        changelog,
+        r.section.line,
+        r.ref === null
+          ? `${r.version} is not a link, so nothing leads from it to the changes it released`
+          : `[${r.ref}] has no link reference definition, so the heading shows its brackets and links nowhere`,
+        r.ref === null
+          ? `write the version as \`[${r.version}]\` and add \`[${r.version}]: <url>\` at the end of the file, comparing it with the release before (or its tag, for the first)`
+          : `add \`[${r.ref}]: <url>\` at the end of the file, comparing it with the release before (or its tag, for the first)`,
+      ),
+    ];
+  });
+}
+
+/**
+ * Whether `url` compares `version`'s tag with HEAD: its last path segment is
+ * `<tag>...HEAD` (or `..HEAD`), the tag ending in the version with nothing
+ * that could make it a longer number before it.
+ */
+export function comparesWithHead(url: string, version: string): boolean {
+  const endpoint = url.split(/[?#]/)[0]?.split("/").at(-1) ?? "";
+  const base = /^(.+?)\.{2,3}HEAD$/.exec(endpoint)?.[1];
+  if (!base?.endsWith(version)) return false;
+  return !/[0-9.]$/.test(base.slice(0, base.length - version.length));
 }
 
 function unreleasedLinkFindings(
@@ -293,7 +328,7 @@ function unreleasedLinkFindings(
   // the first release on.
   if (!unreleased || !newest) return [];
   const def = changelog.definitions.get("unreleased");
-  if (def?.url.includes(newest.version) && /HEAD/.test(def.url)) return [];
+  if (def && comparesWithHead(def.url, newest.version)) return [];
   return [
     finding(
       KEEP_RULES.unreleasedLink,

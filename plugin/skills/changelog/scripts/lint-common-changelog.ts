@@ -17,6 +17,7 @@ import {
   isDate,
   isDefinition,
   isSemver,
+  headingVersion,
   isStable,
   label,
   type Line,
@@ -138,14 +139,56 @@ interface Release {
   section: Section;
   version: string;
   date: string;
-  linked: boolean;
+  /** The label a reference-style version link needs a definition for; null for a plain or inline one. */
+  ref: string | null;
 }
 
-/** A list item's start: `-`, `*` or `+` at the line's start, then a space. */
-const ITEM = /^[-*+][ \t]+\S/;
+/**
+ * A list item's start: up to three spaces, `-`, `*` or `+`, then a space;
+ * `[1]` is where the item's text starts, the column a line continuing it after
+ * a blank line is indented to.
+ */
+const ITEM = /^( {0,3}[-*+][ \t]+)\S/;
 
-/** A reference: a Markdown link right after an opening parenthesis. */
-const REFERENCE = /\(\s*\[[^\]]+\](?:\([^)\s]+(?:\s+"[^"]*")?\)|\[[^\]]*\])/;
+/**
+ * A Markdown link: inline (`[#12](https://…)`), or a reference (`[#12][pr-12]`,
+ * `[#12][]`, `[#12]`) that links only where its label has a definition.
+ */
+const LINK = String.raw`\[[^\]]+\](?:\((?:<[^>]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'))?\)|\[[^\]]*\])?`;
+
+/** A reference: an opening parenthesis, links separated by commas, the closing parenthesis. */
+const REFERENCE = new RegExp(
+  String.raw`\(\s*(${LINK}(?:\s*,\s*${LINK})*)\s*\)`,
+  "g",
+);
+
+/** One link of a reference, with the label a reference-style link resolves through. */
+const EACH_LINK =
+  /\[([^\]]+)\](\((?:<[^>]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'))?\)|\[([^\]]*)\])?/g;
+
+/** A code span, whose text renders literally: no link inside it is one. */
+const CODE_SPAN = /(`+)[\s\S]*?\1/g;
+
+/**
+ * Whether a change's text holds a reference after some text of its own, each
+ * of whose links renders as a link: inline, or by a label `changelog` defines.
+ */
+function referenced(changelog: Changelog, text: string): boolean {
+  const visible = text
+    .replace(/^ {0,3}[-*+][ \t]+/, (marker) => " ".repeat(marker.length))
+    .replace(CODE_SPAN, (span) => " ".repeat(span.length));
+  for (const match of visible.matchAll(REFERENCE)) {
+    if (visible.slice(0, match.index).trim() === "") continue;
+    const links = [...(match[1] ?? "").matchAll(EACH_LINK)];
+    const resolves = links.every(
+      ([, text, inline, ref]) =>
+        inline?.startsWith("(") ||
+        changelog.definitions.has(label(ref ? ref : (text ?? ""))),
+    );
+    if (resolves) return true;
+  }
+  return false;
+}
 
 function fileFindings(changelog: Changelog): Finding[] {
   const findings: Finding[] = [];
@@ -160,7 +203,7 @@ function fileFindings(changelog: Changelog): Finding[] {
       ),
     );
   const first = changelog.first;
-  if (!first || first.inFence || !/^#\s/.test(first.text))
+  if (!first || first.inFence || heading(first.text)?.level !== 1)
     findings.push(
       finding(
         COMMON_RULES.title,
@@ -217,20 +260,20 @@ function releaseOf(changelog: Changelog, section: Section): Release | Finding {
   if (refused) return refused;
   const fail = (problem: string, remedy: string) =>
     finding(COMMON_RULES.heading, changelog, section.line, problem, remedy);
-  const [, linked, plain, date] =
-    /^(?:\[([^\]]+)\]|(\S+))\s+-\s+(\S+)$/.exec(section.title) ?? [];
-  const version = linked ?? plain;
-  if (version === undefined || date === undefined)
+  const parts = headingVersion(section.title);
+  const date = parts ? /^\s+-\s+(\S+)$/.exec(parts.rest)?.[1] : undefined;
+  if (!parts || date === undefined)
     return fail(
       `"## ${section.title}" is not a release heading`,
       "write it as `## [VERSION] - YYYY-MM-DD` (or `## VERSION - YYYY-MM-DD`)",
     );
+  const { version, ref } = parts;
   if (!isSemver(version))
     return fail(
       `"${version}" is not a Semantic Versioning version${/^v\d/.test(version) ? ": it carries a v prefix" : ""}`,
       "write the version as Semantic Versioning has it, without a v prefix (the tag may keep one)",
     );
-  return { section, version, date, linked: linked !== undefined };
+  return { section, version, date, ref };
 }
 
 function dateAndOrderFindings(
@@ -250,38 +293,62 @@ function dateAndOrderFindings(
           "write the release date as YYYY-MM-DD",
         ),
       );
+    // Versions that differ only in build metadata rank equal, so either may
+    // come first; only the same version written twice repeats.
     const above = releases[i - 1];
-    if (above && precedence(above.version, release.version) <= 0)
+    const repeats = releases
+      .slice(0, i)
+      .some((r) => r.version === release.version);
+    if (above && (repeats || precedence(above.version, release.version) < 0))
       findings.push(
         finding(
           COMMON_RULES.order,
           changelog,
           line,
-          `${release.version} is listed below ${above.version}, which it ${precedence(above.version, release.version) === 0 ? "repeats" : "follows in Semantic Versioning"}`,
+          repeats
+            ? `${release.version} already has a section above this one`
+            : `${release.version} is listed below ${above.version}, which it follows in Semantic Versioning`,
           "list the releases latest first by version, one section per version, even where a lower version came out later",
         ),
       );
-    if (release.linked && !changelog.definitions.has(label(release.version)))
+    if (release.ref !== null && !changelog.definitions.has(label(release.ref)))
       findings.push(
         finding(
           COMMON_RULES.versionLink,
           changelog,
           line,
-          `[${release.version}] has no link reference definition, so the heading shows its brackets and links nowhere`,
-          `add \`[${release.version}]: <url>\` at the end of the file (its release or tag page), or write the version without brackets`,
+          `[${release.ref}] has no link reference definition, so the heading shows its brackets and links nowhere`,
+          `add \`[${release.ref}]: <url>\` at the end of the file (its release or tag page), or write the version without brackets`,
         ),
       );
   });
   return findings;
 }
 
-/** Whether a line opens something other than a paragraph: a list, a heading, a fence, a quote. */
+/** A thematic break: three or more `-`, `*` or `_`, spaces between allowed. */
+const BREAK = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+
+/**
+ * Whether a line opens something other than a paragraph: a list, a heading, a
+ * fence, a quote, a thematic break.
+ */
 const opensBlock = (line: Line): boolean =>
   line.inFence ||
   ITEM.test(line.text) ||
-  /^\d+[.)]\s/.test(line.text) ||
-  /^\s{0,3}>/.test(line.text) ||
+  /^ {0,3}\d+[.)]\s/.test(line.text) ||
+  /^ {0,3}>/.test(line.text) ||
+  BREAK.test(line.text) ||
   heading(line.text) !== null;
+
+/**
+ * Whether a line after a paragraph's first ends it or makes it something
+ * else: a block that interrupts a paragraph (an ordered list only from 1), or
+ * a setext underline, which turns the paragraph into a heading.
+ */
+const breaksParagraph = (line: Line): boolean =>
+  /^ {0,3}(?:=+|-+)[ \t]*$/.test(line.text) ||
+  (opensBlock(line) &&
+    !(/^ {0,3}\d+[.)]\s/.test(line.text) && !/^ {0,3}1[.)]\s/.test(line.text)));
 
 function leadFindings(changelog: Changelog, section: Section): Finding[] {
   const runs = paragraphs(section.lead);
@@ -299,12 +366,15 @@ function leadFindings(changelog: Changelog, section: Section): Finding[] {
           ),
         ];
   const start = notice[0] as Line;
-  if (opensBlock(start))
+  const other = opensBlock(start)
+    ? start
+    : notice.slice(1).find(breaksParagraph);
+  if (other)
     return [
       finding(
         COMMON_RULES.release,
         changelog,
-        start.n,
+        other.n,
         "a release holds only a notice and change groups, and this is neither",
         "put each change in a list under a `###` category, or make this the release's one-sentence notice",
       ),
@@ -320,22 +390,75 @@ function leadFindings(changelog: Changelog, section: Section): Finding[] {
   );
 }
 
-/** The top-level list items of a group, each as the text of its lines. */
-function items(group: Group): { line: number; text: string }[] {
-  const out: { line: number; text: string }[] = [];
+/** A line's indentation in columns, a tab counting as four. */
+const indentOf = (text: string): number =>
+  (/^[ \t]*/.exec(text)?.[0] ?? "").replaceAll("\t", "    ").length;
+
+/**
+ * Whether a line other than an item's first belongs to the item whose text
+ * starts at column `offset`. After a blank line it must be indented to that
+ * column; directly after the item's text it may also continue the paragraph
+ * at any indentation, unless it opens a block of its own.
+ */
+const continues = (line: Line, offset: number, afterBlank: boolean): boolean =>
+  indentOf(line.text) >= offset || (!afterBlank && !opensBlock(line));
+
+/** Where a walk down a list stands: the item it is in and what came last. */
+interface ListWalk {
+  items: { line: number; text: string }[];
+  /** The column the current item's text starts at. */
+  offset: number;
+  afterBlank: boolean;
+  /** Whether the fenced code block the walk is in belongs to the item. */
+  fenceInside: boolean;
+}
+
+/** Whether a line that starts no item belongs to the item above it. A fence belongs where its opening line does. */
+function belongs(line: Line, walk: ListWalk): boolean {
+  if (line.inFence && line.delimiter !== "open") return walk.fenceInside;
+  const inside: boolean =
+    walk.items.length > 0 && continues(line, walk.offset, walk.afterBlank);
+  if (line.delimiter === "open") walk.fenceInside = inside;
+  return inside;
+}
+
+/** A blank line or a link reference definition, which neither starts nor ends an item. */
+const isGap = (line: Line): boolean =>
+  !line.inFence && (line.text.trim() === "" || isDefinition(line));
+
+/**
+ * A group's top-level list items, each as the text of its lines, and the
+ * first line that renders outside the list, if one does.
+ */
+function listOf(group: Group): {
+  items: { line: number; text: string }[];
+  stray: Line | null;
+} {
+  const walk: ListWalk = {
+    items: [],
+    offset: 0,
+    afterBlank: false,
+    fenceInside: false,
+  };
   for (const line of group.body) {
-    if (isDefinition(line)) continue;
-    if (ITEM.test(line.text) && !line.inFence)
-      out.push({ line: line.n, text: line.text });
-    else if (out.length && line.text.trim() !== "")
-      (out.at(-1) as { text: string }).text += `\n${line.text}`;
+    if (isGap(line)) {
+      walk.afterBlank ||= line.text.trim() === "";
+      continue;
+    }
+    const item = line.inFence ? null : ITEM.exec(line.text);
+    if (item?.[1] !== undefined) {
+      walk.items.push({ line: line.n, text: line.text });
+      walk.offset = item[1].replaceAll("\t", "    ").length;
+    } else if (belongs(line, walk))
+      (walk.items.at(-1) as { text: string }).text += `\n${line.text}`;
+    else return { items: walk.items, stray: line };
+    walk.afterBlank = false;
   }
-  return out;
+  return { items: walk.items, stray: null };
 }
 
 function listFindings(changelog: Changelog, group: Group): Finding[] {
-  const runs = paragraphs(group.body);
-  if (!runs.length)
+  if (!content(group.body).length)
     return [
       finding(
         COMMON_RULES.list,
@@ -345,15 +468,7 @@ function listFindings(changelog: Changelog, group: Group): Finding[] {
         "list its changes under it, or remove the heading",
       ),
     ];
-  const stray = runs
-    .flat()
-    .find(
-      (line, i, all) =>
-        (i === 0 && !ITEM.test(line.text)) ||
-        (!ITEM.test(line.text) &&
-          !/^\s/.test(line.text) &&
-          (opensBlock(line) || all[i - 1]?.n !== line.n - 1)),
-    );
+  const { items, stray } = listOf(group);
   const findings = stray
     ? [
         finding(
@@ -365,8 +480,8 @@ function listFindings(changelog: Changelog, group: Group): Finding[] {
         ),
       ]
     : [];
-  for (const item of items(group))
-    if (!REFERENCE.test(item.text))
+  for (const item of items)
+    if (!referenced(changelog, item.text))
       findings.push(
         finding(
           COMMON_RULES.reference,

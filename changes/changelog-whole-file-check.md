@@ -14,7 +14,9 @@ release: minor
   the rule and what to change, with the section of the format's specification
   that states the rule; what a format allows, such as a yanked release or an
   Unreleased section without a date, is never a finding. The skill's GitHub
-  Action runs it as `command: lint`; the rules per format are in the
+  Action runs it as `command: lint`, after a checkout with `fetch-depth: 0`:
+  in a shallow clone the tags are not the whole history, so coverage is not
+  checked and the command exits 2. The rules per format are in the
   [skill's README](../plugin/skills/changelog/README.md#checking-the-whole-changelog).
 
 ### Changed

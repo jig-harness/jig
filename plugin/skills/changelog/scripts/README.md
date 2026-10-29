@@ -220,7 +220,7 @@ bun lint.ts [--root <dir>] [--json]
 
 The whole changelog against the rules of its format, and of no other: the
 format is `changelog.format`, else the one the file names (`formats.ts`), and
-`lint.ts` runs that format's rules alone. Three modules beside it:
+`lint.ts` runs that format's rules alone. Modules beside it:
 
 - `lint-structure.ts` reads the file into what the rules look at: its lines
   with their numbers, the title, the text above the first `##` section, each
@@ -239,19 +239,25 @@ the version the version files hold, where the version lives in files (a
 Common Changelog check only where it is stable), and with each tag
 `<tag_prefix><version>` that names a Semantic Versioning version and sits
 in the checkout's history (the tags git lists as merged into `HEAD`: a tag made after the
-branch forked names a release its changelog cannot have yet; a shallow CI
-checkout needs `fetch-depth: 0` to have the tags).
+branch forked names a release its changelog cannot have yet). A shallow
+clone's tags are not read as the whole history: a CI checkout needs
+`fetch-depth: 0`.
+
+Every file the configuration names (the changelog, the version files) is
+read through one reader that refuses a path a link leads outside the
+repository root, or one that is not a regular file, before reading it, so
+the check never reads what it refuses.
 
 Findings go to standard error as `<file>:<line>: [<rule>] <problem>` then
 `  fix: <remedy>`, and in a GitHub Actions job (`GITHUB_ACTIONS=true`) also as
 `::error` annotations on standard output. `--json` prints `{ "plugin",
 "configured", "format", "file", "findings", "unchecked" }`, `unchecked` saying
-why coverage against the version files could not be checked (they disagree),
-or null. Exit 0 clean or `not configured`; 1 findings; 2 a usage error, an
-invalid configuration, an unreadable changelog (or one a link leads outside
-the repository root), a root that is not a git repository's top level, or
-`unchecked` with no
-finding.
+why coverage could not be checked against the tags (a shallow clone, tags git
+cannot list) or the version files (they disagree), or null. Exit 0 clean or
+`not configured`; 1 findings; 2 a usage error, an invalid configuration, an
+unreadable changelog (or one a link leads outside the repository root, or
+that is not a regular file), a root that is not a git repository's top level,
+or `unchecked` with no finding.
 
 ## Converting a branch
 

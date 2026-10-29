@@ -120,9 +120,10 @@ CHANGELOG.md:28: [keep-a-changelog/date] the date "2023-02-29" of 1.0.1 is not a
 
 It exits 0 when the file follows its format's rules (or the skill is off), 1
 with findings, and 2 on a usage error, an invalid configuration or an
-unreadable changelog or one a link leads outside the repository, or when the
-version files disagree, so coverage could
-not be checked, and nothing else was found. In a GitHub Actions job each
+unreadable changelog, one a link leads outside the repository or one that is
+not a regular file, or when coverage could not be checked (the version files
+disagree, the checkout is a shallow clone, or git cannot list its tags) and
+nothing else was found. In a GitHub Actions job each
 finding is also an annotation on its line. The action runs it as
 `command: lint`; the workflow template leaves it out of the pull-request
 check, because some findings cannot be fixed by a pull request that the
@@ -142,13 +143,13 @@ are its guiding principles and its answers, so a rule here is one of those.
 | `keep-a-changelog/title` | The file opens with a first-level heading | [the example changelog](https://keepachangelog.com/en/1.1.0/) |
 | `keep-a-changelog/semver-statement` | The text above the first section says whether the project follows Semantic Versioning | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) |
 | `keep-a-changelog/unreleased-first` | An `## [Unreleased]` section, where the file has one, comes first, and only once | [How can I reduce the effort…?](https://keepachangelog.com/en/1.1.0/#effort) |
-| `keep-a-changelog/release-heading` | Every other `##` heading is `[version] - YYYY-MM-DD`, with ` [YANKED]` after the date for a pulled release | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles), [What about yanked releases?](https://keepachangelog.com/en/1.1.0/#yanked) |
+| `keep-a-changelog/release-heading` | Every other `##` heading is `version - YYYY-MM-DD` (the version maybe a link), with ` [YANKED]` after the date for a pulled release | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles), [What about yanked releases?](https://keepachangelog.com/en/1.1.0/#yanked) |
 | `keep-a-changelog/date` | A release's date is written year-month-day and is a real day | [Confusing Dates](https://keepachangelog.com/en/1.1.0/#confusing-dates) |
 | `keep-a-changelog/release-order` | The latest release comes first: no release is dated later than the one above it | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) |
 | `keep-a-changelog/duplicate-release` | One section per version | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) (versions linkable) |
 | `keep-a-changelog/change-type` | Every `###` heading is `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` or `Security` | [Types of changes](https://keepachangelog.com/en/1.1.0/#types) |
 | `keep-a-changelog/grouped` | A type of change appears once per section | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) |
-| `keep-a-changelog/version-link` | Each `[version]` heading has its link reference definition | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) |
+| `keep-a-changelog/version-link` | Each version links, as the example's do, to the changes it released: an inline link, or a reference link with its definition | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) |
 | `keep-a-changelog/unreleased-link` | From the first release on, `[Unreleased]` links to the comparison of the newest release with `HEAD` | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) and the example changelog |
 | `keep-a-changelog/coverage` | The version the version files hold, and every version a `<tag_prefix><version>` tag in the checkout's history names, has a section | [Guiding Principles](https://keepachangelog.com/en/1.1.0/#principles) |
 
@@ -168,14 +169,14 @@ it states with "must".
 | `common-changelog/no-unreleased` | No Unreleased section | [6.2. How is this different from Keep a Changelog?](https://common-changelog.org/#62-how-is-this-different-from-keep-a-changelog) |
 | `common-changelog/release-heading` | Every `##` heading is `VERSION - DATE` (the version maybe a link), the version Semantic Versioning without a `v`, and no `[YANKED]` | [2.2. Release](https://common-changelog.org/#22-release) |
 | `common-changelog/date` | A release's date is `YYYY-MM-DD` and a real day | [2.2. Release](https://common-changelog.org/#22-release) |
-| `common-changelog/release-order` | Releases sorted latest first by Semantic Versioning precedence, one per version, whatever their dates | [2.1. File format](https://common-changelog.org/#21-file-format) |
-| `common-changelog/version-link` | A version written as a link has its link reference definition | [2.2. Release](https://common-changelog.org/#22-release) |
+| `common-changelog/release-order` | Releases sorted latest first by Semantic Versioning precedence, one per version, whatever their dates (versions that differ only in build metadata rank equal, in either order) | [2.1. File format](https://common-changelog.org/#21-file-format) |
+| `common-changelog/version-link` | A version written as a reference link has its link reference definition | [2.2. Release](https://common-changelog.org/#22-release) |
 | `common-changelog/release-content` | A release holds change groups, or a notice and then any number of them, and nothing else | [2.2. Release](https://common-changelog.org/#22-release) |
 | `common-changelog/notice` | At most one notice, a single paragraph, per release | [2.3. Notice](https://common-changelog.org/#23-notice) |
 | `common-changelog/category` | Every `###` heading is `Changed`, `Added`, `Removed` or `Fixed` | [2.4. Change group](https://common-changelog.org/#24-change-group) |
 | `common-changelog/category-order` | The groups in that order, each once | [2.4. Change group](https://common-changelog.org/#24-change-group) |
 | `common-changelog/change-list` | A group holds an unnumbered list and nothing else | [2.4. Change group](https://common-changelog.org/#24-change-group) |
-| `common-changelog/reference` | Each change ends with a reference in parentheses that is a Markdown link | [2.4.2. References](https://common-changelog.org/#242-references) |
+| `common-changelog/reference` | Each change, after its text, has a reference in parentheses whose links all render as links (inline, or a reference with its definition; none inside a code span) | [2.4.2. References](https://common-changelog.org/#242-references) |
 | `common-changelog/coverage` | The version the version files hold, and every version a tag in the checkout's history names, has a section, where it is a stable version | [2.1. File format](https://common-changelog.org/#21-file-format) |
 
 Allowed, or not checked: a version without a link (it "should" link), a

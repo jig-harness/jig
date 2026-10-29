@@ -5,6 +5,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+  mkdirSync,
   readFileSync,
   realpathSync,
   symlinkSync,
@@ -350,6 +351,174 @@ describe("dates and versions", () => {
     );
     expect(precedence("1.0.0+build.1", "1.0.0")).toBe(0);
   });
+
+  test("a year below 100 is a real year, and a number past 2^53 compares exactly", () => {
+    expect(["0099-01-01", "0001-02-28"].map(isDate)).toEqual([true, true]);
+    expect(isDate("0099-02-29")).toBe(false);
+    expect(
+      precedence("9007199254740993.0.0", "9007199254740992.0.0"),
+    ).toBeGreaterThan(0);
+    expect(
+      precedence("1.0.0-9007199254740993", "1.0.0-9007199254740992"),
+    ).toBeGreaterThan(0);
+    expect(precedence("10.0.0", "9.0.0")).toBeGreaterThan(0);
+  });
+});
+
+/** The rule ids Common Changelog's rules find in its clean fixture with `from` replaced by `to`. */
+function commonWith(from: string, to: string): string[] {
+  const common = fixture("common-changelog", "clean");
+  expect(common).toContain(from);
+  return ruleIds("common-changelog", common.replace(from, to));
+}
+
+/** The rule ids Keep a Changelog's rules find in its clean fixture with `from` replaced by `to`. */
+function keepWith(from: string, to: string): string[] {
+  const keep = fixture("keep-a-changelog", "clean");
+  expect(keep).toContain(from);
+  return ruleIds("keep-a-changelog", keep.replace(from, to));
+}
+
+describe("headings and definitions read as Markdown writes them", () => {
+  test("a version heading may be an inline link or any reference link", () => {
+    expect(
+      commonWith(
+        "## [2.0.0] - 2024-03-01",
+        "## [2.0.0](https://example.com/o/r/releases/tag/v2.0.0) - 2024-03-01",
+      ),
+    ).toEqual([]);
+    expect(
+      commonWith("## [1.10.0] - 2024-04-01", "## [1.10.0][r1100] - 2024-04-01"),
+    ).toEqual([COMMON_RULES.versionLink.id]);
+    expect(
+      commonWith(
+        "## [1.10.0] - 2024-04-01",
+        "## [1.10.0][r1100] - 2024-04-01\n\n[r1100]: https://example.com/o/r/releases/tag/v1.10.0",
+      ),
+    ).toEqual([]);
+    expect(
+      keepWith(
+        "## [1.0.0] - 2024-01-01",
+        "## [1.0.0](https://example.com/r/releases/tag/v1.0.0) - 2024-01-01",
+      ),
+    ).toEqual([]);
+  });
+
+  test("a plain Keep a Changelog version is a release heading that does not link", () => {
+    expect(
+      keepWith("## [1.0.0] - 2024-01-01", "## 1.0.0 - 2024-01-01"),
+    ).toEqual([KEEP_RULES.versionLink.id]);
+  });
+
+  test("a definition may be indented, spaced out and titled", () => {
+    expect(
+      commonWith(
+        "[2.0.0]: https://example.com/o/r/releases/tag/v2.0.0\n[1.10.0]: https://example.com/o/r/releases/tag/v1.10.0",
+        '  [2.0.0]:   https://example.com/o/r/releases/tag/v2.0.0 "2.0.0"\n[1.10.0]:\t<https://example.com/o/r/releases/tag/v1.10.0>',
+      ),
+    ).toEqual([]);
+  });
+
+  test("a title, a list and its items may be indented up to three spaces", () => {
+    expect(commonWith("# Changelog", "   # Changelog")).toEqual([]);
+    expect(keepWith("# Changelog", " # Changelog")).toEqual([]);
+    expect(
+      commonWith(
+        "- Fix the parser ([#7](https://example.com/o/r/pull/7))",
+        "  - Fix the parser ([#7](https://example.com/o/r/pull/7))",
+      ),
+    ).toEqual([]);
+    expect(
+      commonWith(
+        "- Fix the parser ([#7](https://example.com/o/r/pull/7))",
+        "  - Fix the parser",
+      ),
+    ).toEqual([COMMON_RULES.reference.id]);
+  });
+});
+
+describe("changes and notices read as they render", () => {
+  test("a reference is a link that renders, after the change's text", () => {
+    const item = "- Fix the parser ([#7](https://example.com/o/r/pull/7))";
+    for (const broken of [
+      "- Fix the parser `([#7](https://example.com/o/r/pull/7))`",
+      "- Fix the parser ([#7][missing])",
+      "- Fix the parser ([#7](https://example.com/o/r/pull/7)",
+      "- ([#7](https://example.com/o/r/pull/7))",
+    ])
+      expect(commonWith(item, broken)).toEqual([COMMON_RULES.reference.id]);
+    expect(
+      commonWith(
+        item,
+        "- Fix the parser ([#7][pr-7])\n\n[pr-7]: https://example.com/o/r/pull/7",
+      ),
+    ).toEqual([]);
+  });
+
+  test("a fence outside the list is not part of a change", () => {
+    const item = "- Fix the parser ([#7](https://example.com/o/r/pull/7))";
+    expect(commonWith(item, `${item}\n\n \`\`\`\n code\n \`\`\``)).toEqual([
+      COMMON_RULES.list.id,
+    ]);
+    expect(commonWith(item, `${item}\n\n  \`\`\`\n  code\n  \`\`\``)).toEqual(
+      [],
+    );
+    expect(commonWith(item, `${item}\n\n not indented to the item`)).toEqual([
+      COMMON_RULES.list.id,
+    ]);
+  });
+
+  test("a notice is one paragraph to its end, not only at its first line", () => {
+    for (const after of ["> a quote", "***", "---", "==="])
+      expect(
+        commonWith("_First release._", `_First release._\n${after}`),
+      ).toEqual([COMMON_RULES.release.id]);
+    expect(
+      commonWith("_First release._", "_First release,\nwrapped._"),
+    ).toEqual([]);
+  });
+});
+
+describe("orders, links and statements read as they render", () => {
+  test("versions that differ only in build metadata may sit in either order", () => {
+    const last = "## 1.0.0 - 2023-06-01\n\n_First release._";
+    expect(
+      commonWith(
+        last,
+        "## 1.0.0+windows - 2023-06-01\n\n_On Windows._\n\n## 1.0.0+linux - 2023-06-01\n\n_On Linux._",
+      ),
+    ).toEqual([]);
+    expect(
+      commonWith(
+        last,
+        "## 1.0.0+linux - 2023-06-01\n\n_On Linux._\n\n## 1.0.0+windows - 2023-06-01\n\n_On Windows._\n\n## 1.0.0+linux - 2023-06-01\n\n_Again._",
+      ),
+    ).toEqual([COMMON_RULES.order.id]);
+  });
+
+  test("the Unreleased link compares the newest release's own tag with HEAD", () => {
+    const link = "[Unreleased]: https://example.com/r/compare/v1.1.0...HEAD";
+    for (const broken of [
+      "[Unreleased]: https://example.com/r/compare/v11.1.0...HEAD",
+      "[Unreleased]: https://example.com/r/releases/tag/v1.1.0#HEAD",
+      "[Unreleased]: https://example.com/r/compare/HEAD...v1.1.0",
+    ])
+      expect(keepWith(link, broken)).toEqual([KEEP_RULES.unreleasedLink.id]);
+    expect(
+      keepWith(link, "[Unreleased]: https://example.com/r/compare/1.1.0..HEAD"),
+    ).toEqual([]);
+  });
+
+  test("the Semantic Versioning statement is text that renders", () => {
+    const statement =
+      "and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).";
+    for (const hidden of [
+      "<!-- semver -->",
+      "```text\nsemver\n```",
+      "`semver`",
+    ])
+      expect(keepWith(statement, hidden)).toEqual([KEEP_RULES.semver.id]);
+  });
 });
 
 const script = join(import.meta.dir, "..", "scripts", "lint.ts");
@@ -359,9 +528,11 @@ function lint(
   args: string[] = [],
   env: Record<string, string> = {},
 ) {
+  // A deadline, so a read that blocks (a named pipe) fails rather than hangs.
   const result = spawnSync(process.execPath, [script, ...args], {
     cwd,
     env: cleanEnv({ JIG_HOME: temporary("jig-home-"), ...env }),
+    timeout: 30_000,
   });
   return {
     exitCode: result.status,
@@ -370,14 +541,15 @@ function lint(
   };
 }
 
-describe("the command", () => {
-  const configured = (changelog: string, version = "1.1.0") =>
-    repository({
-      "CHANGELOG.md": changelog,
-      "package.json": MANIFEST(version),
-      ".config/jig.yaml": jigYaml("  file: CHANGELOG.md"),
-    });
+/** A repository whose skill is on, holding `changelog` and a manifest at `version`. */
+const configured = (changelog: string, version = "1.1.0"): string =>
+  repository({
+    "CHANGELOG.md": changelog,
+    "package.json": MANIFEST(version),
+    ".config/jig.yaml": jigYaml("  file: CHANGELOG.md"),
+  });
 
+describe("the command", () => {
   test("passes a clean changelog", () => {
     const result = lint(configured(fixture("keep-a-changelog", "clean")));
     expectSpawnExit(result, 0);
@@ -447,7 +619,82 @@ describe("the command", () => {
       "release coverage not checked against the version files: the version files disagree or hold no readable version: run status.ts to see them",
     );
   });
+});
 
+describe("the command, where coverage or the file cannot be read", () => {
+  test("exits 2 on a shallow clone, whose tags are not the whole history", () => {
+    const origin = configured(fixture("keep-a-changelog", "clean"));
+    commit(origin, { "later.txt": "later\n" }, "a later commit");
+    const clone = temporary();
+    git(clone, "clone", "-q", "--depth", "1", `file://${origin}`, ".");
+    const result = lint(clone);
+    expectSpawnExit(result, 2);
+    expect(result.stderr).toContain(
+      "release coverage not checked against the tags: the checkout is a shallow clone",
+    );
+  });
+
+  test("exits 2 when git cannot list the tags, rather than reading none", () => {
+    const root = temporary();
+    git(root, "init", "-q", "-b", "main");
+    writeFileSync(
+      join(root, "CHANGELOG.md"),
+      fixture("keep-a-changelog", "clean"),
+    );
+    writeFileSync(join(root, "package.json"), MANIFEST("1.1.0"));
+    mkdirSync(join(root, ".config"));
+    writeFileSync(
+      join(root, ".config", "jig.yaml"),
+      jigYaml("  file: CHANGELOG.md"),
+    );
+    // No commit: HEAD names nothing, so no tag can be listed as merged into it.
+    const result = lint(root, ["--json"]);
+    expectSpawnExit(result, 2);
+    expect(JSON.parse(result.stdout).unchecked).toContain(
+      "git could not list the tags",
+    );
+  });
+
+  test.skipIf(skipsOnWindows("file-system", "a named pipe needs mkfifo"))(
+    "refuses a changelog that is not a regular file before reading it",
+    () => {
+      // Reading a pipe nobody writes blocks, until the lint's deadline.
+      const root = unconfiguredChangelog();
+      fifo(join(root, "CHANGELOG.md"));
+      const result = lint(root);
+      expectSpawnExit(result, 2);
+      expect(result.stderr).toContain("CHANGELOG.md is not a regular file");
+    },
+  );
+
+  test.skipIf(skipsOnWindows("file-system", "a named pipe needs mkfifo"))(
+    "refuses a link out of the repository before detecting the format from it",
+    () => {
+      const outside = join(temporary(), "pipe");
+      fifo(outside);
+      const root = unconfiguredChangelog();
+      symlinkSync(outside, join(root, "CHANGELOG.md"));
+      const result = lint(root);
+      expectSpawnExit(result, 2);
+      expect(result.stderr).toContain("resolves outside the repository root");
+    },
+  );
+});
+
+/** A repository whose skill is on, with no changelog yet and no format set. */
+const unconfiguredChangelog = (): string =>
+  repository({
+    "package.json": MANIFEST("1.1.0"),
+    ".config/jig.yaml": jigYaml("  file: CHANGELOG.md"),
+  });
+
+/** A named pipe at `path`. */
+function fifo(path: string): void {
+  const made = spawnSync("mkfifo", [path], { env: cleanEnv({}) });
+  expectSpawnExit({ ...made, exitCode: made.status }, 0);
+}
+
+describe("the command's refusals", () => {
   test("says not configured, and passes, where the skill is off", () => {
     const root = repository({ "CHANGELOG.md": "not a changelog\n" });
     const result = lint(root);
