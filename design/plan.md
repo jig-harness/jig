@@ -29,21 +29,13 @@ rollout:
   documentation, scaffolding, agent hierarchy, implementation plans, tracker).
   It replaces `seeds/project-kickoff/`, which is an older copy. M6's PRD and
   architecture templates and the kickoff's own are merged into one of each.
-  The opinions M6 leaves out (personas, tiers, model routing) belong in the
-  skill, not the module. M6's PRD and architecture templates move into the
+  The opinions M6 leaves out (tiers, model routing) belong in the skill, not
+  the module; its red-team phase runs
+  [`red-team`](../plugin/skills/red-team/SKILL.md), which holds the
+  personas. M6's PRD and architecture templates move into the
   skill (`templates/`), moved and not copied, and M6's README links them there
   ([the module contract](../modules/AGENTS.md#the-module-contract)); the
   NOTICE entries move with them.
-- **`red-team`**: adversarial review of a requirements or architecture
-  document by persona, in a fresh session; the runnable form of M6's
-  per-stage adversarial review. The engineering personas (critical chief
-  technology officer, security auditor, performance engineer, cost
-  optimizer) read both documents; a requirements document is also read by
-  personas standing for the people who will use and approve it: a reader
-  who knows no engineering terms, one who cuts the scope to the smallest
-  release that still delivers the outcome, one who asks of each outcome how
-  it would be tested, and one who walks the user's day and names the
-  moments the document leaves out.
 - **Plan review**, folded into `review`, which already accepts a plan
   document: dependencies and critical path, completeness, simplification and
   effort checks.

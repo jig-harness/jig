@@ -1048,6 +1048,19 @@ make, use the entry's term instead.
 - **Tiered review** — a review that runs cheap pattern checks first, contract
   checks second, and an expensive semantic review last; each tier can block
   or warn, and a change only pays for the tiers its file types need.
+- **Red-team review** (adversarial review) — a review that reads a document
+  on purpose against it, looking for what is wrong, missing or unclear
+  rather than confirming what is there. The reviewer starts in **fresh
+  context**: a session or subagent that has not seen the document being
+  written, since one that helped write it tends to defend it. Each stage of
+  [M6](modules/M6-feature-delivery-pipeline/README.md)'s pipeline gets one
+  before the next stage consumes its artifact; Jig's `red-team` skill runs it
+  for requirements and architecture documents.
+- **Review persona** — one point of view a *red-team review* reads a
+  document from, written as a brief: who the reader stands for, what they
+  look for, and what a finding from them must carry (a security auditor, a
+  reader who knows no engineering terms, …). Not the user personas a PRD
+  describes, though some review personas speak for them.
 - **Scanner annotation** — a finding a static-analysis tool reports on a pull
   request as a note pinned to a changed line of its check run (a check-run
   annotation), as SonarQube Cloud does. It is neither a review thread, which
