@@ -341,6 +341,27 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.97.2] - 2026-10-29
+
+### Fixed
+
+- **audit:** `gc.worktree_roots` and `gc.scratch_prefixes` name places that
+  exist on some machines only, so a root that is missing where the audit runs
+  is no longer reported as a finding.
+- **gc:** `jig gc install` run from a linked worktree registers the clone's
+  primary checkout, and resolves the declaration's relative roots from it,
+  rather than registering the linked worktree. An entry an earlier version
+  registered for a linked worktree is replaced on the next install, and
+  removed by uninstall; `jig gc --collect --repo` from a linked worktree
+  collects under the primary checkout's entry, while a report from it still
+  reads that worktree's own declaration. A checkout Git fails to read there
+  fails the collection's inventory (exit 1) rather than reading as a
+  repository with no entry. A directory inside a checkout is none of the
+  clone's checkouts: collection from it finds no entry, and install and
+  uninstall refuse it. Paths compare with symbolic links
+  resolved, so an entry naming the clone through another path is the same
+  clone's.
+
 ## [0.97.1] - 2026-10-29
 
 ### Fixed
@@ -3993,7 +4014,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.97.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.97.2...HEAD
+[0.97.2]: https://github.com/jig-harness/jig/compare/v0.97.1...v0.97.2
 [0.97.1]: https://github.com/jig-harness/jig/compare/v0.97.0...v0.97.1
 [0.97.0]: https://github.com/jig-harness/jig/compare/v0.96.0...v0.97.0
 [0.96.0]: https://github.com/jig-harness/jig/compare/v0.95.0...v0.96.0
