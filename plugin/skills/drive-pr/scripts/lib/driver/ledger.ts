@@ -442,8 +442,12 @@ export function ledgerSettlement(pr: string): AsyncDisposable & {
       await dropRecord();
       return;
     }
-    if (code !== null) await recordDriveEvent(pr, "stop", String(code));
-    if (driver === null) return;
+    // The exit goes into the state for a report this clone reads, after the
+    // ledger's last write, which names it in its driver record already.
+    const recordStop = async () => {
+      if (code !== null) await recordDriveEvent(pr, "stop", String(code));
+    };
+    if (driver === null) return recordStop();
     settled = true;
     const res = await run(tsArgv(driveState, ["handoff", pr]), {
       stdout: "ignore",
@@ -455,6 +459,7 @@ export function ledgerSettlement(pr: string): AsyncDisposable & {
       },
     });
     if (res.code === 0) await dropRecord();
+    await recordStop();
   };
   return {
     async done(code: number): Promise<number> {
