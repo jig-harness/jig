@@ -5,7 +5,7 @@
  * unreadable and claims nothing.
  */
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { chmodSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { repository, runCli } from "./helpers.ts";
@@ -186,6 +186,32 @@ describe("a configuration computed when it runs", () => {
       expect(explain(root, path).kind.value).toBe("code");
     expect(report(root).byKind.test).toBeUndefined();
   });
+});
+
+describe("a configuration the file system refuses to read", () => {
+  const unprivileged = process.platform !== "win32" && process.getuid?.() !== 0;
+
+  test.if(unprivileged)(
+    "is reported unreadable, and the other runners still read",
+    () => {
+      const root = fixture("maven", {
+        "pytest.ini": "[pytest]\ntestpaths = checks\n",
+      });
+      for (const path of ["pytest.ini", "pom.xml"])
+        chmodSync(join(root, path), 0);
+      const explained = explain(root, "lib/src/test/java/shop/LibSuite.java");
+      expect(explained.kind.value).toBe("test");
+      for (const unreadable of [
+        {
+          reader: "pytest",
+          path: "pytest.ini",
+          why: "could not be read (EACCES)",
+        },
+        { reader: "Maven", path: "pom.xml", why: "could not be read (EACCES)" },
+      ])
+        expect(explained.testRunnersUnreadable).toContainEqual(unreadable);
+    },
+  );
 });
 
 describe("the layer's precedence", () => {

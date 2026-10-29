@@ -296,12 +296,13 @@ function inOrder(candidates: readonly string[]): string[] {
 
 /**
  * Whether a candidate is pytest's configuration, read the way the rules are
- * read. A candidate that cannot be read stops the search there, since
- * pytest stops at it too, and is reported unreadable.
+ * read. A candidate that cannot be read, its file included, stops the
+ * search there, since pytest stops at it too, and is reported unreadable.
  */
-function holds(path: string, text: string): boolean {
+function holds(files: RepoFiles, path: string): boolean {
   try {
-    return sectionOf(path, text) !== null;
+    const text = files.read(path);
+    return text !== null && sectionOf(path, text) !== null;
   } catch (error) {
     if (error instanceof UnreadableError) return true;
     throw error;
@@ -310,10 +311,7 @@ function holds(path: string, text: string): boolean {
 
 /** The configuration pytest uses in one folder: the first candidate that holds its section. */
 function chosen(files: RepoFiles, candidates: readonly string[]): string[] {
-  const path = inOrder(candidates).find((c) => {
-    const text = files.read(c);
-    return text !== null && holds(c, text);
-  });
+  const path = inOrder(candidates).find((c) => holds(files, c));
   return path === undefined ? [] : [path];
 }
 

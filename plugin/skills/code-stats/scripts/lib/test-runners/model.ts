@@ -9,9 +9,9 @@ import { posix } from "node:path";
 /** The repository's tracked paths, and a way to read one as text or as bytes. */
 export interface RepoFiles {
   paths: readonly string[];
-  /** The file's text, read as UTF-8, or null when it cannot be read. */
+  /** The file's text, read as UTF-8; null when it is not a regular file, an `UnreadableError` when reading it fails. */
   read(path: string): string | null;
-  /** The file's bytes, for a format that names its own encoding (XML), or null when it cannot be read. */
+  /** The file's bytes, for a format that names its own encoding (XML); null when it is not a regular file, an `UnreadableError` when reading it fails. */
   bytes(path: string): Uint8Array | null;
 }
 
@@ -61,9 +61,9 @@ export function readEach(
 ): Reading {
   const reading: Reading = { rules: [], unreadable: [] };
   for (const path of configs) {
-    const text = files.read(path);
-    if (text === null) continue;
     try {
+      const text = files.read(path);
+      if (text === null) continue;
       reading.rules.push(...(read(path, text) ?? []));
     } catch (error) {
       if (!(error instanceof UnreadableError)) throw error;
