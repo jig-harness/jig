@@ -13,7 +13,10 @@ import {
   isTransparentFollowUp,
 } from "../scripts/lib/bot-confirmation.ts";
 import { qualifyingOutcome } from "../scripts/lib/outcome.ts";
-import { BUILTIN_FORMATS } from "../scripts/lib/severity-formats.ts";
+import {
+  BUILTIN_FORMATS,
+  jigFormats,
+} from "../scripts/lib/severity-formats.ts";
 
 const listed = botMarkers(["coderabbitai[bot]", "example-review[bot]"]);
 
@@ -55,12 +58,20 @@ describe("a transparent follow-up", () => {
     ).toBe(true);
   });
 
-  test("a bot's own markers from its review.bots entry", () => {
+  test("a bot's own markers from its review.bots entry, with a severity format for it", () => {
     const bots = botMarkers([
       { login: "example-review[bot]", chat_marker: "<!-- example-chat -->" },
     ]);
     expect(
-      transparent("example-review", "<!-- example-chat -->\nNoted.", bots),
+      isTransparentFollowUp(
+        {
+          authorLogin: "example-review",
+          body: "<!-- example-chat -->\nNoted.",
+        },
+        qualifyingOutcome,
+        bots,
+        [...BUILTIN_FORMATS, ...jigFormats(["example-review[bot]"])],
+      ),
     ).toBe(true);
   });
 
@@ -95,6 +106,18 @@ describe("a newer comment, never transparent", () => {
   test("a finding in the icon-fields shape inside an acknowledgement", () => {
     const body = `${CODERABBIT_CHAT_MARKER}\nNoted.\n\n**<picture><img alt="Major" src="x"></picture> Major** · **Correctness**\n\nStill wrong.`;
     expect(transparent("coderabbitai", body)).toBe(false);
+  });
+
+  test("a chat reply from a listed bot no severity format reads", () => {
+    const bots = botMarkers([
+      { login: "example-review[bot]", chat_marker: "<!-- example-chat -->" },
+    ]);
+    for (const body of [
+      "<!-- example-chat -->\n🟠 **high** — the guard still permits unauthorized requests",
+      "<!-- example-chat -->\nNoted.",
+    ]) {
+      expect(transparent("example-review", body, bots)).toBe(false);
+    }
   });
 
   test("an acknowledgement from an author review.bots does not list", () => {

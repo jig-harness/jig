@@ -464,6 +464,17 @@ function severityFormats(): SeverityFormat[] {
   ];
 }
 
+/** Does any format in force read `login`'s severities? */
+export function hasSeverityFormat(
+  login: string,
+  formats: readonly SeverityFormat[] = severityFormats(),
+): boolean {
+  const author = normalizeLogin(login);
+  return (
+    author !== "" && formats.some((f) => normalizeLogin(f.login) === author)
+  );
+}
+
 /**
  * The severity of the finding `text` raised, read with the formats belonging
  * to `authorLogin` (the raising comment's own login; `null` when GitHub

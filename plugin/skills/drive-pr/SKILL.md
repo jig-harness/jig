@@ -1014,7 +1014,7 @@ configuration and acts as `unattended`.
 | File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | `file-issue` confirms first | File it: the body says which skill filed it, from which pull request and why |
 | Defer a finding where no adapter can file | Record it in the pull request's `## Deferred` section ([deferral protocol](../resolve-review-comments/references/deferral-protocol.md#deferral-without-a-tracker)) | Same |
 | A technical choice `decide` rules reversible inside one pull request | Decide and record | Same |
-| A technical choice `decide` would rule underdetermined | Escalate | Gather the missing evidence within the round's budget, then apply the ladder; a call it still cannot settle is escalated |
+| A technical choice `decide` would rule underdetermined | Rule it `underdetermined`: name the missing evidence in a spike issue, or a comment on the existing issue | Gather the missing evidence within the round's budget, then apply the ladder; a call it still cannot settle is escalated |
 | A bot-review thread the arbiter rules `escalate` | Park under its `class:` (§ 4) | Same |
 
 The registry's classes are on no row: no level decides them, and a park
