@@ -21,6 +21,7 @@ import {
   fileDeferred,
   identityLine,
   missingEntries,
+  textLine,
 } from "../scripts/file-deferred.ts";
 import {
   deferredEntries,
@@ -30,7 +31,7 @@ import {
   withFiledEntry,
 } from "../scripts/lib/deferred-section.ts";
 import type {
-  DeferredReply,
+  AnswerComment,
   PrBody,
   PrBodyForge,
 } from "../scripts/lib/pr-body.ts";
@@ -45,7 +46,7 @@ function fakeForge(initial: string): PrBodyForge & {
   state: PrBody;
   beforeRead: Array<(s: PrBody) => void>;
   writes: number;
-  replies: DeferredReply[];
+  answered: AnswerComment[];
   failWrites: boolean;
 } {
   let clock = 0;
@@ -58,10 +59,10 @@ function fakeForge(initial: string): PrBodyForge & {
     state,
     beforeRead: [] as Array<(s: PrBody) => void>,
     writes: 0,
-    replies: [] as DeferredReply[],
+    answered: [] as AnswerComment[],
     failWrites: false,
-    async deferredReplies() {
-      return forge.replies;
+    async answers() {
+      return forge.answered;
     },
     async read() {
       forge.beforeRead.shift()?.(state);
@@ -185,9 +186,9 @@ describe("a deferred reply whose entry the body lost", () => {
       withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
         .body,
     );
-    forge.replies = [
-      { thread: THREAD, reply: `${THREAD}-reply` },
-      { thread: other, reply: `${other}-reply` },
+    forge.answered = [
+      threadReply(THREAD, `${THREAD}-reply`),
+      threadReply(other, `${other}-reply`),
     ];
     expect(await missingEntries(forge, "42")).toEqual([
       { thread: other, reply: `${other}-reply` },
@@ -204,15 +205,85 @@ describe("a deferred reply whose entry the body lost", () => {
         reason: "r",
       }).body,
     );
-    forge.replies = [
-      { fingerprint: "fp-a", reply: `${PR_URL}#issuecomment-90` },
-      { fingerprint: "fp-b", reply: `${PR_URL}#issuecomment-90` },
+    forge.answered = [
+      summaryAnswer(`${PR_URL}#issuecomment-90`, ["fp-a", "fp-b"]),
     ];
     expect(await missingEntries(forge, "42")).toEqual([
       { fingerprint: "fp-b", reply: `${PR_URL}#issuecomment-90` },
     ]);
   });
+
+  test("an answer from an author the forge does not vouch for obliges nothing", async () => {
+    const forge = fakeForge("");
+    forge.answered = [
+      threadReply(THREAD, `${THREAD}-reply`, "NONE"),
+      summaryAnswer(`${PR_URL}#issuecomment-90`, ["fp-a"], "CONTRIBUTOR"),
+    ];
+    expect(await missingEntries(forge, "42")).toEqual([]);
+  });
+
+  test("only a link to this pull request's own section counts", async () => {
+    const forge = fakeForge("");
+    const elsewhere = [
+      "https://github.com/example/project/issues/7#deferred",
+      `${PR_URL}0#deferred`,
+      `${PR_URL}#deferred-later`,
+      `https://example.com/?u=${PR_URL}#deferred`,
+    ];
+    forge.answered = elsewhere.map((link, n) => ({
+      thread: `${PR_URL}#discussion_r${n}`,
+      url: `${PR_URL}#discussion_r${n}-reply`,
+      body: `**deferred** — tracked in ${link}`,
+      association: "MEMBER",
+    }));
+    expect(await missingEntries(forge, "42")).toEqual([]);
+    forge.answered.push(threadReply(THREAD, `${THREAD}-reply`));
+    expect(await missingEntries(forge, "42")).toEqual([
+      { thread: THREAD, reply: `${THREAD}-reply` },
+    ]);
+  });
+
+  test("a reply that does not open with **deferred** obliges nothing", async () => {
+    const forge = fakeForge("");
+    forge.answered = [
+      {
+        ...threadReply(THREAD, `${THREAD}-reply`),
+        body: `**wont-fix** — see [the section](${PR_URL}#deferred).`,
+      },
+    ];
+    expect(await missingEntries(forge, "42")).toEqual([]);
+  });
 });
+
+/** A `**deferred**` reply on a resolved thread, as defer-in-pr links it. */
+function threadReply(
+  thread: string,
+  url: string,
+  association = "MEMBER",
+): AnswerComment {
+  return {
+    thread,
+    url,
+    body: `**deferred** — recorded in [the Deferred section](${PR_URL}#deferred).`,
+    association,
+  };
+}
+
+/** A summary finding's `**deferred**` answer, as answer-summary-finding writes it. */
+function summaryAnswer(
+  url: string,
+  fingerprints: string[],
+  association = "OWNER",
+): AnswerComment {
+  return {
+    url,
+    body: [
+      `**deferred** — recorded in ${PR_URL}#deferred`,
+      ...fingerprints.map((fp) => `<!-- drive-pr-addressed: ${fp} -->`),
+    ].join("\n"),
+    association,
+  };
+}
 
 describe("written by read-modify-write against updated_at", () => {
   test("a person's edit within the same second, updated_at unchanged, survives", async () => {
@@ -361,10 +432,11 @@ describe("file-deferred.ts files each entry through the tracker", () => {
       withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
         .body,
     );
+    const [entry] = deferredEntries(forge.state.body);
     const { t, calls } = trackerThatFiles([
       {
         number: 7,
-        body: `Filed by file-deferred.ts.\n\n${identityLine({ source: THREAD })}`,
+        body: `Filed by file-deferred.ts.\n\n${identityLine({ source: THREAD })}\n${textLine({ text: entry?.text ?? "" })}`,
       },
     ]);
     const r = await fileDeferred(forge, t, "42", { label: "pr-followup" });
@@ -374,6 +446,29 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     ]);
     expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(0);
     expect(deferredEntries(forge.state.body)[0]?.filed?.key).toBe("#7");
+  });
+
+  test("an issue filed from an earlier text of a corrected entry does not replace the correction", async () => {
+    const original = withDeferredEntry("", {
+      source: THREAD,
+      finding: FINDING,
+      reason: "r",
+    }).body;
+    const [before] = deferredEntries(original);
+    const corrected = original.replace("deferred: r", "deferred: r, corrected");
+    const forge = fakeForge(corrected);
+    const { t, calls } = trackerThatFiles([
+      {
+        number: 7,
+        body: `${identityLine({ source: THREAD })}\n${textLine({ text: before?.text ?? "" })}`,
+      },
+    ]);
+    const r = await fileDeferred(forge, t, "42", { label: "pr-followup" });
+    expect(r.filed).toEqual([]);
+    expect(r.unrecorded.map((f) => f.key)).toEqual(["#7"]);
+    expect(r.why).toContain("earlier text");
+    expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(0);
+    expect(forge.state.body).toBe(corrected);
   });
 
   test("an issue that only mentions the source, or names another fingerprint on it, is not reused", async () => {
@@ -394,7 +489,7 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     const { t, calls } = trackerThatFiles([
       {
         number: 7,
-        body: `Mentions ${comment}.\n\n${identityLine({ source: comment, fingerprint: "fp-a" })}`,
+        body: `Mentions ${comment}.\n\n${identityLine({ source: comment, fingerprint: "fp-a" })}\n${textLine({ text: deferredEntries(body)[0]?.text ?? "" })}`,
       },
     ]);
     const r = await fileDeferred(forge, t, "42", { label: "pr-followup" });

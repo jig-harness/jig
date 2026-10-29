@@ -12,6 +12,8 @@
  */
 import { isRecord } from "../../../../shared/guards.ts";
 import { ghCall } from "../../../../shared/proc.ts";
+import { TRUSTED_ASSOCIATIONS } from "../../../../shared/trusted-authors.ts";
+import { SECTION_ANCHOR } from "./deferred-section.ts";
 
 const WRITE_ATTEMPTS = 3;
 
@@ -47,17 +49,85 @@ export type DeferredReply =
     };
 
 /**
+ * A comment that may answer a finding, as the forge returns it: a reply on a
+ * resolved review thread (with the thread's first comment), or a top-level
+ * comment on the pull request.
+ */
+export interface AnswerComment {
+  /** The thread's first comment; absent on a top-level comment. */
+  thread?: string;
+  url: string;
+  body: string;
+  /** The forge's `author_association` for the comment's author. */
+  association: string;
+}
+
+/**
  * What the scripts need of the forge: a pull request's body, read and
- * written, and every `**deferred**` answer that links the body's
- * `## Deferred` section, complete or refused.
+ * written, and every comment that may answer one of its findings, complete
+ * or refused.
  */
 export interface PrBodyForge {
   read(pr: string): Promise<PrBody>;
   write(pr: string, body: string): Promise<void>;
-  deferredReplies(pr: string): Promise<DeferredReply[]>;
+  answers(pr: string): Promise<AnswerComment[]>;
 }
 
-/** The review threads, each with its comments' urls and bodies. */
+/** A fingerprint as `answer-summary-finding.ts` writes it into its marker. */
+const ADDRESSED_MARKER =
+  /<!-- drive-pr-addressed: ([A-Za-z0-9][A-Za-z0-9._-]*)/g;
+
+/** A character that continues a url, so a link ending before it is another. */
+const URL_CHAR = /[\w/%#?&=+~-]/;
+
+/**
+ * Whether `body` links the `## Deferred` section of the pull request at
+ * `prUrl`: the exact url and anchor, not part of a longer url on either side.
+ */
+export function linksSection(body: string, prUrl: string): boolean {
+  const link = `${prUrl}#${SECTION_ANCHOR}`;
+  for (let i = body.indexOf(link); i !== -1; i = body.indexOf(link, i + 1)) {
+    const before = body[i - 1] ?? "";
+    const after = body[i + link.length] ?? "";
+    if (
+      !/[\w/.:]/.test(before) &&
+      !URL_CHAR.test(before) &&
+      !URL_CHAR.test(after)
+    )
+      return true;
+  }
+  return false;
+}
+
+/**
+ * The answers that defer a finding into the section of the pull request at
+ * `prUrl`: a trusted author's comment that opens with `**deferred**` and
+ * links that section. A thread reply is keyed on its thread; a top-level
+ * answer on each fingerprint its `drive-pr-addressed` markers name. The same
+ * shape from anyone else, or linking another section, defers nothing here.
+ */
+export function deferredReplies(
+  answers: AnswerComment[],
+  prUrl: string,
+): DeferredReply[] {
+  return answers
+    .filter(
+      (a) =>
+        TRUSTED_ASSOCIATIONS.has(a.association) &&
+        a.body.startsWith("**deferred**") &&
+        linksSection(a.body, prUrl),
+    )
+    .flatMap((a): DeferredReply[] =>
+      a.thread !== undefined
+        ? [{ thread: a.thread, reply: a.url }]
+        : [...a.body.matchAll(ADDRESSED_MARKER)].map((m) => ({
+            fingerprint: m[1] ?? "",
+            reply: a.url,
+          })),
+    );
+}
+
+/** The review threads, each with its comments' urls, bodies and authors. */
 const THREADS_QUERY = `query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $pr) {
@@ -65,7 +135,7 @@ const THREADS_QUERY = `query($owner: String!, $name: String!, $pr: Int!, $endCur
         pageInfo { hasNextPage endCursor }
         nodes {
           isResolved
-          comments(first: 100) { pageInfo { hasNextPage } nodes { url body } }
+          comments(first: 100) { pageInfo { hasNextPage } nodes { url body authorAssociation } }
         }
       }
     }
@@ -74,18 +144,14 @@ const THREADS_QUERY = `query($owner: String!, $name: String!, $pr: Int!, $endCur
 
 /**
  * Each resolved thread's first comment, whether its comments were cut at the
- * page, and its `**deferred**` replies that link `#deferred`, one JSON object
- * per line. A cut thread is emitted whatever its visible replies say: a reply
- * past the page is one the census cannot see.
+ * page, and its replies, one JSON object per line. A cut thread is refused
+ * whatever its visible replies say: a reply past the page is one the census
+ * cannot see.
  */
-const DEFERRED_REPLIES_JQ = `.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved) | {thread: .comments.nodes[0].url, truncated: .comments.pageInfo.hasNextPage, replies: [.comments.nodes[1:][] | select(.body | startswith("**deferred**")) | select(.body | contains("#deferred")) | .url]} | select(.truncated or (.replies | length > 0)) | @json`;
+const THREAD_REPLIES_JQ = `.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved) | {thread: .comments.nodes[0].url, truncated: .comments.pageInfo.hasNextPage, replies: [.comments.nodes[1:][] | {url, body, association: .authorAssociation}]} | @json`;
 
-/**
- * Each top-level `**deferred**` answer that links `#deferred`, with the
- * fingerprints its `drive-pr-addressed` markers name, one JSON object per
- * line (`answer-summary-finding.ts` writes them).
- */
-const SUMMARY_DEFERRED_JQ = `.[] | select(.body | startswith("**deferred**")) | select(.body | contains("#deferred")) | {reply: .html_url, fingerprints: [.body | scan("<!-- drive-pr-addressed: ([^\\\\s>@#]+)") | .[0]]} | @json`;
+/** Each top-level comment, one JSON object per line. */
+const COMMENTS_JQ = `.[] | {url: .html_url, body: (.body // ""), association: .author_association} | @json`;
 
 /** The JSON lines `gh … --jq` printed, each checked by `ok`. */
 function jsonLines<T>(
@@ -103,25 +169,26 @@ function jsonLines<T>(
     });
 }
 
-const isStrings = (v: unknown): v is string[] =>
-  Array.isArray(v) && v.every((s) => typeof s === "string");
+type Comment = Omit<AnswerComment, "thread">;
+
+const isComment = (v: unknown): v is Comment =>
+  isRecord(v) &&
+  typeof v.url === "string" &&
+  typeof v.body === "string" &&
+  typeof v.association === "string";
 
 interface ThreadLine {
   thread: string;
   truncated: boolean;
-  replies: string[];
+  replies: Comment[];
 }
 
 const isThreadLine = (v: unknown): v is ThreadLine =>
   isRecord(v) &&
   typeof v.thread === "string" &&
   typeof v.truncated === "boolean" &&
-  isStrings(v.replies);
-
-const isSummaryLine = (
-  v: unknown,
-): v is { reply: string; fingerprints: string[] } =>
-  isRecord(v) && typeof v.reply === "string" && isStrings(v.fingerprints);
+  Array.isArray(v.replies) &&
+  v.replies.every(isComment);
 
 async function gh(args: string[], stdin?: string): Promise<string> {
   const r = await ghCall(args, {
@@ -169,7 +236,7 @@ export function ghPrBodyForge(): PrBodyForge {
         JSON.stringify({ body }),
       );
     },
-    async deferredReplies(pr) {
+    async answers(pr) {
       const threads = jsonLines(
         await gh([
           "api",
@@ -184,7 +251,7 @@ export function ghPrBodyForge(): PrBodyForge {
           "-F",
           `pr=${pr}`,
           "--jq",
-          DEFERRED_REPLIES_JQ,
+          THREAD_REPLIES_JQ,
         ]),
         isThreadLine,
         `pull request #${pr}'s review threads could not be read`,
@@ -194,27 +261,22 @@ export function ghPrBodyForge(): PrBodyForge {
         throw new PrBodyError(
           `${cut.thread} has more than 100 comments, so its **deferred** replies cannot all be read; check that thread's entry by hand`,
         );
-      const summaries = jsonLines(
+      const comments = jsonLines(
         await gh([
           "api",
           "--paginate",
           `repos/{owner}/{repo}/issues/${pr}/comments`,
           "--jq",
-          SUMMARY_DEFERRED_JQ,
+          COMMENTS_JQ,
         ]),
-        isSummaryLine,
+        isComment,
         `pull request #${pr}'s comments could not be read`,
       );
       return [
         ...threads.flatMap((t) =>
-          t.replies.map((reply) => ({ thread: t.thread, reply })),
+          t.replies.map((r) => ({ ...r, thread: t.thread })),
         ),
-        ...summaries.flatMap((s) =>
-          s.fingerprints.map((fingerprint) => ({
-            fingerprint,
-            reply: s.reply,
-          })),
-        ),
+        ...comments,
       ];
     },
   };
