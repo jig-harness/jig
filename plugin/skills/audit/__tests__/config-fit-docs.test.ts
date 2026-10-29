@@ -61,6 +61,27 @@ test("a docs value the skill refuses is refused", () => {
   expect(docsRefusal(dir)?.message).toContain("docs.stale_after_days");
 });
 
+test("a configured docs root that is a file is refused", () => {
+  const dir = scratch({
+    ".config/jig.yaml": "docs:\n  root: notes.md\n  schema: schema.yaml\n",
+    "notes.md": "# Notes\n",
+    "schema.yaml": "{}\n",
+  });
+  expect(docsRefusal(dir)?.message).toContain(
+    "docs.root names notes.md, which is not a directory",
+  );
+});
+
+test("a configured schema that is a folder is refused", () => {
+  const dir = scratch({
+    ".config/jig.yaml": "docs:\n  root: docs\n  schema: docs\n",
+    "docs/index.md": "# Docs\n",
+  });
+  expect(docsRefusal(dir)?.message).toContain(
+    "docs.schema names docs, which is not a file",
+  );
+});
+
 linkTest("a schema linked to a file outside the repository is refused", () => {
   const dir = scratch({
     ".config/jig.yaml": "docs:\n  schema: docs/schema.yaml\n",

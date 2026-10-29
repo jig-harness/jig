@@ -75,18 +75,30 @@ function confined<T extends string | null>(
   return canonicalPath(to || ".") as T;
 }
 
-/** A configured path: nonempty text naming something that exists. */
+/** What a configured path must name: the root a folder, the schema a file. */
+const KINDS = {
+  root: { noun: "directory", is: (path: string) => isDir(path) },
+  schema: { noun: "file", is: (path: string) => isFileOrLinkToFile(path) },
+};
+
+/** A configured path: nonempty text naming a thing of the key's kind. */
 function configuredPath(
   section: Record<string, unknown>,
-  key: string,
+  key: keyof typeof KINDS,
   repo: string,
 ): string | undefined {
   const value = section[key];
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "string" || value.trim() === "")
     throw new SettingsError(`docs.${key} must be a path (nonempty text)`);
-  if (!existsSync(join(repo, value)))
+  const path = join(repo, value);
+  if (!existsSync(path))
     throw new SettingsError(`docs.${key} names ${value}, which does not exist`);
+  const { noun, is } = KINDS[key];
+  if (!is(path))
+    throw new SettingsError(
+      `docs.${key} names ${value}, which is not a ${noun}`,
+    );
   return canonicalPath(value);
 }
 
