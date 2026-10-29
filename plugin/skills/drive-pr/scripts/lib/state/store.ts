@@ -168,14 +168,12 @@ export async function resolveLegacyStateDir(): Promise<string> {
 
 /** The default, given an already-resolved legacy dir. */
 export function defaultStateDirFor(legacyDir: string): string {
-  return join(
-    homedir(),
-    ".local",
-    "state",
-    "jig",
-    "drive-pr",
-    cloneKey(legacyDir),
-  );
+  return join(defaultStateRoot(), cloneKey(legacyDir));
+}
+
+/** The directory the default per-clone state directories are under. */
+export function defaultStateRoot(): string {
+  return join(homedir(), ".local", "state", "jig", "drive-pr");
 }
 
 /**
@@ -187,9 +185,7 @@ export function defaultStateDirFor(legacyDir: string): string {
  */
 export function peekDefaultStateDirFor(legacyDir: string): string | null {
   const key = peekCloneKey(legacyDir);
-  return key === null
-    ? null
-    : join(homedir(), ".local", "state", "jig", "drive-pr", key);
+  return key === null ? null : join(defaultStateRoot(), key);
 }
 
 /**

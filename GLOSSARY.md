@@ -1118,6 +1118,14 @@ make, use the entry's term instead.
   and round state that survives between invocations. It stops in exactly one
   *terminal state* and never merges. Jig ships it as the `drive-pr`
   skill, and the `do-item` skill starts it when it opens a pull request.
+- **Attach (a pull request)** — putting a *worktree* on a pull request's head
+  before a *PR drive loop* drives it from there: its head branch checked out
+  when no other worktree of the clone holds that branch, otherwise its head
+  commit checked out on a **detached head** (git's name for a checkout of a
+  commit rather than of a branch, since git lets only one worktree hold a
+  branch). The drive pushes to the head branch by name either way, and
+  records which worktree it drives from so the steps that read a branch name
+  find it.
 - **Self-inflicted finding** — a review finding on a line one of the pull
   request's own commits last changed, usually a fix from an earlier round. The
   drive labels every finding this way: by the later rounds most findings are
@@ -1309,10 +1317,11 @@ make, use the entry's term instead.
   *Avoid*: model level (a *maturity level* is something else).
 - **Route** — the agent, *model tier* and reasoning effort chosen for the
   implementer of one piece of work at its pickup; derived from the item's
-  *work type*, size and labels and the *change-area catalog*'s flags and
-  mandatory reviews, by rules a repository declares, with the reason, the
-  source (the rules, or the person who chose instead) and whether it was
-  applied recorded on the pull request ([design](design/agent-routing.md)).
+  *work type*, size, *flag labels* and the *change-area catalog*'s flags and
+  mandatory reviews, by rules a repository keeps as data, with the rule behind
+  each part, the source (the rules, or the person who chose instead, whose
+  choice always wins) and whether it was applied recorded on the pull request
+  ([design](design/agent-routing.md)).
 - **Judgment tier** — the narrowest *model tier*: the top reasoning model,
   admitted only for a *decision layer* that is judgment-only, low-volume and
   high-leverage, and that a mechanical rule already tried and failed to
@@ -1321,11 +1330,6 @@ make, use the entry's term instead.
   out so that it alone runs on an expensive *model tier* while the evidence
   gathering and ranking around it run on cheaper ones. The unit the *Judgment
   tier* is assigned to, rather than a whole skill or agent.
-- **Route** — the agent, the *model tier* and the effort an item's
-  implementer runs on, derived from the item's *work type*, its *flag
-  labels* and size and the change areas it touches, by rules a repository
-  keeps as data, with the rule behind each part recorded; a person's choice
-  always wins ([design](design/agent-routing.md)).
 - **Family alias** — a model name that selects a model family rather than
   one release (`opus`, `sonnet`). A pin written with it ordinarily resolves to
   the family's current release, though not always: a session already on an

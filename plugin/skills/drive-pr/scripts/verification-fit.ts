@@ -67,7 +67,14 @@ import { consumerRoot, readRemoteName } from "../../../shared/consumer.ts";
 import { loadCatalogFile } from "./lib/change-areas-catalog.ts";
 import { readStdinAll } from "./lib/cli.ts";
 import { changeAreasCatalogPath } from "./lib/overlay.ts";
-import { gitIdentityEnv, run, tsArgv } from "./lib/proc.ts";
+import { attachedTree } from "./lib/driven-branch.ts";
+import {
+  git,
+  gitCallTimeoutSeconds,
+  gitIdentityEnv,
+  run,
+  tsArgv,
+} from "./lib/proc.ts";
 import { isRecord as isPlainObject } from "../../../shared/guards.ts";
 
 const VERDICTS = ["over-strict", "proportionate", "under-strict"] as const;
@@ -351,7 +358,16 @@ const planExtract = {
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const headSha = await capture(["git", "rev-parse", "HEAD"]);
-const branch = await capture(["git", "branch", "--show-current"]);
+// A detached tree an attach prepared records the branch it drives.
+const branch =
+  (await capture(["git", "branch", "--show-current"])) ??
+  (
+    await attachedTree(git, process.cwd(), {
+      timeoutSec: gitCallTimeoutSeconds(),
+      env: gitIdentityEnv(),
+    })
+  )?.branch ??
+  null;
 // The drive's remote (`repository.remote`, else `origin`); an unreadable
 // setting records no address, like an unreadable one.
 const remote = readRemoteName();

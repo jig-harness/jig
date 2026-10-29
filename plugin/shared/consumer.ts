@@ -47,10 +47,15 @@ export interface ReviewConfig {
 /**
  * The repository the agent is working in: `JIG_CONSUMER_ROOT` when
  * set, else the nearest ancestor of `cwd` holding `.git` (a directory in a
- * clone, a file in a linked worktree), else `cwd` itself.
+ * clone, a file in a linked worktree), else `cwd` itself. `env` is the
+ * environment the answer is for: a caller resolving the repository of a
+ * process it is about to start passes that process's environment.
  */
-export function consumerRoot(cwd = process.cwd()): string {
-  const explicit = process.env.JIG_CONSUMER_ROOT;
+export function consumerRoot(
+  cwd = process.cwd(),
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const explicit = env.JIG_CONSUMER_ROOT;
   if (explicit !== undefined && explicit.trim() !== "")
     return resolve(explicit);
   let current = resolve(cwd);

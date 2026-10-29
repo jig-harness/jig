@@ -126,12 +126,15 @@ Command-line flags, where a script has them, override all three.
   except the `changelog` fields, which the `changelog` skill reads from the
   repository's own file alone and refuses from any other layer
   ([`changelog`](#changelog)).
+- **Fields only a user file sets.** [`clones`](#clones-user-file-only)
+  describes one machine, so a repository's file refuses it; an environment
+  variable may still set it for one run.
 - **Adoption is the repository's file.** A user file alone does not make a
   repository look adopted: `resolve-review-comments` and the tracker scripts
   still refuse to run without `.config/jig.yaml`. The skills that run on
   their defaults read the user file and the environment either way.
 - **Paths** in any layer are relative to the repository root, as in the
-  repository's file.
+  repository's file, except the clone paths of `clones`, which are absolute.
 - **Errors** name the file or variable that set the field at fault, and
   `jig-config.ts` shows which layer set each field. It writes a key that
   holds a dot in quotes (`do_item.agents.title_keywords."node.js"`), and
@@ -230,8 +233,8 @@ is a complete example.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `repository.base_branch` | branch name, without the remote's prefix (`origin/`) | Derived: the clone's `origin/HEAD` (drive-pr and do-item: the `HEAD` of `repository.remote`), else GitHub's default branch | drive-pr, do-item, review, descar, changelog, docs | The integration branch: where pull requests land. A round diffs against its pull request's own base, so a stacked layer's round covers that layer alone; it diffs against this branch only on a branch with no pull request, and refuses when the pull request's base cannot be read or fetched, or the remote (`repository.remote`) is not the pull request's repository. The required checks come from the protection of the pull request's base and, for a stacked layer, of the branch the stack's bottom layer targets; a walk down the stack stops at this branch, and an unknown integration branch is an error. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it. changelog: the integration branch its release, tag plan, status and `release-access.ts` work on. docs: the base its `last_updated` check compares a branch with, and against which it finds the documents a branch adds; a value that resolves neither as `origin/<branch>` nor as `<branch>` stops the pass (exit 2). Without the field docs does not ask GitHub for the default branch: it takes the first of `origin/HEAD`, `origin/main`, `main`, `origin/master` and `master` that resolves, and skips the `last_updated` check when none does, so set the field when the default branch is named otherwise and `origin/HEAD` is unset |
-| `repository.remote` | git remote name: ASCII letters, digits, `.`, `_`, `-` and `/`; no leading `-`, and none of the sequences a ref name refuses (`..`, `//`, a leading or trailing `/`, a trailing `.`, a component starting with `.` or ending in `.lock`) | `origin` | drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect | The git remote of the clone the skills push to and fetch from. drive-pr: it fetches the pull request's base from it, diffs against `<remote>/<base>`, derives the integration branch from `<remote>/HEAD`, pushes the round's commits to it, and refuses to fetch or push when the remote's addresses do not name the pull request's repository; the conflict fix it prints names it. do-item: `pr-plan.ts open` measures the change against `<remote>/<base>` and prints the remote (`remote:`) the branch is pushed to. fix-ci: the default of `probe-base.ts --remote`. resolve-conflicts: `<remote>/HEAD` names the default branch, and its merge commands fetch from it. do-item, work-batch, file-issue, reflect: with GitHub Issues and no `issue_tracker.github.repository`, the remote's address names the repository. Set it when the clone names that remote otherwise (`upstream`, or a fork setup where `origin` is the fork). A person may set it in the user file for every clone; an unusable name, `null` included, is an error naming where it was set, and so is a `repository` section that is `null` or not a mapping |
+| `repository.base_branch` | branch name, without the remote's prefix (`origin/`) | Derived: the clone's `origin/HEAD` (drive-pr, do-item and gc: the `HEAD` of `repository.remote`), else GitHub's default branch | drive-pr, do-item, review, descar, changelog, docs | The integration branch: where pull requests land. A round diffs against its pull request's own base, so a stacked layer's round covers that layer alone; it diffs against this branch only on a branch with no pull request, and refuses when the pull request's base cannot be read or fetched, or the remote (`repository.remote`) is not the pull request's repository. The required checks come from the protection of the pull request's base and, for a stacked layer, of the branch the stack's bottom layer targets; a walk down the stack stops at this branch, and an unknown integration branch is an error. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it. changelog: the integration branch its release, tag plan, status and `release-access.ts` work on. docs: the base its `last_updated` check compares a branch with, and against which it finds the documents a branch adds; a value that resolves neither as `origin/<branch>` nor as `<branch>` stops the pass (exit 2). Without the field docs does not ask GitHub for the default branch: it takes the first of `origin/HEAD`, `origin/main`, `main`, `origin/master` and `master` that resolves, and skips the `last_updated` check when none does, so set the field when the default branch is named otherwise and `origin/HEAD` is unset |
+| `repository.remote` | git remote name: ASCII letters, digits, `.`, `_`, `-` and `/`; no leading `-`, and none of the sequences a ref name refuses (`..`, `//`, a leading or trailing `/`, a trailing `.`, a component starting with `.` or ending in `.lock`) | `origin` | drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc | The git remote of the clone the skills push to and fetch from. drive-pr: it fetches the pull request's head branch from it to attach the pull request to a working tree (and to place one), fetches the pull request's base from it, diffs against `<remote>/<base>`, derives the integration branch from `<remote>/HEAD`, pushes the round's commits to it, and refuses to fetch or push when the remote's addresses do not name the pull request's repository; the conflict fix it prints names it. do-item: `pr-plan.ts open` measures the change against `<remote>/<base>` and prints the remote (`remote:`) the branch is pushed to. fix-ci: the default of `probe-base.ts --remote`. resolve-conflicts: `<remote>/HEAD` names the default branch, and its merge commands fetch from it. gc: the `worktrees` kind reads a worktree's pull requests and its integration branch (`<remote>/HEAD`) through it, and a detached tree a drive attached through the remote its record names. do-item, work-batch, file-issue, reflect: with GitHub Issues and no `issue_tracker.github.repository`, the remote's address names the repository. Set it when the clone names that remote otherwise (`upstream`, or a fork setup where `origin` is the fork). A person may set it in the user file for every clone; an unusable name, `null` included, is an error naming where it was set, and so is a `repository` section that is `null` or not a mapping |
 
 ## `pull_requests`
 
@@ -763,6 +766,7 @@ These are set per machine or per run, not committed:
 | `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
+| `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees), and `attach-pr.ts --place` choose the tree without attaching; `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
 | `DRIVE_PR_STATE_DIR` | State root; rounds, locks and leases live in its `<clone-key>/` subdirectory. An inherited resolved leaf is also accepted. Flat legacy state refuses until explicitly relocated. |
 | `JIG_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |
 | `DEV_DASHBOARD_DIR` | Overrides `fleet_health.snapshot_dir` |
@@ -783,6 +787,25 @@ These are set per machine or per run, not committed:
 | `DRIVE_PR_*` (others) | Round limits, timeouts and repair budgets; listed in the [drive-pr README](skills/drive-pr/README.md) |
 | Others | A few knobs of a single skill, such as `REFLECT_THRESHOLD` of `resolve-review-comments`, are described where that skill's `SKILL.md` uses them |
 
+## `clones` (user file only)
+
+Where this machine keeps a clone of another repository, so a session in one
+repository can arm the drive of a pull request in another
+(`/jig:drive-pr owner/name#N`, or the pull request's URL). Only the user file
+(`~/.jig/jig.yaml`) or an environment variable may set it: a repository's own
+file, shared by everyone who clones it, cannot know where this machine keeps
+anything, and refuses the field with an error naming it.
+
+```yaml
+clones:
+  example/api: ~/work/api
+  example/web: /srv/checkouts/web
+```
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `clones` | map of `owner/name` to a local clone path, absolute or starting with `~/` | No clone is known: arming another repository's pull request prints the command to run in a checkout of it | drive-pr | The drive is armed in that clone's primary checkout, as for a pull request with no working tree: in the tree that holds the pull request, else in a new one under that repository's `gc.worktree_roots`. The clone must be a checkout of the repository its key names. Keys compare without regard to case |
+
 ## `gc`
 
 The resource collector reads repository declarations separately from machine
@@ -792,7 +815,7 @@ command can be registered as a collection kind.
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
 | `gc.kinds` | distinct string list | Empty; supported repository kinds: `tool-state`, `scratch`, `worktrees` | audit, gc |
-| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute | audit, gc |
+| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute. `drive-pr` creates the working tree for a pull request that has none under the first root | audit, gc, drive-pr |
 | `gc.scratch_prefixes` | distinct path list | Empty; path prefixes of scratch directory names, relative to the repository or absolute; a filesystem root is refused | audit, gc |
 
 A collecting run fetches `.config/jig.yaml` from the remote URL and base branch

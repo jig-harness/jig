@@ -162,7 +162,7 @@ consumer polling `--json` for one of these four will never see it there.
 | `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed and does **not** re-arm |
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
 | `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are |
-| `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` / `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count '@{u}..HEAD'` before re-arming, same as `PASS_DEADLINE`. A *short* window never reaches this state — the drive sleeps through that one and resumes |
+| `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` / `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count 'refs/remotes/<remote>/<head-branch>..HEAD'` before re-arming, same as `PASS_DEADLINE`. A *short* window never reaches this state — the drive sleeps through that one and resumes |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` ended `drive.ts` at a round boundary, after any running pass completed. Resume the stop directive before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
 
@@ -308,6 +308,42 @@ bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- claude -p "/jig:dr
 
 Each round is a **fresh agent process**, so a long converge never depends on one
 session's context surviving. That is the preferred unattended mode.
+
+**The attach.** Once it holds the tree's driver lock and the PR's,
+`drive.ts` attaches the PR to the tree it runs in
+(`scripts/attach-pr.ts`, which you can also run alone:
+`bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`). It checks that
+the drive's remote (`repository.remote`, else `origin`) is the repository
+the PR was read from, fetches the PR's head
+branch from it and checks the branch out when no working tree of the clone
+holds it; when another tree holds it, it checks out the PR's head commit
+**detached**. Never create a branch with another name for a PR's head: the
+PR's head branch is the only branch a drive pushes to, and `guarded-push.ts`
+names it by explicit refspec, so a detached tree pushes exactly as a named
+one does, and a round's commit lands on whatever the attach left. A detached
+tree keeps a record of its PR, head branch and attached commit in its own git
+directory; that record is what every script that reads the branch name or
+resolves the PR from the current branch reads, and only while the tree's
+head still descends from that commit and the branch is still on the remote.
+An attach by name removes it. (The drive state's `drivenBranch` mirrors it
+for the handoff file.) It refuses (exit `2`, naming the state) a tree it
+would move that has uncommitted changes or an unfinished git operation (a
+tree already on the head branch, at or past the head, is not moved), a tree
+holding the branch
+that is dirty or has commits the PR's head lacks, a detached head with
+commits no branch or remote holds, a local branch of that name ahead of the
+head that this tree would switch to (a tree already on the branch keeps its
+commits ahead of the head, and the drive pushes them), the clone's primary
+checkout on another branch, a remote that is another
+repository, and a PR from a fork; a PR that is not open is exit `5`. Under
+`drive.ts`, a live driver already holding the PR makes the PR's lock refuse
+(exit `11`) before the attach runs, so the tree is untouched; run alone, the
+attach leaves a tree that a live driver of the PR or another driver of the
+tree holds untouched and exits `11`, and an interactive session's lease on
+the tree refuses it. `drive.ts` refuses a PR number written with leading
+zeros (exit `2`), since GitHub reads it as the number without them and the
+locks would not. `--dry-run` and `DRIVE_PR_ATTACH=off` skip the attach;
+with `off`, `--place` still chooses the tree and attaches nothing.
 
 Normally you do not run this by hand: a `/jig:do-item` run **arms the
 drive itself** the moment the draft PR opens (its § Arm the drive step).
@@ -562,19 +598,54 @@ could forge or forget.
 
 **exact** — Follow the admission, spawn, observation, and stop sequence; human clearance remains required where specified.
 
-1. **Resolve the PR number.** The argument, else
-   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view --json number --jq .number` for the current branch. Refuse with
-   the `gh` error if neither yields one; do not guess.
-2. **Refuse to arm an uncleared human checkpoint.** The PR serves **every**
-   issue key its branch name carries and every one a closing keyword names in
+1. **Resolve the PR.** The argument — a number, `owner/name#N`, or a pull
+   request URL, which may name another repository — else
+   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view --json number --jq .number` for the current branch. On a
+   detached head `gh` names none; the PR the tree was attached to is the `pr`
+   that `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" get` prints. Refuse
+   with the error if none yields one; do not guess.
+2. **Place the drive.** Run
+   `bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR> --place` with the PR
+   as step 1 resolved it. It chooses the working tree that drives the PR and
+   attaches the PR there: this session's own tree; from the clone's primary
+   checkout, the tree that already holds the PR, else a new one it creates
+   with git's `worktree add --detach` under the first root `gc.worktree_roots`
+   names; for a PR in another repository, the same in the clone the user
+   file's `clones` map names for it.
+   - exit `0` → it prints `{"pr", "repo", "tree", "created", "otherClone",
+     "env"}`: arm in `tree`, with the number `pr`. `env.unset` names the
+     variables the attach ran without, usually none. When it names any,
+     remove each of them from the environment of the processes that run the
+     checkpoint lookup below and the driver, so they read the repository,
+     configuration, tree and drive state the attach read rather than this
+     session's.
+   - exit `3` → the PR is in another repository and no clone of it is mapped.
+     Print its output, which names the command to run in a checkout of that
+     repository, and stop.
+   - exit `2` → the attach refused and names what is in the way (uncommitted
+     changes, an unfinished operation, unpushed commits in the tree holding
+     the branch, a fork, no `gc.worktree_roots`). Report it and stop: never
+     create a branch for the PR, move another tree, or discard changes to get
+     past it.
+   - exit `11` → a live driver already holds that tree or the PR: report it
+     with its details, as step 5 does for a refused spawn, and stop.
+   - exit `5` → the PR is not open; exit `1` → a read failed. Report either.
+
+   Placing comes before the checkpoint below because the checkpoint is read in
+   the placed tree: for a PR in another repository, that is the clone whose
+   tracker configuration names its issues.
+3. **Refuse to arm an uncleared human checkpoint.** The PR serves **every**
+   issue key its head branch's name carries (its `headRefName`, which a
+   detached tree does not have checked out) and every one a closing keyword names in
    its body (`Closes`/`Fixes`/`Resolves <KEY>`) — check each one, never a
    chosen first. A key is `ENG-123` on Linear and `#123` on GitHub Issues; a
    branch carries it as `pull_requests.branch_name` renders it (`eng-123-…`
    for `ENG-123`, `123-…` for `#123`). An issue the body merely cites
    (`References:`, `Related:`, a prose mention) is context the PR does not claim to deliver, so its gate is not
    this PR's to honour and its lookup failing is not a reason to refuse. For
-   each, read its labels through `/jig:do-item`'s tracker scripts
-   (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" "<KEY>"`) and, when
+   each, read its labels through `/jig:do-item`'s tracker scripts, run in the
+   tree step 2 placed the drive in
+   (`bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" "<KEY>"`) and, when
    it has a parent, the parent's description too, applying `/jig:do-item`'s
    human-in-the-loop (HITL) gate check
    ([`do-item/SKILL.md`](../do-item/SKILL.md) Step 4a: the repository's `hitl`
@@ -588,14 +659,14 @@ could forge or forget.
    end-to-end, print the
    command below and stop — review rounds pre-empt a judgment the issue exists
    to collect (the same rule `/jig:do-item`'s § Arm the drive applies).
-3. **Spawn the driver in the background** with the harness's background
+4. **Spawn the driver in the background** with the harness's background
    execution (Bash `run_in_background`), never blocking the session on it, in
-   the portable one-line form:
+   the portable one-line form, `<tree>` and `<PR>` being what step 2 printed:
 
    **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
+   bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
    ```
 
    **exact** — Pass the Bash call's `timeout` of `28800000` (8 hours) with
@@ -612,8 +683,9 @@ could forge or forget.
    Claude Code 2.1.285: from 2.1.288 a local terminal session has no such
    limit, and from 2.1.285 to 2.1.287 every session does. When the limit fires it stops the driver mid-round. The pass's agent
    context is lost, but its edits and unpushed commits stay in the worktree:
-   check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count '@{u}..HEAD'` before
-   re-arming. The next drive recovers the stale locks and resumes from the
+   check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count 'refs/remotes/<remote>/<head-branch>..HEAD'` before
+   re-arming, in the tree the drive ran in (`<head-branch>` is the PR's head
+   branch: a detached tree has no `@{u}` to count against). The next drive recovers the stale locks and resumes from the
    saved state.
    Do not raise `BASH_DEFAULT_TIMEOUT_MS` instead: it also becomes every
    foreground command's default.
@@ -633,7 +705,7 @@ could forge or forget.
    it. `--max-rounds` counts from the durable state, so
    re-arming a PR that has already run rounds resumes it ("at round 4 of 10")
    rather than restarting the budget.
-4. **Check the spawn once, a few seconds later** — not immediately and not in a
+5. **Check the spawn once, a few seconds later** — not immediately and not in a
    poll loop, so lock acquisition has time to resolve:
    - exit `11` (single-instance lock), or a `SESSION_LEASE_HELD` diagnostic on
      the driver's output, naming a **per-PR** or **worktree**
@@ -661,7 +733,7 @@ could forge or forget.
    - exit `0` inside the window → the drive already reached a terminal state;
      report its own reason.
    - still running → armed. Do not poll.
-5. **Report and stop.** State: armed, the PR, the verified driver-log path
+6. **Report and stop.** State: armed, the PR, the tree it drives from, the verified driver-log path
    (`drive.ts: driver log → …` in its output, or `drive.ts: driver log
    unavailable: <reason>` when it keeps none; confirm it is a regular file
    and can be opened for append with `bun "${CLAUDE_SKILL_DIR}/scripts/portable.ts" check-log <path>` before
@@ -1788,7 +1860,7 @@ loop cannot see, such as converging and wanting the local gates and the
 | `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
 | `5` | The PR is not `OPEN` | Stop — the same liveness posture `finish-round.ts` takes before its push |
 | `11` | Another live session holds this working tree's tree lease (never under `--check`) | Stop, as for `finish-round.ts`'s `11` below |
-| `2` / `1` | Usage error, including a worktree whose branch is not the PR's head branch / a step failed | Fix the invocation, or read the step's diagnostic. For the branch mismatch, stop and report it for a human: never rename the workspace's branch, or check out or detach another worktree's branch, to make the check pass |
+| `2` / `1` | Usage error, including a worktree that drives a branch other than the PR's head branch (a detached tree drives the branch its attach recorded) / a step failed | Fix the invocation, or read the step's diagnostic. For the branch mismatch in a driver pass (`$DRIVE_PR_TARGET` set), stop the round and report it: the attach that repairs it runs only when the PR is re-armed, since a standalone attach refuses (exit `11`) while this pass's own driver holds the tree. With no live driver, attach the PR (`bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`), which checks out its head branch or, when another tree holds it, its head commit detached; if the attach refuses, stop and report it for a human. Never rename the workspace's branch, create a branch with another name, or move another worktree to make the check pass |
 
 You do not have to remember to ask: § 1's gate already measured the drift and
 printed it (`base.drift` in its JSON, a `BASE:` line on stderr) whenever there
@@ -2779,7 +2851,7 @@ real round ever reaches it; do not tighten it to make the loop feel faster. It
 exits `15` rather than `1`, because "ran out of wall clock" and "the pass is
 broken" call for different next actions — and because a killed pass strands
 whatever it was doing, so the stop names the recovery checks
-(`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short`, and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count '@{u}..HEAD'`).
+(`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short`, and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count 'refs/remotes/<remote>/<head-branch>..HEAD'`).
 
 A fired deadline is an ordinary non-zero exit, and every caller treats it as an
 **unreadable** answer: a killed `gh pr view` is never "the PR is not open" and

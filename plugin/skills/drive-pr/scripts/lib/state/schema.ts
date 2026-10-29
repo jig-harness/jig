@@ -38,6 +38,7 @@
 
 import { isGitSha } from "../cli.ts";
 import { isActorId } from "./actor.ts";
+import { type DrivenBranch, isOptionalDrivenBranch } from "./driven-branch.ts";
 
 /**
  * The persisted shape of a recorded quota park — what
@@ -403,6 +404,8 @@ export interface DriveState {
    * round ceiling instead (`pruneRoundPaths`'s own header).
    */
   roundPaths: RoundPaths[];
+  /** The tree the last attach prepared, `null` before one (`driven-branch.ts`). */
+  drivenBranch?: DrivenBranch | null;
   [extra: string]: unknown;
 }
 
@@ -493,21 +496,28 @@ export function normalizeRoundPathsUncapped(raw: readonly string[]): string[] {
  * Tolerating them is not neutral, because the consumers treat these fields as
  * positions and sentinels rather than as arbitrary numbers. A persisted
  * `readyMarkedRound: 0.5` is non-zero, so every consumer reads it as "already
- * marked" and the draft→Ready transition is suppressed forever — while
- * `mark-ready.ts`'s own `isDigits` check rejects the same value's decimal
- * point and exits 1, wedging the drive rather than the field. A negative round
- * is the same shape pointed the other way. Fail closed here instead: an
- * unusable state is the store's documented, recoverable refusal
- * (`drive-state.ts reset`), where a silently-accepted malformed counter is
- * neither.
- *
- * Applied to the whole CLASS rather than the one field a review found it on:
- * `rounds`, `attempts`, both reflect
- * positions, `readyMarkedRound`, and the `round` on every parked and held
- * item are the same construct with the same invariant.
+ * marked" and the draft→Ready transition is suppressed forever. Fail closed
+ * instead: an unusable state is the store's documented, recoverable refusal
+ * (`drive-state.ts reset`). Every counter and every item `round` here is
+ * held to it.
  */
 function isCount(v: unknown): boolean {
   return typeof v === "number" && Number.isInteger(v) && v >= 0;
+}
+
+/** A parked item every reader can match and render (`ParkedItem`). */
+function isParkedItem(p: unknown): boolean {
+  if (typeof p !== "object" || p === null) return false;
+  const e = p as Record<string, unknown>;
+  return (
+    typeof e.key === "string" &&
+    e.key.length > 0 &&
+    !/[\n\r]/.test(e.key) &&
+    (e.kind === "thread" || e.kind === "finding") &&
+    typeof e.reason === "string" &&
+    e.reason.length > 0 &&
+    isCount(e.round)
+  );
 }
 
 export function isUsableState(v: unknown, pr: number): v is DriveState {
@@ -518,16 +528,9 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   if (typeof s.lastCountedHead !== "string") return false;
   if (typeof s.verifiedSha !== "string") return false;
   if (typeof s.phase !== "string") return false;
+  if (!isOptionalDrivenBranch(s.drivenBranch)) return false;
   if (!Array.isArray(s.parked)) return false;
-  for (const p of s.parked as unknown[]) {
-    if (typeof p !== "object" || p === null) return false;
-    const e = p as Record<string, unknown>;
-    if (typeof e.key !== "string" || e.key.length === 0) return false;
-    if (/[\n\r]/.test(e.key)) return false;
-    if (e.kind !== "thread" && e.kind !== "finding") return false;
-    if (typeof e.reason !== "string" || e.reason.length === 0) return false;
-    if (!isCount(e.round)) return false;
-  }
+  if (!(s.parked as unknown[]).every(isParkedItem)) return false;
   // Present AND well-typed, not "well-typed if present" — see `DriveState`.
   if (!isCount(s.attempts)) return false;
   if (typeof s.attemptsHead !== "string") return false;
@@ -836,6 +839,7 @@ export function freshState(pr: number): DriveState {
     roundPaths: [],
     lastProgressAt: "",
     quotaPark: null,
+    drivenBranch: null,
   };
 }
 
