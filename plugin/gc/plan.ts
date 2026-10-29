@@ -8,7 +8,7 @@ import {
   type MachineConfig,
   type RepositoryEntry,
 } from "./config.ts";
-import { cloneCheckouts, primaryCheckout } from "./checkout.ts";
+import { canonicalPath, cloneCheckouts, primaryCheckout } from "./checkout.ts";
 import { baseDeclaration } from "./git.ts";
 import { receiptsKind } from "./kinds/receipts.ts";
 import { scratchKind } from "./kinds/scratch.ts";
@@ -154,13 +154,16 @@ export async function collectionPlan(options: {
   const { machine } = gcConfiguration(process.cwd(), null);
   const selected = options.repository ? resolve(options.repository) : undefined;
   const matching = (path: string) =>
-    machine.repositories.filter((entry) => resolve(entry.path) === path);
+    machine.repositories.filter(
+      (entry) => canonicalPath(entry.path) === canonicalPath(path),
+    );
   let entries: (RepositoryEntry | { path: string })[] = selected
     ? matching(selected)
     : machine.repositories;
-  // The entry names the clone's primary checkout; a linked worktree of it
-  // selects that entry. A checkout Git cannot read selects none.
-  if (selected && entries.length === 0) {
+  // The entry names the clone's primary checkout; collecting from a linked
+  // worktree of it selects that entry. A report reads the selected checkout's
+  // own declaration instead, and a checkout Git cannot read selects none.
+  if (options.collect && selected && entries.length === 0) {
     const primary = await cloneCheckouts(selected)
       .then((checkouts) => primaryCheckout(selected, checkouts))
       .catch(() => null);

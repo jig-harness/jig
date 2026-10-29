@@ -7,6 +7,7 @@ import {
   readFileSync,
   realpathSync,
   readdirSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -296,6 +297,49 @@ test("uninstall refuses a checkout Git cannot read that no entry names", () => {
   const result = run(f, ["install", "--repo", elsewhere, "--uninstall"]);
   expectSpawnExit(result, 1);
   expect(result.stderr.toString()).toContain("Cannot identify the clone");
+});
+test("an entry spelling the clone through a symbolic link is the same clone", () => {
+  if (process.platform === "win32") return;
+  const f = setup();
+  const alias = join(f.root, "alias");
+  symlinkSync(f.repo, alias);
+  const aliased = { ...f.machine.repositories[0], path: alias };
+  writeFileSync(f.homeFile, dump({ gc: { repositories: [aliased] } }));
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  const collect = run(f, ["--collect", "--repo", linked, "--json"]);
+  expectSpawnExit(collect, 0);
+  expect(collect.stdout.toString()).not.toContain("no confirmed machine entry");
+  const install = run(f, ["install", "--repo", linked]);
+  expectSpawnExit(install, 0);
+  const preview = install.stdout.toString();
+  expect(preview).toContain(`Replacing the entry for ${alias}`);
+  expect(preview.split("\n").filter((line) => /\bpath: /.test(line))).toEqual([
+    expect.stringContaining(`path: ${realpathSync(f.repo)}`),
+  ]);
+});
+test("machine-wide uninstall identifies no clone, so it runs from any directory", () => {
+  const f = setup();
+  const elsewhere = mkdtempSync(join(tmpdir(), "gc-not-a-clone-"));
+  const result = run(f, [
+    "install",
+    "--repo",
+    elsewhere,
+    "--uninstall",
+    "--machine",
+  ]);
+  expectSpawnExit(result, 0);
+  expect(result.stdout.toString()).toContain("repositories: []");
+});
+test("a report from a linked worktree reads that checkout's own declaration", () => {
+  const f = setup();
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  const result = run(f, ["--repo", linked, "--json"]);
+  expectSpawnExit(result, 0);
+  const text = result.stdout.toString();
+  expect(text).toContain(`${linked}/.config/jig.yaml (checkout; report only)`);
+  expect(text).not.toContain(`${f.repo}/.config/jig.yaml`);
 });
 test("uninstall reads only machine policy, so a broken checkout cannot block it", () => {
   const f = setup();

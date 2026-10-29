@@ -41,5 +41,18 @@ export function primaryCheckout(
   { primary }: { primary: string | null },
 ): string {
   if (primary === null) return root;
-  return realpathSync(primary) === realpathSync(root) ? root : primary;
+  return canonicalPath(primary) === canonicalPath(root) ? root : primary;
+}
+/**
+ * The spelling-independent identity of a checkout path: symbolic links
+ * resolved, so `/alias/repo` and `/physical/repo` compare equal. A path that
+ * no longer exists keeps its lexical form, so an entry naming a deleted
+ * checkout still matches its own spelling.
+ */
+export function canonicalPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
 }
