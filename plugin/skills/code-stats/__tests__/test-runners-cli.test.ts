@@ -245,7 +245,47 @@ describe("a configuration that does not parse", () => {
         expect.objectContaining({ path: `py/${file}` }),
       );
     });
+
+    test(`at the root with code_stats.modules set, ${file} is reported unreadable and the run goes on`, () => {
+      const root = fixture("maven", {
+        [file]: content,
+        ".config/jig.yaml": 'code_stats:\n  modules: ["lib"]\n',
+      });
+      expect(report(root).testRunners.unreadable).toContainEqual(
+        expect.objectContaining({ path: file }),
+      );
+    });
   }
+
+  for (const [why, files, path] of [
+    [
+      "a package.json with no jest key",
+      { "web/package.json": '{"name":\n' },
+      "web/package.json",
+    ],
+    [
+      "a package.json beside a jest configuration",
+      {
+        "web/package.json": '{"jest": {\n',
+        "web/jest.config.json": '{"testMatch": ["**/*.check.js"]}\n',
+      },
+      "web/package.json",
+    ],
+    [
+      "a pyproject.toml beside a pytest.ini that holds the section",
+      {
+        "py/pyproject.toml": "[tool.pytest.ini_options]\ntestpaths = [\n",
+        "py/pytest.ini": "[pytest]\ntestpaths = checks\n",
+      },
+      "py/pyproject.toml",
+    ],
+  ] as const)
+    test(`${why} is not selected, so it is neither parsed nor reported`, () => {
+      const root = fixture("maven", files);
+      expect(report(root).testRunners.unreadable).not.toContainEqual(
+        expect.objectContaining({ path }),
+      );
+    });
 });
 
 describe("the layer's precedence", () => {

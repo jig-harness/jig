@@ -111,8 +111,10 @@ terminal summary, `--explain` and `--json` (`testRunners.unreadable`), and
 nothing is claimed from it. Report such a line to the user; when its tests
 matter, `code_stats.kinds` names them. Two cases stop the run with an
 error instead: a file the run opens that the file system refuses to read
-(`cannot read <path> (<code>)`), and a `pyproject.toml` or `package.json`
-at the root that does not parse, which module detection reads first. Report
+(`cannot read <path> (<code>)`), and, unless `code_stats.modules` is set,
+a `pyproject.toml` or `package.json` at the root that does not parse,
+which module detection reads first. Only a configuration a reader selects
+and parses is reported unreadable. Report
 the error; do not work around it. The [README](README.md#test-runner-configuration)
 lists what each reader reads and cannot read.
 

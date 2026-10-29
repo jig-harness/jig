@@ -262,11 +262,17 @@ system refuses to read (its permissions, say) stops it with
 opens the configuration files these readers find and the workspace
 manifests that name the modules; a report also opens every tracked file it
 counts except an asset (an image, say), whose size is all it needs;
-`--explain` opens only the file it explains. And a `pyproject.toml` or
-`package.json` at the root that is not valid TOML or JSON stops every mode
-with `cannot read <file> to find the repository's modules`, since module
-detection reads it before the test runners do; in any other folder such a
-file is reported unreadable like the rest.
+`--explain` opens only the file it explains. And unless
+`code_stats.modules` is set, a `pyproject.toml` or `package.json` at the
+root that is not valid TOML or JSON stops every mode with
+`cannot read <file> to find the repository's modules`, since module
+detection reads it before the test runners do.
+
+Any other configuration file a reader selects and finds invalid is
+reported unreadable like the rest. A file no reader selects is not
+parsed and not reported: a `package.json` with no `jest` key or beside a
+`jest.config.*`, or a `pyproject.toml` in a folder where an earlier
+pytest file holds the section.
 
 | Runner | Files read | What is read | What is not read |
 |--------|------------|--------------|------------------|
