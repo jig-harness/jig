@@ -449,10 +449,13 @@ thread whose promised fix is not verified as pushed is held again as
 unconfirmed, the way reconciliation holds a reply it finds, so it is not
 resolved until the new driver confirms the fix is in the tree or replies
 afresh; nothing is posted on the thread. A hold that could not be reopened is
-recorded and reported apart. Everything that can
-refuse runs before the holder is stopped; if a later step still refuses, the
-stop says the holder was stopped and prints the plain re-arm command. Do not stop a driver that is
-making progress.
+recorded and reported apart. The checks that need no lock (the pass
+command, the quota re-arm, the held batch) and this tree's own lock run before
+the holder is stopped. Attaching the tree and taking the PR lock can only run
+after it, and can still refuse (a dirty tree, an unfinished git operation, a
+fork, another repository); such a refusal says the holder was stopped and
+prints the plain re-arm command. Do not stop a driver that is making
+progress.
 
 ## The exit states — what you do now
 

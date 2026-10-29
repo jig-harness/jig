@@ -307,7 +307,6 @@ async function stopWedgedHolder(
     `drive.ts --take-over: PR #${pr}'s driver is WEDGED; stopping it through drives.ts --stop.`,
   );
   for (const line of holderLines(row)) console.error(`  ${line}`);
-  announceStoppedOnExit(pr, rearm);
   // Bound to the diagnosed acquisition: `--stop` refuses (exit 3) a holder
   // that acquired the lock after this row was read, so a healthy successor
   // of an exited wedged driver is never the one stopped.
@@ -320,7 +319,6 @@ async function stopWedgedHolder(
     },
   );
   if (stop.code === STOP_OTHER_HOLDER_EXIT) {
-    withdrawStoppedNotice();
     refuse(
       pr,
       row,
@@ -343,6 +341,9 @@ async function stopWedgedHolder(
       );
     await sleep(0.25);
   }
+  // Only now is the stop witnessed: a refusal before this point says the
+  // holder may still be running, and the exit must not claim otherwise.
+  announceStoppedOnExit(pr, rearm);
 }
 
 /**

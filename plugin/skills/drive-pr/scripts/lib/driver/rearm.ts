@@ -67,7 +67,7 @@ import { isRecord } from "../../../../../shared/guards.ts";
 
 import { TRUSTED_ASSOCIATIONS } from "../../summary-findings.ts";
 
-import { driveState } from "./paths.ts";
+import { driveState, driveTs } from "./paths.ts";
 
 import { QUOTA_PARKED_EXIT } from "./settings.ts";
 
@@ -177,6 +177,8 @@ export function admitQuotaRearm(
     "A successor on the same subscription is behind the same wall. Re-arm from a session",
     "whose pass bills another account, or after the reset. --window-reopened only if a person",
     "knows the window has reopened: an agent never passes it.",
+    `The wall belongs to account ${wall ?? "unrecorded"}. From a session whose pass bills another account:`,
+    `  ${armCommand(driveTs, pr, passBotsOnly(agent))}`,
   ])
     console.error(line);
   return QUOTA_PARKED_EXIT;
@@ -193,9 +195,19 @@ interface CommentLike {
 /** A pull-request comment answers a parked key only with a line `answer <key>:`. */
 export function answersKey(body: string, key: string): boolean {
   const prefix = `answer ${key}:`.toLowerCase();
-  return body
-    .split("\n")
-    .some((line) => line.trim().toLowerCase().startsWith(prefix));
+  let fenced = false;
+  for (const raw of body.split("\n")) {
+    const line = raw.trim();
+    // A fenced block is an example or a quote, never the answer itself.
+    if (/^(```|~~~)/.test(line)) fenced = !fenced;
+    else if (
+      !fenced &&
+      line.toLowerCase().startsWith(prefix) &&
+      line.slice(prefix.length).trim() !== ""
+    )
+      return true;
+  }
+  return false;
 }
 
 /** A comment a person wrote after the park, not one the drive wrote. */

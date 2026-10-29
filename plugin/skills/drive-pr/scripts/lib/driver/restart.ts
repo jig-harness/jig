@@ -30,10 +30,41 @@ import { swallow } from "../../../../../shared/errors.ts";
 import { driveState } from "./paths.ts";
 
 /**
+ * Admit one more pass-deadline restart within `budget`, counting it in the
+ * drive state only when it is admitted, so a deadline that stops the drive is
+ * never recorded as a restart taken. Returns the restarts taken, with this
+ * one when admitted; `null` when the count could not be read or recorded.
+ */
+export async function admitDeadlineRestart(
+  pr: string,
+  budget: number,
+): Promise<{ admitted: boolean; taken: number } | null> {
+  const got = await run(tsArgv(driveState, ["get", pr]), {
+    stderr: "inherit",
+    timeoutSec: helperTimeoutSeconds(),
+  });
+  if (got.code !== 0) return null;
+  let taken: unknown;
+  try {
+    taken = (JSON.parse(got.stdout) as { deadlineRetries?: unknown })
+      .deadlineRetries;
+  } catch (err) {
+    swallow(err, "drive-state.ts get printed no JSON");
+    return null;
+  }
+  taken ??= 0;
+  if (!Number.isSafeInteger(taken)) return null;
+  if ((taken as number) >= budget)
+    return { admitted: false, taken: taken as number };
+  const bumped = await bumpDeadlineRetries(pr);
+  return bumped === null ? null : { admitted: true, taken: bumped };
+}
+
+/**
  * Count one more pass-deadline restart in the drive state and return the
  * drive's total; `null` when it could not be recorded.
  */
-export async function bumpDeadlineRetries(pr: string): Promise<number | null> {
+async function bumpDeadlineRetries(pr: string): Promise<number | null> {
   const res = await run(
     tsArgv(driveState, ["deadline-retries", pr, "--set", "bump"]),
     { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
