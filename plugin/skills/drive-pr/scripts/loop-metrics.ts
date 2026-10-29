@@ -235,7 +235,9 @@ async function localAutonomy(pr: string): Promise<DurableAutonomy | null> {
  * toward the validation measure too. `null` when neither holds one, soft
  * like `durableRounds`.
  */
-async function durableAutonomy(pr: string): Promise<DurableAutonomy | null> {
+export async function durableAutonomy(
+  pr: string,
+): Promise<DurableAutonomy | null> {
   const local = await localAutonomy(pr);
   if (local !== null) return local;
   const snapshot = await readLedgerSnapshot(pr, await resolveLogin());

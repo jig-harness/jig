@@ -14,7 +14,11 @@ import {
 import type { PrSample } from "../scripts/lib/sample.ts";
 import { runReport } from "../scripts/loop-metrics.ts";
 import { provisionalBody } from "../scripts/provisional-reply.ts";
-import { commentNodes } from "./provisional-fixtures.ts";
+import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { ledgerFromState, renderLedger } from "../scripts/lib/state/ledger.ts";
+import { freshState } from "../scripts/lib/state/schema.ts";
+import { commentNodes, fakeForge, runIn } from "./provisional-fixtures.ts";
 
 const BOTS = botMarkers(["coderabbitai[bot]"]);
 const FINDING = {
@@ -216,5 +220,54 @@ describe("the per-pull-request counters and the measure", () => {
       [],
     );
     expect(autonomyMetrics([plain], null, null).reversedShare).toBeNull();
+  });
+});
+
+describe("the durable record loop-metrics.ts reads", () => {
+  it("falls back to the pull request's drive ledger when this clone holds no state", async () => {
+    const forge = fakeForge("");
+    forge.write("login", "drive-bot");
+    const ledger = renderLedger(
+      ledgerFromState(
+        {
+          ...freshState(12),
+          rounds: 3,
+          events: [{ at: at(1), round: 1, kind: "rearm", cause: "answered" }],
+          takeovers: [],
+        },
+        {
+          generation: 2,
+          driver: {
+            actor: "wt-cccccccccccccccc",
+            clone: "clone-b",
+            heartbeat: at(2),
+            state: "stopped",
+            exit: 0,
+          },
+          narrative: [],
+          claims: [],
+        },
+      ),
+    );
+    if ("error" in ledger) throw new Error(ledger.error);
+    forge.write("comments-12.json", [
+      {
+        id: 120,
+        body: ledger.body,
+        user: { login: "drive-bot" },
+        author_association: "NONE",
+        updated_at: at(2),
+        created_at: at(2),
+        html_url: "https://example.invalid/comment-120",
+      },
+    ]);
+    const r = await runIn(forge, "-e", [
+      `import(${JSON.stringify(join(import.meta.dir, "..", "scripts", "loop-metrics.ts"))}).then(async (m) => console.log(JSON.stringify(await m.durableAutonomy("12"))))`,
+    ]);
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout)).toMatchObject({
+      events: [{ kind: "rearm", cause: "answered" }],
+      takeovers: 0,
+    });
   });
 });
