@@ -341,6 +341,17 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.97.1] - 2026-10-29
+
+### Fixed
+
+- `drive-pr` with `DRIVE_PR_ATTACH=off`: the advice for counting unpushed
+  commits after a review quota stop or a pass deadline no longer names
+  `@{u}..HEAD` where the tree has no upstream. It reads the same sources the
+  leftovers check reads: the upstream when it exists, else the attach
+  record's remote ref, else it says no range can be named and gives
+  `git log HEAD --branches --not --remotes` to check by hand.
+
 ## [0.97.0] - 2026-10-29
 
 ### Added
@@ -3982,7 +3993,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.97.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.97.1...HEAD
+[0.97.1]: https://github.com/jig-harness/jig/compare/v0.97.0...v0.97.1
 [0.97.0]: https://github.com/jig-harness/jig/compare/v0.96.0...v0.97.0
 [0.96.0]: https://github.com/jig-harness/jig/compare/v0.95.0...v0.96.0
 [0.95.0]: https://github.com/jig-harness/jig/compare/v0.94.2...v0.95.0
