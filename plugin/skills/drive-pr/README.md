@@ -375,8 +375,9 @@ user file (`~/.jig/jig.yaml`,
 [configuration](../../CONFIGURATION.md#clones-user-file-only)), and with
 none mapped the session prints the command to run in a checkout of it. The
 human checkpoint the arm checks is read in the placed tree, so another
-repository's PR is checked against that repository's tracker. The attach,
-the checkpoint and the driver all run without the variables that would
+repository's PR is checked against that repository's tracker. The
+`gc.worktree_roots` a new tree is created under, the attach, the checkpoint
+and the driver are all read or run without the variables that would
 select something else than the placed tree: `GH_REPO` always; a running
 drive's own `DRIVE_PR_WORKTREE` and session when they name another tree;
 in any tree other than the session's own, the location overrides

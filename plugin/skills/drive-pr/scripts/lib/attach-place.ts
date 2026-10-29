@@ -316,10 +316,11 @@ export async function placePr(ref: PrRef, cwd: string): Promise<Placement> {
   const here = canonical(
     await out(clone, ["rev-parse", "--show-toplevel"], "this working tree"),
   );
+  // A tree placement creates is never this session's own, so it moves at
+  // least to another tree; its configuration is read with that same move.
+  const away: Move = otherClone ? "clone" : "tree";
   const moveTo = (tree: string): Move =>
-    otherClone ? "clone" : canonical(tree) === here ? "none" : "tree";
-  const envFor = (tree: string) =>
-    destinationEnv(tree, moveTo(tree), process.env, key);
+    !otherClone && canonical(tree) === here ? "none" : away;
   const placed = (tree: string, created: boolean): Placement => ({
     kind: "placed",
     pr: ref.pr,
@@ -327,7 +328,7 @@ export async function placePr(ref: PrRef, cwd: string): Promise<Placement> {
     tree,
     created,
     otherClone,
-    env: envFor(tree),
+    env: destinationEnv(tree, moveTo(tree), process.env, key),
   });
   const all = await trees(clone);
   const primary = (all[0] as Tree).path;
@@ -338,7 +339,12 @@ export async function placePr(ref: PrRef, cwd: string): Promise<Placement> {
   const recorded = await recordedTree(all, ref.pr);
   if (recorded !== null) return placed(recorded, false);
   return placed(
-    await createTree(primary, ref.pr, branch, envFor(primary)),
+    await createTree(
+      primary,
+      ref.pr,
+      branch,
+      destinationEnv(primary, away, process.env, key),
+    ),
     true,
   );
 }

@@ -189,6 +189,31 @@ describe("attach-pr.ts --place", () => {
     expect(placed.env.unset).toContain("JIG_OVERLAY");
   });
 
+  test("creates a tree from the primary checkout under the clone's roots, not this session's overlay", () => {
+    const c = fresh();
+    const roots = join(c.root, "trees");
+    mkdirSync(join(c.primary, ".config"), { recursive: true });
+    writeFileSync(
+      join(c.primary, ".config", "jig.yaml"),
+      `gc:\n  worktree_roots: [${roots}]\n`,
+    );
+    // The overlay selects this session's configuration; the new tree is
+    // driven without it, so its creation reads the clone's own file.
+    const overlay = join(c.root, "session-overlay.yaml");
+    writeFileSync(overlay, "gc:\n  worktree_roots: []\n");
+    c.env.JIG_OVERLAY = overlay;
+    const r = c.attach(c.primary, "42", "--place");
+    expectSpawnExit(r, 0, "attach --place");
+    const placed = JSON.parse(r.stdout) as {
+      tree: string;
+      created: boolean;
+      env: { unset: string[] };
+    };
+    expect(placed.created).toBe(true);
+    expect(placed.tree.startsWith(roots)).toBe(true);
+    expect(placed.env.unset).toContain("JIG_OVERLAY");
+  });
+
   test("refuses a mapped clone of another repository, or on another host", () => {
     const c = fresh();
     const elsewhere = join(c.root, "elsewhere");
