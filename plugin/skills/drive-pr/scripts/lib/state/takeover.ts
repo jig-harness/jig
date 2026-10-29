@@ -17,8 +17,11 @@ import { isAccountHash } from "../identity.ts";
 import { isActorId } from "./actor.ts";
 import type { StateStore } from "./store.ts";
 
-/** The doctor verdicts a takeover is admitted against (`lib/doctor.ts`). */
-export const TAKEOVER_VERDICTS = ["WEDGED", "DEAD"] as const;
+/**
+ * What a takeover is admitted against: the doctor's `WEDGED`, a `DEAD`
+ * holder, or, across clones, a `STALE` ledger heartbeat (`lib/driver/ledger.ts`).
+ */
+export const TAKEOVER_VERDICTS = ["WEDGED", "DEAD", "STALE"] as const;
 
 export interface TakeoverRecord {
   /** When the takeover was recorded. */
@@ -31,7 +34,7 @@ export interface TakeoverRecord {
   toActor: string;
   /** The account this driver's pass bills, hashed; `null` unknown. */
   toAccount: string | null;
-  /** `WEDGED`, or `DEAD` for a holder whose process was gone. */
+  /** `WEDGED`, `DEAD` for a holder whose process was gone, `STALE` across clones. */
   verdict: (typeof TAKEOVER_VERDICTS)[number];
   /** The durable round the drive resumed at. */
   round: number;

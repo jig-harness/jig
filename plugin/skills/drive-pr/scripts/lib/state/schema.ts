@@ -381,19 +381,18 @@ export interface DriveState {
    * mutation and a 40-round drive on a wide diff would otherwise grow it
    * without limit; the window is far past the two consecutive rounds the
    * predicate reads, so the bound can never change an answer it would
-   * otherwise have given FOR AN ACKNOWLEDGED ENTRY.
-   *
-   * NOT unconditionally bounded: an entry more recent than `lastEscalatedRound`
-   * survives past the window regardless, so a drive that never acknowledges a
-   * standing escalation can retain more than `ROUND_PATHS_WINDOW` entries
-   * indefinitely — accepted, and bounded in practice by the reviewer's own
-   * round ceiling instead (`pruneRoundPaths`'s own header).
+   * otherwise have given FOR AN ACKNOWLEDGED ENTRY. An entry newer than
+   * `lastEscalatedRound` survives the window, so a drive that never
+   * acknowledges keeps more than `ROUND_PATHS_WINDOW` entries, bounded only by
+   * the reviewer's own round ceiling (`pruneRoundPaths`'s own header).
    */
   roundPaths: RoundPaths[];
   /** The tree the last attach prepared, `null` before one (`driven-branch.ts`). */
   drivenBranch?: DrivenBranch | null;
   /** Every `drive.ts --take-over` of this drive, oldest first (`takeover.ts`). */
   takeovers?: TakeoverRecord[];
+  /** The drive ledger's generation this state was last written or seeded at (`ledger.ts`). */
+  ledgerGeneration?: number;
   /** Passes killed at their deadline this drive restarted from (`deadline-retries.ts`). */
   deadlineRetries?: number;
   [extra: string]: unknown;
@@ -541,6 +540,7 @@ function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
     isOptionalDrivenBranch(s.drivenBranch),
     isOptionalTakeovers(s.takeovers),
     isOptionalRetryCount(s.deadlineRetries),
+    s.ledgerGeneration === undefined || isCount(s.ledgerGeneration),
   ].every(Boolean);
 }
 

@@ -102,7 +102,9 @@ export async function runRepairPass(
   // SAME closure keeps this function's own re-check indistinguishable from
   // every other call site's (see this function's own pre-spawn re-check
   // below for why one is needed here at all).
-  mailboxCheckpoint: () => Promise<"clear" | "resumed" | number>,
+  mailboxCheckpoint: (opts?: {
+    beforePass?: boolean;
+  }) => Promise<"clear" | "resumed" | number>,
 ): Promise<RepairDispatch> {
   const deadlineSec = passTimeoutSeconds();
   // One more refresh, immediately before THIS spawn — not only at the PRIOR
@@ -133,10 +135,12 @@ export async function runRepairPass(
   // a mailbox directive can land during, so the caller's own pre-dispatch
   // checkpoint does not cover the gap between it and this spawn — this call
   // is what makes THIS spawn's own checkpoint the LAST await before `run()`,
-  // matching the ordinary-pass site's invariant. Its outcome is tagged
-  // `dispatched: false` so a caller can never mistake it for the pass's OWN
-  // exit code below.
-  const mailboxBeforeSpawn = await mailboxCheckpoint();
+  // matching the ordinary-pass site's invariant, the ledger's claim check
+  // included: a takeover posted during the status wait or a pause before
+  // this repair must not leave a pass running beside the successor. Its
+  // outcome is tagged `dispatched: false` so a caller can never mistake it
+  // for the pass's OWN exit code below.
+  const mailboxBeforeSpawn = await mailboxCheckpoint({ beforePass: true });
   if (typeof mailboxBeforeSpawn === "number")
     return { dispatched: false, resumed: false, code: mailboxBeforeSpawn };
   if (mailboxBeforeSpawn === "resumed")

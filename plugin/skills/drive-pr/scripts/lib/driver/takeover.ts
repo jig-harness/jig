@@ -2,7 +2,10 @@
  * Replacing a driver that still holds a drive's locks: `drive.ts <PR>
  * --take-over`, in the same clone. This file decides the takeover and stops
  * the holder; `takeover-complete.ts` finishes it once this driver holds the
- * locks.
+ * locks. When no driver of this clone holds the drive, a driver in another
+ * clone is taken over through the pull request's drive ledger instead
+ * (`ledger.ts`): admitted on a heartbeat older than the lease window, and
+ * claimed on the pull request once the locks are held.
  *
  * Admitted against exactly two holders, both decided by `drives.ts --doctor`
  * rather than by the caller: one whose verdict is `WEDGED` (a live driver,
@@ -56,6 +59,8 @@ const STOP_OTHER_HOLDER_EXIT = 3;
 
 import { registerCleanup } from "../../../../../shared/cleanup.ts";
 
+import { type LedgerIdentity, admitCrossCloneTakeover } from "./ledger.ts";
+
 /** One `drives.ts --doctor --json` row, as far as a takeover reads it. */
 interface DoctorRowJson {
   kind: string;
@@ -69,13 +74,15 @@ interface DoctorRowJson {
 
 /** What an admitted takeover carries to `takeover-complete.ts`. */
 export interface TakeoverPlan {
-  verdict: "WEDGED" | "DEAD";
+  verdict: "WEDGED" | "DEAD" | "STALE";
   fromActor: string | null;
   fromAccount: string | null;
   /** The holder's claim acquisition time: which instance is being replaced. */
   holderStarted: string | null;
   /** The held batch as it stood before anything was stopped. */
   held: HeldItem[];
+  /** Admitted on another clone's stale ledger heartbeat: claimed on the PR. */
+  crossClone?: true;
 }
 
 /** The doctor's row for `pr`; `null` when no lock or state names it. */
@@ -168,19 +175,28 @@ async function heldSnapshot(pr: string): Promise<HeldItem[]> {
  * Decide a takeover before anything is stopped or locked. Refuses (throws the
  * exit) for every holder the module header excludes.
  */
-export async function decideTakeover(pr: string): Promise<TakeoverPlan> {
+export async function decideTakeover(
+  pr: string,
+  ledger: LedgerIdentity | null,
+): Promise<TakeoverPlan> {
   const row = await doctorRowFor(pr);
   if (row === "unreadable")
     fail(
       1,
       `drive.ts --take-over: could not read drives.ts --doctor for PR #${pr}; refusing to take over blind.`,
     );
-  if (row === null || row.state === "empty")
+  if (row === null || row.state === "empty") {
+    // No driver of this clone holds it: a driver in another clone may, by
+    // the pull request's drive ledger.
+    const crossClone =
+      ledger === null ? null : await admitCrossCloneTakeover(pr, ledger);
+    if (crossClone !== null) return crossClone;
     fail(
       2,
-      `drive.ts --take-over: no driver holds PR #${pr}'s lock, so there is nothing to take over.`,
+      `drive.ts --take-over: no driver holds PR #${pr}'s lock, and its drive ledger names no running driver in another clone, so there is nothing to take over.`,
       "Re-arm it without --take-over.",
     );
+  }
   const verdict = row.doctor?.verdict ?? "UNKNOWN";
   let admitted: TakeoverPlan["verdict"];
   if (row.state === "live" && verdict === "WEDGED") admitted = "WEDGED";

@@ -55,6 +55,7 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
     "export const QUOTA_PARKED_EXIT = 16;",
     "export const MAILBOX_STOPPED_EXIT = 18;",
     "export const MAILBOX_PAUSE_TIMEOUT_EXIT = 19;",
+    "export const TAKEN_OVER_EXIT = 20;",
     "",
   ].join("\n");
   const healthyDriveTsSource = [
@@ -63,6 +64,7 @@ describe("runCheck — the lease.ts + drive-status.ts out-of-band checks reach t
     "export const QUOTA_PARKED_EXIT = driverOnlyExitCode('QUOTA_PARKED');",
     "export const MAILBOX_STOPPED_EXIT = driverOnlyExitCode('MAILBOX_STOPPED');",
     "export const MAILBOX_PAUSE_TIMEOUT_EXIT = driverOnlyExitCode('MAILBOX_PAUSE_TIMEOUT');",
+    "export const TAKEN_OVER_EXIT = driverOnlyExitCode('TAKEN_OVER');",
     "export const MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS');",
     "export const SINGLE_INSTANCE_LOCK_EXIT = driverOnlyExitCode('SINGLE_INSTANCE_LOCK');",
     "export const WORKTREE_UNCLEAN_EXIT = driverOnlyExitCode('WORKTREE_UNCLEAN');",
@@ -274,6 +276,7 @@ describe("runCheck — the outOfBand name-pairing check reaches the real entry p
     "export const QUOTA_PARKED_EXIT = 16;",
     "export const MAILBOX_STOPPED_EXIT = 18;",
     "export const MAILBOX_PAUSE_TIMEOUT_EXIT = 19;",
+    "export const TAKEN_OVER_EXIT = 20;",
     "",
   ].join("\n");
   const healthyDriveTsSource = [
@@ -282,6 +285,7 @@ describe("runCheck — the outOfBand name-pairing check reaches the real entry p
     "export const QUOTA_PARKED_EXIT = driverOnlyExitCode('QUOTA_PARKED');",
     "export const MAILBOX_STOPPED_EXIT = driverOnlyExitCode('MAILBOX_STOPPED');",
     "export const MAILBOX_PAUSE_TIMEOUT_EXIT = driverOnlyExitCode('MAILBOX_PAUSE_TIMEOUT');",
+    "export const TAKEN_OVER_EXIT = driverOnlyExitCode('TAKEN_OVER');",
     "export const MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS');",
     "export const SINGLE_INSTANCE_LOCK_EXIT = driverOnlyExitCode('SINGLE_INSTANCE_LOCK');",
     "export const WORKTREE_UNCLEAN_EXIT = driverOnlyExitCode('WORKTREE_UNCLEAN');",

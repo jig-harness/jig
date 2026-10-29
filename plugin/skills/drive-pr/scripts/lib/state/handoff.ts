@@ -83,6 +83,48 @@ export async function handoffPath(pr: string): Promise<string> {
   return join(await handoffDir(), `pr-drive-${pr}.md`);
 }
 
+/**
+ * The agent-authored narrative of the handoff file at `file`, without the
+ * resume line: what the drive ledger carries the tail of. Empty when the
+ * file or its marker is missing.
+ */
+export function narrativeOf(file: string): string[] {
+  if (!existsSync(file)) return [];
+  const lines = readFileSync(file, "utf8").split("\n");
+  const idx = lines.indexOf(NARRATIVE_MARKER);
+  if (idx === -1) return [];
+  const narrative = lines
+    .slice(idx + 1)
+    .filter((line) => !/^\*\*Resume:\*\* `\/drive-pr \d+`$/.test(line));
+  while (narrative.length > 0 && narrative[0]?.trim() === "") narrative.shift();
+  while (narrative.length > 0 && narrative.at(-1)?.trim() === "")
+    narrative.pop();
+  return narrative;
+}
+
+/**
+ * Replace the handoff file's narrative with `narrative`: a seed from a newer
+ * drive ledger carries the last driver's notes, which are newer than this
+ * clone's. An empty narrative replaces this clone's notes too (the ledger's
+ * size cut can drop them). Returns false, writing nothing, when there is no
+ * file or it has no marker: a seed that cannot install the notes must not
+ * advance its generation.
+ */
+export async function installNarrative(
+  pr: string,
+  narrative: readonly string[],
+): Promise<boolean> {
+  const file = await handoffPath(pr);
+  if (!existsSync(file)) return false;
+  const lines = readFileSync(file, "utf8").split("\n");
+  const idx = lines.indexOf(NARRATIVE_MARKER);
+  if (idx === -1) return false;
+  const machine = lines.slice(0, idx + 1).join("\n");
+  const notes = narrative.length === 0 ? "" : `${narrative.join("\n")}\n\n`;
+  atomicWrite(file, `${machine}\n\n${notes}**Resume:** \`/drive-pr ${pr}\`\n`);
+  return true;
+}
+
 export async function removeHandoff(pr: string): Promise<void> {
   rmSync(await handoffPath(pr), { force: true });
 }

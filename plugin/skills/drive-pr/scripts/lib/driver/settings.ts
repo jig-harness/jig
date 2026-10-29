@@ -276,6 +276,9 @@ export const MAILBOX_PAUSE_TIMEOUT_EXIT = driverOnlyExitCode(
   "MAILBOX_PAUSE_TIMEOUT",
 );
 
+/** A takeover claim from another clone, newer than this driver's own, wins the drive. */
+export const TAKEN_OVER_EXIT = driverOnlyExitCode("TAKEN_OVER");
+
 /**
  * The result of one `runRepairPass` call, kept apart from a raw process exit
  * code: the spawned command is caller-supplied and its exit space is its

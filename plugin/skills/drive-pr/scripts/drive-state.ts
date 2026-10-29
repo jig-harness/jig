@@ -131,7 +131,8 @@
  *                                     # stamp progress — parking is its opposite.
  *   drive-state.ts takeover     [PR]                 # record a drive.ts --take-over (JSON on stdin)
  *   drive-state.ts deadline-retries [PR] --set bump|clear  # the drive's pass-deadline restarts
- *   drive-state.ts handoff      [PR]                 # (re)write the handoff file
+ *   drive-state.ts handoff      [PR]                 # (re)write the handoff file, and the ledger under a driver
+ *   drive-state.ts seed-ledger  [PR]                 # lay a newer ledger over this state (its body on stdin)
  *   drive-state.ts lease        [PR]                 # who is driving this PR from this
  *                                     # tree, as JSON ('' if nobody)
  *   drive-state.ts lease        [PR] --all           # every LIVE lease on this PR from
@@ -215,8 +216,14 @@ import {
   resolvePr,
 } from "./lib/proc.ts";
 import { isActorId, resolveActor } from "./lib/state/actor.ts";
-import { isAccountHash } from "./lib/identity.ts";
 import { recordTakeover } from "./lib/state/takeover.ts";
+import {
+  LEDGER_NOT_WRITTEN_EXIT,
+  mirrorLedger,
+  removeStateKeepingLedgerGeneration,
+  seedLedgerCommand,
+} from "./lib/state/ledger-mirror.ts";
+import { quotaPark } from "./lib/state/quota-park.ts";
 import { deadlineRetries } from "./lib/state/deadline-retries.ts";
 import { unpark } from "./lib/state/unpark.ts";
 import { clearPendingVerdicts } from "./lib/state/pass-handoff.ts";
@@ -372,7 +379,8 @@ function usage(): void {
   deadline-retries [PR] --set bump|clear
                                     count a pass-deadline restart (prints the
                                     count), or clear it when the drive ends
-  handoff      [PR]                 (re)write the handoff file
+  handoff      [PR]                 (re)write the handoff file, and the ledger under a driver
+  seed-ledger  [PR]                 lay a newer ledger over this state (its body on stdin)
   admit        [PR]                 exit 0 if this tree may act on this PR, 13 if
                                     another working tree is driving it. Takes no
                                     lease and mutates nothing — for callers whose
@@ -623,47 +631,6 @@ async function park(store: StateStore, a: Args): Promise<number> {
   return 0;
 }
 
-/** `quota-park`: record the wall, and whose it is, without stamping progress. */
-async function quotaPark(store: StateStore, a: Args): Promise<number> {
-  if (a.vendor === "") fail(2, "quota-park requires --vendor V");
-  if (/[\n\r]/.test(a.vendor)) {
-    fail(2, "quota-park: --vendor must not contain a newline");
-  }
-  if (a.window === "") fail(2, "quota-park requires --window W");
-  if (/[\n\r]/.test(a.window)) {
-    fail(2, "quota-park: --window must not contain a newline");
-  }
-  if (a.account !== "" && !isAccountHash(a.account))
-    fail(
-      2,
-      `quota-park: --account must be an account hash (got '${a.account}')`,
-    );
-  if (a.resetAt !== "" && !Number.isFinite(Date.parse(a.resetAt))) {
-    fail(
-      2,
-      `quota-park: --reset-at must be a string Date.parse can read (got '${a.resetAt}')`,
-    );
-  }
-  // Test-only hook, unset (no-op) by default: forces a lock takeover to
-  // land while `drive.ts`'s `recordQuotaPark` awaits this subprocess.
-  const delaySec = testDelaySeconds(
-    "DRIVE_PR_QUOTA_PARK_TEST_DELAY",
-    "quota-park",
-  );
-  if (delaySec > 0) await sleep(delaySec);
-  await store.update((s) => ({
-    ...s,
-    quotaPark: {
-      vendor: a.vendor,
-      window: a.window,
-      resetAt: a.resetAt === "" ? null : a.resetAt,
-      at: new Date().toISOString(),
-      ...(a.account === "" ? {} : { account: a.account }),
-    },
-  }));
-  return 0;
-}
-
 /**
  * Does an otherwise-unparseable JSON text still contain a string-literal
  * property KEY that DECODES to `target`, anywhere in the text?
@@ -762,6 +729,18 @@ async function readCiHoldTimeline(
   }
 }
 
+/** The commands whose record arrives on standard input. */
+const STDIN_COMMANDS = new Map<
+  string,
+  (store: StateStore, raw: string) => Promise<number>
+>([
+  [
+    "takeover",
+    async (store, raw) => recordTakeover(store, raw, await resolveActor()),
+  ],
+  ["seed-ledger", seedLedgerCommand],
+]);
+
 async function main(): Promise<number> {
   const a = parseArgs(process.argv.slice(2));
   if (a.cmd === "") {
@@ -839,6 +818,7 @@ async function main(): Promise<number> {
     "progress",
     "quota-park",
     "takeover",
+    "seed-ledger",
     "deadline-retries",
     "reset",
     "claim-ready-mark",
@@ -2189,8 +2169,11 @@ async function main(): Promise<number> {
       });
     }
 
-    case "park":
-      return park(store, a);
+    case "park": {
+      const parked = await park(store, a);
+      await mirrorLedger(pr, store);
+      return parked;
+    }
 
     case "unpark":
       return unpark(store, a.keys, a.parkedAts, a.every);
@@ -3160,20 +3143,11 @@ async function main(): Promise<number> {
     case "quota-park":
       return quotaPark(store, a);
 
-    case "takeover":
-      return recordTakeover(store, await readStdinAll(), await resolveActor());
-
     case "deadline-retries":
       return deadlineRetries(store, a.phaseName);
 
-    case "handoff": {
-      return store.locked(async () => {
-        const { state } = store.read();
-        const out = await renderHandoff(pr, state);
-        process.stdout.write(`${out}\n`);
-        return 0;
-      });
-    }
+    case "handoff":
+      return handoff(pr, store);
 
     case "lease": {
       // Read-only, and ungated: asking who is driving must work FROM the
@@ -3568,7 +3542,7 @@ async function main(): Promise<number> {
           return 9;
         }
 
-        rmSync(store.file, { force: true });
+        removeStateKeepingLedgerGeneration(store, Number(pr));
         rmSync(orphanMarkerPath(store.stateDir, pr), { force: true });
         clearPendingVerdicts(store.stateDir, pr);
         await removeHandoff(pr);
@@ -3621,10 +3595,30 @@ async function main(): Promise<number> {
     }
 
     default:
-      console.error(`unknown command: ${a.cmd}`);
-      usage();
-      return 2;
+      return stdinOrUnknown(a.cmd, store);
   }
+}
+
+/** `handoff`: (re)write the handoff file, and the ledger under a driver. */
+async function handoff(pr: string, store: StateStore): Promise<number> {
+  await store.locked(async () => {
+    const out = await renderHandoff(pr, store.read().state);
+    process.stdout.write(`${out}\n`);
+  });
+  // A ledger write that was attempted and did not land is told apart
+  // from success: a stop's last write keeps its recovery record on it.
+  return (await mirrorLedger(pr, store)) === "failed"
+    ? LEDGER_NOT_WRITTEN_EXIT
+    : 0;
+}
+
+/** A command whose record arrives on standard input, or the usage refusal. */
+async function stdinOrUnknown(cmd: string, store: StateStore): Promise<number> {
+  const fromStdin = STDIN_COMMANDS.get(cmd);
+  if (fromStdin !== undefined) return fromStdin(store, await readStdinAll());
+  console.error(`unknown command: ${cmd}`);
+  usage();
+  return 2;
 }
 
 runMain("drive-state.ts", main);

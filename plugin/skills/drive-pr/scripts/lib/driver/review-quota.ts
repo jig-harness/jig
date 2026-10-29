@@ -19,6 +19,8 @@ import {
 
 import { recordQuotaPark } from "./repair.ts";
 
+import { ledgerRenewal } from "./ledger.ts";
+
 import { driveState, driveTs } from "./paths.ts";
 
 import { armCommand, passBotsOnly } from "./rearm.ts";
@@ -55,7 +57,15 @@ async function waitThroughQuotaWindow(
   driverRuntime.quotaSleepAbort = new AbortController();
   try {
     const quotaWaitStartedAt = performance.now();
+    // A sleep can outlast the ledger's lease window: the heartbeat is
+    // rewritten as the sleep starts and well inside the window after, so
+    // another clone never takes over a sleeping driver; a newer claim from
+    // another clone ends the sleep. A mailbox pause inside the checkpoint
+    // below renews it the same way.
+    const renewLedger = ledgerRenewal(context.pr);
     while (performance.now() - quotaWaitStartedAt < plan.ms) {
+      const takenOver = await renewLedger();
+      if (takenOver !== null) return takenOver;
       // Quota waiting is between passes, so a mailbox stop must not
       // sit behind this potentially multi-hour sleep. Keep the
       // takeover abort on each short sleep as before.

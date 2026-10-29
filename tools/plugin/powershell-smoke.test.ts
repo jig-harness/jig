@@ -63,6 +63,7 @@ else if(a[0]==='pr'&&a[1]==='view'){
  if(endpoint.includes('/pulls/999'))data={state:'open',head:{sha:f.head},base:{sha:f.head},draft:true};
  else if(endpoint.includes('/check-runs'))data={check_runs:[]};
  else if(endpoint.includes('/status'))data={statuses:[]};
+ else if(endpoint.includes('/comments')&&a.includes('--input'))data={id:Date.now()};
  else if(endpoint.includes('/comments')||endpoint.includes('/reviews')||endpoint.includes('/timeline'))data=[];
  else throw new Error('unhandled endpoint '+endpoint);
  if(a.includes('--slurp'))data=[data];

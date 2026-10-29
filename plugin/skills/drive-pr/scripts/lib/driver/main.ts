@@ -24,7 +24,7 @@ import { resolveStateDir, worktreeLockName } from "./../state/store.ts";
 
 import { resolveMailboxDir } from "./../state/mailbox.ts";
 
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { startDriverLog } from "./log.ts";
 
@@ -33,6 +33,7 @@ import { resolveAccountIdentity } from "./../identity.ts";
 import type { ClaimDiag } from "./../claim.ts";
 
 import { type DriveLock, acquire, release } from "./locks.ts";
+import { markDriverRecordReleased } from "./../ledger-stop.ts";
 
 import {
   installDriverLifecycle,
@@ -66,6 +67,8 @@ import { pickUpDrive } from "./takeover-complete.ts";
 
 import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
+import { armLedger, ledgerIdentity, ledgerSettlement } from "./ledger.ts";
+
 import type { DriveState } from "./../state/schema.ts";
 
 /**
@@ -80,6 +83,21 @@ import type { DriveState } from "./../state/schema.ts";
  * Refused rather than rewritten, because the pass names the PR in its own
  * argv and drive-status.ts compares that against $DRIVE_PR_TARGET verbatim.
  */
+/**
+ * Release a lock the driver still holds. Releasing the PR's marks the
+ * driver record released first: the evidence `drives.ts` needs to mark the
+ * ledger stopped, which a lock retained over an unwitnessed pass never gives.
+ */
+function releaseHeld(
+  lock: DriveLock,
+  prLock: DriveLock,
+  pr: string,
+  started: string,
+): void {
+  if (lock === prLock) markDriverRecordReleased(dirname(lock.dir), pr, started);
+  release(lock);
+}
+
 function requireCanonicalPr(pr: string): void {
   if (!isDigits(pr)) fail(2, `drive.ts: PR must be a number (got '${pr}')`);
   const canonicalPr = BigInt(pr).toString();
@@ -229,8 +247,10 @@ export async function main(): Promise<number> {
     diag,
   };
   // A takeover is decided before any lock is taken (`takeover.ts`); its
-  // holder is stopped around this tree's lock.
-  const plan = takeOver ? await decideTakeover(pr) : null;
+  // holder is stopped around this tree's lock. Across clones it is decided
+  // by the pull request's drive ledger.
+  const ledger = await ledgerIdentity(dryRun, stateDir, diag.started);
+  const plan = takeOver ? await decideTakeover(pr, ledger) : null;
   const held: DriveLock[] = [];
   using lockResources = new DisposableStack();
   await using lifecycle = installDriverLifecycle(held);
@@ -246,7 +266,7 @@ export async function main(): Promise<number> {
       registerCleanup(() => {
         driverRuntime.driverLogRotates = false;
         // An unwitnessed pass termination deliberately abandons these locks.
-        if (held.includes(lock)) release(lock);
+        if (held.includes(lock)) releaseHeld(lock, prLock, pr, diag.started);
       }),
     );
   };
@@ -401,7 +421,20 @@ export async function main(): Promise<number> {
   // account may pass, a takeover, parked items a person has answered.
   const current = await stateUnderLocks(pr, agent, windowReopened);
   if (typeof current === "number") return current;
-  const firstPassNotice = await pickUpDrive(pr, plan, current, {
+  // The pull request's drive ledger next: seed this clone's state from it,
+  // refuse to drive beside another clone's driver, claim the drive where
+  // this clone does not continue its own ledger.
+  const pickup = await armLedger(
+    pr,
+    ledger,
+    plan,
+    current,
+    armCommand(driveTs, pr, botsOnly, " --take-over"),
+  );
+  // From here the ledger says this driver is running, so whatever ends the
+  // drive (an exit, a thrown refusal, a stop) marks it stopped.
+  await using settlement = ledgerSettlement(pr, held);
+  const firstPassNotice = await pickUpDrive(pr, plan, pickup, {
     agent,
     botsOnly,
     dryRun,
@@ -433,7 +466,7 @@ export async function main(): Promise<number> {
 
   await capturePickup(pr, dryRun, diag);
 
-  return await runDriverRounds({
+  const roundsExit = await runDriverRounds({
     pr,
     mailboxDir,
     keepDraft,
@@ -447,6 +480,7 @@ export async function main(): Promise<number> {
     deadlineRetryBudget,
     firstPassNotice,
   });
+  return await settlement.done(roundsExit);
 }
 
 /** Refuse a pass whose declared target or thread scope differs from the driver. */
