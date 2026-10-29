@@ -334,7 +334,7 @@ The `bun` prefix and the single line are deliberate: every TypeScript command ex
 ### Which working tree drives it
 
 Any working tree of the clone can drive a PR. Once it holds the tree's
-driver lock, and before it takes the PR's, `drive.ts` **attaches** the PR to
+driver lock and the PR's, `drive.ts` **attaches** the PR to
 the tree it runs in (`<skill-dir>/scripts/attach-pr.ts`): it checks that
 `origin` is the PR's repository, fetches the PR's head branch from it, checks
 the branch out when no other working tree of the clone holds it, and checks
@@ -349,7 +349,9 @@ the remote; an attach by name removes it. The drive state's `drivenBranch`
 mirrors it for the handoff file.
 
 It refuses, naming what is in the way, when this tree has uncommitted changes
-or an unfinished merge, rebase or cherry-pick; when the tree holding the
+or an unfinished merge, rebase or cherry-pick and the attach would move it (a
+tree already on the head branch, at or past the head, is not moved, and what
+it holds uncommitted is the drive's to handle); when the tree holding the
 branch has uncommitted changes or commits the PR's head does not have
 (push them from there first); when this tree's detached head has commits no
 branch or remote holds; when a local branch of that name is ahead of the
@@ -359,7 +361,8 @@ its commits ahead of the head, and the drive pushes them); when this is the clon
 the drive cannot push to. It moves nothing while a live driver holds the tree
 or the PR, or an interactive session holds the tree. A dry run attaches
 nothing, and `DRIVE_PR_ATTACH=off` drives the tree as it stands, for a
-harness that prepares its own trees.
+harness that prepares its own trees: placement (below) still chooses the
+tree, and attaches nothing.
 
 `/jig:drive-pr <PR>` decides the tree before it arms the driver
 (`bun "<skill-dir>/scripts/attach-pr.ts" <PR> --place`): the session's own working tree, or, from the
@@ -376,12 +379,15 @@ user file (`~/.jig/jig.yaml`,
 [configuration](../../CONFIGURATION.md#clones-user-file-only)), and with
 none mapped the session prints the command to run in a checkout of it. The
 human checkpoint the arm checks is read in the placed tree, so another
-repository's PR is checked against that repository's tracker. The attach,
-the checkpoint and the driver all run without the variables that would
+repository's PR is checked against that repository's tracker. The
+`gc.worktree_roots` a new tree is created under, the attach, the checkpoint
+and the driver are all read or run without the variables that would
 select something else than the placed tree: `GH_REPO` always; a running
 drive's own `DRIVE_PR_WORKTREE` and session when they name another tree;
-and, in another clone, `JIG_CONSUMER_ROOT`, `JIG_OVERLAY` and a driver's
-exported state directory. Placing another clone's PR from inside a drive
+in any tree other than the session's own, the location overrides
+`JIG_CONSUMER_ROOT`, `JIG_OVERLAY`, `DRIVE_PR_HANDOFF_DIR`,
+`DRIVE_PR_MAILBOX_DIR` and `DRIVE_PR_INTENT_CHAIN_DIR`; and, in another
+clone, a driver's exported state directory. Placing another clone's PR from inside a drive
 whose state is under a relocated `DRIVE_PR_STATE_DIR` is refused (exit 2):
 arm it from a session outside the drive.
 

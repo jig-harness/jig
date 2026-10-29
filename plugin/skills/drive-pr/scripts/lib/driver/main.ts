@@ -105,6 +105,17 @@ export async function main(): Promise<number> {
   // string and refuse for a less obvious reason. Both of those already apply
   // isDigits; this is the entry point that did not.
   if (!isDigits(pr)) fail(2, `drive.ts: PR must be a number (got '${pr}')`);
+  // Canonical before anything is keyed by it: `042` is PR 42 to GitHub, so a
+  // raw `042` would take `pr-drive-042.lock` beside a live #42 driver's
+  // `pr-drive-42.lock` and write #42's state and log under a second name.
+  // Refused rather than rewritten, because the pass names the PR in its own
+  // argv and drive-status.ts compares that against $DRIVE_PR_TARGET verbatim.
+  const canonicalPr = BigInt(pr).toString();
+  if (canonicalPr !== pr)
+    fail(
+      2,
+      `drive.ts: write PR #${canonicalPr} as ${canonicalPr} (got '${pr}')`,
+    );
   process.env.PR = pr;
   // The authoritative, out-of-band statement of which PR this drive is about.
   // drive-status.ts refuses to run when a pass resolves a different one, which
@@ -212,19 +223,21 @@ export async function main(): Promise<number> {
     () => hold(treeLock),
     armCommand(driveTs, pr, botsOnly),
   );
-  // Once this tree is ours and before the PR is: the tree is put on the PR's
-  // head (its branch, or the head commit detached when another working tree
-  // holds the branch), so every round's commit lands on what the attach left,
-  // and no other driver's tree is ever moved.
-  await attachForDrive(pr, dryRun);
+  // Renewal starts the moment the first lock is held, and runs on its own
+  // timer for the rest of the drive — a claim must stay fresh DURING the
+  // attach and every pass, not only between them. It renews `held`, so the
+  // PR's lock joins it once taken.
+  startHeartbeat(held, agent);
   await hold(prLock);
+  // Once both the tree and the PR are ours: the tree is put on the PR's head
+  // (its branch, or the head commit detached when another working tree holds
+  // the branch), so every round's commit lands on what the attach left, no
+  // other driver's tree is ever moved, and no second driver of the PR, in
+  // another tree, attaches beside this one.
+  await attachForDrive(pr, dryRun);
   createDriverRegistry(held);
   lockResources.use(driverStopCompletionCleanup(held));
   driverRuntime.driverLogRotates = true;
-  // Renewal starts the moment the last lock is held, and runs on its own timer
-  // for the rest of the drive — a claim must stay fresh DURING a pass, not
-  // only between passes.
-  startHeartbeat(held, agent);
 
   // The SESSION every drive-state mutation of this drive belongs to, exported
   // once the locks are actually held (`lease.ts`). This driver plus

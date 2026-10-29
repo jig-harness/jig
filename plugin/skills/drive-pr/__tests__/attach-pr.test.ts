@@ -103,6 +103,17 @@ describe("attach-pr.ts attaches", () => {
     expect(branchOf(c, tree)).toBe("feature");
   });
 
+  test("a tree already on the head branch, leaving what it holds uncommitted", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    c.git(tree, "switch", "-q", "feature");
+    writeFileSync(join(tree, "issue.json"), "{}\n");
+    const r = c.attach(tree, "42");
+    expectSpawnExit(r, 0, "attach in place");
+    expect(JSON.parse(r.stdout)).toMatchObject({ detached: false });
+    expect(existsSync(join(tree, "issue.json"))).toBe(true);
+  });
+
   test("again through its record, catching up to a newer head", () => {
     const { c, holder } = held();
     const tree = c.tree("wt1");
@@ -160,6 +171,37 @@ describe("a detached tree's record", () => {
     expectSpawnExit(c.attach(tree, "42"), 0, "attach again");
     expect(branchOf(c, tree)).toBe("");
     expect(c.git(tree, "rev-parse", "HEAD")).toBe(own);
+  });
+
+  test("stops answering once the tree holds a stacked PR's pushed head", () => {
+    const { c } = held();
+    const tree = c.tree("wt1");
+    expectSpawnExit(c.attach(tree, "42"), 0, "attach");
+    // A stacked PR's head descends from this PR's, and another branch holds it.
+    c.commit(tree, "stacked.txt");
+    c.git(tree, "push", "-q", "origin", "HEAD:refs/heads/stacked");
+    c.git(tree, "fetch", "-q", "origin", "stacked:refs/remotes/origin/stacked");
+    const r = c.script(tree, "drive-state.ts", "rounds");
+    expectSpawnExitNot(r, 0, "drive-state.ts rounds");
+  });
+
+  test("keeps answering for the drive's own commit and once it is pushed", () => {
+    const { c } = held();
+    const tree = c.tree("wt1");
+    expectSpawnExit(c.attach(tree, "42"), 0, "attach");
+    c.commit(tree, "own.txt");
+    const before = c.script(tree, "drive-state.ts", "rounds");
+    expectSpawnExit(before, 0, "drive-state.ts rounds, unpushed");
+    c.git(tree, "push", "-q", "origin", "HEAD:refs/heads/feature");
+    c.git(
+      tree,
+      "fetch",
+      "-q",
+      "origin",
+      "+feature:refs/remotes/origin/feature",
+    );
+    const after = c.script(tree, "drive-state.ts", "rounds");
+    expectSpawnExit(after, 0, "drive-state.ts rounds, pushed");
   });
 
   test("stops answering once the tree is detached somewhere else", () => {
@@ -270,6 +312,20 @@ describe("attach-pr.ts refuses", () => {
     expectSpawnExit(r, 2, "attach");
     expect(r.stderr).toContain("primary checkout");
     expect(branchOf(c, c.primary)).toBe("main");
+  });
+
+  test("a reported head the fetched branch no longer has, though the clone holds it", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    const stale = c.git(tree, "rev-parse", "HEAD");
+    // gh reports a commit the clone holds but the branch was pushed past.
+    c.env.FAKE_GH_REMOTE = "";
+    c.pr({ headRefOid: stale });
+    const r = c.attach(tree, "42");
+    expectSpawnExit(r, 1, "attach");
+    expect(r.stderr).toContain("pushed again while attaching");
+    expect(branchOf(c, tree)).toBe("");
+    expect(c.git(tree, "rev-parse", "HEAD")).toBe(stale);
   });
 
   test("a closed pull request", () => {

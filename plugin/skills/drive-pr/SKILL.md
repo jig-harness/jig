@@ -309,8 +309,8 @@ bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- claude -p "/jig:dr
 Each round is a **fresh agent process**, so a long converge never depends on one
 session's context surviving. That is the preferred unattended mode.
 
-**The attach.** Once it holds the tree's driver lock and before it takes the
-PR's, `drive.ts` attaches the PR to the tree it runs in
+**The attach.** Once it holds the tree's driver lock and the PR's,
+`drive.ts` attaches the PR to the tree it runs in
 (`scripts/attach-pr.ts`, which you can also run alone:
 `bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`). It checks that
 `origin` is the repository the PR was read from, fetches the PR's head
@@ -325,18 +325,24 @@ directory; that record is what every script that reads the branch name or
 resolves the PR from the current branch reads, and only while the tree's
 head still descends from that commit and the branch is still on the remote.
 An attach by name removes it. (The drive state's `drivenBranch` mirrors it
-for the handoff file.) It refuses (exit `2`, naming the state) a tree with
-uncommitted changes or an unfinished git operation, a tree holding the branch
+for the handoff file.) It refuses (exit `2`, naming the state) a tree it
+would move that has uncommitted changes or an unfinished git operation (a
+tree already on the head branch, at or past the head, is not moved), a tree
+holding the branch
 that is dirty or has commits the PR's head lacks, a detached head with
 commits no branch or remote holds, a local branch of that name ahead of the
 head that this tree would switch to (a tree already on the branch keeps its
 commits ahead of the head, and the drive pushes them), the clone's primary
 checkout on another branch, an `origin` that is another
-repository, and a PR from a fork; a PR that is not open is exit `5`. A live
-driver already holding the PR leaves the tree untouched, and the lock refuses
-next (exit `11`); run alone, it also leaves a tree another driver holds
-untouched and exits `11`, and an interactive session's lease on the tree
-refuses it. `--dry-run` and `DRIVE_PR_ATTACH=off` skip the attach.
+repository, and a PR from a fork; a PR that is not open is exit `5`. Under
+`drive.ts`, a live driver already holding the PR makes the PR's lock refuse
+(exit `11`) before the attach runs, so the tree is untouched; run alone, the
+attach leaves a tree that a live driver of the PR or another driver of the
+tree holds untouched and exits `11`, and an interactive session's lease on
+the tree refuses it. `drive.ts` refuses a PR number written with leading
+zeros (exit `2`), since GitHub reads it as the number without them and the
+locks would not. `--dry-run` and `DRIVE_PR_ATTACH=off` skip the attach;
+with `off`, `--place` still chooses the tree and attaches nothing.
 
 **A stopped drive restarts itself** from the stops that need no decision. A
 pass killed at its deadline is witnessed gone; the driver then runs the two

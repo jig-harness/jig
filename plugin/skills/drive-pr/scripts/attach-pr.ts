@@ -25,8 +25,8 @@
  * `env.unset` (`destinationEnv` in `lib/attach-place.ts`) names the variables
  * the attach ran without, which every later process in that tree drops too.
  * A tree `--place` creates is recorded as the PR's before the attach runs, so
- * a failed or interrupted attach leaves a tree the next `--place` reuses. `drive.ts` attaches once it holds the tree's lock and before it
- * takes the pull request's, so arming a drive runs this either way; `--place` is the arm step's, which needs to know the
+ * a failed or interrupted attach leaves a tree the next `--place` reuses. `drive.ts` attaches once it holds the tree's lock and the
+ * pull request's, so arming a drive runs this either way; `--place` is the arm step's, which needs to know the
  * tree before it can start the driver there.
  *
  * Exit codes:
@@ -42,7 +42,7 @@
  *  11  a live driver holds this working tree or the PR: nothing moved
  */
 import { fail, runMain } from "./lib/cli.ts";
-import { AttachRefusal, attachPr } from "./lib/attach.ts";
+import { AttachRefusal, attachOff, attachPr } from "./lib/attach.ts";
 import {
   attachIn,
   type PrRef,
@@ -82,15 +82,22 @@ async function attachHere(args: Args): Promise<number> {
 }
 
 async function place(args: Args): Promise<number> {
+  // Read before placement, which can create a tree: an invalid switch
+  // refuses before anything is done.
+  const off = attachOff("attach-pr.ts");
   const placement = await placePr(args.ref, process.cwd());
   if (placement.kind === "elsewhere") {
     console.error(placement.message);
     return 3;
   }
   const { tree, pr, created, slug, otherClone, env } = placement;
-  const attached = await attachIn(tree, pr, created, env);
-  process.stderr.write(attached.stderr);
-  if (attached.code !== 0) return attached.code;
+  // `DRIVE_PR_ATTACH=off` drives the chosen tree as it stands, as drive.ts
+  // does: a tree placement made is already at the head.
+  if (!off) {
+    const attached = await attachIn(tree, pr, created, env);
+    process.stderr.write(attached.stderr);
+    if (attached.code !== 0) return attached.code;
+  }
   console.log(
     JSON.stringify({ pr, repo: slug, tree, created, otherClone, env }),
   );

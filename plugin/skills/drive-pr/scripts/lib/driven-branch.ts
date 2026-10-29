@@ -15,6 +15,7 @@ import {
 } from "../../../../shared/driven-tree.ts";
 import { shellQuote } from "../../../../shared/cli.ts";
 import { definedFields } from "../../../../shared/defined-fields.ts";
+import { gitIdentityEnv } from "../../../../shared/proc.ts";
 
 /** The git seam the callers already inject (`lib/base-drift.ts`'s shape). */
 type Git = (
@@ -27,7 +28,12 @@ interface Opts {
   env?: Record<string, string | undefined>;
 }
 
-/** The attach record of the tree at `root`, when its head is detached. */
+/**
+ * The attach record of the tree at `root`, when its head is detached. Git
+ * runs without inherited location variables (`gitIdentityEnv`) unless the
+ * caller passes an environment: an exported `GIT_DIR` overrides `-C root`,
+ * and would read another tree's record.
+ */
 export function attachedTree(
   git: Git,
   root: string,
@@ -35,7 +41,8 @@ export function attachedTree(
 ): Promise<DrivenTree | null> {
   return detachedTreeRecord((args) =>
     git(["-C", root, ...args], {
-      ...definedFields({ timeoutSec: opts.timeoutSec, env: opts.env }),
+      ...definedFields({ timeoutSec: opts.timeoutSec }),
+      env: opts.env ?? gitIdentityEnv(),
     }),
   );
 }
@@ -63,7 +70,9 @@ let drivenRemoteRef: string | null = null;
 
 /** Recorded by the driver once its attach has named the head branch. */
 export function setDrivenRemoteRef(remote: string, branch: string): void {
-  drivenRemoteRef = `${remote}/${branch}`;
+  // The full ref: `origin/topic` would resolve a local branch or tag of
+  // that name before the remote-tracking branch.
+  drivenRemoteRef = `refs/remotes/${remote}/${branch}`;
 }
 
 /**
