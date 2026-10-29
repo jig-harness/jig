@@ -556,19 +556,19 @@ fields:
     exists: required
     read_by: [docs]
     repository_only: true
-    since: next
+    since: 0.95.0
   docs.schema:
     type: path
     exists: required
     read_by: [docs]
     repository_only: true
-    since: next
+    since: 0.95.0
   docs.stale_after_days:
     type: integer
     min: 1
     default: 180
     read_by: [docs]
-    since: next
+    since: 0.95.0
   promote_memory.lint_command:
     type: command
     read_by: [promote-memory]
