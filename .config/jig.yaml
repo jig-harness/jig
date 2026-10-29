@@ -4,7 +4,12 @@
 gc:
   # What the machine-level resource collector (`jig gc`) may inspect here:
   # the worktrees Orca opens, in the one root every clone on a machine uses.
-  # A root that does not exist on a machine is skipped.
+  # Relative roots resolve from the clone's primary checkout. The audit and
+  # the collector skip a root that does not exist on a machine, but
+  # `drive-pr` creates the working tree for a pull request that has none
+  # under the first root, creating the root too. On a machine laid out
+  # differently, name that machine's root for the run instead, in the
+  # environment layer: JIG__GC__WORKTREE_ROOTS='[../worktrees]'.
   kinds: [tool-state, worktrees]
   worktree_roots:
     - ../../orca/workspaces/jig

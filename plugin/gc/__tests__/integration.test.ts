@@ -226,6 +226,24 @@ test("install takes the repository's base branch without reading the remote's HE
   expectSpawnExit(result, 0);
   expect(result.stdout.toString()).toContain("base_branch: main");
 });
+test("install from a linked worktree registers the primary checkout and resolves roots from it", () => {
+  const f = setup();
+  writeFileSync(
+    join(f.repo, ".config/jig.yaml"),
+    dump({ gc: { ...f.declaration, worktree_roots: ["../worktrees"] } }),
+  );
+  f.command(["git", "commit", "-am", "declare a relative root"]);
+  f.command(["git", "push", "origin", "main"]);
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  const result = run(f, ["install", "--repo", linked]);
+  expectSpawnExit(result, 0);
+  const preview = result.stdout.toString();
+  const primary = realpathSync(f.repo);
+  expect(preview).toContain(`path: ${primary}`);
+  expect(preview).toContain(`- ${join(dirname(primary), "worktrees")}`);
+  expect(preview).not.toContain(`path: ${linked}`);
+});
 test("uninstall reads only machine policy, so a broken checkout cannot block it", () => {
   const f = setup();
   writeFileSync(join(f.repo, ".config/jig.yaml"), "gc: {kinds: [unknown]}\n");

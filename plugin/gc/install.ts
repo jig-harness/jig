@@ -1,5 +1,11 @@
 import { GcError } from "../shared/gc-error.ts";
-import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { gcConfiguration } from "./config.ts";
 import { baseDeclaration, gcGit as git } from "./git.ts";
@@ -25,8 +31,12 @@ export async function install(options: {
   uninstall: boolean;
   machine: boolean;
 }): Promise<number> {
-  const root = resolve(options.repository);
   // Removal needs only machine policy: a broken checkout cannot obstruct it.
+  const root = options.uninstall
+    ? await primaryCheckout(resolve(options.repository)).catch(() =>
+        resolve(options.repository),
+      )
+    : await primaryCheckout(resolve(options.repository));
   const repositoryText = options.uninstall ? null : undefined;
   const { machine, machinePath, repositoryValues } = gcConfiguration(
     root,
@@ -100,6 +110,22 @@ export async function install(options: {
     console.log(`Scheduler ${noEntries ? "removed" : "updated"}: ${job}`);
     return 0;
   });
+}
+/**
+ * The clone's primary checkout. The registration names it, and the
+ * declaration's relative roots resolve from it, whichever of the clone's
+ * worktrees install runs in. A bare clone has none and keeps `root`.
+ */
+async function primaryCheckout(root: string): Promise<string> {
+  const first = (await git(root, ["worktree", "list", "--porcelain"])).split(
+    /\r?\n\r?\n/,
+  )[0];
+  const lines = (first ?? "").split(/\r?\n/);
+  const line = lines.find((entry) => entry.startsWith("worktree "));
+  if (line === undefined || lines.includes("bare")) return root;
+  const primary = resolve(line.slice("worktree ".length));
+  // Keep the caller's spelling of a path that is already the primary.
+  return realpathSync(primary) === realpathSync(root) ? root : primary;
 }
 /**
  * The entry install proposes for the repository at `root`: the remote
