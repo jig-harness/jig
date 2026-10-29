@@ -4,16 +4,19 @@
  * A folder reference passes its checks as a folder; what it holds does not
  * pass with it. A file under it may be ignored by Git, a symbolic link out
  * of the repository or out of the folder, or a pipe, so every file is
- * checked on its own (`checkPath`) before it is listed and again before it
- * is read, and its real location, not the name it was asked for by, must be
- * the reference or under it. Nothing is left out silently: each file or
- * folder the checks refuse is recorded in `refused`, which the resolver
- * reports as unresolved. Listing and reading are asynchronous and stop when
- * the adapter's signal aborts, so the resolver's deadline bounds them.
+ * checked on its own (`checkFilePath`) before it is listed and again before
+ * it is read, and its real location, not the name it was asked for by, must
+ * be the reference or under it. These are file names, taken as written: a
+ * `#` or a `%` in one is part of it. A file reached by two names (a link
+ * beside its target) is listed once, by the first name in order. Nothing is
+ * left out silently: each file or folder the checks refuse is recorded in
+ * `refused`, which the resolver reports as unresolved. Listing, checking and
+ * reading never block and stop when the adapter's signal aborts, so the
+ * resolver's deadline bounds them.
  */
 import { readdir, readFile } from "node:fs/promises";
 import type { CheckedFiles } from "./adapter.ts";
-import { type CheckedPath, checkPath } from "./references.ts";
+import { type CheckedPath, checkFilePath } from "./references.ts";
 
 /** A reader that also records what its checks refused. */
 export interface ReportingFiles extends CheckedFiles {
@@ -66,13 +69,16 @@ async function filesUnder(
   for (const name of names) {
     walk.signal?.throwIfAborted();
     const ref = `${named}${name}`;
-    const child = checkPath(ref, walk.root);
+    const child = await checkFilePath(ref, walk.root, walk.signal);
     if (!child.ok) walk.refused.push(`${ref} (${child.reason})`);
     else if (!within(child, walk.scope))
       walk.refused.push(`${ref} (symbolic link out of ${walk.scope.ref})`);
     else if (child.directory)
       found.push(...(await filesUnder(`${ref}/`, child, walk)));
-    else found.push(ref);
+    else if (!walk.seen.has(child.path)) {
+      walk.seen.add(child.path);
+      found.push(ref);
+    }
   }
   return found;
 }
@@ -96,7 +102,7 @@ export function checkedFiles(
       });
     },
     async read(ref, signal) {
-      const file = checkPath(ref, root);
+      const file = await checkFilePath(ref, root, signal);
       if (!file.ok) throw new RefusedRead(`${ref} (${file.reason})`);
       if (!within(file, checked))
         throw new RefusedRead(`${ref} is not ${checked.ref} or under it`);

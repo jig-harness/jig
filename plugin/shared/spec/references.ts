@@ -11,9 +11,10 @@
 import { lstatSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, posix, relative, sep } from "node:path";
 import { swallow } from "../errors.ts";
-import { spawnSync, withoutLeakyGitEnv } from "../guarded-git-spawn.ts";
+import { spawn, withoutLeakyGitEnv } from "../guarded-git-spawn.ts";
 import type { BodySectionKind, SpecAdapter } from "./adapter.ts";
 import {
+  HEADING,
   headingKey,
   INLINE_HEADINGS,
   type MarkdownLine,
@@ -31,11 +32,9 @@ export interface BodySection {
   lines: MarkdownLine[];
 }
 
-const HEADING = /^ {0,3}(#{1,6})(?:[ \t](.*))?$/;
-
 /** The heading `line` is, its closing run of `#` dropped, or `null`. */
 function headingOf(line: string): { level: number; title: string } | null {
-  const match = HEADING.exec(line);
+  const match = HEADING.exec(line.trimStart());
   if (!match) return null;
   let title = (match[2] ?? "").trim();
   const bare = trimEndOf(title, "#");
@@ -47,7 +46,9 @@ function headingOf(line: string): { level: number; title: string } | null {
  * The recognised sections of `body`. A heading of any level opens one and the
  * next heading of the same or a higher level closes it; a line belongs to the
  * innermost recognised section around it, so an `### Acceptance criteria`
- * inside `## Spec` is its own section, not part of the Spec section.
+ * inside `## Spec` is its own section, not part of the Spec section. A
+ * section's `lines` keep every heading in it, and the heading of each of its
+ * occurrences (kind `heading`), since a heading ends the entry above it.
  */
 export function bodySections(body: string, specHeading: string): BodySection[] {
   const names = new Map<BodySectionKind, BodySection>();
@@ -75,24 +76,23 @@ export function bodySections(body: string, specHeading: string): BodySection[] {
     if (heading) {
       while ((stack.at(-1)?.level ?? 0) >= heading.level) stack.pop();
       stack.push({ level: heading.level, section: section(heading.title) });
-      continue;
     }
     const owner = stack.findLast((s) => s.section !== null)?.section;
     if (!owner) continue;
-    owner.text += `${line}\n`;
     owner.lines.push({ line, kind });
+    if (!heading) owner.text += `${line}\n`;
   }
   return [...names.values()];
 }
 
-/** Each line of `body`, with its heading when it is one outside code. */
+/** Each line of `body`, with its level and title when it is a heading. */
 function* headedLines(
   body: string,
 ): Generator<
   MarkdownLine & { heading: { level: number; title: string } | null }
 > {
   for (const { line, kind } of markdownLines(body))
-    yield { line, kind, heading: kind === "text" ? headingOf(line) : null };
+    yield { line, kind, heading: kind === "heading" ? headingOf(line) : null };
 }
 
 const MARKDOWN_LINK =
@@ -150,7 +150,7 @@ export function sectionReferences(lines: readonly MarkdownLine[]): string[] {
 export function bodyMentions(body: string): string[] {
   const found: string[] = [];
   for (const { line, kind } of markdownLines(body)) {
-    if (kind !== "text") continue;
+    if (kind !== "text" && kind !== "heading") continue;
     found.push(...linkTargets(line));
     for (const m of line.matchAll(CODE_SPAN))
       if (pathLike(m[1] ?? "")) found.push(m[1] ?? "");
@@ -226,32 +226,71 @@ function inside(root: string, path: string): string | null {
   return rel.split(sep).join("/");
 }
 
-/** Whether Git ignores `rel` in `root`; `null` when Git could not say. */
-function ignored(root: string, rel: string): boolean | null {
-  const run = spawnSync("git", ["check-ignore", "-q", "--", rel], {
-    cwd: root,
-    env: withoutLeakyGitEnv(),
-    timeout: 10_000,
+/**
+ * Whether Git ignores `rel` in `root`; `null` when Git could not say. Git
+ * runs without blocking, so the resolver's deadline can fire meanwhile; it
+ * is stopped, and the answer rejected, when `signal` aborts.
+ */
+function ignored(
+  root: string,
+  rel: string,
+  signal: AbortSignal | undefined,
+): Promise<boolean | null> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const child = spawn("git", ["check-ignore", "-q", "--", rel], {
+      cwd: root,
+      env: withoutLeakyGitEnv(),
+      stdio: ["ignore", "ignore", "pipe"],
+      timeout: 10_000,
+      signal,
+    });
+    // Its error output says nothing a verdict of null does not.
+    child.stderr?.resume();
+    const settle = (verdict: boolean | null) => {
+      if (signal?.aborted) reject(signal.reason);
+      else resolve(verdict);
+    };
+    child.on("error", () => settle(null));
+    child.on("close", (code) => {
+      if (code === 0) settle(true);
+      else settle(code === 1 ? false : null);
+    });
   });
-  if (run.status === 0) return true;
-  if (run.status === 1) return false;
-  return null;
 }
 
 /**
- * Check one path before anything reads it, in this order: a web link, an
- * absolute path, a path whose `..` leaves the root, a path that does not
- * exist, a real path (symbolic links followed) outside the root or at the
- * root itself, a path Git ignores, a path that is neither a folder nor a
- * regular file (a pipe or a device, whose read may never end). The first
- * that applies refuses it with that reason.
+ * Check one reference the body writes before anything reads it: a web link
+ * is refused, and anything else is read as a path (an anchor or query
+ * dropped, percent escapes decoded) and checked as `checkFilePath` checks it.
  */
 export function checkPath(
   reference: string,
   root: string,
-): CheckedPath | Refused {
-  if (isWebLink(reference)) return refused("web link, not fetched");
-  const path = asPath(reference);
+  signal?: AbortSignal,
+): Promise<CheckedPath | Refused> {
+  if (isWebLink(reference))
+    return Promise.resolve(refused("web link, not fetched"));
+  return checkFilePath(asPath(reference), root, signal);
+}
+
+/**
+ * Check one path, taken as written (a `#`, `?` or `%` is part of a name),
+ * before anything reads it, in this order: an absolute path, a path whose
+ * `..` leaves the root, a path that does not exist, a real path (symbolic
+ * links followed) outside the root or at the root itself, a path Git
+ * ignores, a path that is neither a folder nor a regular file (a pipe or a
+ * device, whose read may never end). The first that applies refuses it with
+ * that reason. It rejects when `signal` aborts.
+ */
+export async function checkFilePath(
+  path: string,
+  root: string,
+  signal?: AbortSignal,
+): Promise<CheckedPath | Refused> {
   if (isAbsolutePath(path)) return refused("absolute path");
   const normal = posix.normalize(path).replace(/^\.\//, "");
   if (normal === ".." || normal.startsWith("../"))
@@ -277,7 +316,7 @@ export function checkPath(
   const rel = inside(realRoot, real);
   if (rel === null) return refused("symbolic link out of the repository");
   if (rel === "") return refused("no adapter claims it");
-  const verdict = ignored(realRoot, rel);
+  const verdict = await ignored(realRoot, rel, signal);
   if (verdict === null)
     return refused("Git could not say whether it is ignored");
   if (verdict) return refused("ignored by Git");
@@ -291,12 +330,13 @@ export function checkPath(
  * Check one reference: every check of `checkPath`, then whether an enabled
  * adapter's patterns claim it.
  */
-export function checkReference(
+export async function checkReference(
   reference: string,
   root: string,
   adapters: readonly SpecAdapter[],
-): Checked {
-  const checked = checkPath(reference, root);
+  signal?: AbortSignal,
+): Promise<Checked> {
+  const checked = await checkPath(reference, root, signal);
   if (!checked.ok) return checked;
   const adapter = adapters.find((a) => matches(a, checked.ref));
   if (!adapter) return refused("no adapter claims it");

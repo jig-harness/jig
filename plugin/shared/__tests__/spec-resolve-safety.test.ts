@@ -62,7 +62,7 @@ describe("a folder reference", () => {
         join(root, "secrets.txt"),
         join(root, "notes", "export", "leak.md"),
       );
-      const checked = checkPath("notes/export/", root);
+      const checked = await checkPath("notes/export/", root);
       if (!checked.ok) throw new Error(checked.reason);
       const files = checkedFiles(checked, root);
       expect(await files.list()).toEqual(["notes/export/criteria.md"]);
@@ -70,8 +70,14 @@ describe("a folder reference", () => {
         "notes/export/leak.md (symbolic link out of notes/export/)",
       ]);
       await expect(
-        files.read("notes/export/%2e%2e/%2e%2e/secrets.txt"),
+        files.read("notes/export/../../secrets.txt"),
       ).rejects.toThrow("or under it");
+      await expect(
+        files.read("notes/export/%2e%2e/%2e%2e/secrets.txt"),
+      ).rejects.toThrow("not found");
+      await expect(files.read("notes/export/../../../x")).rejects.toThrow(
+        "leaves the repository",
+      );
       await expect(files.read("notes/export/leak.md")).rejects.toThrow(
         "or under it",
       );
@@ -90,11 +96,11 @@ describe("a folder reference", () => {
         { stdout: "pipe", stderr: "pipe" },
       );
       expectSpawnExit(fifo, 0, "mkfifo");
-      expect(checkPath("notes/export/pipe.md", root)).toEqual({
+      expect(await checkPath("notes/export/pipe.md", root)).toEqual({
         ok: false,
         reason: "not a regular file",
       });
-      const checked = checkPath("notes/export/", root);
+      const checked = await checkPath("notes/export/", root);
       if (!checked.ok) throw new Error(checked.reason);
       const files = checkedFiles(checked, root);
       expect(await files.list()).toEqual(["notes/export/criteria.md"]);
@@ -113,7 +119,7 @@ describe("a folder reference", () => {
     put(root, "notes/other.md", "AC-2 y\n");
     put(root, "notes/export/private.md", "AC-3 z\n");
     put(root, ".gitignore", "notes/export/private.md\n");
-    const checked = checkPath("notes/export", root);
+    const checked = await checkPath("notes/export", root);
     if (!checked.ok) throw new Error(checked.reason);
     const files = checkedFiles(checked, root);
     expect(await files.list()).toEqual(["notes/export/criteria.md"]);
@@ -125,6 +131,48 @@ describe("a folder reference", () => {
     await expect(files.read("notes/export/private.md")).rejects.toThrow(
       "ignored by Git",
     );
+    await expect(
+      files.read("notes/export/criteria.md", AbortSignal.abort()),
+    ).rejects.toThrow();
+  });
+
+  test("its files are names as written: a # or % in one is part of it, never an anchor or an escape", async () => {
+    const { root } = scratchRepo("spec-safety-");
+    put(root, "notes/export/criteria#1.md", "AC-1 x\n");
+    put(root, "notes/export/criteria", "AC-8 the wrong file\n");
+    put(root, "notes/export/100%25.md", "AC-2 y\n");
+    put(root, "notes/export/100%.md", "AC-9 the wrong file\n");
+    const checked = await checkPath("notes/export/", root);
+    if (!checked.ok) throw new Error(checked.reason);
+    const files = checkedFiles(checked, root);
+    const listed = await files.list();
+    expect(listed).toEqual([
+      "notes/export/100%.md",
+      "notes/export/100%25.md",
+      "notes/export/criteria",
+      "notes/export/criteria#1.md",
+    ]);
+    expect(await files.read("notes/export/criteria#1.md")).toBe("AC-1 x\n");
+    expect(await files.read("notes/export/100%25.md")).toBe("AC-2 y\n");
+    expect(files.refused).toEqual([]);
+  });
+
+  test.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "creating a symbolic link needs a privilege Windows withholds by default",
+    ),
+  )("a file reached by two names is listed once", async () => {
+    const { root } = scratchRepo("spec-safety-");
+    put(root, "notes/export/criteria.md", "AC-1 x\n");
+    symlinkSync("criteria.md", join(root, "notes", "export", "alias.md"));
+    const result = await resolveSpec(
+      issue("## Spec\n\nnotes/export/\n"),
+      root,
+      { registry: [stub("notes", "notes")], config: only("notes") },
+    );
+    expect(result.unresolved).toEqual([]);
+    expect(result.acceptance.map((c) => c.key)).toEqual(["notes/export/#AC-1"]);
   });
 });
 
@@ -189,6 +237,44 @@ test("a fence indented under a list item is the item's code, not its content", a
   expect(result.acceptance).toEqual([]);
   expect(result.tasks.map((t) => t.id)).toEqual(["1", "2"]);
   expect(result.unresolved).toEqual([]);
+});
+
+test("a fence that opens on a list item's own line is the item's code", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  for (const fence of ["```", "~~~"]) {
+    const body = [
+      "## Spec",
+      "",
+      `- ${fence}md`,
+      "  AC-9 Example",
+      `  ${fence}`,
+      "- [ ] 1. Real task",
+    ].join("\n");
+    const result = await resolveSpec(issue(body), root, {
+      registry: [bodyAdapter],
+      config: only("body"),
+    });
+    expect(result.acceptance).toEqual([]);
+    expect(result.tasks.map((t) => t.id)).toEqual(["1"]);
+  }
+});
+
+test("a heading inside a section ends the entry above it", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  const body = [
+    "## Acceptance criteria",
+    "- Works",
+    "### Notes",
+    "Extra explanation",
+    "## Other",
+    "## Acceptance criteria",
+    "Also explained",
+  ].join("\n");
+  const result = await resolveSpec(issue(body), root, {
+    registry: [bodyAdapter],
+    config: only("body"),
+  });
+  expect(result.acceptance.map((c) => c.text)).toEqual(["Works"]);
 });
 
 test("a section keeps the code its context made: a heading that closed a list still closes it", async () => {

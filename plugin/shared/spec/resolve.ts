@@ -41,6 +41,7 @@ import { checkedFiles } from "./files.ts";
 import {
   bodyMentions,
   bodySections,
+  type Checked,
   checkReference,
   claimant,
   sectionReferences,
@@ -187,13 +188,17 @@ interface Found {
   refused: readonly string[];
 }
 
-/** Every reference the body makes, checked; the refused ones as unresolved lines. */
-function findReferences(
+/**
+ * Every reference the body makes, checked, each check given up on at the
+ * deadline; the refused ones as unresolved lines.
+ */
+async function findReferences(
   body: string,
   root: string,
   adapters: readonly SpecAdapter[],
   config: SpecsConfig,
-): { found: Found[]; unresolved: string[] } {
+  deadlineMs: number,
+): Promise<{ found: Found[]; unresolved: string[] }> {
   const found = new Map<string, Found>();
   const unresolved: string[] = [];
   const add = (f: Found, evidence: string) => {
@@ -229,7 +234,15 @@ function findReferences(
   for (const mention of bodyMentions(body))
     if (claimant(adapters, mention) !== null) candidates.push(mention);
   for (const candidate of new Set(candidates)) {
-    const checked = checkReference(candidate, root, adapters);
+    let checked: Checked;
+    try {
+      checked = await withDeadline(deadlineMs, (signal) =>
+        checkReference(candidate, root, adapters, signal),
+      );
+    } catch (err) {
+      unresolved.push(`${candidate} (could not be checked: ${reasonOf(err)})`);
+      continue;
+    }
     if (!checked.ok) {
       unresolved.push(`${candidate} (${checked.reason})`);
       continue;
@@ -323,11 +336,12 @@ export async function resolveSpec(
     );
   const deadlineMs = options.deadlineMs ?? DEADLINE_MS;
   const enabled = await enabledAdapters(registry, config, root, deadlineMs);
-  const { found, unresolved } = findReferences(
+  const { found, unresolved } = await findReferences(
     issueBody(issue),
     root,
     enabled.adapters,
     config,
+    deadlineMs,
   );
   unresolved.unshift(...enabled.unresolved);
   const read: { source: SpecSource; lists: AdapterRead }[] = [];

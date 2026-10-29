@@ -12,8 +12,10 @@
  * relative to the item's content column (where its text starts after the
  * marker): a fence indented under `- ` is the item's fence, and only a line
  * four columns past that column, after a blank line, is its indented code.
- * A line at or past that column belongs to the item and does not close the
- * list; a heading, or a line before that column after a blank line, does.
+ * The text after a list marker is read the same way, at the item's content
+ * column, so `- ```md` opens a fence and `- - x` opens a nested item. A line
+ * at or past that column belongs to the item and does not close the list; a
+ * heading, or a line before that column after a blank line, does.
  */
 import type { BodySectionKind } from "./adapter.ts";
 
@@ -41,15 +43,17 @@ export function trimEndOf(text: string, chars: string): string {
 }
 
 /**
- * A line in a section: `text` is content, `code` is inside a fence or an
- * indented code block, `fence` opens or closes a fence. Tabs are four
- * spaces.
+ * A line in a section: `text` is content, `heading` a heading outside code,
+ * `code` is inside a fence or an indented code block, `fence` opens or
+ * closes a fence. Tabs are four spaces.
  */
 export interface MarkdownLine {
   line: string;
-  kind: "text" | "code" | "fence";
+  kind: "text" | "heading" | "code" | "fence";
 }
 
+/** A heading: its run of `#` and its title. */
+export const HEADING = /^ {0,3}(#{1,6})(?:[ \t](.*))?$/;
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const LIST_ITEM = /^( {0,3})([-*+]|\d{1,9}[.)])( *)(?=\S|$)/;
 
@@ -127,9 +131,13 @@ function shallowLine(
   if (item !== null) {
     state.listOpen = true;
     state.listIndent = strip + item;
-  } else if (/^ {0,3}#/.test(line) || (state.afterBlank && strip === 0))
+    if (line.length <= state.listIndent) return "text";
+    const content = shallowLine(line, state.listIndent, state);
+    return content === "heading" ? "text" : content;
+  }
+  if (/^ {0,3}#/.test(line) || (state.afterBlank && strip === 0))
     state.listOpen = false;
-  return "text";
+  return HEADING.test(own) ? "heading" : "text";
 }
 
 /** The kind of one line, the state moved on past it. */
