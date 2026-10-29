@@ -76,6 +76,9 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "code_stats.kinds",
   "code_stats.modules",
   "code_stats.classify_command",
+  // Where a repository keeps its docs tree and its schema.
+  "docs.root",
+  "docs.schema",
 ];
 
 export type LayerName = "user" | "repository" | "environment";
