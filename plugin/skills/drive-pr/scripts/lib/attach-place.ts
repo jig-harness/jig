@@ -20,10 +20,22 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { clonePath, isMapping } from "../../../../shared/config-layers.ts";
 import { layeredConfig } from "../../../../shared/consumer.ts";
-import { detachedTreeRecord } from "../../../../shared/driven-tree.ts";
+import {
+  detachedTreeRecord,
+  writeDrivenTree,
+} from "../../../../shared/driven-tree.ts";
 import { isRecord } from "../../../../shared/guards.ts";
-import { canonical, DRIVE_REMOTE, g, out, refuse } from "./attach.ts";
+import {
+  canonical,
+  DRIVE_REMOTE,
+  g,
+  out,
+  refuse,
+  requireOrigin,
+} from "./attach.ts";
 import { fetchTimeoutSeconds } from "./base-drift.ts";
+import { peekCloneKey } from "./state/clone-key.ts";
+import { defaultStateRoot } from "./state/store.ts";
 import {
   ghCall,
   ghRepoEnv,
@@ -72,6 +84,10 @@ export type Placement =
       slug: string | null;
       tree: string;
       created: boolean;
+      /** The tree is in another clone than the caller's checkout. */
+      otherClone: boolean;
+      /** How a process run in `tree` must change this environment. */
+      env: EnvChange;
     }
   | { kind: "elsewhere"; pr: string; slug: string; message: string };
 
@@ -144,11 +160,18 @@ async function recordedTree(all: Tree[], pr: string): Promise<string | null> {
 
 /**
  * The PR's head branch, refusing before anything is created for a PR the
- * attach would refuse anyway: one that is not open, or one from a fork.
+ * attach would refuse anyway: one that is not open, one from a fork, or one
+ * whose repository `origin` is not, for any URL it fetches from or pushes to.
  */
 async function headBranch(cwd: string, pr: string): Promise<string> {
   const r = await ghCall(
-    ["pr", "view", pr, "--json", "state,headRefName,isCrossRepository"],
+    [
+      "pr",
+      "view",
+      pr,
+      "--json",
+      "state,headRefName,isCrossRepository,headRepository,headRepositoryOwner",
+    ],
     { cwd, stderr: "pipe", env: ghRepoEnv() },
   );
   let meta: unknown;
@@ -166,6 +189,15 @@ async function headBranch(cwd: string, pr: string): Promise<string> {
     );
   if (meta.isCrossRepository !== false)
     refuse(2, `PR #${pr} comes from a fork: the drive cannot push its head`);
+  const owner = isRecord(meta.headRepositoryOwner)
+    ? meta.headRepositoryOwner.login
+    : undefined;
+  const name = isRecord(meta.headRepository)
+    ? meta.headRepository.name
+    : undefined;
+  if (typeof owner !== "string" || typeof name !== "string")
+    refuse(1, `PR #${pr} did not report its head repository`);
+  await requireOrigin(cwd, { repo: `${owner}/${name}` }, pr);
   return meta.headRefName;
 }
 
@@ -174,8 +206,10 @@ async function createTree(
   primary: string,
   pr: string,
   branch: string,
+  env: EnvChange,
 ): Promise<string> {
-  const gc = layeredConfig(primary).values.gc;
+  // The destination clone's configuration, not the one this session selects.
+  const gc = layeredConfig(primary, applyEnv(process.env, env)).values.gc;
   const roots = isMapping(gc) ? gc.worktree_roots : undefined;
   const root = Array.isArray(roots) ? roots[0] : undefined;
   if (typeof root !== "string" || root === "")
@@ -226,7 +260,25 @@ async function createTree(
   );
   if (added.code !== 0)
     refuse(1, `cannot add a working tree at ${path}: ${added.stderr.trim()}`);
-  return canonical(path);
+  // Recorded at once, as created for the drive: an attach there that fails
+  // or is interrupted leaves a tree the next placement finds and reuses
+  // (`recordedTree`), and resource collection can reap.
+  const tree = canonical(path);
+  writeDrivenTree(
+    await out(
+      tree,
+      ["rev-parse", "--absolute-git-dir"],
+      "the new tree's git directory",
+    ),
+    {
+      pr: Number(pr),
+      branch,
+      remote: DRIVE_REMOTE,
+      created: true,
+      head: await out(tree, ["rev-parse", "HEAD"], "the new tree's head"),
+    },
+  );
+  return tree;
 }
 
 /**
@@ -259,12 +311,18 @@ export async function placePr(ref: PrRef, cwd: string): Promise<Placement> {
       slug: ref.slug as string,
       message: elsewhere(ref.slug as string, ref.pr),
     };
+  const otherClone = clone !== cwd;
+  const key = otherClone ? await cloneKeyOf(clone) : null;
+  const envFor = (tree: string) =>
+    destinationEnv(tree, otherClone, process.env, key);
   const placed = (tree: string, created: boolean): Placement => ({
     kind: "placed",
     pr: ref.pr,
     slug: ref.slug,
     tree,
     created,
+    otherClone,
+    env: envFor(tree),
   });
   const all = await trees(clone);
   const primary = (all[0] as Tree).path;
@@ -277,7 +335,10 @@ export async function placePr(ref: PrRef, cwd: string): Promise<Placement> {
   if (holder !== undefined) return placed(holder.path, false);
   const recorded = await recordedTree(all, ref.pr);
   if (recorded !== null) return placed(recorded, false);
-  return placed(await createTree(primary, ref.pr, branch), true);
+  return placed(
+    await createTree(primary, ref.pr, branch, envFor(primary)),
+    true,
+  );
 }
 
 function elsewhere(slug: string, pr: string): string {
@@ -297,21 +358,109 @@ const ATTACH_PR = join(
   "attach-pr.ts",
 );
 
+/** The variables a running drive exports for the tree it drives. */
+const DRIVE_CONTEXT = [
+  "DRIVE_PR_WORKTREE",
+  "DRIVE_PR_TARGET",
+  "DRIVE_PR_SESSION",
+  "DRIVE_PR_SESSION_STARTED",
+];
+
+/** The variables that select another clone's configuration. */
+const CLONE_CONFIG = ["JIG_CONSUMER_ROOT", "JIG_OVERLAY"];
+
+/** What `destinationEnv` changes, so the arm step can make the same change. */
+export interface EnvChange {
+  /** Variable names to remove, upper case. */
+  unset: string[];
+}
+
+/**
+ * How the environment of a process run in `tree` differs from this one's:
+ * nothing that selects a repository, configuration, working tree or drive
+ * state survives unless it names `tree`. Every process placement starts
+ * there (the configuration read, the attach) and every one the arm step
+ * starts (the checkpoint lookup, the driver) takes this one change.
+ *
+ * - `GH_REPO` is removed always: placement reads `gh` without it, and the
+ *   attach, the checkpoint and the driver must read the same repository.
+ * - A running drive's own variables (`DRIVE_PR_WORKTREE` and its session)
+ *   are removed when they name another tree.
+ * - In another clone, the consumer root and the overlay are removed. The
+ *   state directory a driver exports (`DRIVE_PR_STATE_DIR` with its identity)
+ *   is its own clone's leaf: kept when it is the destination's too
+ *   (`destinationKey`), removed with its identity when it is under the
+ *   default root, so the destination resolves its own leaf there. A leaf
+ *   under a relocated root is refused: the state fence accepts that root only
+ *   with an identity a driver captured, so no setting here reaches the
+ *   destination's leaf under it.
+ */
+export function destinationEnv(
+  tree: string,
+  otherClone: boolean,
+  env: Record<string, string | undefined> = process.env,
+  destinationKey: string | null = null,
+): EnvChange {
+  const unset = ["GH_REPO"];
+  const anchor = env.DRIVE_PR_WORKTREE;
+  if (otherClone || (anchor !== undefined && canonical(anchor) !== tree))
+    unset.push(...DRIVE_CONTEXT);
+  const leaf = env.DRIVE_PR_STATE_DIR ?? "";
+  if (otherClone) {
+    unset.push(...CLONE_CONFIG);
+    const exported = (env.DRIVE_PR_STATE_DIR_IDENTITY ?? "") !== "";
+    if (exported && leaf !== "" && basename(leaf) !== destinationKey) {
+      if (canonical(dirname(leaf)) !== canonical(defaultStateRoot()))
+        refuse(
+          2,
+          `this session runs inside a drive whose state is under the relocated root ${dirname(leaf)}, and ${tree} is in another clone: arm it from a session outside the drive`,
+        );
+      unset.push("DRIVE_PR_STATE_DIR", "DRIVE_PR_STATE_DIR_IDENTITY");
+    }
+  }
+  const present = (name: string) =>
+    Object.keys(env).some((key) => key.toUpperCase() === name);
+  return { unset: unset.filter(present) };
+}
+
+/** The clone key of the clone `tree` is in, if it has one yet. */
+async function cloneKeyOf(tree: string): Promise<string | null> {
+  const common = await out(
+    tree,
+    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    "the clone's common git directory",
+  );
+  return peekCloneKey(common);
+}
+
+/** `env` with `change` applied. */
+export function applyEnv(
+  env: Record<string, string | undefined>,
+  change: EnvChange,
+): Record<string, string | undefined> {
+  const next = { ...env };
+  for (const key of Object.keys(next))
+    if (change.unset.includes(key.toUpperCase())) delete next[key];
+  return next;
+}
+
 /** Attach `pr` in `tree` as its own process, so the state is that clone's. */
 export async function attachIn(
   tree: string,
   pr: string,
   created: boolean,
+  change: EnvChange,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   // Its fetch has a deadline of its own; the rest is a helper's.
   const fetch = fetchTimeoutSeconds();
+  const env = applyEnv(gitIdentityEnv(), change);
   const r = await run(
     tsArgv(ATTACH_PR, [pr, ...(created ? ["--created"] : [])]),
     {
       cwd: tree,
       stderr: "pipe",
       timeoutSec: helperTimeoutSeconds() + (fetch.ok ? fetch.seconds : 0),
-      env: gitIdentityEnv(),
+      env,
     },
   );
   return { code: r.code, stdout: r.stdout, stderr: r.stderr };

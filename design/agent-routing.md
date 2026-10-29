@@ -21,8 +21,9 @@ wins.
 
 This is the design of [plan.md](plan.md) item 31, a change to `do-item` and
 `work-batch`, with one line added to the
-[workspace launcher](../tools/launcher/README.md)'s first prompt. Nothing
-of it is built. It builds on the agent selection that exists
+[workspace launcher](../tools/launcher/README.md)'s first prompt. The
+derivation ([build order](#build-order) step 1) is built; the rest is not.
+It builds on the agent selection that exists
 (`plugin/skills/do-item/scripts/determine_agent.ts`) and on the
 [work type](../GLOSSARY.md) derivation of item 27
 ([work-types.md](work-types.md)), which it waits on. The standing decision
@@ -384,7 +385,7 @@ refused `do_item` section does today; it is never read as absent.
 
 1. **The derivation.** `determine_route.ts`, the `routing` section and the
    defaults as data with their tests (one fixture per rule, one for the cap,
-   one for the pinned agent, one for `unknown`), documented in
+   one for `unknown`), documented in
    [CONFIGURATION.md](../plugin/CONFIGURATION.md); `do-item` prints the route
    and changes nothing yet. Waits on item 27's first step, the type
    derivation.
@@ -402,7 +403,8 @@ refused `do_item` section does today; it is never read as absent.
    them, field by field, records `applied`, and records the effective
    value the runtime reports after the implementer ran; the definition
    resolver, built-in agents included, keeps a pinned agent's pin and
-   forwards nothing where it cannot resolve one; the fix
+   forwards nothing where it cannot resolve one, with a fixture for each;
+   the fix
    loop reuses the route; the launcher's first prompt carries the `route:`
    line and `do-item` honours it. Fixtures show a flagged bug delegated on
    a higher effort than an unflagged one, the `## Route` section saying

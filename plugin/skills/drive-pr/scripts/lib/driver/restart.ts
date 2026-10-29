@@ -30,10 +30,41 @@ import { swallow } from "../../../../../shared/errors.ts";
 import { driveState } from "./paths.ts";
 
 /**
+ * Admit one more pass-deadline restart within `budget`, counting it in the
+ * drive state only when it is admitted, so a deadline that stops the drive is
+ * never recorded as a restart taken. Returns the restarts taken, with this
+ * one when admitted; `null` when the count could not be read or recorded.
+ */
+export async function admitDeadlineRestart(
+  pr: string,
+  budget: number,
+): Promise<{ admitted: boolean; taken: number } | null> {
+  const got = await run(tsArgv(driveState, ["get", pr]), {
+    stderr: "inherit",
+    timeoutSec: helperTimeoutSeconds(),
+  });
+  if (got.code !== 0) return null;
+  let taken: unknown;
+  try {
+    taken = (JSON.parse(got.stdout) as { deadlineRetries?: unknown })
+      .deadlineRetries;
+  } catch (err) {
+    swallow(err, "drive-state.ts get printed no JSON");
+    return null;
+  }
+  taken ??= 0;
+  if (!Number.isSafeInteger(taken)) return null;
+  if ((taken as number) >= budget)
+    return { admitted: false, taken: taken as number };
+  const bumped = await bumpDeadlineRetries(pr);
+  return bumped === null ? null : { admitted: true, taken: bumped };
+}
+
+/**
  * Count one more pass-deadline restart in the drive state and return the
  * drive's total; `null` when it could not be recorded.
  */
-export async function bumpDeadlineRetries(pr: string): Promise<number | null> {
+async function bumpDeadlineRetries(pr: string): Promise<number | null> {
   const res = await run(
     tsArgv(driveState, ["deadline-retries", pr, "--set", "bump"]),
     { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
@@ -65,6 +96,8 @@ export interface PassLeftovers {
   unpushed: number | null;
   /** An unconcluded merge, rebase or similar, by its marker. */
   operation: string | null;
+  /** The tree's HEAD after the kill: the head the next gate may inherit. */
+  head: string | null;
 }
 
 export async function passLeftovers(): Promise<PassLeftovers> {
@@ -78,6 +111,7 @@ export async function passLeftovers(): Promise<PassLeftovers> {
   const status = await git(["status", "--short"], opts);
   const count = await git(["rev-list", "--count", unpushedRange()], opts);
   const unpushed = Number.parseInt(count.stdout.trim(), 10);
+  const head = await git(["rev-parse", "HEAD"], opts);
   const op = await unconcludedGitOpMarker(gitCallTimeoutSeconds(), {
     ...(anchor ? { cwd: anchor } : {}),
     env: gitIdentityEnv(),
@@ -86,7 +120,19 @@ export async function passLeftovers(): Promise<PassLeftovers> {
     uncommitted: status.code === 0 ? status.stdout.trimEnd() : null,
     unpushed: count.code === 0 && Number.isFinite(unpushed) ? unpushed : null,
     operation: op.ok ? op.marker : null,
+    head:
+      head.code === 0 && head.stdout.trim() !== "" ? head.stdout.trim() : null,
   };
+}
+
+/**
+ * The head the next gate may accept ahead of the PR head
+ * (`drive-status.ts --inherited-head`): the witnessed HEAD, unless the
+ * count shows nothing unpushed. The gate itself checks it still is HEAD
+ * and descends from the PR head.
+ */
+export function inheritedHeadOf(l: PassLeftovers): string {
+  return l.head !== null && l.unpushed !== 0 ? l.head : "";
 }
 
 /** The leftovers as lines for the driver log and the pass notice. */
@@ -116,11 +162,17 @@ export function deadlineNotice(
   deadlineSec: number,
   leftovers: PassLeftovers,
 ): string {
+  const inherited = inheritedHeadOf(leftovers);
   return [
     `RESTARTED AFTER A PASS DEADLINE: the pass on round ${round} ran past its ${deadlineSec}s deadline and was killed.`,
     "Nothing it did was rolled back. What it left in this tree:",
     ...describeLeftovers(leftovers),
     "Start from that state: finish, validate and push what is sound, discard what is not on purpose, then triage as usual.",
+    ...(inherited === ""
+      ? []
+      : [
+          `This pass inherits unpushed commits: local HEAD ${inherited} is ahead of the PR head. Run the § 1 gate with \`--inherited-head ${inherited}\` (without it the gate reads the commits as HEAD_LAG), and push them through finish-round like any fix of this round.`,
+        ]),
   ].join("\n");
 }
 

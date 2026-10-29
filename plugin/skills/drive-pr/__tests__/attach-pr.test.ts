@@ -139,6 +139,29 @@ describe("a detached tree's record", () => {
     expect(existsSync(recordFile(c, tree))).toBe(false);
   });
 
+  test("gives way to the branch once no other tree holds it", () => {
+    const { c, holder } = held();
+    const tree = c.tree("wt1");
+    expectSpawnExit(c.attach(tree, "42"), 0, "detached attach");
+    c.git(holder, "switch", "-q", "--detach");
+    const r = c.attach(tree, "42");
+    expectSpawnExit(r, 0, "attach again");
+    expect(JSON.parse(r.stdout)).toMatchObject({ detached: false });
+    expect(branchOf(c, tree)).toBe("feature");
+    expect(existsSync(recordFile(c, tree))).toBe(false);
+  });
+
+  test("keeps a tree with its own commits detached", () => {
+    const { c, holder } = held();
+    const tree = c.tree("wt1");
+    expectSpawnExit(c.attach(tree, "42"), 0, "detached attach");
+    const own = c.commit(tree, "own.txt");
+    c.git(holder, "switch", "-q", "--detach");
+    expectSpawnExit(c.attach(tree, "42"), 0, "attach again");
+    expect(branchOf(c, tree)).toBe("");
+    expect(c.git(tree, "rev-parse", "HEAD")).toBe(own);
+  });
+
   test("stops answering once the tree is detached somewhere else", () => {
     const { c } = held();
     const tree = c.tree("wt1");
@@ -264,5 +287,14 @@ describe("attach-pr.ts refuses", () => {
     expectSpawnExit(r, 11, "attach");
     expect(r.stderr).toContain("holds this working tree");
     expect(c.git(tree, "rev-parse", "HEAD")).toBe(before);
+  });
+
+  test("leaves no driver lock behind once it has attached", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    expectSpawnExit(c.attach(tree, "42"), 0, "attach");
+    const state = c.env.DRIVE_PR_STATE_DIR as string;
+    expect(existsSync(join(state, worktreeLock(c, tree)))).toBe(false);
+    expect(existsSync(join(state, "pr-drive-42.lock"))).toBe(false);
   });
 });

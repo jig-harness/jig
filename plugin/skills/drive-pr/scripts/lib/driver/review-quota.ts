@@ -22,6 +22,7 @@ import { driveState, driveTs } from "./paths.ts";
 import { armCommand, passBotsOnly } from "./rearm.ts";
 
 import {
+  type AccountIdentity,
   accountHash,
   formatAccountIdentity,
   resolveAccountIdentity,
@@ -31,9 +32,18 @@ import { loopEconomy } from "./reports.ts";
 
 import { planFor, describe as describeQuota } from "./../quota/index.ts";
 
-/** The hashed account the pass that met the wall bills (`accountHash`). */
+/**
+ * The account the pass that met the wall billed: the identity resolved as it
+ * was spawned, not the credentials as they read now, which a login during the
+ * pass can have changed.
+ */
+function wallIdentity(context: DriveRoundContext): AccountIdentity {
+  return context.passIdentity ?? resolveAccountIdentity(context.agent);
+}
+
+/** The hashed account the wall belongs to (`accountHash`). */
 function wallAccount(context: DriveRoundContext): string | null {
-  return accountHash(resolveAccountIdentity(context.agent));
+  return accountHash(wallIdentity(context));
 }
 
 async function waitThroughQuotaWindow(
@@ -199,7 +209,7 @@ export async function handleQuotaBlock(
     "  Check for work the killed pass left behind first — `git status --short` and",
   );
   console.error(`  \`${unpushedCountCommand()}\`.`);
-  const identity = resolveAccountIdentity(context.agent);
+  const identity = wallIdentity(context);
   const account = accountHash(identity);
   console.error(
     `  The wall belongs to ${formatAccountIdentity(identity)}${account === null ? "" : ` (${account})`}.`,

@@ -25,8 +25,3 @@ export const reconcileRepliedThreads = join(
   here,
   "reconcile-replied-threads.ts",
 );
-
-export const replyToThread = join(
-  here,
-  "../../resolve-review-comments/scripts/reply-to-thread.ts",
-);

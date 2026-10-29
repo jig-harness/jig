@@ -177,6 +177,7 @@ export async function runDriverRounds({
     ciRepairBudget,
     dryRun,
     agent,
+    passIdentity: null,
     mailboxCheckpoint,
     held,
     witnessWaitHead,
@@ -186,6 +187,7 @@ export async function runDriverRounds({
     stallExtraRound: false,
     passNotice: "",
     carriedNotice: firstPassNotice,
+    inheritedHead: "",
   };
   for (;;) {
     {

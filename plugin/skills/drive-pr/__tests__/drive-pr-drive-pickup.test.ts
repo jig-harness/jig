@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
+  gitCleanEnv,
   hold,
   park,
   scratchClean,
@@ -31,11 +32,24 @@ import {
   plantPrLock,
   progressAt,
   stale,
-  tokenAccount,
+  loginAccount,
+  loginEnv,
   trackedTree,
 } from "./drive-pr-pickup-fixtures.ts";
 
 useDrivePrSuite();
+
+/** The commit `tree` has checked out. */
+function gitHead(tree: string): string {
+  const r = Bun.spawnSync(["git", "rev-parse", "HEAD"], {
+    cwd: tree,
+    env: gitCleanEnv(),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expectSpawnExit(r, 0);
+  return r.stdout.toString().trim();
+}
 
 describe("drive.ts restarts a pass killed at its deadline", () => {
   it("restarts the round, tells the next pass what the killed one left, and drives on", async () => {
@@ -49,6 +63,8 @@ describe("drive.ts restarts a pass killed at its deadline", () => {
       [
         ": pass for 999",
         `if [ ! -e '${marker}' ]; then : > '${marker}'; echo wip > wip.txt; sleep 60; fi`,
+        // The retried pass finds the killed one's edit, contents intact.
+        '[ "$(cat wip.txt 2>/dev/null)" = wip ] || exit 0',
         'case "$DRIVE_PR_PASS_NOTICE" in "RESTARTED AFTER A PASS DEADLINE"*) echo "pass for 999: RETRY_PASS_OK" >&2 ;; esac',
         "exit 0",
       ].join("\n"),
@@ -73,6 +89,61 @@ describe("drive.ts restarts a pass killed at its deadline", () => {
     expect(r.stderr).not.toContain("retry budget is spent");
   }, 120_000);
 
+  it("dispatches the restarted pass over a commit the killed one left unpushed, under head synchronization", async () => {
+    const tree = trackedTree("deadline-unpushed");
+    const reviewed = gitHead(tree);
+    const marker = join(tmpRoot, "pickup-deadline-unpushed-killed");
+    const noticeFile = join(tmpRoot, "pickup-deadline-unpushed-notice");
+    const headFile = join(tmpRoot, "pickup-deadline-unpushed-head");
+    // The first pass commits and hangs before pushing. The retried one checks
+    // the commit is still there, records its notice, and stands in for the
+    // push by returning the tree to the head the API reports.
+    const pass = [
+      "sh",
+      "-c",
+      [
+        ": pass for 999",
+        `if [ ! -e '${marker}' ]; then : > '${marker}'; echo wip > wip.txt; git add wip.txt; git -c user.email=p@example.invalid -c user.name=p commit -qm wip --no-verify; sleep 60; fi`,
+        '[ "$(git show HEAD:wip.txt 2>/dev/null)" = wip ] || exit 0',
+        `printf '%s' "$DRIVE_PR_PASS_NOTICE" > '${noticeFile}'`,
+        `git rev-parse HEAD > '${headFile}'`,
+        "echo 'pass for 999: RETRY_PASS_OK' >&2",
+        `git reset -q --hard ${reviewed}`,
+        "exit 0",
+      ].join("\n"),
+    ];
+    const r = await runDrive(
+      {
+        head: reviewed,
+        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+      },
+      [
+        "--timeout",
+        "5",
+        "--interval",
+        "5",
+        "--pass-timeout",
+        "2",
+        "--max-rounds",
+        "2",
+        "--",
+        ...pass,
+      ],
+      tree,
+    );
+    expectSpawnExit({ ...r, stdout: null }, 6);
+    expect(r.stderr).toContain("deadline retry 1 of 2");
+    expect(r.stderr).toContain("Unpushed commits: 1");
+    expect(r.stderr).toContain("RETRY_PASS_OK");
+    expect(r.stderr).not.toContain("HEAD_LAG");
+    const notice = readFileSync(noticeFile, "utf8");
+    expect(notice).toStartWith("RESTARTED AFTER A PASS DEADLINE");
+    expect(notice).toContain("finish-round");
+    const inherited = readFileSync(headFile, "utf8").trim();
+    expect(inherited).not.toBe(reviewed);
+    expect(notice).toContain(`--inherited-head ${inherited}`);
+  }, 120_000);
+
   it("carries the restart count across a re-arm instead of granting a fresh budget", async () => {
     const tree = ownTree("deadline-carried");
     const hang = ["sh", "-c", ": pass for 999; sleep 60"];
@@ -90,9 +161,16 @@ describe("drive.ts restarts a pass killed at its deadline", () => {
     expectSpawnExit({ ...again, stdout: null }, 15);
     expect(again.stderr).not.toContain("Restarting");
     expect(again.stderr.match(/was killed/g)?.length).toBe(1);
-    expect(again.stderr).toContain("2 restart(s) already taken by this drive");
+    // Only admitted restarts are counted: a deadline that stops the drive is not one.
+    expect(again.stderr).toContain("1 restart(s) already taken by this drive");
     const after = await state(stateDir, ["get", "999"], tree);
-    expect(JSON.parse(after.stdout).deadlineRetries).toBe(3);
+    expect(JSON.parse(after.stdout).deadlineRetries).toBe(1);
+    // A re-arm with a larger budget can still grant the restart it now allows.
+    const raised = await runDriveIn(dir, stateDir, args, tree, {
+      env: { JIG__DRIVE__PASS_DEADLINE_RETRIES: "2" },
+    });
+    expectSpawnExit({ ...raised, stdout: null }, 15);
+    expect(raised.stderr).toContain("deadline retry 2 of 2");
   }, 120_000);
 
   it("stops as PASS_DEADLINE once drive.pass_deadline_retries is spent", async () => {
@@ -147,13 +225,15 @@ describe("drive.ts re-arms a quota-parked drive only from another account", () =
   }
 
   it("admits a pass that bills a different account", async () => {
-    const { dir, stateDir } = await quotaParked(tokenAccount("tok-wall"));
+    const { dir, stateDir } = await quotaParked(
+      loginAccount("wall@example.invalid"),
+    );
     const r = await runDriveIn(
       dir,
       stateDir,
       ["--no-head-sync", "--", ...CLAUDE_PASS],
       undefined,
-      { env: { CLAUDE_CODE_OAUTH_TOKEN: "tok-other" } },
+      { env: loginEnv("other@example.invalid") },
     );
     // Past the admission the gate finds the PR merged.
     expectSpawnExit({ ...r, stdout: null }, 5);
@@ -161,14 +241,14 @@ describe("drive.ts re-arms a quota-parked drive only from another account", () =
   });
 
   it("refuses a pass that bills the account the wall belongs to", async () => {
-    const wall = tokenAccount("tok-wall");
+    const wall = loginAccount("wall@example.invalid");
     const { dir, stateDir } = await quotaParked(wall);
     const r = await runDriveIn(
       dir,
       stateDir,
       ["--no-head-sync", "--", ...CLAUDE_PASS],
       undefined,
-      { env: { CLAUDE_CODE_OAUTH_TOKEN: "tok-wall" } },
+      { env: loginEnv("wall@example.invalid") },
     );
     expectSpawnExit({ ...r, stdout: null }, 16);
     expect(r.stderr).toContain(
@@ -177,7 +257,9 @@ describe("drive.ts re-arms a quota-parked drive only from another account", () =
   });
 
   it("refuses when the pass's account is unknown", async () => {
-    const { dir, stateDir } = await quotaParked(tokenAccount("tok-wall"));
+    const { dir, stateDir } = await quotaParked(
+      loginAccount("wall@example.invalid"),
+    );
     const r = await runDriveIn(dir, stateDir, [
       "--no-head-sync",
       "--",
@@ -189,6 +271,32 @@ describe("drive.ts re-arms a quota-parked drive only from another account", () =
     expect(r.stderr).toContain("the account this pass bills is unknown");
   });
 
+  it("never reads a token fingerprint as the account on either side", async () => {
+    const { dir, stateDir } = await quotaParked(
+      loginAccount("wall@example.invalid"),
+    );
+    const r = await runDriveIn(
+      dir,
+      stateDir,
+      ["--no-head-sync", "--", ...CLAUDE_PASS],
+      undefined,
+      {
+        env: {
+          ...loginEnv("wall@example.invalid"),
+          CLAUDE_CODE_OAUTH_TOKEN: "tok-other",
+        },
+      },
+    );
+    // A second credential can bill the same account, so it is not "another".
+    expectSpawnExit({ ...r, stdout: null }, 16);
+    expect(r.stderr).toContain("the account this pass bills is unknown");
+    // The refusal still names the wall's account and the command to re-arm.
+    expect(r.stderr).toContain(
+      `The wall belongs to account ${loginAccount("wall@example.invalid")}`,
+    );
+    expect(r.stderr).toMatch(/drive\.ts 999 -- claude -p "\/jig:drive-pr 999"/);
+  });
+
   it("refuses when the wall's account was not recorded", async () => {
     const { dir, stateDir } = await quotaParked(null);
     const r = await runDriveIn(
@@ -196,7 +304,7 @@ describe("drive.ts re-arms a quota-parked drive only from another account", () =
       stateDir,
       ["--no-head-sync", "--", ...CLAUDE_PASS],
       undefined,
-      { env: { CLAUDE_CODE_OAUTH_TOKEN: "tok-other" } },
+      { env: loginEnv("other@example.invalid") },
     );
     expectSpawnExit({ ...r, stdout: null }, 16);
     expect(r.stderr).toContain("did not record the account");
@@ -375,9 +483,12 @@ describe("drive.ts --take-over", () => {
       expect(record.verdict).toBe("WEDGED");
       expect(record.reopened).toEqual(["PRRT_h"]);
       expect(record.fromActor).toBe(record.toActor);
-      expect(after.held.map((h: { key: string }) => h.key)).not.toContain(
-        "PRRT_h",
+      // Reopened: held again unconfirmed, which claim-held refuses until a
+      // pass confirms the fix or replies afresh.
+      const reheld = after.held.find(
+        (h: { key: string }) => h.key === "PRRT_h",
       );
+      expect(reheld?.round).toBe(-1);
     } finally {
       owner.kill();
       await owner.exited;
