@@ -8,6 +8,17 @@
  * `## Decisions taken unattended`, with the autonomy level each was taken
  * under, its class, where its record is and how to reverse it.
  *
+ * A **provisional** decision is one only the `wide` level takes: an arbiter
+ * escalation answered with a provisional reply outcome
+ * (`provisional-reply`), or a choice `decide`'s last row would escalate,
+ * decided (`decide-provisional`). It carries the key a person reverses it
+ * on (the thread, or the decision record's key), and is refused at any
+ * other level. A person reverses it by commenting on that thread, or on the
+ * pull request with a line `answer <key>: …`, as an owner, member or
+ * collaborator; the next round records the reversal here (`reverse-decision`)
+ * and parks the item under `human-thread`. An unresolve alone is not a
+ * reversal: the forge records it without an author.
+ *
  * An entry with no record is accepted and counted as a defect in the round
  * report, the same way an unparked escalation is one: the decision happened,
  * and hiding it would be worse than naming the missing record.
@@ -22,22 +33,40 @@ import {
   currentAutonomy,
 } from "../../../../../shared/autonomy.ts";
 import { fail } from "../cli.ts";
+import { PROVISIONAL_OUTCOMES } from "../outcome.ts";
 import type { StateStore } from "./store.ts";
 
 /**
  * The decisions an agent takes and records, one per row of the autonomy
  * table that the agent may take: filing an issue a skill needs, deferring a
- * finding into the pull request's `## Deferred` section, and a technical
- * choice `decide` rules, reversible inside one pull request or after the
- * evidence an underdetermined call lacked was gathered.
+ * finding into the pull request's `## Deferred` section, a technical choice
+ * `decide` rules, reversible inside one pull request or after the evidence
+ * an underdetermined call lacked was gathered, and the two provisional
+ * decisions only `wide` takes.
  */
 export const DECISION_CLASSES = [
   "file-issue",
   "defer-without-tracker",
   "decide-reversible",
   "decide-underdetermined",
+  "decide-provisional",
+  "provisional-reply",
 ] as const;
 export type DecisionClass = (typeof DECISION_CLASSES)[number];
+
+/** The classes only `wide` takes, each reversible by a person's comment. */
+export const PROVISIONAL_CLASSES: ReadonlySet<DecisionClass> = new Set([
+  "decide-provisional",
+  "provisional-reply",
+]);
+
+/** A person's reversal of a provisional decision. */
+export interface Reversal {
+  at: string;
+  /** The login of the owner, member or collaborator who commented. */
+  by: string;
+  url: string;
+}
 
 export interface UnattendedDecision {
   at: string;
@@ -50,10 +79,42 @@ export interface UnattendedDecision {
   record: string;
   /** How to reverse it, in one line. */
   reverse: string;
+  /** A provisional decision's thread, or its decision record's key. */
+  key?: string;
+  /** A provisional reply's outcome: `rejected`, `wont-fix` or `deferred`. */
+  outcome?: string;
+  /** Set once a person reversed a provisional decision. */
+  reversed?: Reversal;
 }
 
 const oneLine = (v: unknown): v is string =>
   typeof v === "string" && v.trim() !== "" && !/[\n\r]/.test(v);
+
+function isReversal(v: unknown): v is Reversal {
+  return (
+    isRecord(v) &&
+    typeof v.at === "string" &&
+    Number.isFinite(Date.parse(v.at)) &&
+    typeof v.by === "string" &&
+    typeof v.url === "string"
+  );
+}
+
+/** A provisional entry's own fields: a key, an admissible outcome, a reversal. */
+function provisionalFieldsHold(v: Record<string, unknown>): boolean {
+  if (!PROVISIONAL_CLASSES.has(v.class as DecisionClass))
+    return (
+      v.key === undefined && v.outcome === undefined && v.reversed === undefined
+    );
+  return (
+    oneLine(v.key) &&
+    !/\s/.test(v.key) &&
+    (v.class === "provisional-reply"
+      ? PROVISIONAL_OUTCOMES.has(v.outcome as never)
+      : v.outcome === undefined) &&
+    (v.reversed === undefined || isReversal(v.reversed))
+  );
+}
 
 export function isUnattendedDecision(v: unknown): v is UnattendedDecision {
   return (
@@ -68,12 +129,25 @@ export function isUnattendedDecision(v: unknown): v is UnattendedDecision {
     oneLine(v.what) &&
     typeof v.record === "string" &&
     !/[\s]/.test(v.record) &&
-    oneLine(v.reverse)
+    oneLine(v.reverse) &&
+    provisionalFieldsHold(v)
   );
 }
 
 export function isOptionalDecisions(v: unknown): boolean {
   return v === undefined || (Array.isArray(v) && v.every(isUnattendedDecision));
+}
+
+/** Whether a decision is provisional (only `wide` takes those). */
+export function isProvisional(d: UnattendedDecision): boolean {
+  return PROVISIONAL_CLASSES.has(d.class);
+}
+
+/** The provisional decisions no person has reversed yet. */
+export function standingProvisional(
+  decisions: readonly UnattendedDecision[],
+): UnattendedDecision[] {
+  return decisions.filter((d) => isProvisional(d) && d.reversed === undefined);
 }
 
 /** How many recorded decisions have no record a person can reverse them from. */
@@ -83,16 +157,25 @@ export function decisionsWithoutRecord(
   return decisions.filter((d) => d.record === "").length;
 }
 
-/** The `## Decisions taken unattended` section's lines (Markdown). */
+/** One decision as a list item: provisional ones say so, and whether reversed. */
+export function decisionLine(d: UnattendedDecision): string {
+  const tag = isProvisional(d)
+    ? ` · **provisional**${d.outcome === undefined ? "" : ` \`${d.outcome}\``} on \`${d.key}\`${d.reversed === undefined ? "" : ` · reversed by ${d.reversed.by} at ${d.reversed.at} (${d.reversed.url})`}`
+    : "";
+  return `- **${d.class}** at \`${d.level}\`, round ${d.round}: ${d.what}${tag} · record: ${d.record === "" ? "**none (a defect)**" : d.record} · to reverse: ${d.reverse}`;
+}
+
+/** The `## Decisions taken unattended` section's lines (Markdown), provisional ones first. */
 export function decisionsSection(
   decisions: readonly UnattendedDecision[],
 ): string[] {
   const lines = ["## Decisions taken unattended", ""];
   if (decisions.length === 0) return [...lines, "_None._"];
-  for (const d of decisions)
-    lines.push(
-      `- **${d.class}** at \`${d.level}\`, round ${d.round}: ${d.what} · record: ${d.record === "" ? "**none (a defect)**" : d.record} · to reverse: ${d.reverse}`,
-    );
+  const ordered = [
+    ...decisions.filter(isProvisional),
+    ...decisions.filter((d) => !isProvisional(d)),
+  ];
+  for (const d of ordered) lines.push(decisionLine(d));
   const missing = decisionsWithoutRecord(decisions);
   if (missing > 0)
     lines.push(
@@ -102,25 +185,37 @@ export function decisionsSection(
   return lines;
 }
 
+function parseInput(raw: string, usage: string): Record<string, unknown> {
+  let input: unknown;
+  try {
+    input = JSON.parse(raw);
+  } catch {
+    fail(2, usage);
+  }
+  if (!isRecord(input)) fail(2, `${usage} (stdin is not a JSON object)`);
+  return input;
+}
+
 /**
  * `record-decision [PR]`: append one decision, read as JSON on stdin
- * (`{ "class", "what", "reverse", "record"? }`), at the level in force now.
+ * (`{ "class", "what", "reverse", "record"?, "key"?, "outcome"? }`), at the
+ * level in force now. A provisional class is refused unless that level is
+ * `wide`.
  */
 export async function recordDecision(
   store: StateStore,
   raw: string,
 ): Promise<number> {
-  let input: unknown;
-  try {
-    input = JSON.parse(raw);
-  } catch {
-    fail(
-      2,
-      'record-decision reads one JSON object on stdin: {"class", "what", "reverse", "record"?}',
-    );
-  }
-  if (!isRecord(input)) fail(2, "record-decision: stdin is not a JSON object");
+  const input = parseInput(
+    raw,
+    'record-decision reads one JSON object on stdin: {"class", "what", "reverse", "record"?, "key"?, "outcome"?}',
+  );
   const level = currentAutonomy().level;
+  if (PROVISIONAL_CLASSES.has(input.class as DecisionClass) && level !== "wide")
+    fail(
+      3,
+      `record-decision: a ${String(input.class)} decision is taken only at the wide autonomy level, and this one runs at ${level}; escalate or park it instead.`,
+    );
   await store.update((s) => {
     const entry = {
       at: new Date().toISOString(),
@@ -130,11 +225,13 @@ export async function recordDecision(
       what: input.what,
       record: input.record ?? "",
       reverse: input.reverse,
+      ...(input.key === undefined ? {} : { key: input.key }),
+      ...(input.outcome === undefined ? {} : { outcome: input.outcome }),
     };
     if (!isUnattendedDecision(entry))
       fail(
         2,
-        `record-decision: class must be one of ${DECISION_CLASSES.join(", ")}; what and reverse one nonempty line each; record a url or absent`,
+        `record-decision: class must be one of ${DECISION_CLASSES.join(", ")}; what and reverse one nonempty line each; record a url or absent; a provisional class needs a key, and provisional-reply an outcome of rejected, wont-fix or deferred`,
       );
     return { ...s, decisions: [...(s.decisions ?? []), entry] };
   });
@@ -142,5 +239,39 @@ export async function recordDecision(
     console.error(
       "record-decision: recorded without a record a person can reverse it from; the round report counts it as a defect.",
     );
+  return 0;
+}
+
+/**
+ * `reverse-decision [PR]`: record a person's reversal of the standing
+ * provisional decision on a key, read as JSON on stdin
+ * (`{ "key", "by", "url", "at" }`). Prints `reversed` or `none` (no standing
+ * provisional decision on that key, which includes one already reversed).
+ */
+export async function reverseDecision(
+  store: StateStore,
+  raw: string,
+): Promise<number> {
+  const input = parseInput(
+    raw,
+    'reverse-decision reads one JSON object on stdin: {"key", "by", "url", "at"}',
+  );
+  const reversal = { at: input.at, by: input.by, url: input.url };
+  if (!oneLine(input.key) || !isReversal(reversal))
+    fail(
+      2,
+      "reverse-decision: key, by and url are strings and at an ISO-8601 instant",
+    );
+  let found = false;
+  await store.update((s) => ({
+    ...s,
+    decisions: (s.decisions ?? []).map((d) => {
+      if (found || d.key !== input.key || !isProvisional(d) || d.reversed)
+        return d;
+      found = true;
+      return { ...d, reversed: reversal };
+    }),
+  }));
+  console.log(found ? "reversed" : "none");
   return 0;
 }

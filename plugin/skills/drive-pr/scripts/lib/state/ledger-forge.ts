@@ -326,7 +326,14 @@ export interface LedgerPullRequest {
   number: number;
   url: string;
   title: string;
+  /** The pull request's author's login, `''` when the search did not say. */
+  author: string;
+  /** The ledger its comments hold, and the login that wrote it. */
+  ledger: Ledger;
+  ledgerBy: string;
 }
+
+type SearchHit = Omit<LedgerPullRequest, "ledger" | "ledgerBy">;
 
 /**
  * The open pull requests of the current repository that carry a drive
@@ -366,24 +373,28 @@ export async function listLedgerPullRequests(): Promise<
   if (!r.ok) return null;
   const login = await resolveLogin();
   const found: LedgerPullRequest[] = [];
-  for (const hit of searchResults(json(r.stdout, "the search")))
-    if (await carriesLedger(String(hit.number), login)) found.push(hit);
+  for (const hit of searchResults(json(r.stdout, "the search"))) {
+    const held = await ledgerOf(String(hit.number), login);
+    if (held !== null) found.push({ ...hit, ...held });
+  }
   return found;
 }
 
-/** Whether the pull request's comments hold a trusted ledger this version reads. */
-async function carriesLedger(
+/** The trusted ledger this version reads on the pull request, and its writer; `null` for none. */
+async function ledgerOf(
   pr: string,
   login: string | null,
-): Promise<boolean> {
+): Promise<{ ledger: Ledger; ledgerBy: string } | null> {
   const snapshot = await readLedgerSnapshot(pr, login);
-  return (
-    typeof snapshot !== "string" && snapshot.canonical?.parsed.kind === "ledger"
-  );
+  if (typeof snapshot === "string") return null;
+  const canonical = snapshot.canonical;
+  return canonical?.parsed.kind === "ledger"
+    ? { ledger: canonical.parsed.ledger, ledgerBy: canonical.comment.login }
+    : null;
 }
 
 /** The pull requests in the search's pages, by number. */
-function searchResults(pages: unknown): LedgerPullRequest[] {
+function searchResults(pages: unknown): SearchHit[] {
   const items = (Array.isArray(pages) ? pages : [pages]).flatMap((page) =>
     isRecord(page) && Array.isArray(page.items) ? page.items : [],
   );
@@ -400,6 +411,10 @@ function searchResults(pages: unknown): LedgerPullRequest[] {
       number: it.number,
       url: it.html_url,
       title: typeof it.title === "string" ? it.title : "",
+      author:
+        isRecord(it.user) && typeof it.user.login === "string"
+          ? it.user.login
+          : "",
     }))
     .sort((a, b) => a.number - b.number);
 }

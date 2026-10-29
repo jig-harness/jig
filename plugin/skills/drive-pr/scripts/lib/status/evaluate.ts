@@ -56,6 +56,7 @@ import {
   qualifyingOutcome,
 } from "../outcome.ts";
 import { readPrState } from "../pr-state.ts";
+import { standingProvisionalKeys } from "../provisional.ts";
 import { reviewerExpected, reviewerLabel, reviewsDrafts } from "../overlay.ts";
 import { ghCall, git, run, tsArgv } from "../proc.ts";
 import {
@@ -1461,6 +1462,7 @@ async function evaluateFresh(
   report.threadsParked = threads.filter((t) =>
     parkedKeys.has(String(t.threadId)),
   ).length;
+  const provisionalKeys = standingProvisionalKeys(threads, parkedKeys);
   // Computed here, AFTER parkedKeys is known, and not alongside the other
   // thread-derived fields above: a parked thread is a human decision, not a
   // recurring root cause the fix keeps missing, and structuralEscalationDue's
@@ -1580,6 +1582,7 @@ async function evaluateFresh(
         .filter((t) => !parkedKeys.has(String(t.threadId)))
         .filter((t) => !isThreadHoldCurrent(t))
         .filter((t) => !isLeftOpenThread(t))
+        .filter((t) => !provisionalKeys.has(String(t.threadId)))
         .map((t) => (t as { path?: unknown }).path)
         .filter((p): p is string => typeof p === "string" && p.trim() !== ""),
       ...summaryLive
@@ -1592,7 +1595,8 @@ async function evaluateFresh(
     ]),
   ].sort();
 
-  const liveThreads = report.threadsOpen - report.threadsParked;
+  const liveThreads =
+    report.threadsOpen - report.threadsParked - provisionalKeys.size;
   const liveSummary = report.summaryUnaddressed - summaryParked;
 
   // Over unpushed inherited commits only a conflict stops; else push them.

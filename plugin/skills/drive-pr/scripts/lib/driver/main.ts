@@ -361,6 +361,7 @@ export async function main(): Promise<number> {
     agent,
     botsOnly,
     dryRun,
+    windowReopened,
   });
 
   // A dry run inspects; it does not work a round. Counting it would inflate

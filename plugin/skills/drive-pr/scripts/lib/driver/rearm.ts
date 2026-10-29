@@ -71,6 +71,8 @@ import { driveState, driveTs } from "./paths.ts";
 
 import { QUOTA_PARKED_EXIT } from "./settings.ts";
 
+import { provisionalDuties, provisionalNotice } from "./rearm-provisional.ts";
+
 /** The longest answer body in the notice; the url and the kept file carry the rest. */
 const ANSWER_BODY_MAX = 1500;
 
@@ -184,7 +186,7 @@ export function admitQuotaRearm(
   return QUOTA_PARKED_EXIT;
 }
 
-interface CommentLike {
+export interface CommentLike {
   author: string;
   association: string;
   at: string;
@@ -223,7 +225,9 @@ function isAnswer(c: CommentLike, after: number): boolean {
 const THREAD_QUERY =
   "query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved comments(last:100){nodes{url author{login} authorAssociation createdAt body}}}}}";
 
-async function threadComments(key: string): Promise<CommentLike[] | null> {
+export async function threadComments(
+  key: string,
+): Promise<CommentLike[] | null> {
   const res = await ghCall(
     ["api", "graphql", "-f", `query=${THREAD_QUERY}`, "-f", `id=${key}`],
     { stderr: "pipe", env: ghRepoEnv() },
@@ -242,7 +246,7 @@ async function threadComments(key: string): Promise<CommentLike[] | null> {
   }));
 }
 
-async function prComments(pr: string): Promise<CommentLike[] | null> {
+export async function prComments(pr: string): Promise<CommentLike[] | null> {
   const res = await ghCall(
     [
       "api",
@@ -294,7 +298,7 @@ async function answeredParks(
 ): Promise<PendingVerdict[] | null> {
   const conversation = await prComments(String(state.pr));
   const answered: PendingVerdict[] = [];
-  const waiting: string[] = [];
+  const waiting: ParkedItem[] = [];
   for (const item of state.parked) {
     const answers = await answersTo(item, conversation);
     if (answers === null) {
@@ -303,7 +307,7 @@ async function answeredParks(
       );
       return null;
     }
-    if (answers.length === 0) waiting.push(`${item.kind} ${item.key}`);
+    if (answers.length === 0) waiting.push(item);
     else
       answered.push({
         kind: item.kind,
@@ -313,8 +317,11 @@ async function answeredParks(
       });
   }
   if (waiting.length === 0) return answered;
+  // At the wide level, the unanswered items a provisional decision may take.
+  const duties = provisionalDuties(waiting);
+  if (duties !== null) return [...answered, ...duties];
   console.error(
-    `re-arm: ${answered.length} of ${state.parked.length} parked item(s) answered; still waiting on ${waiting.join(", ")}. Nothing is unparked until every one is.`,
+    `re-arm: ${answered.length} of ${state.parked.length} parked item(s) answered; still waiting on ${waiting.map((p) => `${p.kind} ${p.key}`).join(", ")}. Nothing is unparked until every one is.`,
   );
   return null;
 }
@@ -352,7 +359,7 @@ export async function admitAnsweredParks(
     );
   const fresh = state.parked.length === 0 ? [] : await answeredParks(state);
   if (fresh === null || fresh.length === 0)
-    return dryRun ? "" : humanVerdictNotice(carried, file);
+    return dryRun ? "" : rearmNotice(carried, file);
   if (dryRun) {
     console.error(
       `(dry-run) re-arm would unpark ${fresh.length} answered item(s) and hand the answers to the first round.`,
@@ -369,7 +376,7 @@ export async function admitAnsweredParks(
     console.error(
       `re-arm: cannot keep the answers in ${file} (${String(err)}); every item stays parked.`,
     );
-    return humanVerdictNotice(carried, file);
+    return rearmNotice(carried, file);
   }
   const res = await run(
     tsArgv(driveState, [
@@ -392,12 +399,78 @@ export async function admitAnsweredParks(
         ? `re-arm: drive-state.ts unpark exited ${res.code}, but the answered items are unparked; handing their answers on.`
         : `re-arm: could not unpark the answered items (drive-state.ts exited ${res.code}); every one stays parked, and the next arm reads their answers again.`,
     );
-    return humanVerdictNotice([...carried, ...gone], file);
+    return rearmNotice([...carried, ...gone], file);
   }
+  await announceUnparked(pr, fresh, file);
+  return rearmNotice([...carried, ...fresh], file);
+}
+
+/** Say what the re-arm unparked, and record it (`events.ts`). */
+async function announceUnparked(
+  pr: string,
+  fresh: readonly PendingVerdict[],
+  file: string,
+): Promise<void> {
+  const duties = fresh.filter((v) => v.provisional === true).length;
   console.error(
-    `re-arm: every parked item on PR #${pr} is answered — unparked ${fresh.length} and handing the answers to the first round as human verdicts (kept in ${file} until a pass completes).`,
+    duties === 0
+      ? `re-arm: every parked item on PR #${pr} is answered — unparked ${fresh.length} and handing the answers to the first round as human verdicts (kept in ${file} until a pass completes).`
+      : `re-arm: PR #${pr} re-armed at the wide level — unparked ${fresh.length}: ${fresh.length - duties} answered, handed on as human verdicts, and ${duties} to decide provisionally (kept in ${file} until a pass completes).`,
   );
-  return humanVerdictNotice([...carried, ...fresh], file);
+  await recordDriveEvent(
+    pr,
+    "rearm",
+    duties === 0 ? "answered" : "provisional",
+  );
+}
+
+/**
+ * Record a self-restart or a re-arm in the drive state (`events.ts`), for
+ * the morning report and `loop-metrics.ts`; best-effort, logged.
+ */
+export async function recordDriveEvent(
+  pr: string,
+  kind: "restart" | "rearm",
+  cause: string,
+): Promise<void> {
+  const res = await run(tsArgv(driveState, ["record-event", pr]), {
+    stdin: JSON.stringify({ kind, cause }),
+    stderr: "inherit",
+    timeoutSec: helperTimeoutSeconds(),
+  });
+  if (res.code !== 0)
+    console.error(
+      `drive.ts: could not record the ${kind} (${cause}) in the drive state (exit ${res.code}); driving on.`,
+    );
+}
+
+/** The cause of a re-arm past a quota park (`events.ts`); `null` when there was none. */
+export function quotaRearmCause(
+  state: DriveState,
+  windowReopened: boolean,
+  now: Date,
+): string | null {
+  const park = state.quotaPark;
+  if (park === null) return null;
+  if (park.resetAt !== null && Date.parse(park.resetAt) <= now.getTime())
+    return "quota-reset";
+  return windowReopened ? "window-reopened" : "quota-account";
+}
+
+/** The notice for the answered items, then for those to decide provisionally. */
+function rearmNotice(
+  verdicts: readonly PendingVerdict[],
+  file: string,
+): string {
+  return [
+    humanVerdictNotice(
+      verdicts.filter((v) => v.provisional !== true),
+      file,
+    ),
+    provisionalNotice(verdicts),
+  ]
+    .filter((part) => part !== "")
+    .join("\n\n");
 }
 
 function clip(text: string, max: number, why: string): string {

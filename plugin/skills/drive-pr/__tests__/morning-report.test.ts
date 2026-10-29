@@ -1,0 +1,287 @@
+/**
+ * `drives.ts --report`: the morning report over a fixture state directory
+ * and the fake forge in `provisional-fixtures.ts`, holding one of each kind
+ * of entry: provisional decisions (one a person reversed on its thread, one
+ * standing), a takeover, a re-arm, a framed park, an issue filed and a
+ * deferred entry not yet filed; a pull request known only through its
+ * ledger; another account's pull request and a quiet local state, both left
+ * out. Then the time the report remembers for the next one.
+ */
+import { describe, expect, it } from "bun:test";
+import { utimesSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { withDeferredEntry } from "../../resolve-review-comments/scripts/lib/deferred-section.ts";
+import { ledgerFromState, renderLedger } from "../scripts/lib/state/ledger.ts";
+import { type DriveState, freshState } from "../scripts/lib/state/schema.ts";
+import { provisionalBody } from "../scripts/provisional-reply.ts";
+import {
+  fakeForge,
+  type Forge,
+  runIn,
+  SCRIPTS,
+} from "./provisional-fixtures.ts";
+
+const ago = (hours: number) =>
+  new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+
+const FINDING = {
+  author: "review-bot[bot]",
+  association: "NONE",
+  body: "Raise the budget.",
+};
+const PROVISIONAL = {
+  author: "drive-bot",
+  association: "MEMBER",
+  body: provisionalBody(
+    "**wont-fix** — the budget is the configured one.",
+    "escalated",
+  ),
+};
+
+function decision(key: string, hoursAgo: number) {
+  return {
+    at: ago(hoursAgo),
+    round: 2,
+    level: "wide",
+    class: "provisional-reply",
+    what: `kept the configured budget on ${key}`,
+    record: `https://example.invalid/${key}/comment-1`,
+    reverse: "comment on the thread as an owner, member or collaborator",
+    key,
+    outcome: "wont-fix",
+  };
+}
+
+function writeState(forge: Forge, state: DriveState): string {
+  const file = join(forge.stateDir, `drive-pr-${state.pr}.json`);
+  writeFileSync(file, JSON.stringify(state));
+  return file;
+}
+
+function setUp(): Forge {
+  const forge = fakeForge("");
+  forge.write("login", "drive-bot");
+  writeState(forge, {
+    ...freshState(12),
+    rounds: 3,
+    decisions: [
+      decision("PRRT_a", 6),
+      decision("PRRT_b", 5),
+      {
+        at: ago(7),
+        round: 1,
+        level: "unattended",
+        class: "file-issue",
+        what: "filed the follow-up for the retry budget",
+        record: "https://example.invalid/issues/7",
+        reverse: "close the issue",
+      },
+    ],
+    takeovers: [
+      {
+        at: ago(8),
+        fromActor: "wt-aaaaaaaaaaaaaaaa",
+        fromAccount: null,
+        toActor: "wt-bbbbbbbbbbbbbbbb",
+        toAccount: null,
+        verdict: "WEDGED",
+        round: 2,
+        reopened: [],
+      },
+    ],
+    events: [{ at: ago(4), round: 3, kind: "rearm", cause: "answered" }],
+    parked: [
+      {
+        key: "PRRT_c",
+        kind: "thread",
+        reason: "Should the public flag be renamed?",
+        round: 3,
+        at: ago(3),
+        class: "copy",
+        record:
+          "## Question\n\nShould the public flag be renamed?\n\n## Recommended\n\n**Keep it**: published.",
+      },
+    ],
+  } as DriveState);
+  // A quiet local state from long ago: nothing to say.
+  const quiet = writeState(forge, freshState(13));
+  utimesSync(
+    quiet,
+    new Date(Date.now() - 400 * 86400000),
+    new Date(Date.now() - 400 * 86400000),
+  );
+  forge.thread("PRRT_a", [
+    FINDING,
+    PROVISIONAL,
+    {
+      author: "lead",
+      association: "OWNER",
+      body: "Raise it after all.",
+      at: ago(2),
+    },
+  ]);
+  forge.thread("PRRT_b", [FINDING, PROVISIONAL]);
+  forge.write("comments-12.json", []);
+  forge.write("pr-12.json", {
+    title: "Raise the retry budget",
+    url: "https://example.invalid/pull/12",
+    state: "OPEN",
+    author: { login: "drive-bot" },
+    body: withDeferredEntry("Summary.", {
+      source: "https://example.invalid/PRRT_d",
+      finding: "The parser ignores a trailing comma.",
+      reason: "out of scope",
+    }).body,
+  });
+  // Pull request 20 is known only through its ledger, which this account wrote.
+  const ledger = renderLedger(
+    ledgerFromState(
+      { ...freshState(20), rounds: 4, phase: "converged" },
+      {
+        generation: 3,
+        driver: {
+          actor: "wt-cccccccccccccccc",
+          clone: "clone-b",
+          heartbeat: ago(1),
+          state: "stopped",
+          exit: 0,
+        },
+        narrative: [],
+        claims: [],
+      },
+    ),
+  );
+  if ("error" in ledger) throw new Error(ledger.error);
+  const comment = (id: number, login: string, association: string) => ({
+    id,
+    body: ledger.body,
+    user: { login },
+    author_association: association,
+    updated_at: ago(1),
+    created_at: ago(1),
+    html_url: `https://example.invalid/comment-${id}`,
+  });
+  forge.write("comments-20.json", [comment(200, "drive-bot", "NONE")]);
+  // Pull request 21 is another account's, driven by another account.
+  forge.write("comments-21.json", [comment(210, "other-bot", "MEMBER")]);
+  forge.write("search.json", {
+    items: [
+      {
+        number: 20,
+        html_url: "https://example.invalid/pull/20",
+        title: "Ledger only",
+        user: { login: "drive-bot" },
+      },
+      {
+        number: 21,
+        html_url: "https://example.invalid/pull/21",
+        title: "Not ours",
+        user: { login: "someone" },
+      },
+    ],
+  });
+  forge.write("pr-20.json", {
+    title: "Ledger only",
+    url: "https://example.invalid/pull/20",
+    state: "OPEN",
+    author: { login: "drive-bot" },
+    body: "",
+  });
+  return forge;
+}
+
+const report = (forge: Forge, args: string[]) =>
+  runIn(forge, join(SCRIPTS, "drives.ts"), ["--report", ...args]);
+
+describe("drives.ts --report", () => {
+  it("--json carries each kind of entry for this clone's and this account's pull requests", async () => {
+    const forge = setUp();
+    const r = await report(forge, ["--json"]);
+    expectSpawnExit(r, 0);
+    const out = JSON.parse(r.stdout);
+    expect(out.sinceSource).toBe("first report");
+    expect(out.unread).toEqual([]);
+    expect(out.pullRequests.map((p: { number: number }) => p.number)).toEqual([
+      12, 20,
+    ]);
+    const [twelve, twenty] = out.pullRequests;
+    expect(twelve.terminal.name).toBe("HITL_PARKED");
+    expect(
+      twelve.provisional.map((p: { key: string; status: string }) => [
+        p.key,
+        p.status,
+      ]),
+    ).toEqual([
+      ["PRRT_a", "reversed"],
+      ["PRRT_b", "standing"],
+    ]);
+    expect(twelve.provisional[0].reversedBy).toBe("lead");
+    expect(twelve.takeovers).toHaveLength(1);
+    expect(twelve.rearms).toEqual([
+      expect.objectContaining({ cause: "answered" }),
+    ]);
+    expect(twelve.parked[0]).toMatchObject({ key: "PRRT_c", class: "copy" });
+    expect(twelve.issuesFiled[0].record).toBe(
+      "https://example.invalid/issues/7",
+    );
+    expect(twelve.deferredUnfiled[0].source).toBe(
+      "https://example.invalid/PRRT_d",
+    );
+    expect(twelve.deferredUnfiled[0].text).toContain("trailing comma");
+    expect(twenty).toMatchObject({
+      source: "ledger",
+      terminal: { name: "CONVERGED", exit: 0 },
+    });
+  });
+
+  it("prints plain text with the provisional decisions first, and remembers its time for the next one", async () => {
+    const forge = setUp();
+    const first = await report(forge, []);
+    expectSpawnExit(first, 0);
+    const text = first.stdout;
+    expect(text).toContain("no earlier report is remembered here");
+    const provisional = text.indexOf("Provisional decisions");
+    expect(provisional).toBeGreaterThan(-1);
+    expect(provisional).toBeLessThan(
+      text.indexOf("#12 Raise the retry budget"),
+    );
+    expect(text).toContain("REVERSED by lead");
+    expect(text).toContain(
+      "HITL_PARKED: only the parked decisions below remain",
+    );
+    expect(text).toContain("class copy");
+    expect(text).toContain("deferred, not yet filed:");
+    expect(text).toContain("CONVERGED (exit 0): the review settled");
+
+    const second = await report(forge, ["--json"]);
+    expectSpawnExit(second, 0);
+    const again = JSON.parse(second.stdout);
+    expect(again.sinceSource).toBe("last report");
+    expect(Date.parse(again.since)).toBeGreaterThan(Date.parse(ago(1)));
+    // What happened before the last report is not news; what is still owed is.
+    const twelve = again.pullRequests.find(
+      (p: { number: number }) => p.number === 12,
+    );
+    expect(twelve.takeovers).toEqual([]);
+    expect(twelve.issuesFiled).toEqual([]);
+    expect(twelve.parked).toHaveLength(1);
+  });
+
+  it("--since overrides the remembered time, and refuses a time it cannot read", async () => {
+    const forge = setUp();
+    const r = await report(forge, ["--since", "5h30m"]);
+    expectSpawnExit(r, 2);
+    const ok = await report(forge, ["--since", "4h", "--json"]);
+    expectSpawnExit(ok, 0);
+    const out = JSON.parse(ok.stdout);
+    expect(out.sinceSource).toBe("flag");
+    const twelve = out.pullRequests.find(
+      (p: { number: number }) => p.number === 12,
+    );
+    expect(twelve.provisional.map((p: { key: string }) => p.key)).toEqual([
+      "PRRT_a",
+    ]);
+    expect(twelve.rearms).toEqual([]);
+  });
+});

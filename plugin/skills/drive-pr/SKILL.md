@@ -596,6 +596,15 @@ you look:
   read failure prints a warning rather than nothing. A repository can run it
   from its agent tool's session-start hook so that a session opening in a
   driven worktree is warned.
+- **Morning report** — `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --report [--since <time>] [--json]`
+  is what a person reads after an unattended night: every pull request this
+  clone's state has news of and every open one the signed-in account
+  authored or drove (found through the drive ledger), since the last report
+  (remembered in the state directory; the last day for a first one) or
+  `--since` (a time such as `2026-10-29T06:00Z`, or a span such as `12h`). For each: its
+  terminal state and what it means for the person, the provisional
+  decisions first, the takeovers and re-arms, the parked decisions framed in
+  full, the issues filed and the deferred entries not yet filed.
 
 An exit-`11` refusal names the holder's pid/host and, when its claim carries
 the diagnostics line, the PR it is driving, its worktree, its log, its
@@ -651,7 +660,11 @@ stops admit it on a mechanical state:
   A comment the drive itself writes (one opening
   with an outcome token, or carrying a hidden marker) is never an answer.
   With any item unanswered nothing is unparked, and the drive stops `8` at
-  its first gate again, naming what it still waits on.
+  its first gate again, naming what it still waits on; at the `wide`
+  autonomy level, except where every unanswered item has the class
+  `escalated`: the re-arm then unparks them with the answered ones and
+  hands them to the first round to decide provisionally (§ Autonomy). One
+  unanswered item of any other class refuses it, at every level.
 
 Replacing a driver that still holds its locks is a **takeover**:
 
@@ -974,6 +987,7 @@ state directory holding all of it: read that file before acting.
 | `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14` | Act on the open work; if you decide not to, end the handoff narrative with one paragraph saying what you decided and why — the stop prints it |
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed: each thread re-held unconfirmed on its reply, each finding released, and apart those that could not be reopened; a failed reconciliation is said here | For a re-held thread, read the anchored code, make the promised fix if it is missing, then confirm it with the hold command shown; or supersede the reply with a fresh outcome. Triage a released finding afresh. Check each item that could not be reopened against the held batch first |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; every item has a `[kind] key — url` entry, answer bodies may be cut, and the file named on its third line holds every answer in full | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
+| `RE-ARMED TO DECIDE PROVISIONALLY` | At the `wide` level, parked items of the class `escalated` that nobody answered are unparked, one `[kind] key` line each | Decide each one this round, provisionally and with a reply outcome only: a thread with `provisional-reply.ts`, a finding with `decide`'s ruling recorded as `decide-provisional` (§ 8) |
 
 ### Autonomy: what the pass decides without a person
 
@@ -989,21 +1003,51 @@ bun "${CLAUDE_SKILL_DIR}/../../shared/autonomy.ts"
 
 It prints the effective level and where it came from: the repository's
 `level`, a person's own layer or the environment, capped by the repository's
-`max_level`. A session with a person in it (no `$DRIVE_PR_TARGET`) reads
-`attended` unless that person chose a level. `wide` is accepted by the
-configuration and acts as `unattended`.
+`max_level`. Inside one of the `autonomy.off_hours` schedule's windows (the
+machine's local time) a driver pass runs at the off-hours level instead,
+capped the same way, and the line tags it: `autonomy: wide (off_hours) (…)`.
+A session with a person in it (no `$DRIVE_PR_TARGET`) reads `attended`
+unless that person chose a level, and never runs at the off-hours level.
 
-| Decision | `attended` | `unattended` |
-|---|---|---|
-| File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | `file-issue` confirms first | File it: the body says which skill filed it, from which pull request and why |
-| Defer a finding where no adapter can file | Record it in the pull request's `## Deferred` section ([deferral protocol](../resolve-review-comments/references/deferral-protocol.md#deferral-without-a-tracker)) | Same |
-| A technical choice `decide` rules reversible inside one pull request | Decide and record | Same |
-| A technical choice `decide` would rule underdetermined | Escalate | Gather the missing evidence within the round's budget, then apply the ladder |
-| A bot-review thread the arbiter rules `escalate` | Park under its `class:` (§ 4) | Same |
+| Decision | `attended` | `unattended` | `wide` |
+|---|---|---|---|
+| File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | `file-issue` confirms first | File it: the body says which skill filed it, from which pull request and why | Same |
+| Defer a finding where no adapter can file | Record it in the pull request's `## Deferred` section ([deferral protocol](../resolve-review-comments/references/deferral-protocol.md#deferral-without-a-tracker)) | Same | Same |
+| A technical choice `decide` rules reversible inside one pull request | Decide and record | Same | Same |
+| A technical choice `decide` would rule underdetermined | Escalate | Gather the missing evidence within the round's budget, then apply the ladder | Same |
+| A technical choice `decide`'s last row would escalate: no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence | Escalate | Escalate | Decide it, marked provisional: record it as `decide-provisional` (§ 8) |
+| A bot-review thread the arbiter rules `escalate` with `class: escalated` and no recorded human decision behind it | Park under `escalated` (§ 4) | Same | Reply provisionally with a reply outcome, resolve and record it (below) |
+| A bot-review thread the arbiter rules `escalate` with any other class | Park under its `class:` (§ 4) | Same | Same |
+| Re-arm after `HITL_PARKED` with parked items unanswered | Never | Never | The re-arm hands the unanswered `escalated` items to the first round to decide provisionally; one item of any other class refuses it |
 
 The registry's classes are on no row: no level decides them, and a park
 outside them is refused (§ 4). Every decision taken is recorded where a
 person can reverse it (§ 8).
+
+**A provisional reply** answers a thread with `rejected`, `wont-fix` or
+`deferred` and the rationale, never a fix, so it never grows the diff.
+Write the reply as § 3 does, then post, resolve and record it in one call:
+
+**exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/provisional-reply.ts" <THREAD_NODE_ID> [PR] --class escalated --what "<what was decided, one line>"
+```
+
+It refuses (exit `3`) below `wide`, and unless the arbiter's ruling you
+recorded for the thread (its `rule` record, § 4) is `escalate` with the
+class `escalated` and no person's decision behind it: park the thread under
+its class instead (§ 4). The reply carries
+`**provisional**` after its outcome token and says how to reverse it. A
+thread standing on a provisional reply is never triaged again:
+`triage-thread.ts` refuses it (exit `3`), `reconcile-replied-threads.ts`
+skips it, and the gate counts it as no work even when a person unresolved
+it. A person reverses it by commenting on the thread (or, for a `decide`
+ruling, on the pull request with a line `answer <key>: …`) as an owner,
+member or collaborator: before the next gate, the driver records the
+reversal and parks the item under `human-thread`, so it waits for that
+person. An unresolve alone changes nothing. The morning report (§ Running it)
+lists every provisional decision first.
 
 ## One round
 
@@ -2523,9 +2567,11 @@ comment, an issue filed with the filed-by line its body carries
 ([`file-issue`](../file-issue/SKILL.md)), a deferral as its entry in the pull
 request's `## Deferred` section. Then add it to the drive's
 `## Decisions taken unattended`, one JSON object on stdin with its class
-(`file-issue`, `defer-without-tracker`, `decide-reversible` or
-`decide-underdetermined`), what was decided, the record's url and how to
-reverse it, in one line each:
+(`file-issue`, `defer-without-tracker`, `decide-reversible`,
+`decide-underdetermined`, or at `wide` `decide-provisional` with the `key`
+a person answers it on), what was decided, the record's url and how to
+reverse it, in one line each. A provisional reply is recorded by
+`provisional-reply.ts` itself, as `provisional-reply`:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 

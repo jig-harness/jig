@@ -306,6 +306,7 @@ import {
   qualifyingOutcome,
 } from "./lib/outcome.ts";
 import { ghCall, readTimeoutEnv, resolvePr, run, tsArgv } from "./lib/proc.ts";
+import { refuseProvisional } from "./lib/provisional.ts";
 import {
   confirmedMeritSupersession,
   mootHeld,
@@ -699,6 +700,7 @@ async function main(): Promise<number> {
     existingBody = c.body ?? "";
     break;
   }
+  refuseProvisional(threadId, existingBody, existingUrl);
 
   // --cleanup-only: for the documented direct-post-supersession fallback ("stop
   // after reply-to-thread.ts and never invoke this script's resolve step" — the

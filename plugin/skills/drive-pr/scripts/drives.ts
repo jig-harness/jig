@@ -69,6 +69,8 @@
  *                            unbindable claims are refused. With
  *                            --expect-started ISO, only the claim acquired
  *                            then is stopped; another holder exits 3.
+ *   drives.ts --report [--since <time>] [--json]
+ *                            the morning report (`lib/morning-report.ts`).
  *
  * Exit codes:
  *   0  listed / banner printed / positively nothing to report / --doctor's
@@ -146,6 +148,7 @@ import {
   unconcludedGitOpMarker,
 } from "./lib/proc.ts";
 import { legacyFootprint } from "./lib/state/legacy-state.ts";
+import { liveDrives, reportMain } from "./lib/morning-report.ts";
 import { type DriveState, isUsableState } from "./lib/state/schema.ts";
 import {
   peekResolvedStateDir,
@@ -1355,12 +1358,19 @@ function requireStopForExpectStarted(expectStarted: string, stopPr: string) {
     fail(2, "--expect-started only qualifies --stop");
 }
 
-async function main(): Promise<number> {
+/** `--report` is a mode of its own; every other mode is the fleet's. */
+async function entry(): Promise<number> {
+  const argv = process.argv.slice(2);
+  return argv.includes("--report")
+    ? reportMain(argv, async (stateDir) => liveDrives(listRows(stateDir)))
+    : main(argv);
+}
+
+async function main(argv: string[]): Promise<number> {
   let json = false;
   let hereMode = false;
   let stopPr = "";
   let doctorMode = false;
-  const argv = process.argv.slice(2);
   const expectStarted = takeExpectStarted(argv);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] as string;
@@ -1374,7 +1384,7 @@ async function main(): Promise<number> {
     } else {
       fail(
         2,
-        `usage: drives.ts [--json] | [--here] | [--stop <PR> [--expect-started <ISO>]] | [--doctor [--json]]`,
+        `usage: drives.ts [--json] | [--here] | [--stop <PR> [--expect-started <ISO>]] | [--doctor [--json]] | [--report [--since <time>] [--json]]`,
       );
     }
   }
@@ -1461,4 +1471,4 @@ async function main(): Promise<number> {
 
 // Gated, so a helper such as `gatherWorktreeLeftovers` can be imported
 // without running this CLI against the importer's `process.argv`.
-if (import.meta.main) runMain("drives.ts", main);
+if (import.meta.main) runMain("drives.ts", entry);

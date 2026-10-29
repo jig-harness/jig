@@ -4,7 +4,11 @@
  *
  * Prints, for a PR driven or not: how many rounds it took, how many threads it
  * produced, what the outcome mix was, and how much of the final code landed
- * AFTER review started. `drive.ts` prints this block when it stops, so a driven
+ * AFTER review started. Beside them, what the drive did without a person
+ * (`lib/metrics-autonomy.ts`): self-restarts by cause, re-arms and takeovers,
+ * provisional decisions and how many a person reversed before the merge (the
+ * validation measure for the `wide` autonomy level), and the review bots'
+ * transparent acknowledgements. `drive.ts` prints this block when it stops, so a driven
  * PR's final summary carries the numbers without manual archaeology.
  *
  * That last quantity is temporal, not causal — it is every commit after the
@@ -53,6 +57,7 @@
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { swallow } from "../../../shared/errors.ts";
 import { fail, isDigits, runMain } from "./lib/cli.ts";
 import {
   type EscapeBaseline,
@@ -66,7 +71,9 @@ import {
   renderLoopMetrics,
   renderSeverityOutageWarnings,
 } from "./lib/metrics.ts";
+import type { DurableAutonomy } from "./lib/metrics-autonomy.ts";
 import { git, resolvePr, run, tsArgv } from "./lib/proc.ts";
+import { isUsableState } from "./lib/state/schema.ts";
 import { type PrSample, resolveRepo, samplePr } from "./lib/sample.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -184,6 +191,28 @@ async function durableRounds(pr: string): Promise<number | null> {
 }
 
 /**
+ * What this clone's drive state records of the drive's autonomy: its
+ * decisions, its self-restarts and re-arms, and how many takeovers. `null`
+ * when it holds no state for the pull request, soft like `durableRounds`.
+ */
+async function durableAutonomy(pr: string): Promise<DurableAutonomy | null> {
+  const r = await run(tsArgv(driveState, ["get", pr]), { stderr: "ignore" });
+  if (r.code !== 0) return null;
+  try {
+    const s: unknown = JSON.parse(r.stdout);
+    if (!isUsableState(s, Number.parseInt(pr, 10))) return null;
+    return {
+      decisions: s.decisions ?? [],
+      events: s.events ?? [],
+      takeovers: (s.takeovers ?? []).length,
+    };
+  } catch (err) {
+    swallow(err, "drive-state.ts get printed no JSON");
+    return null;
+  }
+}
+
+/**
  * The recorded defect-escape baseline, resolved against THIS clone's
  * repository root — best-effort, like `durableRounds` above: an
  * unreadable root or a doc `readRecordedEscapeBaseline` cannot parse both
@@ -218,6 +247,8 @@ export interface ReportDeps {
   resolveRepo: typeof resolveRepo;
   samplePr: typeof samplePr;
   durableRounds: (pr: string) => Promise<number | null>;
+  /** This clone's drive state's autonomy record; absent reads as none held. */
+  durableAutonomy?: (pr: string) => Promise<DurableAutonomy | null>;
   resolveSiblingCommitOids: (sample: PrSample) => Promise<ReadonlySet<string>>;
   resolveEscapeBaseline: typeof resolveEscapeBaseline;
   write: (s: string) => void;
@@ -227,6 +258,7 @@ const defaultDeps: ReportDeps = {
   resolveRepo,
   samplePr,
   durableRounds,
+  durableAutonomy,
   resolveSiblingCommitOids,
   resolveEscapeBaseline,
   write: (s: string) => {
@@ -257,6 +289,7 @@ export async function runReport(
     sample,
     await deps.durableRounds(pr),
     await deps.resolveSiblingCommitOids(sample),
+    (await deps.durableAutonomy?.(pr)) ?? null,
   );
   const escapeBaseline = await deps.resolveEscapeBaseline();
   deps.write(renderReport(metrics, escapeBaseline, json));

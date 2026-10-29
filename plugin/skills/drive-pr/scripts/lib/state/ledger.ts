@@ -38,6 +38,7 @@ import {
   decisionsSection,
   isUnattendedDecision,
 } from "./decisions.ts";
+import { type DriveEvent, isOptionalEvents } from "./events.ts";
 
 export const LEDGER_MARKER = "<!-- drive-pr-ledger -->";
 export const CLAIM_MARKER = "<!-- drive-pr-takeover-claim -->";
@@ -105,6 +106,8 @@ export interface Ledger {
   claims: LedgerClaimRef[];
   /** The decisions the agent took and recorded (`decisions.ts`). */
   decisions: UnattendedDecision[];
+  /** Self-restarts and re-arms (`events.ts`); absent in a ledger written before them. */
+  events?: DriveEvent[];
   driver: LedgerDriver;
   /** The handoff narrative's last lines. */
   narrative: string[];
@@ -163,6 +166,7 @@ export function ledgerFromState(
       what: redact(d.what),
       reverse: redact(d.reverse),
     })),
+    events: s.events ?? [],
     driver: opts.driver,
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
     cut: [],
@@ -366,6 +370,7 @@ function ledgerFault(v: Record<string, unknown>): string {
       "decisions",
       Array.isArray(v.decisions) && v.decisions.every(isUnattendedDecision),
     ],
+    ["events", isOptionalEvents(v.events)],
     ["driver", isLedgerDriver(v.driver)],
     ["narrative", Array.isArray(v.narrative) && v.narrative.every(isText)],
     ["cut", Array.isArray(v.cut) && v.cut.every(isText)],
@@ -693,6 +698,7 @@ export function seedFromLedger(
       toAccount: null,
     })),
     decisions: l.decisions,
+    events: l.events ?? local.events ?? [],
     ledgerGeneration: l.generation,
   };
   if (!isUsableState(state, local.pr))

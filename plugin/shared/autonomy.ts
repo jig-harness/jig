@@ -10,13 +10,23 @@
  * person in it (an interactive run, not a driver pass) reads `attended`
  * unless that person chose a level in their own layer or the environment.
  *
+ * `autonomy.off_hours` widens it during the hours nobody is there to ask:
+ * inside one of its schedule's windows (`off-hours.ts`, the machine's local
+ * time) a driver pass runs at `off_hours.level` instead of the chosen level,
+ * capped by the same ceiling. Unset `off_hours.level` means off-hours is off;
+ * once it is set, the schedule defaults to weekday nights and the weekend.
+ * A person's session never runs at the off-hours level: a person is there.
+ *
  * The level is read at each decision point rather than once per run, so a
- * configuration changed mid-drive applies to the next decision. Nothing here
- * touches the decision classes the human-in-the-loop registry reserves: a
- * level decides who answers the questions outside them.
+ * configuration changed mid-drive, or a window that opens mid-drive, applies
+ * to the next decision. Nothing here touches the decision classes the
+ * human-in-the-loop registry reserves: a level decides who answers the
+ * questions outside them.
  *
  * Usage:
- *   autonomy.ts [level] [--json]   the effective level and where it came from
+ *   autonomy.ts [level] [--json] [--at <instant>]
+ *                                  the effective level and where it came from,
+ *                                  now or at an ISO-8601 instant
  *   autonomy.ts classes            the park classes, one per line
  *
  * Exit codes: 0 printed, 1 the configuration is invalid, 2 usage.
@@ -30,6 +40,12 @@ import {
   valueAt,
 } from "./config-layers.ts";
 import { layeredConfig } from "./consumer.ts";
+import {
+  DEFAULT_OFF_HOURS_SCHEDULE,
+  OffHoursScheduleError,
+  parseSchedule,
+  windowAt,
+} from "./off-hours.ts";
 
 /** The levels, least autonomous first. */
 export const AUTONOMY_LEVELS = ["attended", "unattended", "wide"] as const;
@@ -89,10 +105,12 @@ export interface Autonomy {
   /** Whether this is a person's session rather than a driver pass. */
   interactive: boolean;
   /**
-   * `wide` names step-five behaviour not built yet: it acts as `unattended`.
-   * `level` already says so; this says why.
+   * The off-hours window the level was resolved inside, with the level it
+   * sets and where that came from; `null` outside every window, with
+   * off-hours off, and in a person's session. `chosen` and `source` then
+   * name the off-hours level.
    */
-  wideActsAsUnattended: boolean;
+  offHours: { window: string } | null;
 }
 
 /** A configuration value that cannot be read as an autonomy setting. */
@@ -235,39 +253,111 @@ function chosenLevel(
     : { chosen: repositoryLevel, source: sourceOf(config, "autonomy.level") };
 }
 
+interface OffHoursSetting {
+  level: AutonomyLevel;
+  source: string;
+  schedule: readonly string[];
+}
+
+const isUnset = (v: unknown): v is undefined | null =>
+  v === undefined || v === null;
+
+/**
+ * `autonomy.off_hours.schedule`, checked and parsed; the default when unset.
+ * `set` says whether the configuration named one.
+ */
+function offHoursSchedule(config: LayeredConfig): {
+  schedule: readonly string[];
+  set: boolean;
+  where: string;
+} {
+  const raw = valueAt(config.values, "autonomy.off_hours.schedule");
+  const where = sourceOf(config, "autonomy.off_hours.schedule");
+  if (isUnset(raw))
+    return { schedule: DEFAULT_OFF_HOURS_SCHEDULE, set: false, where };
+  if (
+    !Array.isArray(raw) ||
+    raw.length === 0 ||
+    raw.some((w) => typeof w !== "string")
+  )
+    throw new AutonomyConfigError(
+      `autonomy.off_hours.schedule must be a nonempty list of windows such as "Mon-Fri 20:00-07:00": ${where}`,
+    );
+  try {
+    parseSchedule(raw as string[]);
+  } catch (err) {
+    if (err instanceof OffHoursScheduleError)
+      throw new AutonomyConfigError(`${err.message}: ${where}`);
+    throw err;
+  }
+  return { schedule: raw as string[], set: true, where };
+}
+
+/** `autonomy.off_hours`, checked; `null` when its level is unset (off-hours is off). */
+function offHoursSetting(config: LayeredConfig): OffHoursSetting | null {
+  const section = valueAt(config.values, "autonomy.off_hours");
+  if (isUnset(section)) return null;
+  if (!isMapping(section))
+    throw new AutonomyConfigError(
+      `autonomy.off_hours must be a mapping: ${sourceOf(config, "autonomy.off_hours")}`,
+    );
+  const where = sourceOf(config, "autonomy.off_hours.level");
+  const level = levelAt(config.values, "autonomy.off_hours.level", where);
+  const schedule = offHoursSchedule(config);
+  if (level === undefined && schedule.set)
+    throw new AutonomyConfigError(
+      `autonomy.off_hours.schedule is set but autonomy.off_hours.level is not, so off-hours is off: set the level, or remove the schedule: ${schedule.where}`,
+    );
+  return level === undefined
+    ? null
+    : { level, source: where, schedule: schedule.schedule };
+}
+
 /**
  * The effective autonomy level of the repository whose layers `config`
- * holds, for a session whose environment is `env`.
+ * holds, for a session whose environment is `env`, at the instant `now`.
  */
 export function resolveAutonomy(
   config: LayeredConfig,
   env: Env = process.env,
+  now: Date = new Date(),
 ): Autonomy {
   checkSection(config);
   const { repositoryLevel, ceiling, ceilingSource } = repositoryCeiling(config);
   const interactive = (env[DRIVER_PASS_VARIABLE] ?? "").trim() === "";
-  const { chosen, source } = chosenLevel(config, repositoryLevel, interactive);
+  const offHours = offHoursSetting(config);
+  const window =
+    offHours === null || interactive
+      ? null
+      : windowAt(parseSchedule(offHours.schedule), now);
+  const { chosen, source } =
+    window === null || offHours === null
+      ? chosenLevel(config, repositoryLevel, interactive)
+      : { chosen: offHours.level, source: offHours.source };
   const capped = rank(chosen) > rank(ceiling);
-  const named = capped ? ceiling : chosen;
-  const wideActsAsUnattended = named === "wide";
   return {
-    level: wideActsAsUnattended ? "unattended" : named,
+    level: capped ? ceiling : chosen,
     chosen,
     source,
     ceiling,
     ceilingSource,
     capped,
     interactive,
-    wideActsAsUnattended,
+    offHours: window === null ? null : { window: window.text },
   };
 }
 
-/** One line for a round header or a report: the level and where it came from. */
+/**
+ * One line for a round header or a report: the level and where it came from.
+ * Inside an off-hours window the level is tagged `(off_hours)` and the line
+ * names the window.
+ */
 export function describeAutonomy(a: Autonomy): string {
-  const parts = [`autonomy: ${a.level} (${a.chosen} from ${a.source}`];
+  const tag = a.offHours === null ? "" : " (off_hours)";
+  const parts = [`autonomy: ${a.level}${tag} (${a.chosen} from ${a.source}`];
+  if (a.offHours !== null)
+    parts.push(`, inside the off-hours window "${a.offHours.window}"`);
   if (a.capped) parts.push(`, capped at ${a.ceiling} by ${a.ceilingSource}`);
-  if (a.wideActsAsUnattended)
-    parts.push(", wide is not built yet and acts as unattended");
   return `${parts.join("")})`;
 }
 
@@ -298,29 +388,55 @@ export function parkClasses(config: LayeredConfig): string[] {
 }
 
 /** The effective level for the repository the working directory is in. */
-export function currentAutonomy(env: Env = process.env): Autonomy {
-  return resolveAutonomy(layeredConfig(undefined, env), env);
+export function currentAutonomy(
+  env: Env = process.env,
+  now: Date = new Date(),
+): Autonomy {
+  return resolveAutonomy(layeredConfig(undefined, env), env, now);
+}
+
+/** `--at <instant>` taken out of `args`; `undefined` when absent. */
+function takeAt(args: string[]): Date | undefined | "invalid" {
+  const i = args.indexOf("--at");
+  if (i < 0) return undefined;
+  const [, value = ""] = args.splice(i, 2);
+  const at = new Date(value);
+  return value === "" || Number.isNaN(at.getTime()) ? "invalid" : at;
+}
+
+/** What the command line asks for; `null` for a usage error. */
+function parseCommand(
+  args: string[],
+): { command: string; json: boolean; at: Date | undefined } | null {
+  const at = takeAt(args);
+  const rest = args.filter((a) => a !== "--json");
+  const command = rest[0] ?? "level";
+  const known = command === "level" || command === "classes";
+  return at === "invalid" || rest.length > 1 || !known
+    ? null
+    : { command, json: args.includes("--json"), at };
+}
+
+function printLevel(json: boolean, at: Date | undefined): void {
+  const a = currentAutonomy(process.env, at);
+  process.stdout.write(
+    json ? `${JSON.stringify(a)}\n` : `${describeAutonomy(a)}\n`,
+  );
 }
 
 async function main(): Promise<number> {
-  const args = process.argv.slice(2);
-  const json = args.includes("--json");
-  const rest = args.filter((a) => a !== "--json");
-  const command = rest[0] ?? "level";
-  if (rest.length > 1 || (command !== "level" && command !== "classes")) {
-    console.error("usage: autonomy.ts [level] [--json] | autonomy.ts classes");
+  const parsed = parseCommand(process.argv.slice(2));
+  if (parsed === null) {
+    console.error(
+      "usage: autonomy.ts [level] [--json] [--at <ISO-8601 instant>] | autonomy.ts classes",
+    );
     return 2;
   }
   try {
-    if (command === "classes") {
+    if (parsed.command === "classes")
       for (const c of parkClasses(layeredConfig()))
         process.stdout.write(`${c}\n`);
-      return 0;
-    }
-    const a = currentAutonomy();
-    process.stdout.write(
-      json ? `${JSON.stringify(a)}\n` : `${describeAutonomy(a)}\n`,
-    );
+    else printLevel(parsed.json, parsed.at);
     return 0;
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
