@@ -375,7 +375,14 @@ user file (`~/.jig/jig.yaml`,
 [configuration](../../CONFIGURATION.md#clones-user-file-only)), and with
 none mapped the session prints the command to run in a checkout of it. The
 human checkpoint the arm checks is read in the placed tree, so another
-repository's PR is checked against that repository's tracker.
+repository's PR is checked against that repository's tracker. The attach,
+the checkpoint and the driver all run without the variables that would
+select something else than the placed tree: `GH_REPO` always; a running
+drive's own `DRIVE_PR_WORKTREE` and session when they name another tree;
+and, in another clone, `JIG_CONSUMER_ROOT`, `JIG_OVERLAY` and a driver's
+exported state directory. Placing another clone's PR from inside a drive
+whose state is under a relocated `DRIVE_PR_STATE_DIR` is refused (exit 2):
+arm it from a session outside the drive.
 
 `--bots-only` keeps it off human-authored threads (recommended for unattended runs). `--keep-draft` stops it marking the PR Ready (`pull_requests.mark_ready: never` does the same for every drive). `--max-rounds N` bounds the loop (default `drive.max_rounds`, else 10). `--dry-run` reports what each round would do and never invokes the pass. Starting it twice **in the same clone** is safe — see exit `11`. That is the exact reach: the lock lives in the per-clone state dir described below, so it covers this clone and its linked worktrees and nothing further. A separate clone — another machine, a CI checkout — takes its own lock and can drive the same PR at the same time.
 

@@ -605,11 +605,13 @@ could forge or forget.
    with git's `worktree add --detach` under the first root `gc.worktree_roots`
    names; for a PR in another repository, the same in the clone the user
    file's `clones` map names for it.
-   - exit `0` → it prints `{"pr", "repo", "tree", "created", "otherClone"}`:
-     arm in `tree`, with the number `pr`. When `otherClone` is `true`, run
-     the checkpoint lookup below and the driver with `GH_REPO`,
-     `JIG_CONSUMER_ROOT` and `JIG_OVERLAY` unset, as the attach ran, so they
-     read that clone's repository and configuration rather than this one's.
+   - exit `0` → it prints `{"pr", "repo", "tree", "created", "otherClone",
+     "env"}`: arm in `tree`, with the number `pr`. `env.unset` names the
+     variables the attach ran without, usually none. When it names any,
+     remove each of them from the environment of the processes that run the
+     checkpoint lookup below and the driver, so they read the repository,
+     configuration, tree and drive state the attach read rather than this
+     session's.
    - exit `3` → the PR is in another repository and no clone of it is mapped.
      Print its output, which names the command to run in a checkout of that
      repository, and stop.
