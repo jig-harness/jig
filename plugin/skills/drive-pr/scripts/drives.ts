@@ -1418,9 +1418,7 @@ async function main(): Promise<number> {
   const lockRows = listRows(stateDir);
   // `--doctor`'s population is lock dirs ∪ state files; the plain listing and
   // plain `--json` stay lock rows only (`listStateOnlyRows` says why).
-  const rows = doctorMode
-    ? [...lockRows, ...listStateOnlyRows(stateDir, lockRows)]
-    : lockRows;
+  const rows = doctorMode ? await doctorRows(stateDir, lockRows) : lockRows;
   // Classified in every mode: `--json` always carries the verdict, and the
   // human listing's "stalled" annotation reads the same `.doctor` field.
   const repository = await driveRepository();
@@ -1428,11 +1426,15 @@ async function main(): Promise<number> {
     (row) => ({ ...row, repository }),
   );
   if (json) console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
-  else if (doctorMode) {
-    await ledgerStop.recoverStoppedLedgers(stateDir, doctored);
-    printDoctor(stateDir, doctored, repository);
-  } else printHuman(stateDir, doctored, repository);
+  else if (doctorMode) printDoctor(stateDir, doctored, repository);
+  else printHuman(stateDir, doctored, repository);
   return 0;
+}
+
+/** `--doctor`'s population, recovered first (a takeover reads `--json`). */
+async function doctorRows(stateDir: string, lockRows: LockRow[]) {
+  await ledgerStop.recoverStoppedLedgers(stateDir);
+  return [...lockRows, ...listStateOnlyRows(stateDir, lockRows)];
 }
 
 // Gated, so a helper such as `gatherWorktreeLeftovers` can be imported

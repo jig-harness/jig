@@ -461,11 +461,12 @@ export async function mirrorNow(pr: string): Promise<void> {
  * A stop by signal or by `drives.ts --stop` cannot write it here: once
  * shutdown begins the process starts no new command (`shared/cleanup.ts`).
  * `drives.ts` writes it from outside instead (`lib/ledger-stop.ts`), from
- * the driver record written at arm, which this removes once the stopped
- * ledger is written. Nor is it written while the drive retains its locks
- * (`held` emptied: a pass whose termination was not witnessed may still
- * act): the ledger keeps naming this driver running, its heartbeat ages
- * toward the lease window, and the record stays for that recovery.
+ * the driver record written at arm and marked released as the PR's lock is
+ * released, which this removes once the stopped ledger is written. Nor is
+ * it written while the drive retains its locks (`held` emptied: a pass
+ * whose termination was not witnessed may still act): the ledger keeps
+ * naming this driver running, its heartbeat ages toward the lease window,
+ * and the record stays unmarked, so no recovery marks it stopped either.
  */
 export function ledgerSettlement(
   pr: string,

@@ -566,11 +566,14 @@ rebuilt from the state and the claims of the newest read. The driver's last
 write marks it stopped, naming its exit, on a returned exit and on a thrown
 refusal. Once a driver's shutdown begins it starts no new command, so a stop
 writes from outside it (`lib/ledger-stop.ts`): `drives.ts`'s `--stop` marks
-the ledger stopped once the driver is witnessed gone, and `--stop` or
-`--doctor` against a lock whose process is confirmed gone, or against the
-driver record a stop by signal leaves once its lock is released
-(`ledger-driver-<PR>.json` in the state directory), does the same, which is
-the recovery after a crash, a kill or a signal stop. Each writes only while
+the ledger stopped once the driver and its captured pass tree are witnessed
+gone, and `--stop` or `--doctor` against the driver record a driver marks
+released as it releases its locks (`ledger-driver-<PR>.json` in the state
+directory), does the same, which is the recovery after a signal stop or a
+last write that failed. A lock left behind is no such evidence: a driver
+that kept its locks over a pass it could not witness gone, or was killed
+outright, may have left that pass running, so its ledger stays running and
+its record stays unmarked. Each writes only while
 the ledger still names that driver as running (its tree, clone and run) with
 no claim in force from another clone past its recorded position, its own
 claim arbitrated as the live driver arbitrates it, re-checked against every

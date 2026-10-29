@@ -37,7 +37,7 @@ function driveState(): DriveState {
       {
         key: "PRRT_parked",
         kind: "thread",
-        reason: "Choose between <a> and --> b: a decision -->",
+        reason: "Choose between <a> and --> b: a decision --!>",
         round: 2,
         at: "2026-10-01T10:00:00.000Z",
       },
@@ -93,16 +93,18 @@ describe("render and parse", () => {
     const rendered = renderLedger(ledger());
     if ("error" in rendered) throw new Error(rendered.error);
     expect(rendered.body.startsWith(LEDGER_MARKER)).toBe(true);
-    // The parked reason's `-->` and `<a>` never reach the body raw.
+    // The parked reason's `-->`, `--!>` and `<a>` never reach the body raw.
     const data = rendered.body.slice(rendered.body.indexOf("{"));
     expect(data).not.toContain("<a>");
-    expect(rendered.body.match(/-->/g)?.length).toBe(2);
+    // Every `>` is escaped, so neither `-->` nor `--!>` can end it early.
+    expect(rendered.body.split("-->").length - 1).toBe(2);
+    expect(rendered.body).not.toContain("--!>");
     const parsed = parseLedger(rendered.body);
     expect(parsed?.kind).toBe("ledger");
     if (parsed?.kind !== "ledger") return;
     expect(parsed.ledger).toEqual(rendered.ledger);
     expect(parsed.ledger.parked[0]?.reason).toBe(
-      "Choose between <a> and --> b: a decision -->",
+      "Choose between <a> and --> b: a decision --!>",
     );
     expect(parsed.ledger.narrative).toHaveLength(20);
     expect(parsed.ledger.narrative.at(-1)).toBe("narrative line 29");

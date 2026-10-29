@@ -560,8 +560,8 @@ you look:
   round, phase, last counted and verified heads, the Ready mark, every parked
   item with its decision, every held item by key, outcome and pushed commit,
   the quota park (without its account), the takeover records (without
-  theirs) and the claims in force, the decisions taken unattended (empty for
-  now), the driver's tree, clone and heartbeat, and the handoff narrative's
+  theirs) and the claims in force, the decisions taken unattended (an empty
+  list, which no drive writes to), the driver's tree, clone and heartbeat, and the handoff narrative's
   last twenty lines. No account hash is posted, and email-shaped text in the
   narrative and the parked reasons is replaced with `<redacted>`; seeding
   keeps this clone's own quota park, so a re-arm from another clone simply
@@ -582,9 +582,12 @@ you look:
   the ledger seeds and arbitrates (§ Picking up a stopped drive), it does not
   lock. `DRIVE_PR_LEDGER=off` and `--dry-run` drive without it. A driver
   stopped by `drives.ts` `--stop` or a signal cannot write its last ledger
-  itself; `--stop` writes it once the driver is witnessed gone, and after a
-  crash or a kill `--stop` or `--doctor` against the lock whose process is
-  gone does the same, each only while the ledger still names that driver.
+  itself; `--stop` writes it once the driver and its pass tree are witnessed
+  gone, and after a signal stop `--stop` or `--doctor` against the driver
+  record it marked released with its locks does the same, each only while
+  the ledger still names that driver. A driver that kept its locks, over a
+  pass it could not witness gone or killed outright, leaves its ledger
+  running.
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state root,
   preserving one `<clone-key>/` directory per clone (the hash of its persisted
   [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved leaf;

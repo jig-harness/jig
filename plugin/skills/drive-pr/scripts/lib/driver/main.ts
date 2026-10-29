@@ -24,7 +24,7 @@ import { resolveStateDir, worktreeLockName } from "./../state/store.ts";
 
 import { resolveMailboxDir } from "./../state/mailbox.ts";
 
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { startDriverLog } from "./log.ts";
 
@@ -33,6 +33,7 @@ import { resolveAccountIdentity } from "./../identity.ts";
 import type { ClaimDiag } from "./../claim.ts";
 
 import { type DriveLock, acquire, release } from "./locks.ts";
+import { markDriverRecordReleased } from "./../ledger-stop.ts";
 
 import {
   installDriverLifecycle,
@@ -82,6 +83,21 @@ import type { DriveState } from "./../state/schema.ts";
  * Refused rather than rewritten, because the pass names the PR in its own
  * argv and drive-status.ts compares that against $DRIVE_PR_TARGET verbatim.
  */
+/**
+ * Release a lock the driver still holds. Releasing the PR's marks the
+ * driver record released first: the evidence `drives.ts` needs to mark the
+ * ledger stopped, which a lock retained over an unwitnessed pass never gives.
+ */
+function releaseHeld(
+  lock: DriveLock,
+  prLock: DriveLock,
+  pr: string,
+  started: string,
+): void {
+  if (lock === prLock) markDriverRecordReleased(dirname(lock.dir), pr, started);
+  release(lock);
+}
+
 function requireCanonicalPr(pr: string): void {
   if (!isDigits(pr)) fail(2, `drive.ts: PR must be a number (got '${pr}')`);
   const canonicalPr = BigInt(pr).toString();
@@ -250,7 +266,7 @@ export async function main(): Promise<number> {
       registerCleanup(() => {
         driverRuntime.driverLogRotates = false;
         // An unwitnessed pass termination deliberately abandons these locks.
-        if (held.includes(lock)) release(lock);
+        if (held.includes(lock)) releaseHeld(lock, prLock, pr, diag.started);
       }),
     );
   };
