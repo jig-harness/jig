@@ -7,15 +7,19 @@
  */
 import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { formatClaim } from "../scripts/lib/claim.ts";
+import { scopedStateDir } from "./scoped-state-dir.ts";
 import {
   type Ledger,
   ledgerFromState,
   parseLedger,
   renderClaim,
 } from "../scripts/lib/state/ledger.ts";
+import { LEDGER_NOT_WRITTEN_EXIT } from "../scripts/lib/state/ledger-mirror.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
 import {
   SCRIPTS,
@@ -118,6 +122,41 @@ describe("the ledger written from the drive state", () => {
     expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(1);
   });
 
+  it("rebuilds with the notes as they stand when the ledger moved under the write", async () => {
+    const forge = fakeForge(
+      [forgeComment(40, ledgerBody(ledger(3)), "maintainer")],
+      { login: "drive-bot" },
+    );
+    expectSpawnExit(
+      await runScript(forge, "drive-state.ts", ["handoff", "999"]),
+      0,
+    );
+    const file = join(forge.env.DRIVE_PR_HANDOFF_DIR ?? "", "pr-drive-999.md");
+    const withNotes = (notes: string) =>
+      readFileSync(file, "utf8").replace(
+        /\*\*Resume:\*\*/,
+        `${notes}\n\n**Resume:**`,
+      );
+    writeFileSync(file, withNotes("Old notes."));
+    const newer = withNotes("New notes.").replace("Old notes.\n\n", "");
+    // Another writer updates the notes and the ledger between this write's
+    // build and its landing.
+    writeFileSync(join(forge.dir, "bump-on-list"), "2");
+    writeFileSync(
+      join(forge.dir, "bump-body.json"),
+      JSON.stringify({ id: 40, body: ledgerBody(ledger(9)) }),
+    );
+    writeFileSync(
+      join(forge.dir, "write-on-list"),
+      JSON.stringify({ n: 2, path: file, text: newer }),
+    );
+    const r = await handoff(forge);
+    expectSpawnExit(r, 0);
+    const written = ledgersOn(forge).get(40);
+    expect(written?.generation).toBe(10);
+    expect(written?.narrative).toEqual(["New notes."]);
+  });
+
   it("rebuilds when the ledger moved within the same second", async () => {
     const forge = fakeForge(
       [forgeComment(40, ledgerBody(ledger(3)), "maintainer")],
@@ -146,9 +185,23 @@ describe("the ledger written from the drive state", () => {
       JSON.stringify({ id: 40, body: ledgerBody(ledger(9)) }),
     );
     const r = await handoff(forge);
-    expectSpawnExit(r, 0);
+    expectSpawnExit(r, LEDGER_NOT_WRITTEN_EXIT);
     expect(r.stderr).toContain("another writer replaced this write");
     expect(ledgersOn(forge).get(40)?.generation).toBe(9);
+    const got = await runScript(forge, "drive-state.ts", ["get", "999"]);
+    expect(JSON.parse(got.stdout).ledgerGeneration).toBeUndefined();
+  });
+
+  it("tells a replacement with the same generation and heartbeat from its own write", async () => {
+    const forge = fakeForge(
+      [forgeComment(40, ledgerBody(ledger(3)), "maintainer")],
+      { login: "drive-bot" },
+    );
+    // The read-back finds another writer's ledger built from the same read.
+    writeFileSync(join(forge.dir, "twin-on-list"), "3");
+    const r = await handoff(forge);
+    expectSpawnExit(r, LEDGER_NOT_WRITTEN_EXIT);
+    expect(r.stderr).toContain("another writer replaced this write");
     const got = await runScript(forge, "drive-state.ts", ["get", "999"]);
     expect(JSON.parse(got.stdout).ledgerGeneration).toBeUndefined();
   });
@@ -258,7 +311,7 @@ describe("the ledger written from the drive state", () => {
     );
     const forge = fakeForge([forgeComment(40, v9)], { login: "drive-bot" });
     const r = await handoff(forge);
-    expectSpawnExit(r, 0);
+    expectSpawnExit(r, LEDGER_NOT_WRITTEN_EXIT);
     expect(r.stderr).toContain("ledgerVersion 9");
     expect(forge.comments()[0]?.body).toBe(v9);
   });
@@ -316,6 +369,43 @@ describe("the ledger written from the drive state", () => {
         ...env,
         started: "2026-10-01T09:00:00.000Z",
       }),
+    });
+    expectSpawnExit(r, 0);
+    expect(r.stderr).toContain("no longer holds PR #999's lock");
+    expect(forge.comments()).toEqual([]);
+  });
+
+  it("is not written once its driver loses the PR's lock during the reads", async () => {
+    const forge = fakeForge([], { login: "drive-bot" });
+    const started = "2026-10-01T09:00:00.000Z";
+    const lock = join(
+      scopedStateDir(forge.stateDir, forge.repo),
+      "pr-drive-999.lock",
+    );
+    mkdirSync(lock, { recursive: true });
+    writeFileSync(
+      join(lock, "claim.feedc0de"),
+      formatClaim(process.pid, hostname(), {
+        pr: "999",
+        worktree: forge.repo,
+        log: join(lock, "drive.log"),
+        started,
+        account: {
+          account: null,
+          vendor: null,
+          provenance: "none",
+          reason: "test",
+        },
+      }),
+    );
+    // The driver releases its lock while the write reads the comments.
+    writeFileSync(
+      join(forge.dir, "remove-on-list"),
+      JSON.stringify({ n: 1, path: lock }),
+    );
+    const env = JSON.parse(driverEnv(CLONE));
+    const r = await handoff(forge, {
+      DRIVE_PR_LEDGER_DRIVER: JSON.stringify({ ...env, started }),
     });
     expectSpawnExit(r, 0);
     expect(r.stderr).toContain("no longer holds PR #999's lock");
@@ -392,6 +482,35 @@ describe("seed-ledger", () => {
     );
     const text = readFileSync(handoffFile, "utf8");
     expect(text).toContain("Round 6 left the parser half done.");
+    expect(text.trimEnd().endsWith("**Resume:** `/drive-pr 999`")).toBe(true);
+  });
+
+  it("replaces this clone's notes with a newer ledger's empty narrative", async () => {
+    const forge = fakeForge([]);
+    expectSpawnExit(
+      await runScript(
+        forge,
+        "drive-state.ts",
+        ["seed-ledger", "999"],
+        {},
+        ledgerBody({ ...ledger(4, 6), narrative: ["Older notes."] }),
+      ),
+      0,
+    );
+    // The newer ledger's narrative was cut to fit the forge's size limit.
+    const seeded = await runScript(
+      forge,
+      "drive-state.ts",
+      ["seed-ledger", "999"],
+      {},
+      ledgerBody(ledger(5, 7)),
+    );
+    expectSpawnExit(seeded, 0);
+    const text = readFileSync(
+      join(forge.env.DRIVE_PR_HANDOFF_DIR ?? "", "pr-drive-999.md"),
+      "utf8",
+    );
+    expect(text).not.toContain("Older notes.");
     expect(text.trimEnd().endsWith("**Resume:** `/drive-pr 999`")).toBe(true);
   });
 

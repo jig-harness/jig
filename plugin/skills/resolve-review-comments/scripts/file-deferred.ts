@@ -17,7 +17,9 @@
  * carries the entry's identity line (its source url and fingerprint; a run
  * stopped after filing it): that issue is reused rather than filed twice.
  * Each entry is read afresh before it is filed, so a person's correction
- * since the run began is what gets filed. Each filing is printed the moment
+ * since the run began is what gets filed. An issue carries a digest of the
+ * text it was filed from, and one filed from an earlier text of a corrected
+ * entry is reported as unrecorded rather than replacing the correction. Each filing is printed the moment
  * it is made, then its entry is replaced by read-modify-write against the
  * body's `updated_at`, before the next one is filed; a filing whose entry
  * could not be replaced (the write failed, or the entry was removed, filed
@@ -25,15 +27,20 @@
  * with its key.
  *
  * The body's write cannot be made atomic against a person's own save, so
- * every run also checks the section against the review threads: a resolved
- * thread whose `**deferred**` reply links the section must still have its
- * entry, filed or not. A missing one is named, and the run exits `4`.
+ * every run also checks the section against the answers: a resolved thread
+ * whose `**deferred**` reply links this pull request's section, and a summary
+ * finding whose `**deferred**` answer links it (by the fingerprint its marker
+ * carries), must still have its entry, filed or not. Only an answer from an
+ * author the forge vouches for counts (`shared/trusted-authors.ts`). A missing one is named, and the
+ * run exits `4`. A thread whose comments run past one page cannot be checked,
+ * and fails the run rather than passing it unread.
  *
  * Exit codes: 0 every entry filed (or none to file), 1 the forge or the
- * tracker failed, or a filing could not be recorded, 2 usage, 3 entries
- * remain because no adapter could file, 4 a resolved `**deferred**` reply
- * links an entry the section lacks.
+ * tracker failed, a filing could not be recorded, or the answers could not
+ * all be read, 2 usage, 3 entries remain because no adapter could file, 4 a
+ * `**deferred**` answer links an entry the section lacks.
  */
+import { createHash } from "node:crypto";
 import { fail, runMain } from "../../../shared/cli.ts";
 import { readConfig } from "../../../shared/consumer.ts";
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
@@ -47,6 +54,7 @@ import {
 } from "./lib/deferred-section.ts";
 import {
   type DeferredReply,
+  deferredReplies,
   ghPrBodyForge,
   type PrBodyForge,
   updatePrBody,
@@ -61,6 +69,18 @@ export function identityLine(entry: {
   fingerprint?: string;
 }): string {
   return `Deferred finding: ${entry.source}${entry.fingerprint === undefined ? "" : ` (fingerprint ${entry.fingerprint})`}`;
+}
+
+/**
+ * The line an issue filed for `entry` carries naming the text it was filed
+ * from, so a run that finds the issue again can tell whether the entry has
+ * been corrected since.
+ */
+export function textLine(entry: { text: string }): string {
+  const digest = createHash("sha256")
+    .update(entry.text.replaceAll("\r", "").trim())
+    .digest("hex");
+  return `Deferred finding text: sha256 ${digest}`;
 }
 
 /** The issue an entry becomes. */
@@ -85,6 +105,7 @@ function issueFor(
       entry.text,
       "",
       identityLine(entry),
+      textLine(entry),
     ].join("\n"),
     labels: [label],
   };
@@ -117,23 +138,32 @@ const message = (err: unknown): string =>
  * An issue the tracker already holds for the entry: one whose body carries
  * its identity line as a line of its own. An issue that only mentions the
  * source url, or names another fingerprint on it, is not this entry's.
+ * `sameText` says whether it was filed from the entry's current text.
  */
 async function alreadyFiled(
   tracker: Tracker,
   entry: DeferredEntry,
-): Promise<{ identifier: string; url: string | null } | null> {
+): Promise<{
+  identifier: string;
+  url: string | null;
+  sameText: boolean;
+} | null> {
+  const identity = identityLine(entry);
+  const text = textLine(entry);
   for (const hit of await tracker.searchIssues(entry.source, {
     includeClosed: true,
   })) {
     const issue = await tracker.getIssue(hit.identifier);
-    const identity = identityLine(entry);
-    if (
-      issue?.description
-        .replaceAll("\r", "")
-        .split("\n")
-        .some((l) => l.trim() === identity)
-    )
-      return { identifier: issue.identifier, url: issue.url };
+    const lines = (issue?.description ?? "")
+      .replaceAll("\r", "")
+      .split("\n")
+      .map((l) => l.trim());
+    if (issue !== null && lines.includes(identity))
+      return {
+        identifier: issue.identifier,
+        url: issue.url,
+        sameText: lines.includes(text),
+      };
   }
   return null;
 }
@@ -197,7 +227,11 @@ async function stillOpen(
   return now === undefined || now.filed !== undefined ? null : now;
 }
 
-/** The issue for `entry`: one the tracker already holds, else `draft` filed. */
+/**
+ * The issue for `entry`: one the tracker already holds, else `draft` filed.
+ * `stale` marks a held issue filed from an earlier text of the entry, which
+ * must not replace the corrected entry.
+ */
 async function issueOf(
   tracker: Tracker,
   entry: DeferredEntry,
@@ -205,11 +239,20 @@ async function issueOf(
 ): Promise<{
   issue: { identifier: string; url: string | null };
   reused: boolean;
+  stale: boolean;
 }> {
   const found = await alreadyFiled(tracker, entry);
   return found !== null
-    ? { issue: found, reused: true }
-    : { issue: await tracker.createIssue(draft), reused: false };
+    ? {
+        issue: { identifier: found.identifier, url: found.url },
+        reused: true,
+        stale: !found.sameText,
+      }
+    : {
+        issue: await tracker.createIssue(draft),
+        reused: false,
+        stale: false,
+      };
 }
 
 /**
@@ -235,63 +278,118 @@ export async function fileDeferred(
     remaining: [],
     why: null,
   };
-  if (tracker === null || opts.dryRun) {
+  const skipped = whyNotFiling(tracker, opts);
+  if (tracker === null || skipped !== null) {
     result.remaining = open;
-    if (open.length > 0)
-      result.why = opts.dryRun
-        ? "a dry run files nothing"
-        : (opts.noTrackerWhy ?? "no tracker adapter can file");
+    if (open.length > 0) result.why = skipped;
     return result;
   }
   for (const [i, initial] of open.entries()) {
     const entry = await stillOpen(forge, pr, initial);
     if (entry === null) continue;
-    let got: {
-      issue: { identifier: string; url: string | null };
-      reused: boolean;
-    };
-    try {
-      got = await issueOf(tracker, entry, issueFor(entry, pr, url, opts.label));
-    } catch (err) {
-      result.remaining = open.slice(i);
-      result.why = `the tracker refused: ${message(err)}`;
-      return result;
+    const step = await fileOne(forge, tracker, pr, entry, { ...opts, url });
+    if (step.why === null) {
+      result.filed.push(step.filing);
+      continue;
     }
-    const { issue, reused } = got;
-    const filing = {
-      source: entry.source,
-      key: issue.identifier,
-      url: issue.url,
-      reused,
-    };
-    opts.onFiled?.(filing);
-    try {
-      await recordFiling(forge, pr, entry, issue);
-    } catch (err) {
-      result.unrecorded.push(filing);
-      result.remaining = open.slice(i + 1);
-      result.why = `${issue.identifier} was filed, but its entry could not be replaced: ${message(err)}`;
-      return result;
-    }
-    result.filed.push(filing);
+    const held = step.filing === null ? [] : [step.filing];
+    result.unrecorded.push(...held);
+    result.remaining = open.slice(i + held.length);
+    result.why = step.why;
+    return result;
   }
   return result;
 }
 
+/** Why a run files nothing at all, or `null` when it can file. */
+function whyNotFiling(
+  tracker: Tracker | null,
+  opts: { dryRun?: boolean; noTrackerWhy?: string },
+): string | null {
+  if (opts.dryRun) return "a dry run files nothing";
+  if (tracker === null)
+    return opts.noTrackerWhy ?? "no tracker adapter can file";
+  return null;
+}
+
 /**
- * The resolved `**deferred**` replies whose thread has no entry in the
- * section: an entry a person's save of the body dropped.
+ * File one open entry and record its issue in the entry. `why` names what
+ * stopped the run; `filing` is the issue the tracker holds, or `null` when it
+ * refused before holding one.
+ */
+async function fileOne(
+  forge: PrBodyForge,
+  tracker: Tracker,
+  pr: string,
+  entry: DeferredEntry,
+  opts: { label: string; url: string; onFiled?: (f: Filing) => void },
+): Promise<
+  { filing: Filing; why: null } | { filing: Filing | null; why: string }
+> {
+  let got: Awaited<ReturnType<typeof issueOf>>;
+  try {
+    got = await issueOf(
+      tracker,
+      entry,
+      issueFor(entry, pr, opts.url, opts.label),
+    );
+  } catch (err) {
+    return { filing: null, why: `the tracker refused: ${message(err)}` };
+  }
+  const { issue, reused, stale } = got;
+  const filing = {
+    source: entry.source,
+    key: issue.identifier,
+    url: issue.url,
+    reused,
+  };
+  opts.onFiled?.(filing);
+  if (stale)
+    return {
+      filing,
+      why: `${issue.identifier} was filed from an earlier text of this entry, which has been corrected since; update or close that issue, then record it in the entry by hand`,
+    };
+  try {
+    await recordFiling(forge, pr, entry, issue);
+  } catch (err) {
+    return {
+      filing,
+      why: `${issue.identifier} was filed, but its entry could not be replaced: ${message(err)}`,
+    };
+  }
+  return { filing, why: null };
+}
+
+/**
+ * The `**deferred**` answers whose entry the section lacks: an entry a
+ * person's save of the body dropped. A thread's entry is keyed on its source,
+ * a summary finding's on its fingerprint, so losing one of several findings
+ * deferred from the same comment is seen.
  */
 export async function missingEntries(
   forge: PrBodyForge,
   pr: string,
 ): Promise<DeferredReply[]> {
-  const [replies, { body }] = await Promise.all([
-    forge.deferredReplies(pr),
+  const [answers, { body, url }] = await Promise.all([
+    forge.answers(pr),
     forge.read(pr),
   ]);
-  const sources = new Set(deferredEntries(body).map((e) => e.source));
-  return replies.filter((r) => !sources.has(r.thread));
+  const replies = deferredReplies(answers, url);
+  const entries = deferredEntries(body);
+  const sources = new Set(entries.map((e) => e.source));
+  const fingerprints = new Set(
+    entries.flatMap((e) =>
+      e.fingerprint === undefined ? [] : [e.fingerprint],
+    ),
+  );
+  return replies.filter((r) =>
+    "thread" in r ? !sources.has(r.thread) : !fingerprints.has(r.fingerprint),
+  );
+}
+
+/** What a missing entry's answer was deferring. */
+function answered(m: DeferredReply): string {
+  return "thread" in m ? m.thread : `the summary finding ${m.fingerprint}`;
 }
 
 /** The configured tracker and its follow-up label, or why none can file. */
@@ -360,7 +458,7 @@ async function main(): Promise<number> {
   }
   for (const m of missing)
     console.error(
-      `file-deferred: ${m.reply} answers ${m.thread} **deferred** and links the Deferred section, which has no entry for it; restore the entry from the reply or file the finding by hand`,
+      `file-deferred: ${m.reply} answers ${answered(m)} **deferred** and links the Deferred section, which has no entry for it; restore the entry from the reply or file the finding by hand`,
     );
   if (code === 1) return 1;
   return missing.length > 0 ? 4 : code;

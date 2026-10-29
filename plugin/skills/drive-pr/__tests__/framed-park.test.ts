@@ -245,6 +245,31 @@ describe("the decision record's sections", () => {
     );
   });
 
+  it("one field's label is never the other field's value", () => {
+    const emptyChanges = complete.replace(
+      "Changes: nothing in the code. Costs:",
+      "Changes: Costs:",
+    );
+    expect(problems(emptyChanges)).toEqual([
+      "option 1 must say what it changes ('Changes: …')",
+    ]);
+    const emptyCosts = complete.replace(
+      "Changes: the anchored function. Costs: one more review round.",
+      "Costs: Changes: the anchored function.",
+    );
+    expect(problems(emptyCosts)).toEqual([
+      "option 2 must say what it costs ('Costs: …')",
+    ]);
+    expect(
+      problems(
+        complete.replace(
+          "Costs: one more review round.",
+          "Costs: one more review round. Costs: a second one.",
+        ),
+      ),
+    ).toEqual(["option 2 gives 'Costs:' more than once"]);
+  });
+
   it("the recommendation names one option and says why", () => {
     expect(
       problems(

@@ -121,6 +121,37 @@ function checkQuestion(q: string, problems: string[]): void {
   else if (!q.endsWith("?")) problems.push("Question must end with '?'");
 }
 
+/** The labelled fields an option carries, each once with a value of its own. */
+const OPTION_FIELDS = ["Changes", "Costs"] as const;
+
+/**
+ * An option's `Changes:` and `Costs:` values, split at the labels: each
+ * value runs to the next label or the item's end, so one label cannot stand
+ * in for the other's value.
+ */
+function optionFields(item: string): {
+  values: Partial<Record<(typeof OPTION_FIELDS)[number], string>>;
+  repeated: string[];
+} {
+  const labels = [...item.matchAll(/\b(changes|costs):/gi)].map((m) => ({
+    field: OPTION_FIELDS.find(
+      (f) => f.toLowerCase() === (m[1] ?? "").toLowerCase(),
+    ),
+    start: m.index,
+    end: m.index + m[0].length,
+  }));
+  const values: Partial<Record<(typeof OPTION_FIELDS)[number], string>> = {};
+  const repeated: string[] = [];
+  for (const [i, l] of labels.entries()) {
+    if (l.field === undefined) continue;
+    if (values[l.field] !== undefined) repeated.push(l.field);
+    values[l.field] = item
+      .slice(l.end, labels[i + 1]?.start ?? item.length)
+      .trim();
+  }
+  return { values, repeated };
+}
+
 function checkOptions(text: string, problems: string[]): string[] {
   const { items: options, stray } = items(text);
   if (stray) problems.push("Options must be '- ' items only");
@@ -132,10 +163,13 @@ function checkOptions(text: string, problems: string[]): string[] {
     if (name === null)
       problems.push(`option ${i + 1} must open with its **name**`);
     else names.push(name);
-    if (!/\bchanges:\s*\S/i.test(o))
+    const { values, repeated } = optionFields(o);
+    if (!values.Changes)
       problems.push(`option ${i + 1} must say what it changes ('Changes: …')`);
-    if (!/\bcosts:\s*\S/i.test(o))
+    if (!values.Costs)
       problems.push(`option ${i + 1} must say what it costs ('Costs: …')`);
+    for (const f of new Set(repeated))
+      problems.push(`option ${i + 1} gives '${f}:' more than once`);
   }
   if (new Set(names).size !== names.length)
     problems.push("two options share a name");

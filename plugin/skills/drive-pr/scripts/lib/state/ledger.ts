@@ -81,7 +81,7 @@ export interface LedgerDriver {
   exit?: number;
   /** The driver's lock acquisition time: which run of that tree it is. */
   started?: string;
-  /** Its claim position: its own claim's id, or the newest claim in force when it started. */
+  /** Its claim position: its own claim's id, or the position its clone's ledger recorded when it continued that ledger. */
   position?: number;
 }
 
@@ -738,6 +738,13 @@ export function heldFromLedger(held: readonly LedgerHeld[]): {
  * the held items the size cut left without an outcome: they are not held
  * here, and the round triages them afresh. An `error` when the result is not
  * a usable state, so a ledger can never seed a state the store would refuse.
+ *
+ * The ledger's rounds replace this clone's. A ledger behind this clone's
+ * round count (another clone reset the drive and published afresh) is a
+ * different round history, so the local records positioned in the old one
+ * (the reflect and escalation positions, the escalation's claim, the
+ * per-round finding paths) are cleared rather than carried past the rounds
+ * they would then exceed.
  */
 export function seedFromLedger(
   local: DriveState,
@@ -748,8 +755,19 @@ export function seedFromLedger(
       error: `the ledger is PR #${l.pr}'s, not PR #${local.pr}'s`,
     };
   const { held, dropped } = heldFromLedger(l.held);
+  const rewound =
+    l.round < local.rounds
+      ? {
+          lastReflectedRound: 0,
+          lastReflectedAttempts: 0,
+          lastEscalatedRound: 0,
+          lastEscalatedInvariant: "",
+          roundPaths: [],
+        }
+      : {};
   const state: DriveState = {
     ...local,
+    ...rewound,
     rounds: l.round,
     attempts: l.attempts,
     attemptsHead: l.attemptsHead,

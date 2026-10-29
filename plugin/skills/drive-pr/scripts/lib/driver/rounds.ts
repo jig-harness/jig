@@ -25,6 +25,8 @@ import { runRoundIteration } from "./round-step.ts";
 
 import { clearDeadlineRetries } from "./restart.ts";
 
+import { standDownOnNewerClaim } from "./ledger.ts";
+
 interface DriverRoundOptions {
   pr: string;
   mailboxDir: string;
@@ -140,7 +142,7 @@ export async function runDriverRounds({
     Number(pauseMaxRaw) <= 86400
       ? Number(pauseMaxRaw)
       : 1800;
-  const mailboxCheckpoint = async (): Promise<"clear" | "resumed" | number> => {
+  const mailboxOnly = async (): Promise<"clear" | "resumed" | number> => {
     const outcome = await waitAtMailboxCheckpoint(mailboxDir, pr, pauseMaxSec);
     switch (outcome) {
       case "clear":
@@ -158,6 +160,16 @@ export async function runDriverRounds({
       case "unreadable":
         return 1;
     }
+  };
+  // The claim check only before a pass, not on every checkpoint: a quota
+  // wait polls the mailbox every few seconds for hours, and the claims are a
+  // forge read.
+  const mailboxCheckpoint = async (opts?: {
+    beforePass?: boolean;
+  }): Promise<"clear" | "resumed" | number> => {
+    const outcome = await mailboxOnly();
+    if (outcome !== "clear" || opts?.beforePass !== true) return outcome;
+    return (await standDownOnNewerClaim(pr)) ?? outcome;
   };
   const context: DriveRoundContext = {
     prevFingerprint,
