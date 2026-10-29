@@ -79,6 +79,8 @@ import {
   run,
   tsArgv,
 } from "./lib/proc.ts";
+import { prComments } from "./lib/driver/rearm.ts";
+import { reversalInConversation } from "./lib/provisional.ts";
 import { readLedgerSnapshot, resolveLogin } from "./lib/state/ledger-forge.ts";
 import { isUsableState } from "./lib/state/schema.ts";
 import { type PrSample, resolveRepo, samplePr } from "./lib/sample.ts";
@@ -239,11 +241,46 @@ export async function durableAutonomy(
   pr: string,
 ): Promise<DurableAutonomy | null> {
   const local = await localAutonomy(pr);
-  if (local !== null) return local;
+  if (local !== null) return withConversationReversals(pr, local);
   const snapshot = await readLedgerSnapshot(pr, await resolveLogin());
   if (typeof snapshot === "string") return null;
   const parsed = snapshot.canonical?.parsed;
-  return parsed?.kind === "ledger" ? autonomyOf(parsed.ledger) : null;
+  return parsed?.kind === "ledger"
+    ? withConversationReversals(pr, autonomyOf(parsed.ledger))
+    : null;
+}
+
+/**
+ * The record with each provisional `decide` ruling's reversal read from the
+ * pull request's conversation, as a thread's is read from the thread: a
+ * person's `answer <key>:` after the drive stopped is recorded by no round
+ * boundary. An unreadable conversation leaves the record as recorded.
+ */
+async function withConversationReversals(
+  pr: string,
+  rec: DurableAutonomy,
+): Promise<DurableAutonomy> {
+  const open = rec.decisions.filter(
+    (d) => d.class === "decide-provisional" && d.reversed === undefined,
+  );
+  if (open.length === 0) return rec;
+  const conversation = await prComments(pr);
+  if (conversation === null) {
+    console.error(
+      `loop-metrics: #${pr}'s conversation could not be read, so a reversal of its provisional rulings since the drive stopped is not counted.`,
+    );
+    return rec;
+  }
+  return {
+    ...rec,
+    decisions: rec.decisions.map((d) => {
+      if (!open.includes(d)) return d;
+      const by = reversalInConversation(conversation, d.key ?? "", d.at);
+      return by === null
+        ? d
+        : { ...d, reversed: { by: by.author, url: by.url, at: by.at } };
+    }),
+  };
 }
 
 /**

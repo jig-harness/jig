@@ -248,8 +248,14 @@ function isAnswer(c: CommentLike, after: number): boolean {
 }
 
 const THREAD_QUERY =
-  "query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved comments(last:100){nodes{url author{login} authorAssociation createdAt body}}}}}";
+  "query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved comments(first:100){pageInfo{hasNextPage} nodes{url author{login} authorAssociation createdAt body}}}}}";
 
+/**
+ * One thread's comments, in order; `null` when they could not be read, or
+ * when the thread holds more than one page of them: a partial history is
+ * never read as the whole, since the comment it leaves out may be the one
+ * the caller looks for.
+ */
 export async function threadComments(
   key: string,
 ): Promise<CommentLike[] | null> {
@@ -258,9 +264,13 @@ export async function threadComments(
     { stderr: "pipe", env: ghRepoEnv() },
   );
   if (res.code !== 0) return null;
-  let at: unknown = parseJson(res.stdout, "the thread query");
-  for (const key of ["data", "node", "comments", "nodes"])
-    at = isRecord(at) ? at[key] : undefined;
+  let comments: unknown = parseJson(res.stdout, "the thread query");
+  for (const key of ["data", "node", "comments"])
+    comments = isRecord(comments) ? comments[key] : undefined;
+  if (!isRecord(comments)) return null;
+  const page = comments.pageInfo;
+  if (!isRecord(page) || page.hasNextPage !== false) return null;
+  const at = comments.nodes;
   if (!Array.isArray(at)) return null;
   return at.filter(isRecord).map((n) => ({
     author: isRecord(n.author) ? text(n.author.login) : "",
@@ -296,12 +306,16 @@ export async function prComments(pr: string): Promise<CommentLike[] | null> {
     }));
 }
 
-/** The answers to one parked item; `null` when its comments could not be read. */
+/**
+ * The answers to one parked item, and whether every place an answer could be
+ * (its thread, and the pull request's conversation) was read; `null` when
+ * none could be.
+ */
 async function answersTo(
   item: ParkedItem,
   conversation: CommentLike[] | null,
-): Promise<PendingAnswer[] | null> {
-  if (item.at === undefined) return [];
+): Promise<{ answers: PendingAnswer[]; complete: boolean } | null> {
+  if (item.at === undefined) return { answers: [], complete: true };
   const after = Date.parse(item.at);
   const thread = item.kind === "thread" ? await threadComments(item.key) : [];
   if (thread === null && conversation === null) return null;
@@ -309,9 +323,12 @@ async function answersTo(
     ...(thread ?? []),
     ...(conversation ?? []).filter((c) => answersKey(c.body, item.key)),
   ];
-  return candidates
-    .filter((c) => isAnswer(c, after))
-    .map(({ author, at, url, body }) => ({ author, at, url, body }));
+  return {
+    answers: candidates
+      .filter((c) => isAnswer(c, after))
+      .map(({ author, at, url, body }) => ({ author, at, url, body })),
+    complete: thread !== null && conversation !== null,
+  };
 }
 
 /**
@@ -324,25 +341,37 @@ async function answeredParks(
   const conversation = await prComments(String(state.pr));
   const answered: PendingVerdict[] = [];
   const waiting: ParkedItem[] = [];
+  const unread: ParkedItem[] = [];
   for (const item of state.parked) {
-    const answers = await answersTo(item, conversation);
-    if (answers === null) {
+    const read = await answersTo(item, conversation);
+    if (read === null) {
       console.error(
         `re-arm: could not read the comments that would answer parked ${item.kind} ${item.key}; leaving every item parked.`,
       );
       return null;
     }
-    if (answers.length === 0) waiting.push(item);
-    else
+    if (read.answers.length > 0)
       answered.push({
         kind: item.kind,
         key: item.key,
         reason: item.reason,
-        answers,
+        answers: read.answers,
       });
+    else {
+      waiting.push(item);
+      if (!read.complete) unread.push(item);
+    }
   }
   if (waiting.length === 0) return answered;
-  // At the wide level, the unanswered items a provisional decision may take.
+  // At the wide level, the unanswered items a provisional decision may take:
+  // only once every place a person's answer could be was read, since an
+  // answer in an unread one must never be decided over.
+  if (unread.length > 0) {
+    console.error(
+      `re-arm: could not read every place an answer to ${unread.map((p) => `${p.kind} ${p.key}`).join(", ")} could be; nothing is unparked, and nothing is decided provisionally.`,
+    );
+    return null;
+  }
   const duties = provisionalDuties(waiting);
   if (duties !== null) return [...answered, ...duties];
   console.error(

@@ -6,9 +6,11 @@
  * From the pull request's threads (the forge's record, whichever clone drove
  * it): the provisional replies, which of them a person reversed by commenting
  * and when, and the review bots' chat acknowledgements the drive read as
- * transparent. From the drive state this clone holds, when it holds one: the
- * provisional `decide` rulings and their reversals, the self-restarts by
- * cause, the re-arms by cause and the takeovers.
+ * transparent. From the drive state this clone holds, else the ledger: the
+ * provisional `decide` rulings and their reversals (read again from the
+ * pull request's conversation, since a person may answer after the drive
+ * stopped), the self-restarts by cause, the re-arms by cause and the
+ * takeovers.
  *
  * The measure: the share of provisional decisions a person reversed before
  * the merge (or, for an open pull request, so far). Pooled over the first

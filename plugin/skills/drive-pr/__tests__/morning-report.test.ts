@@ -8,7 +8,7 @@
  * out. Then the time the report remembers for the next one.
  */
 import { describe, expect, it } from "bun:test";
-import { existsSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { withDeferredEntry } from "../../resolve-review-comments/scripts/lib/deferred-section.ts";
@@ -335,9 +335,80 @@ describe("drives.ts --report", () => {
     const twelve = out.pullRequests.find(
       (p: { number: number }) => p.number === 12,
     );
+    // PRRT_b, decided before the four hours, still stands: it is listed
+    // whatever its age.
     expect(twelve.provisional.map((p: { key: string }) => p.key)).toEqual([
       "PRRT_a",
+      "PRRT_b",
     ]);
     expect(twelve.rearms).toEqual([]);
+  });
+
+  it("lists an authored pull request with no drive ledger, for its deferred entries", async () => {
+    const forge = setUp();
+    forge.write("search.json", {
+      items: [
+        {
+          number: 30,
+          html_url: "https://example.invalid/pull/30",
+          title: "Authored, never driven",
+          user: { login: "drive-bot" },
+        },
+      ],
+    });
+    forge.write("pr-30.json", {
+      title: "Authored, never driven",
+      url: "https://example.invalid/pull/30",
+      state: "OPEN",
+      author: { login: "drive-bot" },
+      body: withDeferredEntry("Summary.", {
+        source: "https://example.invalid/PRRT_e",
+        finding: "The cache is never evicted.",
+        reason: "out of scope",
+      }).body,
+    });
+    const r = await report(forge, ["--json"]);
+    expectSpawnExit(r, 0);
+    const thirty = JSON.parse(r.stdout).pullRequests.find(
+      (p: { number: number }) => p.number === 30,
+    );
+    expect(thirty.deferredUnfiled[0].source).toBe(
+      "https://example.invalid/PRRT_e",
+    );
+  });
+
+  it("an unreadable reversal is said, and the report's time is not remembered", async () => {
+    const forge = setUp();
+    rmSync(join(forge.dir, "thread-PRRT_b.json"));
+    const r = await report(forge, ["--json"]);
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).unread.join("\n")).toContain(
+      "provisional decision on PRRT_b could not be read",
+    );
+    expect(existsSync(join(forge.stateDir, REPORT_MEMORY))).toBe(false);
+  });
+
+  it("a ledger of a later generation than this clone's state speaks for the pull request", async () => {
+    const forge = setUp();
+    writeState(forge, {
+      ...freshState(20),
+      ledgerGeneration: 1,
+      events: [{ at: ago(2), round: 1, kind: "stop", cause: "8" }],
+    } as DriveState);
+    const r = await report(forge, ["--json"]);
+    expectSpawnExit(r, 0);
+    const twenty = JSON.parse(r.stdout).pullRequests.find(
+      (p: { number: number }) => p.number === 20,
+    );
+    expect(twenty).toMatchObject({
+      source: "ledger",
+      terminal: { name: "CONVERGED", exit: 0 },
+    });
+  });
+
+  it("a span too long for a date is refused as usage", async () => {
+    const forge = setUp();
+    const r = await report(forge, ["--since", "999999999999999999999h"]);
+    expectSpawnExit(r, 2);
   });
 });

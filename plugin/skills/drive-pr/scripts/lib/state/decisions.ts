@@ -169,6 +169,43 @@ export function standingProvisional(
   return decisions.filter((d) => isProvisional(d) && d.reversed === undefined);
 }
 
+/**
+ * The parked keys that hold a reversed provisional decision. The round gate
+ * counts these as awaiting a person on their own: a reversed `decide`
+ * ruling's key is no thread id or summary fingerprint, and a reversed
+ * reply's thread may be resolved again, so neither park would otherwise
+ * keep the drive from converging over the person's unanswered comment.
+ */
+export function reversalParkedKeys(
+  parked: ReadonlyArray<{ key: string }>,
+  decisions: readonly UnattendedDecision[],
+): string[] {
+  const reversed = new Set(
+    decisions
+      .filter((d) => isProvisional(d) && d.reversed !== undefined)
+      .map((d) => d.key ?? ""),
+  );
+  return parked.map((p) => p.key).filter((k) => reversed.has(k));
+}
+
+/**
+ * `parked-keys [PR]`: every parked key, one per line;
+ * `reversal-parked-keys [PR]`: only `reversalParkedKeys`.
+ */
+export function printParkedKeys(
+  state: {
+    parked: ReadonlyArray<{ key: string }>;
+    decisions?: readonly UnattendedDecision[];
+  },
+  reversalsOnly: boolean,
+): number {
+  const keys = reversalsOnly
+    ? reversalParkedKeys(state.parked, state.decisions ?? [])
+    : state.parked.map((p) => p.key);
+  for (const key of keys) process.stdout.write(`${key}\n`);
+  return 0;
+}
+
 /** How many recorded decisions have no record a person can reverse them from. */
 export function decisionsWithoutRecord(
   decisions: readonly UnattendedDecision[],
@@ -217,9 +254,10 @@ function parseInput(raw: string, usage: string): Record<string, unknown> {
 
 /**
  * `record-decision [PR]`: append one decision, read as JSON on stdin
- * (`{ "class", "what", "reverse", "record"?, "key"?, "outcome"? }`), at the
- * level in force now. A provisional class is refused unless that level is
- * `wide`.
+ * (`{ "class", "what", "reverse", "record"?, "key"?, "outcome"?, "posted"? }`),
+ * at the level in force now. A provisional class is refused unless that
+ * level is `wide`; `posted: true` records a provisional reply already
+ * posted, at `wide`, whatever the level now.
  */
 export async function recordDecision(
   store: StateStore,
@@ -229,7 +267,13 @@ export async function recordDecision(
     raw,
     'record-decision reads one JSON object on stdin: {"class", "what", "reverse", "record"?, "key"?, "outcome"?}',
   );
-  const level = currentAutonomy().level;
+  // `posted: true` completes a provisional reply already on its thread,
+  // posted at `wide` (its text says so): recording it whatever the level is
+  // now keeps it under the boundary sweep and in the report once an
+  // off-hours window closes between the post and the record.
+  const completing =
+    input.posted === true && input.class === "provisional-reply";
+  const level = completing ? "wide" : currentAutonomy().level;
   if (PROVISIONAL_CLASSES.has(input.class as DecisionClass) && level !== "wide")
     fail(
       3,

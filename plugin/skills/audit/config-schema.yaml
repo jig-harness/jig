@@ -297,13 +297,13 @@ fields:
   autonomy.off_hours.level:
     type: enum
     values: [attended, unattended, wide]
-    read_by: [drive-pr, resolve-review-comments, decide]
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
     since: next
   autonomy.off_hours.schedule:
     type: list
     items: string
     nonempty: true
-    read_by: [drive-pr, resolve-review-comments, decide]
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
     since: next
   autonomy.park_classes:
     type: list

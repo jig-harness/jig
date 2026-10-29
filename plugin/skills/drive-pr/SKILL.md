@@ -1035,7 +1035,7 @@ person can reverse it (§ 8).
 
 **A provisional reply** answers a thread with `rejected`, `wont-fix` or
 `deferred` and the rationale, never a fix, so it never grows the diff.
-Write the reply as § 3 does, then post, resolve and record it in one call:
+Write the reply as § 3 does, then post, record and resolve it in one call:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
@@ -1046,7 +1046,9 @@ bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/reply.md
 It refuses (exit `3`) below `wide`, and unless the arbiter's ruling you
 recorded for the thread (its `rule` record, § 4) is `escalate` with the
 class `escalated` and no person's decision behind it: park the thread under
-its class instead (§ 4). The reply carries
+its class instead (§ 4). A re-run completes a reply already posted, with
+its posted outcome and at any level, and refuses (exit `3`) one a person
+commented after. The reply carries
 `**provisional**` after its outcome token and says how to reverse it. A
 thread standing on a provisional reply is never triaged again:
 `triage-thread.ts` refuses it (exit `3`), `reconcile-replied-threads.ts`

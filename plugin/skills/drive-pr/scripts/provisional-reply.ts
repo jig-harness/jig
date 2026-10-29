@@ -22,7 +22,10 @@
  * Self-reconciling like `triage-thread.ts`: a provisional reply already on
  * the thread is not posted again, and a decision already recorded for the
  * thread is not recorded again, so a retry after a crash completes only the
- * missing steps.
+ * missing steps: with the outcome the reply posted, and whatever the level
+ * is by then. The decision is recorded before the thread is resolved. A
+ * reply a person commented after, or a later outcome superseded, is never
+ * completed: the retry is refused.
  *
  * Usage:
  *   provisional-reply.ts <THREAD_NODE_ID> [PR] --class escalated --what "<one line>" <<'EOF'
@@ -32,7 +35,8 @@
  * Exit codes: 0 replied (or found replied), resolved and recorded; 1 a step
  * failed (the message names it; re-run to complete it); 2 usage or a body
  * whose outcome is not a reply outcome; 3 refused: the autonomy level is
- * not `wide`, or the class is one a person must decide.
+ * not `wide` for a new reply, the class is one a person must decide, or
+ * the reply already posted no longer stands.
  */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -50,6 +54,7 @@ import {
   qualifyingOutcome,
 } from "./lib/outcome.ts";
 import { helperTimeoutSeconds, resolvePr, run, tsArgv } from "./lib/proc.ts";
+import { standsOnProvisionalReply } from "./lib/provisional.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -119,12 +124,15 @@ export function provisionalBody(body: string, parkClass: string): string {
   ].join("\n");
 }
 
-function refuse(a: Args): void {
+function refuseClass(a: Args): void {
   if (a.parkClass !== PROVISIONAL_CLASS)
     fail(
       3,
       `provisional-reply: the class '${a.parkClass}' is a person's to decide, and only '${PROVISIONAL_CLASS}' may be decided provisionally: park the thread under it (drive-state.ts park --class ${a.parkClass}).`,
     );
+}
+
+function refuseLevel(): void {
   const level = currentAutonomy().level;
   if (level !== "wide")
     fail(
@@ -133,8 +141,15 @@ function refuse(a: Args): void {
     );
 }
 
-/** The url of the trusted provisional reply already on the thread, `''` for none. */
-async function existingReply(thread: string): Promise<string> {
+/**
+ * The trusted provisional reply already on the thread, with the outcome it
+ * posted; `null` for none. One a person commented after, or a later outcome
+ * superseded, no longer stands, and recovering it would resolve the
+ * person's thread over them: refused.
+ */
+async function existingReply(
+  thread: string,
+): Promise<{ url: string; outcome: string } | null> {
   const comments = await threadComments(thread);
   if (comments === null)
     fail(1, `provisional-reply: could not read thread ${thread}`);
@@ -142,7 +157,20 @@ async function existingReply(thread: string): Promise<string> {
     (c) =>
       TRUSTED_ASSOCIATIONS.has(c.association) && isProvisionalReply(c.body),
   );
-  return found?.url ?? "";
+  if (found === undefined) return null;
+  const listed = comments.map((c) => ({
+    authorAssociation: c.association,
+    body: c.body,
+  }));
+  if (!standsOnProvisionalReply(listed))
+    fail(
+      3,
+      `provisional-reply: the provisional reply on ${thread} (${found.url}) no longer stands: a person commented after it, or a later outcome superseded it. The round parks it under human-thread; it is never decided provisionally again.`,
+    );
+  return {
+    url: found.url,
+    outcome: qualifyingOutcome(found.body)?.outcome ?? "",
+  };
 }
 
 async function post(thread: string, body: string): Promise<string> {
@@ -202,15 +230,64 @@ function requireRuling(state: StateView, thread: string): void {
     );
 }
 
+/** The reply on the thread: the one already posted, or a new post at `wide`. */
+async function replied(
+  a: Args,
+  body: string,
+): Promise<{ url: string; outcome: string; posted: boolean }> {
+  // A reply already posted is completed whatever the level is now: it was
+  // posted at `wide`, and leaving it unrecorded would hide it from the
+  // boundary sweep and the report. Its outcome is the one posted, never this
+  // invocation's, which a retry may have changed.
+  const existing = await existingReply(a.thread);
+  if (existing !== null) return { ...existing, posted: true };
+  refuseLevel();
+  const url = await post(a.thread, body);
+  return {
+    url,
+    outcome: qualifyingOutcome(body)?.outcome ?? "",
+    posted: false,
+  };
+}
+
+/** Record the decision, once: before the resolve, so a resolved reply always has a record. */
+async function recordOnce(
+  state: StateView,
+  pr: string,
+  a: Args,
+  reply: { url: string; outcome: string; posted: boolean },
+): Promise<void> {
+  if ((state.decisions ?? []).some((d) => d.key === a.thread)) return;
+  const record = await run(tsArgv(driveState, ["record-decision", pr]), {
+    timeoutSec: helperTimeoutSeconds(),
+    stdin: JSON.stringify({
+      class: "provisional-reply",
+      what: a.what,
+      record: reply.url,
+      reverse: "comment on the thread as an owner, member or collaborator",
+      key: a.thread,
+      outcome: reply.outcome,
+      posted: reply.posted,
+    }),
+    stderr: "inherit",
+  });
+  if (record.code !== 0)
+    fail(
+      1,
+      `provisional-reply: replied (${reply.url}), but recording the decision failed; re-run to finish`,
+    );
+}
+
 async function main(): Promise<number> {
   const a = parseArgs(process.argv.slice(2));
   const body = provisionalBody(await readStdinAll(), a.parkClass);
-  refuse(a);
+  refuseClass(a);
   const pr = await resolvePr(a.pr);
   const state = await readState(pr);
   requireRuling(state, a.thread);
-  const outcome = qualifyingOutcome(body)?.outcome ?? "";
-  const url = (await existingReply(a.thread)) || (await post(a.thread, body));
+  const reply = await replied(a, body);
+  const url = reply.url;
+  await recordOnce(state, pr, a, reply);
   const resolved = await run(
     tsArgv(join(rrc, "resolve-thread.ts"), [a.thread]),
     {
@@ -222,27 +299,8 @@ async function main(): Promise<number> {
   if (resolved.code !== 0)
     fail(
       1,
-      `provisional-reply: replied (${url}) but resolving the thread failed; re-run to finish`,
+      `provisional-reply: replied (${url}) and recorded, but resolving the thread failed; re-run to finish`,
     );
-  if (!(state.decisions ?? []).some((d) => d.key === a.thread)) {
-    const record = await run(tsArgv(driveState, ["record-decision", pr]), {
-      timeoutSec: helperTimeoutSeconds(),
-      stdin: JSON.stringify({
-        class: "provisional-reply",
-        what: a.what,
-        record: url,
-        reverse: "comment on the thread as an owner, member or collaborator",
-        key: a.thread,
-        outcome,
-      }),
-      stderr: "inherit",
-    });
-    if (record.code !== 0)
-      fail(
-        1,
-        `provisional-reply: replied (${url}) and resolved, but recording the decision failed; re-run to finish`,
-      );
-  }
   console.log(url);
   return 0;
 }

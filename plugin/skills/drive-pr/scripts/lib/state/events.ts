@@ -13,8 +13,9 @@
  *     `provisional` (under `wide`, the unanswered parks handed on to be
  *     decided provisionally).
  *   - `stop`: the driver exited, its cause the exit code (`0` converged,
- *     `8` HITL-parked, …), so a report reads how the drive last ended from
- *     the state as well as from the ledger.
+ *     `8` HITL-parked, …) or `unknown` (a thrown refusal or a crash), so a
+ *     report reads how the drive last ended from the state as well as from
+ *     the ledger. A dry run records none.
  *
  * Takeovers have their own record (`takeover.ts`). Optional in a stored
  * state: a file written before the field existed reads as no events.
@@ -44,7 +45,8 @@ export interface DriveEvent {
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
 function isCause(kind: unknown, cause: unknown): boolean {
-  if (kind === "stop") return typeof cause === "string" && /^\d+$/.test(cause);
+  if (kind === "stop")
+    return typeof cause === "string" && /^(\d+|unknown)$/.test(cause);
   if (kind !== "restart" && kind !== "rearm") return false;
   const causes: readonly unknown[] = EVENT_CAUSES[kind];
   return causes.includes(cause);
@@ -76,10 +78,16 @@ export function countByCause(
   return out;
 }
 
-/** The exit code the drive last stopped with, `null` when none is recorded. */
+/**
+ * The exit code the drive last stopped with; `null` when none is recorded,
+ * or when its last stop's exit is unknown (a thrown refusal or a crash), so
+ * an earlier run's exit never speaks for a later one.
+ */
 export function lastStop(events: readonly DriveEvent[]): number | null {
   const stop = events.findLast((e) => e.kind === "stop");
-  return stop === undefined ? null : Number(stop.cause);
+  return stop === undefined || stop.cause === "unknown"
+    ? null
+    : Number(stop.cause);
 }
 
 /** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`). */

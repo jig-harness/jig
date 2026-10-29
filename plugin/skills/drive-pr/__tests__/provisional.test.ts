@@ -10,11 +10,13 @@
  * against the fake forge in `provisional-fixtures.ts`.
  */
 import { describe, expect, it } from "bun:test";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { PROVISIONAL_MARKER } from "../scripts/lib/outcome.ts";
 import { listedThreadStandsOnProvisional } from "../scripts/lib/provisional.ts";
 import { provisionalBody } from "../scripts/provisional-reply.ts";
+import { reversalParkedKeys } from "../scripts/lib/state/decisions.ts";
 import {
   type Comment,
   commentNodes,
@@ -177,6 +179,44 @@ describe("provisional-reply.ts", () => {
     expectSpawnExit(await provisionalReply(forge), 0);
     expect(forge.replies()).toHaveLength(1);
     expect((await decisions(forge)).decisions).toHaveLength(1);
+  });
+
+  it("a retry completes a posted reply after the level changed, with the outcome it posted", async () => {
+    const forge = fakeForge(UNATTENDED);
+    await rule(forge, { verdict: "escalate", class: "escalated" });
+    forge.thread("PRRT_p", [FINDING, PROVISIONAL]);
+    const r = await runIn(
+      forge,
+      join(SCRIPTS, "provisional-reply.ts"),
+      ["PRRT_p", "12", "--class", "escalated", "--what", "kept the budget"],
+      { stdin: "**rejected** — the budget is right.", env: DRIVER },
+    );
+    expectSpawnExit(r, 0);
+    expect(forge.replies()).toEqual([]);
+    expect(forge.resolved()).toEqual(["PRRT_p"]);
+    const { decisions: d } = await decisions(forge);
+    expect(d).toHaveLength(1);
+    expect(d[0]).toMatchObject({ level: "wide", outcome: "wont-fix" });
+  });
+
+  it("a retry never completes a reply a person commented after", async () => {
+    const forge = fakeForge(WIDE);
+    await rule(forge, { verdict: "escalate", class: "escalated" });
+    forge.thread("PRRT_p", [
+      FINDING,
+      PROVISIONAL,
+      { author: "lead", association: "OWNER", body: "Raise it." },
+    ]);
+    const r = await runIn(
+      forge,
+      join(SCRIPTS, "provisional-reply.ts"),
+      ["PRRT_p", "12", "--class", "escalated", "--what", "kept the budget"],
+      { stdin: REPLY, env: DRIVER },
+    );
+    expectSpawnExit(r, 3);
+    expect(r.stderr).toContain("no longer stands");
+    expect(forge.resolved()).toEqual([]);
+    expect((await decisions(forge)).decisions).toEqual([]);
   });
 });
 
@@ -356,6 +396,39 @@ describe("a person reverses a provisional decision by commenting, never by an un
       class: "human-thread",
     });
     expect(parked[0].record).toContain("## Question");
+    const keys = await runIn(forge, join(SCRIPTS, "drive-state.ts"), [
+      "reversal-parked-keys",
+      "12",
+    ]);
+    expectSpawnExit(keys, 0);
+    expect(keys.stdout).toBe("PRRT_p\n");
+  });
+
+  it("the gate counts a reversed decision's park whatever its key, and nothing else", () => {
+    const at = "2026-01-01T00:00:00Z";
+    const decided = {
+      what: "kept the budget",
+      reverse: "answer on the pull request",
+      record: "https://example.invalid/c/1",
+      level: "wide",
+      at,
+    };
+    const reversed = { by: "lead", url: "https://example.invalid/c/2", at };
+    expect(
+      reversalParkedKeys(
+        [{ key: "budget" }, { key: "PRRT_other" }, { key: "standing" }],
+        [
+          { ...decided, class: "decide-provisional", key: "budget", reversed },
+          { ...decided, class: "decide-provisional", key: "standing" },
+          {
+            ...decided,
+            class: "decide-reversible",
+            key: "PRRT_other",
+            reversed,
+          },
+        ] as never,
+      ),
+    ).toEqual(["budget"]);
   });
 
   it("an unresolve alone, or a bot's comment, changes nothing", async () => {
@@ -380,6 +453,16 @@ describe("a person reverses a provisional decision by commenting, never by an un
   it("a thread that cannot be read ends the round as INDETERMINATE", async () => {
     const forge = fakeForge(WIDE);
     await recordProvisional(forge);
+    const r = await sweep(forge);
+    expectSpawnExit(r, 0);
+    expect(r.stdout.trim()).toBe("1");
+  });
+
+  it("a thread with more comments than one page reads as unreadable, never as no reversal", async () => {
+    const forge = fakeForge(WIDE);
+    await recordProvisional(forge);
+    forge.thread("PRRT_p", [FINDING, PROVISIONAL]);
+    forge.write("more-PRRT_p", "");
     const r = await sweep(forge);
     expectSpawnExit(r, 0);
     expect(r.stdout.trim()).toBe("1");
@@ -466,6 +549,18 @@ describe("re-arming a HITL-parked drive with items unanswered", () => {
     expect(JSON.parse(r.stdout.trim())).toBe("");
     expect(r.stderr).toContain("class merge, which only a person decides");
     expect((await decisions(forge)).parked).toHaveLength(2);
+  });
+
+  it("at wide, decides nothing provisionally when an item's thread could not be read", async () => {
+    const forge = fakeForge(WIDE);
+    forge.write("comments-12.json", []);
+    await park(forge, "PRRT_e1", "escalated");
+    rmSync(join(forge.dir, "thread-PRRT_e1.json"));
+    const r = await rearm(forge);
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout.trim())).toBe("");
+    expect(r.stderr).toContain("nothing is decided provisionally");
+    expect((await decisions(forge)).parked).toHaveLength(1);
   });
 
   it("below wide, unparks nothing while an item is unanswered", async () => {

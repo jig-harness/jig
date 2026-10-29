@@ -24,6 +24,7 @@ import {
 } from "./driver/rearm.ts";
 import { fail } from "./cli.ts";
 import { isProvisionalReply, qualifyingOutcome } from "./outcome.ts";
+import { run, tsArgv } from "./proc.ts";
 import type { UnattendedDecision } from "./state/decisions.ts";
 
 /** A comment as `list-unresolved-threads.ts` emits it, as far as this reads it. */
@@ -136,6 +137,49 @@ export function standingProvisionalKeys(
       .filter(listedThreadStandsOnProvisional)
       .map((t) => String(t.threadId)),
   );
+}
+
+const lines = (text: string): string[] =>
+  text.split("\n").filter((k) => k !== "");
+
+/**
+ * The round gate's parked keys, and those of them that hold a reversed
+ * provisional decision; `null` when either could not be read, which the
+ * gate takes as INDETERMINATE: an unreadable parked set would re-arm work a
+ * person parked. drive-state's stderr is passed through.
+ */
+export async function readParkedSets(ctx: {
+  driveStateScript: string;
+  pr: string;
+}): Promise<{ keys: Set<string>; reversals: string[] } | null> {
+  const read = (cmd: string) =>
+    run(tsArgv(ctx.driveStateScript, [cmd, ctx.pr]), { stderr: "inherit" });
+  const all = await read("parked-keys");
+  if (all.code !== 0) return null;
+  const reversals = await read("reversal-parked-keys");
+  if (reversals.code !== 0) return null;
+  return {
+    keys: new Set(lines(all.stdout)),
+    reversals: lines(reversals.stdout),
+  };
+}
+
+/**
+ * How many reversed provisional decisions are parked on no live thread or
+ * summary finding: a `decide` ruling's key is neither, and a reopened thread
+ * may be resolved again, yet each awaits a person and keeps the drive from
+ * converging.
+ */
+export function unlistedReversals(
+  reversals: readonly string[],
+  threads: ReadonlyArray<{ threadId?: unknown }>,
+  summary: { unaddressed: ReadonlyArray<{ fingerprint: string }> },
+): number {
+  const counted = new Set([
+    ...threads.map((t) => String(t.threadId)),
+    ...summary.unaddressed.map((f) => f.fingerprint),
+  ]);
+  return reversals.filter((k) => !counted.has(k)).length;
 }
 
 /** The first comment a person wrote after a thread's last provisional reply. */

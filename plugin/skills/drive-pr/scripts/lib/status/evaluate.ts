@@ -56,7 +56,11 @@ import {
   qualifyingOutcome,
 } from "../outcome.ts";
 import { readPrState } from "../pr-state.ts";
-import { standingProvisionalKeys } from "../provisional.ts";
+import {
+  readParkedSets,
+  standingProvisionalKeys,
+  unlistedReversals,
+} from "../provisional.ts";
 import { reviewerExpected, reviewerLabel, reviewsDrafts } from "../overlay.ts";
 import { ghCall, git, run, tsArgv } from "../proc.ts";
 import {
@@ -1434,49 +1438,35 @@ async function evaluateFresh(
   // re-arms exactly what a human parked. The empty set is a real answer only
   // when the state says so.
   //
-  // drive-state's stderr is PASSED THROUGH, not discarded. It writes there
-  // only to say something a human has to act on — a malformed state file, or
-  // a worktree-private state file orphaned by the git-dir migration — and
-  // that second one is a ONE-TIME warning guarded by a durable marker.
-  // Swallowing it here consumed the single showing invisibly and left the
-  // marker claimed, so every later human-visible `rounds`/`get` stayed silent
-  // about state holding parked human decisions. This is the FIRST
-  // drive-state call of an evaluation, so it is the one that reliably ate it.
-  const parkedRes = await run(
-    tsArgv(ctx.driveStateScript, ["parked-keys", ctx.pr]),
-    {
-      stderr: "inherit",
-    },
-  );
-  if (parkedRes.code !== 0) {
+  // drive-state's stderr is PASSED THROUGH: it writes there only what a human
+  // must act on (a malformed state file, or the ONE-TIME warning about a
+  // worktree-private state file the git-dir migration orphaned, guarded by a
+  // durable marker). This first drive-state call of an evaluation would
+  // otherwise consume that single showing invisibly.
+  const parked = await readParkedSets(ctx);
+  if (parked === null) {
     return terminal(
       report,
       "INDETERMINATE",
       `cannot read the parked set for #${ctx.pr} — an unreadable parked set would re-arm work a human parked`,
     );
   }
-  const parkedKeys = new Set(
-    parkedRes.stdout.split("\n").filter((k) => k.length > 0),
-  );
+  const parkedKeys = parked.keys;
   report.parkedItemKeys = [...parkedKeys].sort();
   report.threadsParked = threads.filter((t) =>
     parkedKeys.has(String(t.threadId)),
   ).length;
   const provisionalKeys = standingProvisionalKeys(threads, parkedKeys);
-  // Computed here, AFTER parkedKeys is known, and not alongside the other
-  // thread-derived fields above: a parked thread is a human decision, not a
-  // recurring root cause the fix keeps missing, and structuralEscalationDue's
-  // whole premise is "a finding LANDED on this file again" — not "an item a
-  // human already triaged is still sitting on GitHub, un-resolved because
-  // resolving it is not this signal's job". Left
-  // out, a single old thread parked on `a.ts` would arm every consecutive
-  // round pair for as long as it stays parked, with nothing new for the pass
-  // to have caused or to fix.
+  // Computed AFTER parkedKeys: a parked thread is a human decision, not a
+  // finding that LANDED on its file again (structuralEscalationDue's premise),
+  // so one old parked thread on `a.ts` must not arm every consecutive round
+  // pair while it stays parked.
   const summaryLive = summary.unaddressed.filter(
     (f) => !parkedKeys.has(f.fingerprint),
   );
   const summaryParked = summary.unaddressed.length - summaryLive.length;
   report.summaryParked = summaryParked;
+  const reversalParked = unlistedReversals(parked.reversals, threads, summary);
 
   // A thread/finding held for `resolve-held-thread.ts` /
   // `answer-summary-finding.ts` to dispatch (an `accepted` or `moot`
@@ -1617,10 +1607,10 @@ async function evaluateFresh(
         `PR #${ctx.pr} conflicts with its base (mergeable=${report.mergeable}${report.mergeStateStatus !== "" ? `, mergeStateStatus=${report.mergeStateStatus}` : ""}) and has no workable findings on ${report.apiHead} (${report.threadsParked} parked thread(s), ${summaryParked} parked summary finding(s)). Merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} into this one, push, and re-run; nothing here becomes judgeable with time`,
       );
     }
-    if (report.threadsParked > 0 || summaryParked > 0) {
+    if (report.threadsParked + summaryParked + reversalParked > 0) {
       const rc = await stillOnHead();
       if (rc !== 0) return rc;
-      let hitlReason = `every remaining item awaits a human decision (${report.threadsParked} thread(s), ${summaryParked} summary finding(s)) — handing back rather than re-arming`;
+      let hitlReason = `every remaining item awaits a human decision (${report.threadsParked} thread(s), ${summaryParked} summary finding(s), ${reversalParked} other reversed provisional decision(s)) — handing back rather than re-arming`;
       if (stalledCheckRunNote !== "") hitlReason += ` — ${stalledCheckRunNote}`;
       return terminal(report, "HITL_PARKED", hitlReason);
     }

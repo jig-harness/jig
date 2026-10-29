@@ -402,7 +402,7 @@ export async function main(): Promise<number> {
   );
   // From here the ledger says this driver is running, so whatever ends the
   // drive (an exit, a thrown refusal, a stop) marks it stopped.
-  await using settlement = ledgerSettlement(pr, held);
+  await using settlement = ledgerSettlement(pr, held, dryRun);
   const firstPassNotice = await pickUpDrive(pr, plan, pickup, {
     agent,
     botsOnly,

@@ -342,20 +342,19 @@ export interface LedgerPullRequest {
   ledgerBy: string;
 }
 
-type SearchHit = Omit<LedgerPullRequest, "ledger" | "ledgerBy">;
+export type SearchHit = Omit<LedgerPullRequest, "ledger" | "ledgerBy">;
 
-/**
- * The open pull requests of the current repository that carry a drive
- * ledger: the forge's search (the ledger's visible summary names
- * `drive-pr-ledger`, which the search indexes) narrowed to the pull requests
- * whose comments hold a trusted ledger this version reads, since a comment
- * that merely mentions the marker matches the search too. `null` when the
- * search cannot be run. The population a morning report reads; narrowing it
- * to the pull requests this account drove is the report's own step.
- */
-export async function listLedgerPullRequests(): Promise<
-  LedgerPullRequest[] | null
-> {
+/** The ledger search's pull requests, and each hit whose comments could not be read. */
+export interface LedgerSearch {
+  found: LedgerPullRequest[];
+  /** One sentence per hit whose ledger could not be read. */
+  unread: string[];
+}
+
+/** The open pull requests of the current repository matching `qualifier`; `null` when the search cannot be run. */
+async function searchOpenPullRequests(
+  qualifier: string,
+): Promise<SearchHit[] | null> {
   const repo = await forge([
     "repo",
     "view",
@@ -366,7 +365,6 @@ export async function listLedgerPullRequests(): Promise<
   ]);
   const name = repo.ok ? repo.stdout.trim() : "";
   if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(name)) return null;
-  const marker = LEDGER_MARKER.replace(/^<!-- | -->$/g, "");
   const r = await forge([
     "api",
     "-X",
@@ -375,27 +373,57 @@ export async function listLedgerPullRequests(): Promise<
     "--slurp",
     "search/issues",
     "-f",
-    `q=repo:${name} is:pr is:open in:comments "${marker}"`,
+    `q=repo:${name} is:pr is:open ${qualifier}`,
     "-f",
     "per_page=100",
   ]);
-  if (!r.ok) return null;
-  const login = await resolveLogin();
-  const found: LedgerPullRequest[] = [];
-  for (const hit of searchResults(json(r.stdout, "the search"))) {
-    const held = await ledgerOf(String(hit.number), login);
-    if (held !== null) found.push({ ...hit, ...held });
-  }
-  return found;
+  return r.ok ? searchResults(json(r.stdout, "the search")) : null;
 }
 
-/** The trusted ledger this version reads on the pull request, and its writer; `null` for none. */
+/**
+ * The open pull requests of the current repository that carry a drive
+ * ledger: the forge's search (the ledger's visible summary names
+ * `drive-pr-ledger`, which the search indexes) narrowed to the pull requests
+ * whose comments hold a trusted ledger this version reads, since a comment
+ * that merely mentions the marker matches the search too. A hit whose
+ * comments could not be read is named in `unread`, never dropped as one
+ * without a ledger. `null` when the search cannot be run. The population a
+ * morning report reads; narrowing it to the pull requests this account
+ * drove is the report's own step.
+ */
+export async function listLedgerPullRequests(): Promise<LedgerSearch | null> {
+  const marker = LEDGER_MARKER.replace(/^<!-- | -->$/g, "");
+  const hits = await searchOpenPullRequests(`in:comments "${marker}"`);
+  if (hits === null) return null;
+  const login = await resolveLogin();
+  const found: LedgerPullRequest[] = [];
+  const unread: string[] = [];
+  for (const hit of hits) {
+    const held = await ledgerOf(String(hit.number), login);
+    if (typeof held === "string")
+      unread.push(`#${hit.number}'s drive ledger could not be read: ${held}`);
+    else if (held !== null) found.push({ ...hit, ...held });
+  }
+  return { found, unread };
+}
+
+/** The open pull requests of the current repository `login` authored; `null` when the search cannot be run. */
+export function listAuthoredPullRequests(
+  login: string,
+): Promise<SearchHit[] | null> {
+  return searchOpenPullRequests(`author:${login}`);
+}
+
+/**
+ * The trusted ledger this version reads on the pull request, and its
+ * writer; `null` for none, and why when its comments could not be read.
+ */
 async function ledgerOf(
   pr: string,
   login: string | null,
-): Promise<{ ledger: Ledger; ledgerBy: string } | null> {
+): Promise<{ ledger: Ledger; ledgerBy: string } | null | string> {
   const snapshot = await readLedgerSnapshot(pr, login);
-  if (typeof snapshot === "string") return null;
+  if (typeof snapshot === "string") return snapshot;
   const canonical = snapshot.canonical;
   return canonical?.parsed.kind === "ledger"
     ? { ledger: canonical.parsed.ledger, ledgerBy: canonical.comment.login }

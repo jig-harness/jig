@@ -470,6 +470,7 @@ export async function mirrorNow(pr: string): Promise<void> {
 export function ledgerSettlement(
   pr: string,
   held: readonly DriveLock[],
+  dryRun = false,
 ): AsyncDisposable & {
   done(code: number): Promise<number>;
 } {
@@ -489,9 +490,12 @@ export function ledgerSettlement(
       return;
     }
     // The exit goes into the state for a report this clone reads, after the
-    // ledger's last write, which names it in its driver record already.
+    // ledger's last write, which names it in its driver record already. An
+    // unknown exit is recorded too, so the previous run's stop does not speak
+    // for this one; a dry run (no ledger driver either) records nothing.
     const recordStop = async () => {
-      if (code !== null) await recordDriveEvent(pr, "stop", String(code));
+      if (!dryRun)
+        await recordDriveEvent(pr, "stop", String(code ?? "unknown"));
     };
     if (driver === null) return recordStop();
     settled = true;

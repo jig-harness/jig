@@ -11,9 +11,11 @@
  * account. For each it says the terminal state and what it means for the
  * person; the provisional decisions, first; the takeovers and re-arms; the
  * parked decisions in their framed form; the issues filed and the deferred
- * entries not yet filed. A clone's own state wins over the ledger for a pull
- * request both describe: it is written every round, and the ledger at round
- * boundaries.
+ * entries not yet filed. Every other open pull request the account authored
+ * is listed too, for its deferred entries. Of a clone's own state and the
+ * ledger, the newer speaks for a pull request both describe: the ledger
+ * when another clone wrote a later generation of it, else the state, which
+ * is written every round and after the ledger's last write.
  *
  * The time defaults to the last report's, remembered in the state directory
  * (`drives-report.json`); with no report remembered, the last day
@@ -38,7 +40,11 @@ import {
 } from "./state/decisions.ts";
 import { type DriveEvent, lastStop } from "./state/events.ts";
 import type { Ledger } from "./state/ledger.ts";
-import { listLedgerPullRequests, resolveLogin } from "./state/ledger-forge.ts";
+import {
+  listAuthoredPullRequests,
+  listLedgerPullRequests,
+  resolveLogin,
+} from "./state/ledger-forge.ts";
 import {
   type DriveState,
   isUsableState,
@@ -216,13 +222,15 @@ function provisionalEntries(
   since: number,
   reversals: Map<UnattendedDecision, ReversalRead>,
 ): ReportProvisional[] {
+  // A decision still standing is listed whatever its age: it awaits the
+  // person's review until they reverse it or merge.
   return rec.decisions
     .filter(isProvisional)
     .filter(
       (d) =>
+        d.reversed === undefined ||
         after(d.at, since) ||
-        (d.reversed !== undefined && after(d.reversed.at, since)) ||
-        Boolean(reversals.get(d)),
+        after(d.reversed.at, since),
     )
     .map((d) => {
       const read = reversals.get(d);
@@ -349,32 +357,59 @@ export function rememberReport(stateDir: string, at: string): void {
   );
 }
 
+/** A pull request the forge names for the report, with its ledger; `null` for an authored one without one. */
+interface ForgeEntry {
+  url: string;
+  title: string;
+  ledger: Ledger | null;
+}
+
 async function forgePopulation(
   unread: string[],
-): Promise<Map<string, { url: string; title: string; ledger: Ledger }>> {
-  const out = new Map<string, { url: string; title: string; ledger: Ledger }>();
+): Promise<Map<string, ForgeEntry>> {
+  const out = new Map<string, ForgeEntry>();
   const login = await resolveLogin();
-  const found = await listLedgerPullRequests();
-  if (found === null) {
+  const search = await listLedgerPullRequests();
+  if (search === null)
     unread.push(
       "the forge's search for drive ledgers could not be run, so open pull requests driven from other clones are missing",
     );
-    return out;
-  }
+  else unread.push(...search.unread);
   if (login === null) {
     unread.push(
       "the signed-in account could not be read, so no open pull request was matched to it",
     );
     return out;
   }
-  for (const p of found)
+  for (const p of search?.found ?? [])
     if (p.author === login || p.ledgerBy === login)
       out.set(String(p.number), {
         url: p.url,
         title: p.title,
         ledger: p.ledger,
       });
+  await addAuthored(out, login, unread);
   return out;
+}
+
+/**
+ * Add the account's other open pull requests, with no ledger: an authored
+ * pull request no drive wrote of still belongs to the report, since its
+ * deferred entries may wait for filing.
+ */
+async function addAuthored(
+  out: Map<string, ForgeEntry>,
+  login: string,
+  unread: string[],
+): Promise<void> {
+  const authored = await listAuthoredPullRequests(login);
+  if (authored === null)
+    unread.push(
+      "the forge's search for this account's open pull requests could not be run, so those without a drive ledger are missing",
+    );
+  for (const p of authored ?? [])
+    if (!out.has(String(p.number)))
+      out.set(String(p.number), { url: p.url, title: p.title, ledger: null });
 }
 
 /** The deferred entries a body holds that are not filed yet; a body it cannot read is said. */
@@ -425,6 +460,11 @@ async function reportOne(
     standing.length === 0
       ? new Map<UnattendedDecision, ReversalRead>()
       : await readReversals(pr, standing);
+  for (const [d, read] of reversals)
+    if (read === undefined)
+      unread.push(
+        `#${pr}: whether a person reversed the provisional decision on ${d.key ?? "(no key)"} could not be read`,
+      );
   return {
     number: Number(pr),
     url: view.url,
@@ -447,23 +487,38 @@ async function reportOne(
   };
 }
 
-/** The drive's record for a pull request: this clone's state, else its ledger. */
+/** No drive record at all: an authored pull request no drive has written of. */
+const NO_RECORD: DriveRecord = {
+  source: "ledger",
+  decisions: [],
+  events: [],
+  takeovers: [],
+  parked: [],
+  quotaParked: false,
+  exit: null,
+  runningElsewhere: false,
+};
+
+/**
+ * The drive's record for a pull request: whichever of this clone's state and
+ * the ledger is newer, by the ledger generation the state last wrote or
+ * seeded. A ledger of a later generation was written by another clone since
+ * (a takeover), so it speaks whole; otherwise this clone's state, written
+ * every round and after the ledger's last write, does, and the ledger adds
+ * only that another clone runs the drive now.
+ */
 function recordOf(
   own: { state: DriveState } | undefined,
-  remote: { ledger: Ledger } | undefined,
+  remote: { ledger: Ledger | null } | undefined,
 ): DriveRecord {
+  const ledger = remote?.ledger ?? null;
   if (own === undefined)
-    return fromLedger((remote as { ledger: Ledger }).ledger);
+    return ledger === null ? NO_RECORD : fromLedger(ledger);
   const local = fromState(own.state);
-  if (remote === undefined) return local;
-  // How the drive ended is the ledger's when it has a newer word: another
-  // clone may have driven it since this clone's state was written.
-  const ledger = fromLedger(remote.ledger);
-  return {
-    ...local,
-    exit: ledger.exit ?? local.exit,
-    runningElsewhere: ledger.runningElsewhere,
-  };
+  if (ledger === null) return local;
+  if (ledger.generation > (own.state.ledgerGeneration ?? 0))
+    return fromLedger(ledger);
+  return { ...local, runningElsewhere: fromLedger(ledger).runningElsewhere };
 }
 
 /** Gather the report. `live` holds the pull requests a live driver holds in this clone. */
@@ -550,13 +605,14 @@ export async function reportMain(
  */
 export function parseSince(text: string, now: Date): string | null {
   const span = /^(\d+)([hd])$/.exec(text.trim());
-  if (span !== null)
-    return new Date(
-      now.getTime() -
-        Number(span[1]) * (span[2] === "d" ? 24 : 1) * 60 * 60 * 1000,
-    ).toISOString();
-  const at = Date.parse(text);
-  return Number.isFinite(at) ? new Date(at).toISOString() : null;
+  const at =
+    span === null
+      ? Date.parse(text)
+      : now.getTime() -
+        Number(span[1]) * (span[2] === "d" ? 24 : 1) * 60 * 60 * 1000;
+  // A span too long for a date, like an unparsable time, is no instant.
+  const instant = new Date(at);
+  return Number.isFinite(instant.getTime()) ? instant.toISOString() : null;
 }
 
 /**

@@ -5,10 +5,12 @@
  *
  * - `threads.json`: the pull request's unresolved threads, as
  *   `list-unresolved-threads.ts` reads them (`threadsPayload`).
- * - `thread-<id>.json`: one thread's comments, for the single-thread reads.
+ * - `thread-<id>.json`: one thread's comments, for the single-thread reads
+ *   (`more-<id>` says the thread holds a further page of them).
  * - `comments-<N>.json`: pull request N's conversation comments.
  * - `pr-<N>.json`: `gh pr view N` (title, url, state, body, author).
- * - `search.json`: the ledger search's one page (`fail-search` fails it);
+ * - `search.json`: the search's one page, narrowed to a query's `author:`
+ *   (`fail-search` fails every search);
  *   `login`: the signed-in login.
  * - Writes `replies.jsonl` (each posted reply), `resolved.txt` (each resolved
  *   thread) and `calls.log`.
@@ -90,12 +92,17 @@ if (joined.includes("node(id:$id)") || joined.includes("node(id:")) {
   const id = value("id=");
   if (!has("thread-" + id + ".json")) { process.stderr.write("no thread " + id + "\\n"); process.exit(1); }
   const comments = JSON.parse(read("thread-" + id + ".json"));
-  out(JSON.stringify({ data: { node: { isResolved: has("resolved.txt") && read("resolved.txt").split("\\n").includes(id), comments: { pageInfo: { hasNextPage: false }, nodes: comments } } } }));
+  out(JSON.stringify({ data: { node: { isResolved: has("resolved.txt") && read("resolved.txt").split("\\n").includes(id), comments: { pageInfo: { hasNextPage: has("more-" + id) }, nodes: comments } } } }));
 }
 const issue = joined.match(/issues\\/(\\d+)\\/comments/);
 if (issue) out(JSON.stringify([has("comments-" + issue[1] + ".json") ? JSON.parse(read("comments-" + issue[1] + ".json")) : []]));
 if (joined.includes("search/issues") && has("fail-search")) { process.stderr.write("search failed\\n"); process.exit(1); }
-if (joined.includes("search/issues")) out(JSON.stringify([has("search.json") ? JSON.parse(read("search.json")) : { items: [] }]));
+if (joined.includes("search/issues")) {
+  const page = has("search.json") ? JSON.parse(read("search.json")) : { items: [] };
+  const author = (value("q=").match(/author:(\\S+)/) ?? [])[1];
+  if (author !== undefined) page.items = page.items.filter((it) => it.user && it.user.login === author);
+  out(JSON.stringify([page]));
+}
 process.stderr.write("fake gh: unhandled " + joined + "\\n");
 process.exit(1);
 `;

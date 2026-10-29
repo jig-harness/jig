@@ -270,4 +270,70 @@ describe("the durable record loop-metrics.ts reads", () => {
       takeovers: 0,
     });
   });
+
+  it("reads a provisional ruling's reversal from the conversation, after the drive stopped", async () => {
+    const forge = fakeForge("");
+    forge.write("login", "drive-bot");
+    const ledger = renderLedger(
+      ledgerFromState(
+        {
+          ...freshState(12),
+          rounds: 3,
+          decisions: [
+            {
+              at: at(1),
+              round: 2,
+              level: "wide",
+              class: "decide-provisional",
+              what: "kept the retry budget",
+              record: "https://example.invalid/comment-110",
+              reverse: "answer budget: on the pull request",
+              key: "budget",
+            },
+          ],
+        },
+        {
+          generation: 2,
+          driver: {
+            actor: "wt-cccccccccccccccc",
+            clone: "clone-b",
+            heartbeat: at(2),
+            state: "stopped",
+            exit: 0,
+          },
+          narrative: [],
+          claims: [],
+        },
+      ),
+    );
+    if ("error" in ledger) throw new Error(ledger.error);
+    forge.write("comments-12.json", [
+      {
+        id: 120,
+        body: ledger.body,
+        user: { login: "drive-bot" },
+        author_association: "NONE",
+        updated_at: at(2),
+        created_at: at(2),
+        html_url: "https://example.invalid/comment-120",
+      },
+      {
+        id: 130,
+        body: "answer budget: raise it after all",
+        user: { login: "lead" },
+        author_association: "OWNER",
+        updated_at: at(3),
+        created_at: at(3),
+        html_url: "https://example.invalid/comment-130",
+      },
+    ]);
+    const r = await runIn(forge, "-e", [
+      `import(${JSON.stringify(join(import.meta.dir, "..", "scripts", "loop-metrics.ts"))}).then(async (m) => console.log(JSON.stringify(await m.durableAutonomy("12"))))`,
+    ]);
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).decisions[0].reversed).toMatchObject({
+      by: "lead",
+      url: "https://example.invalid/comment-130",
+    });
+  });
 });

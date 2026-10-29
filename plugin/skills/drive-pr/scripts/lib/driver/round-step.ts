@@ -155,8 +155,9 @@ async function waitForRoundBoundary(
   const takenOver = await standDownOnNewerClaim(context.pr);
   if (takenOver !== null) return takenOver;
   // A person's comment on a provisional decision is parked for them before
-  // the gate counts the round's work (`provisional-sweep.ts`).
-  const reversed = await sweepProvisional(context.pr);
+  // the gate counts the round's work (`provisional-sweep.ts`). A dry run
+  // previews and never sweeps: the sweep unresolves threads and parks.
+  const reversed = context.dryRun ? null : await sweepProvisional(context.pr);
   if (reversed !== null) return reversed;
   const mailboxAtRoundStart = await context.mailboxCheckpoint();
   if (typeof mailboxAtRoundStart === "number") return mailboxAtRoundStart;
