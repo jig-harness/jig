@@ -76,11 +76,47 @@ export function setDrivenRemoteRef(remote: string, branch: string): void {
 }
 
 /**
- * The command that counts commits a stopped pass left unpushed: against the
- * driven branch's remote ref once the attach has named it, since a detached
- * tree has no `@{u}`. The range is shell-quoted: a branch name may carry `;`,
- * `$` or backticks, and the operator pastes this line into a shell.
+ * The range a stopped pass's unpushed commits are counted over, or `null` when
+ * none can be named. The driven branch's remote ref once the attach has named
+ * it. Without that (`DRIVE_PR_ATTACH=off` runs no attach), the sources the
+ * leftovers probe reads (`drives.ts`): the upstream when it exists, else the
+ * attach record's remote ref when the tree is detached with one.
  */
-export function unpushedCountCommand(): string {
-  return `git rev-list --count ${shellQuote(`${drivenRemoteRef ?? "@{u}"}..HEAD`)}`;
+async function unpushedRange(
+  git: Git,
+  root: string,
+  opts: Opts,
+): Promise<string | null> {
+  if (drivenRemoteRef !== null) return `${drivenRemoteRef}..HEAD`;
+  const upstream = await git(
+    ["-C", root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+    {
+      ...definedFields({ timeoutSec: opts.timeoutSec }),
+      env: opts.env ?? gitIdentityEnv(),
+    },
+  );
+  if (upstream.code === 0) return "@{u}..HEAD";
+  const record = await attachedTree(git, root, opts);
+  return record === null
+    ? null
+    : `refs/remotes/${record.remote}/${record.branch}..HEAD`;
+}
+
+/**
+ * The advice for counting commits a stopped pass left unpushed, as the phrase
+ * the report puts in its sentence: the count command over the range
+ * `unpushedRange` names (a detached tree has no `@{u}`), else the check to
+ * make by hand, since a range that does not exist fails or counts nothing.
+ * That check names `HEAD` as well as `--branches`: a detached head's commits
+ * are on no branch. The range is shell-quoted: a branch name may carry `;`, `$` or backticks,
+ * and the operator pastes this line into a shell.
+ */
+export async function unpushedCountAdvice(
+  git: Git,
+  root: string,
+  opts: Opts = {},
+): Promise<string> {
+  const range = await unpushedRange(git, root, opts);
+  if (range !== null) return `\`git rev-list --count ${shellQuote(range)}\``;
+  return "`git log HEAD --branches --not --remotes` (no range can be named here: the tree has no upstream and no attach record)";
 }
