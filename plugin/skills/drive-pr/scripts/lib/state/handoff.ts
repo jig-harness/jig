@@ -84,12 +84,11 @@ export async function handoffPath(pr: string): Promise<string> {
 }
 
 /**
- * The agent-authored narrative of the handoff file, without the resume
- * line: what the drive ledger carries the tail of. Empty when the file or
- * its marker is missing.
+ * The agent-authored narrative of the handoff file at `file`, without the
+ * resume line: what the drive ledger carries the tail of. Empty when the
+ * file or its marker is missing.
  */
-export async function handoffNarrative(pr: string): Promise<string[]> {
-  const file = await handoffPath(pr);
+export function narrativeOf(file: string): string[] {
   if (!existsSync(file)) return [];
   const lines = readFileSync(file, "utf8").split("\n");
   const idx = lines.indexOf(NARRATIVE_MARKER);

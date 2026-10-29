@@ -13,14 +13,14 @@
  * the ledger alone.
  */
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { CLAIM_PREFIX, parseClaimText } from "../claim.ts";
 import { fail } from "../cli.ts";
-import { handoffNarrative, installNarrative } from "./handoff.ts";
+import { handoffPath, installNarrative, narrativeOf } from "./handoff.ts";
 import {
   type ClaimComment,
   type LedgerSnapshot,
@@ -202,13 +202,15 @@ export async function mirrorLedger(
     console.error(`ledger: not written — ${lost}.`);
     return "refused";
   }
-  const narrative = await handoffNarrative(pr);
+  const handoff = await handoffPath(pr);
   const result = await writeLedger(pr, driver.login, (snapshot) => {
     const refused = buildRefused(snapshot, driver, store.stateDir, pr);
     if (refused !== "") return refused;
-    // Read on every attempt: a write rebuilt after another writer moved the
-    // ledger carries the state that writer published, not an older read.
+    // Read on every attempt, the notes with the state: a write rebuilt after
+    // another writer moved the ledger carries what that writer published,
+    // not an older read.
     const { state } = store.read();
+    const narrative = narrativeOf(handoff);
     return ledgerFromState(state, {
       generation:
         Math.max(snapshot.maxGeneration, state.ledgerGeneration ?? 0) + 1,
@@ -276,27 +278,32 @@ export async function seedLedgerCommand(
       `seed-ledger: ledgerVersion ${String(parsed.version)} is not a version this drive reads`,
     );
   const ledger = parsed.ledger;
-  let outcome = "";
-  let invalid = "";
-  await store.update((s) => {
-    if ((s.ledgerGeneration ?? 0) >= ledger.generation) {
-      outcome = `current: this clone's state is at generation ${s.ledgerGeneration ?? 0}`;
-      return s;
-    }
+  // One hold of the state lock covers the generation check, the notes and
+  // the state, so concurrent seeds land in generation order. The last
+  // driver's notes travel with its state, or the next write here would
+  // replace them on the pull request with this clone's older ones; they are
+  // installed before the generation advances, so a seed that stops between
+  // the two is retried in full rather than read as current.
+  const result = await store.locked(async () => {
+    const { state: s } = store.read();
+    if ((s.ledgerGeneration ?? 0) >= ledger.generation)
+      return {
+        outcome: `current: this clone's state is at generation ${s.ledgerGeneration ?? 0}`,
+      };
     const seeded = seedFromLedger(s, ledger);
-    if ("error" in seeded) {
-      invalid = seeded.error;
-      return s;
-    }
-    outcome = `seeded from generation ${ledger.generation}: round ${ledger.round}, ${seeded.state.parked.length} parked, ${seeded.state.held.length} held${seeded.dropped.length > 0 ? `; held without an outcome, triaged afresh: ${seeded.dropped.join(", ")}` : ""}`;
-    return seeded.state;
-  });
-  if (invalid !== "") return fail(1, `seed-ledger: ${invalid}`);
-  // The last driver's notes travel with its state, or the next write here
-  // would replace them on the pull request with this clone's older ones.
-  if (outcome.startsWith("seeded"))
+    if ("error" in seeded) return { invalid: seeded.error };
+    // The notes go under the handoff file's marker, so the file exists first.
+    if (!existsSync(await handoffPath(String(ledger.pr))))
+      await store.renderHandoff(s);
     await installNarrative(String(ledger.pr), ledger.narrative);
-  process.stdout.write(`${outcome}\n`);
+    store.write(seeded.state);
+    await store.renderHandoff(seeded.state);
+    return {
+      outcome: `seeded from generation ${ledger.generation}: round ${ledger.round}, ${seeded.state.parked.length} parked, ${seeded.state.held.length} held${seeded.dropped.length > 0 ? `; held without an outcome, triaged afresh: ${seeded.dropped.join(", ")}` : ""}`,
+    };
+  });
+  if ("invalid" in result) return fail(1, `seed-ledger: ${result.invalid}`);
+  process.stdout.write(`${result.outcome}\n`);
   return 0;
 }
 

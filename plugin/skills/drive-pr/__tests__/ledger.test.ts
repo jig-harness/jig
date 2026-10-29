@@ -441,6 +441,49 @@ describe("seeding", () => {
     });
   });
 
+  it("clears this clone's round records when the ledger's round history is behind them", () => {
+    const local: DriveState = {
+      ...freshState(999),
+      rounds: 7,
+      lastReflectedRound: 6,
+      lastReflectedAttempts: 2,
+      lastEscalatedRound: 7,
+      lastEscalatedInvariant: "the parser reads once",
+      roundPaths: [
+        { round: 6, paths: ["src/parser.ts"] },
+        { round: 7, paths: ["src/parser.ts"] },
+      ],
+    };
+    const seeded = seedFromLedger(local, ledger());
+    if ("error" in seeded) throw new Error(seeded.error);
+    expect(seeded.state).toMatchObject({
+      rounds: 3,
+      lastReflectedRound: 0,
+      lastReflectedAttempts: 0,
+      lastEscalatedRound: 0,
+      lastEscalatedInvariant: "",
+      roundPaths: [],
+    });
+  });
+
+  it("keeps this clone's round records when the ledger's rounds are not behind them", () => {
+    const local: DriveState = {
+      ...freshState(999),
+      rounds: 2,
+      lastEscalatedRound: 2,
+      lastEscalatedInvariant: "the parser reads once",
+      roundPaths: [{ round: 2, paths: ["src/parser.ts"] }],
+    };
+    const seeded = seedFromLedger(local, ledger());
+    if ("error" in seeded) throw new Error(seeded.error);
+    expect(seeded.state).toMatchObject({
+      rounds: 3,
+      lastEscalatedRound: 2,
+      lastEscalatedInvariant: "the parser reads once",
+      roundPaths: [{ round: 2, paths: ["src/parser.ts"] }],
+    });
+  });
+
   it("refuses another pull request's ledger", () => {
     const seeded = seedFromLedger(freshState(998), ledger());
     expect("error" in seeded && seeded.error).toContain("PR #999");

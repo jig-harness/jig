@@ -18,6 +18,8 @@
  *   different content.
  * - `remove-on-list`: `{ "n": n, "path": p }` removes `p` on the n-th
  *   listing, as a driver releasing its lock during the reads would.
+ * - `write-on-list`: `{ "n": n, "path": p, "text": t }` writes `t` to `p` on
+ *   the n-th listing, as another writer updating a local file would.
  * - `fail-list-after`: every listing after that number fails.
  * - `fail-search`: the search fails.
  */
@@ -117,6 +119,10 @@ if (list) {
   if (has("remove-on-list")) {
     const rm = JSON.parse(text("remove-on-list"));
     if (rm.n === n) fs.rmSync(rm.path, { recursive: true, force: true });
+  }
+  if (has("write-on-list")) {
+    const w = JSON.parse(text("write-on-list"));
+    if (w.n === n) fs.writeFileSync(w.path, w.text);
   }
   if (has("twin-on-list") && Number(text("twin-on-list")) === n) {
     const all = read(pr);

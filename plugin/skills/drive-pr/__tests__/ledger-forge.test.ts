@@ -129,6 +129,41 @@ describe("the ledger written from the drive state", () => {
     expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(1);
   });
 
+  it("rebuilds with the notes as they stand when the ledger moved under the write", async () => {
+    const forge = fakeForge(
+      [forgeComment(40, ledgerBody(ledger(3)), "maintainer")],
+      { login: "drive-bot" },
+    );
+    expectSpawnExit(
+      await runScript(forge, "drive-state.ts", ["handoff", "999"]),
+      0,
+    );
+    const file = join(forge.env.DRIVE_PR_HANDOFF_DIR ?? "", "pr-drive-999.md");
+    const withNotes = (notes: string) =>
+      readFileSync(file, "utf8").replace(
+        /\*\*Resume:\*\*/,
+        `${notes}\n\n**Resume:**`,
+      );
+    writeFileSync(file, withNotes("Old notes."));
+    const newer = withNotes("New notes.").replace("Old notes.\n\n", "");
+    // Another writer updates the notes and the ledger between this write's
+    // build and its landing.
+    writeFileSync(join(forge.dir, "bump-on-list"), "2");
+    writeFileSync(
+      join(forge.dir, "bump-body.json"),
+      JSON.stringify({ id: 40, body: ledgerBody(ledger(9)) }),
+    );
+    writeFileSync(
+      join(forge.dir, "write-on-list"),
+      JSON.stringify({ n: 2, path: file, text: newer }),
+    );
+    const r = await handoff(forge);
+    expectSpawnExit(r, 0);
+    const written = ledgersOn(forge).get(40);
+    expect(written?.generation).toBe(10);
+    expect(written?.narrative).toEqual(["New notes."]);
+  });
+
   it("rebuilds when the ledger moved within the same second", async () => {
     const forge = fakeForge(
       [forgeComment(40, ledgerBody(ledger(3)), "maintainer")],
