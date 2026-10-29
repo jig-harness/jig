@@ -2,6 +2,6 @@
 release: patch
 ---
 
-### Fixed
+### Changed
 
-- The [`resolve-conflicts`](../plugin/skills/resolve-conflicts/SKILL.md) test that proves the history replay runs no configured filter now records its merge before it configures the filter, so it runs under git 2.53, which refuses to stage a file under a process filter that exits at once. The replay itself is unchanged.
+- The [`resolve-conflicts`](../plugin/skills/resolve-conflicts/SKILL.md) test that proves the history replay runs no configured filter no longer deletes its marker file before the replay, since no filter is configured until after the merge is recorded, and it says why the merge comes first. The skill itself is unchanged.
