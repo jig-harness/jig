@@ -375,6 +375,49 @@ console.log("RETURNED " + (await drive()));`,
     expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(0);
   });
 
+  it("writes no ledger when the stop cannot be recorded in the drive state", async () => {
+    const forge = fakeForge([], { login: "drive-bot" });
+    // Another live session's lease refuses `record-event`; `handoff` is not leased.
+    const other = Bun.spawn(["sleep", "60"]);
+    try {
+      const seeded = Bun.spawnSync(
+        [
+          process.execPath,
+          join(SCRIPTS, "drive-state.ts"),
+          "record-event",
+          "999",
+        ],
+        {
+          cwd: forge.repo,
+          env: { ...forge.env, DRIVE_PR_SESSION: String(other.pid) },
+          stdin: Buffer.from('{"kind":"stop","cause":"3"}'),
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      expectSpawnExit(seeded, 0);
+      // A ledger written now would mirror the earlier run's stop (3) as this one's.
+      const r = await probe(
+        forge,
+        `async function drive() {
+  await using settlement = d.ledgerSettlement("999", [{ dir: "held-lock" }]);
+  return settlement.done(8);
+}
+console.log("RETURNED " + (await drive()));`,
+        {
+          DRIVE_PR_SESSION: String(process.pid),
+          DRIVE_PR_LEDGER_DRIVER: driverEnv("clone-b"),
+        },
+      );
+      expectSpawnExit(r, 0);
+      expect(r.stdout).toContain("RETURNED 8");
+      expect(r.stderr).toContain("its stop is not in the drive state");
+      expect(forge.comments()).toHaveLength(0);
+    } finally {
+      other.kill();
+    }
+  });
+
   it("with the ledger off, records the returned stop once, never an unknown one after it", async () => {
     const forge = fakeForge([], { login: "drive-bot" });
     const r = await probe(

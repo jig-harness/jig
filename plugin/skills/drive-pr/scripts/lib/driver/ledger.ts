@@ -465,7 +465,8 @@ export async function mirrorNow(pr: string): Promise<void> {
  * ledger is written. Nor is it written while the drive retains its locks
  * (`held` emptied: a pass whose termination was not witnessed may still
  * act): the ledger keeps naming this driver running, its heartbeat ages
- * toward the lease window, and the record stays for that recovery.
+ * toward the lease window, and the record stays for that recovery. The
+ * same holds when the stop cannot be recorded in the drive state first.
  */
 export function ledgerSettlement(
   pr: string,
@@ -500,9 +501,18 @@ export function ledgerSettlement(
     // mirrors the state's events: an unknown exit names none in the driver
     // record, so a report reading the ledger falls back to those events, and
     // the previous run's stop must not be the last of them. A dry run (no
-    // ledger driver either) records nothing.
-    if (!dryRun) await recordDriveEvent(pr, "stop", String(code ?? "unknown"));
+    // ledger driver either) records nothing. An unrecorded stop writes no
+    // ledger and keeps the record: the recovery (`lib/ledger-stop.ts`)
+    // records the stop and then writes the ledger, in that order.
+    const recorded =
+      dryRun || (await recordDriveEvent(pr, "stop", String(code ?? "unknown")));
     if (driver === null) return;
+    if (!recorded) {
+      console.error(
+        `ledger: PR #${pr}'s ledger is left naming this driver running: its stop is not in the drive state, so the recovery writes both.`,
+      );
+      return;
+    }
     const res = await run(tsArgv(driveState, ["handoff", pr]), {
       stdout: "ignore",
       stderr: "inherit",

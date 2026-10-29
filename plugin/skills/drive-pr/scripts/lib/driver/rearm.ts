@@ -490,22 +490,24 @@ async function announceUnparked(
 
 /**
  * Record a self-restart or a re-arm in the drive state (`events.ts`), for
- * the morning report and `loop-metrics.ts`; best-effort, logged.
+ * the morning report and `loop-metrics.ts`; best-effort, logged. Returns
+ * whether the event was recorded, for a caller whose next write depends on it.
  */
 export async function recordDriveEvent(
   pr: string,
   kind: "restart" | "rearm" | "stop",
   cause: string,
-): Promise<void> {
+): Promise<boolean> {
   const res = await run(tsArgv(driveState, ["record-event", pr]), {
     stdin: JSON.stringify({ kind, cause }),
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
   });
-  if (res.code !== 0)
-    console.error(
-      `drive.ts: could not record the ${kind} (${cause}) in the drive state (exit ${res.code}); driving on.`,
-    );
+  if (res.code === 0) return true;
+  console.error(
+    `drive.ts: could not record the ${kind} (${cause}) in the drive state (exit ${res.code}); driving on.`,
+  );
+  return false;
 }
 
 /** The cause of a re-arm past a quota park (`events.ts`); `null` when there was none. */
