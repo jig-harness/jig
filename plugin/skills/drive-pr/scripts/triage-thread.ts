@@ -700,7 +700,7 @@ async function main(): Promise<number> {
     existingBody = c.body ?? "";
     break;
   }
-  refuseProvisional(threadId, existingBody, existingUrl);
+  refuseProvisional(threadId, thread.comments, existingUrl);
 
   // --cleanup-only: for the documented direct-post-supersession fallback ("stop
   // after reply-to-thread.ts and never invoke this script's resolve step" — the

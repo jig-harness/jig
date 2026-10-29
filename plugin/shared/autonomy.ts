@@ -79,8 +79,12 @@ export const DEFAULT_PARK_CLASSES: readonly string[] = [
   "human-decision",
 ];
 
-/** The classes the review arbiter emits, kept whatever a repository lists. */
-const ARBITER_CLASSES = ["escalated", "human-decision"] as const;
+/**
+ * The classes kept whatever a repository lists: the two the review arbiter
+ * emits, and `human-thread`, which a person's reversal of a provisional
+ * decision is parked under.
+ */
+const KEPT_CLASSES = ["escalated", "human-decision", "human-thread"] as const;
 
 /** A class name: lower-case words joined by hyphens. */
 const CLASS_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
@@ -390,7 +394,7 @@ export function parkClasses(config: LayeredConfig): string[] {
       "autonomy.park_classes must be a nonempty list of distinct class names (lower-case words joined by hyphens)",
     );
   const classes = raw as string[];
-  return [...classes, ...ARBITER_CLASSES.filter((c) => !classes.includes(c))];
+  return [...classes, ...KEPT_CLASSES.filter((c) => !classes.includes(c))];
 }
 
 /** The effective level for the repository the working directory is in. */

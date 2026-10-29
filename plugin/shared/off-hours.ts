@@ -16,18 +16,23 @@
  *     it on the next day, so `Mon-Fri 20:00-07:00` is each weekday evening to
  *     the next morning (Friday's runs into Saturday). The days name the day
  *     a window opens, which is how a night is usually spoken of: Monday from
- *     midnight to 07:00 belongs to Sunday's night, and the default schedule
- *     below leaves it out.
+ *     midnight to 07:00 belongs to Sunday's night, which the default
+ *     schedule below names on its own.
  *
  * Times are the machine's local time zone, read from the clock the process
  * runs under, so a window follows daylight-saving changes and a person's own
  * evening wherever the machine is.
  */
 
-/** The schedule in force once `autonomy.off_hours.level` is set and the schedule is not. */
+/**
+ * The schedule in force once `autonomy.off_hours.level` is set and the
+ * schedule is not: weekday nights, the weekend, and the end of Sunday's
+ * night, which `Sat-Sun` closes at midnight.
+ */
 export const DEFAULT_OFF_HOURS_SCHEDULE: readonly string[] = [
   "Mon-Fri 20:00-07:00",
   "Sat-Sun",
+  "Mon 00:00-07:00",
 ];
 
 const DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;

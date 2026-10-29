@@ -215,6 +215,44 @@ describe("off-hours", () => {
     );
   });
 
+  test("an off-hours level from the user layer is capped by the repository's ceiling", () => {
+    const a = at(
+      {
+        driver: true,
+        repository: "autonomy:\n  max_level: unattended\n",
+        user: "autonomy:\n  off_hours:\n    level: wide\n",
+      },
+      mondayNight,
+    );
+    expect(a.chosen).toBe("wide");
+    expect(a.level).toBe("unattended");
+    expect(a.capped).toBe(true);
+    expect(a.source).toContain("home");
+  });
+
+  test("an off-hours level from the environment applies up to the ceiling", () => {
+    const a = at(
+      {
+        driver: true,
+        repository: "autonomy:\n  level: attended\n  max_level: wide\n",
+        env: { JIG__AUTONOMY__OFF_HOURS__LEVEL: "wide" },
+      },
+      saturdayNoon,
+    );
+    expect(a.level).toBe("wide");
+    expect(a.source).toBe("$JIG__AUTONOMY__OFF_HOURS__LEVEL");
+    expect(
+      at(
+        {
+          driver: true,
+          repository: "autonomy:\n  level: attended\n  max_level: wide\n",
+          env: { JIG__AUTONOMY__OFF_HOURS__LEVEL: "wide" },
+        },
+        mondayNoon,
+      ).level,
+    ).toBe("attended");
+  });
+
   test("a person's session never runs at the off-hours level", () => {
     const a = at({ repository: offHours }, mondayNight);
     expect(a.level).toBe("attended");
@@ -330,7 +368,13 @@ describe("the park classes", () => {
       classes({
         repository: "autonomy:\n  park_classes: [merge, data-retention]\n",
       }),
-    ).toEqual(["merge", "data-retention", "escalated", "human-decision"]);
+    ).toEqual([
+      "merge",
+      "data-retention",
+      "escalated",
+      "human-decision",
+      "human-thread",
+    ]);
   });
 
   test("a malformed list is refused", () => {
@@ -378,6 +422,31 @@ describe("the command line", () => {
     const stdout = await new Response(proc.stdout).text();
     await expectSpawnExited(proc, 0);
     expect(stdout).toStartWith("autonomy: unattended (unattended from ");
+  });
+
+  test("a window keeps to the local clock across a daylight-saving change", async () => {
+    const level = async (schedule: string, instant: string) => {
+      const proc = await cli(
+        {
+          driver: true,
+          repository: `autonomy:\n  max_level: wide\n  off_hours:\n    level: wide\n    schedule: ["${schedule}"]\n`,
+          env: { TZ: "Europe/Berlin" },
+        },
+        ["--at", instant],
+      );
+      const stdout = await new Response(proc.stdout).text();
+      await expectSpawnExited(proc, 0);
+      return stdout.startsWith("autonomy: wide (off_hours)");
+    };
+    // 2026-10-25: 03:00 summer time becomes 02:00 winter time, so 02:30 comes twice.
+    expect(await level("Sun 02:00-03:00", "2026-10-25T00:30:00Z")).toBe(true);
+    expect(await level("Sun 02:00-03:00", "2026-10-25T01:30:00Z")).toBe(true);
+    expect(await level("Sun 02:00-03:00", "2026-10-25T02:30:00Z")).toBe(false);
+    // 2026-03-29: 02:00 winter time becomes 03:00 summer time.
+    expect(await level("Sun 01:00-04:00", "2026-03-29T00:30:00Z")).toBe(true);
+    expect(await level("Sun 01:00-04:00", "2026-03-29T01:30:00Z")).toBe(true);
+    expect(await level("Sun 01:00-04:00", "2026-03-29T02:30:00Z")).toBe(false);
+    expect(await level("Sun 01:00-04:00", "2026-03-28T23:30:00Z")).toBe(false);
   });
 
   test("--at reads the windows in the machine's local time zone", async () => {

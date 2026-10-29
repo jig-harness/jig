@@ -67,7 +67,8 @@ export function provisionalNotice(verdicts: readonly PendingVerdict[]): string {
   if (duties.length === 0) return "";
   return [
     "RE-ARMED TO DECIDE PROVISIONALLY: the autonomy level is wide, and these parked items had no answer and the class escalated, which a provisional decision may take. They are unparked.",
-    "Decide each one this round with a reply outcome only (rejected, wont-fix or deferred), never a fix: a thread with provisional-reply.ts --class escalated, a finding with decide's provisional ruling recorded as decide-provisional. Each stays reversible by a person's comment and is listed first in the morning report.",
+    "Before deciding each one, check again that it may be decided provisionally: read the level afresh (an off-hours window may have closed since the re-arm), and check decide's wide conditions on the item: no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence, and for a thread an arbiter ruling of escalate with the class escalated and no person's decision behind it. Where any check fails, park the item again under its class (drive-pr § 4), with its decision record.",
+    "Otherwise decide it this round with a reply outcome only (rejected, wont-fix or deferred), never a fix: a thread with provisional-reply.ts --class escalated, a finding with decide's provisional ruling recorded as decide-provisional. Each stays reversible by a person's comment and is listed first in the morning report.",
     ...duties.map((v) => `- [${v.kind}] ${v.key} — parked: ${v.reason}`),
   ].join("\n");
 }

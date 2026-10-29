@@ -78,7 +78,7 @@ describe("a window spanning the week boundary", () => {
 });
 
 describe("the default schedule", () => {
-  test("is weekday nights and the weekend", () => {
+  test("is weekday nights, the weekend and Sunday's night", () => {
     expect(inside(DEFAULT_OFF_HOURS_SCHEDULE, local("Wed", "21:00"))).toBe(
       "Mon-Fri 20:00-07:00",
     );
@@ -87,6 +87,13 @@ describe("the default schedule", () => {
     );
     expect(
       inside(DEFAULT_OFF_HOURS_SCHEDULE, local("Wed", "12:00")),
+    ).toBeNull();
+    // Sunday's night runs into Monday morning.
+    expect(inside(DEFAULT_OFF_HOURS_SCHEDULE, local("Mon", "03:00"))).toBe(
+      "Mon 00:00-07:00",
+    );
+    expect(
+      inside(DEFAULT_OFF_HOURS_SCHEDULE, local("Mon", "07:00")),
     ).toBeNull();
   });
 });

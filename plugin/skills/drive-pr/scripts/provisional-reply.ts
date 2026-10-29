@@ -101,6 +101,11 @@ export function provisionalBody(body: string, parkClass: string): string {
       2,
       "provisional-reply: the body must open with a reply outcome, **rejected**, **wont-fix** or **deferred**, and a reason: a provisional decision never makes a fix.",
     );
+  if (q.outcome === "deferred" && !/https?:\/\/\S+/.test(body))
+    fail(
+      2,
+      "provisional-reply: a **deferred** reply links where the finding is tracked, as any deferral does: the follow-up issue's url, or the pull request's `## Deferred` section (defer-in-pr.ts prints its link).",
+    );
   const [first = "", ...rest] = body.replace(/\s+$/, "").split("\n");
   const token = `**${q.outcome}**`;
   const opened = `${token} ${PROVISIONAL_TOKEN}${first.slice(token.length)}`;
@@ -173,7 +178,10 @@ interface StateView {
 }
 
 async function readState(pr: string): Promise<StateView> {
-  const r = await run(tsArgv(driveState, ["get", pr]), { stderr: "inherit" });
+  const r = await run(tsArgv(driveState, ["get", pr]), {
+    stderr: "inherit",
+    timeoutSec: helperTimeoutSeconds(),
+  });
   if (r.code !== 0) fail(1, "provisional-reply: cannot read the drive state");
   return JSON.parse(r.stdout) as StateView;
 }
@@ -218,6 +226,7 @@ async function main(): Promise<number> {
     );
   if (!(state.decisions ?? []).some((d) => d.key === a.thread)) {
     const record = await run(tsArgv(driveState, ["record-decision", pr]), {
+      timeoutSec: helperTimeoutSeconds(),
       stdin: JSON.stringify({
         class: "provisional-reply",
         what: a.what,

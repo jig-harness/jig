@@ -465,7 +465,7 @@ async function announceUnparked(
  */
 export async function recordDriveEvent(
   pr: string,
-  kind: "restart" | "rearm",
+  kind: "restart" | "rearm" | "stop",
   cause: string,
 ): Promise<void> {
   const res = await run(tsArgv(driveState, ["record-event", pr]), {

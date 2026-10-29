@@ -72,7 +72,14 @@ import {
   renderSeverityOutageWarnings,
 } from "./lib/metrics.ts";
 import type { DurableAutonomy } from "./lib/metrics-autonomy.ts";
-import { git, resolvePr, run, tsArgv } from "./lib/proc.ts";
+import {
+  git,
+  helperTimeoutSeconds,
+  resolvePr,
+  run,
+  tsArgv,
+} from "./lib/proc.ts";
+import { readLedgerSnapshot, resolveLogin } from "./lib/state/ledger-forge.ts";
 import { isUsableState } from "./lib/state/schema.ts";
 import { type PrSample, resolveRepo, samplePr } from "./lib/sample.ts";
 
@@ -190,26 +197,51 @@ async function durableRounds(pr: string): Promise<number | null> {
   return isDigits(raw) ? Number.parseInt(raw, 10) : null;
 }
 
-/**
- * What this clone's drive state records of the drive's autonomy: its
- * decisions, its self-restarts and re-arms, and how many takeovers. `null`
- * when it holds no state for the pull request, soft like `durableRounds`.
- */
-async function durableAutonomy(pr: string): Promise<DurableAutonomy | null> {
-  const r = await run(tsArgv(driveState, ["get", pr]), { stderr: "ignore" });
+/** What a drive state or a ledger records of the drive's autonomy. */
+function autonomyOf(s: {
+  decisions?: DurableAutonomy["decisions"];
+  events?: DurableAutonomy["events"];
+  takeovers?: readonly unknown[];
+}): DurableAutonomy {
+  return {
+    decisions: s.decisions ?? [],
+    events: s.events ?? [],
+    takeovers: (s.takeovers ?? []).length,
+  };
+}
+
+/** This clone's drive state, `null` when it holds none that ever drove. */
+async function localAutonomy(pr: string): Promise<DurableAutonomy | null> {
+  const r = await run(tsArgv(driveState, ["get", pr]), {
+    stderr: "ignore",
+    timeoutSec: helperTimeoutSeconds(),
+  });
   if (r.code !== 0) return null;
   try {
     const s: unknown = JSON.parse(r.stdout);
-    if (!isUsableState(s, Number.parseInt(pr, 10))) return null;
-    return {
-      decisions: s.decisions ?? [],
-      events: s.events ?? [],
-      takeovers: (s.takeovers ?? []).length,
-    };
+    return isUsableState(s, Number.parseInt(pr, 10)) && s.rounds > 0
+      ? autonomyOf(s)
+      : null;
   } catch (err) {
     swallow(err, "drive-state.ts get printed no JSON");
     return null;
   }
+}
+
+/**
+ * What the drive recorded of its autonomy: its decisions, its self-restarts
+ * and re-arms, and how many takeovers. From this clone's state, else from
+ * the pull request's drive ledger, so a drive run from another clone counts
+ * toward the validation measure too. `null` when neither holds one, soft
+ * like `durableRounds`.
+ */
+async function durableAutonomy(pr: string): Promise<DurableAutonomy | null> {
+  const local = await localAutonomy(pr);
+  if (local !== null) return local;
+  const snapshot = await readLedgerSnapshot(pr, await resolveLogin());
+  if (typeof snapshot === "string") return null;
+  const parsed = snapshot.canonical?.parsed;
+  return parsed?.kind === "ledger" ? autonomyOf(parsed.ledger) : null;
 }
 
 /**

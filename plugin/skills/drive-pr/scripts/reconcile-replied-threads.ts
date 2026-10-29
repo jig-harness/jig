@@ -559,12 +559,13 @@ async function main(): Promise<number> {
       // treated as `left-open` and its stale-hold cleanup could then DELETE the
       // accepted hold for an unverified fix, the exact false-convergence class
       // the `confirmedMeritSupersession` gate exists to prevent.
-      // A provisional reply (`provisional-reply.ts`) stands until a person
-      // comments, and the round, not this sweep, reads that comment: a thread
-      // a person unresolved without a word is left as they left it, so the
-      // sweep never undoes a reversal.
-      if (isProvisionalReply(qualifyingBody)) action = "provisional";
-      else if (markedLeftOpen(qualifyingBody, outcome)) {
+      if (isProvisionalReply(qualifyingBody)) {
+        // A provisional reply (`provisional-reply.ts`) stands until a person
+        // comments, and the round, not this sweep, reads that comment: a
+        // thread a person unresolved without a word is left as they left it,
+        // so the sweep never undoes a reversal.
+        action = "provisional";
+      } else if (markedLeftOpen(qualifyingBody, outcome)) {
         action = "left-open";
         leftOpen += 1;
         if (!dryRun) {

@@ -8,10 +8,11 @@
  * out. Then the time the report remembers for the next one.
  */
 import { describe, expect, it } from "bun:test";
-import { utimesSync, writeFileSync } from "node:fs";
+import { existsSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { withDeferredEntry } from "../../resolve-review-comments/scripts/lib/deferred-section.ts";
+import { REPORT_MEMORY } from "../scripts/lib/morning-report.ts";
 import { ledgerFromState, renderLedger } from "../scripts/lib/state/ledger.ts";
 import { type DriveState, freshState } from "../scripts/lib/state/schema.ts";
 import { provisionalBody } from "../scripts/provisional-reply.ts";
@@ -266,6 +267,61 @@ describe("drives.ts --report", () => {
     expect(twelve.takeovers).toEqual([]);
     expect(twelve.issuesFiled).toEqual([]);
     expect(twelve.parked).toHaveLength(1);
+  });
+
+  it("reads how a drive this clone ran ended from its state", async () => {
+    const forge = setUp();
+    writeState(forge, {
+      ...freshState(14),
+      rounds: 4,
+      events: [{ at: ago(2), round: 4, kind: "stop", cause: "0" }],
+    } as DriveState);
+    forge.write("pr-14.json", {
+      title: "Converged here",
+      url: "https://example.invalid/pull/14",
+      state: "OPEN",
+      author: { login: "drive-bot" },
+      body: "",
+    });
+    const r = await report(forge, ["--json"]);
+    expectSpawnExit(r, 0);
+    const fourteen = JSON.parse(r.stdout).pullRequests.find(
+      (p: { number: number }) => p.number === 14,
+    );
+    expect(fourteen).toMatchObject({
+      source: "state",
+      terminal: { name: "CONVERGED", exit: 0 },
+    });
+  });
+
+  it("says when the ledger search failed, and then does not move the next report's start", async () => {
+    const forge = setUp();
+    forge.write("fail-search", "");
+    const r = await report(forge, ["--json"]);
+    expectSpawnExit(r, 0);
+    const out = JSON.parse(r.stdout);
+    expect(out.unread.join("\n")).toContain(
+      "search for drive ledgers could not be run",
+    );
+    expect(out.pullRequests.map((p: { number: number }) => p.number)).toEqual([
+      12,
+    ]);
+    expect(existsSync(join(forge.stateDir, REPORT_MEMORY))).toBe(false);
+  });
+
+  it("a --since look does not move the next report's start", async () => {
+    const forge = setUp();
+    expectSpawnExit(await report(forge, ["--since", "2h", "--json"]), 0);
+    expect(existsSync(join(forge.stateDir, REPORT_MEMORY))).toBe(false);
+    expectSpawnExit(await report(forge, ["--json"]), 0);
+    expect(existsSync(join(forge.stateDir, REPORT_MEMORY))).toBe(true);
+  });
+
+  it("names the command that files the deferred entries", async () => {
+    const forge = setUp();
+    const r = await report(forge, []);
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toMatch(/file them: bun ".*file-deferred\.ts" 12/);
   });
 
   it("--since overrides the remembered time, and refuses a time it cannot read", async () => {

@@ -608,7 +608,8 @@ you look:
   is what a person reads after an unattended night: every pull request this
   clone's state has news of and every open one the signed-in account
   authored or drove (found through the drive ledger), since the last report
-  (remembered in the state directory; the last day for a first one) or
+  (remembered in the state directory only by a report with no `--since`
+  that read everything; the last day for a first one) or
   `--since` (a time such as `2026-10-29T06:00Z`, or a span such as `12h`). For each: its
   terminal state and what it means for the person, the provisional
   decisions first, the takeovers and re-arms, the parked decisions framed in
@@ -995,7 +996,7 @@ state directory holding all of it: read that file before acting.
 | `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14` | Act on the open work; if you decide not to, end the handoff narrative with one paragraph saying what you decided and why — the stop prints it |
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed: each thread re-held unconfirmed on its reply, each finding released, and apart those that could not be reopened; a failed reconciliation is said here | For a re-held thread, read the anchored code, make the promised fix if it is missing, then confirm it with the hold command shown; or supersede the reply with a fresh outcome. Triage a released finding afresh. Check each item that could not be reopened against the held batch first |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; every item has a `[kind] key — url` entry, answer bodies may be cut, and the file named on its third line holds every answer in full | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
-| `RE-ARMED TO DECIDE PROVISIONALLY` | At the `wide` level, parked items of the class `escalated` that nobody answered are unparked, one `[kind] key` line each | Decide each one this round, provisionally and with a reply outcome only: a thread with `provisional-reply.ts`, a finding with `decide`'s ruling recorded as `decide-provisional` (§ 8) |
+| `RE-ARMED TO DECIDE PROVISIONALLY` | At the `wide` level, parked items of the class `escalated` that nobody answered are unparked, one `[kind] key` line each | Check each again first: the level read afresh (an off-hours window may have closed), and `decide`'s `wide` conditions (no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence; for a thread, a recorded `escalate` ruling of the class `escalated`). Where one fails, park the item again under its class (§ 4). Otherwise decide it this round, provisionally and with a reply outcome only: a thread with `provisional-reply.ts`, a finding with `decide`'s ruling recorded as `decide-provisional` (§ 8) |
 
 ### Autonomy: what the pass decides without a person
 
@@ -1052,9 +1053,15 @@ thread standing on a provisional reply is never triaged again:
 skips it, and the gate counts it as no work even when a person unresolved
 it. A person reverses it by commenting on the thread (or, for a `decide`
 ruling, on the pull request with a line `answer <key>: …`) as an owner,
-member or collaborator: before the next gate, the driver records the
-reversal and parks the item under `human-thread`, so it waits for that
-person. An unresolve alone changes nothing. The morning report (§ Running it)
+member or collaborator, whatever the comment says: before the next gate,
+the driver records the reversal, unresolves the thread and parks the item
+under `human-thread`, so it waits for that person. Once they answer and the
+drive is re-armed, supersede the provisional reply with the outcome their
+answer leads to (`reply-to-thread.ts`), then triage the thread as usual;
+`triage-thread.ts` refuses only while the provisional reply stands. A
+`**deferred**` provisional reply links the follow-up issue or the pull
+request's `## Deferred` section, as any deferral does. An unresolve alone
+changes nothing. The morning report (§ Running it)
 lists every provisional decision first.
 
 ## One round

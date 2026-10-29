@@ -12,6 +12,9 @@
  *     said the window reopened), `answered` (every parked item answered) or
  *     `provisional` (under `wide`, the unanswered parks handed on to be
  *     decided provisionally).
+ *   - `stop`: the driver exited, its cause the exit code (`0` converged,
+ *     `8` HITL-parked, …), so a report reads how the drive last ended from
+ *     the state as well as from the ledger.
  *
  * Takeovers have their own record (`takeover.ts`). Optional in a stored
  * state: a file written before the field existed reads as no events.
@@ -30,7 +33,7 @@ export const EVENT_CAUSES = {
     "provisional",
   ],
 } as const;
-export type EventKind = keyof typeof EVENT_CAUSES;
+export type EventKind = keyof typeof EVENT_CAUSES | "stop";
 
 export interface DriveEvent {
   at: string;
@@ -41,6 +44,7 @@ export interface DriveEvent {
 
 /** Whether `cause` is one of the causes of an event of `kind`. */
 function isCause(kind: unknown, cause: unknown): boolean {
+  if (kind === "stop") return typeof cause === "string" && /^\d+$/.test(cause);
   if (kind !== "restart" && kind !== "rearm") return false;
   const causes: readonly unknown[] = EVENT_CAUSES[kind];
   return causes.includes(cause);
@@ -72,6 +76,12 @@ export function countByCause(
   return out;
 }
 
+/** The exit code the drive last stopped with, `null` when none is recorded. */
+export function lastStop(events: readonly DriveEvent[]): number | null {
+  const stop = events.findLast((e) => e.kind === "stop");
+  return stop === undefined ? null : Number(stop.cause);
+}
+
 /** `record-event [PR]`: append one event, read as JSON on stdin (`{ "kind", "cause" }`). */
 export async function recordEvent(
   store: StateStore,
@@ -95,7 +105,7 @@ export async function recordEvent(
     if (!isDriveEvent(event))
       fail(
         2,
-        `record-event: kind restart (${EVENT_CAUSES.restart.join(", ")}) or rearm (${EVENT_CAUSES.rearm.join(", ")})`,
+        `record-event: kind restart (${EVENT_CAUSES.restart.join(", ")}), rearm (${EVENT_CAUSES.rearm.join(", ")}) or stop (the exit code)`,
       );
     return { ...s, events: [...(s.events ?? []), event] };
   });

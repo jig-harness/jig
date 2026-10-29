@@ -6,12 +6,24 @@
  * parked decisions in their framed form, the issues filed and the deferred
  * entries not yet filed. `--json` prints the gathered report instead.
  */
+import { join } from "node:path";
 import { framedDecisionLines } from "./state/park-frame.ts";
 import type {
   MorningReport,
   ReportProvisional,
   ReportPullRequest,
 } from "./morning-report.ts";
+
+/** `file-deferred.ts`, which files a pull request's deferred entries. */
+const FILE_DEFERRED = join(
+  import.meta.dir,
+  "..",
+  "..",
+  "..",
+  "resolve-review-comments",
+  "scripts",
+  "file-deferred.ts",
+);
 
 function sinceLine(r: MorningReport): string {
   const why = {
@@ -68,7 +80,12 @@ function pullRequestLines(p: ReportPullRequest): string[] {
     ),
     ...section(
       "deferred, not yet filed",
-      p.deferredUnfiled.map((d) => `    ${d.text} · ${d.source}`),
+      p.deferredUnfiled.length === 0
+        ? []
+        : [
+            ...p.deferredUnfiled.map((d) => `    ${d.text} · ${d.source}`),
+            `    file them: bun "${FILE_DEFERRED}" ${p.number}`,
+          ],
     ),
   ];
   return lines;

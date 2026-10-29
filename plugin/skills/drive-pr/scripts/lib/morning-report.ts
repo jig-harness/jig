@@ -36,7 +36,7 @@ import {
   standingProvisional,
   type UnattendedDecision,
 } from "./state/decisions.ts";
-import type { DriveEvent } from "./state/events.ts";
+import { type DriveEvent, lastStop } from "./state/events.ts";
 import type { Ledger } from "./state/ledger.ts";
 import { listLedgerPullRequests, resolveLogin } from "./state/ledger-forge.ts";
 import {
@@ -105,6 +105,8 @@ interface DriveRecord {
   parked: ParkedItem[];
   quotaParked: boolean;
   exit: number | null;
+  /** The ledger names a driver running in another clone. */
+  runningElsewhere: boolean;
 }
 
 const DRIVER_MEANINGS: Record<string, string> = {
@@ -157,7 +159,7 @@ function terminalOf(
       DRIVER_MEANINGS[name] ?? "read the handoff file, then re-arm the drive",
   });
   if (prState === "MERGED" || prState === "CLOSED") return named(prState, null);
-  if (live) return named("running", null);
+  if (live || rec.runningElsewhere) return named("running", null);
   if (rec.exit !== null) return named(exitName(rec.exit), rec.exit);
   if (rec.parked.length > 0) return named("HITL_PARKED", null);
   if (rec.quotaParked) return named("QUOTA_PARKED", null);
@@ -177,7 +179,8 @@ function fromState(s: DriveState): DriveRecord {
     takeovers: s.takeovers ?? [],
     parked: s.parked,
     quotaParked: s.quotaPark !== null,
-    exit: null,
+    exit: lastStop(s.events ?? []),
+    runningElsewhere: false,
   };
 }
 
@@ -189,7 +192,11 @@ function fromLedger(l: Ledger): DriveRecord {
     takeovers: l.takeovers,
     parked: l.parked,
     quotaParked: l.quotaPark !== null,
-    exit: l.driver.state === "stopped" ? (l.driver.exit ?? null) : null,
+    exit:
+      l.driver.state === "stopped"
+        ? (l.driver.exit ?? lastStop(l.events ?? []))
+        : null,
+    runningElsewhere: l.driver.state === "running",
   };
 }
 
@@ -445,9 +452,18 @@ function recordOf(
   own: { state: DriveState } | undefined,
   remote: { ledger: Ledger } | undefined,
 ): DriveRecord {
-  return own !== undefined
-    ? fromState(own.state)
-    : fromLedger((remote as { ledger: Ledger }).ledger);
+  if (own === undefined)
+    return fromLedger((remote as { ledger: Ledger }).ledger);
+  const local = fromState(own.state);
+  if (remote === undefined) return local;
+  // How the drive ended is the ledger's when it has a newer word: another
+  // clone may have driven it since this clone's state was written.
+  const ledger = fromLedger(remote.ledger);
+  return {
+    ...local,
+    exit: ledger.exit ?? local.exit,
+    runningElsewhere: ledger.runningElsewhere,
+  };
 }
 
 /** Gather the report. `live` holds the pull requests a live driver holds in this clone. */
@@ -585,6 +601,10 @@ export async function morningReportCommand(opts: {
       ? `${JSON.stringify(report, null, 2)}\n`
       : renderMorningReport(report),
   );
+  // Only a report that covered the whole default span moves the next one's
+  // start: a --since look, or one that could not read everything, would
+  // otherwise hide what it skipped from the person's next report.
+  if (opts.sinceFlag !== "" || report.unread.length > 0) return 0;
   try {
     rememberReport(opts.stateDir, report.now);
   } catch (err) {

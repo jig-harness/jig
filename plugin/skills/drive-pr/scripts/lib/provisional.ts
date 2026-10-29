@@ -34,13 +34,14 @@ export interface ListedComment {
 
 const text = (v: unknown): string => (typeof v === "string" ? v : "");
 
-/** A comment a person wrote, not one the drive wrote: the re-arm's answer rule. */
+/**
+ * A comment a person wrote, not one the drive's scripts wrote: any comment
+ * from an owner, member or collaborator that carries no hidden marker. A
+ * person's `**accepted** — fix it` counts too: an outcome token in a
+ * person's own words is still that person's verdict.
+ */
 export function isPersonsComment(association: string, body: string): boolean {
-  return (
-    TRUSTED_ASSOCIATIONS.has(association) &&
-    qualifyingOutcome(body) === null &&
-    !body.includes("<!--")
-  );
+  return TRUSTED_ASSOCIATIONS.has(association) && !body.includes("<!--");
 }
 
 /** The index of the last trusted provisional reply in a thread's comments, `-1` for none. */
@@ -103,16 +104,17 @@ export function listedThreadStandsOnProvisional(t: unknown): boolean {
 }
 
 /**
- * `triage-thread.ts`: a provisional decision is never decided again. It
- * stands until a person comments, and the round then parks the thread
- * under `human-thread`.
+ * `triage-thread.ts`: a provisional decision is never decided again while
+ * it stands. Once a person commented after it, the round parks the thread
+ * under `human-thread`, and after that person's answer the thread is
+ * triaged like any other.
  */
 export function refuseProvisional(
   threadId: string,
-  body: string | null,
+  comments: readonly ListedComment[],
   url: string | null,
 ): void {
-  if (isProvisionalReply(body ?? ""))
+  if (standsOnProvisionalReply(comments))
     fail(
       3,
       `triage-thread.ts: thread ${threadId} stands on a provisional decision (${url ?? "no url"}), which is never triaged again. A person's comment on it is parked by the round under human-thread; an unresolve alone changes nothing.`,

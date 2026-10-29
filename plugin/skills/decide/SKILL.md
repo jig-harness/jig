@@ -270,7 +270,9 @@ line `answer <key>: …` from an owner, member or collaborator, where `<key>`
 is the short slug you give the ruling), and the drive records it as
 `decide-provisional` with that key (drive-pr § 8), which only `wide`
 accepts. A person's answer reverses it, and the drive parks it for them.
-Under `attended` and `unattended` the row stands: escalate.
+Under `attended` and `unattended` the row stands: escalate. A call the
+evidence could not settle stays `escalated` at `wide` too: this row decides
+only a call whose evidence is in hand.
 
 `hitl` marks a human-in-the-loop decision; `hitl:<stakeholder>` names whose
 call it is (the label conventions `/jig:do-item` reads). A repository

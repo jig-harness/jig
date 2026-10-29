@@ -8,7 +8,8 @@
  * - `thread-<id>.json`: one thread's comments, for the single-thread reads.
  * - `comments-<N>.json`: pull request N's conversation comments.
  * - `pr-<N>.json`: `gh pr view N` (title, url, state, body, author).
- * - `search.json`: the ledger search's one page; `login`: the signed-in login.
+ * - `search.json`: the ledger search's one page (`fail-search` fails it);
+ *   `login`: the signed-in login.
  * - Writes `replies.jsonl` (each posted reply), `resolved.txt` (each resolved
  *   thread) and `calls.log`.
  *
@@ -25,6 +26,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { gitIdentityEnv } from "../scripts/lib/proc.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
@@ -72,6 +74,13 @@ if (joined.includes("addPullRequestReviewThreadReply")) {
   fs.appendFileSync(file("replies.jsonl"), JSON.stringify(req.variables) + "\\n");
   out("https://example.invalid/reply-" + (n + 1) + "\\n");
 }
+if (joined.includes("unresolveReviewThread")) {
+  const id = value("threadId=");
+  const left = has("resolved.txt") ? read("resolved.txt").split("\\n").filter((x) => x && x !== id) : [];
+  fs.writeFileSync(file("resolved.txt"), left.map((x) => x + "\\n").join(""));
+  fs.appendFileSync(file("unresolved.txt"), id + "\\n");
+  out("false\\n");
+}
 if (joined.includes("resolveReviewThread")) {
   fs.appendFileSync(file("resolved.txt"), value("threadId=") + "\\n");
   out("true\\n");
@@ -85,6 +94,7 @@ if (joined.includes("node(id:$id)") || joined.includes("node(id:")) {
 }
 const issue = joined.match(/issues\\/(\\d+)\\/comments/);
 if (issue) out(JSON.stringify([has("comments-" + issue[1] + ".json") ? JSON.parse(read("comments-" + issue[1] + ".json")) : []]));
+if (joined.includes("search/issues") && has("fail-search")) { process.stderr.write("search failed\\n"); process.exit(1); }
 if (joined.includes("search/issues")) out(JSON.stringify([has("search.json") ? JSON.parse(read("search.json")) : { items: [] }]));
 process.stderr.write("fake gh: unhandled " + joined + "\\n");
 process.exit(1);
@@ -161,8 +171,10 @@ export function fakeForge(overlay = ""): Forge {
   const init = Bun.spawnSync(["git", "init", "-q"], {
     cwd: tree,
     env: gitIdentityEnv(),
+    stdout: "pipe",
+    stderr: "pipe",
   });
-  if (init.exitCode !== 0) throw new Error("git init failed");
+  expectSpawnExit(init, 0);
   writeFakeProgram(join(bin, "gh"), FAKE_GH);
   const overlayFile = join(root, "jig.yaml");
   writeFileSync(overlayFile, overlay);

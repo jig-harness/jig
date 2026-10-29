@@ -503,12 +503,19 @@ bun "<skill-dir>/scripts/drives.ts" --report
 
 It covers every pull request this clone's state has news of, and every open
 one your account authored or drove, found through the drive ledger, since
-the last report (remembered in the state directory; the last day for a first
+the last full report (remembered in the state directory only by a report
+with no `--since` that read everything; the last day for a first
 one) or `--since <time>` (a time such as `2026-10-29T06:00Z`, or a span such as `12h`). For
 each it gives the terminal state and what it means for you, the provisional
 decisions first (and whether someone reversed them), the takeovers and
 re-arms, the parked decisions in full, the issues filed and the deferred
-findings not yet filed. `--json` prints the same as data.
+findings not yet filed, with the `file-deferred.ts` command that files them.
+`--json` prints the same as data.
+
+Where your repository has a pre-merge follow-up step, have its list include
+the pull request's provisional decisions, so the person merging reads each
+one, and whether it stands, before the merge: `drives.ts --report --since
+<when the pull request opened> --json` lists them under `provisional`.
 
 ## The exit states — what you do now
 

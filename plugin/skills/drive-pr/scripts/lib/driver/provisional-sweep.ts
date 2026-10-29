@@ -4,7 +4,8 @@
  * request's conversation) for a person's comment after it. A comment by an
  * owner, member or collaborator reverses the decision: the reversal is
  * recorded in the drive state (`reverse-decision`) and the item is parked
- * under `human-thread` with a framed decision record, so the round never
+ * under `human-thread` with a framed decision record (a reversed reply's
+ * thread is unresolved first, so it is open again), so the round never
  * decides it again and the drive stops for the person once only parked
  * items remain. An unresolve alone is not a reversal and changes nothing.
  *
@@ -19,7 +20,19 @@ import {
   standingProvisional,
   type UnattendedDecision,
 } from "./../state/decisions.ts";
+import { join } from "node:path";
 import { driveState } from "./paths.ts";
+
+const unresolveThread = join(
+  import.meta.dir,
+  "..",
+  "..",
+  "..",
+  "..",
+  "resolve-review-comments",
+  "scripts",
+  "unresolve-thread.ts",
+);
 
 /** The class a reversed provisional decision is parked under. */
 export const REVERSAL_CLASS = "human-thread";
@@ -64,9 +77,16 @@ async function reverse(
   d: UnattendedDecision,
   by: CommentLike,
 ): Promise<boolean> {
-  // A person's comment makes the thread theirs: the arbiter's `escalated`
-  // ruling gives way to `human-thread`, which `park` then admits.
+  // A person's comment makes the thread theirs: it is open again, and the
+  // arbiter's `escalated` ruling gives way to `human-thread`, which `park`
+  // then admits.
   if (d.class === "provisional-reply") {
+    const reopened = await run(tsArgv(unresolveThread, [d.key ?? ""]), {
+      stdout: "ignore",
+      stderr: "inherit",
+      timeoutSec: helperTimeoutSeconds(),
+    });
+    if (reopened.code !== 0) return false;
     const ruled = await run(tsArgv(driveState, ["rule", pr]), {
       stdin: JSON.stringify({
         key: d.key,

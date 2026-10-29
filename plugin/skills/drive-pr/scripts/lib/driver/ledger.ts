@@ -61,7 +61,7 @@ import {
 import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
 import type { DriveState } from "./../state/schema.ts";
 import { driveState } from "./paths.ts";
-import { readDriveState } from "./rearm.ts";
+import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
 import type { TakeoverPlan } from "./takeover.ts";
 
@@ -442,6 +442,7 @@ export function ledgerSettlement(pr: string): AsyncDisposable & {
       await dropRecord();
       return;
     }
+    if (code !== null) await recordDriveEvent(pr, "stop", String(code));
     if (driver === null) return;
     settled = true;
     const res = await run(tsArgv(driveState, ["handoff", pr]), {
