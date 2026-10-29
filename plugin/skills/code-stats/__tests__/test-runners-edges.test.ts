@@ -719,6 +719,12 @@ describe("Maven encodings", () => {
       new TextEncoder().encode(
         `<?xml version='1.0' encoding='utf-8'?>${body("qé")}`,
       ),
+      latin1(
+        `<?xml version="1.0"${" ".repeat(2048)}encoding="ISO-8859-1"?>${body("qé")}`,
+      ),
+      new TextEncoder().encode(
+        `<?xml-stylesheet encoding="ISO-8859-1"?>${body("qé")}`,
+      ),
     ]) {
       const reading = read(bytes);
       expect(reading.unreadable).toEqual([]);
@@ -747,6 +753,21 @@ describe("Maven encodings", () => {
           false,
         ),
         'declares "ISO-8859-1" where its byte order mark says UTF-16LE',
+      ],
+      [
+        utf16(`<?xml version="1.0" encoding="UTF-16BE"?>${body("qa")}`, false),
+        'declares "UTF-16BE" where its byte order mark says UTF-16LE',
+      ],
+      [
+        utf16(`<?xml version="1.0" encoding="UTF-16LE"?>${body("qa")}`, true),
+        'declares "UTF-16LE" where its byte order mark says UTF-16BE',
+      ],
+      [
+        Uint8Array.from([
+          ...[0xef, 0xbb, 0xbf, 0xef, 0xbb, 0xbf],
+          ...new TextEncoder().encode(body("qa")),
+        ]),
+        'has text outside the root element ("﻿")',
       ],
     ] as const) {
       const reading = read(bytes);

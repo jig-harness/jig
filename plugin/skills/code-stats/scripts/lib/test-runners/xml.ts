@@ -8,7 +8,9 @@
  * end or empty-element tag, a comment, a CDATA section, a processing
  * instruction, the XML declaration or the document type declaration.
  * Anything else at a `<` is malformed markup. The text read is the
- * document's characters, decoded from its bytes by `xml-encoding.ts`.
+ * document's characters, decoded from its bytes by `xml-encoding.ts`, which
+ * alone consumes the byte order mark: a U+FEFF left in the text is a
+ * character, and outside the root element it makes the document unreadable.
  *
  * Not checked: the declarations inside a document type declaration's
  * internal subset are read to their ends, with quotes respected, but their
@@ -43,8 +45,10 @@ const START_TAG = new RegExp(
 const ATTRIBUTES = new RegExp(ATTRIBUTE, "gu");
 const END_TAG = new RegExp(`</(${NAME})${S}*>`, "uy");
 const PI_TARGET = new RegExp(`<\\?(${NAME})(?=${S}|\\?>)`, "uy");
+const ENC_NAME = "[A-Za-z][\\w.\\-]*";
+/** XML's `XMLDecl` production, capturing the `encoding` it names. */
 const XML_DECLARATION = new RegExp(
-  `^<\\?xml${pair("version", "1\\.[0-9]+")}(?:${pair("encoding", "[A-Za-z][\\w.\\-]*")})?(?:${pair("standalone", "(?:yes|no)")})?${S}*\\?>$`,
+  `^<\\?xml${pair("version", "1\\.[0-9]+")}(?:${S}+encoding${S}*=${S}*(?:"(${ENC_NAME})"|'(${ENC_NAME})'))?(?:${pair("standalone", "(?:yes|no)")})?${S}*\\?>$`,
   "u",
 );
 const DOCTYPE = new RegExp(
@@ -134,6 +138,23 @@ function instructionAt(text: string, open: number): Markup {
       `has an XML declaration XML does not allow (${JSON.stringify(text.slice(open, end).slice(0, 40))})`,
     );
   return markup("xml-declaration", end);
+}
+
+/**
+ * The `encoding` named by the XML declaration that opens `text`, read by
+ * the same production `instructionAt` checks it against: null when `text`
+ * opens with no XML declaration (another processing instruction such as
+ * `<?xml-stylesheet …?>` is none), with one XML does not allow, or with one
+ * that names no encoding. The declaration has no length bound, so it is
+ * read to its `?>` however far that stands.
+ */
+export function declaredEncoding(text: string): string | null {
+  const target = matchAt(PI_TARGET, text, 0);
+  if (target?.[1] !== "xml") return null;
+  const close = text.indexOf("?>", 2);
+  if (close === -1) return null;
+  const found = XML_DECLARATION.exec(text.slice(0, close + 2));
+  return found ? (found[1] ?? found[2] ?? null) : null;
 }
 
 /** The end of the document type declaration at `open`, its internal subset included. */
@@ -244,9 +265,8 @@ export function elementValues(source: string): Values {
     rooted: false,
     declared: false,
   };
-  const start = text.startsWith("﻿") ? 1 : 0;
   let value = "";
-  let at = start;
+  let at = 0;
   for (
     let open = text.indexOf("<", at);
     open !== -1;
@@ -254,7 +274,7 @@ export function elementValues(source: string): Values {
   ) {
     const read = markupAt(text, open);
     const raw = text.slice(at, open);
-    placed(scan, raw, read, open === start);
+    placed(scan, raw, read, open === 0);
     value += textData(raw) + read.adds;
     at = read.end;
     if (!read.tag) continue;
@@ -303,7 +323,7 @@ function placed(scan: Scan, raw: string, read: Markup, first: boolean) {
 function outsideRoot(scan: Scan, raw: string, read: Markup | null) {
   if (/[^ \t\r\n]/.test(raw))
     throw new UnreadableError(
-      `has text outside the root element (${JSON.stringify(raw.trim().slice(0, 20))})`,
+      `has text outside the root element (${JSON.stringify(raw.replace(/^[ \t\r\n]+/, "").slice(0, 20))})`,
     );
   if (read?.kind === "cdata")
     throw new UnreadableError("has a CDATA section outside the root element");

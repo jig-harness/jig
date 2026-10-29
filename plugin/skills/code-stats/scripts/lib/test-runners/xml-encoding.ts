@@ -3,7 +3,12 @@
  * (https://www.w3.org/TR/xml/#charencoding, and its Appendix F) says a
  * processor finds them: a byte order mark names UTF-8 or UTF-16; without
  * one, the XML declaration's `encoding`, written in ASCII, names the
- * encoding, and a document that declares none is UTF-8.
+ * encoding, and a document that declares none is UTF-8. The declaration is
+ * read by `xml.ts`'s own `XMLDecl` production, to its `?>` however long it
+ * is; a processing instruction such as `<?xml-stylesheet …?>` declares
+ * nothing. A UTF-16 byte order mark agrees with `UTF-16` and with the
+ * byte order it marks, never with the opposite one. This layer alone
+ * consumes the byte order mark.
  *
  * Decoded: UTF-8, UTF-16, ISO-8859-1 and US-ASCII. A document in any other
  * encoding, one holding bytes its encoding does not decode, or one whose
@@ -11,19 +16,22 @@
  * unreadable, never read as other characters than the ones it holds.
  */
 import { UnreadableError } from "./model.ts";
-
-/** The `encoding` of an XML declaration at the start of `text`, or null when it names none. */
-const ENCODING =
-  /^<\?xml(?:[^?]|\?(?!>))*?[ \t\r\n]encoding[ \t\r\n]*=[ \t\r\n]*(?:"([^"]*)"|'([^']*)')/;
+import { declaredEncoding } from "./xml.ts";
 
 const UTF8 = /^utf-8$/i;
 const UTF16 = /^utf-16(?:le|be)?$/i;
+const UTF16BE = /^utf-16(?:be)?$/i;
+const UTF16LE = /^utf-16(?:le)?$/i;
 const LATIN1 = /^(?:iso[-_]?8859-1|latin-?1)$/i;
 const ASCII = /^(?:us-)?ascii$/i;
 
-function declaredEncoding(text: string): string | null {
-  const found = ENCODING.exec(text);
-  return found ? ((found[1] ?? found[2]) as string) : null;
+/** The bytes up to and including the first `?>`, as text one character per byte; empty when the document does not open with `<?`. */
+function declarationBytes(bytes: Uint8Array): string {
+  if (bytes[0] !== 0x3c || bytes[1] !== 0x3f) return "";
+  for (let i = 3; i < bytes.length; i++)
+    if (bytes[i - 1] === 0x3f && bytes[i] === 0x3e)
+      return latin1(bytes.subarray(0, i + 1));
+  return "";
 }
 
 /** The encodings decoded by `TextDecoder`. */
@@ -49,12 +57,11 @@ function latin1(bytes: Uint8Array): string {
 /** The document's text, its byte order mark removed. */
 export function xmlText(bytes: Uint8Array): string {
   const [a, b, c] = bytes;
-  if (a === 0xfe && b === 0xff) return fromBom(bytes, "utf-16be", UTF16);
-  if (a === 0xff && b === 0xfe) return fromBom(bytes, "utf-16le", UTF16);
+  if (a === 0xfe && b === 0xff) return fromBom(bytes, "utf-16be", UTF16BE);
+  if (a === 0xff && b === 0xfe) return fromBom(bytes, "utf-16le", UTF16LE);
   if (a === 0xef && b === 0xbb && c === 0xbf)
     return fromBom(bytes, "utf-8", UTF8);
-  const head = latin1(bytes.subarray(0, 1024));
-  const declared = declaredEncoding(head);
+  const declared = declaredEncoding(declarationBytes(bytes));
   if (declared === null || UTF8.test(declared))
     return decode(bytes, "utf-8", "UTF-8");
   if (LATIN1.test(declared)) return latin1(bytes);
