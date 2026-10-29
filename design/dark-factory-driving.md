@@ -227,11 +227,16 @@ on the pull request, the **drive ledger** (`<!-- drive-pr-ledger -->`):
 last counted and verified heads and the Ready mark; every parked item with
 its framed decision; every held item by key, outcome and pushed commit; the
 takeover claims; the decisions taken unattended
-([below](#every-autonomous-decision-is-recorded)); and the driver's actor,
-hashed account and last heartbeat. The agent-authored narrative of the
-handoff file travels with it, cut to its last twenty lines; the comment is
-cut to the forge's body limit by dropping held items' outcomes first and
-the narrative second, never a parked decision.
+([below](#every-autonomous-decision-is-recorded)); and the driver's actor
+and last heartbeat. The account is never posted: a hash of an address can
+be checked against a guessed address, so the account stays in the clone's
+own state, where the same-clone re-arm reads it, and a re-arm from another
+clone simply tries, since the short-window sleep already handles a wall.
+The agent-authored narrative of the handoff file travels with it, cut to
+its last twenty lines, with address-shaped strings redacted from it and
+from the parked reasons; the comment is cut to the forge's body limit by
+dropping held items' outcomes first and the narrative second, never a
+parked decision.
 
 It is written at round boundaries and at every park and takeover, by
 read-modify-write against the comment's `updatedAt`, so two writers cannot
