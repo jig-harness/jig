@@ -33,6 +33,7 @@ import {
   type Ledger,
   type LedgerSnapshot,
   claimFloor,
+  heldFromLedger,
   newerClaim,
 } from "./../state/ledger.ts";
 import {
@@ -46,10 +47,19 @@ import {
   ledgerDriverFromEnv,
 } from "./../state/ledger-mirror.ts";
 import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
-import { driveState, driveTs } from "./paths.ts";
-import { armCommand, readDriveState } from "./rearm.ts";
+import type { DriveState } from "./../state/schema.ts";
+import { driveState } from "./paths.ts";
+import { quotaRefusal, readDriveState } from "./rearm.ts";
 import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
-import type { TakeoverAdmission } from "./takeover.ts";
+import type { TakeoverPlan } from "./takeover.ts";
+
+/** What arming the ledger needs beyond who this driver is. */
+export interface LedgerArmOptions {
+  agent: string[];
+  windowReopened: boolean;
+  /** The `--take-over` command a refusal prints. */
+  takeOverCommand: string;
+}
 
 /** Who this driver is, as the ledger names it. */
 export interface LedgerIdentity {
@@ -126,7 +136,7 @@ function report(snapshot: LedgerSnapshot): void {
 export async function admitCrossCloneTakeover(
   pr: string,
   id: LedgerIdentity,
-): Promise<TakeoverAdmission | null> {
+): Promise<TakeoverPlan | null> {
   const snapshot = await readLedgerSnapshot(pr, id.login);
   if (typeof snapshot === "string")
     return fail(
@@ -151,6 +161,8 @@ export async function admitCrossCloneTakeover(
     verdict: "STALE",
     fromActor: ledger.driver.actor,
     fromAccount: ledger.driver.account,
+    holderStarted: null,
+    held: heldFromLedger(ledger.held).held,
     crossClone: true,
   };
 }
@@ -200,9 +212,9 @@ async function seed(
   pr: string,
   ledger: Ledger,
   body: string,
-): Promise<number | null> {
+): Promise<"seeded" | "unchanged" | "failed"> {
   const local = await readDriveState(pr);
-  if ((local?.ledgerGeneration ?? 0) >= ledger.generation) return null;
+  if ((local?.ledgerGeneration ?? 0) >= ledger.generation) return "unchanged";
   const res = await run(tsArgv(driveState, ["seed-ledger", pr]), {
     stdin: body,
     stderr: "inherit",
@@ -212,10 +224,10 @@ async function seed(
     console.error(
       `ledger: could not seed this clone's state from the ledger (drive-state.ts seed-ledger exited ${res.code}).`,
     );
-    return 1;
+    return "failed";
   }
   console.error(`ledger: ${res.stdout.trim()}.`);
-  return null;
+  return "seeded";
 }
 
 /**
@@ -228,10 +240,12 @@ async function seed(
 export async function armLedger(
   pr: string,
   id: LedgerIdentity | null,
-  admission: TakeoverAdmission | null,
-): Promise<number | null> {
-  if (id === null) return null;
-  const crossClone = admission?.crossClone === true;
+  plan: TakeoverPlan | null,
+  state: DriveState | null,
+  opts: LedgerArmOptions,
+): Promise<{ exit: number } | { state: DriveState | null }> {
+  if (id === null) return { state };
+  const crossClone = plan?.crossClone === true;
   const snapshot = await readLedgerSnapshot(pr, id.login);
   if (typeof snapshot === "string") {
     if (crossClone)
@@ -243,24 +257,48 @@ export async function armLedger(
       `ledger: ${snapshot}; this drive starts without seeding from PR #${pr}'s ledger or checking another clone's driver.`,
     );
     publish(id, 0, null);
-    return null;
+    return { state };
   }
   const ledger = readLedger(pr, snapshot);
-  const refusal = refuseBesideAnotherClone(pr, ledger, id, crossClone);
-  if (refusal !== null) return refusal;
+  const refusal = refuseBesideAnotherClone(
+    pr,
+    ledger,
+    id,
+    crossClone ? null : opts.takeOverCommand,
+  );
+  if (refusal !== null) return { exit: refusal };
   let floor = claimFloor(snapshot.claims);
   let own: ClaimComment | null = null;
   if (crossClone) {
     own = await claimDrive(pr, id, ledger?.generation ?? 0);
-    if (own === null) return TAKEN_OVER_EXIT;
+    if (own === null) return { exit: TAKEN_OVER_EXIT };
     floor = own.id;
   }
-  if (ledger !== null && snapshot.canonical !== null) {
-    const seeded = await seed(pr, ledger, snapshot.canonical.comment.body);
-    if (seeded !== null) return seeded;
-  }
+  const seeded = await seedFrom(pr, ledger, snapshot, state, opts);
+  if ("exit" in seeded) return seeded;
   publish(id, floor, own);
-  return null;
+  return seeded;
+}
+
+/**
+ * Seed from a ledger newer than this clone's state, and hold the seeded
+ * state to the quota rule the pre-lock check applied to the old one: a wall
+ * recorded in another clone binds an arm on its account here too.
+ */
+async function seedFrom(
+  pr: string,
+  ledger: Ledger | null,
+  snapshot: LedgerSnapshot,
+  state: DriveState | null,
+  opts: LedgerArmOptions,
+): Promise<{ exit: number } | { state: DriveState | null }> {
+  if (ledger === null || snapshot.canonical === null) return { state };
+  const seeded = await seed(pr, ledger, snapshot.canonical.comment.body);
+  if (seeded === "unchanged") return { state };
+  if (seeded === "failed") return { exit: 1 };
+  const now = await readDriveState(pr);
+  const quota = quotaRefusal(now, opts.agent, opts.windowReopened);
+  return quota === undefined ? { state: now } : { exit: quota };
 }
 
 /** Report what is ignored, and refuse a version this code does not read. */
@@ -277,17 +315,18 @@ function readLedger(pr: string, snapshot: LedgerSnapshot): Ledger | null {
 
 /**
  * The exit for a drive beside another clone's running driver: a plain arm
- * refused with `13`, a takeover whose holder has written again since its
- * admission refused with `11`; `null` drives on.
+ * (`takeOverCommand` set, printed once a takeover is admitted) refused with
+ * `13`, a takeover whose holder has written again since its admission
+ * refused with `11`; `null` drives on.
  */
 function refuseBesideAnotherClone(
   pr: string,
   ledger: Ledger | null,
   id: LedgerIdentity,
-  crossClone: boolean,
+  takeOverCommand: string | null,
 ): number | null {
   if (ledger === null || !otherCloneDriving(ledger, id)) {
-    if (!crossClone) return null;
+    if (takeOverCommand !== null) return null;
     return fail(
       SINGLE_INSTANCE_LOCK_EXIT,
       `drive.ts --take-over: PR #${pr}'s ledger no longer names a running driver in another clone; re-arm without --take-over.`,
@@ -295,13 +334,13 @@ function refuseBesideAnotherClone(
   }
   const age = heartbeatAgeMs(ledger, new Date());
   const stale = age > stallThresholdMs();
-  if (!crossClone) {
+  if (takeOverCommand !== null) {
     console.error(
       `drive.ts: PR #${pr} is driven from another clone: its drive ledger names a running driver (${ledger.driver.actor}) with a heartbeat ${minutes(age)} minute(s) old.`,
     );
     console.error(
       stale
-        ? `Its heartbeat is past the lease window, so a takeover is admitted:\n  ${armCommand(driveTs, pr, " --take-over")}`
+        ? `Its heartbeat is past the lease window, so a takeover is admitted:\n  ${takeOverCommand}`
         : "Do not drive beside it; a takeover is admitted once its heartbeat is older than the lease window.",
     );
     return DRIVE_HELD_ELSEWHERE_EXIT;

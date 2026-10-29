@@ -137,8 +137,10 @@ export async function prepareReviewPass(context: DriveRoundContext): Promise<
   const baseEnv = passEnv();
   // A stop the driver recovered from (a killed pass, a stall, a takeover, a
   // re-arm with answers) is told to the next review pass, once.
-  if (context.passNotice !== "")
-    baseEnv.DRIVE_PR_PASS_NOTICE = context.passNotice;
+  const notice = [context.passNotice, context.carriedNotice]
+    .filter((part) => part !== "")
+    .join("\n\n");
+  if (notice !== "") baseEnv.DRIVE_PR_PASS_NOTICE = notice;
   const prepared = prepareQuotaSpawn(context.agent, baseEnv);
   if (prepared !== null) {
     // Said out loud, once per round. This is the only place the driver

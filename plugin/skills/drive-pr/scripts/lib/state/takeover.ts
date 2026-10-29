@@ -3,7 +3,7 @@
  * one entry per takeover, oldest first. It says who stopped driving and who
  * took over (the working-tree actor and the hashed billing account of each),
  * the doctor verdict that admitted it, the round it resumed at, and the held
- * items whose promised fix never landed and were reopened.
+ * items not verified as pushed and reopened, and whether the reconciliation ran.
  *
  * Optional in a stored state, like `drivenBranch`: a state file written
  * before the field existed reads as no takeovers, since nothing about a
@@ -37,8 +37,10 @@ export interface TakeoverRecord {
   verdict: (typeof TAKEOVER_VERDICTS)[number];
   /** The durable round the drive resumed at. */
   round: number;
-  /** Held items whose promised fix never landed, reopened by the takeover. */
+  /** Held items not stamped as pushed, reopened by the takeover. */
   reopened: string[];
+  /** `reconcile-replied-threads.ts` ran and exited 0 before the first triage. */
+  reconciled?: boolean;
 }
 
 function isNullableAccount(v: unknown): boolean {
@@ -67,7 +69,8 @@ export function isTakeoverRecord(v: unknown): v is TakeoverRecord {
     Array.isArray(t.reopened) &&
     t.reopened.every(
       (k) => typeof k === "string" && k.length > 0 && !/[\n\r]/.test(k),
-    )
+    ) &&
+    (t.reconciled === undefined || typeof t.reconciled === "boolean")
   );
 }
 
@@ -107,6 +110,9 @@ export async function recordTakeover(
       verdict: input.verdict,
       round: s.rounds,
       reopened: input.reopened ?? [],
+      ...(input.reconciled === undefined
+        ? {}
+        : { reconciled: input.reconciled }),
     };
     if (!isTakeoverRecord(record)) {
       invalid = JSON.stringify(input);

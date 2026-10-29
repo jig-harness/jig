@@ -41,6 +41,7 @@ import { isActorId } from "./actor.ts";
 import { type DrivenBranch, isOptionalDrivenBranch } from "./driven-branch.ts";
 import { isAccountHash } from "../identity.ts";
 import { type TakeoverRecord, isOptionalTakeovers } from "./takeover.ts";
+import { isOptionalRetryCount } from "./deadline-retries.ts";
 
 /**
  * The persisted shape of a recorded quota park — what
@@ -395,6 +396,8 @@ export interface DriveState {
   takeovers?: TakeoverRecord[];
   /** The drive ledger's generation this state was last written or seeded at (`ledger.ts`). */
   ledgerGeneration?: number;
+  /** Passes killed at their deadline this drive restarted from (`deadline-retries.ts`). */
+  deadlineRetries?: number;
   [extra: string]: unknown;
 }
 
@@ -534,13 +537,14 @@ function isQuotaParkRecord(v: unknown): boolean {
   );
 }
 
-/** The fields a state written before they existed may lack, each well-formed when present. */
-function optionalFieldsUsable(s: Record<string, unknown>): boolean {
-  return (
-    isOptionalDrivenBranch(s.drivenBranch) &&
-    isOptionalTakeovers(s.takeovers) &&
-    (s.ledgerGeneration === undefined || isCount(s.ledgerGeneration))
-  );
+/** The fields a stored state may lack: absent, or well-formed. */
+function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
+  return [
+    isOptionalDrivenBranch(s.drivenBranch),
+    isOptionalTakeovers(s.takeovers),
+    isOptionalRetryCount(s.deadlineRetries),
+    s.ledgerGeneration === undefined || isCount(s.ledgerGeneration),
+  ].every(Boolean);
 }
 
 export function isUsableState(v: unknown, pr: number): v is DriveState {
@@ -551,7 +555,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   if (typeof s.lastCountedHead !== "string") return false;
   if (typeof s.verifiedSha !== "string") return false;
   if (typeof s.phase !== "string") return false;
-  if (!optionalFieldsUsable(s)) return false;
+  if (!hasUsableOptionalFields(s)) return false;
   if (!Array.isArray(s.parked)) return false;
   if (!(s.parked as unknown[]).every(isParkedItem)) return false;
   // Present AND well-typed, not "well-typed if present" — see `DriveState`.

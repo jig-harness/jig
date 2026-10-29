@@ -35,6 +35,8 @@ export async function runReviewPassPhase(
     return dispatchReviewPassResult;
   const { passRes, passHandle } = dispatchReviewPassResult;
   const disposition = passExitDisposition(passRes.code);
+  // A pass that completed has acted on what it was carried.
+  if (disposition.kind === "ok") context.carriedNotice = "";
   // A directive sent WHILE this pass ran must still be honored before a
   // non-success terminal result for it is reported, PR_NOT_OPEN included.
   // NOT extended to the

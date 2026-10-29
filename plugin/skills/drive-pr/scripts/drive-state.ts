@@ -130,6 +130,7 @@
  *                                     # before its QUOTA_PARKED_EXIT return. Does NOT
  *                                     # stamp progress — parking is its opposite.
  *   drive-state.ts takeover     [PR]                 # record a drive.ts --take-over (JSON on stdin)
+ *   drive-state.ts deadline-retries [PR] --set bump|clear  # the drive's pass-deadline restarts
  *   drive-state.ts handoff      [PR]                 # (re)write the handoff file, and the ledger under a driver
  *   drive-state.ts seed-ledger  [PR]                 # lay a newer ledger over this state (its body on stdin)
  *   drive-state.ts lease        [PR]                 # who is driving this PR from this
@@ -218,6 +219,7 @@ import { isActorId, resolveActor } from "./lib/state/actor.ts";
 import { recordTakeover } from "./lib/state/takeover.ts";
 import { mirrorLedger, seedLedgerCommand } from "./lib/state/ledger-mirror.ts";
 import { quotaPark } from "./lib/state/quota-park.ts";
+import { deadlineRetries } from "./lib/state/deadline-retries.ts";
 import {
   breakStaleClaimLocked,
   claimCreate,
@@ -367,6 +369,9 @@ function usage(): void {
                                     parking is the opposite of it. Cleared by
                                     the next progress event
   takeover     [PR]                 record a drive.ts --take-over (JSON on stdin)
+  deadline-retries [PR] --set bump|clear
+                                    count a pass-deadline restart (prints the
+                                    count), or clear it when the drive ends
   handoff      [PR]                 (re)write the handoff file, and the ledger under a driver
   seed-ledger  [PR]                 lay a newer ledger over this state (its body on stdin)
   admit        [PR]                 exit 0 if this tree may act on this PR, 13 if
@@ -554,6 +559,49 @@ function parseArgs(argv: string[]): Args {
     }
   }
   return a;
+}
+
+/** `park`: record an item whose decision is a person's, and when it was parked. */
+async function park(store: StateStore, a: Args): Promise<number> {
+  if (a.key === "")
+    fail(2, "park requires --key (a thread node id or finding fingerprint)");
+  // A key carrying CR or LF is not one key. `parked-keys` emits keys
+  // newline-delimited and drive-status splits that output on LF, so
+  // `PRRT_x<LF>PRRT_unrelated` parks ONE item and yields TWO match tokens
+  // — the second suppressing live work nobody parked, which is the
+  // opposite of what parking is for and is invisible in the state file's
+  // own shape. The channel is line-delimited, so the constraint belongs on
+  // what may enter it.
+  if (/[\n\r]/.test(a.key)) {
+    fail(
+      2,
+      "park: --key may not contain a newline or carriage return.",
+      "parked-keys is a line-delimited channel, so such a key becomes TWO",
+      "match tokens and the extra one suppresses work nobody parked.",
+    );
+  }
+  if (a.kind !== "thread" && a.kind !== "finding")
+    fail(2, `park requires --kind thread|finding (got '${a.kind}')`);
+  if (a.reason === "")
+    fail(
+      2,
+      "park requires --reason — a parked item with no framed decision is not a checkpoint, it is a dropped finding",
+    );
+  const kind = a.kind;
+  await store.update((s) => ({
+    ...s,
+    parked: [
+      ...s.parked.filter((p) => p.key !== a.key),
+      {
+        key: a.key,
+        kind,
+        reason: a.reason,
+        round: s.rounds,
+        at: new Date().toISOString(),
+      },
+    ],
+  }));
+  return 0;
 }
 
 /**
@@ -744,6 +792,7 @@ async function main(): Promise<number> {
     "quota-park",
     "takeover",
     "seed-ledger",
+    "deadline-retries",
     "reset",
     "claim-ready-mark",
     "renew-ready-mark",
@@ -2094,49 +2143,9 @@ async function main(): Promise<number> {
     }
 
     case "park": {
-      if (a.key === "")
-        fail(
-          2,
-          "park requires --key (a thread node id or finding fingerprint)",
-        );
-      // A key carrying CR or LF is not one key. `parked-keys` emits keys
-      // newline-delimited and drive-status splits that output on LF, so
-      // `PRRT_x<LF>PRRT_unrelated` parks ONE item and yields TWO match tokens
-      // — the second suppressing live work nobody parked, which is the
-      // opposite of what parking is for and is invisible in the state file's
-      // own shape. The channel is line-delimited, so the constraint belongs on
-      // what may enter it.
-      if (/[\n\r]/.test(a.key)) {
-        fail(
-          2,
-          "park: --key may not contain a newline or carriage return.",
-          "parked-keys is a line-delimited channel, so such a key becomes TWO",
-          "match tokens and the extra one suppresses work nobody parked.",
-        );
-      }
-      if (a.kind !== "thread" && a.kind !== "finding")
-        fail(2, `park requires --kind thread|finding (got '${a.kind}')`);
-      if (a.reason === "")
-        fail(
-          2,
-          "park requires --reason — a parked item with no framed decision is not a checkpoint, it is a dropped finding",
-        );
-      const kind = a.kind;
-      await store.update((s) => ({
-        ...s,
-        parked: [
-          ...s.parked.filter((p) => p.key !== a.key),
-          {
-            key: a.key,
-            kind,
-            reason: a.reason,
-            round: s.rounds,
-            at: new Date().toISOString(),
-          },
-        ],
-      }));
+      const parked = await park(store, a);
       await mirrorLedger(pr, store);
-      return 0;
+      return parked;
     }
 
     case "unpark": {
@@ -3112,6 +3121,9 @@ async function main(): Promise<number> {
     // progress event (not this call) is what clears it.
     case "quota-park":
       return quotaPark(store, a);
+
+    case "deadline-retries":
+      return deadlineRetries(store, a.phaseName);
 
     case "handoff": {
       await store.locked(async () => {

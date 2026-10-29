@@ -409,7 +409,7 @@ drive:
   change_areas_catalog: docs/change-areas.yaml      # change-area catalog for area-aware reports; default: none
   reviews_drafts: true        # does the AI reviewer review draft pull requests
   max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
-  pass_deadline_retries: 2    # passes killed at their deadline a drive-pr run restarts from; default 2
+  pass_deadline_retries: 2    # passes killed at their deadline one drive restarts from, across re-arms; default 2
 ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
   hold_label: ci:hold         # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)

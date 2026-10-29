@@ -510,7 +510,7 @@ export function claimFloor(claims: readonly ClaimComment[]): number {
 }
 
 /** A ledger's held items that carry what a held item needs. */
-function seededHeld(held: readonly LedgerHeld[]): {
+export function heldFromLedger(held: readonly LedgerHeld[]): {
   held: HeldItem[];
   dropped: string[];
 } {
@@ -544,7 +544,7 @@ export function seedFromLedger(
   local: DriveState,
   l: Ledger,
 ): { state: DriveState; dropped: string[] } | { error: string } {
-  const { held, dropped } = seededHeld(l.held);
+  const { held, dropped } = heldFromLedger(l.held);
   const state: DriveState = {
     ...local,
     rounds: l.round,
