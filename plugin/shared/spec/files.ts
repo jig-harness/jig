@@ -13,6 +13,11 @@
  * `refused`, which the resolver reports as unresolved. Listing, checking and
  * reading never block and stop when the adapter's signal aborts, so the
  * resolver's deadline bounds them.
+ *
+ * The checks hold against what the issue body and the checked-out tree say,
+ * not against a process that rewrites the tree while the resolver runs: a
+ * folder swapped for a link between a check and its read is followed. Such a
+ * process can already change every file the resolver reads.
  */
 import { readdir, readFile } from "node:fs/promises";
 import type { CheckedFiles } from "./adapter.ts";

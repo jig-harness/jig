@@ -259,6 +259,60 @@ test("a fence that opens on a list item's own line is the item's code", async ()
   }
 });
 
+test("text four columns past a list marker's content column is the item's indented code", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  for (const marker of ["-", "1."]) {
+    const body = [
+      "## Spec",
+      "",
+      `${marker}     AC-9 Example`,
+      `${" ".repeat(marker.length + 5)}AC-8 Its next line`,
+      "- [ ] 1. Real task",
+    ].join("\n");
+    const result = await resolveSpec(issue(body), root, {
+      registry: [bodyAdapter],
+      config: only("body"),
+    });
+    expect(result.acceptance).toEqual([]);
+    expect(result.tasks.map((t) => t.id)).toEqual(["1"]);
+  }
+});
+
+test("a fence opened in a list item ends with the item", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  const body = [
+    "## Spec",
+    "",
+    "- ```md",
+    "  AC-9 Example",
+    "",
+    "## Acceptance criteria",
+    "- AC-1 Works",
+  ].join("\n");
+  const result = await resolveSpec(issue(body), root, {
+    registry: [bodyAdapter],
+    config: only("body"),
+  });
+  expect(result.acceptance.map((c) => c.id)).toEqual(["AC-1"]);
+});
+
+test("a line of list markers past the nesting bound is read without running the scan deep", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  const body = [
+    "## Spec",
+    "",
+    `${"- ".repeat(200_000)}x`,
+    "",
+    "## Acceptance criteria",
+    "- AC-1 Works",
+  ].join("\n");
+  const result = await resolveSpec(issue(body), root, {
+    registry: [bodyAdapter],
+    config: only("body"),
+  });
+  expect(result.acceptance.map((c) => c.id)).toEqual(["AC-1"]);
+});
+
 test("a heading inside a section ends the entry above it", async () => {
   const { root } = scratchRepo("spec-safety-");
   const body = [

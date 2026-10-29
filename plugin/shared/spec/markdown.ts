@@ -13,9 +13,13 @@
  * marker): a fence indented under `- ` is the item's fence, and only a line
  * four columns past that column, after a blank line, is its indented code.
  * The text after a list marker is read the same way, at the item's content
- * column, so `- ```md` opens a fence and `- - x` opens a nested item. A line
- * at or past that column belongs to the item and does not close the list; a
- * heading, or a line before that column after a blank line, does.
+ * column, so `- ```md` opens a fence, `- - x` opens a nested item and
+ * `-     x` is the item's indented code. A line at or past that column
+ * belongs to the item and does not close the list; a heading, or a line
+ * before that column after a blank line, does. A fence opened inside an item
+ * ends with it: a line before the item's column closes the fence and is read
+ * as ordinary Markdown. Past a nesting depth of 64 markers on one line the
+ * rest is the item's text, so a line of markers cannot run the scan deep.
  */
 import type { BodySectionKind } from "./adapter.ts";
 
@@ -56,6 +60,8 @@ export interface MarkdownLine {
 export const HEADING = /^ {0,3}(#{1,6})(?:[ \t](.*))?$/;
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const LIST_ITEM = /^( {0,3})([-*+]|\d{1,9}[.)])( *)(?=\S|$)/;
+/** List markers past this many on one line are read as the item's text. */
+const MAX_LIST_DEPTH = 64;
 
 function indentOf(line: string): number {
   return line.length - line.trimStart().length;
@@ -122,30 +128,80 @@ function shallowLine(
 ): MarkdownLine["kind"] {
   state.indentedCode = false;
   const own = line.slice(strip);
-  const run = fenceRun(own);
-  if (run !== null) {
-    state.fence = { ...run, strip };
-    return "fence";
-  }
+  const opened = opensFence(own, strip, state);
+  if (opened !== null) return opened;
   const item = listContent(own);
-  if (item !== null) {
-    state.listOpen = true;
-    state.listIndent = strip + item;
-    if (line.length <= state.listIndent) return "text";
-    const content = shallowLine(line, state.listIndent, state);
-    return content === "heading" ? "text" : content;
-  }
+  if (item !== null) return itemLine(line, strip + item, state);
   if (/^ {0,3}#/.test(line) || (state.afterBlank && strip === 0))
     state.listOpen = false;
   return HEADING.test(own) ? "heading" : "text";
 }
 
+/** `"fence"` with the fence `own` opens at `column` recorded, or `null`. */
+function opensFence(
+  own: string,
+  column: number,
+  state: ScanState,
+): "fence" | null {
+  const run = fenceRun(own);
+  if (run === null) return null;
+  state.fence = { ...run, strip: column };
+  return "fence";
+}
+
+/**
+ * The kind of a line that opens a list item whose content starts at
+ * `column`. Each further marker on the line moves the column past it, up to
+ * `MAX_LIST_DEPTH`; the text after the last is read at that column, as a
+ * line of the item.
+ */
+function itemLine(
+  line: string,
+  column: number,
+  state: ScanState,
+): MarkdownLine["kind"] {
+  for (let depth = 1; ; depth++) {
+    state.listOpen = true;
+    state.listIndent = column;
+    if (line.length <= column) return "text";
+    const own = line.slice(column);
+    if (indentOf(own) >= 4) {
+      state.indentedCode = true;
+      return "code";
+    }
+    const opened = opensFence(own, column, state);
+    if (opened !== null) return opened;
+    const item = depth < MAX_LIST_DEPTH ? listContent(own) : null;
+    if (item === null) return "text";
+    column += item;
+  }
+}
+
+/**
+ * The kind of `line` inside the open `fence`, or `null` when the line ends
+ * the list item the fence opened in, and the fence with it, and is to be
+ * read as ordinary Markdown.
+ */
+function fencedLine(
+  line: string,
+  fence: Fence,
+  state: ScanState,
+): MarkdownLine["kind"] | null {
+  if (fence.strip > 0 && line.trim() !== "" && indentOf(line) < fence.strip) {
+    state.fence = null;
+    state.listOpen = false;
+    return null;
+  }
+  if (!closes(line, fence)) return "code";
+  state.fence = null;
+  return "fence";
+}
+
 /** The kind of one line, the state moved on past it. */
 function classify(line: string, state: ScanState): MarkdownLine["kind"] {
   if (state.fence !== null) {
-    if (!closes(line, state.fence)) return "code";
-    state.fence = null;
-    return "fence";
+    const fenced = fencedLine(line, state.fence, state);
+    if (fenced !== null) return fenced;
   }
   if (line.trim() === "") {
     state.afterBlank = true;
