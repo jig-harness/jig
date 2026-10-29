@@ -254,7 +254,10 @@ exports, or sets its export inside a function, a block or after an `if`;
 a Gradle script that builds its folders in code; a `pom.xml`
 value built from a property) is reported as
 `unreadable: <path> (<why>)`, and nothing is claimed from that file. The
-built-in conventions still apply to it.
+built-in conventions still apply to it. A file the file system refuses to
+read (its permissions, say) is a different case: every mode needs every
+tracked file, so code-stats stops with `cannot read <path> (<code>)` rather
+than leaving the file out.
 
 | Runner | Files read | What is read | What is not read |
 |--------|------------|--------------|------------------|

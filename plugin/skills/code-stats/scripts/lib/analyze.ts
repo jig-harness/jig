@@ -17,6 +17,7 @@ import {
 } from "./classify.ts";
 import type { CodeStatsConfig } from "./config.ts";
 import { countLines } from "./count.ts";
+import { unreadableFile } from "./errors.ts";
 import type { Attributes } from "./git.ts";
 import {
   ASSET_EXTENSIONS,
@@ -138,7 +139,7 @@ export async function analyzeFile(
   const abs = resolve(ctx.root, relPath);
   const st = await lstat(abs).catch((err: unknown) => {
     if (errnoCode(err) === "ENOENT") return null;
-    throw err;
+    throw unreadableFile(relPath, err);
   });
   if (!st) return null;
   if (ctx.submodules.has(relPath) || st.isDirectory())
@@ -166,7 +167,11 @@ async function readText(
   const relPath = facts.path;
   const file = Bun.file(abs);
   const buf = new Uint8Array(
-    await (whole ? file : file.slice(0, BINARY_PROBE_BYTES)).arrayBuffer(),
+    await (whole ? file : file.slice(0, BINARY_PROBE_BYTES))
+      .arrayBuffer()
+      .catch((err: unknown) => {
+        throw unreadableFile(relPath, err);
+      }),
   );
   if (buf.subarray(0, BINARY_PROBE_BYTES).includes(0))
     return result({ ...facts, shape: "binary" }, ctx, size, ZERO);

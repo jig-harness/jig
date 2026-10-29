@@ -9,9 +9,9 @@ import { posix } from "node:path";
 /** The repository's tracked paths, and a way to read one as text or as bytes. */
 export interface RepoFiles {
   paths: readonly string[];
-  /** The file's text, read as UTF-8; null when it is not a regular file, an `UnreadableError` when reading it fails. */
+  /** The file's text, read as UTF-8, or null when it is not a regular file. */
   read(path: string): string | null;
-  /** The file's bytes, for a format that names its own encoding (XML); null when it is not a regular file, an `UnreadableError` when reading it fails. */
+  /** The file's bytes, for a format that names its own encoding (XML), or null when it is not a regular file. */
   bytes(path: string): Uint8Array | null;
 }
 

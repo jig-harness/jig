@@ -296,8 +296,8 @@ function inOrder(candidates: readonly string[]): string[] {
 
 /**
  * Whether a candidate is pytest's configuration, read the way the rules are
- * read. A candidate that cannot be read, its file included, stops the
- * search there, since pytest stops at it too, and is reported unreadable.
+ * read. A candidate that cannot be read stops the search there, since
+ * pytest stops at it too, and is reported unreadable.
  */
 function holds(files: RepoFiles, path: string): boolean {
   try {

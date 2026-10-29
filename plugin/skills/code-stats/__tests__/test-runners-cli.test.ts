@@ -188,30 +188,33 @@ describe("a configuration computed when it runs", () => {
   });
 });
 
-describe("a configuration the file system refuses to read", () => {
+describe("a tracked file the file system refuses to read", () => {
   const unprivileged = process.platform !== "win32" && process.getuid?.() !== 0;
+  const MODES = [
+    ["--explain", "lib/src/test/java/shop/LibSuite.java", "--json"],
+    ["--json"],
+    [],
+    ["--html", "report.html"],
+  ];
 
-  test.if(unprivileged)(
-    "is reported unreadable, and the other runners still read",
-    () => {
-      const root = fixture("maven", {
-        "pytest.ini": "[pytest]\ntestpaths = checks\n",
-      });
-      for (const path of ["pytest.ini", "pom.xml"])
-        chmodSync(join(root, path), 0);
-      const explained = explain(root, "lib/src/test/java/shop/LibSuite.java");
-      expect(explained.kind.value).toBe("test");
-      for (const unreadable of [
-        {
-          reader: "pytest",
-          path: "pytest.ini",
-          why: "could not be read (EACCES)",
-        },
-        { reader: "Maven", path: "pom.xml", why: "could not be read (EACCES)" },
-      ])
-        expect(explained.testRunnersUnreadable).toContainEqual(unreadable);
-    },
-  );
+  for (const [file, content] of [
+    ["pom.xml", null],
+    ["pytest.ini", "[pytest]\ntestpaths = checks\n"],
+    ["pyproject.toml", "[tool.pytest.ini_options]\ntestpaths = ['checks']\n"],
+    ["package.json", '{"jest": {"testMatch": ["**/*.check.js"]}}\n'],
+  ] as const)
+    test.if(unprivileged)(
+      `${file} stops every mode with an error naming it`,
+      () => {
+        const root = fixture("maven", content ? { [file]: content } : {});
+        chmodSync(join(root, file), 0);
+        for (const args of MODES) {
+          const run = runCli(root, args);
+          expectSpawnExit(run, 1);
+          expect(run.stderr).toContain(`cannot read ${file} (EACCES)`);
+        }
+      },
+    );
 });
 
 describe("the layer's precedence", () => {

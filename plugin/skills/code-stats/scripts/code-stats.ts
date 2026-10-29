@@ -52,14 +52,13 @@ import {
   parseCodeStatsConfig,
 } from "./lib/config.ts";
 import { CONVENTIONS } from "./lib/conventions.ts";
-import { CodeStatsError, UsageError } from "./lib/errors.ts";
+import { CodeStatsError, UsageError, unreadableFile } from "./lib/errors.ts";
 import { explainJson, explainText } from "./lib/explain.ts";
 import { listTracked, readAttributes, repositoryInfo } from "./lib/git.ts";
 import { KINDS } from "./lib/model.ts";
 import { detectModules } from "./lib/modules.ts";
 import { renderHtmlReport } from "./lib/render-html.ts";
 import { type RepoFiles, readTestRunners } from "./lib/test-runners/index.ts";
-import { UnreadableError } from "./lib/test-runners/model.ts";
 import {
   fmt,
   fmtBytes,
@@ -198,8 +197,8 @@ function realPath(path: string): string {
 
 /**
  * The tracked files as the test-runner readers see them: regular files, read
- * as text or as bytes. A file the file system refuses to read is unreadable
- * configuration, reported beside the others rather than ending the run.
+ * as text or as bytes. A file the file system refuses to read stops the run
+ * (`unreadableFile`), as it does in every other place code-stats reads one.
  */
 function repoFiles(root: string, paths: readonly string[]): RepoFiles {
   const load = <T>(path: string, read: (abs: string) => T): T | null => {
@@ -209,8 +208,7 @@ function repoFiles(root: string, paths: readonly string[]): RepoFiles {
         ? read(abs)
         : null;
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code ?? "an I/O error";
-      throw new UnreadableError(`could not be read (${code})`);
+      throw unreadableFile(path, error);
     }
   };
   return {

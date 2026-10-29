@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { load } from "../../../../shared/yaml.ts";
 import type { Pattern } from "./config.ts";
 import { closeAt } from "./count.ts";
-import { CodeStatsError } from "./errors.ts";
+import { CodeStatsError, unreadableFile } from "./errors.ts";
 import type { Decision } from "./model.ts";
 
 /** Folders whose children are modules when no manifest names any. */
@@ -91,7 +91,12 @@ function withNegations(source: string, members: string[]): MemberList {
 
 function readText(root: string, file: string): string | null {
   const path = join(root, file);
-  return existsSync(path) ? readFileSync(path, "utf8") : null;
+  if (!existsSync(path)) return null;
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    throw unreadableFile(file, error);
+  }
 }
 
 function parsed<T>(file: string, parse: () => T): T {
