@@ -19,6 +19,7 @@ import {
   bumpDeadlineRetries,
   deadlineNotice,
   describeLeftovers,
+  inheritedHeadOf,
   passLeftovers,
 } from "./restart.ts";
 
@@ -97,6 +98,10 @@ async function restartAfterDeadline(
       `  Restarting: deadline retry ${retries} of ${context.deadlineRetryBudget} for this drive (drive.pass_deadline_retries). The leftovers stay in the tree for the next pass.`,
     );
     context.passNotice = deadlineNotice(round, passDeadlineSec, leftovers);
+    // Committed but unpushed work puts local HEAD ahead of the PR head, which
+    // the next gate would read as head lag and never hand out the round that
+    // pushes it. That gate accepts exactly this witnessed head instead.
+    context.inheritedHead = inheritedHeadOf(leftovers);
     // A killed pass is not a completed one: it must not count toward the
     // stall streak, which compares the gates around COMPLETED passes.
     context.prevFingerprint = null;

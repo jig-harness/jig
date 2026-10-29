@@ -73,6 +73,7 @@ import {
   type UnresolvedThread,
   unresolvedThreads,
 } from "./evidence.ts";
+import { acceptsInheritedHead } from "./inherited-head.ts";
 import { terminal } from "./terminal-states.ts";
 import type { WaitingEvaluationCache } from "./waiting-cache.ts";
 
@@ -195,6 +196,8 @@ export interface EvaluateContext {
   botsOnly: boolean;
   headSync: boolean;
   localHead: string;
+  /** The witnessed head a killed pass left unpushed (`inherited-head.ts`). */
+  inheritedHead?: string;
   /** Absolute paths to the sibling scripts this decision spawns. */
   driveStateScript: string;
   listThreadsScript: string;
@@ -903,20 +906,12 @@ async function evaluateFresh(
     );
   }
 
-  // Draftness is MEASURED AND PUBLISHED here, and gates nothing. It was a
-  // terminal state (`PR_IS_DRAFT`, exit 10) on the premise that no reviewer arm
-  // looks at a draft; the module header records the measurement that killed
-  // that premise for the arm `CONVERGED` is defined against. A drive on a draft
-  // now proceeds exactly as it would on a Ready PR.
-  //
-  // Still validated as a BOOLEAN rather than read for truthiness, and still
-  // INDETERMINATE when it is neither. It stopped being a gate but it did not
-  // stop being DECISION evidence — `mark-ready.ts` reads this field to decide
-  // whether the draft→Ready transition is owed, and `false` is the answer that
-  // says "already Ready, nothing to do". An absent or null `isDraft` coerces to
-  // exactly that, so accepting a partial response here would silently skip the
-  // transition on the one PR that needs it rather than trip. The rule the
-  // `mergeable` block below states therefore still applies.
+  // Draftness is MEASURED AND PUBLISHED here, and gates nothing: a drive on a
+  // draft proceeds as on a Ready PR (the module header says why exit 10 is
+  // retired). It is still validated as a BOOLEAN and INDETERMINATE otherwise,
+  // because `mark-ready.ts` decides from it whether the draft→Ready
+  // transition is owed, and an absent or null value read as `false` would
+  // skip that transition on the one PR that needs it.
   const draft = prJson.isDraft;
   if (typeof draft !== "boolean") {
     return terminal(
@@ -927,7 +922,16 @@ async function evaluateFresh(
   }
   report.isDraft = draft;
 
-  if (ctx.headSync && report.apiHead !== ctx.localHead) {
+  // The witnessed inherited head passes; the round is judged on the API head.
+  const inherited =
+    ctx.headSync &&
+    report.apiHead !== ctx.localHead &&
+    (await acceptsInheritedHead(
+      report.apiHead,
+      ctx.localHead,
+      ctx.inheritedHead ?? "",
+    ));
+  if (ctx.headSync && report.apiHead !== ctx.localHead && !inherited) {
     return terminal(
       report,
       "HEAD_LAG",
@@ -936,28 +940,21 @@ async function evaluateFresh(
   }
 
   // A nominally SUCCESSFUL read is validated, not trusted. A partial or
-  // malformed response — `mergeable` null/absent/an unhandled enum, or an
-  // empty `baseRefOid` — otherwise collapses to `''` and falls through
-  // exactly as though the PR were mergeable, or silently disarms the
-  // base-race guard.
+  // malformed response (`mergeable` null, absent or unhandled, or an empty
+  // `baseRefOid`) otherwise collapses to `''` and reads as mergeable, or
+  // silently disarms the base-race guard.
   //
-  // Validation is scoped to the fields a STATE IS DECIDED FROM, and that scope
-  // is deliberate rather than an oversight. `mergeable` picks the branch and
-  // `baseRefOid` arms the base-race guard, so a bad value in either is a wrong
-  // decision and must be INDETERMINATE. `baseRefName`, `headRefName` and
-  // `mergeStateStatus` are REPORTED, never branched on HERE: an absent one
-  // costs a branch name in a `git merge` hint and a parenthetical in the
-  // reason, both of which degrade to a named "unavailable" at the point of use.
-  // `headRefName` is additionally consumed by `drive-status.ts`'s own
-  // best-effort drift measurement (the branch-identity check beside its
-  // ancestor check), which already degrades to "no drift published" on an empty
-  // value — a second, narrower branch, not a reason to hard-fail the whole
-  // snapshot on it here. Hard-failing on any of the three instead would block
-  // PR_CONFLICTING from ever being reported over evidence that path does not
-  // use — which is precisely the regression the check-runs read below already
-  // had to undo. Requiring the fields OF THE CLI (above) and validating the
-  // decision evidence (here) are therefore two different rules, and the prose
-  // says so in both places rather than implying one blanket one.
+  // Validation is scoped to the fields a STATE IS DECIDED FROM, deliberately.
+  // `mergeable` picks the branch and `baseRefOid` arms the base-race guard, so
+  // a bad value in either is a wrong decision and must be INDETERMINATE.
+  // `baseRefName`, `headRefName` and `mergeStateStatus` are REPORTED, never
+  // branched on HERE: an absent one costs a branch name in a `git merge` hint
+  // or a parenthetical in the reason, each degrading to a named "unavailable"
+  // where used, and `drive-status.ts`'s best-effort drift measurement already
+  // degrades to "no drift published" on an empty `headRefName`. Hard-failing
+  // on any of the three would block PR_CONFLICTING over evidence that path
+  // does not use. Requiring the fields OF THE CLI (above) and validating the
+  // decision evidence (here) are two different rules.
   report.mergeable = str(prJson, "mergeable").toUpperCase();
   report.mergeStateStatus = str(prJson, "mergeStateStatus").toUpperCase();
   if (!["MERGEABLE", "CONFLICTING", "UNKNOWN"].includes(report.mergeable)) {
@@ -1596,7 +1593,8 @@ async function evaluateFresh(
   const liveThreads = report.threadsOpen - report.threadsParked;
   const liveSummary = report.summaryUnaddressed - summaryParked;
 
-  if (liveThreads <= 0 && liveSummary <= 0) {
+  // Over unpushed inherited commits only a conflict stops; else push them.
+  if (liveThreads <= 0 && liveSummary <= 0 && (!inherited || conflicting)) {
     // A conflict with NOTHING left to work is unconvergeable: no round can be
     // reviewed, and no amount of waiting changes that. Checked before
     // HITL_PARKED because a merge is a concrete command and a parked item is a
@@ -1659,6 +1657,8 @@ async function evaluateFresh(
   let roundReadyReason = `${liveThreads} unresolved thread(s) and ${liveSummary} unaddressed summary finding(s) on ${report.apiHead}`;
   if (stalledCheckRunNote !== "")
     roundReadyReason += ` — ${stalledCheckRunNote}`;
+  if (inherited)
+    roundReadyReason += ` — local HEAD ${ctx.localHead} carries commits a killed pass left unpushed; this round pushes them`;
   if (conflicting) {
     roundReadyReason += ` — NOTE: PR #${ctx.pr} conflicts with its base, so no pull_request CI will run on what this round pushes; merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} in as part of the round`;
     // Say, in the reason itself, how current these findings are. The reviewer

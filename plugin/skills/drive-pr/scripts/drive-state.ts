@@ -47,7 +47,7 @@
  *   drive-state.ts reflected    [PR]                 # round a /reflect was last recorded at
  *   drive-state.ts set-reflected [PR]                # record a completed /reflect at the current round
  *   drive-state.ts park         [PR] --key K --kind thread|finding --reason R
- *   drive-state.ts unpark       [PR] --key K
+ *   drive-state.ts unpark       [PR] --key K [--key K …]   # all, or none
  *   drive-state.ts parked-keys  [PR]                 # newline-delimited keys
  *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome accepted|moot
  *                                     [--comment-url URL] [--unconfirmed]
@@ -218,6 +218,8 @@ import { isActorId, resolveActor } from "./lib/state/actor.ts";
 import { isAccountHash } from "./lib/identity.ts";
 import { recordTakeover } from "./lib/state/takeover.ts";
 import { deadlineRetries } from "./lib/state/deadline-retries.ts";
+import { unpark } from "./lib/state/unpark.ts";
+import { clearPendingVerdicts } from "./lib/state/pass-handoff.ts";
 import {
   breakStaleClaimLocked,
   claimCreate,
@@ -331,7 +333,7 @@ function usage(): void {
 . Omitting it clears any prior
                                     claim rather than preserving it.
   park         [PR] --key K --kind thread|finding --reason R
-  unpark       [PR] --key K
+  unpark       [PR] --key K [--key K …]  every key, or none when one is not parked
   parked-keys  [PR]                 newline-delimited keys
   hold         [PR] --key K --kind thread|finding --outcome accepted|moot
                [--comment-url URL] [--unconfirmed]
@@ -401,6 +403,8 @@ interface Args {
   cmd: string;
   pr: string;
   key: string;
+  /** Every `--key`, in argv order (`unpark` takes several). */
+  keys: string[];
   kind: string;
   reason: string;
   sha: string;
@@ -485,6 +489,7 @@ function parseArgs(argv: string[]): Args {
     cmd,
     pr: "",
     key: "",
+    keys: [],
     kind: "",
     reason: "",
     sha: "",
@@ -526,6 +531,7 @@ function parseArgs(argv: string[]): Args {
       : undefined;
     if (field !== undefined) {
       a[field] = take(arg, i++);
+      if (field === "key") a.keys.push(a.key);
       continue;
     }
     switch (arg) {
@@ -2170,14 +2176,8 @@ async function main(): Promise<number> {
     case "park":
       return park(store, a);
 
-    case "unpark": {
-      if (a.key === "") fail(2, "unpark requires --key");
-      await store.update((s) => ({
-        ...s,
-        parked: s.parked.filter((p) => p.key !== a.key),
-      }));
-      return 0;
-    }
+    case "unpark":
+      return unpark(store, a.keys);
 
     case "parked-keys": {
       for (const p of store.read().state.parked)
@@ -3554,6 +3554,7 @@ async function main(): Promise<number> {
 
         rmSync(store.file, { force: true });
         rmSync(orphanMarkerPath(store.stateDir, pr), { force: true });
+        clearPendingVerdicts(store.stateDir, pr);
         await removeHandoff(pr);
         // Every claim file for this PR too — live, or an abandoned
         // `.released.` leftover. Without this, "forget everything for this PR"

@@ -1143,7 +1143,7 @@ make, use the entry's term instead.
   in (converged, pull request merged or closed, round limit reached, waiting
   on a human, …), each reported with a documented exit code, so a script or a
   person can tell from the exit alone what to do next.
-- **Re-arm and takeover (of a drive)** — the two ways a *PR drive loop* that
+- **Re-arm and takeover (of a drive)** — how a *PR drive loop* that
   stopped is picked up again. A **re-arm** starts the drive afresh from its
   saved state once the reason it stopped is gone: a usage limit another
   billing account is not behind, or every decision it parked answered by a

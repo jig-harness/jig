@@ -18,8 +18,10 @@
  *     author GitHub vouches for as an owner, member or collaborator
  *     (`TRUSTED_ASSOCIATIONS`, the summary-finding guard's rule), later than
  *     the park, on the item's thread or as a pull-request comment with a line
- *     `answer <key>: …` — the re-arm unparks them all and hands the answers to
- *     the first round as human verdicts. With any item unanswered nothing is
+ *     `answer <key>: …` — the re-arm keeps the answers in the state directory,
+ *     unparks every item in one state mutation, and hands the answers to
+ *     every pass until one completes, across later arms too, as human
+ *     verdicts. With any item unanswered nothing is
  *     unparked, and the drive stops `HITL_PARKED` at its first gate as
  *     before. A comment the drive itself writes (one opening with an outcome
  *     token, or carrying a hidden marker) is never read as an answer, and a
@@ -49,6 +51,16 @@ import {
   type ParkedItem,
 } from "./../state/schema.ts";
 
+import {
+  answersFile,
+  type PendingAnswer,
+  type PendingVerdict,
+  readPendingVerdicts,
+  writePendingVerdicts,
+} from "./../state/pass-handoff.ts";
+
+import { resolveStateDir } from "./../state/store.ts";
+
 import { swallow } from "../../../../../shared/errors.ts";
 
 import { isRecord } from "../../../../../shared/guards.ts";
@@ -59,11 +71,14 @@ import { driveState } from "./paths.ts";
 
 import { QUOTA_PARKED_EXIT } from "./settings.ts";
 
-/** The longest answer body handed to the first pass; the url carries the rest. */
+/** The longest answer body in the notice; the url and the kept file carry the rest. */
 const ANSWER_BODY_MAX = 1500;
 
-/** The longest notice the first pass is handed, whatever the number of answers. */
-const NOTICE_MAX = 16_000;
+/** The longest park reason in an item's entry. */
+const REASON_MAX = 300;
+
+/** The length the answer bodies are cut to fit, beside every item's entry. */
+const NOTICE_MAX = 15_000;
 
 /** The canonical arm command, in the drive's own mode, for a person to copy. */
 export function armCommand(
@@ -167,13 +182,6 @@ export function admitQuotaRearm(
   return QUOTA_PARKED_EXIT;
 }
 
-interface Answer {
-  author: string;
-  at: string;
-  url: string;
-  body: string;
-}
-
 interface CommentLike {
   author: string;
   association: string;
@@ -251,7 +259,7 @@ async function prComments(pr: string): Promise<CommentLike[] | null> {
 async function answersTo(
   item: ParkedItem,
   conversation: CommentLike[] | null,
-): Promise<Answer[] | null> {
+): Promise<PendingAnswer[] | null> {
   if (item.at === undefined) return [];
   const after = Date.parse(item.at);
   const thread = item.kind === "thread" ? await threadComments(item.key) : [];
@@ -266,18 +274,14 @@ async function answersTo(
 }
 
 /**
- * Unpark every parked item once all of them are answered, and return the
- * notice that hands the answers to the first round; `''` when nothing was
- * unparked (no parks, an unanswered item, or a read that failed).
+ * Every parked item with its answers once all of them are answered; `null`
+ * when one is unanswered or a read failed (each logged).
  */
-export async function admitAnsweredParks(
+async function answeredParks(
   state: DriveState,
-  dryRun: boolean,
-): Promise<string> {
-  if (state.parked.length === 0) return "";
-  const pr = String(state.pr);
-  const conversation = await prComments(pr);
-  const answered: Array<{ item: ParkedItem; answers: Answer[] }> = [];
+): Promise<PendingVerdict[] | null> {
+  const conversation = await prComments(String(state.pr));
+  const answered: PendingVerdict[] = [];
   const waiting: string[] = [];
   for (const item of state.parked) {
     const answers = await answersTo(item, conversation);
@@ -285,64 +289,173 @@ export async function admitAnsweredParks(
       console.error(
         `re-arm: could not read the comments that would answer parked ${item.kind} ${item.key}; leaving every item parked.`,
       );
-      return "";
+      return null;
     }
     if (answers.length === 0) waiting.push(`${item.kind} ${item.key}`);
-    else answered.push({ item, answers });
+    else
+      answered.push({
+        kind: item.kind,
+        key: item.key,
+        reason: item.reason,
+        answers,
+      });
   }
-  if (waiting.length > 0) {
-    console.error(
-      `re-arm: ${answered.length} of ${state.parked.length} parked item(s) answered; still waiting on ${waiting.join(", ")}. Nothing is unparked until every one is.`,
-    );
-    return "";
-  }
-  if (dryRun) {
-    console.error(
-      `(dry-run) re-arm would unpark ${answered.length} answered item(s) and hand the answers to the first round.`,
-    );
-    return "";
-  }
-  for (const { item } of answered) {
-    const res = await run(
-      tsArgv(driveState, ["unpark", pr, "--key", item.key]),
-      {
-        stderr: "inherit",
-        timeoutSec: helperTimeoutSeconds(),
-      },
-    );
-    if (res.code !== 0) {
-      console.error(
-        `re-arm: could not unpark ${item.key} (drive-state.ts exited ${res.code}); the drive keeps its parks.`,
-      );
-      return "";
-    }
-  }
+  if (waiting.length === 0) return answered;
   console.error(
-    `re-arm: every parked item on PR #${pr} is answered — unparked ${answered.length} and handing the answers to the first round as human verdicts.`,
+    `re-arm: ${answered.length} of ${state.parked.length} parked item(s) answered; still waiting on ${waiting.join(", ")}. Nothing is unparked until every one is.`,
   );
-  return humanVerdictNotice(answered);
+  return null;
 }
 
-function humanVerdictNotice(
-  answered: Array<{ item: ParkedItem; answers: Answer[] }>,
+/**
+ * Unpark every parked item once all of them are answered, and return the
+ * notice that hands the answers, with any an earlier arm unparked and no pass
+ * has yet completed with, to the first round; `''` when there are none.
+ *
+ * The answers are written to the state directory (`pass-handoff.ts`) before
+ * the one `unpark` that removes every answered park or none, so no stop
+ * after it can lose them: they stay there until a pass exits 0. An entry
+ * whose item is still parked (an unpark that failed) is kept and not handed:
+ * the item's thread still holds the answer for the next arm to read.
+ */
+export async function admitAnsweredParks(
+  state: DriveState,
+  dryRun: boolean,
+): Promise<string> {
+  const pr = String(state.pr);
+  const stateDir = await resolveStateDir();
+  const file = answersFile(stateDir, pr);
+  const kept = readPendingVerdicts(stateDir, pr);
+  if (kept === null) {
+    console.error(
+      `re-arm: cannot read the answers kept for PR #${pr} in ${file}; unparking nothing. Act on that file by hand, then remove it to drive on.`,
+    );
+    return "";
+  }
+  const isParked = (key: string) => state.parked.some((p) => p.key === key);
+  const carried = kept.filter((v) => !isParked(v.key));
+  if (carried.length > 0)
+    console.error(
+      `re-arm: ${carried.length} answered item(s) an earlier arm unparked are still owed to a pass (${file}).`,
+    );
+  const fresh = state.parked.length === 0 ? [] : await answeredParks(state);
+  if (fresh === null || fresh.length === 0)
+    return dryRun ? "" : humanVerdictNotice(carried, file);
+  if (dryRun) {
+    console.error(
+      `(dry-run) re-arm would unpark ${fresh.length} answered item(s) and hand the answers to the first round.`,
+    );
+    return "";
+  }
+  const keys = new Set(fresh.map((v) => v.key));
+  try {
+    writePendingVerdicts(stateDir, pr, [
+      ...kept.filter((v) => !keys.has(v.key)),
+      ...fresh,
+    ]);
+  } catch (err) {
+    console.error(
+      `re-arm: cannot keep the answers in ${file} (${String(err)}); every item stays parked.`,
+    );
+    return humanVerdictNotice(carried, file);
+  }
+  const res = await run(
+    tsArgv(driveState, [
+      "unpark",
+      pr,
+      ...fresh.flatMap((v) => ["--key", v.key]),
+    ]),
+    { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
+  );
+  if (res.code !== 0) {
+    // A deadline can end the call after its write landed: hand on whatever
+    // the state no longer parks (all of them or none).
+    const now = await readDriveState(pr);
+    const gone =
+      now === null
+        ? []
+        : fresh.filter((v) => !now.parked.some((p) => p.key === v.key));
+    console.error(
+      gone.length > 0
+        ? `re-arm: drive-state.ts unpark exited ${res.code}, but the answered items are unparked; handing their answers on.`
+        : `re-arm: could not unpark the answered items (drive-state.ts exited ${res.code}); every one stays parked, and the next arm reads their answers again.`,
+    );
+    return humanVerdictNotice([...carried, ...gone], file);
+  }
+  console.error(
+    `re-arm: every parked item on PR #${pr} is answered — unparked ${fresh.length} and handing the answers to the first round as human verdicts (kept in ${file} until a pass completes).`,
+  );
+  return humanVerdictNotice([...carried, ...fresh], file);
+}
+
+function clip(text: string, max: number, why: string): string {
+  return text.length > max ? `${text.slice(0, max)}… (cut; ${why})` : text;
+}
+
+/**
+ * The notice for `verdicts`; `''` for none. Every item keeps a one-line
+ * `[kind] key — url` entry whatever the count; only answer bodies are cut to
+ * fit `NOTICE_MAX`, and `file` holds every answer in full.
+ */
+export function humanVerdictNotice(
+  verdicts: readonly PendingVerdict[],
+  file: string,
 ): string {
-  const lines = [
+  if (verdicts.length === 0) return "";
+  const head = [
     "RE-ARMED WITH HUMAN ANSWERS: every parked item was answered by an owner, member or collaborator after it was parked, and is unparked.",
     "Treat each answer as a person's verdict on its item: act on it this round, reply with the outcome it leads to, and resolve or hold as usual.",
+    `Every answer in full: ${file}`,
   ];
-  for (const { item, answers } of answered) {
-    lines.push(`- [${item.kind}] ${item.key} — parked: ${item.reason}`);
-    for (const a of answers) {
-      const body =
-        a.body.length > ANSWER_BODY_MAX
-          ? `${a.body.slice(0, ANSWER_BODY_MAX)}… (cut; read the rest at the url)`
-          : a.body;
-      lines.push(`  answered by ${a.author} at ${a.at} (${a.url}):`);
-      for (const line of body.split("\n")) lines.push(`    ${line}`);
+  const entries = verdicts.map((v) => ({
+    entry: `- [${v.kind}] ${v.key} — ${v.answers[0]?.url ?? "(no url)"} — parked: ${clip(v.reason, REASON_MAX, "see the thread")}`,
+    answers: v.answers.map((a) => ({
+      line: `  answered by ${a.author} at ${a.at} (${a.url}):`,
+      body: a.body,
+    })),
+  }));
+  // Each answer's body is at least the cut note; what is left is shared out
+  // in order.
+  const floor = indent(CUT).length + 1;
+  const skeleton = [
+    ...head,
+    ...entries.flatMap((e) => [e.entry, ...e.answers.map((a) => a.line)]),
+  ].join("\n").length;
+  let room = NOTICE_MAX - skeleton - floor * answerCount(entries);
+  const lines = [...head];
+  for (const e of entries) {
+    lines.push(e.entry);
+    for (const a of e.answers) {
+      const body = fitBody(a.body, floor + Math.max(0, room));
+      room -= body.length + 1 - floor;
+      lines.push(a.line, body);
     }
   }
-  const notice = lines.join("\n");
-  return notice.length > NOTICE_MAX
-    ? `${notice.slice(0, NOTICE_MAX)}\n… (cut; read the remaining answers on the pull request)`
-    : notice;
+  return lines.join("\n");
+}
+
+const CUT = "… (cut; read the rest at the url or in the file named above)";
+
+function indent(body: string): string {
+  return body
+    .split("\n")
+    .map((line) => `    ${line}`)
+    .join("\n");
+}
+
+function answerCount(entries: ReadonlyArray<{ answers: unknown[] }>): number {
+  return entries.reduce((n, e) => n + e.answers.length, 0);
+}
+
+/** `body` indented, cut to at most `ANSWER_BODY_MAX` characters and `max` in all. */
+function fitBody(body: string, max: number): string {
+  if (body.length <= ANSWER_BODY_MAX && indent(body).length + 1 <= max)
+    return indent(body);
+  let n = Math.min(ANSWER_BODY_MAX, body.length);
+  let out = indent(`${body.slice(0, n)}${CUT}`);
+  while (n > 0 && out.length + 1 > max) {
+    n = Math.max(0, n - (out.length + 1 - max));
+    out = indent(`${body.slice(0, n)}${CUT}`);
+  }
+  return out;
 }

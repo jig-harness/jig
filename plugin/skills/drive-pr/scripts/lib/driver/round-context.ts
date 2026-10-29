@@ -3,6 +3,8 @@ import type { FinalCiWait } from "./../final-ci-wait.ts";
 
 import type { DriveLock } from "./locks.ts";
 
+import type { AccountIdentity } from "./../identity.ts";
+
 export interface DriveRoundContext {
   passes: number;
   prevFingerprint: string | null;
@@ -21,6 +23,12 @@ export interface DriveRoundContext {
   ciRepairBudget: number;
   dryRun: boolean;
   agent: string[];
+  /**
+   * The account the last review pass billed, resolved as it was spawned: a
+   * wall that pass meets is that account's, whatever the credentials read
+   * after it exits. `null` before the first spawn.
+   */
+  passIdentity: AccountIdentity | null;
   mailboxCheckpoint: () => Promise<number | "resumed" | "clear">;
   held: DriveLock[];
   witnessWaitHead: string;
@@ -42,4 +50,10 @@ export interface DriveRoundContext {
    * them, so it is cleared only when a pass exits 0.
    */
   carriedNotice: string;
+  /**
+   * The local HEAD a pass killed at its deadline left ahead of the PR head,
+   * witnessed after the kill; `''` when it left nothing unpushed. Every gate
+   * is told it (`drive-status.ts --inherited-head`) until a pass completes.
+   */
+  inheritedHead: string;
 }

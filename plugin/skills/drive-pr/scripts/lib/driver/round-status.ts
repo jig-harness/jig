@@ -72,8 +72,18 @@ export async function readRoundStatus(
   | "continue"
   | { code: number; status: Record<string, unknown>; reasonLine: string }
 > {
+  const inherited =
+    context.inheritedHead === ""
+      ? []
+      : ["--inherited-head", context.inheritedHead];
   const statusRes = await run(
-    tsArgv(driveStatus, [context.pr, "--json", ...forward, ...probeFlags]),
+    tsArgv(driveStatus, [
+      context.pr,
+      "--json",
+      ...forward,
+      ...probeFlags,
+      ...inherited,
+    ]),
     { stderr: "inherit" },
   );
   const code = statusRes.code;

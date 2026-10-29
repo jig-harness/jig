@@ -424,6 +424,7 @@ const ALL_ARTIFACT_FAMILIES: Record<ArtifactFamily, true> = {
   "legacy-migration-marker": true,
   log: true,
   "orphan-marker": true,
+  "pass-handoff": true,
   "pr-lease": true,
   "ready-claim": true,
   "reaper-delete-lock": true,
@@ -439,9 +440,11 @@ describe("canonical state artifact inventory", () => {
     const root = scratch();
     const files = [
       "drive-arm-42.out",
+      "drive-pr-42.answers.json",
       "drive-pr-42.held-claim.key.0123456789abcdef",
       "drive-pr-42.json",
       "drive-pr-42.log",
+      "drive-pr-42.notice.md",
       "drive-pr-42.ready-claim",
       "drive-pr-42.stop-complete.aaaaaaaaaaaaaaaaaaaaaaaa.json",
       "drive-pr-remote-lock-42.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa",
@@ -483,12 +486,14 @@ describe("canonical state artifact inventory", () => {
       },
       { name: ".reap-state-snapshot.json", family: "reaper-snapshot" },
       { name: "drive-arm-42.out", family: "arm-output" },
+      { name: "drive-pr-42.answers.json", family: "pass-handoff" },
       {
         name: "drive-pr-42.held-claim.key.0123456789abcdef",
         family: "held-claim",
       },
       { name: "drive-pr-42.json", family: "state" },
       { name: "drive-pr-42.log", family: "log" },
+      { name: "drive-pr-42.notice.md", family: "pass-handoff" },
       { name: "drive-pr-42.ready-claim", family: "ready-claim" },
       {
         name: "drive-pr-42.stop-complete.aaaaaaaaaaaaaaaaaaaaaaaa.json",

@@ -4,7 +4,6 @@
  * claims, back-dated progress, billing-account hashes and scratch trees.
  */
 
-import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
@@ -19,17 +18,34 @@ import {
 } from "./drive-pr-harness.ts";
 import { state } from "./drive-loop-harness.ts";
 
-/** The hashed account a `CLAUDE_CODE_OAUTH_TOKEN` pass bills. */
-export function tokenAccount(token: string): string {
-  const fp = createHash("sha256").update(token).digest("hex").slice(0, 12);
+/** The hashed account a Claude pass logged in as `email` bills. */
+export function loginAccount(email: string): string {
   const hash = accountHash({
-    account: `token:${fp}`,
+    account: email,
     vendor: "claude",
-    provenance: "CLAUDE_CODE_OAUTH_TOKEN",
+    provenance: "oauthAccount",
     reason: null,
   });
-  if (hash === null) throw new Error("a resolved identity always hashes");
+  if (hash === null) throw new Error("a resolved login always hashes");
   return hash;
+}
+
+/**
+ * The environment of a Claude pass logged in as `email`: a config directory
+ * whose `.claude.json` names it, and no token or API key in front of it.
+ */
+export function loginEnv(email: string): Record<string, string> {
+  const dir = join(tmpRoot, `login-${email.replace(/[^a-z0-9]/gi, "-")}`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, ".claude.json"),
+    JSON.stringify({ oauthAccount: { emailAddress: email } }),
+  );
+  return {
+    CLAUDE_CONFIG_DIR: dir,
+    CLAUDE_CODE_OAUTH_TOKEN: "",
+    ANTHROPIC_API_KEY: "",
+  };
 }
 
 /** Whether a process is still running, by the signal-0 probe. */

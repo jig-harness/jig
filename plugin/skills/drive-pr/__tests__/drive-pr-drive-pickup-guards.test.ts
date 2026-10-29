@@ -28,7 +28,8 @@ import {
   progressAt,
   replyRecordingGh,
   stale,
-  tokenAccount,
+  loginAccount,
+  loginEnv,
   trackedTree,
 } from "./drive-pr-pickup-fixtures.ts";
 
@@ -171,7 +172,7 @@ describe("re-arming a quota-parked drive on the wall's own account", () => {
         "--reset-at",
         resetAt,
         "--account",
-        tokenAccount("tok-wall"),
+        loginAccount("wall@example.invalid"),
       ],
       scratchClean.dir,
     );
@@ -188,7 +189,7 @@ describe("re-arming a quota-parked drive on the wall's own account", () => {
       stateDir,
       ["--no-head-sync", "--", ...CLAUDE_PASS],
       undefined,
-      { env: { CLAUDE_CODE_OAUTH_TOKEN: "tok-wall" } },
+      { env: loginEnv("wall@example.invalid") },
     );
     expectSpawnExit({ ...r, stdout: null }, 5);
     expect(r.stderr).toContain("its window reset at");
@@ -201,7 +202,7 @@ describe("re-arming a quota-parked drive on the wall's own account", () => {
       stateDir,
       ["--no-head-sync", "--window-reopened", "--", ...CLAUDE_PASS],
       undefined,
-      { env: { CLAUDE_CODE_OAUTH_TOKEN: "tok-wall" } },
+      { env: loginEnv("wall@example.invalid") },
     );
     expectSpawnExit({ ...r, stdout: null }, 5);
     expect(r.stderr).toContain("--window-reopened says the window is open");
@@ -357,7 +358,7 @@ describe("drive.ts --take-over admits and refuses by the holder", () => {
     }
   });
 
-  it("carries a stamped hold over and reopens the unstamped one with a superseding reply", async () => {
+  it("carries a stamped hold over and re-holds the unstamped one unconfirmed, posting nothing", async () => {
     const owner = fakeDriver();
     const gh = replyRecordingGh("takeover-carry");
     try {
@@ -391,12 +392,14 @@ describe("drive.ts --take-over admits and refuses by the holder", () => {
       expect(r.stderr).toContain("takeover: recorded in the drive state");
       const after = JSON.parse((await state(stateDir, ["get", "999"])).stdout);
       expect(after.takeovers[0].reopened).toEqual(["PRRT_h"]);
-      expect(after.held.map((h: { key: string }) => h.key)).toContain("PRRT_s");
-      expect(existsSync(gh.log)).toBe(true);
-      const replies = readFileSync(gh.log, "utf8");
-      expect(replies).toContain("PRRT_h");
-      expect(replies).toContain("Reopened:");
-      expect(replies).not.toContain("PRRT_s");
+      const byKey = (k: string) =>
+        after.held.find((h: { key: string }) => h.key === k);
+      expect(byKey("PRRT_s")?.round).not.toBe(-1);
+      // The unstamped hold is re-held unconfirmed on its own reply, and
+      // nothing is posted: the sweep would re-hold that reply anyway.
+      expect(byKey("PRRT_h")?.round).toBe(-1);
+      expect(byKey("PRRT_h")?.commentUrl).toBe("https://example.invalid/h");
+      expect(existsSync(gh.log)).toBe(false);
     } finally {
       owner.kill();
       await owner.exited;
