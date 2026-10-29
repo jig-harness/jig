@@ -415,13 +415,13 @@ export async function admitAnsweredParks(
     { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
   );
   if (res.code !== 0) {
-    // A deadline can end the call after its write landed: hand on whatever
-    // the state no longer parks (all of them or none).
-    const now = await readDriveState(pr);
-    const gone =
-      now === null
-        ? []
-        : fresh.filter((v) => !now.parked.some((p) => p.key === v.key));
+    // A deadline can end the call after its write landed.
+    const gone = unparkedAfterFailure(await readDriveState(pr), fresh);
+    if (gone === null)
+      return fail(
+        1,
+        `re-arm: drive-state.ts unpark exited ${res.code}, and the drive state cannot be read to tell whether the answered items were unparked; stopping with the answers kept in ${file}. Re-arm once the state reads.`,
+      );
     console.error(
       gone.length > 0
         ? `re-arm: drive-state.ts unpark exited ${res.code}, but the answered items are unparked; handing their answers on.`
@@ -433,6 +433,21 @@ export async function admitAnsweredParks(
     `re-arm: every parked item on PR #${pr} is answered — unparked ${fresh.length} and handing the answers to the first round as human verdicts (kept in ${file} until a pass completes).`,
   );
   return humanVerdictNotice([...carried, ...fresh], file);
+}
+
+/**
+ * After an `unpark` that exited non-zero, the answered items the state
+ * `now` no longer parks (all of them or none), to hand on. `null` when the
+ * state could not be read: whether they were unparked is then unknown, and
+ * driving on could let a completed pass remove the only copy of answers
+ * whose parks are gone, so the arm stops.
+ */
+export function unparkedAfterFailure(
+  now: DriveState | null,
+  fresh: readonly PendingVerdict[],
+): PendingVerdict[] | null {
+  if (now === null) return null;
+  return fresh.filter((v) => !now.parked.some((p) => p.key === v.key));
 }
 
 function clip(text: string, max: number, why: string): string {
