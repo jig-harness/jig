@@ -311,7 +311,7 @@ function sectionText(text: string, heading: string | undefined): Section {
 }
 
 /**
- * The prose restatements of the exit-code pairing, in three row shapes:
+ * The prose restatements of the exit-code pairing, by row shape:
  * `drive-status.ts`'s doc-comment format, `SKILL.md`'s `| State | Exit | … |`
  * table and the others' `| Exit | State | … |`. `requiredIdentifiers` is the
  * pinned set `CorpusFile` explains, read back from this file's extractor run
