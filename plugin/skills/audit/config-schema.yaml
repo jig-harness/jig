@@ -88,7 +88,7 @@ fields:
     type: list
     items: path
     distinct: true
-    read_by: [audit, gc]
+    read_by: [audit, gc, drive-pr]
     repository_only: true
     since: 0.83.0
   gc.scratch_prefixes:
@@ -216,7 +216,7 @@ fields:
     type: string
     pattern: "^(?!-)(?!.*\\.\\.)(?!.*//)(?!/)(?!.*/$)(?!.*\\.$)(?!(?:.*/)?\\.)(?!.*\\.lock(?:/|$))[A-Za-z0-9._/-]+$"
     default: origin
-    read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect]
+    read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc]
     since: 0.94.0
 
   pull_requests.stacking:

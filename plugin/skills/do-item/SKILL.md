@@ -121,11 +121,15 @@ bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<is
 bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" [--stack-on <branch>] [--accept-oversize "<reason>"] [--json]
 ```
 
-- `branch` prints the branch name for the issue. Create the working branch
-  with it from the planned base before the implementing agent writes
-  anything. When the harness has already created the working branch and its
-  instructions forbid renaming it, keep that branch and say so in the status
-  message; the issue-link line in the body still links the pull request.
+- `branch` prints the branch name for the issue, for a **new** pull request.
+  Create the working branch with it from the planned base before the
+  implementing agent writes anything. When the harness has already created
+  the working branch and its instructions forbid renaming it, keep that
+  branch and say so in the status message; the issue-link line in the body
+  still links the pull request. An item that already has an open pull
+  request gets no branch and no second pull request: its work continues on
+  that pull request, driven with `/jig:drive-pr <PR>`, which places the
+  drive in a working tree on the pull request's head (Step 4).
 - `open` prints the plan for the current branch, after validation and the
   pre-PR review gate pass: the `base`, the `gh pr create` arguments the policy
   fixes (`createArgs`: base, `--draft` or not, labels), commands to run after
@@ -608,7 +612,14 @@ routing below remain **exact**.
    branch named by `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch` (**exact**; see
    [Pull-request policy](#pull-request-policy)), from the integration branch,
    or from the predecessor's branch when this change builds on an unmerged
-   pull request and `pull_requests.stacking` allows it.
+   pull request and `pull_requests.stacking` allows it. When the item already
+   has an open pull request, do not delegate: stop here, create no branch
+   and open no pull request, remove the scratch files this procedure wrote
+   (`issue.json`, `comments.json`, `intent-chain-input.json` and
+   `scout-findings.md`, whichever exist; an
+   attach refuses a tree it would move while they are in it), and hand the item to that pull request's drive with
+   `/jig:drive-pr <PR>`. Its placement chooses or creates the working tree
+   on the pull request's head, so nothing here is pushed or attached.
 
    **Review gates — MANDATORY when declared.** Each entry of the overlay's
    `do_item.gates` is `{labels: [...], paths: [...], skill: <name>}`. A gate

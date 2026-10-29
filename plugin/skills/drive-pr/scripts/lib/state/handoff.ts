@@ -39,6 +39,7 @@ import {
   keyFromBranch,
 } from "../../../../do-item/scripts/lib/tracker/keys.ts";
 import { DEFAULT_BRANCH_PATTERN, prPolicy } from "../pr-policy.ts";
+import { drivenBranchName } from "../driven-branch.ts";
 import { git, gitIdentityEnv } from "../proc.ts";
 import { atomicWrite } from "./fsutil.ts";
 import type { DriveState } from "./schema.ts";
@@ -223,14 +224,13 @@ async function identifierFromBranch(
   dir: string,
   keys: IssueKeys | null,
 ): Promise<string | null> {
-  const r = await git(["rev-parse", "--abbrev-ref", "HEAD"], {
-    cwd: dir,
-    stderr: "ignore",
+  // A detached tree an attach prepared drives the branch its record names.
+  const branch = await drivenBranchName(git, dir, {
     timeoutSec: 10,
     env: gitIdentityEnv(),
   });
-  if (r.code !== 0) return null;
-  return identifierFromBranchName(r.stdout, keys);
+  if (branch === null) return null;
+  return identifierFromBranchName(branch, keys);
 }
 
 /** A snapshot is a regular file the writer created. `existsSync`/`readFileSync`
@@ -415,6 +415,17 @@ export async function intentChainSection(
   ];
 }
 
+/** Which tree the last attach prepared, when one did (`drivenBranch`). */
+function drivenFromLine(s: DriveState): string[] {
+  const d = s.drivenBranch;
+  if (!d) return [];
+  const how = d.detached ? "detached at the head of" : "on";
+  const made = d.created ? "; the drive created this tree" : "";
+  return [
+    `- **Driven from**: ${d.worktree}, ${how} \`${d.branch}\` (pushed to \`${d.remote}\`)${made}`,
+  ];
+}
+
 export async function renderHandoff(
   pr: string,
   s: DriveState,
@@ -479,6 +490,7 @@ export async function renderHandoff(
     }
   })();
   lines.push(`- **CI hold**: ${ciHoldSummary}`);
+  lines.push(...drivenFromLine(s));
   lines.push(
     ...(await intentChainSection(
       await intentChainDir(dir),

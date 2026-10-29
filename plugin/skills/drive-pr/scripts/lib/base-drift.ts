@@ -60,6 +60,7 @@ import { definedFields } from "../../../../shared/defined-fields.ts";
  * construct that merge tree either — see `pathCollisions` below.
  */
 
+import { drivenBranchName } from "./driven-branch.ts";
 import { consumerRoot, remoteName } from "../../../../shared/consumer.ts";
 import { gitCallTimeoutSeconds, readTimeoutEnv } from "./proc.ts";
 import { repoOfUrl } from "./repo-url.ts";
@@ -287,24 +288,21 @@ export async function verifyCheckoutIsPrHead(
   apiHead: string,
   env?: Record<string, string | undefined>,
 ): Promise<{ ok: true } | { ok: false; why: string }> {
-  const branchRes = await git(
-    ["-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
-    {
-      timeoutSec: gitCallTimeoutSeconds(),
-      ...definedFields({ env }),
-    },
-  );
-  if (branchRes.code !== 0) {
+  // A detached tree an attach prepared drives the branch its record names.
+  const branch = await drivenBranchName(git, root, {
+    timeoutSec: gitCallTimeoutSeconds(),
+    ...definedFields({ env }),
+  });
+  if (branch === null) {
     return {
       ok: false,
       why: "cannot read this worktree's current branch",
     };
   }
-  const branch = branchRes.stdout.trim();
   if (branch !== headRefName) {
     return {
       ok: false,
-      why: `checked out on ${branch === "HEAD" ? "a detached HEAD" : `'${branch}'`}, not this PR's head branch '${headRefName}'`,
+      why: `checked out on ${branch === "HEAD" ? "a detached HEAD no attach recorded" : `'${branch}'`}, not this PR's head branch '${headRefName}'`,
     };
   }
   const ancestorRes = await git(

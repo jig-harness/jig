@@ -42,6 +42,7 @@
 
 import { runMain } from "../../../shared/cli.ts";
 import { reviewConfig } from "../../../shared/consumer.ts";
+import { attachedTreePr } from "../../../shared/proc.ts";
 import { ghOrExit, repoViewOrExit } from "./lib/gh.ts";
 import {
   DEFAULT_SCANNER_APPS,
@@ -73,11 +74,20 @@ async function targetPr(args: string[]): Promise<string | null> {
     console.error(`${LABEL}: ${usage}`);
     return null;
   }
+  // A detached tree a drive attached has no branch for `gh` to read.
   const pr =
     args[0] ??
-    (
-      await ghOrExit(LABEL, ["pr", "view", "--json", "number", "-q", ".number"])
-    ).trim();
+    ((await attachedTreePr()) ||
+      (
+        await ghOrExit(LABEL, [
+          "pr",
+          "view",
+          "--json",
+          "number",
+          "-q",
+          ".number",
+        ])
+      ).trim());
   if (/^[0-9]+$/.test(pr)) return pr;
   console.error(`${LABEL}: PR must be a number (got '${pr}')`);
   return null;

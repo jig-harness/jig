@@ -123,6 +123,7 @@ import {
   noLiveDriver,
   stallThresholdMs,
 } from "./lib/doctor.ts";
+import { attachedTree } from "./lib/driven-branch.ts";
 import { formatAccountIdentity } from "./lib/identity.ts";
 import {
   findPassChild,
@@ -575,16 +576,10 @@ export async function gatherWorktreeLeftovers(
   worktree: string,
 ): Promise<DoctorLeftovers | null> {
   const timeoutSec = gitCallTimeoutSeconds();
-  // `env: gitIdentityEnv()` on EVERY probe below, not just `cwd` — `cwd`
-  // alone was never sufficient (`GIT_LOCATION_VARS`' own header in
-  // `lib/proc.ts`). This command is routinely run from an operator's shell
-  // and from a SessionStart hook, and a lefthook hook exports `GIT_DIR`/
-  // `GIT_WORK_TREE` into exactly that environment; `GIT_DIR` alone is the
-  // sharpest case, since git then treats `cwd` as the work tree while
-  // resolving refs from the leaked dir — so `status` would answer for THIS
-  // worktree while `@{u}..HEAD` answered for another repository entirely, and
-  // `--doctor` would report a stranger's unpushed commits as this drive's
-  // leftovers.
+  // `env: gitIdentityEnv()` on EVERY probe below, not just `cwd`: a hook
+  // exports `GIT_DIR`/`GIT_WORK_TREE` into an operator's shell, and with a
+  // leaked `GIT_DIR` git resolves refs from another repository, so `--doctor`
+  // would report a stranger's unpushed commits as this drive's leftovers.
   const env = gitIdentityEnv();
   const dirty = await git(
     [
@@ -598,23 +593,28 @@ export async function gatherWorktreeLeftovers(
   if (dirty.code !== 0) return null;
   const op = await unconcludedGitOpMarker(timeoutSec, { cwd: worktree, env });
   if (!op.ok) return null;
-  // A missing upstream is not "0 unpushed commits" and not "some unpushed
-  // commits" — it is a DIFFERENT question this probe cannot answer, checked
-  // STRUCTURALLY (does `@{u}` resolve at all) before ever asking `rev-list` to
-  // count against it, rather than inferring the cause from `rev-list`'s own
-  // exit code or stderr text (parse or pin, never pattern-match a failure's
-  // cause).
+  // A missing upstream is a question this probe cannot answer, not a count:
+  // checked structurally before `rev-list` counts against it. A detached
+  // tree an attach prepared counts against its driven branch's remote ref.
+  let upstreamRef = "@{u}";
   const upstream = await git(
     ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
     { stderr: "ignore", timeoutSec, cwd: worktree, env },
   );
-  if (upstream.code !== 0) return null;
-  const unpushedCount = await git(["rev-list", "--count", "@{u}..HEAD"], {
-    stderr: "ignore",
-    timeoutSec,
-    cwd: worktree,
-    env,
-  });
+  if (upstream.code !== 0) {
+    const record = await attachedTree(git, worktree, { timeoutSec, env });
+    if (record === null) return null;
+    upstreamRef = `refs/remotes/${record.remote}/${record.branch}`;
+  }
+  const unpushedCount = await git(
+    ["rev-list", "--count", `${upstreamRef}..HEAD`],
+    {
+      stderr: "ignore",
+      timeoutSec,
+      cwd: worktree,
+      env,
+    },
+  );
   if (unpushedCount.code !== 0) return null;
   const n = Number.parseInt(unpushedCount.stdout.trim(), 10);
   if (!Number.isFinite(n)) return null;
