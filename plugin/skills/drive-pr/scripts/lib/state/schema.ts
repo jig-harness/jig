@@ -393,6 +393,8 @@ export interface DriveState {
   drivenBranch?: DrivenBranch | null;
   /** Every `drive.ts --take-over` of this drive, oldest first (`takeover.ts`). */
   takeovers?: TakeoverRecord[];
+  /** The drive ledger's generation this state was last written or seeded at (`ledger.ts`). */
+  ledgerGeneration?: number;
   [extra: string]: unknown;
 }
 
@@ -542,6 +544,8 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   if (typeof s.phase !== "string") return false;
   if (!isOptionalDrivenBranch(s.drivenBranch)) return false;
   if (!isOptionalTakeovers(s.takeovers)) return false;
+  if (s.ledgerGeneration !== undefined && !isCount(s.ledgerGeneration))
+    return false;
   if (!Array.isArray(s.parked)) return false;
   if (!(s.parked as unknown[]).every(isParkedItem)) return false;
   // Present AND well-typed, not "well-typed if present" — see `DriveState`.

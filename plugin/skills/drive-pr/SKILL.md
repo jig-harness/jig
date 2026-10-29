@@ -151,9 +151,9 @@ its `--json` report; the canonical (exit, state) pairing is code, not this
 table — [`terminal-states.ts`](scripts/lib/status/terminal-states.ts),
 checked against this and the other prose restatements by
 [`__tests__/terminal-states-consistency.ts`](https://github.com/jig-harness/jig/blob/main/plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts).
-`PASS_DEADLINE`, `QUOTA_PARKED`, `MAILBOX_STOPPED`, and `MAILBOX_PAUSE_TIMEOUT` are the
+`PASS_DEADLINE`, `QUOTA_PARKED`, `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT` and `TAKEN_OVER` are the
 exception: named exits `drive.ts` returns directly, never through this report — a
-consumer polling `--json` for one of these four will never see it there.
+consumer polling `--json` for one of these five will never see it there.
 
 | State | Exit | Meaning |
 |---|---|---|
@@ -165,6 +165,7 @@ consumer polling `--json` for one of these four will never see it there.
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` / `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count 'origin/<head-branch>..HEAD'` before re-arming, same as `PASS_DEADLINE`. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` ended `drive.ts` at a round boundary, after any running pass completed. Resume the stop directive before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
+| `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
 `CONVERGED` on a PR that is **still an unmarked draft** is not returned as-is:
 `drive.ts` marks it Ready first and re-gates once (§ Drafts are driven). Its
@@ -214,7 +215,9 @@ this working tree holds the drive lease (the session lease — the gate raises
 it from its own round-counting call), `13` another live working *tree* is driving
 this PR (PR-wide admission; same call, deliberately a different code —
 the remedies differ; both ladders:
-[round-finish.md](references/round-finish.md) § Concurrency), `12` converged but the
+[round-finish.md](references/round-finish.md) § Concurrency; `drive.ts` raises
+it at arm too, when the drive ledger names a running driver in another clone),
+`12` converged but the
 worktree is not clean — uncommitted state, an unconcluded merge/cherry-
 pick/revert/rebase/am, or local HEAD no longer matching the reviewed head,
 all invisible to a plain `git status` (`drive.ts` only — commit/push/discard
@@ -527,6 +530,29 @@ you look:
   a previous `$DRIVE_PR_STATE_DIR`) moves with `bun "${CLAUDE_SKILL_DIR}/scripts/migrate-state-dir.ts" --from <old
   dir>` instead: [README.md § Relocating the state
   dir](README.md#relocating-the-state-dir).
+- **The drive ledger** — the state's resumable subset, mirrored into one
+  hidden-marker comment on the PR (`<!-- drive-pr-ledger -->`,
+  `lib/state/ledger.ts`): `ledgerVersion` and a monotonic `generation`, the
+  round, phase, last counted and verified heads, the Ready mark, every parked
+  item with its decision, every held item by key, outcome and pushed commit,
+  the quota park, the takeover records and the claims in force, the decisions
+  taken unattended (empty for now), the driver's tree, hashed account, clone
+  and heartbeat, and the handoff narrative's last twenty lines. A driver writes
+  it on the path that regenerates the handoff file — `drive-state.ts`'s `handoff`
+  at every round boundary, after a takeover and as it stops (naming its exit),
+  and its `park` at every park — by read-modify-write against the
+  comment's `updated_at`; a session that is not a drive's child never writes
+  it. The body is cut to the forge's limit by dropping held items' outcomes
+  first and the narrative second, never a parked decision. Two creations that
+  race leave two comments: the lower id is canonical, and each writer deletes
+  its own copy on its next write. It is trusted only from the drive's own
+  login or an owner, member or collaborator; any other comment carrying the
+  marker is ignored and reported. A drive that starts with no state for the
+  PR, or with state older than the ledger's generation, seeds its state from
+  the ledger (`drive-state.ts`'s `seed-ledger`); a `ledgerVersion` it does not
+  read refuses with exit `1`, naming the version. The locks stay per clone:
+  the ledger seeds and arbitrates (§ Picking up a stopped drive), it does not
+  lock. `DRIVE_PR_LEDGER=off` and `--dry-run` drive without it.
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state root,
   preserving one `<clone-key>/` directory per clone (the hash of its persisted
   [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved leaf;
@@ -625,10 +651,32 @@ drive's durable round. Held items carry over by their state: a hold whose
 fix was pushed is resolved by the round as usual; a hold whose promised fix
 never landed is released and reopened with a superseding reply that says so,
 and the first pass is told to redo the fix and hold it again or to triage it
-afresh. A takeover reaches only this clone's drivers.
+afresh.
+
+**Across clones** no process can be stopped and no lock is shared, so the
+takeover goes through the drive ledger (§ Running it, *The drive ledger*).
+When no driver of this clone holds the drive and the ledger names a running
+driver in another clone, `--take-over` is admitted only when that ledger's
+heartbeat (the time of its last write) is older than the lease window, the
+doctor's stall threshold (`DRIVE_PR_STALL_MIN`, floor 240 minutes); a fresher
+one is refused with exit `11`. Once it holds its locks the taker posts an
+append-only claim on the PR (`<!-- drive-pr-takeover-claim -->`: its tree,
+hashed account, clone, the ledger generation it read, the time). Of the
+claims on one generation the earliest comment id wins, and a later claimant
+stands down with exit `20` (`TAKEN_OVER`). The winner seeds this clone's
+state from the ledger, completes the takeover as above, and writes the
+ledger. Every driver reads the claims at each round boundary and exits `20`,
+without another pass, when a claim in force from another clone is newer than
+its own. A plain arm while the ledger names another clone's running driver
+is refused with exit `13`, and the refusal prints the `--take-over` command
+once that driver's heartbeat is past the window. This arbitration holds only
+once every driver of a PR runs a plugin version that reads the ledger: an
+older driver writes no heartbeat and reads no claim.
 
 Do not stop a driver that is making progress; take over one that is `WEDGED`
-or dead with `--take-over`.
+or dead, or another clone's whose ledger heartbeat is past the lease window,
+with `--take-over`. Never drive beside a driver whose claim is newer than
+yours.
 
 ## Entry mode: arm the driver, or work one round (decide first)
 

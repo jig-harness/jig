@@ -130,7 +130,8 @@
  *                                     # before its QUOTA_PARKED_EXIT return. Does NOT
  *                                     # stamp progress — parking is its opposite.
  *   drive-state.ts takeover     [PR]                 # record a drive.ts --take-over (JSON on stdin)
- *   drive-state.ts handoff      [PR]                 # (re)write the handoff file
+ *   drive-state.ts handoff      [PR]                 # (re)write the handoff file, and the ledger under a driver
+ *   drive-state.ts seed-ledger  [PR]                 # lay a newer ledger over this state (its body on stdin)
  *   drive-state.ts lease        [PR]                 # who is driving this PR from this
  *                                     # tree, as JSON ('' if nobody)
  *   drive-state.ts lease        [PR] --all           # every LIVE lease on this PR from
@@ -214,8 +215,9 @@ import {
   resolvePr,
 } from "./lib/proc.ts";
 import { isActorId, resolveActor } from "./lib/state/actor.ts";
-import { isAccountHash } from "./lib/identity.ts";
 import { recordTakeover } from "./lib/state/takeover.ts";
+import { mirrorLedger, seedLedgerCommand } from "./lib/state/ledger-mirror.ts";
+import { quotaPark } from "./lib/state/quota-park.ts";
 import {
   breakStaleClaimLocked,
   claimCreate,
@@ -263,7 +265,7 @@ import {
   structuralEscalationArmed,
   withProgress,
 } from "./lib/state/schema.ts";
-import { openStore, type StateStore } from "./lib/state/store.ts";
+import { openStore } from "./lib/state/store.ts";
 import {
   attributeStatuses,
   checkRunsFor,
@@ -365,7 +367,8 @@ function usage(): void {
                                     parking is the opposite of it. Cleared by
                                     the next progress event
   takeover     [PR]                 record a drive.ts --take-over (JSON on stdin)
-  handoff      [PR]                 (re)write the handoff file
+  handoff      [PR]                 (re)write the handoff file, and the ledger under a driver
+  seed-ledger  [PR]                 lay a newer ledger over this state (its body on stdin)
   admit        [PR]                 exit 0 if this tree may act on this PR, 13 if
                                     another working tree is driving it. Takes no
                                     lease and mutates nothing — for callers whose
@@ -553,47 +556,6 @@ function parseArgs(argv: string[]): Args {
   return a;
 }
 
-/** `quota-park`: record the wall, and whose it is, without stamping progress. */
-async function quotaPark(store: StateStore, a: Args): Promise<number> {
-  if (a.vendor === "") fail(2, "quota-park requires --vendor V");
-  if (/[\n\r]/.test(a.vendor)) {
-    fail(2, "quota-park: --vendor must not contain a newline");
-  }
-  if (a.window === "") fail(2, "quota-park requires --window W");
-  if (/[\n\r]/.test(a.window)) {
-    fail(2, "quota-park: --window must not contain a newline");
-  }
-  if (a.account !== "" && !isAccountHash(a.account))
-    fail(
-      2,
-      `quota-park: --account must be an account hash (got '${a.account}')`,
-    );
-  if (a.resetAt !== "" && !Number.isFinite(Date.parse(a.resetAt))) {
-    fail(
-      2,
-      `quota-park: --reset-at must be a string Date.parse can read (got '${a.resetAt}')`,
-    );
-  }
-  // Test-only hook, unset (no-op) by default: forces a lock takeover to
-  // land while `drive.ts`'s `recordQuotaPark` awaits this subprocess.
-  const delaySec = testDelaySeconds(
-    "DRIVE_PR_QUOTA_PARK_TEST_DELAY",
-    "quota-park",
-  );
-  if (delaySec > 0) await sleep(delaySec);
-  await store.update((s) => ({
-    ...s,
-    quotaPark: {
-      vendor: a.vendor,
-      window: a.window,
-      resetAt: a.resetAt === "" ? null : a.resetAt,
-      at: new Date().toISOString(),
-      ...(a.account === "" ? {} : { account: a.account }),
-    },
-  }));
-  return 0;
-}
-
 /**
  * Does an otherwise-unparseable JSON text still contain a string-literal
  * property KEY that DECODES to `target`, anywhere in the text?
@@ -769,6 +731,7 @@ async function main(): Promise<number> {
     "progress",
     "quota-park",
     "takeover",
+    "seed-ledger",
     "reset",
     "claim-ready-mark",
     "renew-ready-mark",
@@ -2160,6 +2123,7 @@ async function main(): Promise<number> {
           },
         ],
       }));
+      await mirrorLedger(pr, store);
       return 0;
     }
 
@@ -3140,13 +3104,16 @@ async function main(): Promise<number> {
     case "takeover":
       return recordTakeover(store, await readStdinAll(), await resolveActor());
 
+    case "seed-ledger":
+      return seedLedgerCommand(store, await readStdinAll());
+
     case "handoff": {
-      return store.locked(async () => {
-        const { state } = store.read();
-        const out = await renderHandoff(pr, state);
+      await store.locked(async () => {
+        const out = await renderHandoff(pr, store.read().state);
         process.stdout.write(`${out}\n`);
-        return 0;
       });
+      await mirrorLedger(pr, store);
+      return 0;
     }
 
     case "lease": {

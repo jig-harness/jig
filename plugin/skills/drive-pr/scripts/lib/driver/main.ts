@@ -56,6 +56,8 @@ import { attachForDrive } from "./../attach.ts";
 
 import { admitTakeover, explainingRefusal, pickUpDrive } from "./takeover.ts";
 
+import { armLedger, ledgerIdentity, ledgerOn, settleLedger } from "./ledger.ts";
+
 export async function main(): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
   let { pr, keepDraft, handoffAt } = options;
@@ -170,7 +172,12 @@ export async function main(): Promise<number> {
   };
   // A takeover is decided, and a wedged holder stopped, before any lock is
   // taken: the holder's locks are what this driver is about to acquire.
-  const admission = takeOver ? await admitTakeover(pr, prLock.dir) : null;
+  const ledger = ledgerOn(dryRun)
+    ? await ledgerIdentity(stateDir, agent)
+    : null;
+  const admission = takeOver
+    ? await admitTakeover(pr, prLock.dir, ledger)
+    : null;
   const held: DriveLock[] = [];
   using lockResources = new DisposableStack();
   await using lifecycle = installDriverLifecycle(held);
@@ -319,6 +326,13 @@ export async function main(): Promise<number> {
   const commandExit = validatePassCommand(explicitPr, agent, botsOnly);
   if (commandExit !== undefined) return commandExit;
 
+  // The pull request's drive ledger: seed this clone's state from it, refuse
+  // to drive beside another clone's driver, claim a cross-clone takeover.
+  if (ledger !== null) {
+    const ledgerExit = await armLedger(pr, ledger, admission);
+    if (ledgerExit !== null) return ledgerExit;
+  }
+
   // Picking the drive up from its durable state: a quota wall another
   // account may pass, a takeover, parked items a person has answered.
   const firstPassNotice = await pickUpDrive(pr, admission, {
@@ -327,7 +341,8 @@ export async function main(): Promise<number> {
     windowReopened,
     dryRun,
   });
-  if (typeof firstPassNotice === "number") return firstPassNotice;
+  if (typeof firstPassNotice === "number")
+    return settleLedger(pr, firstPassNotice);
 
   // A dry run inspects; it does not work a round. Counting it would inflate
   // the round total the bound is measured against.
@@ -355,7 +370,7 @@ export async function main(): Promise<number> {
 
   await capturePickup(pr, dryRun, diag);
 
-  return await runDriverRounds({
+  const roundsExit = await runDriverRounds({
     pr,
     mailboxDir,
     keepDraft,
@@ -369,6 +384,7 @@ export async function main(): Promise<number> {
     deadlineRetryBudget,
     firstPassNotice,
   });
+  return settleLedger(pr, roundsExit);
 }
 
 /** Refuse a pass whose declared target or thread scope differs from the driver. */

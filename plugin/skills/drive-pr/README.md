@@ -375,7 +375,7 @@ none mapped the session prints the command to run in a checkout of it. The
 human checkpoint the arm checks is read in the placed tree, so another
 repository's PR is checked against that repository's tracker.
 
-`--bots-only` keeps it off human-authored threads (recommended for unattended runs). `--keep-draft` stops it marking the PR Ready (`pull_requests.mark_ready: never` does the same for every drive). `--max-rounds N` bounds the loop (default `drive.max_rounds`, else 10). `--dry-run` reports what each round would do and never invokes the pass. `--take-over` and `--window-reopened` pick a stopped drive up ([below](#picking-up-a-stopped-drive)). Starting it twice **in the same clone** is safe — see exit `11`. That is the exact reach: the lock lives in the per-clone state dir described below, so it covers this clone and its linked worktrees and nothing further. A separate clone — another machine, a CI checkout — takes its own lock and can drive the same PR at the same time.
+`--bots-only` keeps it off human-authored threads (recommended for unattended runs). `--keep-draft` stops it marking the PR Ready (`pull_requests.mark_ready: never` does the same for every drive). `--max-rounds N` bounds the loop (default `drive.max_rounds`, else 10). `--dry-run` reports what each round would do and never invokes the pass. `--take-over` and `--window-reopened` pick a stopped drive up ([below](#picking-up-a-stopped-drive)). Starting it twice **in the same clone** is safe — see exit `11`. The lock lives in the per-clone state dir described below, so it covers this clone and its linked worktrees and nothing further. Another clone — another machine, a CI checkout — is held off by the [drive ledger](#where-its-state-lives) instead: while the ledger names a running driver in another clone, an arm is refused with exit `13`.
 
 ### A stopped drive restarts itself
 
@@ -426,6 +426,19 @@ promised fix was never pushed is reopened with a reply that says so, and the
 new driver redoes the fix or triages it afresh. Do not stop a driver that is
 making progress.
 
+A driver in **another clone** cannot be stopped from here, so the takeover
+goes through the drive ledger on the pull request. When no driver of this
+clone holds the drive and the ledger names a running driver elsewhere,
+`--take-over` is admitted only when that ledger's heartbeat (its last write)
+is older than the lease window, the doctor's stall threshold (four hours by
+default); a plain arm is refused with exit `13`, and the refusal prints the
+`--take-over` command once the heartbeat is past the window. The taker posts a
+takeover claim on the pull request. If two clones claim at once, the earlier
+comment wins and the later one stands down with exit `20`. The old driver,
+if it is still alive, reads the claim at its next round boundary and stops
+with exit `20` without another pass. This holds only once every driver of
+the pull request runs a version of the plugin that reads the ledger.
+
 ## The exit states — what you do now
 
 | Exit | State | What you do |
@@ -440,12 +453,13 @@ making progress.
 | `7` | Reviewer check failed (`REVIEWER_FAILED`) | The reviewer's check-run did not pass, so a "zero threads" read would be meaningless. Look at the check on the PR. |
 | `10` | — | Reserved; never returned. |
 | `11` | **Another driver is live** | The drive is already armed — in this worktree or another of this clone. The refusal names the holder's `--doctor` verdict. Do not stop a driver that is making progress; when the verdict is `WEDGED`, the refusal prints the `--take-over` command, and a dead holder can be taken over once its leftovers are pushed or discarded ([picking up](#picking-up-a-stopped-drive)). A `--take-over` refused for the holder's verdict exits `11` too. |
-| `13` | `DRIVE_HELD_BY_OTHER_WORKTREE` | Another live *working tree* is mutating this PR's drive state, possibly through an interactive pass rather than another driver — a case not covered by `11` when the other session is not itself holding `drive.ts`'s PR/worktree locks. Inspect with `bun "<skill-dir>/scripts/drive-state.ts" lease <PR> --all`; wait for the holder, or take over with `bun "<skill-dir>/scripts/drive-state.ts" clear-lease <PR> --all` once you have confirmed it is dead. |
+| `13` | `DRIVE_HELD_BY_OTHER_WORKTREE` | Another live *working tree* is mutating this PR's drive state, possibly through an interactive pass rather than another driver — a case not covered by `11` when the other session is not itself holding `drive.ts`'s PR/worktree locks. Inspect with `bun "<skill-dir>/scripts/drive-state.ts" lease <PR> --all`; wait for the holder, or take over with `bun "<skill-dir>/scripts/drive-state.ts" clear-lease <PR> --all` once you have confirmed it is dead. `drive.ts` also stops with `13` at arm when the drive ledger names a running driver in **another clone**; the refusal says how old its heartbeat is, and prints the `--take-over` command once that is past the lease window ([picking up](#picking-up-a-stopped-drive)). |
 | `14` | **Stalled** | `$DRIVE_PR_STALL_ROUNDS` (default 2) consecutive passes changed nothing this loop can observe — the reviewed head, local head, and every unresolved-thread/summary-finding/parked-key set all came back identical. The usual cause is a pass exiting 0 without acting (for example, standing down against its own parent driver) while the round headers still look healthy. First check what the driven worktree still holds — the stop prints it, and a pass can make correct edits and stall before committing them. The drive already ran one extra round with the stall's diagnostics in the pass's notice before stopping, and the stop prints what the passes recorded deciding at the end of the handoff narrative; read that and the pass output, fix why they did not act, then re-arm the same command. |
 | `15` | **Pass deadline** | Agent passes ran longer than `DRIVE_PR_PASS_TIMEOUT` (default 90 minutes) and were killed more often than `drive.pass_deadline_retries` (default 2) lets the drive restart from; the stop says the budget is spent. Nothing was rolled back: check `bun "<skill-dir>/../../shared/command.ts" -- git status --short` for an uncommitted fix and `bun "<skill-dir>/../../shared/command.ts" -- git rev-list --count 'origin/<head-branch>..HEAD'` for a committed but unpushed one, keep or discard that work, then re-arm. If a legitimate round needs longer, raise the deadline; if not, look for what hung. |
 | `16` | **Quota-parked** | The agent hit a subscription usage limit that will not reset within `DRIVE_PR_QUOTA_MAX_SLEEP_SEC` (default 6 hours) — a weekly limit, or one whose reset could not be read. A short limit never reaches this exit: the drive sleeps through it. Nothing is wrong with the PR. Run the same two `git` checks as for `15`. The stop names the account the limit belongs to and prints the re-arm command: run it from a session whose pass bills another account now, or on this account once the limit has reset ([picking up](#picking-up-a-stopped-drive)). A re-arm on the same account before then is refused with exit `16`. |
 | `18` | `MAILBOX_STOPPED` | A mailbox `stop` ended the drive after any active pass and its Ready transition finished. Send `resume --target stop` before re-arming. |
 | `19` | `MAILBOX_PAUSE_TIMEOUT` | A mailbox `pause` stayed active for `$DRIVE_PR_PAUSE_MAX_SEC` (default 30 minutes). Send `resume --target pause`, then re-arm. The driver releases its locks on this exit. |
+| `20` | `TAKEN_OVER` | Another clone took the drive over: its takeover claim on the pull request is newer than this driver's own, so this driver stopped at a round boundary without another pass, or this `--take-over` lost to an earlier claim. That clone drives now; nothing to do here, and do not re-arm beside it ([picking up](#picking-up-a-stopped-drive)). |
 | `1` / `2` | Pass failed / usage error / **CI still red** | Operational. Read stderr; `2` usually means the command line itself is wrong, or that the [attach](#which-working-tree-drives-it) refused this tree (it names what is in the way), but can also mean `UNSUPPORTED_CLI` — a `gh` too old to report a required PR field such as draft state or mergeability. For that case, upgrade `gh`; it is not a CI-repair matter. `1` is also the CI stop: the review converged but full CI on the converged head is red and the repair budget (`DRIVE_PR_CI_REPAIR_ROUNDS`, default 2) is exhausted or disabled (`0` skips repair entirely and stops on the first red), or the verdict was unreadable rather than a named failure. Repair CI by hand, then re-arm. |
 
 One red-CI cause is worth ruling out before you repair anything in a repository with a [CI hold](#ci-hold): a drive that **died** mid-round leaves its hold label behind, and the repository's held-head check then fails or cancels a required check on a perfectly healthy PR. Check `bun "<skill-dir>/../../shared/command.ts" -- gh pr view <PR> --json labels` first. If it is there, push whatever the dead drive stranded, then `bun "<skill-dir>/../../shared/command.ts" -- gh pr edit <PR> --remove-label "<ci.hold_label>"` — the removal itself retriggers CI. Do **not** `gh run rerun` the old run: it replays the original event payload, which still carries the label, so it fails on the hold step again.
@@ -462,7 +476,7 @@ round. A repository that did not is never asked for one.
 - **Touch human-authored threads** under `--bots-only`.
 - **Resolve an accepted thread before its fix's push is verified** on the remote head — a fix that failed gates is not a fix.
 - **Bypass repository hooks or the emitted validation plan.** There is no `--no-verify` path.
-- **Start a second loop on the same PR *from this clone*** — the per-PR lock refuses (exit `11`). A drive launched from a *different* clone is outside that lock's reach and is not prevented — see § How to start it.
+- **Start a second loop on the same PR** — the per-PR lock refuses one from this clone (exit `11`), and the drive ledger one from another clone while it names a running driver there (exit `13`) — see § How to start it.
 
 ## Where its state lives
 
@@ -472,7 +486,8 @@ round. A repository that did not is never asked for one.
 
   Each held item's `actor` stamp reuses that same tree key, but it only **records** which tree made a promise — it grants no exclusivity of its own.
 - **`.context/pr-drive-<PR>.md`** — the human-readable handoff: where the drive stands and how to resume.
-- **GitHub** — the shared truth: threads and their resolution state, outcome replies, the drive's announce comments, the reviewer check-runs.
+- **The drive ledger** — one comment on the pull request, opening with the hidden marker `<!-- drive-pr-ledger -->`, that mirrors the resumable part of the drive state so a drive started in another clone or on another machine picks up where the last one left off: the round and phase, the last counted and verified heads, the Ready mark, every parked item with its decision, every held item with its outcome and pushed commit, the takeovers, the driver's working tree, hashed account and last heartbeat, and the last twenty lines of the handoff narrative. It carries a version and a generation that grows with every write. The driver writes it at every round boundary, park and takeover, and when it stops. A drive that starts with no state for the pull request, or with state older than the ledger's generation, seeds its state from it; a ledger version it cannot read stops it with exit `1`, naming the version. Only a ledger written by the drive's own login or by an owner, member or collaborator is trusted; any other comment carrying the marker is ignored and reported. A ledger too long for one comment loses the held items' outcomes first and the narrative second, never a parked decision. `DRIVE_PR_LEDGER=off` drives without it.
+- **GitHub** — the shared truth: threads and their resolution state, outcome replies, the drive's announce comments, the drive ledger and takeover claims, the reviewer check-runs.
 
 The state dir grows with every lock generation. `bun "<skill-dir>/scripts/reap-state.ts"`
 (dry-run by default, `--delete` to act) compacts what is still in use on POSIX

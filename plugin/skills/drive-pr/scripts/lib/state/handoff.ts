@@ -83,6 +83,26 @@ export async function handoffPath(pr: string): Promise<string> {
   return join(await handoffDir(), `pr-drive-${pr}.md`);
 }
 
+/**
+ * The agent-authored narrative of the handoff file, without the resume
+ * line: what the drive ledger carries the tail of. Empty when the file or
+ * its marker is missing.
+ */
+export async function handoffNarrative(pr: string): Promise<string[]> {
+  const file = await handoffPath(pr);
+  if (!existsSync(file)) return [];
+  const lines = readFileSync(file, "utf8").split("\n");
+  const idx = lines.indexOf(NARRATIVE_MARKER);
+  if (idx === -1) return [];
+  const narrative = lines
+    .slice(idx + 1)
+    .filter((line) => !/^\*\*Resume:\*\* `\/drive-pr \d+`$/.test(line));
+  while (narrative.length > 0 && narrative[0]?.trim() === "") narrative.shift();
+  while (narrative.length > 0 && narrative.at(-1)?.trim() === "")
+    narrative.pop();
+  return narrative;
+}
+
 export async function removeHandoff(pr: string): Promise<void> {
   rmSync(await handoffPath(pr), { force: true });
 }

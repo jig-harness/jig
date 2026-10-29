@@ -1151,6 +1151,15 @@ make, use the entry's term instead.
   but is stuck (alive with no progress) or dead with nothing left unpushed;
   it is refused against a driver that is making progress
   ([drive-pr](plugin/skills/drive-pr/README.md#picking-up-a-stopped-drive)).
+- **Drive ledger** — the resumable part of a *PR drive loop*'s saved state
+  (its round, what it parked for a person and why, what it replied to and
+  pushed, who drove it and when it last wrote), kept as one hidden-marker
+  comment on the pull request itself, so a drive started in another clone or
+  on another machine resumes where the last one stopped. Across clones it is
+  also how a stuck driver is taken over: the new driver posts a **takeover
+  claim** on the pull request, the earliest claim wins, and every driver
+  reads the claims each round and stops when a newer one is there
+  ([drive-pr](plugin/skills/drive-pr/README.md#where-its-state-lives)).
 - **CI hold** — an opt-in label on a pull request that the repository's
   continuous-integration workflows honour: while it is present they skip
   their expensive jobs and a required check fails or is cancelled (the

@@ -153,6 +153,9 @@
  *      The in-flight pass, if any, already finished; normal exit releases locks.
  *  19  MAILBOX_PAUSE_TIMEOUT: a pause stayed active beyond the bounded wait.
  *      Resume the pause directive and re-arm the drive.
+ *  20  TAKEN_OVER: another clone's takeover claim, newer than this driver's
+ *      own, is on the pull request (found at a round boundary), or a rival's
+ *      claim on the same ledger generation came first. That clone drives now.
  */
 import { runMain } from "./lib/cli.ts";
 import { span } from "../../../shared/trace.ts";
@@ -171,6 +174,7 @@ export {
   STALLED_EXIT,
   MAILBOX_STOPPED_EXIT,
   MAILBOX_PAUSE_TIMEOUT_EXIT,
+  TAKEN_OVER_EXIT,
   passTimeoutSeconds,
   finalCiWitnessPolls,
   ciRepairRounds,

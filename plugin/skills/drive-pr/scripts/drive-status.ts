@@ -211,6 +211,8 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                       drive at a safe round boundary
  *  19  MAILBOX_PAUSE_TIMEOUT [drive.ts only, no report] a pause remained
  *                       active beyond the driver's bounded wait
+ *  20  TAKEN_OVER       [drive.ts only, no report] another clone's newer
+ *                       takeover claim is on the pull request
  *   6  —  [drive.ts only, no report] hit `--max-rounds` without converging
  *
  * The JSON report carries `state` (the name above) plus the evidence behind

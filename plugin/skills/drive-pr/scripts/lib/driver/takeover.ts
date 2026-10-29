@@ -1,6 +1,9 @@
 /**
  * Replacing a driver that still holds a drive's locks: `drive.ts <PR>
- * --take-over`, in the same clone.
+ * --take-over`, in the same clone. When no driver of this clone holds the
+ * drive, a driver in another clone is taken over through the pull request's
+ * drive ledger instead (`ledger.ts`): admitted on a heartbeat older than the
+ * lease window, and claimed on the pull request once the locks are held.
  *
  * Admitted against exactly two holders, both decided by `drives.ts --doctor`
  * rather than by the caller: one whose verdict is `WEDGED` (a live driver,
@@ -63,6 +66,12 @@ import { isRecord } from "../../../../../shared/guards.ts";
 
 import { SINGLE_INSTANCE_LOCK_EXIT } from "./settings.ts";
 
+import {
+  type LedgerIdentity,
+  admitCrossCloneTakeover,
+  mirrorNow,
+} from "./ledger.ts";
+
 /** One `drives.ts --doctor --json` row, as far as a takeover reads it. */
 interface DoctorRowJson {
   kind: string;
@@ -76,9 +85,11 @@ interface DoctorRowJson {
 
 /** What an admitted takeover hands to `completeTakeover`. */
 export interface TakeoverAdmission {
-  verdict: "WEDGED" | "DEAD";
+  verdict: "WEDGED" | "DEAD" | "STALE";
   fromActor: string | null;
   fromAccount: string | null;
+  /** Admitted on another clone's stale ledger heartbeat: claimed on the PR. */
+  crossClone?: true;
 }
 
 /** The doctor's row for `pr`; `null` when no lock or state names it. */
@@ -143,6 +154,7 @@ function holderLines(row: DoctorRowJson): string[] {
 export async function admitTakeover(
   pr: string,
   prLockDir: string,
+  ledger: LedgerIdentity | null,
 ): Promise<TakeoverAdmission> {
   const row = await doctorRowFor(pr);
   if (row === "unreadable")
@@ -150,12 +162,18 @@ export async function admitTakeover(
       1,
       `drive.ts --take-over: could not read drives.ts --doctor for PR #${pr}; refusing to take over blind.`,
     );
-  if (row === null || row.state === "empty")
+  if (row === null || row.state === "empty") {
+    // No driver of this clone holds it: a driver in another clone may, by
+    // the pull request's drive ledger.
+    const crossClone =
+      ledger === null ? null : await admitCrossCloneTakeover(pr, ledger);
+    if (crossClone !== null) return crossClone;
     fail(
       2,
-      `drive.ts --take-over: no driver holds PR #${pr}'s lock, so there is nothing to take over.`,
+      `drive.ts --take-over: no driver holds PR #${pr}'s lock, and its drive ledger names no running driver in another clone, so there is nothing to take over.`,
       "Re-arm it without --take-over.",
     );
+  }
   const verdict = row.doctor?.verdict ?? "UNKNOWN";
   const from = {
     fromActor: actorOf(row.diag),
@@ -394,8 +412,14 @@ export async function completeTakeover(
       ? `takeover: recorded in the drive state (from ${admission.fromActor ?? "an unnamed tree"}, account ${admission.fromAccount ?? "unknown"}, to account ${toAccount ?? "unknown"}, verdict ${admission.verdict}, ${reopened.length} hold(s) reopened).`
       : `takeover: could not record the takeover (drive-state.ts exited ${record.code}); driving on.`,
   );
+  const from = {
+    WEDGED: "a wedged driver",
+    DEAD: "a dead driver",
+    STALE:
+      "another clone's driver whose ledger heartbeat was past the lease window",
+  }[admission.verdict];
   const notice = [
-    `TAKEN OVER: this drive was taken over from a ${admission.verdict === "WEDGED" ? "wedged" : "dead"} driver and resumes at its durable round.`,
+    `TAKEN OVER: this drive was taken over from ${from} and resumes at its durable round.`,
   ];
   if (lines.length > 0)
     notice.push(
@@ -428,10 +452,14 @@ export async function pickUpDrive(
       ? null
       : admitQuotaRearm(state, opts.agent, opts.windowReopened, new Date());
   if (quotaExit !== null) return quotaExit;
-  const notices = [
+  const takeover =
     admission === null
       ? ""
-      : await completeTakeover(pr, admission, opts.agent, opts.botsOnly),
+      : await completeTakeover(pr, admission, opts.agent, opts.botsOnly);
+  // A takeover is written to the ledger at once, not at the next boundary.
+  if (admission !== null) await mirrorNow(pr);
+  const notices = [
+    takeover,
     state === null ? "" : await admitAnsweredParks(state, opts.dryRun),
   ];
   return notices.filter((part) => part !== "").join("\n\n");

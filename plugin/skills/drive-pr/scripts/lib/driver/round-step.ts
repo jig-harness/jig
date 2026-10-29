@@ -1,7 +1,7 @@
 /** Order one round boundary, status gate, pass and Ready transition without bypassing admission checks. */
 import type { DriveRoundContext } from "./round-context.ts";
 
-import { run, tsArgv } from "./../proc.ts";
+import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 
 import { driveState, driveTs } from "./paths.ts";
 
@@ -36,16 +36,20 @@ import { preparePassBoundary, markReadyAfterRound } from "./round-ready.ts";
 
 import { runReviewPassPhase } from "./review-pass.ts";
 
+import { standDownOnNewerClaim } from "./ledger.ts";
+
 async function gateRoundStatus(
   context: DriveRoundContext,
   code: number,
   status: Record<string, unknown>,
   reasonLine: string,
 ): Promise<number | "continue" | null> {
-  // Keep the resumable trail current even if the pass below dies mid-round.
+  // Keep the resumable trail current even if the pass below dies mid-round:
+  // the handoff file, and under a driver the pull request's drive ledger.
   await run(tsArgv(driveState, ["handoff", context.pr]), {
     stdout: "ignore",
-    stderr: "ignore",
+    stderr: "inherit",
+    timeoutSec: helperTimeoutSeconds(),
   });
 
   switch (code) {
@@ -140,6 +144,10 @@ async function waitForRoundBoundary(
     );
     return SINGLE_INSTANCE_LOCK_EXIT;
   }
+  // Another clone's takeover claim, newer than this driver's own, ends the
+  // drive here, before another pass could reply beside its successor.
+  const takenOver = await standDownOnNewerClaim(context.pr);
+  if (takenOver !== null) return takenOver;
   const mailboxAtRoundStart = await context.mailboxCheckpoint();
   if (typeof mailboxAtRoundStart === "number") return mailboxAtRoundStart;
   if (mailboxAtRoundStart === "resumed") context.finalCiWait.clear();

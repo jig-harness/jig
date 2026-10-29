@@ -345,6 +345,7 @@ const CORPUS_FILES: readonly CorpusFile[] = [
       "QUOTA_PARKED",
       "MAILBOX_STOPPED",
       "MAILBOX_PAUSE_TIMEOUT",
+      "TAKEN_OVER",
     ],
   },
   {
@@ -361,6 +362,7 @@ const CORPUS_FILES: readonly CorpusFile[] = [
       "QUOTA_PARKED",
       "MAILBOX_STOPPED",
       "MAILBOX_PAUSE_TIMEOUT",
+      "TAKEN_OVER",
     ],
   },
   {
@@ -386,6 +388,7 @@ const CORPUS_FILES: readonly CorpusFile[] = [
       "QUOTA_PARKED",
       "MAILBOX_STOPPED",
       "MAILBOX_PAUSE_TIMEOUT",
+      "TAKEN_OVER",
       "UNSUPPORTED_CLI",
     ],
   },
@@ -405,6 +408,7 @@ const CORPUS_FILES: readonly CorpusFile[] = [
       "DRIVE_HELD_BY_OTHER_WORKTREE",
       "MAILBOX_STOPPED",
       "MAILBOX_PAUSE_TIMEOUT",
+      "TAKEN_OVER",
     ],
   },
 ];
@@ -811,6 +815,7 @@ const DRIVER_ONLY_EXIT_NAMES: ReadonlyArray<{
     constantName: "MAILBOX_PAUSE_TIMEOUT_EXIT",
     stateName: "MAILBOX_PAUSE_TIMEOUT",
   },
+  { constantName: "TAKEN_OVER_EXIT", stateName: "TAKEN_OVER" },
 ];
 
 /**
