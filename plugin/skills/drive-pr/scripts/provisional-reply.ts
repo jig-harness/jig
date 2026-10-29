@@ -111,7 +111,7 @@ export function provisionalBody(body: string, parkClass: string): string {
       2,
       "provisional-reply: a **deferred** reply links where the finding is tracked, as any deferral does: the follow-up issue's url, or the pull request's `## Deferred` section (defer-in-pr.ts prints its link).",
     );
-  const [first = "", ...rest] = body.replace(/\s+$/, "").split("\n");
+  const [first = "", ...rest] = body.trimEnd().split("\n");
   const token = `**${q.outcome}**`;
   const opened = `${token} ${PROVISIONAL_TOKEN}${first.slice(token.length)}`;
   return [
