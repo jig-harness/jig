@@ -15,7 +15,7 @@ import {
 } from "./config.ts";
 import { gitHubClient } from "./github/client.ts";
 import { gitHubModel } from "./github/model.ts";
-import { homeRepo, originUrl } from "./github/refs.ts";
+import { homeRepo, remoteUrl } from "./github/refs.ts";
 import { gitHubTracker } from "./github/tracker.ts";
 import { defaultTransport as gitHubTransport } from "./github/transport.ts";
 import { defaultTransport, linearTracker } from "./linear.ts";
@@ -40,7 +40,7 @@ const ADAPTERS: Record<string, AdapterFactory> = {
   github: (config, root) =>
     gitHubTracker(
       gitHubClient({
-        home: homeRepo(config.github.repository, () => originUrl(root)),
+        home: homeRepo(config.github.repository, () => remoteUrl(root)),
         model: gitHubModel(config.states, config.github),
         settings: config.github,
         transport: gitHubTransport(),
@@ -57,7 +57,7 @@ export function knownAdapters(): string[] {
  * The tracker the consumer configured. Throws with the field to fix when the
  * overlay is missing, names an unknown adapter, or lacks a setting the
  * adapter needs (a team for Linear; for GitHub, a repository when the
- * `origin` remote of the repository at `root` does not name one). `root`
+ * git remote of the repository at `root` does not name one). `root`
  * defaults to the consumer root, the repository `ownTrackerConfig()` reads
  * its configuration from, so the configuration and the repository it
  * derives always come from the same place.

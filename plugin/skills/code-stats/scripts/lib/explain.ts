@@ -2,8 +2,13 @@
 import type { AnalyzedFile } from "./analyze.ts";
 import { isUnclassified } from "./model.ts";
 import { fmt, fmtBytes, visible } from "./render-terminal.ts";
+import type { Unreadable } from "./test-runners/index.ts";
 
-export function explainJson(file: AnalyzedFile, includeVendored: boolean) {
+export function explainJson(
+  file: AnalyzedFile,
+  includeVendored: boolean,
+  unreadable: readonly Unreadable[] = [],
+) {
   const { stats, classification } = file;
   return {
     path: stats.path,
@@ -20,12 +25,14 @@ export function explainJson(file: AnalyzedFile, includeVendored: boolean) {
       commentLines: stats.commentLines,
       blankLines: stats.blankLines,
     },
+    testRunnersUnreadable: unreadable,
   };
 }
 
 export function explainText(
   file: AnalyzedFile,
   includeVendored: boolean,
+  unreadable: readonly Unreadable[] = [],
 ): string {
   const { stats, classification: c } = file;
   const row = (label: string, value: string, rule: string) =>
@@ -50,6 +57,10 @@ export function explainText(
   if (stats.kind === "vendored" && !includeVendored)
     lines.push(
       "  Left out of the totals: vendored (--include-vendored counts it).",
+    );
+  for (const u of unreadable)
+    lines.push(
+      `  Test runner ${visible(u.reader)}: unreadable: ${visible(u.path)} (${visible(u.why)}); nothing is claimed from it.`,
     );
   return `${lines.join("\n")}\n`;
 }

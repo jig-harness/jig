@@ -2,7 +2,7 @@
  * The GitHub Issues adapter of the tracker port (`port.ts`).
  *
  * It works on the issues of one repository (`issue_tracker.github.repository`,
- * else the `origin` remote's), whose keys are `#<n>`. How the port's
+ * else the git remote's, `repository.remote` or `origin`), whose keys are `#<n>`. How the port's
  * vocabulary maps onto GitHub:
  *
  * - workflow states: `model.ts` (close reasons, and labels or a board's

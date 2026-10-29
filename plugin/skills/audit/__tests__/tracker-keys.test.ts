@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "bun:test";
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
-import { trackerTeamSuggestion } from "../scripts/lib/forge-suggestions.ts";
+import { trackerTeamSuggestion } from "../scripts/lib/suggestions.ts";
 import { trackerProbeable } from "../scripts/lib/tracker-probe.ts";
 
 describe("trackerProbeable", () => {

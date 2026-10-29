@@ -31,6 +31,7 @@ import {
 } from "../../do-item/scripts/lib/tracker/github/settings.ts";
 import { DEFAULT_MAX_ROUNDS } from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
+import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
 import { DEFAULT_SCANNER_APPS } from "../../resolve-review-comments/scripts/lib/scanner-annotations.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import { parseWorkTypes } from "../../do-item/scripts/lib/work-types.ts";
@@ -302,6 +303,7 @@ describe("the reading skills", () => {
       "work_batch.ranking.provenance": DEFAULT_RANKING.provenance,
       "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
       "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
+      "repository.remote": DEFAULT_REMOTE,
       "review.scanner_apps": DEFAULT_SCANNER_APPS,
       "routing.raise.reviews": parseRouting({}, parseWorkTypes({})).raise
         .reviews,
@@ -320,6 +322,21 @@ describe("the reading skills", () => {
     expect(problems(2 ** 53)).toEqual([
       "drive.max_rounds must be a whole number ≥ 1",
     ]);
+  });
+
+  test("report as errors the nulls remoteName refuses, and other nulls as not set", () => {
+    const severities = (config: Record<string, unknown>) =>
+      checkConfig(config, schema).map((f) => [f.id, f.severity]);
+    expect(severities({ repository: null })).toEqual([
+      ["null:repository", "error"],
+    ]);
+    expect(severities({ repository: { remote: null } })).toEqual([
+      ["null:repository.remote", "error"],
+    ]);
+    expect(severities({ repository: { base_branch: null } })).toEqual([
+      ["null:repository.base_branch", "info"],
+    ]);
+    expect(severities({ drive: null })).toEqual([]);
   });
 
   test("bound an integer from above where its reader does", () => {

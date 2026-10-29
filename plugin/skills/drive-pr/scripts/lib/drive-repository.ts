@@ -1,4 +1,5 @@
 /** Repository labels for a listing of one clone's state, without network calls. */
+import { consumerRoot, readRemoteName } from "../../../../shared/consumer.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "./proc.ts";
 import { resolveLegacyStateDir } from "./state/store.ts";
 
@@ -32,15 +33,23 @@ export function repositoryLabel(url: string): string {
 }
 
 export async function driveRepository(): Promise<string> {
-  const result = await git(["remote", "get-url", "origin"], {
-    cwd: process.env.DRIVE_PR_WORKTREE || process.cwd(),
-    timeoutSec: gitCallTimeoutSeconds(),
-    env: gitIdentityEnv(),
-  });
+  const cwd = process.env.DRIVE_PR_WORKTREE || process.cwd();
+  // The label is decoration on a listing whose rows are the recovery
+  // information: a configuration that cannot be read (a broken or conflicted
+  // file, an unusable remote setting) falls back like a missing remote.
+  const read = readRemoteName(consumerRoot(cwd));
+  const result =
+    "remote" in read
+      ? await git(["remote", "get-url", read.remote], {
+          cwd,
+          timeoutSec: gitCallTimeoutSeconds(),
+          env: gitIdentityEnv(),
+        })
+      : null;
   // Local-only clones and remotes without a safe label fall back to the Git
   // common directory. Never print a raw remote URL: it may carry credentials.
   return (
-    (result.code === 0 ? repositoryLabel(result.stdout.trim()) : "") ||
+    (result?.code === 0 ? repositoryLabel(result.stdout.trim()) : "") ||
     (await resolveLegacyStateDir())
   );
 }

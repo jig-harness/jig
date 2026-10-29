@@ -11,11 +11,7 @@ import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import { load } from "../../../shared/yaml.ts";
-import {
-  commandProblems,
-  commandSegments,
-  NOTHING_TO_SUGGEST,
-} from "../scripts/config-fit.ts";
+import { commandProblems, NOTHING_TO_SUGGEST } from "../scripts/config-fit.ts";
 import { checkConfig, loadSchema } from "../scripts/lib/schema.ts";
 import {
   cleanEnv,
@@ -115,16 +111,6 @@ const ids = (r: Report, severity?: string) =>
     .map((f) => f.id);
 
 describe("command lines", () => {
-  test("split on operators outside quotes", () => {
-    expect(
-      commandSegments(`FOO=1 bun run a && echo "x && y" | wc; make b`),
-    ).toEqual([
-      ["FOO=1", "bun", "run", "a"],
-      ["echo", "x && y"],
-      ["wc"],
-      ["make", "b"],
-    ]);
-  });
   test("a placeholder, a missing script, file or make target is an error", () => {
     const dir = repo({
       "package.json": '{"scripts":{"gates":"true"}}',

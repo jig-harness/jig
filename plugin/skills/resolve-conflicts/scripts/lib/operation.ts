@@ -11,6 +11,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { consumerRoot, readRemoteName } from "../../../../shared/consumer.ts";
 import { git, gitPath, gitRaw, resolveCommit, subject } from "./git.ts";
 
 export type OperationKind = "merge" | "rebase" | "cherry-pick" | "revert";
@@ -127,16 +128,27 @@ function mergedRef(root: string): string | null {
   return match?.[1] ?? null;
 }
 
-/** The repository's default branch name ("main"), when the remote declares it. */
+/**
+ * The repository's default branch name ("main"), when its remote
+ * (`repository.remote`, else `origin`) declares it. A configuration that
+ * cannot be read (it may be one of the conflicted files) leaves the guess to
+ * the usual names.
+ */
 function defaultBranch(root: string): string[] {
+  const read = readRemoteName(consumerRoot(root));
+  if ("error" in read) return ["main", "master"];
+  // A remote name may hold a `/`, so the whole `<remote>/` prefix is removed,
+  // never just the first component.
+  const prefix = `${read.remote}/`;
   const r = gitRaw(root, [
     "symbolic-ref",
     "--quiet",
     "--short",
-    "refs/remotes/origin/HEAD",
+    `refs/remotes/${read.remote}/HEAD`,
   ]);
-  if (r.code === 0 && r.stdout.trim() !== "")
-    return [r.stdout.trim().replace(/^[^/]+\//, "")];
+  const head = r.code === 0 ? r.stdout.trim() : "";
+  if (head.startsWith(prefix) && head.length > prefix.length)
+    return [head.slice(prefix.length)];
   return ["main", "master"];
 }
 
