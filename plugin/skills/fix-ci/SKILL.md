@@ -330,8 +330,12 @@ preference, not an either-or.
 **Attribute before you fix.** Where the failing test, the file it tests or
 their directory is not in the branch's diff, do not assume the change broke
 it: run the fresh-base probe on that one file, with the base the pull
-request merges into (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view <PR> --json baseRefName --jq .baseRefName`, naming the pull request, since a detached working tree has no branch to look it up by, or
-the repository's default branch).
+request merges into (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view <PR> --json baseRefName --jq .baseRefName`).
+`<PR>` is the pull request you were given; for a run ID or a branch, the
+pull request of the run's head branch
+(`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr list --head <branch> --json number --jq '.[0].number'`),
+or of the branch a detached working tree's attach names. Use the
+repository's default branch only when that branch has no pull request.
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/probe-base.ts" --base <base> --setup "<install_command>" --expect "<the failing test's name from the CI log>" --junit probe.xml -- <the repository's test command> <failing test file> <the runner's flag writing a JUnit report to probe.xml>

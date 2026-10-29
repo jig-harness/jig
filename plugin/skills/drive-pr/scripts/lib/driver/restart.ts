@@ -123,13 +123,17 @@ export async function passLeftovers(): Promise<PassLeftovers> {
 }
 
 /**
- * The head the next gate may accept ahead of the PR head
- * (`drive-status.ts --inherited-head`): the witnessed HEAD, unless the
- * count shows nothing unpushed. The gate itself checks it still is HEAD
- * and descends from the PR head.
+ * The head the next gate is told the killed pass left work on
+ * (`drive-status.ts --inherited-head`): the witnessed HEAD, unless the probes
+ * show nothing unpushed and nothing uncommitted. Ahead of the PR head the
+ * gate accepts it in place of head lag; on the PR head itself (uncommitted
+ * edits only) it still owes the round that settles them, so neither case
+ * converges before a pass has run. The gate checks it still is HEAD and
+ * descends from the PR head.
  */
 export function inheritedHeadOf(l: PassLeftovers): string {
-  return l.head !== null && l.unpushed !== 0 ? l.head : "";
+  const leftWork = l.unpushed !== 0 || l.uncommitted !== "";
+  return l.head !== null && leftWork ? l.head : "";
 }
 
 /** The leftovers as lines for the driver log and the pass notice. */
@@ -168,7 +172,7 @@ export function deadlineNotice(
     ...(inherited === ""
       ? []
       : [
-          `This pass inherits unpushed commits: local HEAD ${inherited} is ahead of the PR head. Run the § 1 gate with \`--inherited-head ${inherited}\` (without it the gate reads the commits as HEAD_LAG), and push them through finish-round like any fix of this round.`,
+          `This pass inherits the killed pass's work at local HEAD ${inherited}. Run the § 1 gate with \`--inherited-head ${inherited}\`: without it the gate reads unpushed commits as HEAD_LAG, and can read a tree with only uncommitted edits as converged. Push what is sound through finish-round like any fix of this round.`,
         ]),
   ].join("\n");
 }

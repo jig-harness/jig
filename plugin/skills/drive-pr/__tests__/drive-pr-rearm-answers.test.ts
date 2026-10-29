@@ -22,7 +22,7 @@ import {
   writeFixture,
 } from "./drive-pr-harness.ts";
 import { runDriveIn, state } from "./drive-loop-harness.ts";
-import { humanVerdictNotice } from "../scripts/lib/driver/rearm.ts";
+import { humanVerdictNotice, NOTICE_MAX } from "../scripts/lib/driver/rearm.ts";
 import {
   answersFile,
   boundPassNotice,
@@ -60,6 +60,59 @@ describe("drive-state.ts unpark takes every key or none", () => {
       "--key",
       "PRRT_b",
     ]);
+    expectSpawnExit({ ...done, stderr: null }, 0);
+    expect(await parkedKeys(stateDir)).toEqual([]);
+  });
+
+  it("refuses the whole set when a park changed since its timestamp was read", async () => {
+    const { stateDir } = writeFixture({}, scratchClean.dir);
+    await park(stateDir, "PRRT_a", "thread");
+    await park(stateDir, "PRRT_b", "thread");
+    const got = await state(stateDir, ["get", "999"]);
+    const at = (key: string): string =>
+      JSON.parse(got.stdout).parked.find((p: { key: string }) => p.key === key)
+        .at;
+    const unparkAt = (bAt: string) =>
+      state(stateDir, [
+        "unpark",
+        "999",
+        "--key",
+        "PRRT_a",
+        "--parked-at",
+        at("PRRT_a"),
+        "--key",
+        "PRRT_b",
+        "--parked-at",
+        bAt,
+      ]);
+    const stale = await unparkAt("2000-01-01T00:00:00.000Z");
+    expectSpawnExit({ ...stale, stderr: null }, 1);
+    expect(await parkedKeys(stateDir)).toEqual(["PRRT_a", "PRRT_b"]);
+    const done = await unparkAt(at("PRRT_b"));
+    expectSpawnExit({ ...done, stderr: null }, 0);
+    expect(await parkedKeys(stateDir)).toEqual([]);
+  });
+
+  it("with --every, refuses the whole set when another key is parked", async () => {
+    const { stateDir } = writeFixture({}, scratchClean.dir);
+    await park(stateDir, "PRRT_a", "thread");
+    await park(stateDir, "PRRT_new", "thread");
+    const refused = await state(stateDir, [
+      "unpark",
+      "999",
+      "--every",
+      "--key",
+      "PRRT_a",
+    ]);
+    expectSpawnExit({ ...refused, stderr: null }, 1);
+    expect(await parkedKeys(stateDir)).toEqual(["PRRT_a", "PRRT_new"]);
+  });
+
+  it("takes only the values the parser consumed as keys", async () => {
+    const { stateDir } = writeFixture({}, scratchClean.dir);
+    // `--key` is a legal key value: the parser consumes it as one.
+    await park(stateDir, "--key", "thread");
+    const done = await state(stateDir, ["unpark", "999", "--key", "--key"]);
     expectSpawnExit({ ...done, stderr: null }, 0);
     expect(await parkedKeys(stateDir)).toEqual([]);
   });
@@ -139,6 +192,40 @@ describe("drive.ts keeps a re-arm's answers until a pass completes with them", (
     expect(third.stderr).toContain("PASS_RAN");
     expect(third.stderr).not.toContain("ANSWER_SEEN");
   }, 120_000);
+
+  it("stops before any pass when the drive state cannot be read once the locks are held", async () => {
+    const { dir, stateDir } = await answeredPark();
+    writeFileSync(join(stateDir, "drive-pr-999.json"), "{ not json");
+    const run = await runDriveIn(dir, stateDir, [
+      "--no-head-sync",
+      "--max-rounds",
+      "1",
+      "--",
+      ...PASS(0),
+    ]);
+    expectSpawnExit({ ...run, stdout: "" }, 1);
+    expect(run.stderr).toContain("now that its locks are held");
+    expect(run.stderr).not.toContain("PASS_RAN");
+  }, 120_000);
+
+  it("stops before any pass when the kept answers cannot be read, and keeps the file", async () => {
+    const { dir, stateDir } = await answeredPark();
+    writeFileSync(answersFile(stateDir, "999"), "{ not json");
+    const run = await runDriveIn(dir, stateDir, [
+      "--no-head-sync",
+      "--max-rounds",
+      "1",
+      "--",
+      ...PASS(0),
+    ]);
+    expectSpawnExit({ ...run, stdout: "" }, 1);
+    expect(run.stderr).toContain("cannot read the answers kept for PR #999");
+    expect(run.stderr).not.toContain("PASS_RAN");
+    expect(readFileSync(answersFile(stateDir, "999"), "utf8")).toBe(
+      "{ not json",
+    );
+    expect(await parkedKeys(stateDir)).toEqual(["PRRT_p"]);
+  }, 120_000);
 });
 
 describe("humanVerdictNotice", () => {
@@ -166,7 +253,7 @@ describe("humanVerdictNotice", () => {
         `- [thread] PRRT_item${i} — https://example.test/pr/999#c${i}`,
       );
     expect(notice).toContain("/state/drive-pr-999.answers.json");
-    expect(notice.length).toBeLessThanOrEqual(16_000);
+    expect(notice.length).toBeLessThanOrEqual(NOTICE_MAX);
   });
 });
 
@@ -188,5 +275,11 @@ describe("boundPassNotice", () => {
     expect(bounded.startsWith("TAKEN OVER")).toBe(true);
     expect(bounded).toContain(noticeFile(dir, "999"));
     expect(readFileSync(noticeFile(dir, "999"), "utf8")).toBe(long);
+  });
+
+  it("throws rather than cut a notice whose file cannot be written", () => {
+    const dir = join(mkdtempSync(join(tmpRoot, "notice-unwritable-")), "gone");
+    const long = `TAKEN OVER: many holds\n${"- held line\n".repeat(20_000)}`;
+    expect(() => boundPassNotice(dir, "999", long)).toThrow();
   });
 });

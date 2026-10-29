@@ -153,7 +153,7 @@ checked against this and the other prose restatements by
 [`__tests__/terminal-states-consistency.ts`](https://github.com/jig-harness/jig/blob/main/plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts).
 `PASS_DEADLINE`, `QUOTA_PARKED`, `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT` and `TAKEN_OVER` are the
 exception: named exits `drive.ts` returns directly, never through this report — a
-consumer polling `--json` for one of these five will never see it there.
+consumer polling `--json` for one of these states will never see it there.
 
 | State | Exit | Meaning |
 |---|---|---|
@@ -312,8 +312,8 @@ bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- claude -p "/jig:dr
 Each round is a **fresh agent process**, so a long converge never depends on one
 session's context surviving. That is the preferred unattended mode.
 
-**The attach.** Once it holds the tree's driver lock and before it takes the
-PR's, `drive.ts` attaches the PR to the tree it runs in
+**The attach.** Once it holds the tree's driver lock and the PR's,
+`drive.ts` attaches the PR to the tree it runs in
 (`scripts/attach-pr.ts`, which you can also run alone:
 `bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`). It checks that
 `origin` is the repository the PR was read from, fetches the PR's head
@@ -328,18 +328,24 @@ directory; that record is what every script that reads the branch name or
 resolves the PR from the current branch reads, and only while the tree's
 head still descends from that commit and the branch is still on the remote.
 An attach by name removes it. (The drive state's `drivenBranch` mirrors it
-for the handoff file.) It refuses (exit `2`, naming the state) a tree with
-uncommitted changes or an unfinished git operation, a tree holding the branch
+for the handoff file.) It refuses (exit `2`, naming the state) a tree it
+would move that has uncommitted changes or an unfinished git operation (a
+tree already on the head branch, at or past the head, is not moved), a tree
+holding the branch
 that is dirty or has commits the PR's head lacks, a detached head with
 commits no branch or remote holds, a local branch of that name ahead of the
 head that this tree would switch to (a tree already on the branch keeps its
 commits ahead of the head, and the drive pushes them), the clone's primary
 checkout on another branch, an `origin` that is another
-repository, and a PR from a fork; a PR that is not open is exit `5`. A live
-driver already holding the PR leaves the tree untouched, and the lock refuses
-next (exit `11`); run alone, it also leaves a tree another driver holds
-untouched and exits `11`, and an interactive session's lease on the tree
-refuses it. `--dry-run` and `DRIVE_PR_ATTACH=off` skip the attach.
+repository, and a PR from a fork; a PR that is not open is exit `5`. Under
+`drive.ts`, a live driver already holding the PR makes the PR's lock refuse
+(exit `11`) before the attach runs, so the tree is untouched; run alone, the
+attach leaves a tree that a live driver of the PR or another driver of the
+tree holds untouched and exits `11`, and an interactive session's lease on
+the tree refuses it. `drive.ts` refuses a PR number written with leading
+zeros (exit `2`), since GitHub reads it as the number without them and the
+locks would not. `--dry-run` and `DRIVE_PR_ATTACH=off` skip the attach;
+with `off`, `--place` still chooses the tree and attaches nothing.
 
 **A stopped drive restarts itself** from the stops that need no decision. A
 pass killed at its deadline is witnessed gone; the driver then runs the two
@@ -352,7 +358,9 @@ and its gates accept exactly it (the gate's `--inherited-head` flag, which
 also requires the PR head to be its ancestor) until a pass completes. Any
 other mismatch is still `HEAD_LAG`; with no live work left, a `CONVERGED` or
 `HITL_PARKED` over those commits is reported as `ROUND_READY`, so a pass
-pushes them. The driver restarts up to
+pushes them. Uncommitted edits alone leave HEAD on the PR head; the driver
+records it all the same, and the gate hands out the round that settles them
+in place of `CONVERGED` or `HITL_PARKED`. The driver restarts up to
 `drive.pass_deadline_retries` (default 2) times per drive — counted in the
 drive state (`deadlineRetries`), so a re-arm or a takeover does not reset it,
 and cleared when the drive converges or the PR closes; past that budget
@@ -970,7 +978,7 @@ state directory holding all of it: read that file before acting.
 
 | Opens with | What happened | What this round does |
 |---|---|---|
-| `RESTARTED AFTER A PASS DEADLINE` | The previous pass was killed at its deadline; its uncommitted edits and unpushed commits are listed and are still in the tree | Start from that state: finish, validate and push what is sound, discard what is not on purpose, then triage as usual. When it names an inherited head, add `--inherited-head <sha>` to § 1's gate (without it the gate reads the unpushed commits as `HEAD_LAG`) and push them through `finish-round.ts` with the round's own fixes |
+| `RESTARTED AFTER A PASS DEADLINE` | The previous pass was killed at its deadline; its uncommitted edits and unpushed commits are listed and are still in the tree | Start from that state: finish, validate and push what is sound, discard what is not on purpose, then triage as usual. When it names an inherited head, add `--inherited-head <sha>` to § 1's gate (without it the gate reads unpushed commits as `HEAD_LAG`, and a tree with only uncommitted edits as converged) and push them through `finish-round.ts` with the round's own fixes |
 | `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14` | Act on the open work; if you decide not to, end the handoff narrative with one paragraph saying what you decided and why — the stop prints it |
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed: each thread re-held unconfirmed on its reply, each finding released, and apart those that could not be reopened; a failed reconciliation is said here | For a re-held thread, read the anchored code, make the promised fix if it is missing, then confirm it with the hold command shown; or supersede the reply with a fresh outcome. Triage a released finding afresh. Check each item that could not be reopened against the held batch first |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; every item has a `[kind] key — url` entry, answer bodies may be cut, and the file named on its third line holds every answer in full | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |

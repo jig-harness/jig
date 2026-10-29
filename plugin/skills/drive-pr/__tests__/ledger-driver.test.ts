@@ -52,12 +52,13 @@ try { ${body} } catch (e) { if (e && typeof e.code === "number") { console.log("
   return { stdout, stderr, exitCode };
 }
 
-function claim(clone: string, generation: number): string {
+/** A claim posted now, or `minutesAgo` before now. */
+function claim(clone: string, generation: number, minutesAgo = 0): string {
   return renderClaim({
     actor: "wt-cccccccccccccccc",
     clone,
     generation,
-    at: "2026-10-01T12:00:00.000Z",
+    at: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
   });
 }
 
@@ -113,31 +114,71 @@ console.log("BEATEN BY " + l.newerClaim(snap.claims, own.id, "clone-b", own)?.id
     expect(r.stdout).toContain("WON 101");
     expect(r.stdout).toContain("BEATEN BY 50");
   });
+
+  it("wins over a rival claim on the same generation older than the lease window", async () => {
+    const forge = fakeForge([], { login: "drive-bot" });
+    // The rival claimed and never wrote the ledger: its claim lapsed.
+    writeFileSync(
+      join(forge.dir, "race-on-claim"),
+      JSON.stringify(forgeComment(50, claim("clone-c", 3, 300), "other-bot")),
+    );
+    const r = await probe(
+      forge,
+      `console.log("CLAIM " + (await d.claimDrive("999", ${ID}, 3))?.id);`,
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("CLAIM 101");
+  });
+
+  it("drives by this clone's own earlier claim when a retry claims again", async () => {
+    const forge = fakeForge([], { login: "drive-bot" });
+    writeFileSync(
+      join(forge.dir, "race-on-claim"),
+      JSON.stringify(forgeComment(50, claim("clone-b", 3), "drive-bot")),
+    );
+    const r = await probe(
+      forge,
+      `console.log("CLAIM " + (await d.claimDrive("999", ${ID}, 3))?.id);`,
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("CLAIM 50");
+  });
 });
 
-describe("a driver that starts without reading the comments", () => {
-  it("takes its position from the first round boundary that reads them", async () => {
-    const forge = fakeForge([forgeComment(60, claim("clone-c", 1))], {
-      login: "drive-bot",
-    });
+describe("arming the ledger", () => {
+  it("refuses to start when the comments cannot be read", async () => {
+    const forge = fakeForge([], { login: "drive-bot" });
     writeFileSync(join(forge.dir, "fail-list-after"), "0");
     const r = await probe(
       forge,
       `await d.armLedger("999", ${ID}, null, null, "take-over");
-console.log("FLOOR " + JSON.parse(process.env.DRIVE_PR_LEDGER_DRIVER).floor);
-fs.rmSync(process.env.LEDGER_FAKE_DIR + "/fail-list-after");
+console.log("ARMED");`,
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("EXIT 1");
+    expect(r.stdout).not.toContain("ARMED");
+    expect(r.stderr).toContain("not starting the drive");
+  });
+
+  it("claims a pull request no ledger names yet, and stands down at a later claim", async () => {
+    const forge = fakeForge([forgeComment(60, claim("clone-c", 1))], {
+      login: "drive-bot",
+    });
+    const r = await probe(
+      forge,
+      `await d.armLedger("999", ${ID}, null, null, "take-over");
+const env = JSON.parse(process.env.DRIVE_PR_LEDGER_DRIVER);
+console.log("OWN " + env.claim?.id + " FLOOR " + env.floor);
 console.log("FIRST " + (await d.standDownOnNewerClaim("999")));
-console.log("FLOOR " + JSON.parse(process.env.DRIVE_PR_LEDGER_DRIVER).floor);
 const all = JSON.parse(fs.readFileSync(process.env.LEDGER_FAKE_DIR + "/comments.json", "utf8"));
-all.push({ id: 70, body: ${JSON.stringify(claim("clone-c", 2))}, user: { login: "other" }, author_association: "MEMBER", updated_at: "2026-10-01T12:00:00Z" });
+all.push({ id: 900, body: ${JSON.stringify(claim("clone-c", 2))}, user: { login: "other" }, author_association: "MEMBER", updated_at: "2026-10-01T12:00:00Z" });
 fs.writeFileSync(process.env.LEDGER_FAKE_DIR + "/comments.json", JSON.stringify(all));
 console.log("SECOND " + (await d.standDownOnNewerClaim("999")));`,
     );
     expectSpawnExit(r, 0);
-    // An old claim does not end the drive; a claim after the position does.
-    expect(r.stdout).toContain("FLOOR null");
+    // An earlier claim does not end the drive; a claim after its own does.
+    expect(r.stdout).toMatch(/OWN (\d+) FLOOR \1/);
     expect(r.stdout).toContain("FIRST null");
-    expect(r.stdout).toContain("FLOOR 60");
     expect(r.stdout).toContain("SECOND 20");
   });
 });

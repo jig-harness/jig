@@ -336,7 +336,7 @@ The `bun` prefix and the single line are deliberate: every TypeScript command ex
 ### Which working tree drives it
 
 Any working tree of the clone can drive a PR. Once it holds the tree's
-driver lock, and before it takes the PR's, `drive.ts` **attaches** the PR to
+driver lock and the PR's, `drive.ts` **attaches** the PR to
 the tree it runs in (`<skill-dir>/scripts/attach-pr.ts`): it checks that
 `origin` is the PR's repository, fetches the PR's head branch from it, checks
 the branch out when no other working tree of the clone holds it, and checks
@@ -351,7 +351,9 @@ the remote; an attach by name removes it. The drive state's `drivenBranch`
 mirrors it for the handoff file.
 
 It refuses, naming what is in the way, when this tree has uncommitted changes
-or an unfinished merge, rebase or cherry-pick; when the tree holding the
+or an unfinished merge, rebase or cherry-pick and the attach would move it (a
+tree already on the head branch, at or past the head, is not moved, and what
+it holds uncommitted is the drive's to handle); when the tree holding the
 branch has uncommitted changes or commits the PR's head does not have
 (push them from there first); when this tree's detached head has commits no
 branch or remote holds; when a local branch of that name is ahead of the
@@ -361,7 +363,8 @@ its commits ahead of the head, and the drive pushes them); when this is the clon
 the drive cannot push to. It moves nothing while a live driver holds the tree
 or the PR, or an interactive session holds the tree. A dry run attaches
 nothing, and `DRIVE_PR_ATTACH=off` drives the tree as it stands, for a
-harness that prepares its own trees.
+harness that prepares its own trees: placement (below) still chooses the
+tree, and attaches nothing.
 
 `/jig:drive-pr <PR>` decides the tree before it arms the driver
 (`bun "<skill-dir>/scripts/attach-pr.ts" <PR> --place`): the session's own working tree, or, from the
@@ -378,12 +381,15 @@ user file (`~/.jig/jig.yaml`,
 [configuration](../../CONFIGURATION.md#clones-user-file-only)), and with
 none mapped the session prints the command to run in a checkout of it. The
 human checkpoint the arm checks is read in the placed tree, so another
-repository's PR is checked against that repository's tracker. The attach,
-the checkpoint and the driver all run without the variables that would
+repository's PR is checked against that repository's tracker. The
+`gc.worktree_roots` a new tree is created under, the attach, the checkpoint
+and the driver are all read or run without the variables that would
 select something else than the placed tree: `GH_REPO` always; a running
 drive's own `DRIVE_PR_WORKTREE` and session when they name another tree;
-and, in another clone, `JIG_CONSUMER_ROOT`, `JIG_OVERLAY` and a driver's
-exported state directory. Placing another clone's PR from inside a drive
+in any tree other than the session's own, the location overrides
+`JIG_CONSUMER_ROOT`, `JIG_OVERLAY`, `DRIVE_PR_HANDOFF_DIR`,
+`DRIVE_PR_MAILBOX_DIR` and `DRIVE_PR_INTENT_CHAIN_DIR`; and, in another
+clone, a driver's exported state directory. Placing another clone's PR from inside a drive
 whose state is under a relocated `DRIVE_PR_STATE_DIR` is refused (exit 2):
 arm it from a session outside the drive.
 
@@ -398,7 +404,9 @@ branch's remote ref lacks), prints what it finds, leaves it in the tree and
 starts the next round, whose pass is told what it inherits. A commit the
 killed pass made but did not push does not hold that round up: the drive
 records the head it left, hands the round out over exactly that head, and
-the next pass pushes it. The drive restarts up
+the next pass pushes it. Uncommitted edits alone are not mistaken for
+convergence either: the drive hands that round out before it can converge.
+The drive restarts up
 to `drive.pass_deadline_retries` times per drive (default 2; the count is
 kept in the drive state, so a re-arm or a takeover does not reset it, and it
 clears when the drive converges or the PR closes) and then stops
@@ -471,11 +479,17 @@ clone holds the drive and the ledger names a running driver elsewhere,
 is older than the lease window, the doctor's stall threshold (four hours by
 default); a plain arm is refused with exit `13`, and the refusal prints the
 `--take-over` command once the heartbeat is past the window. The taker posts a
-takeover claim on the pull request. If two clones claim at once, the earlier
-comment wins and the later one stands down with exit `20`. The old driver,
-if it is still alive, reads the claim at its next round boundary and stops
-with exit `20` without another pass. This holds only once every driver of
-the pull request runs a version of the plugin that reads the ledger.
+takeover claim on the pull request; so does any drive that does not continue
+its own clone's ledger, such as the first drive of a pull request. If two
+clones claim at once, the earlier comment wins and the later one stands down
+with exit `20`. A claim whose clone never got the drive going stops counting
+after the lease window, and a retry from that clone picks up its own claim.
+The old driver, if it is still alive, reads the claim at its next round
+boundary or before its next pass and stops with exit `20`. A drive that
+cannot read the pull request's comments when it starts refuses with exit `1`
+rather than risk driving beside another clone. This holds only once every
+driver of the pull request runs a version of the plugin that reads the
+ledger.
 
 ## The exit states — what you do now
 
@@ -526,7 +540,7 @@ round. A repository that did not is never asked for one.
 
   Each held item's `actor` stamp reuses that same tree key, but it only **records** which tree made a promise — it grants no exclusivity of its own.
 - **`.context/pr-drive-<PR>.md`** — the human-readable handoff: where the drive stands and how to resume.
-- **The drive ledger** — one comment on the pull request, opening with the hidden marker `<!-- drive-pr-ledger -->`, that mirrors the resumable part of the drive state so a drive started in another clone or on another machine picks up where the last one left off: the round and phase, the last counted and verified heads, the Ready mark, every parked item with its decision, every held item with its outcome and pushed commit, the takeovers, the driver's working tree and last heartbeat, and the last twenty lines of the handoff narrative. Nothing that identifies an account is posted: no account hash in the ledger or a takeover claim (the drive state keeps the quota park's account locally, so a re-arm from another clone simply tries, and the usage-limit handling meets the wall again if it is still there), and anything shaped like an email address in the narrative or a parked decision is replaced with `<redacted>`. It carries a version and a generation that grows with every write. The driver writes it at every round boundary, park and takeover, and when it stops. A driver stopped by `--stop` cannot write it itself, so `bun "<skill-dir>/scripts/drives.ts" --stop <PR>` marks the ledger stopped once the driver is witnessed gone. After a crash, a kill or Ctrl-C, run `--stop <PR>` or `--doctor` in that clone: against a lock whose process is gone they do the same. Each writes only while the ledger still names that driver (its working tree, clone and run) with no newer takeover claim, so a successor's ledger is left as it is. Until one of them runs, a ledger whose driver died keeps saying it runs, and another clone waits for its heartbeat to age past the lease window. A reset keeps the ledger's generation, so the next drive does not seed back what the reset forgot. A drive that starts with no state for the pull request, or with state older than the ledger's generation, seeds its state from it; a ledger version it cannot read stops it with exit `1`, naming the version. Only a ledger written by the drive's own login or by an owner, member or collaborator is trusted; any other comment carrying the marker is ignored and reported. A ledger too long for one comment loses the held items' outcomes first and the narrative second, never a parked decision. `DRIVE_PR_LEDGER=off` drives without it.
+- **The drive ledger** — one comment on the pull request, opening with the hidden marker `<!-- drive-pr-ledger -->`, that mirrors the resumable part of the drive state so a drive started in another clone or on another machine picks up where the last one left off: the round and phase, the last counted and verified heads, the Ready mark, every parked item with its decision, every held item with its outcome and pushed commit, the takeovers, the driver's working tree and last heartbeat, and the last twenty lines of the handoff narrative. Nothing that identifies an account is posted: no account hash in the ledger or a takeover claim (the drive state keeps the quota park's account locally, so a re-arm from another clone simply tries, and the usage-limit handling meets the wall again if it is still there), and anything shaped like an email address or an account identifier in the narrative, a parked decision or a held finding's answer is replaced with `<redacted>`. It carries a version and a generation that grows with every write. The driver writes it at every round boundary, park and takeover, and when it stops. A driver stopped by `--stop` cannot write it itself, so `bun "<skill-dir>/scripts/drives.ts" --stop <PR>` marks the ledger stopped once the driver is witnessed gone. After a crash, a kill or Ctrl-C, run `--stop <PR>` or `--doctor` in that clone: against a lock whose process is gone, or the driver record a stopped driver leaves in the state directory, they do the same. Each writes only while the ledger still names that driver (its working tree, clone and run) with no newer takeover claim, so a successor's ledger is left as it is. Until one of them runs, a ledger whose driver died keeps saying it runs, and another clone waits for its heartbeat to age past the lease window. A reset keeps the ledger's generation, so the next drive does not seed back what the reset forgot. A drive that starts with no state for the pull request, or with state older than the ledger's generation, seeds its state from it; a ledger version it cannot read stops it with exit `1`, naming the version. Only a ledger written by the drive's own login or by an owner, member or collaborator is trusted; any other comment carrying the marker is ignored and reported. A ledger too long for one comment loses the held items' outcomes first and the narrative second, never a parked decision. `DRIVE_PR_LEDGER=off` drives without it.
 - **GitHub** — the shared truth: threads and their resolution state, outcome replies, the drive's announce comments, the drive ledger and takeover claims, the reviewer check-runs.
 
 The state dir grows with every lock generation. `bun "<skill-dir>/scripts/reap-state.ts"`

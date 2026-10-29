@@ -29,7 +29,7 @@
  *     the drive posts with the operator's own credentials, so a comment that
  *     merely mentions a parked key must not unpark it.
  */
-import { shellQuote } from "./../cli.ts";
+import { fail, shellQuote } from "./../cli.ts";
 
 import {
   ghCall,
@@ -78,7 +78,7 @@ const ANSWER_BODY_MAX = 1500;
 const REASON_MAX = 300;
 
 /** The length the answer bodies are cut to fit, beside every item's entry. */
-const NOTICE_MAX = 15_000;
+export const NOTICE_MAX = 15_000;
 
 /** The canonical arm command, in the drive's own mode, for a person to copy. */
 export function armCommand(
@@ -195,19 +195,44 @@ interface CommentLike {
 /** A pull-request comment answers a parked key only with a line `answer <key>:`. */
 export function answersKey(body: string, key: string): boolean {
   const prefix = `answer ${key}:`.toLowerCase();
-  let fenced = false;
+  // The open fence's marker run (```` ```` ````, `~~~`, …); `''` outside one.
+  let fence = "";
   for (const raw of body.split("\n")) {
     const line = raw.trim();
     // A fenced block is an example or a quote, never the answer itself.
-    if (/^(```|~~~)/.test(line)) fenced = !fenced;
-    else if (
-      !fenced &&
-      line.toLowerCase().startsWith(prefix) &&
-      line.slice(prefix.length).trim() !== ""
-    )
-      return true;
+    const marker = /^(`{3,}|~{3,})/.exec(line)?.[1] ?? "";
+    if (fence === "") {
+      if (marker !== "") fence = marker;
+      else if (isAnswerLine(raw, line, prefix)) return true;
+    } else if (closesFence(line, marker, fence)) fence = "";
   }
   return false;
+}
+
+/**
+ * Whether one line outside a fence is the answer: the prefix with a decision
+ * after it, indented less than an indented code block (four spaces or a tab),
+ * which is an example too.
+ */
+function isAnswerLine(raw: string, line: string, prefix: string): boolean {
+  return (
+    !/^( {4}|\t)/.test(raw.replace(/^ {0,3}(?=\t)/, "")) &&
+    line.toLowerCase().startsWith(prefix) &&
+    line.slice(prefix.length).trim() !== ""
+  );
+}
+
+/**
+ * Whether `line` closes the fence `open` opened: a run of the same character
+ * at least as long, with nothing after it (CommonMark's closing fence).
+ */
+function closesFence(line: string, marker: string, open: string): boolean {
+  return (
+    marker !== "" &&
+    marker[0] === open[0] &&
+    marker.length >= open.length &&
+    line.slice(marker.length).trim() === ""
+  );
 }
 
 /** A comment a person wrote after the park, not one the drive wrote. */
@@ -338,12 +363,13 @@ export async function admitAnsweredParks(
   const stateDir = await resolveStateDir();
   const file = answersFile(stateDir, pr);
   const kept = readPendingVerdicts(stateDir, pr);
-  if (kept === null) {
-    console.error(
-      `re-arm: cannot read the answers kept for PR #${pr} in ${file}; unparking nothing. Act on that file by hand, then remove it to drive on.`,
+  // Driving on would let the next completed pass remove the only copy of
+  // answers whose parks may already be gone, unread.
+  if (kept === null)
+    return fail(
+      1,
+      `re-arm: cannot read the answers kept for PR #${pr} in ${file}; stopping with the file left in place. Repair it, or act on it by hand and remove it, then re-arm.`,
     );
-    return "";
-  }
   const isParked = (key: string) => state.parked.some((p) => p.key === key);
   const carried = kept.filter((v) => !isParked(v.key));
   if (carried.length > 0)
@@ -371,11 +397,20 @@ export async function admitAnsweredParks(
     );
     return humanVerdictNotice(carried, file);
   }
+  // Bound to the parks whose answers were read: a park replaced under the
+  // same key, or added, while the comments were read refuses the whole set.
+  const parkedAt = new Map(state.parked.map((p) => [p.key, p.at ?? ""]));
   const res = await run(
     tsArgv(driveState, [
       "unpark",
       pr,
-      ...fresh.flatMap((v) => ["--key", v.key]),
+      "--every",
+      ...fresh.flatMap((v) => [
+        "--key",
+        v.key,
+        "--parked-at",
+        parkedAt.get(v.key) ?? "",
+      ]),
     ]),
     { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
   );
