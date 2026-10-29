@@ -6,7 +6,13 @@
  * ledger is left as it is. And a seed the state store refuses keeps its exit.
  */
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -181,6 +187,44 @@ describe("drives.ts --stop marks the stopped driver's ledger", () => {
       expectSpawnExit(r, 0);
       expect(r.stderr).toContain("left as it is: it names another driver");
       expect(s.forge.comments()[0]?.body).toBe(before);
+    },
+    60_000,
+  );
+
+  it.skipIf(posixStop)(
+    "keeps the witness when the forge refuses the write, and the next recovery consumes it",
+    async () => {
+      const s = stage();
+      const owner = Bun.spawn(
+        [
+          process.execPath,
+          "-e",
+          "setInterval(() => {}, 1000)",
+          "drive.ts",
+          "999",
+        ],
+        { stdout: "ignore", stderr: "ignore" },
+      );
+      plantLock(s, owner.pid);
+      const record = join(s.leaf, "ledger-driver-999.json");
+      writeDriverRecord(s.leaf, "999", {
+        worktree: s.forge.repo,
+        started: s.started,
+        pid: owner.pid,
+        host: hostname(),
+      });
+      writeFileSync(join(s.forge.dir, "fail-list-after"), "0");
+      const r = await drives(s, ["--stop", "999"]);
+      owner.kill("SIGKILL");
+      await owner.exited;
+      expectSpawnExit(r, 0);
+      expect(driverOf(s)?.state).toBe("running");
+      expect(JSON.parse(readFileSync(record, "utf8")).released).toBe(true);
+      rmSync(join(s.forge.dir, "fail-list-after"));
+      // The stopped driver's abandoned lock is still in place.
+      expectSpawnExit(await drives(s, ["--doctor"]), 0);
+      expect(driverOf(s)).toMatchObject({ actor: s.actor, state: "stopped" });
+      expect(existsSync(record)).toBe(false);
     },
     60_000,
   );

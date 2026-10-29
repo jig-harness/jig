@@ -1078,13 +1078,14 @@ async function stop(
     );
     return 1;
   }
-  const verified = await verifyDriverClaim(row, pid);
+  const v = await verifyDriverClaim(row, pid);
   const code =
-    "code" in verified
-      ? verified.code
-      : consumeStopResult(row, await stopVerifiedDriver(row, verified.owner));
-  // Witnessed gone (or already gone): its ledger is marked stopped, guarded.
-  if (code === 0) await ledgerStop.settleStoppedDriver(stateDir, pr, row.diag);
+    "code" in v
+      ? v.code
+      : consumeStopResult(row, await stopVerifiedDriver(row, v.owner));
+  // Witnessed gone, or already gone with nothing witnessing its pass.
+  if (code === 0)
+    await ledgerStop.settleStop(stateDir, pr, row, !("code" in v));
   return code;
 }
 

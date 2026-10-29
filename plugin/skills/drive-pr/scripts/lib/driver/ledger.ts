@@ -7,7 +7,8 @@
  *
  * Across clones no process can be stopped and no lock is shared, so the
  * ledger arbitrates. Its driver heartbeat is the time of its last write
- * (every round boundary, park and takeover); a heartbeat older than the lease
+ * (every round boundary, park and takeover, and through a quota sleep at a
+ * quarter of the lease window); a heartbeat older than the lease
  * window, the doctor's stall threshold (`stallThresholdMs`), is what admits
  * a takeover from another clone. A driver that does not continue its own
  * clone's ledger (a takeover, a pull request with no ledger yet, another
