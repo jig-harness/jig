@@ -10,6 +10,7 @@
  * reader the resolver hands it with the reference, which checks every file
  * before it lists or reads it, and never opens a path itself.
  */
+import type { MarkdownLine } from "./markdown.ts";
 
 /** A requirement as an adapter reads it: its id within the source and its text. */
 export interface SpecEntry {
@@ -43,28 +44,39 @@ export type BodySectionKind = "spec" | "requirements" | "acceptance";
 
 /**
  * The files of a checked file reference. Each file is checked on its own
- * (inside the root through every symbolic link, not ignored by Git) before
- * it is listed and again before it is read, so a folder's contents pass the
- * same checks as the folder.
+ * (inside the root and inside the reference through every symbolic link,
+ * not ignored by Git, a regular file) before it is listed and again before
+ * it is read, so a folder's contents pass the same checks as the folder; the
+ * resolver reports each one the checks leave out. Pass the adapter's own
+ * signal, so its deadline stops a long listing or read.
  */
 export interface CheckedFiles {
   /** The reference itself, or every file under the folder that passes the checks, relative to the root. */
-  list(): Promise<string[]>;
+  list(signal?: AbortSignal): Promise<string[]>;
   /** The text of the reference or a file under it; rejects one that fails the checks. */
-  read(ref: string): Promise<string>;
+  read(ref: string, signal?: AbortSignal): Promise<string>;
 }
 
 /**
  * A reference the resolver has checked and passes to an adapter.
  *
  * `body`: one recognised section of the issue's own body, its text as the
- * issue carries it. `file`: a path in the repository, `ref` its canonical
+ * issue carries it, and its `lines` as the resolver classified them while
+ * scanning the whole body (code or content): read code from `lines`, never
+ * by scanning `text` again, since the section is cut out of its context (the
+ * headings around it, a list it continues). `file`: a path in the repository, `ref` its canonical
  * form relative to the root (a folder ends in `/`), already known to be
  * inside the root, not ignored by Git and matched by the adapter's own
  * `patterns`; `files` is the only way to its contents.
  */
 export type SpecReference =
-  | { kind: "body"; ref: string; section: BodySectionKind; text: string }
+  | {
+      kind: "body";
+      ref: string;
+      section: BodySectionKind;
+      text: string;
+      lines: readonly MarkdownLine[];
+    }
   | { kind: "file"; ref: string; files: CheckedFiles };
 
 export interface SpecAdapter {

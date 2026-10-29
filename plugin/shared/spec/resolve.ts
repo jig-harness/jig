@@ -131,7 +131,7 @@ function issueBody(issue: Record<string, unknown>): string {
 /**
  * The adapters to run, in order: the configured ones, or every one whose
  * layout is present. One whose `detect` fails or misses its deadline is
- * left out, and reported.
+ * left out, and reported in that order.
  */
 async function enabledAdapters(
   registry: readonly SpecAdapter[],
@@ -148,20 +148,21 @@ async function enabledAdapters(
       : config.adapters.flatMap((name) =>
           registry.filter((a) => a.name === name),
         );
-  const unresolved: string[] = [];
-  const present = await Promise.all(
+  const answers = await Promise.all(
     chosen.map((a) =>
-      withDeadline(deadlineMs, (signal) => a.detect(root, signal)).catch(
-        (err: unknown) => {
-          unresolved.push(
-            `${a.name} adapter (could not tell whether its layout is present: ${reasonOf(err)})`,
-          );
-          return false;
-        },
+      withDeadline(deadlineMs, (signal) => a.detect(root, signal)).then(
+        (present) => ({ present, failure: null }),
+        (err: unknown) => ({
+          present: false,
+          failure: `${a.name} adapter (could not tell whether its layout is present: ${reasonOf(err)})`,
+        }),
       ),
     ),
   );
-  return { adapters: chosen.filter((_, i) => present[i]), unresolved };
+  return {
+    adapters: chosen.filter((_, i) => answers[i]?.present),
+    unresolved: answers.flatMap((a) => (a.failure === null ? [] : [a.failure])),
+  };
 }
 
 /** An id `lists` give to more than one entry, or `null`. */
@@ -182,6 +183,8 @@ interface Found {
   adapter: SpecAdapter;
   source: SpecSource;
   reference: SpecReference;
+  /** What the reference's file checks left out, once the adapter has read it. */
+  refused: readonly string[];
 }
 
 /** Every reference the body makes, checked; the refused ones as unresolved lines. */
@@ -214,12 +217,14 @@ function findReferences(
             ref,
             section: section.kind,
             text: section.text,
+            lines: section.lines,
           },
+          refused: [],
         },
         "section",
       );
     if (section.kind === "spec")
-      candidates.push(...sectionReferences(section.text));
+      candidates.push(...sectionReferences(section.lines));
   }
   for (const mention of bodyMentions(body))
     if (claimant(adapters, mention) !== null) candidates.push(mention);
@@ -229,6 +234,7 @@ function findReferences(
       unresolved.push(`${candidate} (${checked.reason})`);
       continue;
     }
+    const files = checkedFiles(checked, root);
     add(
       {
         adapter: checked.adapter,
@@ -237,11 +243,8 @@ function findReferences(
           ref: checked.ref,
           evidence: [],
         },
-        reference: {
-          kind: "file",
-          ref: checked.ref,
-          files: checkedFiles(checked, root),
-        },
+        reference: { kind: "file", ref: checked.ref, files },
+        refused: files.refused,
       },
       "body link",
     );
@@ -339,6 +342,8 @@ export async function resolveSpec(
         `${f.source.ref} (${f.adapter.name} could not read it: ${reasonOf(err)})`,
       );
       continue;
+    } finally {
+      unresolved.push(...f.refused);
     }
     const shared = sharedId(lists);
     if (shared === null) read.push({ source: f.source, lists });

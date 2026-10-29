@@ -5,6 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { symlinkSync } from "node:fs";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import type { SpecAdapter } from "../spec/adapter.ts";
 import { bodyAdapter } from "../spec/adapters/body.ts";
@@ -39,6 +40,70 @@ describe("a folder reference", () => {
       expect(result.acceptance.map((c) => c.key)).toEqual([
         "notes/export/#AC-1",
       ]);
+      expect(result.unresolved).toEqual([
+        "notes/export/leak.md (symbolic link out of the repository)",
+        "notes/export/private.md (ignored by Git)",
+      ]);
+    },
+  );
+
+  test.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "creating a symbolic link needs a privilege Windows withholds by default",
+    ),
+  )(
+    "a file is held to the folder by its real location, not the name it is asked for by",
+    async () => {
+      const { root } = scratchRepo("spec-safety-");
+      put(root, "notes/export/criteria.md", "AC-1 x\n");
+      put(root, "secrets.txt", "AC-9 a secret\n");
+      symlinkSync(
+        join(root, "secrets.txt"),
+        join(root, "notes", "export", "leak.md"),
+      );
+      const checked = checkPath("notes/export/", root);
+      if (!checked.ok) throw new Error(checked.reason);
+      const files = checkedFiles(checked, root);
+      expect(await files.list()).toEqual(["notes/export/criteria.md"]);
+      expect(files.refused).toEqual([
+        "notes/export/leak.md (symbolic link out of notes/export/)",
+      ]);
+      await expect(
+        files.read("notes/export/%2e%2e/%2e%2e/secrets.txt"),
+      ).rejects.toThrow("or under it");
+      await expect(files.read("notes/export/leak.md")).rejects.toThrow(
+        "or under it",
+      );
+    },
+  );
+
+  test.skipIf(
+    skipsOnWindows("file-system", "a named pipe is a POSIX file type"),
+  )(
+    "a pipe is refused rather than read, and a read stops on its signal",
+    async () => {
+      const { root } = scratchRepo("spec-safety-");
+      put(root, "notes/export/criteria.md", "AC-1 x\n");
+      const fifo = Bun.spawnSync(
+        ["mkfifo", join(root, "notes", "export", "pipe.md")],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      expectSpawnExit(fifo, 0, "mkfifo");
+      expect(checkPath("notes/export/pipe.md", root)).toEqual({
+        ok: false,
+        reason: "not a regular file",
+      });
+      const checked = checkPath("notes/export/", root);
+      if (!checked.ok) throw new Error(checked.reason);
+      const files = checkedFiles(checked, root);
+      expect(await files.list()).toEqual(["notes/export/criteria.md"]);
+      expect(files.refused).toEqual([
+        "notes/export/pipe.md (not a regular file)",
+      ]);
+      await expect(
+        files.read("notes/export/criteria.md", AbortSignal.abort()),
+      ).rejects.toThrow();
     },
   );
 
@@ -101,6 +166,69 @@ test("code is never content: a longer fence holds a shorter one, and indented co
   expect(result.acceptance).toEqual([]);
   expect(result.tasks.map((t) => t.id)).toEqual(["2", "2.1"]);
   expect(result.unresolved).toEqual([]);
+});
+
+test("a fence indented under a list item is the item's code, not its content", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  const body = [
+    "## Spec",
+    "",
+    "- [ ] 1. Real task",
+    "",
+    "    ```md",
+    "    - AC-9 Example",
+    "    notes/example.md",
+    "    ```",
+    "",
+    "- [ ] 2. Next task",
+  ].join("\n");
+  const result = await resolveSpec(issue(body), root, {
+    registry: [bodyAdapter],
+    config: only("body"),
+  });
+  expect(result.acceptance).toEqual([]);
+  expect(result.tasks.map((t) => t.id)).toEqual(["1", "2"]);
+  expect(result.unresolved).toEqual([]);
+});
+
+test("a section keeps the code its context made: a heading that closed a list still closes it", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  const body = [
+    "## Spec",
+    "",
+    "- [ ] 1. Real task",
+    "",
+    "### Example",
+    "",
+    "    - AC-9 Example",
+    "    notes/example.md",
+  ].join("\n");
+  const result = await resolveSpec(issue(body), root, {
+    registry: [bodyAdapter],
+    config: only("body"),
+  });
+  expect(result.acceptance).toEqual([]);
+  expect(result.tasks.map((t) => t.id)).toEqual(["1"]);
+  expect(result.unresolved).toEqual([]);
+});
+
+test("detect failures are reported in the configured order, whichever fails first", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  const failing = (name: string, ms: number): SpecAdapter => ({
+    ...stub(name, name),
+    detect: () =>
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("broken")), ms),
+      ),
+  });
+  const result = await resolveSpec(issue(""), root, {
+    registry: [failing("late", 40), failing("early", 1)],
+    config: only("late", "early"),
+  });
+  expect(result.unresolved).toEqual([
+    "late adapter (could not tell whether its layout is present: broken)",
+    "early adapter (could not tell whether its layout is present: broken)",
+  ]);
 });
 
 test("an adapter that does not answer by the deadline is given up on, its signal aborted", async () => {

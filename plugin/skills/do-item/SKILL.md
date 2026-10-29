@@ -634,8 +634,8 @@ routing below remain **exact**.
    pull request and `pull_requests.stacking` allows it. When the item already
    has an open pull request, do not delegate: stop here, create no branch
    and open no pull request, remove the scratch files this procedure wrote
-   (`issue.json`, `comments.json`, `intent-chain-input.json` and
-   `scout-findings.md`, whichever exist; an
+   (`issue.json`, `spec-issue.json`, `comments.json`,
+   `intent-chain-input.json` and `scout-findings.md`, whichever exist; an
    attach refuses a tree it would move while they are in it), and hand the item to that pull request's drive with
    `/jig:drive-pr <PR>`. Its placement chooses or creates the working tree
    on the pull request's head, so nothing here is pushed or attached.

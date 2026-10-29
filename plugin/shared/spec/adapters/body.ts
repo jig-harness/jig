@@ -34,7 +34,7 @@ import type {
   SpecAdapter,
   SpecReference,
 } from "../adapter.ts";
-import { markdownLines, trimEndOf } from "../markdown.ts";
+import { type MarkdownLine, trimEndOf } from "../markdown.ts";
 
 const ID = "[A-Z][A-Z0-9]*-\\d+(?:\\.\\d+)*";
 const REQUIREMENT_ID = /^(?:FR|NFR|REQ)-\d+(?:\.\d+)*$/;
@@ -97,10 +97,10 @@ function block(indent: number, list: boolean, content: string): Block {
 /**
  * The section's lines outside code, tabs as four spaces; `null` stands
  * where code opens, closes or continues, since it ends the entry above it.
+ * The classification is the resolver's, made over the whole body.
  */
-function* unfenced(text: string): Generator<string | null> {
-  for (const { line, kind } of markdownLines(text))
-    yield kind === "text" ? line : null;
+function* unfenced(lines: readonly MarkdownLine[]): Generator<string | null> {
+  for (const { line, kind } of lines) yield kind === "text" ? line : null;
 }
 
 /** A new block the line opens, `"end"` when it ends the one above, or `"continue"`. */
@@ -120,11 +120,11 @@ function opens(
 }
 
 /** The list items and id-led lines of a section, continuation lines joined on. */
-function blocks(text: string): Block[] {
+function blocks(lines: readonly MarkdownLine[]): Block[] {
   const out: Block[] = [];
   let current: Block | null = null;
   let afterBlank = false;
-  for (const line of unfenced(text)) {
+  for (const line of unfenced(lines)) {
     if (line !== null && line.trim() === "") {
       afterBlank = true;
       continue;
@@ -188,11 +188,14 @@ function servedRequirement(text: string): string | null {
   return named.size === 1 ? ([...named][0] ?? null) : null;
 }
 
-/** Read one section's text into the three lists. */
-function readSection(text: string, section: BodySectionKind): AdapterRead {
+/** Read one section's classified lines into the three lists. */
+function readSection(
+  lines: readonly MarkdownLine[],
+  section: BodySectionKind,
+): AdapterRead {
   const read: AdapterRead = { requirements: [], acceptance: [], tasks: [] };
   const taken = new Set<string>();
-  const all = blocks(text);
+  const all = blocks(lines);
   if (all.length === 0) return read;
   for (const b of entries(all)) {
     const kind = kindOf(b, section);
@@ -222,6 +225,6 @@ export const bodyAdapter: SpecAdapter = {
   read(ref: SpecReference): Promise<AdapterRead> {
     if (ref.kind !== "body")
       throw new Defect(`the body adapter reads only the body, not ${ref.ref}`);
-    return Promise.resolve(readSection(ref.text, ref.section));
+    return Promise.resolve(readSection(ref.lines, ref.section));
   },
 };

@@ -11,9 +11,10 @@ release: minor
   derived from its text, and each reference it did not read with the reason.
   The resolver behind it (`plugin/shared/spec/resolve.ts`) reads only inside
   the repository: an absolute path, a `..` that leaves the root, a symbolic
-  link out of it and a file Git ignores, such as `.env`, are refused before
-  anything reads them, each file in a referenced folder is checked on its
-  own, and no web link is fetched. A reader that does not answer within 30
-  seconds is given up on. Nothing else in the pickup changes. Two new fields, `specs.adapters` and `specs.body_section`, set
-  which readers run and the spec section's heading
+  link out of it, a file Git ignores, such as `.env`, and a pipe or device
+  are refused before anything reads them, each file in a referenced folder
+  is checked on its own and reported when refused, and no web link is
+  fetched. A reader that does not answer within 30 seconds is given up on.
+  Nothing else in the pickup changes. New fields, `specs.adapters` and
+  `specs.body_section`, set which readers run and the spec section's heading
   ([configuration](../plugin/CONFIGURATION.md#specs)).

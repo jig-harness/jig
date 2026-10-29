@@ -8,8 +8,12 @@
  * fence closes only on a run of its own character at least as long as the
  * one that opened it, so a three-backtick line inside a four-backtick
  * example stays inside it. A line indented four columns or more after a
- * blank line opens indented code unless a list item is open, where it is
- * the item's nested content.
+ * blank line opens indented code. Inside an open list item both are read
+ * relative to the item's content column (where its text starts after the
+ * marker): a fence indented under `- ` is the item's fence, and only a line
+ * four columns past that column, after a blank line, is its indented code.
+ * A line at or past that column belongs to the item and does not close the
+ * list; a heading, or a line before that column after a blank line, does.
  */
 import type { BodySectionKind } from "./adapter.ts";
 
@@ -47,10 +51,25 @@ export interface MarkdownLine {
 }
 
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
-const LIST_ITEM = /^ {0,3}(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/;
+const LIST_ITEM = /^( {0,3})([-*+]|\d{1,9}[.)])( *)(?=\S|$)/;
 
 function indentOf(line: string): number {
   return line.length - line.trimStart().length;
+}
+
+/** `line` with up to `columns` leading spaces removed. */
+function dedent(line: string, columns: number): string {
+  return line.slice(Math.min(columns, indentOf(line)));
+}
+
+/** The content column of the list item `line` opens, or `null`. */
+function listContent(line: string): number | null {
+  const match = LIST_ITEM.exec(line);
+  if (!match) return null;
+  const marker = (match[1] ?? "").length + (match[2] ?? "").length;
+  const spaces = (match[3] ?? "").length;
+  if (spaces === 0 && match[0].length < line.length) return null;
+  return marker + (spaces === 0 || spaces > 4 ? 1 : spaces);
 }
 
 /** The fence `line` closes or opens: its character and length. */
@@ -63,10 +82,12 @@ function fenceRun(line: string): { char: string; length: number } | null {
   return { char, length: run.length };
 }
 
-type Fence = { char: string; length: number };
+/** An open fence; `strip` is the list content column it was opened at. */
+type Fence = { char: string; length: number; strip: number };
 
 /** Whether `line` closes `fence`: a bare run of its character, at least as long. */
-function closes(line: string, fence: Fence): boolean {
+function closes(raw: string, fence: Fence): boolean {
+  const line = dedent(raw, fence.strip);
   const run = fenceRun(line);
   return (
     run !== null &&
@@ -81,19 +102,33 @@ interface ScanState {
   fence: Fence | null;
   indentedCode: boolean;
   listOpen: boolean;
+  /** The content column of the innermost list item open. */
+  listIndent: number;
   afterBlank: boolean;
 }
 
-/** The kind of a line indented less than four columns, outside code. */
-function shallowLine(line: string, state: ScanState): MarkdownLine["kind"] {
+/**
+ * The kind of a line less than four columns past its container's content
+ * column (`strip`, 0 outside a list), outside code.
+ */
+function shallowLine(
+  line: string,
+  strip: number,
+  state: ScanState,
+): MarkdownLine["kind"] {
   state.indentedCode = false;
-  const run = fenceRun(line);
+  const own = line.slice(strip);
+  const run = fenceRun(own);
   if (run !== null) {
-    state.fence = run;
+    state.fence = { ...run, strip };
     return "fence";
   }
-  if (LIST_ITEM.test(line)) state.listOpen = true;
-  else if (state.afterBlank || /^ {0,3}#/.test(line)) state.listOpen = false;
+  const item = listContent(own);
+  if (item !== null) {
+    state.listOpen = true;
+    state.listIndent = strip + item;
+  } else if (/^ {0,3}#/.test(line) || (state.afterBlank && strip === 0))
+    state.listOpen = false;
   return "text";
 }
 
@@ -108,11 +143,14 @@ function classify(line: string, state: ScanState): MarkdownLine["kind"] {
     state.afterBlank = true;
     return "text";
   }
+  const indent = indentOf(line);
+  const strip =
+    state.listOpen && indent >= state.listIndent ? state.listIndent : 0;
   let kind: MarkdownLine["kind"];
-  if (indentOf(line) >= 4) {
-    state.indentedCode ||= state.afterBlank && !state.listOpen;
+  if (indent - strip >= 4) {
+    state.indentedCode ||= state.afterBlank;
     kind = state.indentedCode ? "code" : "text";
-  } else kind = shallowLine(line, state);
+  } else kind = shallowLine(line, strip, state);
   state.afterBlank = false;
   return kind;
 }
@@ -123,6 +161,7 @@ export function* markdownLines(text: string): Generator<MarkdownLine> {
     fence: null,
     indentedCode: false,
     listOpen: false,
+    listIndent: 0,
     afterBlank: true,
   };
   for (const raw of text.split(/\r?\n/)) {

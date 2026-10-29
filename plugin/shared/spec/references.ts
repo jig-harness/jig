@@ -16,6 +16,7 @@ import type { BodySectionKind, SpecAdapter } from "./adapter.ts";
 import {
   headingKey,
   INLINE_HEADINGS,
+  type MarkdownLine,
   markdownLines,
   trimEndOf,
 } from "./markdown.ts";
@@ -26,6 +27,8 @@ export interface BodySection {
   /** The heading as the configuration or the resolver names it. */
   heading: string;
   text: string;
+  /** Its lines, each classified as the scan of the whole body found it. */
+  lines: MarkdownLine[];
 }
 
 const HEADING = /^ {0,3}(#{1,6})(?:[ \t](.*))?$/;
@@ -63,30 +66,33 @@ export function bodySections(body: string, specHeading: string): BodySection[] {
     const known = want.get(headingKey(title));
     if (!known) return null;
     const [kind, heading] = known;
-    const found = names.get(kind) ?? { kind, heading, text: "" };
+    const found = names.get(kind) ?? { kind, heading, text: "", lines: [] };
     names.set(kind, found);
     return found;
   };
   const stack: { level: number; section: BodySection | null }[] = [];
-  for (const { line, heading } of headedLines(body)) {
+  for (const { line, kind, heading } of headedLines(body)) {
     if (heading) {
       while ((stack.at(-1)?.level ?? 0) >= heading.level) stack.pop();
       stack.push({ level: heading.level, section: section(heading.title) });
       continue;
     }
     const owner = stack.findLast((s) => s.section !== null)?.section;
-    if (owner) owner.text += `${line}\n`;
+    if (!owner) continue;
+    owner.text += `${line}\n`;
+    owner.lines.push({ line, kind });
   }
   return [...names.values()];
 }
 
 /** Each line of `body`, with its heading when it is one outside code. */
-function* headedLines(body: string): Generator<{
-  line: string;
-  heading: { level: number; title: string } | null;
-}> {
+function* headedLines(
+  body: string,
+): Generator<
+  MarkdownLine & { heading: { level: number; title: string } | null }
+> {
   for (const { line, kind } of markdownLines(body))
-    yield { line, heading: kind === "text" ? headingOf(line) : null };
+    yield { line, kind, heading: kind === "text" ? headingOf(line) : null };
 }
 
 const MARKDOWN_LINK =
@@ -122,10 +128,11 @@ function linkTargets(line: string): string[] {
  * The references the spec section names: every link target, web address and
  * link definition, and every line or list item whose whole text is one path
  * (bare or as code). A path mentioned inside a sentence is not a reference.
+ * `lines` are the section's, classified in the whole body (`bodySections`).
  */
-export function sectionReferences(text: string): string[] {
+export function sectionReferences(lines: readonly MarkdownLine[]): string[] {
   const found: string[] = [];
-  for (const { line, kind } of markdownLines(text)) {
+  for (const { line, kind } of lines) {
     if (kind !== "text") continue;
     const targets = linkTargets(line);
     found.push(...targets);
@@ -235,8 +242,9 @@ function ignored(root: string, rel: string): boolean | null {
  * Check one path before anything reads it, in this order: a web link, an
  * absolute path, a path whose `..` leaves the root, a path that does not
  * exist, a real path (symbolic links followed) outside the root or at the
- * root itself, a path Git ignores. The first that applies refuses it with
- * that reason.
+ * root itself, a path Git ignores, a path that is neither a folder nor a
+ * regular file (a pipe or a device, whose read may never end). The first
+ * that applies refuses it with that reason.
  */
 export function checkPath(
   reference: string,
@@ -273,7 +281,9 @@ export function checkPath(
   if (verdict === null)
     return refused("Git could not say whether it is ignored");
   if (verdict) return refused("ignored by Git");
-  const directory = statSync(real).isDirectory();
+  const stat = statSync(real);
+  const directory = stat.isDirectory();
+  if (!directory && !stat.isFile()) return refused("not a regular file");
   return { ok: true, ref: directory ? `${rel}/` : rel, path: real, directory };
 }
 

@@ -80,13 +80,13 @@ export function stub(
     name,
     patterns: [`${folder}/*.md`, `${folder}/*/`],
     detect: () => Promise.resolve(present),
-    async read(ref) {
+    async read(ref, signal) {
       reads.push(ref);
       if (ref.kind !== "file") throw new TypeError("files only");
       if (ref.ref.includes("broken")) throw new TypeError("unparseable");
       let text = "";
-      for (const file of await ref.files.list())
-        text += await ref.files.read(file);
+      for (const file of await ref.files.list(signal))
+        text += await ref.files.read(file, signal);
       const out: AdapterRead = { requirements: [], acceptance: [], tasks: [] };
       for (const line of text.split("\n").filter(Boolean)) {
         const [id = "", ...rest] = line.split(" ");
