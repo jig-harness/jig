@@ -341,6 +341,19 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.94.1] - 2026-10-29
+
+### Changed
+
+- The values a repository already implies for its configuration (the gate
+  command, review bots, the repository the forge names, stacked pull
+  requests, the issue-tracker team, the change-area catalog, the integration
+  branch and the package manager) are read by one detector the skills share,
+  `plugin/shared/detect.ts`, which returns each value with the evidence it
+  was read from and drafts the starter configuration. The audit's
+  configuration fit and `fix-ci`'s package-manager detection call it; what
+  they report is unchanged.
+
 ## [0.94.0] - 2026-10-29
 
 ### Added
@@ -3913,7 +3926,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.94.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.94.1...HEAD
+[0.94.1]: https://github.com/jig-harness/jig/compare/v0.94.0...v0.94.1
 [0.94.0]: https://github.com/jig-harness/jig/compare/v0.93.0...v0.94.0
 [0.93.0]: https://github.com/jig-harness/jig/compare/v0.92.0...v0.93.0
 [0.92.0]: https://github.com/jig-harness/jig/compare/v0.91.3...v0.92.0
