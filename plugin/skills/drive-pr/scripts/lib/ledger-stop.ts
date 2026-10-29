@@ -251,11 +251,34 @@ export async function recoverStoppedLedger(
 ): Promise<void> {
   if (row.state !== "stale" || row.pid === null) return;
   if (pidAlive(row.pid, row.host ?? "")) return;
-  if (
-    (await markLedgerStopped(stateDir, pr, row.diag, null)) === "done" &&
-    row.diag !== null
-  )
-    removeDriverRecord(stateDir, pr, row.diag.started);
+  await settleStoppedDriver(stateDir, pr, row.diag);
+}
+
+/**
+ * Mark the ledger of the stopped driver `diag` names stopped, and drop its
+ * driver record once nothing is left to do.
+ */
+export async function settleStoppedDriver(
+  stateDir: string,
+  pr: string,
+  diag: StoppedDiag | null,
+): Promise<void> {
+  if (diag === null) return;
+  if ((await markLedgerStopped(stateDir, pr, diag, null)) === "done")
+    removeDriverRecord(stateDir, pr, diag.started);
+}
+
+/**
+ * `--stop`'s recovery when no live driver holds PR `pr`'s lock: an empty
+ * lock's driver record, or a stale lock whose process is confirmed gone.
+ */
+export async function recoverIdleStop(
+  stateDir: string,
+  pr: string,
+  row: StoppedLock,
+): Promise<void> {
+  if (row.state === "empty") await recoverFromDriverRecord(stateDir, pr, row);
+  else await recoverStoppedLedger(stateDir, pr, row);
 }
 
 /** `--doctor`'s recovery: every PR lock in `rows` whose process is confirmed gone. */

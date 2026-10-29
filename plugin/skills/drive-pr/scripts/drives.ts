@@ -102,14 +102,10 @@ import {
   requestDriverStop,
   driverStopCompleted,
   consumeDriverStopCompletion,
+  takeExpectStarted,
+  requireStopForExpectStarted,
 } from "./lib/stop-request.ts";
-import {
-  markLedgerStopped,
-  recoverFromDriverRecord,
-  recoverStoppedLedger,
-  removeDriverRecord,
-  recoverStoppedLedgers,
-} from "./lib/ledger-stop.ts";
+import * as ledgerStop from "./lib/ledger-stop.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 import { driveRepository } from "./lib/drive-repository.ts";
@@ -1052,16 +1048,13 @@ async function stop(
   expectStarted: string,
 ): Promise<number> {
   const row = readLock(join(stateDir, `pr-drive-${pr}.lock`), "pr", pr);
-  if (row.state === "empty") {
-    console.log(`no drive holds PR #${pr}'s lock — nothing to stop.`);
-    await recoverFromDriverRecord(stateDir, pr, row);
-    return 1;
-  }
-  if (row.state === "stale") {
+  if (row.state === "empty" || row.state === "stale") {
     console.log(
-      `PR #${pr}'s lock is stale (owner pid ${row.pid} no longer counts as live) — nothing to stop; the next drive recovers it.`,
+      row.state === "empty"
+        ? `no drive holds PR #${pr}'s lock — nothing to stop.`
+        : `PR #${pr}'s lock is stale (owner pid ${row.pid} no longer counts as live) — nothing to stop; the next drive recovers it.`,
     );
-    await recoverStoppedLedger(stateDir, pr, row);
+    await ledgerStop.recoverIdleStop(stateDir, pr, row);
     return 1;
   }
   if (row.state !== "live") {
@@ -1091,12 +1084,7 @@ async function stop(
       ? verified.code
       : consumeStopResult(row, await stopVerifiedDriver(row, verified.owner));
   // Witnessed gone (or already gone): its ledger is marked stopped, guarded.
-  if (
-    code === 0 &&
-    (await markLedgerStopped(stateDir, pr, row.diag, null)) === "done" &&
-    row.diag !== null
-  )
-    removeDriverRecord(stateDir, pr, row.diag.started);
+  if (code === 0) await ledgerStop.settleStoppedDriver(stateDir, pr, row.diag);
   return code;
 }
 
@@ -1343,23 +1331,6 @@ export async function forceStopDriver(
   return 0;
 }
 
-/**
- * Remove `--expect-started ISO` from `argv` and return ISO (`''` when
- * absent): the acquisition a `--stop` is bound to.
- */
-function takeExpectStarted(argv: string[]): string {
-  const at = argv.indexOf("--expect-started");
-  if (at < 0) return "";
-  const [, value = ""] = argv.splice(at, 2);
-  if (value === "") fail(2, "--expect-started takes a time");
-  return value;
-}
-
-function requireStopForExpectStarted(expectStarted: string, stopPr: string) {
-  if (expectStarted !== "" && stopPr === "")
-    fail(2, "--expect-started only qualifies --stop");
-}
-
 async function main(): Promise<number> {
   let json = false;
   let hereMode = false;
@@ -1458,7 +1429,7 @@ async function main(): Promise<number> {
   );
   if (json) console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
   else if (doctorMode) {
-    await recoverStoppedLedgers(stateDir, doctored);
+    await ledgerStop.recoverStoppedLedgers(stateDir, doctored);
     printDoctor(stateDir, doctored, repository);
   } else printHuman(stateDir, doctored, repository);
   return 0;
