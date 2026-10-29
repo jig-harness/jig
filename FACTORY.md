@@ -141,13 +141,14 @@ The skills that run stations at this level:
 | [`explain`](plugin/skills/explain/SKILL.md) | Before deciding: a cited, dated explanation of how the part of the system in question works today |
 | [`decide`](plugin/skills/decide/SKILL.md) | A technical dilemma: checked against the decisions already made, then ruled or escalated to a person, and recorded |
 | [`adr`](plugin/skills/adr/SKILL.md) | Architecture: the decision record, and the checkable rules derived from it |
+| [`red-team`](plugin/skills/red-team/SKILL.md) | PRD and architecture: an adversarial review by persona, each persona in fresh context, into one findings report |
 | [`design-brief-builder`](plugin/skills/design-brief-builder/SKILL.md) | Design prototype loop: the brief for an external design session, and the returned bundle merged and checked |
 | [`review`](plugin/skills/review/SKILL.md) | Every stage: a plan or document reviewed against the repository's decisions |
 
 A person sets the intent, accepts each stage's artifact and takes the
-decisions `decide` escalates. On the roadmap: the greenfield kickoff and an
-adversarial `red-team` reviewer ([ROADMAP.md](ROADMAP.md) item 3), and epic
-planning on the tracker (ROADMAP.md, Later).
+decisions `decide` escalates. On the roadmap: the greenfield kickoff
+([ROADMAP.md](ROADMAP.md) item 3), and epic planning on the tracker
+(ROADMAP.md, Later).
 
 ## Execution: the work-item line
 

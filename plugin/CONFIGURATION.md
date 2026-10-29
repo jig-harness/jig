@@ -709,10 +709,13 @@ area's paths, the build tools and the database conventions.
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
 `docs`, `promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
-`explain`, `resolve-conflicts`, `audit`) detect
+`explain`, `red-team`, `resolve-conflicts`, `audit`) detect
 what they need from the repository; set a field only when detection picks
-the wrong thing. `programmatic-execution` and `audit` read no field of their
-own; `audit` checks all the others.
+the wrong thing. `programmatic-execution`, `red-team` and `audit` read no
+field of their own; `audit` checks all the others. `red-team` reads a
+document's kind from its frontmatter `type:` or its headings (`--kind`
+overrides) and takes the agent command for its fresh runs on the command
+line.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|

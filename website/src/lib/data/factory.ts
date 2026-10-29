@@ -130,9 +130,7 @@ export const NOT_BUILT: Record<string, Actor[]> = {
  */
 export const DESIGN_NOT_BUILT: { level: Actor[]; everyStage: Actor[] } = {
   level: [{ kind: "todo", item: "3", text: "the greenfield kickoff" }],
-  everyStage: [
-    { kind: "todo", item: "3", text: "an adversarial red-team reviewer" },
-  ],
+  everyStage: [],
 };
 
 /**
@@ -142,6 +140,11 @@ export const DESIGN_NOT_BUILT: { level: Actor[]; everyStage: Actor[] } = {
 export const EVERY_STAGE: Actor[] = [
   { kind: "skill", name: "review", note: "against the repository's decisions" },
   { kind: "skill", name: "decide", note: "a dilemma: ruled, or escalated" },
+  {
+    kind: "skill",
+    name: "red-team",
+    note: "requirements and architecture, by persona",
+  },
   { kind: "person", note: "accepts each stage's artifact" },
   ...DESIGN_NOT_BUILT.everyStage,
 ];
