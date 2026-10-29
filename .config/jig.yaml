@@ -1,6 +1,14 @@
 # Jig's own values for its skills, read at run time by the plugin
 # (plugin/README.md § Configure a repository). Jig uses its own skills
 # on its pull requests like any other consumer.
+gc:
+  # What the machine-level resource collector (`jig gc`) may inspect here:
+  # the worktrees Orca opens, in the one root every clone on a machine uses.
+  # A root that does not exist on a machine is skipped.
+  kinds: [tool-state, worktrees]
+  worktree_roots:
+    - ../../orca/workspaces/jig
+    - ../../worktrees/jig # Herdr-era worktrees, until none remain
 gates:
   command: bun run gates
 review:

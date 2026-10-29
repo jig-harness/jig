@@ -29,7 +29,9 @@
 #   values_type  map: the type of each value (default string)
 #   exists    path: `required` when the reading skill refuses a configured path
 #             that does not exist; `expected` when a missing one only makes
-#             the field useless
+#             the field useless; `machine` when the path names a place that
+#             exists on some machines only (a worktree root), so a missing one
+#             is not a finding
 #   read_by   the skills that read the field (CONFIGURATION.md's "Read by");
 #             `gc` names the collector (`jig.ts gc`) and `evidence` the
 #             shared evidence record (`shared/evidence.ts`)
@@ -87,6 +89,7 @@ fields:
   gc.worktree_roots:
     type: list
     items: path
+    exists: machine
     distinct: true
     read_by: [audit, gc, drive-pr]
     repository_only: true
@@ -94,6 +97,7 @@ fields:
   gc.scratch_prefixes:
     type: list
     items: path
+    exists: machine
     distinct: true
     read_by: [audit, gc]
     repository_only: true

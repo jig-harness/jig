@@ -53,7 +53,7 @@ export interface Field {
   nonempty?: boolean;
   keys?: string[];
   values_type?: TypeSpec;
-  exists?: "required" | "expected";
+  exists?: "required" | "expected" | "machine";
   read_by: string[];
   repository_only?: boolean;
   default?: unknown;
@@ -207,8 +207,11 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
   (e) =>
     e.type === "list" && !validItems(e.items) ? "a list needs items" : null,
   (e) =>
-    e.exists !== undefined && e.exists !== "required" && e.exists !== "expected"
-      ? "exists is required or expected"
+    e.exists !== undefined &&
+    e.exists !== "required" &&
+    e.exists !== "expected" &&
+    e.exists !== "machine"
+      ? "exists is required, expected or machine"
       : null,
   flag("repository_only"),
   (e) =>

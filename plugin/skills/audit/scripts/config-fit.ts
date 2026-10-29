@@ -466,8 +466,8 @@ function commandFindings(
 
 /** A configured path that does not exist, when the field expects it to. */
 function pathFindings(field: Field, value: unknown, root: string): Finding[] {
-  if (typeof value !== "string" || value.trim() === "" || !field.exists)
-    return [];
+  if (!field.exists || field.exists === "machine") return [];
+  if (typeof value !== "string" || value.trim() === "") return [];
   if (value.startsWith("~")) return [];
   if (existsSync(configuredAt(root, value))) return [];
   const required = field.exists === "required";
