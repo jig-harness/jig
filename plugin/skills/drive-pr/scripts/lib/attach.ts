@@ -728,7 +728,7 @@ export function attachOff(script: string): boolean {
 export async function attachForDrive(
   pr: string,
   dryRun: boolean,
-  onNotOpen: () => Promise<void> = async () => {},
+  onNotOpen?: () => Promise<void>,
 ): Promise<void> {
   if (dryRun || attachOff("drive.ts")) return;
   let attached: Attached;
@@ -736,7 +736,7 @@ export async function attachForDrive(
     attached = await attachPr(pr, { locksHeld: true });
   } catch (e) {
     if (e instanceof AttachRefusal) {
-      if (e.code === 5) await onNotOpen();
+      if (e.code === 5) await onNotOpen?.();
       fail(e.code, `drive.ts: ${e.message}`);
     }
     throw e;
