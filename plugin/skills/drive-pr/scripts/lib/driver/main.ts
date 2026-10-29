@@ -64,6 +64,28 @@ import { pickUpDrive } from "./takeover-complete.ts";
 
 import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
+/**
+ * Refuse a PR that is not a canonical number. Digits, checked here rather
+ * than at the three places it lands: it is interpolated into a `new RegExp`,
+ * so a metacharacter — `drive.ts '('` — throws a SyntaxError instead of a
+ * usage error; and it is exported as $DRIVE_PR_TARGET, where drive-status.ts
+ * and guarded-push.ts compare it as a string and refuse for a less obvious
+ * reason. Canonical before anything is keyed by it: `042` is PR 42 to GitHub,
+ * so a raw `042` would take `pr-drive-042.lock` beside a live #42 driver's
+ * `pr-drive-42.lock` and write #42's state and log under a second name.
+ * Refused rather than rewritten, because the pass names the PR in its own
+ * argv and drive-status.ts compares that against $DRIVE_PR_TARGET verbatim.
+ */
+function requireCanonicalPr(pr: string): void {
+  if (!isDigits(pr)) fail(2, `drive.ts: PR must be a number (got '${pr}')`);
+  const canonicalPr = BigInt(pr).toString();
+  if (canonicalPr !== pr)
+    fail(
+      2,
+      `drive.ts: write PR #${canonicalPr} as ${canonicalPr} (got '${pr}')`,
+    );
+}
+
 export async function main(): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
   let { pr, keepDraft, handoffAt } = options;
@@ -98,24 +120,7 @@ export async function main(): Promise<number> {
   const explicitPr = pr;
   pr = await resolvePr(pr);
   if (pr === "") fail(1, "drive.ts: could not resolve a PR number");
-  // Digits, checked here rather than at the three places it lands. It is
-  // interpolated into a `new RegExp` below, so a metacharacter — `drive.ts '('`
-  // — throws a SyntaxError instead of a usage error; and it is exported as
-  // $DRIVE_PR_TARGET, where drive-status.ts and guarded-push.ts compare it as a
-  // string and refuse for a less obvious reason. Both of those already apply
-  // isDigits; this is the entry point that did not.
-  if (!isDigits(pr)) fail(2, `drive.ts: PR must be a number (got '${pr}')`);
-  // Canonical before anything is keyed by it: `042` is PR 42 to GitHub, so a
-  // raw `042` would take `pr-drive-042.lock` beside a live #42 driver's
-  // `pr-drive-42.lock` and write #42's state and log under a second name.
-  // Refused rather than rewritten, because the pass names the PR in its own
-  // argv and drive-status.ts compares that against $DRIVE_PR_TARGET verbatim.
-  const canonicalPr = BigInt(pr).toString();
-  if (canonicalPr !== pr)
-    fail(
-      2,
-      `drive.ts: write PR #${canonicalPr} as ${canonicalPr} (got '${pr}')`,
-    );
+  requireCanonicalPr(pr);
   process.env.PR = pr;
   // The authoritative, out-of-band statement of which PR this drive is about.
   // drive-status.ts refuses to run when a pass resolves a different one, which

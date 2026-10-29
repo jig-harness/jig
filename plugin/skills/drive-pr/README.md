@@ -402,7 +402,9 @@ branch's remote ref lacks), prints what it finds, leaves it in the tree and
 starts the next round, whose pass is told what it inherits. A commit the
 killed pass made but did not push does not hold that round up: the drive
 records the head it left, hands the round out over exactly that head, and
-the next pass pushes it. The drive restarts up
+the next pass pushes it. Uncommitted edits alone are not mistaken for
+convergence either: the drive hands that round out before it can converge.
+The drive restarts up
 to `drive.pass_deadline_retries` times per drive (default 2; the count is
 kept in the drive state, so a re-arm or a takeover does not reset it, and it
 clears when the drive converges or the PR closes) and then stops

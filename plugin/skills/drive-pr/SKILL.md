@@ -355,7 +355,9 @@ and its gates accept exactly it (the gate's `--inherited-head` flag, which
 also requires the PR head to be its ancestor) until a pass completes. Any
 other mismatch is still `HEAD_LAG`; with no live work left, a `CONVERGED` or
 `HITL_PARKED` over those commits is reported as `ROUND_READY`, so a pass
-pushes them. The driver restarts up to
+pushes them. Uncommitted edits alone leave HEAD on the PR head; the driver
+records it all the same, and the gate hands out the round that settles them
+in place of `CONVERGED` or `HITL_PARKED`. The driver restarts up to
 `drive.pass_deadline_retries` (default 2) times per drive — counted in the
 drive state (`deadlineRetries`), so a re-arm or a takeover does not reset it,
 and cleared when the drive converges or the PR closes; past that budget
@@ -918,7 +920,7 @@ state directory holding all of it: read that file before acting.
 
 | Opens with | What happened | What this round does |
 |---|---|---|
-| `RESTARTED AFTER A PASS DEADLINE` | The previous pass was killed at its deadline; its uncommitted edits and unpushed commits are listed and are still in the tree | Start from that state: finish, validate and push what is sound, discard what is not on purpose, then triage as usual. When it names an inherited head, add `--inherited-head <sha>` to § 1's gate (without it the gate reads the unpushed commits as `HEAD_LAG`) and push them through `finish-round.ts` with the round's own fixes |
+| `RESTARTED AFTER A PASS DEADLINE` | The previous pass was killed at its deadline; its uncommitted edits and unpushed commits are listed and are still in the tree | Start from that state: finish, validate and push what is sound, discard what is not on purpose, then triage as usual. When it names an inherited head, add `--inherited-head <sha>` to § 1's gate (without it the gate reads unpushed commits as `HEAD_LAG`, and a tree with only uncommitted edits as converged) and push them through `finish-round.ts` with the round's own fixes |
 | `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14` | Act on the open work; if you decide not to, end the handoff narrative with one paragraph saying what you decided and why — the stop prints it |
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed: each thread re-held unconfirmed on its reply, each finding released, and apart those that could not be reopened; a failed reconciliation is said here | For a re-held thread, read the anchored code, make the promised fix if it is missing, then confirm it with the hold command shown; or supersede the reply with a fresh outcome. Triage a released finding afresh. Check each item that could not be reopened against the held batch first |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; every item has a `[kind] key — url` entry, answer bodies may be cut, and the file named on its third line holds every answer in full | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |

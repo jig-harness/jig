@@ -142,16 +142,25 @@ export async function prepareReviewPass(context: DriveRoundContext): Promise<
   const preexistingSessions = preexistingSnapshot.files;
   const baseEnv = passEnv();
   // A stop the driver recovered from (a killed pass, a stall, a takeover, a
-  // re-arm with answers) is told to the next review pass, once. One
+  // re-arm with answers) is told to every review pass until one completes. One
   // environment string has an OS limit, so a long notice reaches the pass
   // through a file the variable names.
-  const notice = boundPassNotice(
-    await resolveStateDir(),
-    context.pr,
-    [context.passNotice, context.carriedNotice]
-      .filter((part) => part !== "")
-      .join("\n\n"),
-  );
+  const stateDir = await resolveStateDir();
+  let notice: string;
+  try {
+    notice = boundPassNotice(
+      stateDir,
+      context.pr,
+      [context.passNotice, context.carriedNotice]
+        .filter((part) => part !== "")
+        .join("\n\n"),
+    );
+  } catch (err) {
+    return fail(
+      1,
+      `cannot keep PR #${context.pr}'s pass notice whole in ${stateDir} (${String(err)}); stopping rather than dispatching a pass without it`,
+    );
+  }
   if (notice !== "") baseEnv.DRIVE_PR_PASS_NOTICE = notice;
   const prepared = prepareQuotaSpawn(context.agent, baseEnv);
   if (prepared !== null) {
@@ -261,7 +270,6 @@ export async function dispatchReviewPass(
       ...(passDeadlineSec > 0 ? { timeoutSec: passDeadlineSec } : {}),
       onSpawn: (handle) => {
         driverRuntime.activePass = handle;
-        context.passNotice = "";
         passSpawnProgressStamp = run(
           tsArgv(driveState, [
             "progress",

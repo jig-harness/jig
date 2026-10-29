@@ -405,6 +405,8 @@ interface Args {
   key: string;
   /** Every `--key`, in argv order (`unpark` takes several). */
   keys: string[];
+  /** Every `--parked-at`, in argv order: `unpark`'s park timestamps, one per `--key`. */
+  parkedAts: string[];
   kind: string;
   reason: string;
   sha: string;
@@ -457,7 +459,6 @@ type ValueField = Exclude<
 
 /** Every flag that takes one value, and the field it sets. */
 const VALUE_FLAGS: Readonly<Record<string, ValueField>> = {
-  "--key": "key",
   "--kind": "kind",
   "--reason": "reason",
   "--head": "sha",
@@ -483,18 +484,14 @@ const VALUE_FLAGS: Readonly<Record<string, ValueField>> = {
   "--account": "account",
 };
 
-/** Every value `flag` is given in `argv`, in order. */
-function flagValues(argv: string[], flag: string): string[] {
-  return argv.flatMap((arg, i) => (arg === flag ? [argv[i + 1] ?? ""] : []));
-}
-
 function parseArgs(argv: string[]): Args {
   const cmd = argv.shift() ?? "";
   const a: Args = {
     cmd,
     pr: "",
     key: "",
-    keys: flagValues(argv, "--key"),
+    keys: [],
+    parkedAts: [],
     kind: "",
     reason: "",
     sha: "",
@@ -539,6 +536,12 @@ function parseArgs(argv: string[]): Args {
       continue;
     }
     switch (arg) {
+      // Every `--key` the parser consumed, in order, for `unpark`'s set: a
+      // value that merely reads `--key` is a value, not another flag.
+      case "--key":
+        a.key = take(arg, i++);
+        a.keys.push(a.key);
+        break;
       case "--unconfirmed":
         a.unconfirmed = true;
         break;
@@ -553,6 +556,9 @@ function parseArgs(argv: string[]): Args {
       // "not armed" forever.
       case "--path":
         a.paths.push(take(arg, i++));
+        break;
+      case "--parked-at":
+        a.parkedAts.push(take(arg, i++));
         break;
       case "--stdin":
         a.stdin = true;
@@ -2181,7 +2187,7 @@ async function main(): Promise<number> {
       return park(store, a);
 
     case "unpark":
-      return unpark(store, a.keys);
+      return unpark(store, a.keys, a.parkedAts);
 
     case "parked-keys": {
       for (const p of store.read().state.parked)
