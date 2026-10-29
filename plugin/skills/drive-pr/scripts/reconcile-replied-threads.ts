@@ -59,7 +59,9 @@
  * thread.ts`'s own inline check shares — the two can never disagree about
  * what counts as a qualifying reply):
  *
- *   rejected / wont-fix / deferred  -> resolved now. These are claims about the
+ *   rejected / wont-fix / deferred  -> resolved now, except a code-scanning
+ *                                      alert must first be confirmed dismissed.
+ *                                      These are claims about the
  *                                      finding's MERIT, not fix-dependent — per
  *                                      SKILL.md § 3, "nothing else ever will
  *                                      resolve it" once replied. EXCEPT when the
@@ -125,6 +127,7 @@ import {
   qualifyingOutcome as sharedQualifyingOutcome,
 } from "./lib/outcome.ts";
 import { ghCall, readTimeoutEnv, resolvePr, run, tsArgv } from "./lib/proc.ts";
+import { sweepVerdict } from "./lib/scanner-sweep-guard.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -146,6 +149,7 @@ interface ThreadComment {
 interface Thread {
   threadId: string;
   path: string | null;
+  codeScanning: unknown;
   commentsTruncated: boolean;
   comments: ThreadComment[];
 }
@@ -194,6 +198,7 @@ function parseThread(line: string): Thread | null {
   return {
     threadId: t.threadId,
     path: typeof t.path === "string" ? t.path : null,
+    codeScanning: t.codeScanning,
     // Fail CLOSED, not open: a missing field, `null`, or a malformed string
     // must not read as "not truncated" — that would let the caller trust the
     // visible comments and resolve/hold a merit outcome from a record that
@@ -483,29 +488,23 @@ async function main(): Promise<number> {
       // Trusted comments only, most recent first — the last one that ALSO
       // matches the grammar is the answer (SKILL.md § 3: a qualifying reply is
       // never superseded by a LATER comment that doesn't itself qualify).
-      let outcome = "";
-      let author: string | null = null;
-      let assoc: string | null = null;
-      let commentUrl: string | null = null;
-      let qualifyingBody = "";
-      for (let i = thread.comments.length - 1; i >= 0; i--) {
-        const c = thread.comments[i];
-        if (
-          c === undefined ||
-          c.authorAssociation === null ||
-          !TRUSTED_ASSOCIATIONS.has(c.authorAssociation)
-        )
-          continue;
-        const candidate = qualifyingOutcome(c.body ?? "");
-        if (candidate === "") continue;
-        outcome = candidate;
-        author = c.author;
-        assoc = c.authorAssociation;
-        commentUrl = c.url;
-        qualifyingBody = c.body ?? "";
-        break;
-      }
-      if (outcome === "") continue;
+      const reply = thread.comments.findLast(
+        (c) =>
+          c.authorAssociation !== null &&
+          TRUSTED_ASSOCIATIONS.has(c.authorAssociation) &&
+          qualifyingOutcome(c.body ?? "") !== "",
+      );
+      if (reply === undefined) continue;
+      const qualifyingBody = reply.body ?? "";
+      const outcome = qualifyingOutcome(qualifyingBody);
+      const author = reply.author;
+      const assoc = reply.authorAssociation;
+      const commentUrl = reply.url;
+      const verdict = sweepVerdict(
+        outcome,
+        thread.comments[0],
+        thread.codeScanning,
+      );
 
       let action: string;
       // `triage-thread.ts --leave-open` embeds LEAVE_OPEN_MARKER on a
@@ -552,8 +551,18 @@ async function main(): Promise<number> {
           const cleanedUp = await releaseStaleHoldIfSeen(pr, thread);
           if (!cleanedUp) hadErrors = 1;
         }
-      } else if (MERIT_OUTCOMES.has(outcome)) {
-        if (dryRun) {
+      } else if (verdict !== null) {
+        // A merit outcome, or a code-scanning `moot`, which is never held:
+        // its alert's state, not a push, is its proof (`sweepVerdict`).
+        if (verdict.leftOpen !== undefined) {
+          action = "left-open";
+          leftOpen += 1;
+          console.error(
+            `reconcile-replied-threads.ts: #${pr} thread ${thread.threadId} has an alert that is not confirmed ${verdict.leftOpen} — left open`,
+          );
+          if (!dryRun && !(await releaseStaleHoldIfSeen(pr, thread)))
+            hadErrors = 1;
+        } else if (dryRun) {
           action = "would-resolve";
           wouldResolve += 1;
         } else {

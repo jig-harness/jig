@@ -72,13 +72,6 @@ Issues. The [tracker interface](GLOSSARY.md) first gains attaching a file,
 the one operation the skills need that the interface does not have yet, and
 the workspace launcher learns to open GitHub issues.
 
-### 15. M14 Testing strategy: the rest
-
-[M14](modules/M14-testing-strategy/README.md) gains exception lists that prune
-themselves: the tests-with-changes gate failing on an exemption that matches no
-file, and a `fixed-delay:` token gate that fails on a token with no delay
-beside it.
-
 ### 17. Corrected designs for the existing modules
 
 Practices working repositories validated, added to the modules that exist:
@@ -182,23 +175,24 @@ write specs well are recommended beside the adapter that reads each.
 
 A static-analysis app that reports to the pull request as annotations rather
 than review threads (SonarQube Cloud does) has its findings worked by the
-review loop, but they do not yet hold the drive back from converging. They
-will count as open work beside threads and summary findings, a finding that
-stands can be recorded as such, and the tool's own dismissal is made where
-the tool offers one.
+review loop when a round runs, but a drive with only annotations can converge
+without starting one. They will count as open work beside threads and summary
+findings; a finding that stands can be recorded against the head so a later
+head is checked again; and the tool's own dismissal is made where the tool
+offers one.
 
 ### 31. Routing work to an agent, a model and an effort
 
 Delegation already picks an agent from the issue's change areas, labels and
-title, but the agent runs on whichever model and effort the session was
-started with, whatever the work. Routing will choose them for the
-implementer from the work's type, its size and flag labels and the
-change areas' flags and mandatory reviews, by rules a
-repository declares with defaults it overrides, opt-in, with the reason
-recorded on the pull request where the review loop's reports join it to
-the outcome, and a person's choice always able to override it. Until then,
-the workspace launcher's Orca provider hands the agent's start to the
-person; its Herdr provider starts the configured agent.
+title, and `do-item` reports the model tier and effort the work's type, its
+size and flag labels and the change areas' mandatory reviews call for, by
+rules a repository declares with defaults it overrides. The agent still
+runs on whichever model and effort the session was started with, whatever
+the work. Routing will apply that route to the implementer, opt-in, with
+the reason recorded on the pull request where the review loop's reports
+join it to the outcome, and a person's choice always able to override it.
+Until then, the workspace launcher's Orca provider hands the agent's start
+to the person; its Herdr provider starts the configured agent.
 
 ## Later
 
