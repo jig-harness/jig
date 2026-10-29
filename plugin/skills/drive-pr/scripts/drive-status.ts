@@ -205,12 +205,10 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *  14  —  [drive.ts only, no report] the loop stalled — see
  *         `references/terminal-states.md` row 14
  *  15  PASS_DEADLINE    [drive.ts only, no report] `$DRIVE_PR_PASS_TIMEOUT`
- *                       expired mid-round. Named (`PASS_DEADLINE_EXIT`), but
- *                       never reaches this script's `--json` report — see
+ *                       expired mid-round (`PASS_DEADLINE_EXIT`) — see
  *                       `references/terminal-states.md` row 15
  *  16  QUOTA_PARKED     [drive.ts only, no report] the pass died on a
- *                       subscription usage wall. Named (`QUOTA_PARKED_EXIT`),
- *                       never reaches this script's `--json` report — see
+ *                       subscription usage wall (`QUOTA_PARKED_EXIT`) — see
  *                       `references/terminal-states.md` row 16
  *  18  MAILBOX_STOPPED [drive.ts only, no report] a stop directive ended the
  *                       drive at a safe round boundary

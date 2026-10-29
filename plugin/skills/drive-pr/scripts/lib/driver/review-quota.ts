@@ -19,9 +19,7 @@ import {
 
 import { recordQuotaPark } from "./repair.ts";
 
-import { mirrorNow } from "./ledger.ts";
-
-import { stallThresholdMs } from "./../doctor.ts";
+import { ledgerRenewal } from "./ledger.ts";
 
 import { driveState, driveTs } from "./paths.ts";
 
@@ -59,21 +57,19 @@ async function waitThroughQuotaWindow(
   driverRuntime.quotaSleepAbort = new AbortController();
   try {
     const quotaWaitStartedAt = performance.now();
-    let ledgerWrittenAt = quotaWaitStartedAt;
+    // A sleep can outlast the ledger's lease window: the heartbeat is
+    // rewritten as the sleep starts and well inside the window after, so
+    // another clone never takes over a sleeping driver. A mailbox pause
+    // inside the checkpoint below renews it the same way.
+    const renewLedger = ledgerRenewal(context.pr);
     while (performance.now() - quotaWaitStartedAt < plan.ms) {
+      await renewLedger();
       // Quota waiting is between passes, so a mailbox stop must not
       // sit behind this potentially multi-hour sleep. Keep the
       // takeover abort on each short sleep as before.
       const mailboxDuringQuota = await context.mailboxCheckpoint();
       if (typeof mailboxDuringQuota === "number") return mailboxDuringQuota;
       if (driverRuntime.compromised !== "") break;
-      // A sleep can outlast the ledger's lease window: rewrite the heartbeat
-      // well inside it, so another clone never takes over a sleeping driver.
-      // The writer refuses once another clone's claim is newer than ours.
-      if (performance.now() - ledgerWrittenAt >= stallThresholdMs() / 4) {
-        await mirrorNow(context.pr);
-        ledgerWrittenAt = performance.now();
-      }
       const remainingMs = plan.ms - (performance.now() - quotaWaitStartedAt);
       if (remainingMs > 0) {
         await sleep(

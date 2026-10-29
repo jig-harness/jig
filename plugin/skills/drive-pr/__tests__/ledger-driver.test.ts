@@ -345,3 +345,51 @@ console.log("RETURNED " + (await drive()));`,
     expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(0);
   });
 });
+
+describe("renewing the heartbeat through a wait", () => {
+  it("writes as the wait starts and not again inside the renewal interval", async () => {
+    const forge = fakeForge(
+      [
+        forgeComment(
+          40,
+          ledgerBody(
+            ledgerFromState(freshState(999), {
+              generation: 2,
+              driver: {
+                actor: "wt-bbbbbbbbbbbbbbbb",
+                clone: "clone-b",
+                heartbeat: "2026-10-01T11:00:00.000Z",
+                state: "running",
+              },
+              narrative: [],
+              claims: [],
+            }),
+          ),
+        ),
+      ],
+      { login: "drive-bot" },
+    );
+    const r = await probe(
+      forge,
+      `const renew = d.ledgerRenewal("999");
+await renew();
+await renew();
+console.log("RENEW_MS " + d.LEDGER_RENEW_MS);`,
+      // A longer local stall threshold must not stretch the renewal: other
+      // clones apply their own, as short as the default.
+      {
+        DRIVE_PR_LEDGER_DRIVER: driverEnv("clone-b"),
+        DRIVE_PR_STALL_MIN: "1440",
+      },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain(`RENEW_MS ${60 * 60_000}`);
+    expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(1);
+    const parsed = parseLedger(forge.comments()[0]?.body ?? "");
+    const heartbeat =
+      parsed?.kind === "ledger"
+        ? Date.parse(parsed.ledger.driver.heartbeat)
+        : 0;
+    expect(Date.now() - heartbeat).toBeLessThan(10 * 60_000);
+  });
+});

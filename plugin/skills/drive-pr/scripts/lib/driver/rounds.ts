@@ -25,7 +25,7 @@ import { runRoundIteration } from "./round-step.ts";
 
 import { clearDeadlineRetries, prReadsClosed } from "./restart.ts";
 
-import { standDownOnNewerClaim } from "./ledger.ts";
+import { ledgerRenewal, standDownOnNewerClaim } from "./ledger.ts";
 
 interface DriverRoundOptions {
   pr: string;
@@ -143,7 +143,12 @@ export async function runDriverRounds({
       ? Number(pauseMaxRaw)
       : 1800;
   const mailboxOnly = async (): Promise<"clear" | "resumed" | number> => {
-    const outcome = await waitAtMailboxCheckpoint(mailboxDir, pr, pauseMaxSec);
+    const outcome = await waitAtMailboxCheckpoint(
+      mailboxDir,
+      pr,
+      pauseMaxSec,
+      ledgerRenewal(pr),
+    );
     switch (outcome) {
       case "clear":
       case "resumed":

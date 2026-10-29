@@ -7,8 +7,9 @@
  *
  * Across clones no process can be stopped and no lock is shared, so the
  * ledger arbitrates. Its driver heartbeat is the time of its last write
- * (every round boundary, park and takeover, and through a quota sleep at a
- * quarter of the lease window); a heartbeat older than the lease
+ * (every round boundary, park and takeover, and through a quota sleep or a
+ * mailbox pause at entry and every quarter of the shortest lease window,
+ * `ledgerRenewal`); a heartbeat older than the lease
  * window, the doctor's stall threshold (`stallThresholdMs`), is what admits
  * a takeover from another clone. A driver that does not continue its own
  * clone's ledger (a takeover, a pull request with no ledger yet, another
@@ -38,7 +39,7 @@ import { hostname } from "node:os";
 import { ExitError, fail } from "./../cli.ts";
 import { removeDriverRecord, writeDriverRecord } from "./../ledger-stop.ts";
 import { resolveStateDir } from "./../state/store.ts";
-import { stallThresholdMs } from "./../doctor.ts";
+import { STALL_THRESHOLD_MIN_DEFAULT, stallThresholdMs } from "./../doctor.ts";
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 import { resolveActor } from "./../state/actor.ts";
 import {
@@ -452,6 +453,31 @@ export async function mirrorNow(pr: string): Promise<void> {
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
   });
+}
+
+/**
+ * The longest a waiting driver goes between ledger writes: a quarter of the
+ * shortest lease window any clone applies. Each clone reads its own
+ * `DRIVE_PR_STALL_MIN`, floored at `STALL_THRESHOLD_MIN_DEFAULT`, so only
+ * that floor bounds every reader, whatever this clone's own setting.
+ */
+export const LEDGER_RENEW_MS = (STALL_THRESHOLD_MIN_DEFAULT * 60_000) / 4;
+
+/**
+ * The heartbeat renewal for one wait (a quota sleep, a mailbox pause): its
+ * first call writes the ledger, since the wait may begin with a heartbeat
+ * already aged by a long pass, and later calls write once `LEDGER_RENEW_MS`
+ * has passed since the last. The writer refuses once another clone's claim
+ * is newer than this driver's, so renewal never outlives a takeover.
+ */
+export function ledgerRenewal(pr: string): () => Promise<void> {
+  let writtenAt: number | null = null;
+  return async () => {
+    const now = performance.now();
+    if (writtenAt !== null && now - writtenAt < LEDGER_RENEW_MS) return;
+    writtenAt = now;
+    await mirrorNow(pr);
+  };
 }
 
 /**
