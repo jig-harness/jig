@@ -2,8 +2,8 @@
  * Every autonomous decision is recorded where a person can find and reverse
  * it, in the same step that takes it: a thread reply with the outcome token
  * and its rationale for a review finding, a decision-record comment for a
- * `decide` ruling, the issue body for an issue filed, and, for all of them,
- * an entry here. `drive-state.ts record-decision` appends the entry; the
+ * `decide` ruling, the issue body for an issue filed, the `## Deferred`
+ * section for a deferral, and, for each but the thread reply, an entry here. `drive-state.ts record-decision` appends the entry; the
  * handoff file and the drive ledger list the entries under
  * `## Decisions taken unattended`, with the autonomy level each was taken
  * under, its class, where its record is and how to reverse it.
@@ -55,6 +55,20 @@ export interface UnattendedDecision {
 const oneLine = (v: unknown): v is string =>
   typeof v === "string" && v.trim() !== "" && !/[\n\r]/.test(v);
 
+/**
+ * A record a person can open: an `http(s)` url with a host, or `''` for none.
+ * A placeholder (`none`, `TODO`, `#`) is neither, so it cannot pass a missing
+ * record off as a present one.
+ */
+function isRecordUrl(v: unknown): v is string {
+  if (v === "") return true;
+  if (typeof v !== "string" || /\s/.test(v) || !URL.canParse(v)) return false;
+  const url = new URL(v);
+  return (
+    (url.protocol === "https:" || url.protocol === "http:") && url.host !== ""
+  );
+}
+
 export function isUnattendedDecision(v: unknown): v is UnattendedDecision {
   return (
     isRecord(v) &&
@@ -66,8 +80,7 @@ export function isUnattendedDecision(v: unknown): v is UnattendedDecision {
     (AUTONOMY_LEVELS as readonly unknown[]).includes(v.level) &&
     (DECISION_CLASSES as readonly unknown[]).includes(v.class) &&
     oneLine(v.what) &&
-    typeof v.record === "string" &&
-    !/[\s]/.test(v.record) &&
+    isRecordUrl(v.record) &&
     oneLine(v.reverse)
   );
 }
@@ -134,7 +147,7 @@ export async function recordDecision(
     if (!isUnattendedDecision(entry))
       fail(
         2,
-        `record-decision: class must be one of ${DECISION_CLASSES.join(", ")}; what and reverse one nonempty line each; record a url or absent`,
+        `record-decision: class must be one of ${DECISION_CLASSES.join(", ")}; what and reverse one nonempty line each; record an http(s) url or absent`,
       );
     return { ...s, decisions: [...(s.decisions ?? []), entry] };
   });

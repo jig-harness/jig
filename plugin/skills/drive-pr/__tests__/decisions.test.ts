@@ -86,4 +86,24 @@ describe("record-decision", () => {
     expectSpawnExit(r, 2);
     expect(r.stderr).toContain("class must be one of");
   });
+
+  it("refuses a record that is a placeholder rather than a url", async () => {
+    const records = ["none", "TODO", "#", "ftp://example.invalid/x"];
+    for (const [i, record] of records.entries()) {
+      const d = stateDirFor(`decision-bad-record-${i}`);
+      const r = await state(
+        d,
+        ["record-decision", "999"],
+        {},
+        JSON.stringify({
+          class: "file-issue",
+          what: "filed the follow-up",
+          record,
+          reverse: "close the issue",
+        }),
+      );
+      expectSpawnExit(r, 2);
+      expect(r.stderr).toContain("record an http(s) url");
+    }
+  });
 });

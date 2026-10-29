@@ -998,7 +998,7 @@ configuration and acts as `unattended`.
 | File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | `file-issue` confirms first | File it: the body says which skill filed it, from which pull request and why |
 | Defer a finding where no adapter can file | Record it in the pull request's `## Deferred` section ([deferral protocol](../resolve-review-comments/references/deferral-protocol.md#deferral-without-a-tracker)) | Same |
 | A technical choice `decide` rules reversible inside one pull request | Decide and record | Same |
-| A technical choice `decide` would rule underdetermined | Escalate | Gather the missing evidence within the round's budget, then apply the ladder |
+| A technical choice `decide` would rule underdetermined | Escalate | Gather the missing evidence within the round's budget, then apply the ladder; a call it still cannot settle is escalated |
 | A bot-review thread the arbiter rules `escalate` | Park under its `class:` (§ 4) | Same |
 
 The registry's classes are on no row: no level decides them, and a park
@@ -1997,7 +1997,7 @@ where a person can reverse it (§ 8). A park with no class is refused with
 "decide and record it", at every autonomy level.
 
 Write the decision record to a file with the file-writing tool, with these
-six sections in this order, following the
+sections in this order, following the
 [writing rules for text that asks a human to decide](../decide/references/human-call-elaboration.md#writing-rules-for-text-that-asks-a-human-to-decide):
 
 ```markdown
@@ -2521,7 +2521,8 @@ find and reverse it, in the same step that took it: a thread reply with the
 outcome token and its rationale, a `decide` ruling as its decision-record
 comment, an issue filed with the filed-by line its body carries
 ([`file-issue`](../file-issue/SKILL.md)), a deferral as its entry in the pull
-request's `## Deferred` section. Then add it to the drive's
+request's `## Deferred` section. A thread's outcome reply is its whole
+record. Add each of the others to the drive's
 `## Decisions taken unattended`, one JSON object on stdin with its class
 (`file-issue`, `defer-without-tracker`, `decide-reversible` or
 `decide-underdetermined`), what was decided, the record's url and how to

@@ -252,8 +252,9 @@ Under `unattended` (a drive's pass, where the repository allows it), nobody is
 there to gather it: gather the missing evidence yourself within the round's
 remaining budget (read the code, run the measurement, check the record),
 then work the ladder again from the top with it. A call the evidence still
-leaves underdetermined, or that needs more than the round has, takes the next
-row that matches (usually `escalated`), never a guess. Say in the record that
+leaves underdetermined, or that needs more than the round has, is
+`escalated`, never `decided`: the `decided` row needs the evidence the call
+lacked, and a guess is not evidence. Say in the record that
 the evidence was gathered unattended and what it was. Under a drive, add the
 ruling to the drive's decisions taken unattended (drive-pr § 8) with its
 record's link. The escalate rows do not change with the level.
@@ -316,7 +317,7 @@ average them into a confident recommendation. Two competent passes disagreeing
 | `decided` | A **decision note** comment on the live issue (default). An ADR **only** if it clears the bar below |
 | `escalated` | An issue carrying `hitl` + `hitl:<stakeholder>` (+ any `decide.escalation_labels`), its body in the [decision record](references/decision-record.md) format — plus a decision sheet above the threshold below |
 | `human-decided` | A follow-up **decision note** comment on that same `hitl` issue, folding the human's ruling (and the reasoning behind it) back onto it — not a new issue. If the issue carries a decision sheet, regenerate it so the call shows as decided |
-| `underdetermined` | A spike issue naming the missing evidence and what would settle it. Under `unattended` this verdict is reached only when the evidence could not be gathered within the round (Phase 3) |
+| `underdetermined` | A spike issue naming the missing evidence and what would settle it. Under `unattended` the session gathers the evidence instead, and a call it still cannot settle within the round is `escalated` (Phase 3) |
 
 With no issue tracker configured, every outcome lands in the reply, and an
 issue the table asks for is a draft the user files.
@@ -356,9 +357,12 @@ getting the human to a decision rather than for recording one already made.
 
 **A `decided` ruling under a drive is a decision taken without a person**:
 its decision-record comment is where a person reverses it, and the drive
-records it with that comment's link (drive-pr § 8). An `escalated` verdict
-under a drive is parked under the class `escalated`, with its decision record
-(drive-pr § 4).
+records it with that comment's link (drive-pr § 8). An `escalated`
+verdict under a drive is parked under the class `escalated`. The park takes
+its own record format (drive-pr § 4), not the decision record's: build it from
+the ruling (the question, the options with what each changes and costs, the
+recommendation and why) and link the escalation issue or comment from its
+`## Already done`.
 
 **Any text this skill writes to ask a human for a call** — an `escalated`
 record, an elaboration, an `hitl` issue body — follows the

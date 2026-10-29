@@ -248,9 +248,13 @@ merging:
 bun "<skill-dir>/scripts/file-deferred.ts" <PR#>
 ```
 
-It reuses an issue the tracker already holds for an entry's source (a run
-stopped after filing it), prints each filing as it is made, and exits `3`
-when entries remain because no adapter could file them. The body's write is
+Each issue it files carries the entry's identity line (its source and, for a
+summary finding, its fingerprint), and it reuses an issue whose body already
+carries that line (a run stopped after filing it). It reads each entry afresh
+before filing it, so a correction made during the run is what gets filed,
+prints each filing as it is made, and reports a filing as not recorded when
+its entry was removed, changed or filed as another issue in the meantime. It
+exits `3` when entries remain because no adapter could file them. The body's write is
 not atomic against a person's own save of the body, so the script also
 checks every resolved thread whose `**deferred**` reply links the section:
 one whose entry is gone is named, and it exits `4`. Restore that entry from

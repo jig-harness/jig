@@ -222,7 +222,13 @@ function chosenLevel(
       chosen:
         levelAt(personal.values, "autonomy.level", personal.source) ??
         DEFAULT_LEVEL,
-      source: sourceOf(config, "autonomy.level"),
+      // The layer that supplied the level, not the field's ordinary winner:
+      // the repository's file outranks the user's, but its level is not the
+      // one chosen here.
+      source:
+        personal.name === "environment"
+          ? sourceOf(config, "autonomy.level")
+          : personal.source,
     };
   if (interactive)
     return {

@@ -69,27 +69,45 @@ export function isOptionalRulings(v: unknown): boolean {
   return v === undefined || (Array.isArray(v) && v.every(isRuling));
 }
 
+/**
+ * Why `input`'s fields are not of their types, or `null`. A field given with
+ * the wrong type is refused, never read as absent: an absent
+ * `humanDecision` is no, and a `"yes"` read the same way would be the
+ * permissive answer.
+ */
+function shapeFault(input: Record<string, unknown>): string | null {
+  const { key, verdict, humanDecision, class: cls } = input;
+  if (humanDecision !== undefined && typeof humanDecision !== "boolean")
+    return "humanDecision must be true or false when given";
+  if (cls !== undefined && typeof cls !== "string")
+    return "class must be a class name when given";
+  if (typeof key !== "string" || key === "" || /[\n\r]/.test(key))
+    return "key must be one thread node id on one line";
+  if (!(ARBITER_VERDICTS as readonly unknown[]).includes(verdict))
+    return `verdict must be one of ${ARBITER_VERDICTS.join(", ")}`;
+  return null;
+}
+
 /** The ruling `input` describes, or why it cannot be recorded. */
 function rulingFrom(
   input: Record<string, unknown>,
   classes: readonly string[],
 ): Omit<ArbiterRuling, "round" | "at"> | string {
-  const { key, verdict } = input;
+  const fault = shapeFault(input);
+  if (fault !== null) return fault;
+  const key = input.key as string;
+  const verdict = input.verdict as Verdict;
   const humanDecision = input.humanDecision === true;
-  if (typeof key !== "string" || key === "" || /[\n\r]/.test(key))
-    return "key must be one thread node id on one line";
-  if (!(ARBITER_VERDICTS as readonly unknown[]).includes(verdict))
-    return `verdict must be one of ${ARBITER_VERDICTS.join(", ")}`;
   if (humanDecision && verdict !== "escalate")
     return "a call that touches a person's decision is only ever escalated";
-  const given = typeof input.class === "string" ? input.class : undefined;
+  const given = input.class as string | undefined;
   if (humanDecision && given !== undefined && given !== HUMAN_DECISION_CLASS)
     return `a call that touches a person's decision has the class ${HUMAN_DECISION_CLASS}, not '${given}'`;
   const cls = humanDecision ? HUMAN_DECISION_CLASS : given;
   if (verdict !== "escalate")
     return cls === undefined
-      ? { key, verdict: verdict as Verdict, humanDecision }
-      : `a ${String(verdict)} ruling carries no class`;
+      ? { key, verdict, humanDecision }
+      : `a ${verdict} ruling carries no class`;
   if (cls === undefined || !classes.includes(cls))
     return `an escalate ruling needs its class, one of: ${classes.join(", ")}`;
   return { key, verdict: "escalate", class: cls, humanDecision };

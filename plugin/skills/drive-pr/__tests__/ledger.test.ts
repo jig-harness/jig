@@ -240,6 +240,17 @@ describe("what is posted", () => {
             round: 1,
           },
         ],
+        decisions: [
+          {
+            at: "2026-10-01T10:30:00.000Z",
+            round: 1,
+            level: "unattended",
+            class: "file-issue",
+            what: "filed it for first.last@example.co.uk",
+            record: "https://example.invalid/u/first.last@example.co.uk",
+            reverse: "ask first.last@example.co.uk",
+          },
+        ],
       },
       {
         generation: 1,
@@ -256,6 +267,8 @@ describe("what is posted", () => {
     expect(l.quotaPark).not.toHaveProperty("account");
     expect(l.parked[0]?.reason).toBe("Ask <redacted>");
     expect(l.narrative).toEqual(["mailed <redacted> today"]);
+    expect(JSON.stringify(l.decisions)).not.toContain("@");
+    expect(l.decisions[0]?.record).toBe("https://example.invalid/u/<redacted>");
   });
 });
 
@@ -369,6 +382,47 @@ describe("seeding", () => {
     const seeded = seedFromLedger(freshState(999), parsed.ledger);
     if ("error" in seeded) throw new Error(seeded.error);
     expect(seeded.state.decisions).toEqual(decided.decisions);
+  });
+
+  it("carries the arbiter's rulings, so a recovered drive parks under the same boundary", () => {
+    const ruled: DriveState = {
+      ...driveState(),
+      rulings: [
+        {
+          key: "PRRT_r",
+          verdict: "rejected",
+          humanDecision: false,
+          round: 2,
+          at: "2026-10-01T10:30:00.000Z",
+        },
+        {
+          key: "PRRT_h",
+          verdict: "escalate",
+          class: "human-decision",
+          humanDecision: true,
+          round: 2,
+          at: "2026-10-01T10:31:00.000Z",
+        },
+      ],
+    };
+    const l = ledgerFromState(ruled, {
+      generation: 5,
+      driver: {
+        actor: ACTOR_A,
+        clone: "clone-a",
+        heartbeat: "2026-10-01T11:00:00.000Z",
+        state: "running",
+      },
+      narrative: [],
+      claims: [],
+    });
+    const rendered = renderLedger(l);
+    if ("error" in rendered) throw new Error(rendered.error);
+    const parsed = parseLedger(rendered.body);
+    if (parsed?.kind !== "ledger") throw new Error("not a ledger");
+    const seeded = seedFromLedger(freshState(999), parsed.ledger);
+    if ("error" in seeded) throw new Error(seeded.error);
+    expect(seeded.state.rulings).toEqual(ruled.rulings);
   });
 
   it("refuses a ledger that would make an unusable state", () => {

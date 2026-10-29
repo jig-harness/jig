@@ -72,7 +72,10 @@ function locate(
 ): { before: string; inner: string; after: string } | null {
   const start = body.indexOf(SECTION_START);
   if (start === -1) return null;
-  const end = body.indexOf(SECTION_END, start + SECTION_START.length);
+  // The closing marker counts only at the start of a line: the section
+  // writes it there, and every payload line is quoted or escaped.
+  const close = body.indexOf(`\n${SECTION_END}`, start + SECTION_START.length);
+  const end = close === -1 ? -1 : close + 1;
   if (end === -1)
     throw new DeferredSectionError(
       "the pull request body opens a deferred section it never closes: restore the closing marker before deferring again",
@@ -90,13 +93,27 @@ export function deferredEntries(body: string): DeferredEntry[] {
   if (at === null) return [];
   const out: DeferredEntry[] = [];
   const lines = at.inner.split("\n");
-  for (let i = 0; i < lines.length; i++) {
+  let i = 0;
+  while (i < lines.length) {
     const m = ENTRY_START.exec(lines[i] ?? "");
-    if (m === null) continue;
+    if (m === null) {
+      i++;
+      continue;
+    }
     let j = i + 1;
-    while (j < lines.length && lines[j] !== ENTRY_END) j++;
+    while (j < lines.length && lines[j] !== ENTRY_END) {
+      if (ENTRY_START.test(lines[j] ?? ""))
+        throw new DeferredSectionError(
+          `the deferred entry for ${m[1]} opens another before it ends: restore its closing marker before deferring again`,
+        );
+      j++;
+    }
+    if (j === lines.length)
+      throw new DeferredSectionError(
+        `the deferred entry for ${m[1]} never ends: restore its closing marker before deferring again`,
+      );
     out.push(entryFrom(m, lines.slice(i + 1, j)));
-    i = j;
+    i = j + 1;
   }
   return out;
 }
@@ -126,9 +143,17 @@ function entryFrom(m: RegExpExecArray, text: string[]): DeferredEntry {
   };
 }
 
+/**
+ * `text` with every HTML comment opener escaped, so no payload can carry one
+ * of the section's own markers; it renders as the same characters.
+ */
+function escaped(text: string): string {
+  return text.replaceAll("<!--", "&lt;!--");
+}
+
 /** The finding quoted as a Markdown blockquote, every line of it. */
 function quoted(finding: string): string {
-  return finding
+  return escaped(finding)
     .trim()
     .split("\n")
     .map((l) => (l.trim() === "" ? ">" : `> ${l}`))
@@ -140,7 +165,7 @@ function entryBlock(id: EntryId, finding: string, reason: string): string {
     throw new DeferredSectionError("the reason must be one line");
   return [
     entryStart(id),
-    `**[The finding](${id.source})**, deferred: ${reason}`,
+    `**[The finding](${id.source})**, deferred: ${escaped(reason)}`,
     "",
     quoted(finding),
     ENTRY_END,

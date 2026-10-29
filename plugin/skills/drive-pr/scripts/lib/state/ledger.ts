@@ -38,6 +38,7 @@ import {
   decisionsSection,
   isUnattendedDecision,
 } from "./decisions.ts";
+import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
 
 export const LEDGER_MARKER = "<!-- drive-pr-ledger -->";
 export const CLAIM_MARKER = "<!-- drive-pr-takeover-claim -->";
@@ -105,6 +106,12 @@ export interface Ledger {
   claims: LedgerClaimRef[];
   /** The decisions the agent took and recorded (`decisions.ts`). */
   decisions: UnattendedDecision[];
+  /**
+   * The review arbiter's rulings (`rulings.ts`), so a drive recovered in
+   * another clone parks under the same boundary. Absent in a ledger written
+   * before they were carried, which seeds none over the local ones.
+   */
+  rulings?: ArbiterRuling[];
   driver: LedgerDriver;
   /** The handoff narrative's last lines. */
   narrative: string[];
@@ -161,8 +168,10 @@ export function ledgerFromState(
     decisions: (s.decisions ?? []).map((d) => ({
       ...d,
       what: redact(d.what),
+      record: redact(d.record),
       reverse: redact(d.reverse),
     })),
+    rulings: s.rulings ?? [],
     driver: opts.driver,
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
     cut: [],
@@ -366,6 +375,7 @@ function ledgerFault(v: Record<string, unknown>): string {
       "decisions",
       Array.isArray(v.decisions) && v.decisions.every(isUnattendedDecision),
     ],
+    ["rulings", isOptionalRulings(v.rulings)],
     ["driver", isLedgerDriver(v.driver)],
     ["narrative", Array.isArray(v.narrative) && v.narrative.every(isText)],
     ["cut", Array.isArray(v.cut) && v.cut.every(isText)],
@@ -693,6 +703,7 @@ export function seedFromLedger(
       toAccount: null,
     })),
     decisions: l.decisions,
+    ...(l.rulings === undefined ? {} : { rulings: l.rulings }),
     ledgerGeneration: l.generation,
   };
   if (!isUsableState(state, local.pr))

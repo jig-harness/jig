@@ -196,6 +196,21 @@ describe("the class is the arbiter's ruling", () => {
     expectSpawnExit(park, 2);
     expect(park.stderr).toContain("the arbiter ruled 'rejected'");
   });
+
+  it("a humanDecision or class that is not the right type is refused, not read as no", async () => {
+    const d = stateDirFor("rule-wrong-type");
+    for (const ruling of [
+      { key: "PRRT_a", verdict: "fix-now", humanDecision: "yes" },
+      { key: "PRRT_a", verdict: "escalate", class: "legal", humanDecision: 1 },
+      { key: "PRRT_a", verdict: "rejected", class: 5 },
+    ]) {
+      const r = await rule(d, ruling);
+      expectSpawnExit(r, 2);
+      expect(r.stderr).toMatch(
+        /must be (true or false|a class name) when given/,
+      );
+    }
+  });
 });
 
 describe("the decision record's sections", () => {
@@ -268,6 +283,10 @@ describe("the decision record's sections", () => {
         ),
       ),
     ).toEqual([]);
+    for (const empty of ["- \n- \n- Approve it", "- Approve it\n- "])
+      expect(problems(complete.replace("None.", empty))).toContain(
+        "Steps for a person must be 'None.' or '- ' items, each a command or a named action",
+      );
   });
 
   it("the sections come in order, each once", () => {
