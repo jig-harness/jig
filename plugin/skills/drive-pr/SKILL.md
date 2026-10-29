@@ -3295,8 +3295,8 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   confirmation marker (CodeRabbit's measured one whether or not
   `review.bots` lists it), or its author is a bot `review.bots` lists and it
   carries that bot's chat marker and none of its finding shape (a severity
-  line, read by a format known to be the bot's: declared, built in, or Jig's
-  for the configured `review.reviewer_app`). Any other later comment — human, an unlisted bot's chat reply, an
+  line, read by a format known to be the bot's: declared in
+  `review.severity_formats`, or built in). Any other later comment — human, an unlisted bot's chat reply, an
   unrecognized body, an acknowledgement that embeds a finding — still
   refuses.
 - **Never answer a transparent comment, and never assert one.** A bot's

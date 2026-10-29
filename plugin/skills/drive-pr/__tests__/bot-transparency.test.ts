@@ -43,11 +43,15 @@ function transparent(
 /**
  * `example-review`'s chat replies read through the default configuration
  * resolver, in a subprocess given an overlay that lists the bot with a chat
- * marker and no severity format, and `reviewerApp` as `review.reviewer_app`.
+ * marker, `reviewerApp` as `review.reviewer_app`, and with `declared` a
+ * `review.severity_formats` entry giving the bot Jig's format.
  * The replies: a finding in a shape no format of the bot's reads, one in
  * Jig's shape, and a plain acknowledgement.
  */
-function readsThroughConfig(reviewerApp: string | null): boolean[] {
+function readsThroughConfig(
+  reviewerApp: string | null,
+  declared = false,
+): boolean[] {
   const dir = mkdtempSync(join(tmpdir(), "bot-transparency-"));
   try {
     const overlay = join(dir, "overlay.yaml");
@@ -59,6 +63,14 @@ function readsThroughConfig(reviewerApp: string | null): boolean[] {
         "  bots:",
         '    - login: "example-review[bot]"',
         '      chat_marker: "<!-- example-chat -->"',
+        ...(declared
+          ? [
+              "  severity_formats:",
+              '    - login: "example-review[bot]"',
+              "      shape: bold-token",
+              "      severities: { blocker: blocker, high: high, medium: medium, low: low }",
+            ]
+          : []),
       ].join("\n"),
     );
     const script = [
@@ -178,10 +190,18 @@ describe("a newer comment, never transparent", () => {
     }
   });
 
-  test("a chat reply from a listed bot whose only format is the review.bots fallback", () => {
+  test("a chat reply from a listed bot whose only format is Jig's, assumed", () => {
     expect(readsThroughConfig(null)).toEqual([false, false, false]);
-    // The same bot named as review.reviewer_app has Jig's format as its own.
+    // Naming the bot as review.reviewer_app does not make the format its own.
     expect(readsThroughConfig("example-review[bot]")).toEqual([
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  test("a declared format makes the bot's chat acknowledgement transparent", () => {
+    expect(readsThroughConfig("example-review[bot]", true)).toEqual([
       true,
       false,
       true,

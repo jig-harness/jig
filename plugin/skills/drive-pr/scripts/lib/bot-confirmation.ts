@@ -21,11 +21,11 @@
  *    login reads as a severity (`lib/severity-formats.ts`), since a chat
  *    reply can embed a fresh finding. Only a recognizer known to be the
  *    bot's can prove that absence: one `review.severity_formats` declares,
- *    a built-in one, or Jig's for the bot named as `review.reviewer_app`.
- *    Jig's format is assumed for `review.bots` logins when no app is named,
- *    and an assumed recognizer proves nothing, so a bot without a known
- *    format has no transparent chat follow-ups, and neither has a bot the
- *    list leaves out.
+ *    or a built-in one. Jig's format is assumed for the configured
+ *    reviewer (`review.reviewer_app`, else the `review.bots` logins), and an
+ *    assumed recognizer proves nothing, so a bot without a known format has
+ *    no transparent chat follow-ups, and neither has a bot the list leaves
+ *    out.
  *
  * Authorship is by login: an association check cannot tell a bot from a
  * person (both read `NONE`), and logins are unique across users and bots.
