@@ -289,6 +289,19 @@ test("collect from a checkout Git cannot read fails the inventory with exit 1", 
   });
   expect(JSON.stringify(receipt)).not.toContain("no confirmed machine entry");
 });
+test("collect from a checkout whose .git is a dangling link fails the inventory", () => {
+  if (process.platform === "win32") return;
+  const f = setup();
+  const broken = mkdtempSync(join(tmpdir(), "gc-dangling-git-"));
+  symlinkSync(join(broken, "missing"), join(broken, ".git"));
+  const result = run(f, ["--collect", "--repo", broken, "--json"]);
+  expectSpawnExit(result, 1);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.resources[0]).toMatchObject({
+    outcome: "unverified",
+    reason: expect.stringContaining("Cannot identify the clone"),
+  });
+});
 test("collect from a path that is no checkout reports a missing entry", () => {
   const f = setup();
   const elsewhere = mkdtempSync(join(tmpdir(), "gc-not-a-clone-"));

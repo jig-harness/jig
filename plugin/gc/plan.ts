@@ -1,5 +1,5 @@
 import { GcError } from "../shared/gc-error.ts";
-import { existsSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { GcConfigurationError } from "../shared/gc-error.ts";
 import {
@@ -148,6 +148,21 @@ async function entryPlan(
   return kinds;
 }
 /**
+ * Whether `path` is confirmed to hold no `.git`: only a lookup that reports
+ * the entry or a parent missing proves it. A `.git` that cannot be read (a
+ * denied search permission, a dangling link) is a checkout whose identity is
+ * unknown, not an absent one.
+ */
+function holdsNoGit(path: string): boolean {
+  try {
+    lstatSync(join(path, ".git"));
+    return false;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === "ENOENT" || code === "ENOTDIR";
+  }
+}
+/**
  * The entries `--repo` selects, or why its clone cannot be identified. The
  * entry names the clone's primary checkout; collecting from a linked worktree
  * of it selects that entry. A report reads the selected checkout's own
@@ -173,7 +188,7 @@ async function selection(
     );
     return primary.length > 0 ? primary : [{ path: selected }];
   } catch (error) {
-    if (!existsSync(join(selected, ".git"))) return [{ path: selected }];
+    if (holdsNoGit(selected)) return [{ path: selected }];
     const reason = error instanceof Error ? error.message : String(error);
     return `Cannot identify the clone at ${selected}: ${reason}`;
   }
