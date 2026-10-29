@@ -18,9 +18,8 @@ issues. It replaces the fixed starter kit the
 [greenfield guide](adoption/greenfield.md) uses today. With it come
 `red-team`, which reviews a requirements or architecture document from
 several hostile points of view in a fresh session; plan review inside
-`review`; a `docs` skill that runs [M4](modules/M4-docs-governance/README.md)'s
-documentation checks; and `upgrade-deps`, which makes grouped dependency
-upgrades an update bot cannot make alone and drives them to merge.
+`review`; and `upgrade-deps`, which makes grouped dependency upgrades an
+update bot cannot make alone and drives them to merge.
 
 ### 7. The Notion store, verified against Notion
 
