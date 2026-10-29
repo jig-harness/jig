@@ -29,9 +29,12 @@
  *     support, and another profile to consider beside it or beside the one
  *     the audit record declares.
  *
- * Each suggested value comes with the fact it was read from, and together
- * they make a starter configuration (`lib/draft.ts`): a whole file for a
- * repository without one, the fields to add for a repository with one.
+ * The values the repository implies come from the shared detector
+ * (`shared/detect.ts`), each with the fact it was read from; this script
+ * offers the ones the file leaves unset (`lib/suggestions.ts`), and together
+ * they make a starter configuration (the detector's `draftConfig`): a whole
+ * file for a repository without one, the fields to add for a repository with
+ * one.
  *
  * Read-only: it runs `git` and, unless `--offline`, read-only `gh` calls and
  * one tracker read. A question it cannot answer is reported as unchecked,
@@ -63,7 +66,7 @@ import {
   userConfigPath,
   userLayerEnabled,
 } from "../../../shared/config-layers.ts";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize, relative } from "node:path";
 import {
   consumerRoot,
@@ -75,35 +78,59 @@ import {
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import { trackerProbeable } from "./lib/tracker-probe.ts";
-import { detectPackageManager } from "../../fix-ci/scripts/consumer-config.ts";
 import { swallow } from "../../../shared/errors.ts";
-import { load } from "../../../shared/yaml.ts";
+import { ghCall } from "../../../shared/proc.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
 import { taxonomyFindings } from "./lib/taxonomy-fit.ts";
 import {
   configuredAt,
-  ghJson,
   trackedNeeds,
   newerInstalledVersion,
   onDisk,
-  packageScripts,
   pluginVersion,
-  run,
-  runsDirectly,
   skillDir,
   today,
   trackedFiles,
 } from "./lib/repo.ts";
-import { draftConfig, type Suggestion, suggestionId } from "./lib/draft.ts";
 import {
-  type KeySource,
-  keyInBranch,
-  keyInText,
+  ASSIGNMENT,
+  type CiJob,
+  ciJobs,
+  commandSegments,
+  commandWords,
+  draftConfig,
+  type ForgeRepo,
+  forgeRepo,
+  gateCommand,
+  ghJson,
+  issueKeySources,
+  makefileOf,
+  mergedPulls,
+  normalLogin,
+  OPEN_PULL_LIMIT,
   type OpenPull,
+  openPulls,
+  originHead,
+  packageScripts,
+  type Pull,
+  reviewBots,
+  reviewerCounts,
+  run,
+  scan,
+  stackedPulls,
+  texts,
+  withoutAssignments,
+} from "../../../shared/detect.ts";
+import {
+  catalogSuggestion,
   repoSlugSuggestion,
   stackingSuggestion,
+  type Suggestion,
+  suggest,
+  suggestedFacts,
+  suggestionId,
   trackerTeamSuggestion,
-} from "./lib/forge-suggestions.ts";
+} from "./lib/suggestions.ts";
 import {
   type ProfileFacts,
   profileFactLines,
@@ -134,180 +161,6 @@ export interface FitReport {
 }
 
 type Config = Record<string, unknown>;
-
-/**
- * The text entries of a list field. A field of the wrong type is already a
- * finding of its own; the derivations read only the entries that could work.
- */
-function texts(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((v): v is string => typeof v === "string" && v !== "")
-    : [];
-}
-
-/** A word, or a separator between commands. */
-type Token = { word: string } | { separator: string };
-
-/**
- * One piece of a command line: blanks, a separator (`&&`, `||`, `;`, `|`), a
- * single- or double-quoted run (its closing quote captured, empty when
- * missing), or unquoted text. Adjacent pieces other than blanks and
- * separators join into one word.
- */
-const PIECE = /(\s+)|(&&|\|\||;|\|)|'([^']*)('?)|"([^"]*)("?)|([^\s;|'"&]+|&)/g;
-
-/**
- * Unquoted text a shell takes literally. Anything else may be expanded,
- * globbed, redirected or grouped, and splitting on blanks and separators
- * alone cannot say what such a line runs.
- */
-const PLAIN = /^[\p{L}\p{N}_./:=@%+,#^-]+$/u;
-
-/**
- * Syntax in unquoted or double-quoted text that changes how the rest of a
- * line's quotes and separators are read: an escape, a backtick, or a `$` that
- * opens a span which may hold quotes, blanks and separators (`${…}`, `$(…)`,
- * `$((…))`, `$[…]`, and unquoted `$'…'`, where a backslash escapes the closing
- * quote). Any other `$` is a parameter or a literal `$`, and single-quoted
- * text holds no syntax at all.
- */
-const REQUOTES = /[\\`]|\$[{([]/;
-
-/** Whether one piece of a command line, followed by `next`, holds {@link REQUOTES} syntax. */
-function requotes(
-  blank: string | undefined,
-  double: string | undefined,
-  text: string | undefined,
-  next: string,
-): boolean {
-  if (blank !== undefined) return /[\r\n]/.test(blank);
-  if (double !== undefined) return REQUOTES.test(double);
-  if (text === undefined) return false;
-  return REQUOTES.test(text) || (text.endsWith("$") && next === "'");
-}
-
-/** The words and separators of a command line, and an unclosed quote if any. */
-function tokenize(command: string): {
-  tokens: Token[];
-  unclosed: string | null;
-} {
-  const tokens: Token[] = [];
-  let unclosed: string | null = null;
-  let word = "";
-  const endWord = () => {
-    if (word !== "") tokens.push({ word });
-    word = "";
-  };
-  for (const [
-    ,
-    blank,
-    separator,
-    single,
-    singleEnd,
-    double,
-    doubleEnd,
-    text,
-  ] of command.matchAll(PIECE)) {
-    if (blank !== undefined || separator !== undefined) endWord();
-    if (separator !== undefined) tokens.push({ separator });
-    if (singleEnd === "") unclosed ??= "'";
-    if (doubleEnd === "") unclosed ??= '"';
-    word += single ?? double ?? text ?? "";
-  }
-  endWord();
-  return { tokens, unclosed };
-}
-
-/** Shell syntax in one piece of a command line that this scan does not parse. */
-function unsupportedPiece(
-  text: string | undefined,
-  double: string | undefined,
-  wordStart: boolean,
-): string | null {
-  if (double !== undefined)
-    return /[$`]/.test(double) ? `an expansion inside "${double}"` : null;
-  if (text === undefined) return null;
-  if (wordStart && text.startsWith("#")) return "a comment";
-  if (text === "&") return "a background `&`";
-  return PLAIN.test(text) ? null : `\`${text}\``;
-}
-
-/**
- * Each piece of a command line's shell syntax beyond plain words, quotes and
- * separators, and whether any piece changes how the rest of the line's quotes
- * are read. The pieces are read in order, so every piece before the first
- * such syntax is read as a shell reads it, quoted or not.
- */
-function unsupportedPieces(command: string): {
-  found: string[];
-  requoted: boolean;
-} {
-  const found: string[] = [];
-  let requoted = false;
-  let wordStart = true;
-  for (const match of command.matchAll(PIECE)) {
-    const [whole, blank, separator, , , double, , text] = match;
-    const piece = unsupportedPiece(text, double, wordStart);
-    if (piece !== null) found.push(piece);
-    const next = command.charAt(match.index + whole.length);
-    requoted ||= piece === "a comment" || requotes(blank, double, text, next);
-    wordStart = blank !== undefined || separator !== undefined;
-  }
-  return { found, requoted };
-}
-
-/**
- * The first shell syntax beyond plain words, quotes and separators, if any,
- * and whether the line's syntax changes how its quotes are read.
- */
-function unsupportedSyntax(
-  command: string,
-): Pick<Scan, "unsupported" | "requoted"> {
-  const { found: pieces, requoted } = unsupportedPieces(command);
-  if (/[\r\n]/.test(command)) return { unsupported: "a line break", requoted };
-  if (command.includes("\\"))
-    return { unsupported: "a backslash escape", requoted };
-  return { unsupported: pieces[0] ?? null, requoted };
-}
-
-/**
- * A command line split into segments of words, why a shell would refuse it,
- * the syntax it uses that this scan does not parse, and whether that syntax
- * changes how its quotes are read (which makes `syntax` a guess too).
- */
-interface Scan {
-  segments: string[][];
-  syntax: string | null;
-  unsupported: string | null;
-  requoted: boolean;
-}
-
-/** Split a command line on `&&`, `||`, `;` and `|` outside quotes, then into words. */
-function scan(command: string): Scan {
-  const { tokens, unclosed } = tokenize(command);
-  const segments: string[][] = [];
-  let syntax: string | null =
-    unclosed === null ? null : `has an unclosed ${unclosed} quote`;
-  let words: string[] = [];
-  for (const token of tokens) {
-    if ("word" in token) words.push(token.word);
-    else if (words.length > 0) segments.push(words);
-    else if (token.separator !== ";")
-      syntax ??= `has \`${token.separator}\` with no command before it`;
-    if ("separator" in token) words = [];
-  }
-  if (words.length > 0) segments.push(words);
-  const last = tokens.at(-1);
-  if (last !== undefined && "separator" in last && last.separator !== ";")
-    syntax ??= `ends with \`${last.separator}\` and no command after it`;
-  if (segments.length === 0) syntax ??= "runs no command";
-  return { segments, syntax, ...unsupportedSyntax(command) };
-}
-
-/** Split a command line on `&&`, `||`, `;` and `|` outside quotes, then into words. */
-export function commandSegments(command: string): string[][] {
-  return scan(command).segments;
-}
 
 const BUILTINS = new Set([
   "echo",
@@ -385,39 +238,9 @@ function makeTargets(text: string): Set<string> {
   return targets;
 }
 
-/**
- * The makefile `make` would read, by its exact name: listed rather than
- * tested with `existsSync`, which on a case-insensitive file system finds
- * `makefile` when the file is `Makefile`.
- */
-function makefileOf(root: string): string | undefined {
-  const names = new Set(readdirSync(root));
-  return ["GNUmakefile", "makefile", "Makefile"].find((f) => names.has(f));
-}
 const SCRIPT_FILE = /\.(m?[jt]s|cjs|tsx|jsx)$/;
 
 type Problem = { severity: "error" | "warning" | "info"; message: string };
-
-const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-
-/** Drop leading `NAME=value` words. */
-function withoutAssignments(words: string[]): string[] {
-  let i = 0;
-  while (i < words.length && ASSIGNMENT.test(words[i] ?? "")) i++;
-  return words.slice(i);
-}
-
-/**
- * The words that run, without leading assignments or an `env` or `exec`
- * prefix; the prefix and its option instead when it takes one, since an
- * option may take a value and what it runs is then unknown here.
- */
-function commandWords(segment: string[]): string[] | string {
-  const words = withoutAssignments(segment);
-  if (words[0] !== "env" && words[0] !== "exec") return words;
-  if (words[1]?.startsWith("-")) return `${words[0]} ${words[1]}`;
-  return commandWords(words.slice(1));
-}
 
 /** What the checks of one command line read from the repository. */
 interface Context {
@@ -837,32 +660,6 @@ function machineLayers(config: Config, schema: Schema): Finding[] {
   return findings;
 }
 
-interface Pull {
-  number: number;
-  title: string;
-  headRefName: string;
-  baseRefName: string;
-  statusCheckRollup?: {
-    name?: string;
-    context?: string;
-    conclusion?: string;
-  }[];
-  reviews?: { author?: { login?: string } }[];
-  comments?: { author?: { login?: string } }[];
-}
-
-const RECENT = 20;
-const AUTOMATION =
-  /^(dependabot|renovate|github-actions|codecov|netlify|vercel)/i;
-const normalLogin = (login: string) =>
-  login.replace(/\[bot\]$/, "").toLowerCase();
-
-interface ForgeRepo {
-  nameWithOwner: string;
-  defaultBranchRef?: { name?: string };
-  deleteBranchOnMerge?: boolean;
-}
-
 /** What classic branch protection says about a branch. */
 type Classic = "protected" | "unprotected" | "unknown";
 
@@ -871,15 +668,14 @@ type Classic = "protected" | "unprotected" | "unknown";
  * whether the branch has classic protection at all; unknown when that could
  * not be read.
  */
-function classicProtection(
+async function classicProtection(
   slug: string,
   base: string,
   root: string,
   required: Set<string>,
   report: FitReport,
-): Classic {
-  const protection = run(
-    "gh",
+): Promise<Classic> {
+  const protection = await ghCall(
     ["api", `repos/${slug}/branches/${base}/protection`],
     { cwd: root },
   );
@@ -887,7 +683,10 @@ function classicProtection(
     if (/not protected/i.test(protection.stderr)) return "unprotected";
     // Reading protection needs admin rights; the branch itself tells any
     // reader whether it is protected at all.
-    const branch = ghJson(["api", `repos/${slug}/branches/${base}`], root);
+    const branch = await ghJson(
+      ["api", `repos/${slug}/branches/${base}`],
+      root,
+    );
     return branch.ok &&
       (branch.value as { protected?: unknown }).protected === false
       ? "unprotected"
@@ -930,13 +729,16 @@ function protectionChecks(status: unknown): string[] {
  * many ruleset rules apply to the branch; null when the rulesets could not be
  * read.
  */
-function rulesetChecks(
+async function rulesetChecks(
   slug: string,
   base: string,
   root: string,
   required: Set<string>,
-): number | null {
-  const rules = ghJson(["api", `repos/${slug}/rules/branches/${base}`], root);
+): Promise<number | null> {
+  const rules = await ghJson(
+    ["api", `repos/${slug}/rules/branches/${base}`],
+    root,
+  );
   if (!rules.ok || !Array.isArray(rules.value)) return null;
   for (const rule of rules.value as {
     type?: string;
@@ -953,15 +755,15 @@ function rulesetChecks(
  * rulesets both count. A branch with neither is reported as unprotected,
  * apart from one protected without a required check.
  */
-function requiredChecks(
+async function requiredChecks(
   slug: string,
   base: string,
   root: string,
   report: FitReport,
-): { required: Set<string>; findings: Finding[] } {
+): Promise<{ required: Set<string>; findings: Finding[] }> {
   const required = new Set<string>();
-  const classic = classicProtection(slug, base, root, required, report);
-  const rules = rulesetChecks(slug, base, root, required);
+  const classic = await classicProtection(slug, base, root, required, report);
+  const rules = await rulesetChecks(slug, base, root, required);
   if (classic === "unknown" || rules === null) {
     report.facts.branch_protection =
       "unchecked: protection or rulesets could not be read";
@@ -989,28 +791,6 @@ function requiredChecks(
   };
 }
 
-/** The last merged pull requests into `base`, or null when unreadable. */
-function mergedPulls(base: string, root: string): Pull[] | null {
-  const merged = ghJson(
-    [
-      "pr",
-      "list",
-      "--state",
-      "merged",
-      "--base",
-      base,
-      "--limit",
-      String(RECENT),
-      "--json",
-      "number,title,headRefName,baseRefName,statusCheckRollup,reviews,comments",
-    ],
-    root,
-  );
-  return merged.ok && Array.isArray(merged.value)
-    ? (merged.value as Pull[])
-    : null;
-}
-
 /** A required check that ran on none of the recent merged pull requests. */
 function checksThatNeverRan(checks: string[], pulls: Pull[]): Finding[] {
   const ran = new Set(
@@ -1027,47 +807,6 @@ function checksThatNeverRan(checks: string[], pulls: Pull[]): Finding[] {
     }));
 }
 
-/** How many of the pull requests each login reviewed or commented on. */
-function reviewerCounts(pulls: Pull[]): Map<string, number> {
-  const authors = new Map<string, number>();
-  for (const p of pulls) {
-    const seen = new Set(
-      [...(p.reviews ?? []), ...(p.comments ?? [])]
-        .map((r) => r.author?.login)
-        .filter((l): l is string => typeof l === "string")
-        .map(normalLogin),
-    );
-    for (const login of seen) authors.set(login, (authors.get(login) ?? 0) + 1);
-  }
-  return authors;
-}
-
-/** Whether a login looks like a review bot that reviewed often enough to list. */
-function likelyReviewBot(login: string, count: number): boolean {
-  return (
-    /(bot|review|ai)$|^ai[-_]|review/i.test(login) &&
-    !AUTOMATION.test(login) &&
-    count >= 2
-  );
-}
-
-/**
- * The login the review skills match for `login`: the forge's GraphQL drops a
- * bot's `[bot]` suffix, and the skills match `review.bots` against the REST
- * login, which carries it. The suffix is added only when the forge confirms
- * the account is a bot, and the login stays as it is only when the forge says
- * there is no such bot; any other answer leaves it unknown (`null`).
- */
-function restLogin(login: string, root: string): string | null {
-  const user = ghJson(["api", `users/${login}[bot]`], root);
-  if (!user.ok) return /\bHTTP 404\b/.test(user.reason) ? login : null;
-  const type =
-    typeof user.value === "object" && user.value !== null
-      ? (user.value as { type?: unknown }).type
-      : undefined;
-  return type === "Bot" ? `${login}[bot]` : null;
-}
-
 /** Record `suggestions` on the report, and the finding each one makes. */
 function offer(report: FitReport, suggestions: Suggestion[]): Finding[] {
   report.suggestions.push(...suggestions);
@@ -1079,12 +818,12 @@ function offer(report: FitReport, suggestions: Suggestion[]): Finding[] {
 }
 
 /** Declared review bots that never reviewed, or, with none declared, likely ones. */
-function reviewBotFindings(
+async function reviewBotFindings(
   config: Config,
   pulls: Pull[],
   root: string,
   report: FitReport,
-): Finding[] {
+): Promise<Finding[]> {
   const authors = reviewerCounts(pulls);
   const declaredBots = texts(at(config, "review.bots"));
   const findings: Finding[] = declaredBots
@@ -1095,42 +834,34 @@ function reviewBotFindings(
       message: `review.bots names ${bot}, which reviewed or commented on none of the last ${pulls.length} merged pull requests`,
     }));
   if (declaredBots.length > 0) return findings;
-  const likely = [...authors].filter(([login, count]) =>
-    likelyReviewBot(login, count),
+  const { found, unconfirmed } = await reviewBots(pulls, root);
+  const bots = found.map((bot) =>
+    suggest(
+      bot,
+      `${bot.evidence.join("; ")}: list it in review.bots so the review skills work its threads`,
+      { key: bot.login },
+    ),
   );
-  const bots: Suggestion[] = [];
-  const unchecked: Finding[] = [];
-  for (const [login, count] of likely) {
-    const evidence = `${login} reviewed ${count} of the last ${pulls.length} merged pull requests`;
-    const rest = restLogin(login, root);
-    if (rest === null)
-      unchecked.push({
-        id: `unchecked:review.bots:${login}`,
-        severity: "info",
-        message: `${evidence}, but whether it is a bot could not be read, so the login review.bots needs is unchecked: no value is suggested`,
-      });
-    else
-      bots.push({
-        field: "review.bots",
-        key: login,
-        value: [rest],
-        evidence,
-        message: `${evidence}: list it in review.bots so the review skills work its threads`,
-      });
-  }
+  const unchecked = unconfirmed.map(
+    ({ login, evidence }): Finding => ({
+      id: `unchecked:review.bots:${login}`,
+      severity: "info",
+      message: `${evidence}, but whether it is a bot could not be read, so the login review.bots needs is unchecked: no value is suggested`,
+    }),
+  );
   return [...findings, ...offer(report, bots), ...unchecked];
 }
 
 /** What the recent merged pull requests show: required checks and reviewers. */
-function mergedPullFindings(
+async function mergedPullFindings(
   config: Config,
   root: string,
   base: string,
   required: Set<string>,
   report: FitReport,
   state: ForgeState,
-): Finding[] {
-  const pulls = mergedPulls(base, root);
+): Promise<Finding[]> {
+  const pulls = await mergedPulls(base, root);
   state.pulls = pulls;
   if (pulls === null)
     return [
@@ -1153,36 +884,21 @@ function mergedPullFindings(
   const checks = Array.isArray(declared) ? texts(declared) : [...required];
   return [
     ...checksThatNeverRan(checks, pulls),
-    ...reviewBotFindings(config, pulls, root, report),
+    ...(await reviewBotFindings(config, pulls, root, report)),
     ...reviewerFindings(config, pulls),
   ];
 }
 
-/** How many open pull requests the stacking check reads. */
-const OPEN_PULL_LIMIT = 200;
-
 /** Whether the open pull requests and the repository fit `pull_requests.stacking`. */
-function stackingFindings(
+async function stackingFindings(
   config: Config,
   root: string,
   base: string,
   repo: ForgeRepo,
   report: FitReport,
-): Finding[] {
-  const open = ghJson(
-    [
-      "pr",
-      "list",
-      "--state",
-      "open",
-      "--limit",
-      String(OPEN_PULL_LIMIT),
-      "--json",
-      "number,baseRefName,headRefName",
-    ],
-    root,
-  );
-  if (!open.ok || !Array.isArray(open.value))
+): Promise<Finding[]> {
+  const pulls = await openPulls(root);
+  if (pulls === null)
     return [
       {
         id: "unchecked:open-pulls",
@@ -1191,20 +907,8 @@ function stackingFindings(
       },
     ];
   const findings: Finding[] = [];
-  // Stacked: based on another open pull request's branch. A pull request into
-  // a release or backport branch targets another branch than the base too.
-  const pulls = open.value as OpenPull[];
-  const heads = new Set(pulls.map((p) => p.headRefName));
-  const stacked = pulls.filter(
-    (p) => p.baseRefName !== base && heads.has(p.baseRefName),
-  );
+  const { stacked, unresolved } = stackedPulls(pulls, base);
   report.facts.stacked_open_pulls = String(stacked.length);
-  // A full page may leave out the parent a pull request is based on, so one
-  // based on a branch no read pull request has may be stacked all the same.
-  const unresolved =
-    pulls.length >= OPEN_PULL_LIMIT
-      ? pulls.filter((p) => p.baseRefName !== base && !heads.has(p.baseRefName))
-      : [];
   if (unresolved.length > 0) {
     report.facts.stacked_open_pulls = `at least ${stacked.length}`;
     findings.push({
@@ -1254,10 +958,14 @@ function stackedWithoutStacking(
 }
 
 /** Configured pull-request labels the repository does not have. */
-function labelFindings(config: Config, root: string, slug: string): Finding[] {
+async function labelFindings(
+  config: Config,
+  root: string,
+  slug: string,
+): Promise<Finding[]> {
   const labels = texts(at(config, "pull_requests.labels"));
   if (labels.length === 0) return [];
-  const list = ghJson(
+  const list = await ghJson(
     ["label", "list", "--limit", "1000", "--json", "name"],
     root,
   );
@@ -1319,21 +1027,13 @@ interface ForgeState {
   pulls: Pull[] | null;
 }
 
-function forgeChecks(
+async function forgeChecks(
   config: Config,
   root: string,
   report: FitReport,
   state: ForgeState,
-): Finding[] {
-  const view = ghJson(
-    [
-      "repo",
-      "view",
-      "--json",
-      "nameWithOwner,defaultBranchRef,deleteBranchOnMerge",
-    ],
-    root,
-  );
+): Promise<Finding[]> {
+  const view = await forgeRepo(root);
   if (!view.ok) {
     report.forge = "unchecked";
     return [
@@ -1345,21 +1045,32 @@ function forgeChecks(
     ];
   }
   report.forge = "checked";
-  const repo = view.value as ForgeRepo;
+  const repo = view.value;
   const slug = repo.nameWithOwner;
   report.facts.repository = slug;
   const { base, findings: baseFindings } = forgeBase(repo, report);
   if (base === null) return baseFindings;
-  const { required, findings } = requiredChecks(slug, base, root, report);
+  const { required, findings } = await requiredChecks(slug, base, root, report);
   if (!report.facts.branch_protection?.startsWith("unchecked"))
     state.required = required;
+  // In this order: each reading's suggestions join the report as it runs.
+  const merged = await mergedPullFindings(
+    config,
+    root,
+    base,
+    required,
+    report,
+    state,
+  );
+  const stacking = await stackingFindings(config, root, base, repo, report);
+  const labels = await labelFindings(config, root, slug);
   return [
     ...baseFindings,
     ...findings,
-    ...mergedPullFindings(config, root, base, required, report, state),
-    ...stackingFindings(config, root, base, repo, report),
-    ...labelFindings(config, root, slug),
-    ...offer(report, repoSlugSuggestion(config, slug)),
+    ...merged,
+    ...stacking,
+    ...labels,
+    ...offer(report, repoSlugSuggestion(config, repo)),
   ];
 }
 
@@ -1408,197 +1119,9 @@ async function trackerCheck(
   }
 }
 
-/** A tracked file named like a change-area catalog, when none is configured. */
-function catalogSuggestion(config: Config, files: string[]): Suggestion[] {
-  if (at(config, "drive.change_areas_catalog") !== undefined) return [];
-  const catalog = files.find(
-    (f) =>
-      /(^|\/)change[-_]?areas?\.ya?ml$/i.test(f) &&
-      !/(^|\/)(fixtures?|templates?)\//.test(f),
-  );
-  if (catalog === undefined) return [];
-  return [
-    {
-      field: "drive.change_areas_catalog",
-      value: catalog,
-      evidence: `${catalog} is tracked and named like a change-area catalog`,
-      message: `${catalog} looks like a change-area catalog: set drive.change_areas_catalog to it so reviews and agent routing use it`,
-    },
-  ];
-}
-
 /**
- * A command that runs the repository's checks, and what shows it;
- * `unsettled` names what keeps it from being the whole check CI runs.
- */
-type Gate = { command: string; evidence: string; unsettled?: string };
-
-/** The package script that runs the repository's checks, with its runner. */
-function scriptGate(root: string): Gate | null {
-  const scripts = packageScripts(root) ?? {};
-  const name = ["gates", "check", "ci", "verify", "validate", "test"].find(
-    (n) => Object.hasOwn(scripts, n),
-  );
-  if (name === undefined) return null;
-  const found = detectPackageManager(root).found;
-  const manager = found?.name ?? "npm";
-  const runner = found
-    ? `, and ${found.lockfile} makes ${manager} its package manager`
-    : "";
-  return {
-    command: `${manager} run ${name}`,
-    evidence: `package.json defines a "${name}" script${runner}`,
-  };
-}
-
-/** The make target that runs the repository's checks. */
-function makeGate(root: string): Gate | null {
-  const makefile = makefileOf(root);
-  if (makefile === undefined) return null;
-  const text = readFileSync(join(root, makefile), "utf8");
-  const target = ["gates", "check", "ci", "verify"].find((t) =>
-    new RegExp(`^${t}\\s*:`, "m").test(text),
-  );
-  if (target === undefined) return null;
-  return {
-    command: `make ${target}`,
-    evidence: `${makefile} defines a "${target}" target`,
-  };
-}
-
-/** A tracked script named like the repository's whole check, at the root or under `scripts/` or `bin/`. */
-const GATE_SCRIPT =
-  /^(?:(?:scripts|bin)\/)?(gates?|checks?|verify|ci)(?:\.(?:sh|bash))?$/;
-
-/** A command line up to its first comment: a shell runs nothing after it. */
-function beforeComment(line: string): string {
-  let wordStart = true;
-  for (const match of line.matchAll(PIECE)) {
-    const [, blank, separator, , , , , text] = match;
-    if (wordStart && text?.startsWith("#")) return line.slice(0, match.index);
-    wordStart = blank !== undefined || separator !== undefined;
-  }
-  return line;
-}
-
-/**
- * One command of a CI line that runs a gate script, as CI writes it (with
- * the environment it sets, if any) and as a configuration could repeat it.
- */
-type CiRun = { written: string; env: string; command: string | null };
-
-/**
- * The commands of a CI command line that run the gate script `file`,
- * directly or through `bash` or `sh`. A mention in an argument
- * (`echo ./scripts/gates.sh`) or after a comment runs nothing, and a line
- * whose syntax changes how its quotes are read shows nothing reliably. Each
- * run's `command` repeats it exactly, interpreter and arguments kept; it is
- * null when no configuration value can: a leading assignment or `env`
- * prefix, or an `env` setting of the workflow, job or step, sets what the
- * script reads, and an argument with expansion, quoting or space reads
- * differently pasted elsewhere.
- */
-function ciRuns(line: CiLine, file: string): CiRun[] {
-  const { segments, requoted } = scan(beforeComment(line.text));
-  if (requoted) return [];
-  return segments.flatMap((segment) => {
-    const words = commandWords(segment);
-    if (typeof words === "string") return [];
-    const shell = words[0] === "bash" || words[0] === "sh" ? words[0] : null;
-    const at = shell === null ? 0 : 1;
-    if (words[at]?.replace(/^\.\//, "") !== file) return [];
-    const args = words.slice(at + 1);
-    const repeatable =
-      line.env.length === 0 &&
-      words.length === segment.length &&
-      args.every((a) => PLAIN_ARGUMENT.test(a));
-    const base = shell === null ? `./${file}` : `${shell} ${file}`;
-    const env = line.env.length === 0 ? "" : ` with ${line.env.join(", ")} set`;
-    return [
-      {
-        written: segment.join(" "),
-        env,
-        command: repeatable ? [base, ...args].join(" ") : null,
-      },
-    ];
-  });
-}
-
-/** An argument that reads the same pasted into a configuration: no expansion, quoting or space. */
-const PLAIN_ARGUMENT = /^[\w.,=:/@+%-]+$/;
-
-/**
- * The tracked gate scripts ({@link GATE_SCRIPT}) a shell can run: an
- * executable one as `./<path>`, a shell script without the executable bit
- * through `bash`. One a CI job's `run` step invokes comes first, with the
- * workflow named in its evidence. When every CI run of it is the same
- * repeatable command, that command is the suggestion, so it runs what CI
- * runs; otherwise the suggestion is the bare script, marked `unsettled`
- * with the runs CI makes, for a reader to choose from.
- */
-function scriptFileGates(
-  root: string,
-  files: string[],
-): (Gate & { ci: boolean })[] {
-  const jobs = ciJobs(root, files);
-  const gates = files.flatMap((file) => {
-    const match = GATE_SCRIPT.exec(file);
-    if (match === null) return [];
-    let mode: number;
-    try {
-      mode = statSync(join(root, file)).mode;
-    } catch (error) {
-      swallow(error, `${file} is tracked but missing from the working tree`);
-      return [];
-    }
-    const executable = runsDirectly(root, file, mode);
-    if (!executable && !/\.(sh|bash)$/.test(file)) return [];
-    const { runBy, settled, unsettled } = ciSettlement(
-      jobs.flatMap((job) =>
-        job.commands.flatMap((line) =>
-          ciRuns(line, file).map((run) => ({ ...run, file: job.file })),
-        ),
-      ),
-    );
-    const base = executable ? `./${file}` : `bash ${file}`;
-    const kind = executable ? "an executable script" : "a shell script";
-    const ci =
-      runBy.length === 0
-        ? ""
-        : `, and CI runs it (${runBy.join(", ")})${unsettled === undefined ? "" : `; ${unsettled}`}`;
-    return [
-      {
-        command: settled ?? base,
-        evidence: `${file} is ${kind} named like the repository's check${ci}`,
-        ci: runBy.length > 0,
-        ...(unsettled === undefined ? {} : { unsettled }),
-      },
-    ];
-  });
-  return [...gates.filter((g) => g.ci), ...gates.filter((g) => !g.ci)];
-}
-
-/**
- * What a gate script's CI runs settle: the workflows that run it, the one
- * command every run is when there is one, and otherwise how CI runs it.
- */
-function ciSettlement(runs: (CiRun & { file: string })[]): {
-  runBy: string[];
-  settled: string | null;
-  unsettled?: string;
-} {
-  const runBy = [...new Set(runs.map((r) => r.file))];
-  const commands = [...new Set(runs.map((r) => r.command))];
-  const settled = commands.length === 1 ? (commands[0] ?? null) : null;
-  if (runs.length === 0 || settled !== null) return { runBy, settled };
-  const written = [...new Set(runs.map((r) => `\`${r.written}\`${r.env}`))];
-  return { runBy, settled, unsettled: `CI runs it as ${written.join(", ")}` };
-}
-
-/**
- * With no gate command set, the one the repository's shape names: a gate
- * script CI runs, else a package script, else a make target, else a gate
- * script CI does not run.
+ * With no gate command set, the one the repository's shape names
+ * (`gateCommand` in the detector).
  */
 function gateFindings(
   config: Config,
@@ -1607,13 +1130,7 @@ function gateFindings(
   report: FitReport,
 ): Finding[] {
   if (at(config, "gates.command") !== undefined) return [];
-  const scripts = scriptFileGates(root, files);
-  const gate =
-    scripts.find((g) => g.ci) ??
-    scriptGate(root) ??
-    makeGate(root) ??
-    scripts[0] ??
-    null;
+  const gate = gateCommand(root, files);
   if (gate === null)
     return [
       {
@@ -1624,15 +1141,12 @@ function gateFindings(
       },
     ];
   return offer(report, [
-    {
-      field: "gates.command",
-      value: gate.command,
-      evidence: gate.evidence,
-      message:
-        gate.unsettled === undefined
-          ? `set gates.command: ${gate.command}, the repository's whole local check, so the review and CI skills run it before every push`
-          : `${gate.command} is the repository's check, but ${gate.unsettled}: set gates.command to the command that runs all of what CI runs, since ${gate.command} alone may run less`,
-    },
+    suggest(
+      gate,
+      gate.unsettled === undefined
+        ? `set gates.command: ${gate.value}, the repository's whole local check, so the review and CI skills run it before every push`
+        : `${gate.value} is the repository's check, but ${gate.unsettled}: set gates.command to the command that runs all of what CI runs, since ${gate.value} alone may run less`,
+    ),
   ]);
 }
 
@@ -1683,16 +1197,9 @@ function integrationBranch(
           },
         ];
   }
-  const head = run(
-    "git",
-    ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
-    {
-      cwd: root,
-    },
-  );
-  const name = head.stdout.trim();
-  if (head.code === 0 && name.startsWith("origin/")) {
-    report.facts.integration_branch = name.slice("origin/".length);
+  const head = originHead(root);
+  if (head !== null) {
+    report.facts.integration_branch = head.value;
     report.facts.integration_branch_source = "origin/HEAD";
   }
   return [];
@@ -1736,75 +1243,6 @@ function behindIntegrationBranch(root: string, report: FitReport): Finding[] {
       message: `HEAD lacks ${behind} commit(s) of origin/${branch} (as of the last fetch): the audit would describe a stale commit. Fetch, then check out or rebase onto origin/${branch} before scoring`,
     },
   ];
-}
-
-/** How many commit subjects and branch names the tracker-team count reads. */
-const KEY_HISTORY_LIMIT = 200;
-
-/**
- * Where issue keys can be read: the recent merged pull requests (title, else
- * head branch), the commit subjects of the integration branch (or HEAD when
- * the clone lacks it) and the clone's remote branch names.
- */
-function issueKeySources(
-  root: string,
-  report: FitReport,
-  pulls: Pull[] | null,
-): KeySource[] {
-  const sources: KeySource[] = [];
-  if (pulls !== null && pulls.length > 0)
-    sources.push({
-      label: `the last ${pulls.length} merged pull requests`,
-      keys: pulls.map((p) => keyInText(p.title) ?? keyInBranch(p.headRefName)),
-    });
-  const branch = report.facts.integration_branch;
-  const ref =
-    branch !== undefined &&
-    run(
-      "git",
-      ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`],
-      {
-        cwd: root,
-      },
-    ).code === 0
-      ? `origin/${branch}`
-      : "HEAD";
-  const log = run(
-    "git",
-    ["log", "-n", String(KEY_HISTORY_LIMIT), "--format=%s", ref, "--"],
-    { cwd: root },
-  );
-  const subjects = log.code === 0 ? lines(log.stdout) : [];
-  if (subjects.length > 0)
-    sources.push({
-      label: `the last ${subjects.length} commit subjects on ${ref}`,
-      keys: subjects.map(keyInText),
-    });
-  const refs = run(
-    "git",
-    [
-      "for-each-ref",
-      `--count=${KEY_HISTORY_LIMIT}`,
-      "--sort=-committerdate",
-      "--format=%(refname:lstrip=3)",
-      "refs/remotes/origin/",
-    ],
-    { cwd: root },
-  );
-  const branches = (refs.code === 0 ? lines(refs.stdout) : []).filter(
-    (b) => b !== "HEAD" && b !== branch,
-  );
-  if (branches.length > 0)
-    sources.push({
-      label: `the ${branches.length} most recent branches on origin`,
-      keys: branches.map(keyInBranch),
-    });
-  return sources;
-}
-
-/** The nonempty lines of a command's output. */
-function lines(text: string): string[] {
-  return text.split("\n").filter((line) => line.trim() !== "");
 }
 
 /** The configuration file of the `groundwork` plugin, which Jig's skills do not read. */
@@ -2005,160 +1443,6 @@ function fileCommandFindings(config: Config, files: string[]): Finding[] {
       }: unless every machine that works here installs it (a user command, or another plugin's skill), an agent told to file an issue with it cannot. Add that command to the repository, or set the field to one that exists`,
     },
   ];
-}
-
-/** GitHub Actions workflows. */
-const GITHUB_WORKFLOW = /^\.github\/workflows\/[^/]+\.ya?ml$/;
-
-/** A CI job: where it is, the name its check run takes, and the commands its steps run. */
-interface CiJob {
-  file: string;
-  id: string;
-  name: string;
-  pullRequest: boolean;
-  /** The ids of the jobs it waits for. */
-  needs: string[];
-  commands: CiLine[];
-  /** The `run` steps not read: their lines are not each a command run at the root. */
-  unread: number;
-}
-
-/**
- * One command line of a `run` step, with the environment variables the
- * workflow, job or step sets for it: what the line runs reads them, and a
- * configuration value repeating the line alone would not set them.
- */
-interface CiLine {
-  text: string;
-  env: string[];
-}
-
-/** Whether a workflow's `on` names a pull-request event. */
-function onPullRequest(on: unknown): boolean {
-  const events = ["pull_request", "pull_request_target"];
-  if (typeof on === "string") return events.includes(on);
-  if (Array.isArray(on)) return on.some((e) => events.includes(e));
-  return isRecord(on) && events.some((e) => Object.hasOwn(on, e));
-}
-
-/** Shell words that open or close a compound command, which spans lines. */
-const COMPOUND =
-  /^(if|then|else|elif|fi|for|while|until|do|done|case|esac|select|function|\{|\}|\(|\))(\s|;|$)/;
-
-/**
- * Text that may open a here-document or change folder: `<<` anywhere, or
- * `cd`, `pushd` or `popd` as a word anywhere. Matched on the raw line,
- * comments included and quote marks and backslashes removed (`c'd'` and
- * `c\d` run `cd`), so it can only over-read.
- */
-const NOT_AT_ROOT = /<<|(^|[^\w./-])(cd|pushd|popd)(?![\w./-])/;
-
-/** Whether a line may open a here-document or change folder, in any quoting. */
-function notAtRoot(line: string): boolean {
-  return NOT_AT_ROOT.test(line.replace(/['"\\]/g, ""));
-}
-
-/**
- * The command lines of a `run` block: continuations joined, blanks and
- * comments dropped; null when the block is not read. A block is read only
- * when its lines are each a command run at the repository's root: a compound
- * command (`if`, `for`, …) runs depending on its conditions, a
- * here-document's lines are input, and a `cd` moves what follows it to
- * another folder. Those are recognised by text, not parsed, so a block that
- * only mentions one (`echo '<<EOF'`) is not read either, and the caller says
- * so rather than reading it as running nothing.
- */
-function runLines(run: string): string[] | null {
-  const lines = run
-    .replace(/\s*\\\r?\n\s*/g, " ")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line !== "" && !line.startsWith("#"));
-  const unread = lines.some((line) => COMPOUND.test(line) || notAtRoot(line));
-  return unread ? null : lines;
-}
-
-/** The names of the environment variables an `env` setting sets; an expression sets ones unknown. */
-function envNames(env: unknown): string[] {
-  if (env === undefined || env === null) return [];
-  return isRecord(env) ? Object.keys(env) : ["(an expression)"];
-}
-
-/**
- * Whether `defaults` makes `run` steps start in another folder or another
- * shell, where the repository's root scripts do not say what a command runs.
- */
-function runsElsewhere(defaults: unknown): boolean {
-  const run = isRecord(defaults) ? defaults.run : undefined;
-  return (
-    isRecord(run) &&
-    (run["working-directory"] !== undefined || !shellLike(run.shell))
-  );
-}
-
-/** Whether a step's `shell` is a POSIX shell, or unset. */
-function shellLike(shell: unknown): boolean {
-  return (
-    shell === undefined ||
-    (typeof shell === "string" && /^(bash|sh)\b/.test(shell))
-  );
-}
-
-/**
- * The command lines of a `run` step that runs at the root in a POSIX shell,
- * each with the environment `inherited` from its workflow and job and the
- * step's own; null for a `run` step that is not read: one in another folder
- * or shell, or a block {@link runLines} does not read.
- */
-function stepLines(step: unknown, inherited: string[]): CiLine[] | null {
-  if (!isRecord(step) || typeof step.run !== "string") return [];
-  if (step["working-directory"] !== undefined || !shellLike(step.shell))
-    return null;
-  const env = [...new Set([...inherited, ...envNames(step.env)])];
-  return runLines(step.run)?.map((text) => ({ text, env })) ?? null;
-}
-
-/** The jobs of the repository's GitHub Actions workflows that parse. */
-function ciJobs(root: string, files: string[]): CiJob[] {
-  return files
-    .filter((f) => GITHUB_WORKFLOW.test(f))
-    .flatMap((file) => {
-      try {
-        return workflowJobs(file, load(readFileSync(join(root, file), "utf8")));
-      } catch (error) {
-        swallow(error, `${file} does not parse: its jobs are not compared`);
-        return [];
-      }
-    });
-}
-
-/** The jobs of one parsed workflow. */
-function workflowJobs(file: string, doc: unknown): CiJob[] {
-  if (!isRecord(doc) || !isRecord(doc.jobs)) return [];
-  const pullRequest = onPullRequest(doc.on);
-  const elsewhere = runsElsewhere(doc.defaults);
-  return Object.entries(doc.jobs).flatMap(([id, job]) => {
-    if (!isRecord(job)) return [];
-    const steps = Array.isArray(job.steps) ? job.steps : [];
-    const away = elsewhere || runsElsewhere(job.defaults);
-    const env = [...envNames(doc.env), ...envNames(job.env)];
-    const read = steps.map((step) =>
-      away && isRecord(step) && typeof step.run === "string"
-        ? null
-        : stepLines(step, env),
-    );
-    return [
-      {
-        file,
-        id,
-        name: typeof job.name === "string" ? job.name : id,
-        pullRequest,
-        needs: typeof job.needs === "string" ? [job.needs] : texts(job.needs),
-        commands: read.flatMap((lines) => lines ?? []),
-        unread: read.filter((lines) => lines === null).length,
-      },
-    ];
-  });
 }
 
 /**
@@ -3119,7 +2403,9 @@ export async function configFit(opts: {
   report.findings.push(...integrationBranch(config, opts.root, report));
   const state: ForgeState = { required: null, pulls: null };
   if (!opts.offline) {
-    report.findings.push(...forgeChecks(config, opts.root, report, state));
+    report.findings.push(
+      ...(await forgeChecks(config, opts.root, report, state)),
+    );
     report.findings.push(
       ...(await trackerCheck(opts.file, report.configured, opts.root)),
     );
@@ -3138,7 +2424,11 @@ export async function configFit(opts: {
       report,
       trackerTeamSuggestion(
         config,
-        issueKeySources(opts.root, report, state.pulls),
+        issueKeySources(
+          opts.root,
+          report.facts.integration_branch,
+          state.pulls,
+        ),
       ),
     ),
   );
@@ -3158,7 +2448,7 @@ export async function configFit(opts: {
   Object.assign(report.facts, profileFactLines(report.profile_facts));
   applyDeclines(report, opts.recordPath);
   const draft = draftConfig(
-    report.suggestions,
+    suggestedFacts(report.suggestions),
     schema,
     report.configured ? config : null,
   );
