@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   LEAKY_GIT_ENV,
   spawnSync,
@@ -56,6 +57,11 @@ function run(args: string[], options: { input?: string; cwd?: string } = {}) {
   return { code: r.status, out: r.stdout, err: r.stderr };
 }
 
+/** Assert the gate's exit status, printing its output when it differs. */
+function expectExit(r: ReturnType<typeof run>, code: number) {
+  expectSpawnExit({ exitCode: r.code, stdout: r.out, stderr: r.err }, code);
+}
+
 /** List mode: the changed paths on standard input, tests looked up in the fixture tree. */
 const listed = (changed: string[], extra: string[] = []) =>
   run(["--changed", "-", "--root", tree, ...LAYOUT, ...extra], {
@@ -101,6 +107,38 @@ describe("list mode", () => {
     );
     expect(r.code).toBe(2);
     expect(r.err).toContain("needs a reason");
+  });
+
+  test("an exemption that matches no file in the tree fails, and names its line", () => {
+    const stale = join(fixtures, "exemptions-stale.txt");
+    const r = listed(["src/generated/schema.ts"], ["--exemptions", stale]);
+    expectExit(r, 1);
+    expect(r.err).toContain("1 exemption(s) matching no file");
+    expect(r.err).toContain(`${stale}:3: src/legacy/**`);
+    expect(r.err).not.toContain("src/generated/**");
+    expect(r.err).not.toContain("without a test");
+  });
+
+  test("an exemption is checked against the tree even when the change touches none of its files", () => {
+    const stale = join(fixtures, "exemptions-stale.txt");
+    expectExit(listed(["docs/guide.md"], ["--exemptions", stale]), 1);
+    expectExit(
+      listed(
+        ["docs/guide.md"],
+        ["--exemptions", join(fixtures, "exemptions.txt")],
+      ),
+      0,
+    );
+  });
+
+  test("a stale exemption and a source without a test are both reported", () => {
+    const r = listed(
+      ["src/invoices.ts"],
+      ["--exemptions", join(fixtures, "exemptions-stale.txt")],
+    );
+    expectExit(r, 1);
+    expect(r.err).toContain("src/invoices.ts (");
+    expect(r.err).toContain("src/legacy/**");
   });
 
   test("--require-changed wants the test in the same change", () => {
@@ -474,6 +512,48 @@ describe("git mode", () => {
     git(root, "add", "-A");
     git(root, "commit", "-q", "-m", "link");
     expect(run(["--base", "main", ...LAYOUT], { cwd: root }).code).toBe(1);
+  });
+
+  const EXEMPT = ["--exemptions", "exemptions.txt"];
+
+  test("an exemption is matched against HEAD, not the working tree", () => {
+    const root = repo();
+    commit(root, {
+      "src/generated/schema.ts": "export {};\n",
+      "exemptions.txt":
+        "src/generated/** Generated from the schema.\nsrc/legacy/** The old importer.\n",
+    });
+    // On disk only: an untracked file does not keep an exemption alive.
+    mkdirSync(join(root, "src", "legacy"));
+    writeFileSync(join(root, "src", "legacy", "import.ts"), "export {};\n");
+    const r = run(["--base", "main", ...LAYOUT, ...EXEMPT], { cwd: root });
+    expectExit(r, 1);
+    expect(r.err).toContain(
+      "exemptions.txt:2: src/legacy/** matches no file in HEAD",
+    );
+    expect(r.err).not.toContain("src/generated/**");
+  });
+
+  test("an exemption whose only file the change deletes fails", () => {
+    const root = mkdtempSync(join(tmpdir(), "tests-with-changes-"));
+    repos.push(root);
+    git(root, "init", "-q", "-b", "main");
+    mkdirSync(join(root, "src", "legacy"), { recursive: true });
+    writeFileSync(join(root, "src", "legacy", "import.ts"), "export {};\n");
+    writeFileSync(
+      join(root, "exemptions.txt"),
+      "src/legacy/** The old importer, kept until its replacement ships.\n",
+    );
+    git(root, "add", "-A");
+    git(root, "commit", "-q", "-m", "base");
+    git(root, "checkout", "-q", "-b", "change");
+    const args = ["--base", "main", ...LAYOUT, ...EXEMPT];
+    expectExit(run(args, { cwd: root }), 0);
+    git(root, "rm", "-q", "-r", "src/legacy");
+    git(root, "commit", "-q", "-m", "remove the old importer");
+    const r = run(args, { cwd: root });
+    expectExit(r, 1);
+    expect(r.err).toContain("src/legacy/** matches no file in HEAD");
   });
 
   test("a base git cannot resolve fails closed", () => {

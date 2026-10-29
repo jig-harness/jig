@@ -16,3 +16,12 @@ export const loopMetrics = join(here, "loop-metrics.ts");
 export const markReady = join(here, "mark-ready.ts");
 
 export const captureIntentChain = join(here, "capture-intent-chain.ts");
+
+export const drives = join(here, "drives.ts");
+
+export const driveTs = join(here, "drive.ts");
+
+export const reconcileRepliedThreads = join(
+  here,
+  "reconcile-replied-threads.ts",
+);

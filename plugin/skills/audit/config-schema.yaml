@@ -15,6 +15,7 @@
 #   values    enum: the allowed values, also in a nested type spec of an
 #             enum (a list's `items`); integer: words allowed besides a number
 #   min       integer: the least allowed number
+#   max       integer: the greatest allowed number
 #   pattern   string, command, path: a regular expression the value must
 #             match; also allowed in a nested type spec of one of those types
 #             (a list's `items`), applying to each entry; refused on any other
@@ -29,8 +30,12 @@
 #   values_type  map: the type of each value (default string)
 #   exists    path: `required` when the reading skill refuses a configured path
 #             that does not exist; `expected` when a missing one only makes
-#             the field useless
-#   read_by   the skills that read the field (CONFIGURATION.md's "Read by")
+#             the field useless; `machine` when the path names a place that
+#             exists on some machines only (a worktree root), so a missing one
+#             is not a finding
+#   read_by   the skills that read the field (CONFIGURATION.md's "Read by");
+#             `gc` names the collector (`jig.ts gc`) and `evidence` the
+#             shared evidence record (`shared/evidence.ts`)
 #   repository_only  true for a field that describes one repository: the user
 #             file refuses it (CONFIGURATION.md § Configuration layers)
 #   default   the value a skill uses when the field is absent, where that is
@@ -56,9 +61,20 @@ strict:
   - resolve_conflicts
   - reflection
   - code_stats
+  - docs
   - specs
   - work_batch
   - work_batch.ranking
+  - routing
+  - routing.raise
+  - verify
+
+# Sections and fields whose `null` a skill refuses rather than reading it as
+# not set: a higher layer's `null` there would otherwise put a lower layer's
+# value back to its default unnoticed. Elsewhere a `null` reads as not set.
+null_refused:
+  - repository
+  - repository.remote
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
@@ -75,13 +91,15 @@ fields:
   gc.worktree_roots:
     type: list
     items: path
+    exists: machine
     distinct: true
-    read_by: [audit, gc]
+    read_by: [audit, gc, drive-pr]
     repository_only: true
     since: 0.83.0
   gc.scratch_prefixes:
     type: list
     items: path
+    exists: machine
     distinct: true
     read_by: [audit, gc]
     repository_only: true
@@ -197,8 +215,15 @@ fields:
   repository.base_branch:
     type: string
     pattern: "^(?!origin/)[^\\s~^:?*\\[\\\\]+$"
-    read_by: [drive-pr, do-item, review, descar, changelog]
+    read_by: [drive-pr, do-item, review, descar, changelog, docs]
     repository_only: true
+
+  repository.remote:
+    type: string
+    pattern: "^(?!-)(?!.*\\.\\.)(?!.*//)(?!/)(?!.*/$)(?!.*\\.$)(?!(?:.*/)?\\.)(?!.*\\.lock(?:/|$))[A-Za-z0-9._/-]+$"
+    default: origin
+    read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc]
+    since: 0.94.0
 
   pull_requests.stacking:
     type: enum
@@ -261,6 +286,12 @@ fields:
     min: 1
     default: 10
     since: 0.33.0
+    read_by: [drive-pr]
+  drive.pass_deadline_retries:
+    type: integer
+    min: 0
+    default: 2
+    since: 0.98.0
     read_by: [drive-pr]
   drive.escape_baseline_doc:
     type: path
@@ -350,6 +381,11 @@ fields:
     items: string
     distinct: true
     read_by: [do-item]
+  issue_tracker.types:
+    type: map
+    values_type: { type: list, items: string }
+    read_by: [do-item]
+    since: 0.89.0
   issue_tracker.file_command:
     type: string
     read_by: [do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections]
@@ -394,6 +430,11 @@ fields:
     type: string
     default: execution-plan-v1
     read_by: [do-item]
+  do_item.work_types:
+    type: map
+    values_type: { type: map, values_type: any }
+    read_by: [do-item]
+    since: 0.89.0
 
   specs.adapters:
     type: list
@@ -459,6 +500,37 @@ fields:
     read_by: [work-batch]
     since: 0.57.0
 
+  routing.types:
+    type: map
+    values_type: { type: map, values_type: string }
+    read_by: [do-item]
+    since: 0.92.0
+  routing.raise.flags:
+    type: any
+    read_by: [do-item]
+    since: 0.92.0
+  routing.raise.sizes:
+    type: list
+    items: string
+    distinct: true
+    read_by: [do-item]
+    since: 0.92.0
+  routing.raise.reviews:
+    type: boolean
+    default: true
+    read_by: [do-item]
+    since: 0.92.0
+  routing.models:
+    type: map
+    values_type: { type: map, values_type: string }
+    read_by: [do-item]
+    since: 0.92.0
+  routing.efforts:
+    type: map
+    values_type: { type: map, values_type: string }
+    read_by: [do-item]
+    since: 0.92.0
+
   fleet_health.config:
     type: path
     exists: expected
@@ -467,10 +539,34 @@ fields:
     type: path
     read_by: [drive-pr]
 
+  verify.store:
+    type: path
+    read_by: [evidence]
+    since: 0.90.0
+  verify.output_lines:
+    type: integer
+    min: 1
+    default: 60
+    read_by: [evidence]
+    since: 0.90.0
+  verify.timeout_minutes:
+    type: integer
+    min: 1
+    max: 35791
+    default: 30
+    read_by: [evidence]
+    since: 0.90.0
+  verify.retention_days:
+    type: integer
+    min: 1
+    default: 30
+    read_by: [evidence]
+    since: 0.90.0
+
   adr.directory:
     type: path
     exists: required
-    read_by: [adr, review, decide, explain]
+    read_by: [adr, review, decide, explain, docs]
   adr.rules_file:
     type: path
     exists: required
@@ -483,6 +579,24 @@ fields:
   descar.lint_command:
     type: command
     read_by: [descar]
+  docs.root:
+    type: path
+    exists: required
+    read_by: [docs]
+    repository_only: true
+    since: 0.95.0
+  docs.schema:
+    type: path
+    exists: required
+    read_by: [docs]
+    repository_only: true
+    since: 0.95.0
+  docs.stale_after_days:
+    type: integer
+    min: 1
+    default: 180
+    read_by: [docs]
+    since: 0.95.0
   promote_memory.lint_command:
     type: command
     read_by: [promote-memory]

@@ -39,15 +39,24 @@
 // `--require-changed`, the test must be part of the same change, not merely
 // exist.
 //
-// Exit codes: 0 every changed source file has a test or an exemption; 1 at
-// least one has neither; 2 a usage error (including an empty source glob or
-// test template), an exemption without a reason, or git failing. A failure to read the change is never a pass.
+// Exemptions prune themselves: an exemption whose glob matches no file in the
+// tree the gate checks (HEAD with `--base`, the `--root` tree on disk with
+// `--changed`) fails the gate, whatever the change touched. Otherwise it
+// would outlive the code it excused and silently exempt new code created at
+// that path later. An exemption whose only file the change deletes is stale
+// in that same change, so it leaves with what it excused.
+//
+// Exit codes: 0 every changed source file has a test or an exemption and
+// every exemption matches a file; 1 at least one changed source has neither,
+// or an exemption matches no file; 2 a usage error (including an empty source
+// glob or test template), an exemption without a reason, or git failing. A
+// failure to read the change is never a pass.
 //
 // Usage:
 //   bun check-tests-with-changes.ts --base origin/main \
 //     --source 'src/**/*.ts' --test '{dir}/{name}.test.{ext}' \
 //     --test '{dir}/__tests__/{name}.test.{ext}' --exemptions .config/test-exemptions.txt
-import { lstatSync, readFileSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { posix } from "node:path";
 import { parseArgs } from "node:util";
 import { cli } from "../../../../lib/cli.ts";
@@ -58,6 +67,17 @@ const USAGE =
 interface Change {
   changed: string[];
   exists: (path: string) => boolean;
+  /** Where the tree is, for a report: "HEAD" or the root directory. */
+  tree: string;
+  /** Every file in the tree, a symbolic link included, a directory not. */
+  files: () => Iterable<string>;
+}
+
+interface Exemption {
+  glob: Bun.Glob;
+  pattern: string;
+  /** 1-based line number in the exemptions file. */
+  line: number;
 }
 
 const DIR = /\{dir(?::([^=}]*)=([^}]*))?\}/g;
@@ -176,9 +196,9 @@ function testShape(template: string): RegExp {
   return new RegExp(`^${pattern}$`);
 }
 
-function readExemptions(file: string | undefined): Bun.Glob[] {
+function readExemptions(file: string | undefined): Exemption[] {
   if (!file) return [];
-  const exemptions: Bun.Glob[] = [];
+  const exemptions: Exemption[] = [];
   for (const [index, raw] of readFileSync(file, "utf8")
     .split(/\r?\n/)
     .entries()) {
@@ -189,9 +209,24 @@ function readExemptions(file: string | undefined): Bun.Glob[] {
       throw new Error(
         `${file}:${index + 1}: an exemption needs a reason after its glob: ${line}`,
       );
-    exemptions.push(new Bun.Glob(pattern));
+    exemptions.push({ glob: new Bun.Glob(pattern), pattern, line: index + 1 });
   }
   return exemptions;
+}
+
+/**
+ * The exemptions no file in the tree matches. The tree is read once, and the
+ * read stops as soon as every exemption has matched a file.
+ */
+function staleExemptions(exemptions: Exemption[], change: Change) {
+  const unmatched = new Set(exemptions);
+  if (!unmatched.size) return [];
+  for (const path of change.files()) {
+    for (const exemption of unmatched)
+      if (exemption.glob.match(path)) unmatched.delete(exemption);
+    if (!unmatched.size) break;
+  }
+  return [...unmatched];
 }
 
 function git(args: string[]): string {
@@ -212,19 +247,42 @@ function fromGit(base: string): Change {
   const changed = nulList(
     git(["diff", "--name-only", "-z", "--diff-filter=ACMRT", `${base}...HEAD`]),
   );
-  // Each entry is "<mode> <type> <object>\t<path>"; keep regular files only.
-  const head = new Set(
-    nulList(git(["ls-tree", "-r", "-z", "--full-tree", "HEAD"])).flatMap(
-      (entry) => {
-        const tab = entry.indexOf("\t");
-        const mode = entry.slice(0, entry.indexOf(" "));
-        return mode === "100644" || mode === "100755"
-          ? [entry.slice(tab + 1)]
-          : [];
-      },
-    ),
+  // Each entry is "<mode> <type> <object>\t<path>". A test must be a regular
+  // file; an exemption may match any file, a symbolic link included.
+  const entries = nulList(
+    git(["ls-tree", "-r", "-z", "--full-tree", "HEAD"]),
+  ).map((entry) => ({
+    mode: entry.slice(0, entry.indexOf(" ")),
+    path: entry.slice(entry.indexOf("\t") + 1),
+  }));
+  const regular = new Set(
+    entries
+      .filter(({ mode }) => mode === "100644" || mode === "100755")
+      .map(({ path }) => path),
   );
-  return { changed, exists: (path) => head.has(path) };
+  const files = entries
+    .filter(({ mode }) => mode !== "160000")
+    .map(({ path }) => path);
+  return {
+    changed,
+    exists: (path) => regular.has(path),
+    tree: "HEAD",
+    files: () => files,
+  };
+}
+
+/**
+ * Every file under `root`, relative to it with `/` between segments: links
+ * are listed but not followed, and the `.git` directory is left out.
+ */
+function* walk(root: string, dir = ""): Generator<string> {
+  for (const entry of readdirSync(posix.join(root, dir), {
+    withFileTypes: true,
+  })) {
+    const path = dir ? `${dir}/${entry.name}` : entry.name;
+    if (!entry.isDirectory()) yield path;
+    else if (path !== ".git") yield* walk(root, path);
+  }
 }
 
 /**
@@ -255,6 +313,8 @@ function fromList(list: string, root: string): Change {
   return {
     changed,
     exists: (path) => isRegularFile(root, path),
+    tree: root,
+    files: () => walk(root),
   };
 }
 
@@ -263,7 +323,7 @@ interface Options {
   sources: Bun.Glob[];
   templates: string[];
   shapes: RegExp[];
-  exemptions: Bun.Glob[];
+  exemptions: Exemption[];
   requireChanged: boolean;
   exemptionsFile: string | undefined;
 }
@@ -309,7 +369,7 @@ function needsTest(path: string, o: Options): boolean {
   return (
     o.sources.some((glob) => glob.match(path)) &&
     !o.shapes.some((shape) => shape.test(path)) &&
-    !o.exemptions.some((glob) => glob.match(path))
+    !o.exemptions.some(({ glob }) => glob.match(path))
   );
 }
 
@@ -329,6 +389,7 @@ export function checkTestsWithChanges(argv: string[]): number {
   const missing = o.change.changed
     .filter((path) => needsTest(path, o))
     .flatMap((path) => missingTest(path, o, inChange) ?? []);
+  const stale = staleExemptions(o.exemptions, o.change);
   if (missing.length) {
     const alongside = o.requireChanged ? " changed alongside" : "";
     const where = o.exemptionsFile
@@ -337,10 +398,24 @@ export function checkTestsWithChanges(argv: string[]): number {
     console.error(
       `ERROR: ${missing.length} changed source file(s) without a test${alongside}:\n${missing.join("\n")}\nAdd the test, or register an exemption with its reason${where}.`,
     );
-    return 1;
   }
+  if (stale.length) {
+    const tree =
+      o.change.tree === "HEAD" ? "in HEAD" : `under ${o.change.tree}`;
+    const lines = stale.map(
+      ({ pattern, line }) =>
+        `  ${o.exemptionsFile}:${line}: ${pattern} matches no file ${tree}`,
+    );
+    console.error(
+      `ERROR: ${stale.length} exemption(s) matching no file:\n${lines.join("\n")}\nDelete each line: what it excused is gone, and it would exempt new code at that path.`,
+    );
+  }
+  if (missing.length || stale.length) return 1;
+  const exemptions = o.exemptions.length
+    ? `, ${o.exemptions.length} exemption(s) each matching a file in ${o.change.tree}`
+    : "";
   console.log(
-    `OK: every changed source file has a test or an exemption (${o.change.changed.length} changed path(s) checked).`,
+    `OK: every changed source file has a test or an exemption (${o.change.changed.length} changed path(s) checked${exemptions}).`,
   );
   return 0;
 }

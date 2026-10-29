@@ -10,6 +10,10 @@ interface DriverOptions {
   passTimeout: string;
   forward: string[];
   agent: string[];
+  /** `--take-over`: replace a WEDGED or dead holder (`takeover.ts`). */
+  takeOver: boolean;
+  /** `--window-reopened`: a person says a quota wall's window is open again. */
+  windowReopened: boolean;
 }
 
 function flagValue(argv: string[], index: number): string {
@@ -41,6 +45,12 @@ function parseFlag(
     case "--keep-draft":
       options.keepDraft = true;
       return index;
+    case "--take-over":
+      options.takeOver = true;
+      return index;
+    case "--window-reopened":
+      options.windowReopened = true;
+      return index;
     case "--bots-only":
       options.botsOnly = true;
       options.forward.push(flag);
@@ -70,6 +80,8 @@ export function parseDriverOptions(argv: string[]): DriverOptions {
     passTimeout: "",
     forward: [],
     agent: [],
+    takeOver: false,
+    windowReopened: false,
   };
   let sawDdash = false;
   for (let index = 0; index < argv.length; index++) {
@@ -78,6 +90,11 @@ export function parseDriverOptions(argv: string[]): DriverOptions {
     else if (arg === "--") sawDdash = true;
     else index = parseFlag(options, argv, index);
   }
+  if (options.takeOver && options.dryRun)
+    fail(
+      2,
+      "drive.ts: --take-over stops another driver; it cannot be a --dry-run",
+    );
   return options;
 }
 

@@ -76,11 +76,9 @@ OSS
 ESM
 PID
 JVM
-XML
 CSV
 TSV
 PHP
-UTF
 PNG
 # licence identifiers, and the licence file's name
 LICENSE

@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { errnoCode, swallow } from "../../../../shared/errors.ts";
+import { fail } from "./cli.ts";
 
 export function stopRequestPath(dir: string, nonce: string): string {
   return join(dir, `stop.${nonce}`);
@@ -84,4 +85,24 @@ export function driverStopCompleted(
 export function consumeDriverStopCompletion(dir: string, nonce: string): void {
   const path = stopCompletionPath(dir, nonce);
   if (path !== null) rmSync(path, { force: true });
+}
+
+/**
+ * Remove `--expect-started ISO` from `argv` and return ISO (`''` when
+ * absent): the acquisition a `--stop` is bound to.
+ */
+export function takeExpectStarted(argv: string[]): string {
+  const at = argv.indexOf("--expect-started");
+  if (at < 0) return "";
+  const [, value = ""] = argv.splice(at, 2);
+  if (value === "") fail(2, "--expect-started takes a time");
+  return value;
+}
+
+export function requireStopForExpectStarted(
+  expectStarted: string,
+  stopPr: string,
+): void {
+  if (expectStarted !== "" && stopPr === "")
+    fail(2, "--expect-started only qualifies --stop");
 }

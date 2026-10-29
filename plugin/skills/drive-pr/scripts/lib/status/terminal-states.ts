@@ -36,12 +36,12 @@
  * `evaluate.ts` sets both through it. Every
  * 'driver-only' entry (`MAX_ROUNDS`, `SINGLE_INSTANCE_LOCK`,
  * `WORKTREE_UNCLEAN`, `STALLED`, `PASS_DEADLINE`, `QUOTA_PARKED`,
- * `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT`) is bound
+ * `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT`, `TAKEN_OVER`) is bound
  * the OTHER direction: `drive.ts` exports a named constant for
  * each — `MAX_ROUNDS_EXIT`, `SINGLE_INSTANCE_LOCK_EXIT`,
  * `WORKTREE_UNCLEAN_EXIT`, `STALLED_EXIT`, `PASS_DEADLINE_EXIT`,
- * `QUOTA_PARKED_EXIT`, `MAILBOX_STOPPED_EXIT`, `MAILBOX_PAUSE_TIMEOUT_EXIT`
- * — each read via `driverOnlyExitCode` below (e.g.
+ * `QUOTA_PARKED_EXIT`, `MAILBOX_STOPPED_EXIT`, `MAILBOX_PAUSE_TIMEOUT_EXIT`,
+ * `TAKEN_OVER_EXIT` — each read via `driverOnlyExitCode` below (e.g.
  * `export const MAX_ROUNDS_EXIT = driverOnlyExitCode('MAX_ROUNDS')`), the
  * `DriverOnlyStateName`-typed sibling of `terminal`'s own
  * `EvaluateStateName` lookup, and every one of `drive.ts`'s own `return`
@@ -351,6 +351,16 @@ export const TERMINAL_STATES: Readonly<
     terminal: true,
     emittedBy: "drive.ts only (MAILBOX_PAUSE_TIMEOUT_EXIT)",
   },
+  // A takeover claim from another clone, newer than this driver's own, found
+  // on the pull request at a round boundary, or a claim this driver posted
+  // that a rival's earlier claim beat (`lib/driver/ledger.ts`). `drive.ts`
+  // exports `TAKEN_OVER_EXIT = driverOnlyExitCode('TAKEN_OVER')`.
+  TAKEN_OVER: {
+    exitCode: 20,
+    category: "driver-only",
+    terminal: true,
+    emittedBy: "drive.ts only (TAKEN_OVER_EXIT)",
+  },
   // drive.ts's own single-instance lock refusal, BEFORE drive-status.ts ever
   // runs — a distinct cause from SESSION_LEASE_HELD above, sharing the same
   // exit code by design (see references/terminal-states.md row 11).
@@ -412,7 +422,8 @@ export type DriverOnlyStateName =
   | "PASS_DEADLINE"
   | "QUOTA_PARKED"
   | "MAILBOX_STOPPED"
-  | "MAILBOX_PAUSE_TIMEOUT";
+  | "MAILBOX_PAUSE_TIMEOUT"
+  | "TAKEN_OVER";
 
 /**
  * `TERMINAL_STATES[name].exitCode` for a `DriverOnlyStateName`, throwing —

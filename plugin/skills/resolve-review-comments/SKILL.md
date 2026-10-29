@@ -47,9 +47,12 @@ bun "${CLAUDE_SKILL_DIR}/scripts/consumer-config.ts"
 It prints the repository's values: the gate command (`gates.command`), the
 expected reviewer identities (`review.bots`), the reviewer check pattern
 (`review.job_pattern`) and its required checks, and the deferral team
-(`review.deferral_team`). Use them wherever this procedure names them. A
-non-zero exit means the repository has not configured the skill or its
-configuration is invalid: report the message and stop. Do not guess values.
+(`review.deferral_team`). Use them wherever this procedure names them. Only
+`gates.command` is required: without `review.bots` every reviewer's threads
+are worked, and without `review.deferral_team` a deferral names its team with
+`--team`. A non-zero exit means the repository has not configured the skill
+or its configuration is invalid: report the message and stop. Do not guess
+values.
 
 ## Arguments
 
@@ -707,9 +710,13 @@ an open alert hides a finding nobody answered.
 Under `/jig:drive-pr`, `triage-thread.ts` resolves a merit outcome in the
 same call that posts it, which leaves no point to dismiss in between. Post the
 reply with `reply-to-thread.ts`, dismiss, then dispatch with `triage-thread.ts`,
-which finds the posted reply and resolves. The drive's replied-thread sweep
-does not read alerts, so a thread left open after a refused dismissal is
-resolved by the next sweep: report that alert in the round's summary.
+which finds the posted reply and resolves. Both `triage-thread.ts` and the
+drive's replied-thread sweep leave a declined finding open until they can
+confirm the alert is dismissed (`triage-thread.ts` exits `4` while dismissal
+remains unconfirmed); a `moot` closes once the alert is fixed, closed or
+dismissed, and is never held for a push, `--moot-pending-push` included,
+since the alert's state is its proof. A thread GitHub's code scanning account
+opened whose alert cannot be identified stays open as well. Report an alert that could not be dismissed in the round's summary.
 
 A dismissal reaches the tool: SonarQube Cloud, for one, records a false
 positive as False Positive and the other reasons as Accept. A security
@@ -1007,7 +1014,7 @@ invocation and reported — see below.
 
 Resolving another person's thread is a social act:
 
-- **Bot threads** — address, reject, or defer and resolve freely. The expected identities come from `review.bots`; `--bots-only` uses
+- **Bot threads** — address, reject, or defer and resolve freely. The expected identities come from `review.bots`, when set; `--bots-only` uses
   GitHub App authorship rather than a consumer-specific hard-coded list.
 - **Human threads** — address or reply, but prefer to leave the *resolution* to
   the author unless it is an unambiguous nit you fixed. When in doubt, reply

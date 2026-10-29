@@ -66,8 +66,9 @@
  *                            process identities and witness the tree's exit.
  *                            Older POSIX drivers receive SIGTERM instead.
  *                            Foreign PID namespaces, unreadable tables and
- *                            unbindable claims are refused.
-
+ *                            unbindable claims are refused. With
+ *                            --expect-started ISO, only the claim acquired
+ *                            then is stopped; another holder exits 3.
  *
  * Exit codes:
  *   0  listed / banner printed / positively nothing to report / --doctor's
@@ -81,6 +82,7 @@
  *      (the state dir itself could not be read — the same failure `listRows`
  *      already treats as fatal for the plain listing)
  *   2  usage
+ *   3  --stop --expect-started: the lock is held by another acquisition
  */
 
 import {
@@ -100,7 +102,10 @@ import {
   requestDriverStop,
   driverStopCompleted,
   consumeDriverStopCompletion,
+  takeExpectStarted,
+  requireStopForExpectStarted,
 } from "./lib/stop-request.ts";
+import * as ledgerStop from "./lib/ledger-stop.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 import { driveRepository } from "./lib/drive-repository.ts";
@@ -123,6 +128,7 @@ import {
   noLiveDriver,
   stallThresholdMs,
 } from "./lib/doctor.ts";
+import { attachedTree } from "./lib/driven-branch.ts";
 import { formatAccountIdentity } from "./lib/identity.ts";
 import {
   findPassChild,
@@ -575,16 +581,10 @@ export async function gatherWorktreeLeftovers(
   worktree: string,
 ): Promise<DoctorLeftovers | null> {
   const timeoutSec = gitCallTimeoutSeconds();
-  // `env: gitIdentityEnv()` on EVERY probe below, not just `cwd` — `cwd`
-  // alone was never sufficient (`GIT_LOCATION_VARS`' own header in
-  // `lib/proc.ts`). This command is routinely run from an operator's shell
-  // and from a SessionStart hook, and a lefthook hook exports `GIT_DIR`/
-  // `GIT_WORK_TREE` into exactly that environment; `GIT_DIR` alone is the
-  // sharpest case, since git then treats `cwd` as the work tree while
-  // resolving refs from the leaked dir — so `status` would answer for THIS
-  // worktree while `@{u}..HEAD` answered for another repository entirely, and
-  // `--doctor` would report a stranger's unpushed commits as this drive's
-  // leftovers.
+  // `env: gitIdentityEnv()` on EVERY probe below, not just `cwd`: a hook
+  // exports `GIT_DIR`/`GIT_WORK_TREE` into an operator's shell, and with a
+  // leaked `GIT_DIR` git resolves refs from another repository, so `--doctor`
+  // would report a stranger's unpushed commits as this drive's leftovers.
   const env = gitIdentityEnv();
   const dirty = await git(
     [
@@ -598,23 +598,28 @@ export async function gatherWorktreeLeftovers(
   if (dirty.code !== 0) return null;
   const op = await unconcludedGitOpMarker(timeoutSec, { cwd: worktree, env });
   if (!op.ok) return null;
-  // A missing upstream is not "0 unpushed commits" and not "some unpushed
-  // commits" — it is a DIFFERENT question this probe cannot answer, checked
-  // STRUCTURALLY (does `@{u}` resolve at all) before ever asking `rev-list` to
-  // count against it, rather than inferring the cause from `rev-list`'s own
-  // exit code or stderr text (parse or pin, never pattern-match a failure's
-  // cause).
+  // A missing upstream is a question this probe cannot answer, not a count:
+  // checked structurally before `rev-list` counts against it. A detached
+  // tree an attach prepared counts against its driven branch's remote ref.
+  let upstreamRef = "@{u}";
   const upstream = await git(
     ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
     { stderr: "ignore", timeoutSec, cwd: worktree, env },
   );
-  if (upstream.code !== 0) return null;
-  const unpushedCount = await git(["rev-list", "--count", "@{u}..HEAD"], {
-    stderr: "ignore",
-    timeoutSec,
-    cwd: worktree,
-    env,
-  });
+  if (upstream.code !== 0) {
+    const record = await attachedTree(git, worktree, { timeoutSec, env });
+    if (record === null) return null;
+    upstreamRef = `refs/remotes/${record.remote}/${record.branch}`;
+  }
+  const unpushedCount = await git(
+    ["rev-list", "--count", `${upstreamRef}..HEAD`],
+    {
+      stderr: "ignore",
+      timeoutSec,
+      cwd: worktree,
+      env,
+    },
+  );
   if (unpushedCount.code !== 0) return null;
   const n = Number.parseInt(unpushedCount.stdout.trim(), 10);
   if (!Number.isFinite(n)) return null;
@@ -1037,16 +1042,19 @@ async function here(stateDir: string): Promise<number> {
   return 0;
 }
 
-async function stop(stateDir: string, pr: string): Promise<number> {
+async function stop(
+  stateDir: string,
+  pr: string,
+  expectStarted: string,
+): Promise<number> {
   const row = readLock(join(stateDir, `pr-drive-${pr}.lock`), "pr", pr);
-  if (row.state === "empty") {
-    console.log(`no drive holds PR #${pr}'s lock — nothing to stop.`);
-    return 1;
-  }
-  if (row.state === "stale") {
+  if (row.state === "empty" || row.state === "stale") {
     console.log(
-      `PR #${pr}'s lock is stale (owner pid ${row.pid} no longer counts as live) — nothing to stop; the next drive recovers it.`,
+      row.state === "empty"
+        ? `no drive holds PR #${pr}'s lock — nothing to stop.`
+        : `PR #${pr}'s lock is stale (owner pid ${row.pid} no longer counts as live) — nothing to stop; the next drive recovers it.`,
     );
+    await ledgerStop.recoverIdleStop(stateDir, pr, row);
     return 1;
   }
   if (row.state !== "live") {
@@ -1055,6 +1063,14 @@ async function stop(stateDir: string, pr: string): Promise<number> {
     );
     return 1;
   }
+  // The row read here is the one every check below verifies and the stop
+  // request addresses (by its nonce), so the expected acquisition binds them.
+  if (expectStarted !== "" && row.diag?.started !== expectStarted) {
+    console.log(
+      `PR #${pr}'s lock is held by another acquisition (started ${row.diag?.started ?? "unrecorded"}, expected ${expectStarted}) — not stopping it.`,
+    );
+    return 3;
+  }
   const pid = row.pid as number;
   if (!samePidNamespace({ host: row.host ?? "", platform: row.platform })) {
     console.log(
@@ -1062,9 +1078,15 @@ async function stop(stateDir: string, pr: string): Promise<number> {
     );
     return 1;
   }
-  const verified = await verifyDriverClaim(row, pid);
-  if ("code" in verified) return verified.code;
-  return consumeStopResult(row, await stopVerifiedDriver(row, verified.owner));
+  const v = await verifyDriverClaim(row, pid);
+  const code =
+    "code" in v
+      ? v.code
+      : consumeStopResult(row, await stopVerifiedDriver(row, v.owner));
+  // Witnessed gone, or already gone with nothing witnessing its pass.
+  if (code === 0)
+    await ledgerStop.settleStop(stateDir, pr, row, !("code" in v));
+  return code;
 }
 
 function consumeStopResult(row: LockRow, code: number): number {
@@ -1316,6 +1338,7 @@ async function main(): Promise<number> {
   let stopPr = "";
   let doctorMode = false;
   const argv = process.argv.slice(2);
+  const expectStarted = takeExpectStarted(argv);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] as string;
     if (a === "--json") json = true;
@@ -1328,10 +1351,11 @@ async function main(): Promise<number> {
     } else {
       fail(
         2,
-        `usage: drives.ts [--json] | [--here] | [--stop <PR>] | [--doctor [--json]]`,
+        `usage: drives.ts [--json] | [--here] | [--stop <PR> [--expect-started <ISO>]] | [--doctor [--json]]`,
       );
     }
   }
+  requireStopForExpectStarted(expectStarted, stopPr);
   // `--doctor` combines with `--json` but is otherwise mutually
   // exclusive with every other mode, on the same terms `--here`/`--json`/
   // `--stop` already are with each other.
@@ -1370,79 +1394,50 @@ async function main(): Promise<number> {
     return here(stateDir);
   }
   if (stopPr !== "") {
-    // `resolveStateDir()` can refuse here specifically because an unmigrated
-    // legacy footprint exists (`ensureMigratedFromLegacy`) — and the single
-    // most likely cause of that footprint is exactly the live older
-    // driver `--stop` exists to reach: its own lock is what the migration
-    // guard is refusing on. Falling back to the raw legacy directory is what
-    // actually lets that scenario be recovered from — without it, `--stop`
-    // is unusable for the one case it is most needed, the same live-driver
-    // scenario `migrate-legacy-state.ts`'s own refusal message points users at
-    // this command to resolve.
+    // `resolveStateDir()` refuses while an unmigrated legacy footprint exists,
+    // most likely the lock of the very older driver `--stop` must reach (the
+    // case `migrate-legacy-state.ts`'s refusal points here for), so that
+    // refusal falls back to the legacy directory.
     let stateDir: string;
     try {
       stateDir = await resolveStateDir();
     } catch (e) {
-      // Narrowed to the migration-guard shape specifically, not every
-      // `resolveStateDir()` failure — a relative-override or no-git-repo
-      // refusal is a different, genuine problem that silently falling back to
-      // the legacy directory would mask rather than surface.
-      // `ensureMigratedFromLegacy` only ever refuses when `legacyFootprint`
-      // found something, so an empty footprint here means this was NOT that
-      // refusal — re-throw.
+      // Only that refusal, which needs a legacy footprint: any other failure
+      // (a relative override, no git repository) is re-thrown, not masked.
       const legacyDir = await resolveLegacyStateDir().catch(() => null);
       if (legacyDir === null || legacyFootprint(legacyDir).length === 0) {
         throw e;
       }
       stateDir = legacyDir;
     }
-    return stop(stateDir, stopPr);
+    return stop(stateDir, stopPr, expectStarted);
   }
 
   // Read-only listing, same reasoning as --here above: this must not mint a
   // clone identity or create/mark the state directory merely to enumerate it.
   const stateDir = await peekResolvedStateDir();
   const lockRows = listRows(stateDir);
-  // `--doctor`'s population is `lock dirs ∪ drive-pr-*.json state files`
-  // — the plain listing's and plain `--json`'s
-  // stays LOCK ROWS ONLY, unchanged in kind (see `listStateOnlyRows`'s own
-  // header for why that split is deliberate, not an oversight). This is also
-  // what makes `--doctor --json` a genuinely DIFFERENT payload from plain
-  // `--json`, not the no-op it used to be when this branch returned before
-  // `doctorMode` was ever read.
-  const rows = doctorMode
-    ? [...lockRows, ...listStateOnlyRows(stateDir, lockRows)]
-    : lockRows;
-  // Classified UNCONDITIONALLY, not only under `--doctor`: the
-  // acceptance bar for this feature is that `drives.ts --json` ALWAYS carries
-  // the verdict, and the plain human listing's own "stalled" annotation reads
-  // off the same `.doctor` field `printHuman` expects to already be
-  // populated — one classification pass feeds every rendering, rather than
-  // three call sites each deciding independently whether to run it.
+  // `--doctor`'s population is lock dirs ∪ state files; the plain listing and
+  // plain `--json` stay lock rows only (`listStateOnlyRows` says why).
+  const rows = doctorMode ? await doctorRows(stateDir, lockRows) : lockRows;
+  // Classified in every mode: `--json` always carries the verdict, and the
+  // human listing's "stalled" annotation reads the same `.doctor` field.
   const repository = await driveRepository();
   const doctored = (await attachDoctorVerdicts(stateDir, rows, SELF)).map(
     (row) => ({ ...row, repository }),
   );
-  if (doctorMode) {
-    if (json) {
-      console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
-      return 0;
-    }
-    printDoctor(stateDir, doctored, repository);
-    return 0;
-  }
-  if (json) {
-    console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
-    return 0;
-  }
-  printHuman(stateDir, doctored, repository);
+  if (json) console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
+  else if (doctorMode) printDoctor(stateDir, doctored, repository);
+  else printHuman(stateDir, doctored, repository);
   return 0;
 }
 
-// Gated behind `import.meta.main`, not run at module scope unconditionally — the
-// established pattern several siblings in this skill already use
-// (`round-plan.ts`, `self-inflicted.ts`, `migrate-state-dir.ts`, …) so a pure
-// helper like `gatherWorktreeLeftovers` can be imported directly by a test
-// without ALSO running this file's own CLI against whatever `process.argv`
-// the importing process happens to carry.
+/** `--doctor`'s population, recovered first (a takeover reads `--json`). */
+async function doctorRows(stateDir: string, lockRows: LockRow[]) {
+  await ledgerStop.recoverStoppedLedgers(stateDir);
+  return [...lockRows, ...listStateOnlyRows(stateDir, lockRows)];
+}
+
+// Gated, so a helper such as `gatherWorktreeLeftovers` can be imported
+// without running this CLI against the importer's `process.argv`.
 if (import.meta.main) runMain("drives.ts", main);

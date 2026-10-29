@@ -134,10 +134,10 @@ tooling can carry more.
 | Field | Meaning |
 |-------|---------|
 | `gates.command` | Required. Complete local checks required before a fix is committed and pushed |
-| `review.bots` | Required. Expected reviewer identities for instructions |
+| `review.bots` | The repository's reviewer logins, named to the agent. Absent: threads are worked whoever wrote them |
 | `review.job_pattern` | Regular expression selecting checks to wait on; requires `review.required_checks`. Absent or `null`: reviewer checks are recognised by name |
 | `review.required_checks` | Distinct exact check names that must each complete; missing or skipped members cannot settle |
-| `review.deferral_team` | Required. Linear team used by the deferral adapter |
+| `review.deferral_team` | Linear team used by the deferral adapter. Absent: a deferral with no originating issue needs `--team` |
 | `review.repo_slug` | GitHub repository (`owner/name`) used to validate finding permalinks; a deferral without it needs `--repo-slug` |
 | `review.repo_label` | Repository label used on follow-up issues, one of `review.taxonomy.repos`; a deferral without it needs `--repo-label` |
 | `review.taxonomy` | Consumer label sets used when filing deferred findings: `types`, `repos`, `sizes` (default `xs`, `small`), `categories`, `context_prefixes`, and `ownership_prefixes` (required once `types`, `repos` or `context_prefixes` is set). `provenance_label` and `epic_label` are older spellings of the `followup` and `epic` roles in `issue_tracker.labels`; set either one, or both to the same name |
@@ -146,6 +146,13 @@ tooling can carry more.
 | `issue_tracker.team`, `issue_tracker.file_command` | Optional. Shown to the agent for filing follow-up issues by hand |
 
 A minimal configuration:
+
+```yaml
+gates:
+  command: bun run gates
+```
+
+With the reviewer and the deferral team named:
 
 ```yaml
 gates:

@@ -23,6 +23,8 @@ import { prepareQuotaSpawn } from "./../quota/index.ts";
 
 import { passEnv } from "./repair.ts";
 
+import { recordedDecisions, stallNotice } from "./restart.ts";
+
 export async function checkRoundStall(
   status: Record<string, unknown>,
   context: DriveRoundContext,
@@ -43,60 +45,41 @@ export async function checkRoundStall(
     context.noopRounds,
   );
   context.prevFingerprint = fingerprint;
+  if (context.noopRounds === 0) context.stallExtraRound = false;
   if (stallRounds > 0 && context.noopRounds >= stallRounds) {
-    const work = (status.work ?? {}) as Record<string, unknown>;
-    // A count can be null per-field while the fingerprint still matched on
-    // the other one; "?" reads as "unmeasured", which is what null means.
-    const count = (v: unknown) => (typeof v === "number" ? String(v) : "?");
-    const apiHeadShort = String(
-      (status.head as Record<string, unknown> | undefined)?.api ?? "",
-    ).slice(0, 12);
+    const diagnostics = stallDiagnostics(status, context);
+    for (const line of diagnostics) console.error(line);
+    // One more round before the stop, with these diagnostics in the pass's
+    // notice: a pass that stood down for a reason it can see past once told
+    // is the measured case, and a second identical gate after it stops.
+    if (!context.stallExtraRound) {
+      context.stallExtraRound = true;
+      context.passNotice = stallNotice(diagnostics);
+      console.error(
+        "  Running ONE more round with these diagnostics in the pass notice before stopping.",
+      );
+      return null;
+    }
     console.error(
-      `the last ${context.noopRounds} completed pass(es) on PR #${context.pr} changed NOTHING this loop can observe:`,
+      `  The extra round changed nothing either. Stopping rather than spending the rest of --max-rounds (${context.maxRoundsN})`,
     );
     console.error(
-      `  head ${apiHeadShort} unmoved, ${count(work.unresolvedThreads)} unresolved thread(s) and`,
+      `  on no-ops; fix why the passes did not act, then re-arm. ($DRIVE_PR_STALL_ROUNDS=${stallRounds}; 0 disables this stop.)`,
     );
+    const decided = await recordedDecisions(context.pr);
     console.error(
-      `  ${count(work.summaryUnaddressed)} unaddressed summary finding(s), with ${count(work.parkedThreads)} thread(s)`,
+      decided.length === 0
+        ? "  What the passes decided: nothing recorded in the handoff narrative — read the pass output."
+        : "  What the passes decided (the end of the handoff narrative):",
     );
-    console.error(
-      `  and ${count(work.parkedSummaryFindings)} summary finding(s) parked — identical before and after.`,
-    );
-    console.error(
-      "  The SAME thread ids and finding fingerprints, not merely the same totals —",
-    );
-    console.error(
-      "  nothing was resolved, addressed, parked or replaced, and local HEAD did not",
-    );
-    console.error(
-      "  move. A pass that exits 0 without acting — e.g. one that stood down after",
-    );
-    console.error("  mistaking its own parent driver for a competing drive —");
-    console.error(
-      `  looks exactly like this. Stopping rather than spending the rest of --max-rounds (${context.maxRoundsN})`,
-    );
-    console.error(
-      "  on no-ops. Read the pass output above for what it decided, fix why it did",
-    );
-    console.error(
-      `  not act, then re-arm. ($DRIVE_PR_STALL_ROUNDS=${stallRounds}; 0 disables this stop.)`,
-    );
+    for (const line of decided) console.error(`    ${line}`);
     // WHY it stopped is above; WHAT it left behind is here. A pass can make
     // substantive, correct edits and still trip this stop by standing down
     // before committing them — the stall predicate keys on what the loop can
     // observe (head, threads, findings), and an uncommitted edit moves none
-    // of those. So the two reports are independent, and the one an operator
-    // acts on FIRST is this one.
-    //
-    // EXECUTE `loopEconomy()` before `leftoverReport()` even though it is
-    // PRINTED after it — the same reordering the CONVERGED path already
-    // uses, for the same reason: `loopEconomy()` is up to 120s of network
-    // work, and an edit landing in that window would make a report that
-    // already ran and printed "clean" false by the time this function
-    // actually returns.
-    // Certifying the worktree LAST, right before the exit, is what keeps
-    // that window as narrow as it can be.
+    // of those. `loopEconomy()` runs before `leftoverReport()` although it
+    // prints after it, so the worktree is certified last, right before the
+    // exit, and an edit landing during the network work is not missed.
     const economyReport = await loopEconomy(context.pr);
     process.stderr.write(await leftoverReport());
     process.stderr.write(economyReport);
@@ -104,6 +87,30 @@ export async function checkRoundStall(
   }
 
   return null;
+}
+
+/** What the stalled passes left unchanged, as the stop and the notice print it. */
+function stallDiagnostics(
+  status: Record<string, unknown>,
+  context: DriveRoundContext,
+): string[] {
+  const work = (status.work ?? {}) as Record<string, unknown>;
+  // A count can be null per-field while the fingerprint still matched on
+  // the other one; "?" reads as "unmeasured", which is what null means.
+  const count = (v: unknown) => (typeof v === "number" ? String(v) : "?");
+  const apiHeadShort = String(
+    (status.head as Record<string, unknown> | undefined)?.api ?? "",
+  ).slice(0, 12);
+  return [
+    `the last ${context.noopRounds} completed pass(es) on PR #${context.pr} changed NOTHING this loop can observe:`,
+    `  head ${apiHeadShort} unmoved, ${count(work.unresolvedThreads)} unresolved thread(s) and`,
+    `  ${count(work.summaryUnaddressed)} unaddressed summary finding(s), with ${count(work.parkedThreads)} thread(s)`,
+    `  and ${count(work.parkedSummaryFindings)} summary finding(s) parked — identical before and after.`,
+    "  The SAME thread ids and finding fingerprints, not merely the same totals —",
+    "  nothing was resolved, addressed, parked or replaced, and local HEAD did not",
+    "  move. A pass that exits 0 without acting — e.g. one that stood down after",
+    "  mistaking its own parent driver for a competing drive — looks exactly like this.",
+  ];
 }
 
 async function peekRoundState(
