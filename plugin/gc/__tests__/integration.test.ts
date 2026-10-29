@@ -210,6 +210,22 @@ test("install proposes the configured remote, not origin", () => {
   expect(preview).toContain("base_branch: main");
   expect(preview).not.toContain("remote: origin");
 });
+test("install takes the repository's base branch without reading the remote's HEAD", () => {
+  const f = setup();
+  f.command(["git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD"]);
+  writeFileSync(
+    join(f.repo, ".config/jig.yaml"),
+    dump({ gc: f.declaration, repository: { base_branch: "main" } }),
+  );
+  // The environment layer clears the value collection reads; install still
+  // proposes the one the repository file declares.
+  const result = run(
+    { ...f, env: { ...f.env, JIG__REPOSITORY__BASE_BRANCH: "null" } },
+    ["install", "--repo", f.repo],
+  );
+  expectSpawnExit(result, 0);
+  expect(result.stdout.toString()).toContain("base_branch: main");
+});
 test("uninstall reads only machine policy, so a broken checkout cannot block it", () => {
   const f = setup();
   writeFileSync(join(f.repo, ".config/jig.yaml"), "gc: {kinds: [unknown]}\n");

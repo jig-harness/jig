@@ -33,23 +33,33 @@ export interface WorktreePolicy {
  * `repository.base_branch`, else that remote's `HEAD`.
  */
 export async function worktreePolicy(root: string): Promise<WorktreePolicy> {
-  let remote: string;
-  try {
-    remote = remoteName(root);
-  } catch (error) {
-    throw new GcError(error instanceof Error ? error.message : String(error));
-  }
+  const remote = worktreeRemote(root);
   const config = layeredConfig(root).values;
   const repository = isMapping(config.repository) ? config.repository : {};
-  const prefix = `refs/remotes/${remote}/`;
   const base =
     typeof repository.base_branch === "string"
       ? repository.base_branch
-      : (await git(root, ["symbolic-ref", `${prefix}HEAD`])).replace(
-          prefix,
-          "",
-        );
+      : await remoteHeadBranch(root, remote);
   return { remote, base };
+}
+/** `repository.remote` (`remoteName`, else `origin`), as a collection error. */
+export function worktreeRemote(root: string): string {
+  try {
+    return remoteName(root);
+  } catch (error) {
+    throw new GcError(error instanceof Error ? error.message : String(error));
+  }
+}
+/** The branch `remote`'s `HEAD` points at. */
+export async function remoteHeadBranch(
+  root: string,
+  remote: string,
+): Promise<string> {
+  const prefix = `refs/remotes/${remote}/`;
+  return (await git(root, ["symbolic-ref", `${prefix}HEAD`])).replace(
+    prefix,
+    "",
+  );
 }
 async function operation(admin: string): Promise<string | null> {
   for (const name of [
