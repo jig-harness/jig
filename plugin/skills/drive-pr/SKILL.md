@@ -2043,10 +2043,14 @@ None. | - <a command, or a named action>
 <what you did about it so far>
 ```
 
+Substitute `<class>` in the command below: for a thread the arbiter ruled,
+the class its ruling recorded; otherwise the registry class the decision
+falls in.
+
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/park-record.md -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key PRRT_kwDO... --kind thread --class escalated
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/park-record.md -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key PRRT_kwDO... --kind thread --class <class>
 ```
 
 The script checks the sections mechanically and refuses, naming each missing
