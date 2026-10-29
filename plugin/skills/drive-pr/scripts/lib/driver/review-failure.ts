@@ -13,7 +13,9 @@ import { detectQuotaBlock } from "./../quota/index.ts";
 
 import { handleQuotaBlock } from "./review-quota.ts";
 
-import { unpushedCountCommand } from "./../driven-branch.ts";
+import { unpushedCountAdvice } from "./../driven-branch.ts";
+
+import { git, gitCallTimeoutSeconds } from "./../proc.ts";
 
 import {
   admitDeadlineRestart,
@@ -116,7 +118,11 @@ async function restartAfterDeadline(
       `  The pass-deadline retry budget is spent (${context.deadlineRetryBudget}, drive.pass_deadline_retries; ${restart.taken} restart(s) already taken by this drive): stopping.`,
     );
   console.error(
-    `  Before re-arming, settle what the pass left: \`git status --short\` and \`${unpushedCountCommand()}\`.`,
+    `  Before re-arming, settle what the pass left: \`git status --short\` and ${await unpushedCountAdvice(
+      git,
+      process.cwd(),
+      { timeoutSec: gitCallTimeoutSeconds() },
+    )}.`,
   );
   return PASS_DEADLINE_EXIT;
 }
