@@ -23,6 +23,8 @@ import type { DriveRoundContext } from "./round-context.ts";
 
 import { runRoundIteration } from "./round-step.ts";
 
+import { clearDeadlineRetries, prReadsClosed } from "./restart.ts";
+
 interface DriverRoundOptions {
   pr: string;
   mailboxDir: string;
@@ -34,6 +36,10 @@ interface DriverRoundOptions {
   forward: string[];
   probeFlags: string[];
   markReadyPolicy: MarkReady;
+  /** `drive.pass_deadline_retries`, resolved before the locks were taken. */
+  deadlineRetryBudget: number;
+  /** What the first pass is told: a takeover, or the answers a re-arm read. */
+  firstPassNotice: string;
 }
 
 export async function runDriverRounds({
@@ -47,6 +53,8 @@ export async function runDriverRounds({
   forward,
   probeFlags,
   markReadyPolicy,
+  deadlineRetryBudget,
+  firstPassNotice,
 }: DriverRoundOptions): Promise<number> {
   const passes = 0;
   // Whether THIS run fired the draft→Ready transition. Not the durable claim —
@@ -169,11 +177,17 @@ export async function runDriverRounds({
     ciRepairBudget,
     dryRun,
     agent,
+    passIdentity: null,
     mailboxCheckpoint,
     held,
     witnessWaitHead,
     witnessWaitLimit,
     maxRoundsN,
+    deadlineRetryBudget,
+    stallExtraRound: false,
+    passNotice: "",
+    carriedNotice: firstPassNotice,
+    inheritedHead: "",
   };
   for (;;) {
     {
@@ -185,7 +199,21 @@ export async function runDriverRounds({
         markReadyPolicy,
       );
       if (stage === "continue") continue;
-      if (stage !== null) return stage;
+      if (stage === null) continue;
+      return dryRun ? stage : await endDrive(pr, stage);
     }
   }
+}
+
+/**
+ * The drive is over once it converged or the PR closed: its pass-deadline
+ * restarts stop counting against a later drive. A stop 5 clears the count only
+ * when a read confirms the closure, since a pass can exit 5 on its own. A count
+ * that could not be cleared ends the drive as a failure, so it is not reported
+ * over as an ordinary end.
+ */
+async function endDrive(pr: string, stage: number): Promise<number> {
+  if (stage !== 0 && stage !== 5) return stage;
+  if (stage === 5 && !(await prReadsClosed(pr))) return stage;
+  return (await clearDeadlineRetries(pr)) ? stage : 1;
 }

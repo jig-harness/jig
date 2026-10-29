@@ -41,6 +41,9 @@ export function passEnv(task?: {
   // unanswered, which is the one failure this whole loop exists to prevent.
   delete env.DRIVE_PR_ROUND_TASK;
   delete env.DRIVE_PR_ROUND_TASK_DETAIL;
+  // The same for the notice of a recovered stop: only the driver that
+  // recovered it may say so, and only to the review pass it spawns next.
+  delete env.DRIVE_PR_PASS_NOTICE;
   if (task !== undefined) {
     env.DRIVE_PR_ROUND_TASK = task.task;
     env.DRIVE_PR_ROUND_TASK_DETAIL = task.detail;
@@ -248,6 +251,7 @@ export async function recordQuotaPark(
   driveStatePath: string,
   pr: string,
   block: { vendor: string; window: string; resetAt: Date | null },
+  account: string | null,
 ): Promise<void> {
   const park = await run(
     tsArgv(driveStatePath, [
@@ -260,6 +264,8 @@ export async function recordQuotaPark(
       ...(block.resetAt !== null
         ? ["--reset-at", block.resetAt.toISOString()]
         : []),
+      // Whose wall it is: a re-arm from another account may pass it.
+      ...(account !== null ? ["--account", account] : []),
     ]),
     // Deadlined per `references/consistency.md` — on the exiting
     // path an undeadlined hang would hold the drive's locks open

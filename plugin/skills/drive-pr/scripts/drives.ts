@@ -66,8 +66,9 @@
  *                            process identities and witness the tree's exit.
  *                            Older POSIX drivers receive SIGTERM instead.
  *                            Foreign PID namespaces, unreadable tables and
- *                            unbindable claims are refused.
-
+ *                            unbindable claims are refused. With
+ *                            --expect-started ISO, only the claim acquired
+ *                            then is stopped; another holder exits 3.
  *
  * Exit codes:
  *   0  listed / banner printed / positively nothing to report / --doctor's
@@ -81,6 +82,7 @@
  *      (the state dir itself could not be read — the same failure `listRows`
  *      already treats as fatal for the plain listing)
  *   2  usage
+ *   3  --stop --expect-started: the lock is held by another acquisition
  */
 
 import {
@@ -1037,7 +1039,11 @@ async function here(stateDir: string): Promise<number> {
   return 0;
 }
 
-async function stop(stateDir: string, pr: string): Promise<number> {
+async function stop(
+  stateDir: string,
+  pr: string,
+  expectStarted: string,
+): Promise<number> {
   const row = readLock(join(stateDir, `pr-drive-${pr}.lock`), "pr", pr);
   if (row.state === "empty") {
     console.log(`no drive holds PR #${pr}'s lock — nothing to stop.`);
@@ -1054,6 +1060,14 @@ async function stop(stateDir: string, pr: string): Promise<number> {
       `PR #${pr}'s lock has a ${row.state} claim — refusing to guess who to signal. Inspect: ${row.dir}`,
     );
     return 1;
+  }
+  // The row read here is the one every check below verifies and the stop
+  // request addresses (by its nonce), so the expected acquisition binds them.
+  if (expectStarted !== "" && row.diag?.started !== expectStarted) {
+    console.log(
+      `PR #${pr}'s lock is held by another acquisition (started ${row.diag?.started ?? "unrecorded"}, expected ${expectStarted}) — not stopping it.`,
+    );
+    return 3;
   }
   const pid = row.pid as number;
   if (!samePidNamespace({ host: row.host ?? "", platform: row.platform })) {
@@ -1310,12 +1324,30 @@ export async function forceStopDriver(
   return 0;
 }
 
+/**
+ * Remove `--expect-started ISO` from `argv` and return ISO (`''` when
+ * absent): the acquisition a `--stop` is bound to.
+ */
+function takeExpectStarted(argv: string[]): string {
+  const at = argv.indexOf("--expect-started");
+  if (at < 0) return "";
+  const [, value = ""] = argv.splice(at, 2);
+  if (value === "") fail(2, "--expect-started takes a time");
+  return value;
+}
+
+function requireStopForExpectStarted(expectStarted: string, stopPr: string) {
+  if (expectStarted !== "" && stopPr === "")
+    fail(2, "--expect-started only qualifies --stop");
+}
+
 async function main(): Promise<number> {
   let json = false;
   let hereMode = false;
   let stopPr = "";
   let doctorMode = false;
   const argv = process.argv.slice(2);
+  const expectStarted = takeExpectStarted(argv);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] as string;
     if (a === "--json") json = true;
@@ -1328,10 +1360,11 @@ async function main(): Promise<number> {
     } else {
       fail(
         2,
-        `usage: drives.ts [--json] | [--here] | [--stop <PR>] | [--doctor [--json]]`,
+        `usage: drives.ts [--json] | [--here] | [--stop <PR> [--expect-started <ISO>]] | [--doctor [--json]]`,
       );
     }
   }
+  requireStopForExpectStarted(expectStarted, stopPr);
   // `--doctor` combines with `--json` but is otherwise mutually
   // exclusive with every other mode, on the same terms `--here`/`--json`/
   // `--stop` already are with each other.
@@ -1370,79 +1403,46 @@ async function main(): Promise<number> {
     return here(stateDir);
   }
   if (stopPr !== "") {
-    // `resolveStateDir()` can refuse here specifically because an unmigrated
-    // legacy footprint exists (`ensureMigratedFromLegacy`) — and the single
-    // most likely cause of that footprint is exactly the live older
-    // driver `--stop` exists to reach: its own lock is what the migration
-    // guard is refusing on. Falling back to the raw legacy directory is what
-    // actually lets that scenario be recovered from — without it, `--stop`
-    // is unusable for the one case it is most needed, the same live-driver
-    // scenario `migrate-legacy-state.ts`'s own refusal message points users at
-    // this command to resolve.
+    // `resolveStateDir()` refuses while an unmigrated legacy footprint exists,
+    // most likely the lock of the very older driver `--stop` must reach (the
+    // case `migrate-legacy-state.ts`'s refusal points here for), so that
+    // refusal falls back to the legacy directory.
     let stateDir: string;
     try {
       stateDir = await resolveStateDir();
     } catch (e) {
-      // Narrowed to the migration-guard shape specifically, not every
-      // `resolveStateDir()` failure — a relative-override or no-git-repo
-      // refusal is a different, genuine problem that silently falling back to
-      // the legacy directory would mask rather than surface.
-      // `ensureMigratedFromLegacy` only ever refuses when `legacyFootprint`
-      // found something, so an empty footprint here means this was NOT that
-      // refusal — re-throw.
+      // Only that refusal, which needs a legacy footprint: any other failure
+      // (a relative override, no git repository) is re-thrown, not masked.
       const legacyDir = await resolveLegacyStateDir().catch(() => null);
       if (legacyDir === null || legacyFootprint(legacyDir).length === 0) {
         throw e;
       }
       stateDir = legacyDir;
     }
-    return stop(stateDir, stopPr);
+    return stop(stateDir, stopPr, expectStarted);
   }
 
   // Read-only listing, same reasoning as --here above: this must not mint a
   // clone identity or create/mark the state directory merely to enumerate it.
   const stateDir = await peekResolvedStateDir();
   const lockRows = listRows(stateDir);
-  // `--doctor`'s population is `lock dirs ∪ drive-pr-*.json state files`
-  // — the plain listing's and plain `--json`'s
-  // stays LOCK ROWS ONLY, unchanged in kind (see `listStateOnlyRows`'s own
-  // header for why that split is deliberate, not an oversight). This is also
-  // what makes `--doctor --json` a genuinely DIFFERENT payload from plain
-  // `--json`, not the no-op it used to be when this branch returned before
-  // `doctorMode` was ever read.
+  // `--doctor`'s population is lock dirs ∪ state files; the plain listing and
+  // plain `--json` stay lock rows only (`listStateOnlyRows` says why).
   const rows = doctorMode
     ? [...lockRows, ...listStateOnlyRows(stateDir, lockRows)]
     : lockRows;
-  // Classified UNCONDITIONALLY, not only under `--doctor`: the
-  // acceptance bar for this feature is that `drives.ts --json` ALWAYS carries
-  // the verdict, and the plain human listing's own "stalled" annotation reads
-  // off the same `.doctor` field `printHuman` expects to already be
-  // populated — one classification pass feeds every rendering, rather than
-  // three call sites each deciding independently whether to run it.
+  // Classified in every mode: `--json` always carries the verdict, and the
+  // human listing's "stalled" annotation reads the same `.doctor` field.
   const repository = await driveRepository();
   const doctored = (await attachDoctorVerdicts(stateDir, rows, SELF)).map(
     (row) => ({ ...row, repository }),
   );
-  if (doctorMode) {
-    if (json) {
-      console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
-      return 0;
-    }
-    printDoctor(stateDir, doctored, repository);
-    return 0;
-  }
-  if (json) {
-    console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
-    return 0;
-  }
-  printHuman(stateDir, doctored, repository);
+  if (json) console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
+  else if (doctorMode) printDoctor(stateDir, doctored, repository);
+  else printHuman(stateDir, doctored, repository);
   return 0;
 }
 
-// Gated behind `import.meta.main`, not run at module scope unconditionally — the
-// established pattern several siblings in this skill already use
-// (`round-plan.ts`, `self-inflicted.ts`, `migrate-state-dir.ts`, …) so a pure
-// helper like `gatherWorktreeLeftovers` can be imported directly by a test
-// without ALSO running this file's own CLI against whatever `process.argv`
-// the importing process happens to carry.
+// Gated, so a helper such as `gatherWorktreeLeftovers` can be imported
+// without running this CLI against the importer's `process.argv`.
 if (import.meta.main) runMain("drives.ts", main);

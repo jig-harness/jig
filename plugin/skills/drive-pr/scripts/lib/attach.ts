@@ -460,8 +460,8 @@ async function move(
   tree: string,
   target: PrHead & { number: string; remote: string },
   current: Current,
+  holder: string | null,
 ): Promise<boolean> {
-  const holder = await holderOf(tree, target.branch);
   if (current.branch === target.branch) {
     await catchUp(tree, target, current.sha, false);
     return false;
@@ -479,6 +479,28 @@ async function move(
   if (holder !== null) await requireHolderBehind(holder, target);
   await moveTree(tree, target, current, holder === null);
   return holder !== null;
+}
+
+/**
+ * Whether `move` leaves the tree where it is: at or past the PR's head, on
+ * the head branch, or detached under this PR's record while another tree
+ * holds the branch or the tree has commits of its own. A detached tree exactly
+ * at the head with the branch free takes the branch by name, so it moves.
+ */
+async function staysInPlace(
+  tree: string,
+  target: PrHead & { number: string },
+  current: Current,
+  holder: string | null,
+): Promise<boolean> {
+  if (!(await ancestor(tree, target.head, current.sha))) return false;
+  if (current.branch === target.branch) return true;
+  if (current.branch !== "") return false;
+  const recorded = await detachedTreeRecord((args) => g(tree, args));
+  return (
+    recorded?.pr === Number(target.number) &&
+    (holder !== null || current.sha !== target.head)
+  );
 }
 
 /**
@@ -571,15 +593,15 @@ export async function attachPr(
     let created: boolean;
     try {
       const current = await currentOf(tree);
-      // A tree already on the head branch, at or past the PR's head, is not
-      // moved, so what it holds uncommitted is the drive's to handle, as on
-      // any re-arm; every other attach moves the tree and needs it settled.
-      const inPlace =
-        current.branch === head.branch &&
-        (await ancestor(tree, head.head, current.sha));
-      if (!inPlace) await requireSettled(tree, "this working tree");
+      // A tree the attach does not move keeps what it holds uncommitted for
+      // the drive to handle, as on any re-arm; every other attach moves the
+      // tree and needs it settled.
+      const holder = await holderOf(tree, head.branch);
+      const target = { ...head, number, remote };
+      if (!(await staysInPlace(tree, target, current, holder)))
+        await requireSettled(tree, "this working tree");
       const old = readDrivenTree(current.gitDir);
-      detached = await move(tree, { ...head, number, remote }, current);
+      detached = await move(tree, target, current, holder);
       created =
         opts.created === true ||
         (old?.pr === Number(number) && old.created === true);
@@ -699,18 +721,24 @@ export function attachOff(script: string): boolean {
  * `drive.ts`'s attach, once it holds the tree's driver lock and the pull
  * request's. Skipped by a dry run, which moves nothing, and by
  * `DRIVE_PR_ATTACH=off`, which drives the tree as it stands (a harness that
- * prepares its trees itself).
+ * prepares its trees itself). `onNotOpen` runs before a PR that is not open
+ * ends the drive with exit 5, so the drive's end-of-drive cleanup runs on that
+ * exit as it does when the round loop finds the PR closed.
  */
 export async function attachForDrive(
   pr: string,
   dryRun: boolean,
+  onNotOpen?: () => Promise<void>,
 ): Promise<void> {
   if (dryRun || attachOff("drive.ts")) return;
   let attached: Attached;
   try {
     attached = await attachPr(pr, { locksHeld: true });
   } catch (e) {
-    if (e instanceof AttachRefusal) fail(e.code, `drive.ts: ${e.message}`);
+    if (e instanceof AttachRefusal) {
+      if (e.code === 5) await onNotOpen?.();
+      fail(e.code, `drive.ts: ${e.message}`);
+    }
     throw e;
   }
   setDrivenRemoteRef(attached.remote, attached.branch);
