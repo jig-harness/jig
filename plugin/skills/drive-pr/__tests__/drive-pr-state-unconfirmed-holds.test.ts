@@ -4,6 +4,7 @@
  */
 
 import { parkArgs, parkRecord } from "./park-record-fixture.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { describe, expect, it } from "bun:test";
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -451,7 +452,7 @@ describe("drive-state.ts durability", () => {
         { DRIVE_PR_HANDOFF_DIR: join(d, "handoff") },
         parkRecord("first line\nsecond line"),
       );
-      expect(r.exitCode).toBe(2);
+      expectSpawnExit(r, 2);
       expect(r.stderr).toContain("Question must be one line");
     });
 
