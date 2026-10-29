@@ -379,8 +379,10 @@ repository's PR is checked against that repository's tracker. The attach,
 the checkpoint and the driver all run without the variables that would
 select something else than the placed tree: `GH_REPO` always; a running
 drive's own `DRIVE_PR_WORKTREE` and session when they name another tree;
-and, in another clone, `JIG_CONSUMER_ROOT`, `JIG_OVERLAY` and a driver's
-exported state directory. Placing another clone's PR from inside a drive
+in any tree other than the session's own, the location overrides
+`JIG_CONSUMER_ROOT`, `JIG_OVERLAY`, `DRIVE_PR_HANDOFF_DIR`,
+`DRIVE_PR_MAILBOX_DIR` and `DRIVE_PR_INTENT_CHAIN_DIR`; and, in another
+clone, a driver's exported state directory. Placing another clone's PR from inside a drive
 whose state is under a relocated `DRIVE_PR_STATE_DIR` is refused (exit 2):
 arm it from a session outside the drive.
 
