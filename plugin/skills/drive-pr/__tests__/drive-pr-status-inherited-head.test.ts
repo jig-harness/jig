@@ -166,7 +166,8 @@ describe("drive-status.ts --inherited-head with --no-head-sync", () => {
       "--inherited-head",
       inherited,
     ]);
-    expect(r.state).not.toBe("ROUND_READY");
+    expectSpawnExit(r, 3);
+    expect(r.state).toBe("CONVERGED");
     expect(r.reason).not.toContain("left unpushed");
   });
 });
