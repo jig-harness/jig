@@ -19,7 +19,8 @@ const DRIVEN_BRANCH = join(
   "driven-branch.ts",
 );
 const PROC = join(import.meta.dir, "..", "scripts", "lib", "proc.ts");
-const BY_HAND = "git log --branches --not --remotes";
+const BY_HAND = "git log HEAD --branches --not --remotes";
+const SPAWN_TIMEOUT_MS = 120_000;
 
 const clones: Clone[] = [];
 afterAll(() => {
@@ -40,13 +41,14 @@ function advice(c: Clone, root: string, attached?: string): string {
     import { setDrivenRemoteRef, unpushedCountAdvice } from ${JSON.stringify(DRIVEN_BRANCH)};
     import { git } from ${JSON.stringify(PROC)};
     ${attached === undefined ? "" : `setDrivenRemoteRef("origin", ${JSON.stringify(attached)});`}
-    console.log(await unpushedCountAdvice(git, ${JSON.stringify(root)}));
+    console.log(await unpushedCountAdvice(git, ${JSON.stringify(root)}, { timeoutSec: 60 }));
   `;
   const r = Bun.spawnSync([process.execPath, "-e", code], {
     cwd: root,
     env: { ...c.env, DRIVE_PR_ATTACH: "off" },
     stdout: "pipe",
     stderr: "pipe",
+    timeout: SPAWN_TIMEOUT_MS,
   });
   expectSpawnExit(
     {
@@ -81,6 +83,14 @@ describe("unpushedCountAdvice with the attach off", () => {
     const text = advice(c, c.tree("wt1"));
     expect(text).not.toContain("@{u}");
     expect(text).toContain(BY_HAND);
+  });
+
+  test("the by-hand check finds a commit a detached tree holds on no branch", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    const stranded = c.commit(tree, "stranded.txt");
+    const [, ...args] = BY_HAND.split(" ");
+    expect(c.git(tree, ...args, "--format=%H")).toBe(stranded);
   });
 
   test("counts against the attach record's remote ref for a detached tree", () => {

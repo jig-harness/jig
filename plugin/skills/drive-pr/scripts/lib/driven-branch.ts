@@ -107,7 +107,8 @@ async function unpushedRange(
  * the report puts in its sentence: the count command over the range
  * `unpushedRange` names (a detached tree has no `@{u}`), else the check to
  * make by hand, since a range that does not exist fails or counts nothing.
- * The range is shell-quoted: a branch name may carry `;`, `$` or backticks,
+ * That check names `HEAD` as well as `--branches`: a detached head's commits
+ * are on no branch. The range is shell-quoted: a branch name may carry `;`, `$` or backticks,
  * and the operator pastes this line into a shell.
  */
 export async function unpushedCountAdvice(
@@ -117,5 +118,5 @@ export async function unpushedCountAdvice(
 ): Promise<string> {
   const range = await unpushedRange(git, root, opts);
   if (range !== null) return `\`git rev-list --count ${shellQuote(range)}\``;
-  return "`git log --branches --not --remotes` (no range can be named here: the tree has no upstream and no attach record)";
+  return "`git log HEAD --branches --not --remotes` (no range can be named here: the tree has no upstream and no attach record)";
 }
