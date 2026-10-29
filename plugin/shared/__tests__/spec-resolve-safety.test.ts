@@ -334,6 +334,31 @@ test("text that starts with # but is no heading leaves the open items open", asy
   }
 });
 
+test("a heading inside a list item leaves the item open", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  for (const heading of [["", "    ### Notes", ""], ["  ### Notes"]]) {
+    const body = [
+      "## Spec",
+      "- [ ] 1. Outer task",
+      ...heading,
+      "    - [ ] 2. Nested task",
+      "",
+      "## Acceptance criteria",
+      "- AC-1 Works",
+      "",
+      "  ### Details",
+      "",
+      "  - AC-2 Nested criterion",
+    ].join("\n");
+    const result = await resolveSpec(issue(body), root, {
+      registry: [bodyAdapter],
+      config: only("body"),
+    });
+    expect(result.tasks.map((t) => t.id)).toEqual(["1", "2"]);
+    expect(result.acceptance.map((c) => c.id)).toEqual(["AC-1", "AC-2"]);
+  }
+});
+
 test("a fence before a list item's column ends the item", async () => {
   const { root } = scratchRepo("spec-safety-");
   for (const gap of [[""], []]) {

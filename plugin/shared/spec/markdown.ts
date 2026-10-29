@@ -15,10 +15,11 @@
  * The text after a list marker is read the same way, at the item's content
  * column, so `- ```md` opens a fence, `- - x` opens a nested item and
  * `-     x` is the item's indented code. A line at or past that column
- * belongs to the item and does not close the list; a heading closes every
- * open item, and a fence, a list marker, or any line after a blank line
- * closes the items whose column it does not reach, leaving the enclosing
- * items it does reach open. A fence opened inside an item ends with it: a line before the
+ * belongs to the item and does not close the list. A heading, a fence, a
+ * list marker, or any line after a blank line closes the items whose column
+ * it does not reach, leaving the enclosing items it does reach open: a
+ * heading at the margin closes every item, one indented to an item's column
+ * is that item's. A fence opened inside an item ends with it: a line before the
  * item's column closes the fence and those items, and is read as ordinary
  * Markdown in the item that remains. Past a nesting depth of 64 markers on one line the
  * rest is the item's text, so a line of markers cannot run the scan deep.
@@ -160,7 +161,7 @@ function shallowLine(
     return itemLine(line, strip + item, state);
   }
   if (!HEADING.test(own)) return "text";
-  state.lists.length = 0;
+  closeItemsPast(state, strip);
   return "heading";
 }
 
