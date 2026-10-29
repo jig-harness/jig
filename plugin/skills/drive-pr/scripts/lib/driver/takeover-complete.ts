@@ -28,6 +28,8 @@ import { admitAnsweredParks, parseJson } from "./rearm.ts";
 
 import { settleTakeover, type TakeoverPlan } from "./takeover.ts";
 
+import { mirrorNow } from "./ledger.ts";
+
 async function driveStateRun(
   args: string[],
   stdin?: string,
@@ -210,8 +212,14 @@ export async function completeTakeover(
       ? `takeover: recorded in the drive state (from ${plan.fromActor ?? "an unnamed tree"}, account ${plan.fromAccount ?? "unknown"}, to account ${toAccount ?? "unknown"}, verdict ${plan.verdict}, ${reopened.length} hold(s) reopened, ${notReopened.length} not).`
       : `takeover: could not record the takeover (drive-state.ts exited ${record.code}); driving on.`,
   );
+  const from = {
+    WEDGED: "a wedged driver",
+    DEAD: "a dead driver",
+    STALE:
+      "another clone's driver whose ledger heartbeat was past the lease window",
+  }[plan.verdict];
   const notice = [
-    `TAKEN OVER: this drive was taken over from a ${plan.verdict === "WEDGED" ? "wedged" : "dead"} driver and resumes at its durable round.`,
+    `TAKEN OVER: this drive was taken over from ${from} and resumes at its durable round.`,
   ];
   if (!reconciled)
     notice.push(
@@ -243,11 +251,12 @@ export async function pickUpDrive(
   state: DriveState,
   opts: { agent: string[]; botsOnly: boolean; dryRun: boolean },
 ): Promise<string> {
-  const notices = [
+  const takeover =
     plan === null
       ? ""
-      : await completeTakeover(pr, plan, opts.agent, opts.botsOnly),
-    await admitAnsweredParks(state, opts.dryRun),
-  ];
+      : await completeTakeover(pr, plan, opts.agent, opts.botsOnly);
+  // A takeover is written to the drive ledger at once, not at the next boundary.
+  if (plan !== null) await mirrorNow(pr);
+  const notices = [takeover, await admitAnsweredParks(state, opts.dryRun)];
   return notices.filter((part) => part !== "").join("\n\n");
 }

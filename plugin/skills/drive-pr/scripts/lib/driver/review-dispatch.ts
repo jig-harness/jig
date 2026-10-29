@@ -216,8 +216,9 @@ export async function dispatchReviewPass(
   // Several awaited state/account reads separate the earlier round check
   // from this spawn, and a directive sent during one of them must still
   // prevent a new pass — this checkpoint is the LAST await before the
-  // charge below and the spawn that follows it.
-  const mailboxAtSpawn = await context.mailboxCheckpoint();
+  // charge below and the spawn that follows it, and it reads the ledger's
+  // claims too.
+  const mailboxAtSpawn = await context.mailboxCheckpoint({ beforePass: true });
   if (typeof mailboxAtSpawn === "number") return mailboxAtSpawn;
   if (mailboxAtSpawn === "resumed") return "continue";
   // Commit the durable charge and the local pass counter HERE, not

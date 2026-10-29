@@ -29,7 +29,15 @@ export interface DriveRoundContext {
    * after it exits. `null` before the first spawn.
    */
   passIdentity: AccountIdentity | null;
-  mailboxCheckpoint: () => Promise<number | "resumed" | "clear">;
+  /**
+   * The mailbox directives, at a checkpoint. `beforePass` is the last await
+   * before a pass (review or repair) is spawned: a clear mailbox is then
+   * followed by the ledger's claim check, so no pass replies beside a
+   * successor however long the waits before it were.
+   */
+  mailboxCheckpoint: (opts?: {
+    beforePass?: boolean;
+  }) => Promise<number | "resumed" | "clear">;
   held: DriveLock[];
   witnessWaitHead: string;
   witnessWaitLimit: number;

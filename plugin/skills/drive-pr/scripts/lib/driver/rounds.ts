@@ -11,6 +11,7 @@ import {
   MAILBOX_STOPPED_EXIT,
   MAILBOX_PAUSE_TIMEOUT_EXIT,
   SINGLE_INSTANCE_LOCK_EXIT,
+  TAKEN_OVER_EXIT,
 } from "./settings.ts";
 
 import { FinalCiWait } from "./../final-ci-wait.ts";
@@ -24,6 +25,8 @@ import type { DriveRoundContext } from "./round-context.ts";
 import { runRoundIteration } from "./round-step.ts";
 
 import { clearDeadlineRetries, prReadsClosed } from "./restart.ts";
+
+import { ledgerRenewal, standDownOnNewerClaim } from "./ledger.ts";
 
 interface DriverRoundOptions {
   pr: string;
@@ -140,8 +143,13 @@ export async function runDriverRounds({
     Number(pauseMaxRaw) <= 86400
       ? Number(pauseMaxRaw)
       : 1800;
-  const mailboxCheckpoint = async (): Promise<"clear" | "resumed" | number> => {
-    const outcome = await waitAtMailboxCheckpoint(mailboxDir, pr, pauseMaxSec);
+  const mailboxOnly = async (): Promise<"clear" | "resumed" | number> => {
+    const outcome = await waitAtMailboxCheckpoint(
+      mailboxDir,
+      pr,
+      pauseMaxSec,
+      ledgerRenewal(pr),
+    );
     switch (outcome) {
       case "clear":
       case "resumed":
@@ -157,7 +165,19 @@ export async function runDriverRounds({
         return SINGLE_INSTANCE_LOCK_EXIT;
       case "unreadable":
         return 1;
+      case "taken-over":
+        return TAKEN_OVER_EXIT;
     }
+  };
+  // The claim check only before a pass, not on every checkpoint: a quota
+  // wait polls the mailbox every few seconds for hours, and the claims are a
+  // forge read.
+  const mailboxCheckpoint = async (opts?: {
+    beforePass?: boolean;
+  }): Promise<"clear" | "resumed" | number> => {
+    const outcome = await mailboxOnly();
+    if (outcome !== "clear" || opts?.beforePass !== true) return outcome;
+    return (await standDownOnNewerClaim(pr)) ?? outcome;
   };
   const context: DriveRoundContext = {
     prevFingerprint,
