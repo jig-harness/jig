@@ -413,7 +413,8 @@ convergence either: the drive hands that round out before it can converge.
 The drive restarts up
 to `drive.pass_deadline_retries` times per drive (default 2; the count is
 kept in the drive state, so a re-arm or a takeover does not reset it, and it
-clears when the drive converges or the PR closes) and then stops
+clears when the drive converges or the PR closes; a clear that fails ends
+the drive with exit `1` and prints the command that clears it) and then stops
 with exit `15`, saying the budget is spent. A stall gets one more round with
 the stall's diagnostics in the pass's notice before the drive stops with exit
 `14`, and the stop prints what the passes recorded deciding. A short usage

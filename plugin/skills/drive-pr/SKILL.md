@@ -362,7 +362,9 @@ records it all the same, and the gate hands out the round that settles them
 in place of `CONVERGED` or `HITL_PARKED`. The driver restarts up to
 `drive.pass_deadline_retries` (default 2) times per drive — counted in the
 drive state (`deadlineRetries`), so a re-arm or a takeover does not reset it,
-and cleared when the drive converges or the PR closes; past that budget
+and cleared when the drive converges or the PR closes (a clear that fails
+ends the drive with exit `1`, printing the command that clears the count);
+past that budget
 it exits `15` and says the budget is spent. A stall (exit `14`) gets one more
 round with the stand-down diagnostics in the pass's notice before it stops,
 and the stop prints what the passes recorded deciding at the end of the

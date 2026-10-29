@@ -200,11 +200,18 @@ export async function runDriverRounds({
       );
       if (stage === "continue") continue;
       if (stage === null) continue;
-      // The drive is over once it converged or the PR closed: its
-      // pass-deadline restarts stop counting against a later drive.
-      if (!dryRun && (stage === 0 || stage === 5))
-        await clearDeadlineRetries(pr);
-      return stage;
+      return dryRun ? stage : await endDrive(pr, stage);
     }
   }
+}
+
+/**
+ * The drive is over once it converged or the PR closed: its pass-deadline
+ * restarts stop counting against a later drive. A count that could not be
+ * cleared ends the drive as a failure, so it is not reported over as an
+ * ordinary end.
+ */
+async function endDrive(pr: string, stage: number): Promise<number> {
+  if (stage !== 0 && stage !== 5) return stage;
+  return (await clearDeadlineRetries(pr)) ? stage : 1;
 }

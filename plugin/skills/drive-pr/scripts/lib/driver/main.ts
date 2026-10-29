@@ -293,8 +293,15 @@ export async function main(): Promise<number> {
   // the branch), so every round's commit lands on what the attach left, no
   // other driver's tree is ever moved, and no second driver of the PR, in
   // another tree, attaches beside this one. A PR found closed here ends the
-  // drive as the round loop's PR_NOT_OPEN does, restart count included.
-  await attachForDrive(pr, dryRun, () => clearDeadlineRetries(pr));
+  // drive as the round loop's PR_NOT_OPEN does, restart count included, and
+  // as a failure (exit 1) when that count could not be cleared.
+  await attachForDrive(pr, dryRun, async () => {
+    if (!(await clearDeadlineRetries(pr)))
+      fail(
+        1,
+        `drive.ts: PR #${pr} is not open; its restart count still stands`,
+      );
+  });
   createDriverRegistry(held);
   lockResources.use(driverStopCompletionCleanup(held));
   driverRuntime.driverLogRotates = true;
