@@ -514,8 +514,13 @@ findings not yet filed, with the `file-deferred.ts` command that files them.
 
 Where your repository has a pre-merge follow-up step, have its list include
 the pull request's provisional decisions, so the person merging reads each
-one, and whether it stands, before the merge: `drives.ts --report --since
-<when the pull request opened> --json` lists them under `provisional`.
+one, and whether it stands, before the merge. The morning report lists them
+under `provisional` when run with `--since` set to when the pull request
+opened, and `--json`:
+
+```bash
+bun "<skill-dir>/scripts/drives.ts" --report --since <opened-at> --json
+```
 
 ## The exit states — what you do now
 
