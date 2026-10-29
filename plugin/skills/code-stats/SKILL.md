@@ -109,9 +109,11 @@ A configuration that exists only when it runs (a function, a spread, a
 folder built in code) is reported as `unreadable: <path> (<why>)` in the
 terminal summary, `--explain` and `--json` (`testRunners.unreadable`), and
 nothing is claimed from it. Report such a line to the user; when its tests
-matter, `code_stats.kinds` names them. A tracked file the file system
-refuses to read stops every mode with `cannot read <path> (<code>)`; report
-it, do not work around it. The [README](README.md#test-runner-configuration)
+matter, `code_stats.kinds` names them. Two cases stop the run with an
+error instead: a file the run opens that the file system refuses to read
+(`cannot read <path> (<code>)`), and a `pyproject.toml` or `package.json`
+at the root that does not parse, which module detection reads first. Report
+the error; do not work around it. The [README](README.md#test-runner-configuration)
 lists what each reader reads and cannot read.
 
 ## Fixing a weak classification

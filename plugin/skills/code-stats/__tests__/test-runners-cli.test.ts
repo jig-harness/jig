@@ -217,6 +217,37 @@ describe("a tracked file the file system refuses to read", () => {
     );
 });
 
+describe("a configuration that does not parse", () => {
+  const MODES = [
+    ["--explain", "lib/src/test/java/shop/LibSuite.java", "--json"],
+    ["--json"],
+    [],
+  ];
+
+  for (const [file, content] of [
+    ["pyproject.toml", "[tool.pytest.ini_options]\ntestpaths = [\n"],
+    ["package.json", '{"jest": {"testMatch": ["**/*.check.js"]\n'],
+  ] as const) {
+    test(`at the root, ${file} stops every mode, since module detection reads it first`, () => {
+      const root = fixture("maven", { [file]: content });
+      for (const args of MODES) {
+        const run = runCli(root, args);
+        expectSpawnExit(run, 1);
+        expect(run.stderr).toContain(
+          `cannot read ${file} to find the repository's modules`,
+        );
+      }
+    });
+
+    test(`in a folder, ${file} is reported unreadable and the run goes on`, () => {
+      const root = fixture("maven", { [`py/${file}`]: content });
+      expect(report(root).testRunners.unreadable).toContainEqual(
+        expect.objectContaining({ path: `py/${file}` }),
+      );
+    });
+  }
+});
+
 describe("the layer's precedence", () => {
   test("code_stats.kinds overrides a runner's rule", () => {
     const root = fixture("jest", {
