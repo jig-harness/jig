@@ -378,7 +378,11 @@ console.log("RETURNED " + (await drive()));`,
   it("writes no ledger when the stop cannot be recorded in the drive state", async () => {
     const forge = fakeForge([], { login: "drive-bot" });
     // Another live session's lease refuses `record-event`; `handoff` is not leased.
-    const other = Bun.spawn(["sleep", "60"]);
+    const other = Bun.spawn([
+      process.execPath,
+      "-e",
+      "setInterval(() => {}, 1000)",
+    ]);
     try {
       const seeded = Bun.spawnSync(
         [
