@@ -341,6 +341,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.94.2] - 2026-10-29
+
+### Changed
+
+- The [`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md) test that proves the history replay runs no configured filter no longer deletes its marker file before the replay, since no filter is configured until after the merge is recorded, and it says why the merge comes first. The skill itself is unchanged.
+
 ## [0.94.1] - 2026-10-29
 
 ### Changed
@@ -3926,7 +3932,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.94.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.94.2...HEAD
+[0.94.2]: https://github.com/jig-harness/jig/compare/v0.94.1...v0.94.2
 [0.94.1]: https://github.com/jig-harness/jig/compare/v0.94.0...v0.94.1
 [0.94.0]: https://github.com/jig-harness/jig/compare/v0.93.0...v0.94.0
 [0.93.0]: https://github.com/jig-harness/jig/compare/v0.92.0...v0.93.0
