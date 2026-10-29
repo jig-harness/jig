@@ -45,6 +45,7 @@ export interface Field {
   type: FieldType;
   values?: string[];
   min?: number;
+  max?: number;
   pattern?: string;
   nullable?: boolean;
   items?: Items;
@@ -52,7 +53,7 @@ export interface Field {
   nonempty?: boolean;
   keys?: string[];
   values_type?: TypeSpec;
-  exists?: "required" | "expected";
+  exists?: "required" | "expected" | "machine";
   read_by: string[];
   repository_only?: boolean;
   default?: unknown;
@@ -62,6 +63,8 @@ export interface Field {
 
 export interface Schema {
   strict: string[];
+  /** Sections and fields whose `null` the skills refuse rather than read as not set. */
+  null_refused: string[];
   refused: Record<string, string>;
   fields: Field[];
 }
@@ -82,6 +85,7 @@ const FIELD_KEYS = new Set([
   "type",
   "values",
   "min",
+  "max",
   "pattern",
   "nullable",
   "items",
@@ -189,6 +193,10 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
     e.min !== undefined && typeof e.min !== "number"
       ? "min must be a number"
       : null,
+  (e) =>
+    e.max !== undefined && typeof e.max !== "number"
+      ? "max must be a number"
+      : null,
   (e) => patternProblem(e.type, e.pattern),
   (e) =>
     e.keys !== undefined && !stringList(e.keys) ? "keys must be a list" : null,
@@ -199,8 +207,11 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
   (e) =>
     e.type === "list" && !validItems(e.items) ? "a list needs items" : null,
   (e) =>
-    e.exists !== undefined && e.exists !== "required" && e.exists !== "expected"
-      ? "exists is required or expected"
+    e.exists !== undefined &&
+    e.exists !== "required" &&
+    e.exists !== "expected" &&
+    e.exists !== "machine"
+      ? "exists is required, expected or machine"
       : null,
   flag("repository_only"),
   (e) =>
@@ -249,13 +260,37 @@ export function parseSchema(raw: unknown): Schema {
     throw new Error("config schema: refused must map a section to a message");
   if (!isRecord(raw.fields))
     throw new Error("config schema: fields must be a mapping");
-  return {
+  const nullRefused = raw.null_refused ?? [];
+  if (!stringList(nullRefused))
+    throw new SchemaNullRefusedError(
+      "config schema: null_refused must be a list of section or field paths",
+    );
+  const schema: Schema = {
     strict: raw.strict,
+    null_refused: nullRefused,
     refused: raw.refused as Record<string, string>,
     fields: Object.entries(raw.fields).map(([path, entry]) =>
       parseField(path, entry),
     ),
   };
+  const index = indexSchema(schema);
+  for (const path of schema.null_refused) {
+    const field = index.byPath.get(path);
+    if (!field && !index.prefixes.has(path))
+      throw new SchemaNullRefusedError(
+        `config schema: null_refused names ${path}, which is not a section or field`,
+      );
+    if (field?.nullable)
+      throw new SchemaNullRefusedError(
+        `config schema: null_refused names ${path}, which is nullable`,
+      );
+  }
+  return schema;
+}
+
+/** A `null_refused` list that does not name the schema's own refusable paths. */
+class SchemaNullRefusedError extends Error {
+  override readonly name = "SchemaNullRefusedError";
 }
 
 export const SCHEMA_PATH = join(skillDir(), "config-schema.yaml");
@@ -329,10 +364,19 @@ function integerProblem(value: unknown, field?: Field): string | null {
   const words = field?.values ?? [];
   if (typeof value === "string" && words.includes(value)) return null;
   const min = field?.min ?? Number.NEGATIVE_INFINITY;
-  if (typeof value === "number" && Number.isSafeInteger(value) && value >= min)
+  const max = field?.max ?? Number.POSITIVE_INFINITY;
+  if (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= min &&
+    value <= max
+  )
     return null;
-  const bound =
-    field?.min === undefined ? "a whole number" : `a whole number ≥ ${min}`;
+  const limits = [
+    field?.min === undefined ? null : `≥ ${min}`,
+    field?.max === undefined ? null : `≤ ${max}`,
+  ].filter((l) => l !== null);
+  const bound = ["a whole number", limits.join(" and ")].join(" ").trim();
   return `must be ${[bound, ...words].join(" or ")}`;
 }
 
@@ -454,15 +498,27 @@ function knownKeys(index: SchemaIndex, prefix: string): string[] {
     .map((p) => p.slice(prefix.length + 1).split(".")[0] ?? "");
 }
 
+/** The error for a `null` the skills refuse at `path`. */
+function refusedNullFinding(path: string): Finding {
+  return {
+    id: `null:${path}`,
+    severity: "error",
+    message: `${path} is null, which the skills refuse rather than read as not set; remove it or give it a value`,
+  };
+}
+
 /** A known field's value: null where it is not nullable, the wrong shape, an older name. */
 function knownFieldFindings(
+  index: SchemaIndex,
   path: string,
   value: unknown,
   field: Field,
 ): Finding[] {
   const findings: Finding[] = [];
   const problem = value === null ? null : typeProblem(value, field.type, field);
-  if (value === null && !field.nullable)
+  if (value === null && index.schema.null_refused.includes(path))
+    findings.push(refusedNullFinding(path));
+  else if (value === null && !field.nullable)
     findings.push({
       id: `null:${path}`,
       severity: "info",
@@ -501,13 +557,19 @@ function unknownKeyFinding(
   };
 }
 
-/** A section's findings: none when null, an error when not a mapping, else its keys'. */
+/**
+ * A section's findings: none when null (an error where the skills refuse a
+ * null section), an error when not a mapping, else its keys'.
+ */
 function sectionFindings(
   index: SchemaIndex,
   path: string,
   value: unknown,
 ): Finding[] {
-  if (value === null) return [];
+  if (value === null)
+    return index.schema.null_refused.includes(path)
+      ? [refusedNullFinding(path)]
+      : [];
   if (!isRecord(value))
     return [
       {
@@ -536,7 +598,7 @@ function keyFindings(
       },
     ];
   const field = index.byPath.get(path);
-  if (field) return knownFieldFindings(path, value, field);
+  if (field) return knownFieldFindings(index, path, value, field);
   if (index.prefixes.has(path)) return sectionFindings(index, path, value);
   return [unknownKeyFinding(index, prefix, key, path)];
 }

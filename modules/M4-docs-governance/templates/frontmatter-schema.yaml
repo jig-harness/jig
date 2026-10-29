@@ -1,7 +1,8 @@
 # TEMPLATE — copy to your repo (e.g. docs/.frontmatter-schema.yaml) and adapt.
 # This is the machine-readable vocabulary every doc's frontmatter is validated
-# against. The reference checker (../reference/frontmatter-check/) reads a
-# schema of this shape at runtime. Enums below are neutral defaults — keep,
+# against. The frontmatter check in Jig's docs skill
+# (plugin/skills/docs/scripts/frontmatter-check/) reads a schema of this shape
+# at runtime. Enums below are neutral defaults — keep,
 # extend, or rename to fit your repo, but keep them CLOSED (a fixed vocabulary
 # is what makes docs queryable and prevents status/type sprawl).
 

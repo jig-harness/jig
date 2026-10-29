@@ -1,6 +1,21 @@
 # Jig's own values for its skills, read at run time by the plugin
 # (plugin/README.md § Configure a repository). Jig uses its own skills
 # on its pull requests like any other consumer.
+gc:
+  # What the machine-level resource collector (`jig gc`) may inspect here:
+  # the worktrees Orca opens, in the one root every clone on a machine uses.
+  # Relative roots resolve from the clone's primary checkout. The audit and
+  # the collector skip a root that does not exist on a machine, but
+  # `drive-pr` creates the working tree for a pull request that has none
+  # under the first root, creating the root too. A machine laid out
+  # differently adds its root to this list on the base branch and reinstalls
+  # `jig gc`: collection reads only this declaration, within the bounds
+  # install confirmed, so a root named only in the environment layer would
+  # hold trees it never collects.
+  kinds: [tool-state, worktrees]
+  worktree_roots:
+    - ../../orca/workspaces/jig
+    - ../../worktrees/jig # Herdr-era worktrees, until none remain
 gates:
   command: bun run gates
 review:

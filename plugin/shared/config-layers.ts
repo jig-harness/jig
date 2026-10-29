@@ -76,7 +76,58 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "code_stats.kinds",
   "code_stats.modules",
   "code_stats.classify_command",
+  // Where a repository keeps its docs tree and its schema.
+  "docs.root",
+  "docs.schema",
 ];
+
+/**
+ * Fields only the user file (or one run) may set; a repository's file refuses
+ * them. They describe one person's machine, which a repository's file,
+ * shared by everyone who clones it, cannot know.
+ */
+const USER_ONLY_FIELDS: readonly string[] = ["clones"];
+
+const SLUG = /^[^/\s]+\/[^/\s]+$/;
+
+/** A configuration field holds what its reader cannot use. */
+class ConfigFieldError extends Error {
+  override name = "ConfigFieldError";
+}
+
+/**
+ * The local clone the `clones` map names for the repository `slug`
+ * (`owner/name`, compared without regard to case), or `undefined` when it
+ * names none. A path is absolute or starts with `~/`; anything else is an
+ * error naming the entry, as is a map that is not one.
+ */
+export function clonePath(
+  values: Record<string, unknown>,
+  slug: string,
+  env: Env = process.env,
+): string | undefined {
+  const clones = values.clones;
+  if (clones === undefined || clones === null) return undefined;
+  if (!isMapping(clones))
+    throw new ConfigFieldError(
+      "clones must map owner/name to a local clone path",
+    );
+  let found: string | undefined;
+  for (const [key, path] of Object.entries(clones)) {
+    if (!SLUG.test(key))
+      throw new ConfigFieldError(
+        `clones: ${JSON.stringify(key)} is not owner/name`,
+      );
+    if (typeof path !== "string" || !/^(?:~\/|\/|[A-Za-z]:[\\/])/.test(path))
+      throw new ConfigFieldError(
+        `clones.${key} must be an absolute path or start with ~/ (got ${JSON.stringify(path)})`,
+      );
+    const home = nonEmpty(env.HOME) ?? nonEmpty(env.USERPROFILE) ?? homedir();
+    if (key.toLowerCase() === slug.toLowerCase())
+      found = path.startsWith("~/") ? join(home, path.slice(2)) : path;
+  }
+  return found;
+}
 
 export type LayerName = "user" | "repository" | "environment";
 
@@ -468,6 +519,12 @@ export function loadLayeredConfig(
       : repositoryText === null
         ? null
         : parseConfigText(repositoryText, repositoryPath);
+  if (repository !== null)
+    for (const field of USER_ONLY_FIELDS)
+      if (valueAt(repository, field) !== undefined)
+        throw new ConfigFieldError(
+          `${field} describes one machine, so ${repositoryPath} cannot set it: set it in ${userPath}`,
+        );
   if (repository !== null)
     layers.push({
       name: "repository",

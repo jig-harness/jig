@@ -29,15 +29,32 @@ import {
   GITHUB_STATE_SOURCES,
   PRIORITY_NAMES,
 } from "../../do-item/scripts/lib/tracker/github/settings.ts";
-import { DEFAULT_MAX_ROUNDS } from "../../drive-pr/scripts/lib/overlay.ts";
+import {
+  DEFAULT_MAX_ROUNDS,
+  DEFAULT_PASS_DEADLINE_RETRIES,
+} from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
+import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
 import { DEFAULT_SCANNER_APPS } from "../../resolve-review-comments/scripts/lib/scanner-annotations.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
+import { parseWorkTypes } from "../../do-item/scripts/lib/work-types.ts";
+import {
+  parseRouting,
+  RAISE_FIELDS,
+  ROUTING_FIELDS,
+} from "../../do-item/scripts/lib/routing.ts";
 import {
   CANONICAL_STATES,
   knownAdapters,
 } from "../../do-item/scripts/lib/tracker/index.ts";
 import { checkConfig, loadSchema, parseSchema } from "../scripts/lib/schema.ts";
+import {
+  DEFAULT_OUTPUT_LINES,
+  DEFAULT_RETENTION_DAYS,
+  DEFAULT_TIMEOUT_MINUTES,
+  MAX_TIMEOUT_MINUTES,
+  verifySettings,
+} from "../../../shared/evidence-record.ts";
 import {
   MODES,
   parseReflection,
@@ -65,6 +82,10 @@ import {
   WORK_BATCH_FIELDS,
   parseWorkBatchSection,
 } from "../../work-batch/scripts/lib/policy.ts";
+import {
+  DEFAULT_STALE_AFTER_DAYS,
+  FIELDS as DOCS_FIELDS,
+} from "../../docs/scripts/lib/settings.ts";
 import { runScript } from "./helpers.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
@@ -160,6 +181,8 @@ describe("CONFIGURATION.md", () => {
     expect(findings.filter((f) => !f.id.startsWith("deprecated:"))).toEqual([]);
     expect(() => parsePrPolicy(example)).not.toThrow();
     expect(() => parseTrackerConfig(example)).not.toThrow();
+    expect(() => parseWorkTypes(example)).not.toThrow();
+    expect(() => parseRouting(example, parseWorkTypes(example))).not.toThrow();
     expect(() => parseReflection(example.reflection, repoRoot)).not.toThrow();
     expect(parseChangelogSection(example.changelog)).not.toBeNull();
     const set = (path: string) =>
@@ -177,6 +200,12 @@ describe("CONFIGURATION.md", () => {
 test("its complete example's code_stats section passes the skill", () => {
   expect(() =>
     parseCodeStatsConfig(completeExample().code_stats),
+  ).not.toThrow();
+});
+
+test("its complete example's verify section passes the evidence record", () => {
+  expect(() =>
+    verifySettings(completeExample().verify, repoRoot),
   ).not.toThrow();
 });
 
@@ -203,6 +232,14 @@ describe("the reading skills", () => {
     expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
   });
 
+  test("read the routing section's fields", () => {
+    expect(under("routing").sort()).toEqual(
+      ROUTING_FIELDS.flatMap((f) =>
+        f === "raise" ? RAISE_FIELDS.map((r) => `raise.${r}`) : [f],
+      ).sort(),
+    );
+  });
+
   test("accept the GitHub adapter's value sets the schema lists", () => {
     expect(field("issue_tracker.github.states_from")?.values).toEqual([
       ...GITHUB_STATE_SOURCES,
@@ -219,6 +256,10 @@ describe("the reading skills", () => {
       f.path.startsWith("code_stats."),
     ))
       expect([f.path, f.repository_only]).toEqual([f.path, true]);
+  });
+
+  test("read the docs section's fields", () => {
+    expect(under("docs").sort()).toEqual([...DOCS_FIELDS].sort());
   });
 
   test("read the changelog section's fields, all of them repository-only", () => {
@@ -248,6 +289,7 @@ describe("the reading skills", () => {
       "pull_requests.branch_name": policy.branchName,
       "pull_requests.issue_link": policy.issueLink,
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
+      "drive.pass_deadline_retries": DEFAULT_PASS_DEADLINE_RETRIES,
       "issue_tracker.adapter": DEFAULT_ADAPTER,
       "issue_tracker.github.states_from": DEFAULT_STATES_FROM,
       "issue_tracker.github.status_field": DEFAULT_STATUS_FIELD,
@@ -259,12 +301,19 @@ describe("the reading skills", () => {
       "changelog.release.push": CHANGELOG_DEFAULTS.push,
       "changelog.release.branch": CHANGELOG_DEFAULTS.branch,
       "code_stats.default_area": CODE_STATS_DEFAULT_AREA,
+      "docs.stale_after_days": DEFAULT_STALE_AFTER_DAYS,
       "work_batch.point_budget": DEFAULT_POINT_BUDGET,
       "work_batch.max_items": DEFAULT_MAX_ITEMS,
       "work_batch.ranking.provenance": DEFAULT_RANKING.provenance,
       "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
       "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
+      "repository.remote": DEFAULT_REMOTE,
       "review.scanner_apps": DEFAULT_SCANNER_APPS,
+      "routing.raise.reviews": parseRouting({}, parseWorkTypes({})).raise
+        .reviews,
+      "verify.output_lines": DEFAULT_OUTPUT_LINES,
+      "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
+      "verify.retention_days": DEFAULT_RETENTION_DAYS,
     });
   });
 
@@ -276,6 +325,33 @@ describe("the reading skills", () => {
     expect(problems(Number.MAX_SAFE_INTEGER)).toEqual([]);
     expect(problems(2 ** 53)).toEqual([
       "drive.max_rounds must be a whole number ≥ 1",
+    ]);
+  });
+
+  test("report as errors the nulls remoteName refuses, and other nulls as not set", () => {
+    const severities = (config: Record<string, unknown>) =>
+      checkConfig(config, schema).map((f) => [f.id, f.severity]);
+    expect(severities({ repository: null })).toEqual([
+      ["null:repository", "error"],
+    ]);
+    expect(severities({ repository: { remote: null } })).toEqual([
+      ["null:repository.remote", "error"],
+    ]);
+    expect(severities({ repository: { base_branch: null } })).toEqual([
+      ["null:repository.base_branch", "info"],
+    ]);
+    expect(severities({ drive: null })).toEqual([]);
+  });
+
+  test("bound an integer from above where its reader does", () => {
+    const problems = (value: number) =>
+      checkConfig({ verify: { timeout_minutes: value } }, schema).map(
+        (f) => f.message,
+      );
+    expect(field("verify.timeout_minutes")?.max).toBe(MAX_TIMEOUT_MINUTES);
+    expect(problems(MAX_TIMEOUT_MINUTES)).toEqual([]);
+    expect(problems(MAX_TIMEOUT_MINUTES + 1)).toEqual([
+      `verify.timeout_minutes must be a whole number ≥ 1 and ≤ ${MAX_TIMEOUT_MINUTES}`,
     ]);
   });
 
@@ -344,7 +420,9 @@ describe("the reading skills", () => {
           existsSync(
             skill === "gc"
               ? join(plugin, "jig.ts")
-              : join(plugin, "skills", skill, "SKILL.md"),
+              : skill === "evidence"
+                ? join(plugin, "shared", "evidence.ts")
+                : join(plugin, "skills", skill, "SKILL.md"),
           ),
         ]).toEqual([f.path, skill, true]);
   });

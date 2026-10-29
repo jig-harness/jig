@@ -81,11 +81,16 @@ export function blockedPassScript(started: string, release: string): string {
  * how long a drive sleeps, never what it reads or decides; a poll-bounded
  * wait still runs its full number of polls. A test that asserts the
  * production pacing sets its own value (per-call env wins over this one).
+ * It also turns the drive ledger off (see the entry's comment).
  */
 export const DRIVE_PACING_ENV: Record<string, string> = {
   DRIVE_PR_FINAL_CI_POLL_MS: "50",
   DRIVE_PR_UNLABEL_SETTLE_MS: "50",
   DRIVE_PR_MAILBOX_POLL_MS: "50",
+  // The stub forge never returns a comment it was posted, so a drive writing
+  // its ledger would add a post per round to what these suites count; the
+  // ledger's own suite turns it on.
+  DRIVE_PR_LEDGER: "off",
 };
 
 /**
@@ -179,21 +184,24 @@ export async function state(stateDir: string, args: string[], cwd?: string) {
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [stdout, exitCode] = await Promise.all([
+  const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
     proc.exited,
   ]);
-  return { stdout, exitCode };
+  return { stdout, stderr, exitCode };
 }
 
 // Every pass command must name PR 999 or drive.ts's mis-targeting guard
 // rejects it — which `refuses a pass command that names a different PR`
-// asserts directly.
+// asserts directly. A marker a test looks for is split in the shell source
+// (`RAN_TH""E_PASS`): a stop prints the re-arm command with this argv, and
+// only the shell running the pass may put the whole marker on stderr.
 export const PASS_NOOP = ["sh", "-c", ": pass for 999; exit 0"];
 export const PASS_LOUD = [
   "sh",
   "-c",
-  'echo "pass for 999: RAN_THE_PASS" >&2; exit 0',
+  'echo "pass for 999: RAN_TH""E_PASS" >&2; exit 0',
 ];
 // Echoes the repair-task channel back. Both variables are always
 // printed, including when unset, so a test can assert their ABSENCE on an

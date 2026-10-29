@@ -531,6 +531,17 @@ test("a sentinel the hold skips, or whose failure is tolerated, is none", () => 
   expect(run(["--root", sentinelRepo("", SENTINEL_STEP)]).code).toBe(0);
 });
 
+test("a sentinel that cancels its own run before failing is one", () => {
+  const cancelling = `      - if: contains(${LABELS}, 'hold')\n        env:\n          RUN_URL: x\n        run: |\n          curl -fsS -X POST "$RUN_URL/cancel" && sleep 120\n          exit 1\n`;
+  exits(run(["--root", sentinelRepo("", cancelling)]), 0, "cancelling");
+  const tolerated = run([
+    "--root",
+    sentinelRepo("", `${cancelling}        continue-on-error: true\n`),
+  ]);
+  exits(tolerated, 1, "cancelling, continuing on error");
+  expect(rulesOf(tolerated.err)).toEqual(["ci-hold-sentinel"]);
+});
+
 test("a sentinel counts only where its failure is proven to reach the required check", () => {
   const sentinelJob = (cond = "") =>
     `  sentinel:\n${cond}    runs-on: x\n    timeout-minutes: 5\n    steps:\n${SENTINEL_STEP}`;

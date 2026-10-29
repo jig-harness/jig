@@ -29,30 +29,16 @@ rollout:
   documentation, scaffolding, agent hierarchy, implementation plans, tracker).
   It replaces `seeds/project-kickoff/`, which is an older copy. M6's PRD and
   architecture templates and the kickoff's own are merged into one of each.
-  The opinions M6 leaves out (personas, tiers, model routing) belong in the
-  skill, not the module. M6's PRD and architecture templates move into the
+  The opinions M6 leaves out (tiers, model routing) belong in the skill, not
+  the module; its red-team phase runs
+  [`red-team`](../plugin/skills/red-team/SKILL.md), which holds the
+  personas. M6's PRD and architecture templates move into the
   skill (`templates/`), moved and not copied, and M6's README links them there
   ([the module contract](../modules/AGENTS.md#the-module-contract)); the
   NOTICE entries move with them.
-- **`red-team`**: adversarial review of a requirements or architecture
-  document by persona, in a fresh session; the runnable form of M6's
-  per-stage adversarial review. The engineering personas (critical chief
-  technology officer, security auditor, performance engineer, cost
-  optimizer) read both documents; a requirements document is also read by
-  personas standing for the people who will use and approve it: a reader
-  who knows no engineering terms, one who cuts the scope to the smallest
-  release that still delivers the outcome, one who asks of each outcome how
-  it would be tested, and one who walks the user's day and names the
-  moments the document leaves out.
 - **Plan review**, folded into `review`, which already accepts a plan
   document: dependencies and critical path, completeness, simplification and
   effort checks.
-- **`docs`**: the runnable form of M4: runs the repository's frontmatter,
-  index and scar checks, flags stale drafts, and plans missing documentation by
-  project type. M4's gates (`modules/M4-docs-governance/reference/`) and their
-  self-tests move into the skill's `scripts/` and `__tests__/`, moved and not
-  copied, and M4's README links them there. The repository's M4 schema wins
-  over the source skill's own frontmatter rules.
 - **`upgrade-deps`**: grouped, changelog-driven dependency upgrades (the
   majors an update bot cannot do alone), opened through `do-item`'s
   pull-request policy and driven by `drive-pr`; the runnable side of M1's
@@ -149,15 +135,16 @@ Move into configuration when a consumer needs them:
   findings at once. Done when a deferral round files and appends its
   findings on both adapters, with the fake-tracker tests both adapters'
   tests use;
-- the drive pushes to and fetches from a remote named `origin`;
+- the git remote: the delivery skills read it from `repository.remote`
+  (default `origin`), but `review`, `review-reflections`, `reflect`,
+  `code-stats`, `changelog` and the audit's `config-fit.ts` still read
+  `origin` directly; they move onto the same setting, through
+  `remoteName()` in `shared/consumer.ts`;
 - the markers of Jig's own finding format (`ai-review-backlog`,
   `ai-review-round`, the leading `ai-review-*` comments) are fixed, and the
   summary-comment markers default to `<!-- ai-code-review -->` and
   `ai-reviewed-sha`: they become settings with neutral defaults, set to the
-  current names first in the repositories whose reviewer writes them;
-- fields named after Linear: the review-triage file's
-  `severity_mapping.<severity>.linear_priority` and
-  `fractal-metrics.ts --skip-linear`, renamed with the old names still read.
+  current names first in the repositories whose reviewer writes them.
 
 ### 11. Jig's own Simplified Technical English linter
 
@@ -184,19 +171,6 @@ launcher tracker for GitHub Issues and the key's file name (`issue-123`)
 where they name a cache file or a claim.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
-
-### 15. M14 Testing strategy: the rest
-
-[M14](../modules/M14-testing-strategy/README.md) states test tiers with budgets,
-honest doubles, the injected clock, polling, predicates proven where they
-execute, typed builders, tests with every change, coverage as a trend, a skip
-tripwire, stale-test triage, behaviour pins and a runtime canary. Still open:
-
-- exceptions that prune themselves: the tests-with-changes gate failing on an
-  exemption that matches no file, and a `fixed-delay:` token gate that fails
-  on a token with no delay beside it.
-
-Done when both gates are in M14's reference with their criteria.
 
 ### 17. Corrected designs for the existing modules
 
@@ -231,18 +205,13 @@ how it works and what is left. Done when:
   time;
 - the home and adoption pages show an audit sheet of Jig's own audit.
 
-### 20. `code-stats`: test-runner configuration and audit evidence
+### 20. `code-stats`: a reference set and audit evidence
 
 The [code-stats skill](../plugin/skills/code-stats/README.md) classifies a
-repository's files from conventions, attributes, its `code_stats`
-configuration and a classify command. What is left:
+repository's files from conventions, attributes, its test runners'
+configuration, its `code_stats` configuration and a classify command. What
+is left:
 
-- **Test-runner configuration** as the classification layer between
-  built-in detection and `code_stats` (the seam is marked in
-  `classify.ts`): jest and vitest `testMatch` and `include`, pytest
-  `testpaths` and `python_files`, Gradle and Maven test source sets. Each
-  reader states what it cannot read (a computed configuration) rather than
-  guessing.
 - **A reference set** of public repositories (a Python service, a Go
   module, a Rust workspace, a Java build, a JavaScript monorepo), each run
   recorded with its commit and its results beside it, as
@@ -253,10 +222,8 @@ configuration and a classify command. What is left:
   generated share, the scaffolding size, and a large unclassified share as a
   finding about the configuration.
 
-Done when a repository whose tests only its test runner names is classified
-correctly with no `code_stats` section, the reference set's recorded results
-are checked by a test, and an audit sheet cites code-stats figures as
-evidence.
+Done when the reference set's recorded results are checked by a test, and
+an audit sheet cites code-stats figures as evidence.
 
 ### 21. `changelog` skill: several artifacts, and the whole file checked
 
@@ -279,17 +246,19 @@ repository with one released artifact. What is left:
 ### 22. Merge conflicts, measured
 
 The replay, live record and [M11/M12 practice](merge-conflicts.md) measure
-where parallel work conflicts and expose the result in the audit and
-cross-PR scoreboard. What is left:
+where parallel work conflicts, expose the result in the audit and cross-PR
+scoreboard, and feed each hotspot into the reflection store as a finding
+whose class is its cause. What is left concerns only how Jig keeps its own
+plan:
 
-- **Into the learning loop**: turn conflict hotspots into findings in the
-  reflection store, with each cause as the finding's class, so the existing
-  review and escalation loop turns a recurring cause into a change.
 - **One file per roadmap item** follows only if the report shows the plan
-  or the roadmap conflicting where items are added or removed side by side.
+  or the roadmap conflicting where items are added or removed side by side
+  (`append` or `adjacent` hotspots, which now also arrive as reflection
+  findings of those classes).
 
-Done when measured hotspots enter the existing reflection loop without a
-second escalation path.
+Done when a history report over a window of parallel work on Jig has shown
+whether the plan or the roadmap has such hotspots, and one file per item has
+then become a plan item of its own or been dropped.
 
 ### 23. Seed review lenses
 
@@ -392,14 +361,17 @@ overlay with its evidence, enables the plugin for everyone who clones, and
 checks the result the way the audit will; the audit measures, init writes.
 What it will build, one pull request per step:
 
-- **The shared detector**: `config-fit.ts`'s detection and draft move to
-  `plugin/shared/detect.ts` with their tests, the audit unchanged.
 - **The skill**: `plugin/skills/init/` with `init.ts` (derive, ask, write,
-  check), refresh mode after a plugin release, tests from a plugin copy
-  against fixture repositories with and without a configuration, the
-  lifecycle-map row and the README table row.
+  check) on the shared detector (`plugin/shared/detect.ts`), which learns the
+  changelog file, the label taxonomy and the title convention, the `fields` on
+  the configuration fit's findings so init can sort them, refresh mode
+  after a plugin release, tests from a plugin copy against fixture
+  repositories with and without a configuration, the lifecycle-map row and
+  the README table row.
 - **The pointers**: the adoption pages, setup's next step, the audit's
-  `remedy: init` marker and the sheet's command.
+  `remedy: init` marker and the sheet's command, and the configuration
+  fit's finding for a file written under an older plugin than the last
+  field-adding release.
 - **Project-level enablement** in the host settings files.
 
 Done when a fresh clone with no configuration runs `/jig:init`, commits
@@ -420,9 +392,6 @@ defaults a repository overrides field by field; a type lowering depth only
 where no flag, catalog review or gate raises it; an unknown type getting
 the strictest value of every field. What it will build, one pull request per step:
 
-- **The derivation**: `determine_type.ts`, `issue_tracker.types`, the
-  defaults table as data with its tests, in CONFIGURATION.md; `do-item`
-  prints the type and changes nothing yet.
 - **`do-item` reads the row**: the pattern pre-scout, the review tiers and
   skip threshold, the change note, the body sections and the spike's `hitl`
   default move to the table, with a `task` fixture showing the lighter path.
@@ -450,8 +419,11 @@ attributes on a fresh base, narrows, keeps a hypothesis ledger, fixes, and
 stops after a budget with the ledger posted where the work is tracked.
 What it will build, one pull request per step:
 
-- **The record**: `shared/evidence.ts` with its tests, run from a plugin copy.
 - **`verify`**: the skill, its README, the lifecycle row, the M14 link.
+- **Evidence collection**: a resource collection kind that removes records,
+  their output and moved-aside reports past `verify.retention_days`, with
+  receipts; until it lands, `verify.retention_days` is read and nothing is
+  removed.
 - **`do-item` and `fix-ci` record and require**: the policy refusal, the
   body's evidence section, the seen-to-fail requirement by work type (item 27).
 - **`debug`**: the skill, the ledger, the budget, the hand-off from
@@ -508,7 +480,8 @@ item links its requirements; the delivery loop writes no spec) is a decision rec
 `resolve-review-comments` lists the findings a static-analysis app reports as
 check-run annotations (`review.scanner_apps`), and `drive-pr` tells the agent
 to work them, but the drive's verdict reads threads and summary comments
-only, so a drive can still end `CONVERGED` over an annotation. What it will
+only, so a drive with annotations as its only findings can end `CONVERGED`
+without starting a round. What it will
 build: the annotation listing as a third source of open work beside threads
 and summary findings, read by `drive-status`, `round-plan` and `converge`,
 so the verdict withholds `CONVERGED` while a scanner check is running on the
@@ -537,12 +510,11 @@ conflict; a pinned agent keeping its pin; the reason, the source and
 whether it was applied on the pull request, where the drive's loop-cost
 report joins them to the outcome; a person's choice always winning; opt-in
 until a repository declares its rules; no model asked to route. The design
-is written and decided, so what stays open under this item is the build,
-its own epic, one pull request per step, after item 27's type derivation:
+is written and decided, and its first step is built: `determine_route.ts`
+derives the route from the `routing` section and its defaults, and
+`do-item` prints it and forwards nothing. What stays open is the rest of
+the build, its own epic, one pull request per step:
 
-- **The derivation**: `determine_route.ts`, the `routing` section and its
-  defaults as data with their tests, in CONFIGURATION.md; `do-item` prints
-  the route and changes nothing yet.
 - **The record**: the `## Route` section written and parsed from
   `plugin/shared/`, and the loop-cost report reading it.
 - **M0's declaration point**: the policy, the criterion and the loader's
