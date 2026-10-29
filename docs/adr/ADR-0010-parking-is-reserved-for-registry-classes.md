@@ -54,10 +54,11 @@ where a person can find and reverse it, in the same step that takes it: a
 thread reply with the outcome token and its rationale, a decision-record
 comment for a `decide` ruling, the issue body for an issue filed (saying
 which skill filed it, from which pull request and why), an entry in the pull
-request's `## Deferred` section for a deferral no tracker adapter can file,
-and for all of them an entry under the drive's
+request's `## Deferred` section for a deferral no tracker adapter can file.
+Each of the last three also gets an entry under the drive's
 `## Decisions taken unattended`, with the autonomy level, the class and how
-to reverse it. A decision with no record is a defect the round report counts.
+to reverse it; a thread's outcome is already listed on the pull request with
+its reply. A decision with no record is a defect the round report counts.
 
 How far a run decides on its own is the repository's `autonomy.level`,
 capped by its `max_level`; the default, `attended`, is the behaviour before

@@ -17,23 +17,33 @@ const DRIVE = {
   DRIVE_PR_SESSION_STARTED: "t",
 };
 const DRIVE_NAMES = Object.keys(DRIVE);
+const SELECTORS = {
+  JIG_CONSUMER_ROOT: "/here",
+  JIG_OVERLAY: "/here/o.yaml",
+  DRIVE_PR_HANDOFF_DIR: "/here/.context",
+  DRIVE_PR_MAILBOX_DIR: "/here/.context/drive-mailbox",
+  DRIVE_PR_INTENT_CHAIN_DIR: "/here/.context/intent-chain",
+};
+const SELECTOR_NAMES = Object.keys(SELECTORS);
 
 describe("destinationEnv", () => {
   test("removes only GH_REPO from a session outside any drive", () => {
-    const change = destinationEnv(TREE, false, {
+    const change = destinationEnv(TREE, "none", {
       GH_REPO: "example/app",
-      JIG_OVERLAY: "/o.yaml",
+      ...SELECTORS,
       DRIVE_PR_STATE_DIR: "/state",
     });
     expect(change).toEqual({ unset: ["GH_REPO"] });
   });
 
   test("is empty when nothing selects another repository or tree", () => {
-    expect(destinationEnv(TREE, false, { HOME: "/h" })).toEqual({ unset: [] });
+    expect(destinationEnv(TREE, "none", { HOME: "/h" })).toEqual({
+      unset: [],
+    });
   });
 
   test("keeps a drive's variables that name the same tree", () => {
-    const change = destinationEnv(TREE, false, {
+    const change = destinationEnv(TREE, "none", {
       ...DRIVE,
       DRIVE_PR_WORKTREE: TREE,
     });
@@ -41,7 +51,7 @@ describe("destinationEnv", () => {
   });
 
   test("removes a drive's variables that name another tree, keeping its clone's state", () => {
-    const change = destinationEnv(TREE, false, {
+    const change = destinationEnv(TREE, "none", {
       ...DRIVE,
       DRIVE_PR_STATE_DIR: "/relocated/key",
       DRIVE_PR_STATE_DIR_IDENTITY: "1:2",
@@ -49,14 +59,32 @@ describe("destinationEnv", () => {
     expect(change.unset).toEqual(DRIVE_NAMES);
   });
 
-  test("in another clone, removes the configuration selectors and a default state leaf", () => {
+  test("in another tree of the same clone, removes every tree selector and keeps the state leaf", () => {
+    const change = destinationEnv(TREE, "tree", {
+      ...DRIVE,
+      ...SELECTORS,
+      DRIVE_PR_STATE_DIR: "/relocated/key",
+      DRIVE_PR_STATE_DIR_IDENTITY: "1:2",
+    });
+    expect(change.unset).toEqual([...DRIVE_NAMES, ...SELECTOR_NAMES]);
+  });
+
+  test("in another tree, keeps a drive's variables that name the destination", () => {
+    const change = destinationEnv(TREE, "tree", {
+      ...DRIVE,
+      ...SELECTORS,
+      DRIVE_PR_WORKTREE: TREE,
+    });
+    expect(change.unset).toEqual(SELECTOR_NAMES);
+  });
+
+  test("in another clone, removes the tree selectors and a default state leaf", () => {
     const change = destinationEnv(
       TREE,
-      true,
+      "clone",
       {
         ...DRIVE,
-        JIG_CONSUMER_ROOT: "/here",
-        JIG_OVERLAY: "/here/o.yaml",
+        ...SELECTORS,
         DRIVE_PR_STATE_DIR: join(defaultStateRoot(), "source-key"),
         DRIVE_PR_STATE_DIR_IDENTITY: "1:2",
       },
@@ -64,8 +92,7 @@ describe("destinationEnv", () => {
     );
     expect(change.unset).toEqual([
       ...DRIVE_NAMES,
-      "JIG_CONSUMER_ROOT",
-      "JIG_OVERLAY",
+      ...SELECTOR_NAMES,
       "DRIVE_PR_STATE_DIR",
       "DRIVE_PR_STATE_DIR_IDENTITY",
     ]);
@@ -74,7 +101,7 @@ describe("destinationEnv", () => {
   test("in another clone, keeps a state leaf that is the destination's", () => {
     const change = destinationEnv(
       TREE,
-      true,
+      "clone",
       {
         DRIVE_PR_STATE_DIR: "/relocated/destination-key",
         DRIVE_PR_STATE_DIR_IDENTITY: "1:2",
@@ -88,7 +115,7 @@ describe("destinationEnv", () => {
     expect(() =>
       destinationEnv(
         TREE,
-        true,
+        "clone",
         {
           DRIVE_PR_STATE_DIR: "/relocated/source-key",
           DRIVE_PR_STATE_DIR_IDENTITY: "1:2",

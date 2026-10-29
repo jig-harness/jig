@@ -14,11 +14,15 @@
  * Each entry is filed through the configured tracker adapter (`do-item`'s
  * tracker interface, `issue_tracker.adapter`) with the label of the
  * `followup` role, unless the tracker already holds an issue whose body
- * carries the entry's source url (a run stopped after filing it): that issue
- * is reused rather than filed twice. Each filing is printed the moment it is
- * made, then its entry is replaced by read-modify-write against the body's
- * `updated_at`, before the next one is filed; a filing whose entry could not
- * be replaced is reported as unrecorded, with its key.
+ * carries the entry's identity line (its source url and fingerprint; a run
+ * stopped after filing it): that issue is reused rather than filed twice.
+ * Each entry is read afresh before it is filed, so a person's correction
+ * since the run began is what gets filed. Each filing is printed the moment
+ * it is made, then its entry is replaced by read-modify-write against the
+ * body's `updated_at`, before the next one is filed; a filing whose entry
+ * could not be replaced (the write failed, or the entry was removed, filed
+ * as another issue or changed since it was read) is reported as unrecorded,
+ * with its key.
  *
  * The body's write cannot be made atomic against a person's own save, so
  * every run also checks the section against the review threads: a resolved
@@ -37,6 +41,7 @@ import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import type { Tracker } from "../../do-item/scripts/lib/tracker/port.ts";
 import {
   type DeferredEntry,
+  DeferredSectionError,
   deferredEntries,
   withFiledEntry,
 } from "./lib/deferred-section.ts";
@@ -46,6 +51,17 @@ import {
   type PrBodyForge,
   updatePrBody,
 } from "./lib/pr-body.ts";
+
+/**
+ * The line an issue filed for `entry` carries, naming exactly that entry:
+ * two summary findings share their comment's url and differ by fingerprint.
+ */
+export function identityLine(entry: {
+  source: string;
+  fingerprint?: string;
+}): string {
+  return `Deferred finding: ${entry.source}${entry.fingerprint === undefined ? "" : ` (fingerprint ${entry.fingerprint})`}`;
+}
 
 /** The issue an entry becomes. */
 function issueFor(
@@ -67,6 +83,8 @@ function issueFor(
       `Filed by \`file-deferred.ts\` from [pull request #${pr}](${prUrl}), whose review deferred it there because no tracker adapter could file it at the time.`,
       "",
       entry.text,
+      "",
+      identityLine(entry),
     ].join("\n"),
     labels: [label],
   };
@@ -95,7 +113,11 @@ const sameEntry = (a: DeferredEntry, b: DeferredEntry): boolean =>
 const message = (err: unknown): string =>
   err instanceof Error ? err.message : String(err);
 
-/** An issue the tracker already holds for the entry, by its source url. */
+/**
+ * An issue the tracker already holds for the entry: one whose body carries
+ * its identity line as a line of its own. An issue that only mentions the
+ * source url, or names another fingerprint on it, is not this entry's.
+ */
 async function alreadyFiled(
   tracker: Tracker,
   entry: DeferredEntry,
@@ -104,13 +126,24 @@ async function alreadyFiled(
     includeClosed: true,
   })) {
     const issue = await tracker.getIssue(hit.identifier);
-    if (issue?.description.includes(entry.source))
+    const identity = identityLine(entry);
+    if (
+      issue?.description
+        .replaceAll("\r", "")
+        .split("\n")
+        .some((l) => l.trim() === identity)
+    )
       return { identifier: issue.identifier, url: issue.url };
   }
   return null;
 }
 
-/** Replace `entry` with the issue it was filed as. */
+/**
+ * Replace `entry` with the issue it was filed as. Already recorded as that
+ * issue is a no-op; an entry since removed, recorded as another issue, or
+ * changed from the text that was filed is refused, so the filing is reported
+ * rather than counted as recorded.
+ */
 async function recordFiling(
   forge: PrBodyForge,
   pr: string,
@@ -120,20 +153,63 @@ async function recordFiling(
   await updatePrBody(
     forge,
     pr,
-    (current) =>
-      deferredEntries(current).some(
-        (e) => sameEntry(e, entry) && e.filed === undefined,
-      )
-        ? withFiledEntry(current, entry, {
-            key: issue.identifier,
-            url: issue.url,
-          })
-        : null,
+    (current) => {
+      const now = deferredEntries(current).find((e) => sameEntry(e, entry));
+      if (now === undefined)
+        throw new DeferredSectionError(
+          "the entry was removed from the body after it was read",
+        );
+      if (now.filed !== undefined) {
+        if (now.filed.key === issue.identifier) return null;
+        throw new DeferredSectionError(
+          `the entry is already recorded as ${now.filed.key}`,
+        );
+      }
+      if (now.text !== entry.text)
+        throw new DeferredSectionError(
+          "the entry changed after it was filed: file the corrected finding by hand or close the issue",
+        );
+      return withFiledEntry(current, entry, {
+        key: issue.identifier,
+        url: issue.url,
+      });
+    },
     (after) =>
       deferredEntries(after).some(
         (e) => sameEntry(e, entry) && e.filed?.key === issue.identifier,
       ),
   );
+}
+
+/**
+ * `initial` as the body holds it now, or `null` when it is gone or filed:
+ * a person may have corrected, removed or filed it while earlier entries
+ * were filed.
+ */
+async function stillOpen(
+  forge: PrBodyForge,
+  pr: string,
+  initial: DeferredEntry,
+): Promise<DeferredEntry | null> {
+  const now = deferredEntries((await forge.read(pr)).body).find((e) =>
+    sameEntry(e, initial),
+  );
+  return now === undefined || now.filed !== undefined ? null : now;
+}
+
+/** The issue for `entry`: one the tracker already holds, else `draft` filed. */
+async function issueOf(
+  tracker: Tracker,
+  entry: DeferredEntry,
+  draft: ReturnType<typeof issueFor>,
+): Promise<{
+  issue: { identifier: string; url: string | null };
+  reused: boolean;
+}> {
+  const found = await alreadyFiled(tracker, entry);
+  return found !== null
+    ? { issue: found, reused: true }
+    : { issue: await tracker.createIssue(draft), reused: false };
 }
 
 /**
@@ -167,20 +243,21 @@ export async function fileDeferred(
         : (opts.noTrackerWhy ?? "no tracker adapter can file");
     return result;
   }
-  for (const [i, entry] of open.entries()) {
-    let issue: { identifier: string; url: string | null };
-    let reused: boolean;
+  for (const [i, initial] of open.entries()) {
+    const entry = await stillOpen(forge, pr, initial);
+    if (entry === null) continue;
+    let got: {
+      issue: { identifier: string; url: string | null };
+      reused: boolean;
+    };
     try {
-      const found = await alreadyFiled(tracker, entry);
-      reused = found !== null;
-      issue =
-        found ??
-        (await tracker.createIssue(issueFor(entry, pr, url, opts.label)));
+      got = await issueOf(tracker, entry, issueFor(entry, pr, url, opts.label));
     } catch (err) {
       result.remaining = open.slice(i);
       result.why = `the tracker refused: ${message(err)}`;
       return result;
     }
+    const { issue, reused } = got;
     const filing = {
       source: entry.source,
       key: issue.identifier,

@@ -98,6 +98,7 @@ describe("the effective level and its source", () => {
     });
     expect(a.level).toBe("unattended");
     expect(a.capped).toBe(false);
+    expect(a.source).toContain("home");
   });
 
   test("the environment layer wins over the user layer", () => {

@@ -18,8 +18,8 @@ let n = 0;
 
 async function run(
   config: string,
-  opts: { driver: boolean; args?: string[] },
-): Promise<{ stdout: string }> {
+  opts: { driver: boolean; args?: string[]; exit?: number },
+): Promise<{ stdout: string; stderr: string }> {
   const root = join(scratch, `repo-${n++}`);
   mkdirSync(join(root, ".config"), { recursive: true });
   mkdirSync(join(root, ".git"));
@@ -38,8 +38,9 @@ async function run(
     stderr: "pipe",
   });
   const stdout = await new Response(proc.stdout).text();
-  await expectSpawnExited(proc, 0);
-  return { stdout };
+  const stderr = await new Response(proc.stderr).text();
+  await expectSpawnExited(proc, opts.exit ?? 0);
+  return { stdout, stderr };
 }
 
 const UNATTENDED = "autonomy:\n  level: unattended\n";
@@ -65,6 +66,28 @@ describe("the confirm step", () => {
   test("a driver pass under unattended confirms when no pull request is named", async () => {
     const { stdout } = await run(UNATTENDED, { driver: true });
     expect(stdout).toStartWith("confirm: autonomy: unattended");
+  });
+
+  test("options that name no pull request are refused, never a skip", async () => {
+    const bad = (i: number, value: string) =>
+      WHY.map((v, j) => (j === i ? value : v));
+    for (const args of [
+      ["--skill", "", "--pr", "", "--why", ""],
+      bad(1, ""),
+      bad(3, ""),
+      bad(3, "not a url"),
+      bad(3, "https://github.com/example/project/issues/42"),
+      bad(5, "  "),
+      bad(5, "two\nlines"),
+    ]) {
+      const { stdout, stderr } = await run(UNATTENDED, {
+        driver: true,
+        args,
+        exit: 2,
+      });
+      expect(stdout).not.toContain("skip");
+      expect(stderr).toContain("give --skill, --pr and --why together");
+    }
   });
 
   test("a driver pass under attended confirms", async () => {

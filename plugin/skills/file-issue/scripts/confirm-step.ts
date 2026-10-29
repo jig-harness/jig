@@ -30,11 +30,48 @@ export function filedByLine(skill: string, pr: string, why: string): string {
   return `Filed by \`/jig:${skill}\` from ${pr}, without a person's confirmation: ${why}`;
 }
 
-async function main(): Promise<number> {
-  let values: Record<string, string | boolean | undefined>;
+const isSkillName = (v: unknown): boolean =>
+  typeof v === "string" && /^[a-z][a-z0-9-]*$/.test(v);
+
+/** An \`http(s)\` url whose path ends at a pull or merge request's number. */
+function isPullRequestUrl(v: unknown): boolean {
+  if (typeof v !== "string" || !URL.canParse(v)) return false;
+  const url = new URL(v);
+  return (
+    /^https?:$/.test(url.protocol) &&
+    /\/(pull|pulls|merge_requests)\/\d+\/?$/.test(url.pathname)
+  );
+}
+
+const isOneLine = (v: unknown): boolean =>
+  typeof v === "string" && v.trim() !== "" && !/[\n\r]/.test(v);
+
+/**
+ * What keeps the three options from naming a run's provenance, or \`null\`: a
+ * skill name, a pull request's url, and a reason on one line. Values that
+ * name nothing (empty, blank, not a pull request) would let a run with no
+ * pull request behind it skip the confirmation.
+ */
+export function provenanceFault(
+  skill: unknown,
+  pr: unknown,
+  why: unknown,
+): string | null {
+  if (!isSkillName(skill))
+    return "--skill must name a skill (lower-case words joined by hyphens)";
+  if (!isPullRequestUrl(pr)) return "--pr must be a pull request's url";
+  if (!isOneLine(why)) return "--why must be one nonempty line";
+  return null;
+}
+
+const USAGE =
+  "usage: confirm-step.ts [--skill <name> --pr <url> --why <one line>]";
+
+/** The three options as given; usage fails on any other argument. */
+function parsed(args: string[]): Record<string, string | boolean | undefined> {
   try {
-    values = parseArgs({
-      args: process.argv.slice(2),
+    return parseArgs({
+      args,
       options: {
         skill: { type: "string" },
         pr: { type: "string" },
@@ -42,28 +79,34 @@ async function main(): Promise<number> {
       },
     }).values;
   } catch {
-    fail(
-      2,
-      "usage: confirm-step.ts [--skill <name> --pr <url> --why <one line>]",
-    );
+    fail(2, USAGE);
   }
-  const { skill, pr, why } = values;
-  const given = [skill, pr, why].filter((v) => typeof v === "string");
-  if (
-    (given.length !== 0 && given.length !== 3) ||
-    (typeof why === "string" && /[\n\r]/.test(why))
-  )
-    fail(
-      2,
-      "confirm-step.ts: give --skill, --pr and --why together, --why on one line",
-    );
+}
+
+/**
+ * The provenance the options name, or `null` when none is given; usage
+ * fails on part of it, or on a part that names nothing.
+ */
+function provenance(
+  args: string[],
+): { skill: string; pr: string; why: string } | null {
+  const { skill, pr, why } = parsed(args);
+  if ([skill, pr, why].every((v) => v === undefined)) return null;
+  const fault = provenanceFault(skill, pr, why);
+  if (fault !== null)
+    fail(2, `confirm-step.ts: give --skill, --pr and --why together: ${fault}`);
+  return { skill: skill as string, pr: pr as string, why: why as string };
+}
+
+async function main(): Promise<number> {
+  const given = provenance(process.argv.slice(2));
   let line: string;
   let confirm: boolean;
   try {
     const a = currentAutonomy();
     line = describeAutonomy(a);
     // With no pull request behind the run there is no skip: confirm.
-    confirm = a.level === "attended" || given.length !== 3;
+    confirm = a.level === "attended" || given === null;
   } catch (err) {
     fail(
       1,
@@ -71,10 +114,8 @@ async function main(): Promise<number> {
     );
   }
   process.stdout.write(`${confirm ? "confirm" : "skip"}: ${line}\n`);
-  if (given.length === 3)
-    process.stdout.write(
-      `${filedByLine(skill as string, pr as string, why as string)}\n`,
-    );
+  if (given !== null)
+    process.stdout.write(`${filedByLine(given.skill, given.pr, given.why)}\n`);
   return 0;
 }
 

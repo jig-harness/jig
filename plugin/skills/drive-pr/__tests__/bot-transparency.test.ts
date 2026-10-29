@@ -130,6 +130,18 @@ describe("a newer comment, never transparent", () => {
   test("a deleted account", () => {
     expect(transparent(null, ACKNOWLEDGEMENT)).toBe(false);
   });
+
+  test("a finding from a bot whose entry declares an empty or wrong-typed marker", () => {
+    const finding = "_⚠️ Potential issue_ | _🟠 Major_\n\nStill wrong.";
+    for (const marker of ["", "  ", 7])
+      for (const field of ["confirmation_marker", "chat_marker"]) {
+        const bots = botMarkers([
+          { login: "example-review[bot]", [field]: marker } as never,
+        ]);
+        expect(transparent("example-review", finding, bots)).toBe(false);
+        expect(transparent("example-review", "Noted.", bots)).toBe(false);
+      }
+  });
 });
 
 describe("review.bots entries", () => {

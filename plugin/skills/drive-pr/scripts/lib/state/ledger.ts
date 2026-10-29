@@ -24,6 +24,7 @@
  */
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
+import { stallThresholdMs } from "../doctor.ts";
 import { TRUSTED_ASSOCIATIONS } from "../../summary-findings.ts";
 import {
   type DriveState,
@@ -39,6 +40,7 @@ import {
   isUnattendedDecision,
 } from "./decisions.ts";
 import { type DriveEvent, isOptionalEvents } from "./events.ts";
+import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
 
 export const LEDGER_MARKER = "<!-- drive-pr-ledger -->";
 export const CLAIM_MARKER = "<!-- drive-pr-takeover-claim -->";
@@ -62,6 +64,8 @@ export interface LedgerHeld {
   actor: string;
   outcome?: "accepted" | "moot";
   commentUrl?: string;
+  /** A held finding's answer, posted once its push lands; cut with `outcome`. */
+  reason?: string;
   verifiedSha?: string;
 }
 
@@ -94,6 +98,11 @@ export interface Ledger {
   generation: number;
   pr: number;
   round: number;
+  /** The passes on `attemptsHead`: the per-head budget a resume keeps. */
+  attempts: number;
+  attemptsHead: string;
+  /** The deadline restarts already spent, shared with a takeover. */
+  deadlineRetries: number;
   phase: string;
   lastCountedHead: string;
   verifiedSha: string;
@@ -108,6 +117,12 @@ export interface Ledger {
   decisions: UnattendedDecision[];
   /** Self-restarts and re-arms (`events.ts`); absent in a ledger written before them. */
   events?: DriveEvent[];
+  /**
+   * The review arbiter's rulings (`rulings.ts`), so a drive recovered in
+   * another clone parks under the same boundary. Absent in a ledger written
+   * before they were carried, which seeds none over the local ones.
+   */
+  rulings?: ArbiterRuling[];
   driver: LedgerDriver;
   /** The handoff narrative's last lines. */
   narrative: string[];
@@ -146,6 +161,9 @@ export function ledgerFromState(
     generation: opts.generation,
     pr: s.pr,
     round: s.rounds,
+    attempts: s.attempts,
+    attemptsHead: s.attemptsHead,
+    deadlineRetries: s.deadlineRetries ?? 0,
     phase: s.phase,
     lastCountedHead: s.lastCountedHead,
     verifiedSha: s.verifiedSha,
@@ -164,9 +182,11 @@ export function ledgerFromState(
     decisions: (s.decisions ?? []).map((d) => ({
       ...d,
       what: redact(d.what),
+      record: redact(d.record),
       reverse: redact(d.reverse),
     })),
     events: s.events ?? [],
+    rulings: s.rulings ?? [],
     driver: opts.driver,
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
     cut: [],
@@ -178,12 +198,19 @@ const EMAIL =
   /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
 
 /**
- * `text` with every email-shaped string replaced: the narrative and the
- * parked reasons are agent-authored, and a pull request comment is public to
- * everyone who can read the repository.
+ * An account identifier as `lib/identity.ts` writes one: an account hash, or
+ * a credential's fingerprint.
+ */
+const ACCOUNT_ID = /\b(?:acct-[0-9a-f]{16}|(?:token|api-key):[0-9a-f]{12})\b/g;
+
+/**
+ * `text` with every email-shaped string and account identifier replaced: the
+ * narrative, the parked reasons and the held findings' answers are
+ * agent-authored, and a pull request comment is public to everyone who can
+ * read the repository.
  */
 export function redact(text: string): string {
-  return text.replace(EMAIL, "<redacted>");
+  return text.replace(EMAIL, "<redacted>").replace(ACCOUNT_ID, "<redacted>");
 }
 
 function withoutAccount(
@@ -202,6 +229,7 @@ function ledgerHeld(h: HeldItem): LedgerHeld {
     actor: h.actor,
     outcome: h.outcome,
     ...(h.commentUrl === undefined ? {} : { commentUrl: h.commentUrl }),
+    ...(h.reason === undefined ? {} : { reason: redact(h.reason) }),
     ...(h.verifiedSha === undefined ? {} : { verifiedSha: h.verifiedSha }),
   };
 }
@@ -273,7 +301,7 @@ export function renderLedger(
   if (bytes(body) <= limit) return { body, ledger: l };
   l = {
     ...l,
-    held: l.held.map(({ outcome: _dropped, ...rest }) => rest),
+    held: l.held.map(({ outcome: _dropped, reason: _answer, ...rest }) => rest),
     cut: ["held items' outcomes"],
   };
   body = ledgerBody(l, true);
@@ -307,18 +335,23 @@ const isText = (v: unknown): v is string => typeof v === "string";
 const isCount = (v: unknown): v is number =>
   typeof v === "number" && Number.isInteger(v) && v >= 0;
 
+/** A held item's round: a count, or `-1` for an unconfirmed hold. */
+const isHeldRound = (v: unknown): boolean =>
+  typeof v === "number" && Number.isInteger(v) && v >= -1;
+
 function isLedgerHeld(v: unknown): v is LedgerHeld {
   return (
     isRecord(v) &&
     isText(v.key) &&
     v.key !== "" &&
     (v.kind === "thread" || v.kind === "finding") &&
-    isCount(v.round) &&
+    isHeldRound(v.round) &&
     isText(v.actor) &&
     (v.outcome === undefined ||
       v.outcome === "accepted" ||
       v.outcome === "moot") &&
     (v.commentUrl === undefined || isText(v.commentUrl)) &&
+    (v.reason === undefined || isText(v.reason)) &&
     (v.verifiedSha === undefined || isText(v.verifiedSha))
   );
 }
@@ -349,6 +382,9 @@ function ledgerFault(v: Record<string, unknown>): string {
     ["generation", isCount(v.generation) && v.generation > 0],
     ["pr", isCount(v.pr)],
     ["round", isCount(v.round)],
+    ["attempts", isCount(v.attempts)],
+    ["attemptsHead", isText(v.attemptsHead)],
+    ["deadlineRetries", isCount(v.deadlineRetries)],
     ["phase", isText(v.phase)],
     ["lastCountedHead", isText(v.lastCountedHead)],
     ["verifiedSha", isText(v.verifiedSha)],
@@ -371,6 +407,7 @@ function ledgerFault(v: Record<string, unknown>): string {
       Array.isArray(v.decisions) && v.decisions.every(isUnattendedDecision),
     ],
     ["events", isOptionalEvents(v.events)],
+    ["rulings", isOptionalRulings(v.rulings)],
     ["driver", isLedgerDriver(v.driver)],
     ["narrative", Array.isArray(v.narrative) && v.narrative.every(isText)],
     ["cut", Array.isArray(v.cut) && v.cut.every(isText)],
@@ -394,8 +431,14 @@ export function parseLedger(body: string): ParsedLedger | null {
   }
   if (!isRecord(data))
     return { kind: "malformed", reason: "the data block is not an object" };
+  // Only a version number reads as a future ledger; anything else is damage.
   if (data.ledgerVersion !== LEDGER_VERSION)
-    return { kind: "unknown-version", version: data.ledgerVersion };
+    return isCount(data.ledgerVersion) && data.ledgerVersion > LEDGER_VERSION
+      ? { kind: "unknown-version", version: data.ledgerVersion }
+      : {
+          kind: "malformed",
+          reason: `ledgerVersion ${JSON.stringify(data.ledgerVersion) ?? "is missing"} is not a version`,
+        };
   const fault = ledgerFault(data);
   if (fault !== "")
     return { kind: "malformed", reason: `ill-formed field(s): ${fault}` };
@@ -406,7 +449,7 @@ export function parseLedger(body: string): ParsedLedger | null {
 export function renderClaim(claim: TakeoverClaim): string {
   return [
     CLAIM_MARKER,
-    `**Drive takeover claim** · \`drive-pr-takeover-claim\` · the drive of this pull request is taken over by another clone, from a driver whose ledger heartbeat is older than the lease window. Of the claims on one ledger generation the earliest wins; a driver that finds a newer claim than its own stops at its next round boundary.`,
+    `**Drive claim** · \`drive-pr-takeover-claim\` · a driver in another clone claims the drive of this pull request: a takeover from a driver whose ledger heartbeat is older than the lease window, or a start where no driver of that clone held it. Of the claims on one ledger generation the earliest wins; a driver that finds a newer claim than its own stops at its next round boundary.`,
     "",
     `<!-- ${CLAIM_DATA}`,
     commentSafeJson(claim),
@@ -555,15 +598,25 @@ export function snapshotFrom(
 /**
  * The claims in force: of the claims on one ledger generation, the earliest
  * (lowest id) wins and every later one has stood down, so it counts for
- * nothing.
+ * nothing. A winner whose owner never wrote the ledger past that generation
+ * is abandoned (its seeding failed, or it died before its first write): a
+ * claim on the same generation posted more than the lease window after it
+ * (`stallThresholdMs`) wins in its place, so an abandoned claim never holds
+ * the drive for good.
  */
 export function effectiveClaims(
   claims: readonly ClaimComment[],
 ): ClaimComment[] {
+  const window = stallThresholdMs();
   const byGeneration = new Map<number, ClaimComment>();
-  for (const c of [...claims].sort((a, b) => a.id - b.id))
-    if (!byGeneration.has(c.claim.generation))
+  for (const c of [...claims].sort((a, b) => a.id - b.id)) {
+    const winner = byGeneration.get(c.claim.generation);
+    if (
+      winner === undefined ||
+      Date.parse(c.claim.at) - Date.parse(winner.claim.at) > window
+    )
       byGeneration.set(c.claim.generation, c);
+  }
   return [...byGeneration.values()].sort((a, b) => a.id - b.id);
 }
 
@@ -617,7 +670,7 @@ export interface StoppedDriver {
 export function ledgerOfStoppedDriver(
   snapshot: LedgerSnapshot,
   who: StoppedDriver,
-): { ledger: Ledger } | { why: string } {
+): { ledger: Ledger; own: ClaimComment | null } | { why: string } {
   const parsed = snapshot.canonical?.parsed;
   if (parsed?.kind !== "ledger") return { why: "there is no ledger to mark" };
   const d = parsed.ledger.driver;
@@ -631,12 +684,18 @@ export function ledgerOfStoppedDriver(
     return {
       why: `it names another driver (${d.actor}), which now owns it`,
     };
-  const claim = newerClaim(snapshot.claims, d.position ?? 0, who.clone);
+  // A position that is this clone's own claim is arbitrated as the live
+  // driver arbitrates it, so a rival that beat that claim is seen too.
+  const own =
+    snapshot.claims.find(
+      (c) => c.id === d.position && c.claim.clone === who.clone,
+    ) ?? null;
+  const claim = newerClaim(snapshot.claims, d.position ?? 0, who.clone, own);
   if (d.position !== undefined && claim !== null)
     return {
       why: `another clone's claim (comment ${claim.id}) took the drive over`,
     };
-  return { ledger: parsed.ledger };
+  return { ledger: parsed.ledger, own };
 }
 
 /** The highest id among the claims in force, `0` for none. */
@@ -652,7 +711,8 @@ export function heldFromLedger(held: readonly LedgerHeld[]): {
   const out: HeldItem[] = [];
   const dropped: string[] = [];
   for (const h of held) {
-    if (h.outcome === undefined) {
+    const answerless = h.kind === "finding" && (h.reason ?? "") === "";
+    if (h.outcome === undefined || answerless) {
       dropped.push(h.key);
       continue;
     }
@@ -663,6 +723,7 @@ export function heldFromLedger(held: readonly LedgerHeld[]): {
       round: h.round,
       actor: h.actor,
       ...(h.commentUrl === undefined ? {} : { commentUrl: h.commentUrl }),
+      ...(h.reason === undefined ? {} : { reason: h.reason }),
       ...(h.verifiedSha === undefined ? {} : { verifiedSha: h.verifiedSha }),
     });
   }
@@ -682,10 +743,17 @@ export function seedFromLedger(
   local: DriveState,
   l: Ledger,
 ): { state: DriveState; dropped: string[] } | { error: string } {
+  if (l.pr !== local.pr)
+    return {
+      error: `the ledger is PR #${l.pr}'s, not PR #${local.pr}'s`,
+    };
   const { held, dropped } = heldFromLedger(l.held);
   const state: DriveState = {
     ...local,
     rounds: l.round,
+    attempts: l.attempts,
+    attemptsHead: l.attemptsHead,
+    deadlineRetries: l.deadlineRetries,
     phase: l.phase,
     lastCountedHead: l.lastCountedHead,
     verifiedSha: l.verifiedSha,
@@ -699,6 +767,7 @@ export function seedFromLedger(
     })),
     decisions: l.decisions,
     events: l.events ?? local.events ?? [],
+    ...(l.rulings === undefined ? {} : { rulings: l.rulings }),
     ledgerGeneration: l.generation,
   };
   if (!isUsableState(state, local.pr))

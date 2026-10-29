@@ -11,7 +11,7 @@
  * a person must decide, and a decision outside them is the agent's to take
  * and record.
  *
- * The record is Markdown with six headings, in this order, each once:
+ * The record is Markdown with these headings, in this order, each once:
  *
  *   ## Question        one sentence on one line, ending with `?`
  *   ## Options         two or more `- **<name>** …` items, each with
@@ -80,7 +80,7 @@ function sections(text: string): {
     if (current !== null) found[current] = body.join("\n").trim();
   };
   for (const line of lines) {
-    const heading = /^##\s+(.+?)\s*$/.exec(line)?.[1];
+    const heading = /^##\s+(\S.*)$/.exec(line)?.[1]?.trimEnd();
     if (heading !== undefined) {
       close();
       const known = RECORD_SECTIONS.find(
@@ -160,7 +160,7 @@ function checkRecommended(
 function checkSteps(text: string, problems: string[]): void {
   if (/^none\.?$/i.test(text)) return;
   const { items: steps, stray } = items(text);
-  if (stray || steps.length === 0)
+  if (stray || steps.length === 0 || steps.some((s) => s === ""))
     problems.push(
       "Steps for a person must be 'None.' or '- ' items, each a command or a named action",
     );

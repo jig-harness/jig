@@ -66,6 +66,52 @@ import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
 import { armLedger, ledgerIdentity, ledgerSettlement } from "./ledger.ts";
 
+import type { DriveState } from "./../state/schema.ts";
+
+/**
+ * Refuse a PR that is not a canonical number. Digits, checked here rather
+ * than at the three places it lands: it is interpolated into a `new RegExp`,
+ * so a metacharacter — `drive.ts '('` — throws a SyntaxError instead of a
+ * usage error; and it is exported as $DRIVE_PR_TARGET, where drive-status.ts
+ * and guarded-push.ts compare it as a string and refuse for a less obvious
+ * reason. Canonical before anything is keyed by it: `042` is PR 42 to GitHub,
+ * so a raw `042` would take `pr-drive-042.lock` beside a live #42 driver's
+ * `pr-drive-42.lock` and write #42's state and log under a second name.
+ * Refused rather than rewritten, because the pass names the PR in its own
+ * argv and drive-status.ts compares that against $DRIVE_PR_TARGET verbatim.
+ */
+function requireCanonicalPr(pr: string): void {
+  if (!isDigits(pr)) fail(2, `drive.ts: PR must be a number (got '${pr}')`);
+  const canonicalPr = BigInt(pr).toString();
+  if (canonicalPr !== pr)
+    fail(
+      2,
+      `drive.ts: write PR #${canonicalPr} as ${canonicalPr} (got '${pr}')`,
+    );
+}
+
+/**
+ * The drive state read again once this driver holds the locks, and the
+ * re-arm admission repeated against it: the read before the locks only
+ * refuses early, and a holder that stopped since (a quota wall recorded, a
+ * park added) changed what is admitted. An unreadable state refuses here:
+ * picking the drive up without it would skip the answers a re-arm kept, and
+ * the next completed pass would clear them unread.
+ */
+async function stateUnderLocks(
+  pr: string,
+  agent: string[],
+  windowReopened: boolean,
+): Promise<DriveState | number> {
+  const state = await readDriveState(pr);
+  if (state === null)
+    return fail(
+      1,
+      `drive.ts: cannot read PR #${pr}'s drive state now that its locks are held; refusing to pick the drive up without it`,
+    );
+  return quotaRefusal(state, agent, windowReopened) ?? state;
+}
+
 export async function main(): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
   let { pr, keepDraft, handoffAt } = options;
@@ -100,13 +146,7 @@ export async function main(): Promise<number> {
   const explicitPr = pr;
   pr = await resolvePr(pr);
   if (pr === "") fail(1, "drive.ts: could not resolve a PR number");
-  // Digits, checked here rather than at the three places it lands. It is
-  // interpolated into a `new RegExp` below, so a metacharacter — `drive.ts '('`
-  // — throws a SyntaxError instead of a usage error; and it is exported as
-  // $DRIVE_PR_TARGET, where drive-status.ts and guarded-push.ts compare it as a
-  // string and refuse for a less obvious reason. Both of those already apply
-  // isDigits; this is the entry point that did not.
-  if (!isDigits(pr)) fail(2, `drive.ts: PR must be a number (got '${pr}')`);
+  requireCanonicalPr(pr);
   process.env.PR = pr;
   // The authoritative, out-of-band statement of which PR this drive is about.
   // drive-status.ts refuses to run when a pass resolves a different one, which
@@ -137,7 +177,8 @@ export async function main(): Promise<number> {
 
   // Everything that can refuse from the arguments and the durable state runs
   // before any lock is taken and before a takeover stops anyone: the pass
-  // command's target and scope, and a re-arm behind a quota wall.
+  // command's target and scope, and a re-arm behind a quota wall. The state
+  // check is repeated once the locks are held (`stateUnderLocks`).
   const state = await readDriveState(pr);
   const refusal =
     validatePassCommand(explicitPr, agent, botsOnly) ??
@@ -216,19 +257,21 @@ export async function main(): Promise<number> {
     () => hold(treeLock),
     armCommand(driveTs, pr, botsOnly),
   );
-  // Once this tree is ours and before the PR is: the tree is put on the PR's
-  // head (its branch, or the head commit detached when another working tree
-  // holds the branch), so every round's commit lands on what the attach left,
-  // and no other driver's tree is ever moved.
-  await attachForDrive(pr, dryRun);
+  // Renewal starts the moment the first lock is held, and runs on its own
+  // timer for the rest of the drive — a claim must stay fresh DURING the
+  // attach and every pass, not only between them. It renews `held`, so the
+  // PR's lock joins it once taken.
+  startHeartbeat(held, agent);
   await hold(prLock);
+  // Once both the tree and the PR are ours: the tree is put on the PR's head
+  // (its branch, or the head commit detached when another working tree holds
+  // the branch), so every round's commit lands on what the attach left, no
+  // other driver's tree is ever moved, and no second driver of the PR, in
+  // another tree, attaches beside this one.
+  await attachForDrive(pr, dryRun);
   createDriverRegistry(held);
   lockResources.use(driverStopCompletionCleanup(held));
   driverRuntime.driverLogRotates = true;
-  // Renewal starts the moment the last lock is held, and runs on its own timer
-  // for the rest of the drive — a claim must stay fresh DURING a pass, not
-  // only between passes.
-  startHeartbeat(held, agent);
 
   // The SESSION every drive-state mutation of this drive belongs to, exported
   // once the locks are actually held (`lease.ts`). This driver plus
@@ -343,15 +386,18 @@ export async function main(): Promise<number> {
 
   await ensureContinuousHandoff(handoffAt, pr);
 
-  // The pull request's drive ledger first: seed this clone's state from it,
-  // refuse to drive beside another clone's driver, claim a cross-clone
-  // takeover. Then pick the drive up from its durable state: a takeover,
-  // parked items a person has answered.
+  // Picking the drive up from its durable state: a quota wall another
+  // account may pass, a takeover, parked items a person has answered.
+  const current = await stateUnderLocks(pr, agent, windowReopened);
+  if (typeof current === "number") return current;
+  // The pull request's drive ledger next: seed this clone's state from it,
+  // refuse to drive beside another clone's driver, claim the drive where
+  // this clone does not continue its own ledger.
   const pickup = await armLedger(
     pr,
     ledger,
     plan,
-    state,
+    current,
     armCommand(driveTs, pr, botsOnly, " --take-over"),
   );
   // From here the ledger says this driver is running, so whatever ends the
@@ -404,7 +450,7 @@ export async function main(): Promise<number> {
     deadlineRetryBudget,
     firstPassNotice,
   });
-  return settlement.done(roundsExit);
+  return await settlement.done(roundsExit);
 }
 
 /** Refuse a pass whose declared target or thread scope differs from the driver. */

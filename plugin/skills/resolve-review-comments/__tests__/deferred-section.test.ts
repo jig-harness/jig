@@ -17,7 +17,11 @@ import {
   repoLabels,
 } from "../../do-item/__tests__/github-fixtures.ts";
 import { deferInPr, deferralRoute } from "../scripts/defer-in-pr.ts";
-import { fileDeferred, missingEntries } from "../scripts/file-deferred.ts";
+import {
+  fileDeferred,
+  identityLine,
+  missingEntries,
+} from "../scripts/file-deferred.ts";
 import {
   deferredEntries,
   SECTION_END,
@@ -124,6 +128,53 @@ describe("the deferred section", () => {
       "fp-a",
       "fp-b",
     ]);
+  });
+
+  test("a finding or reason carrying the section's own markers closes nothing", () => {
+    const other = `${PR_URL}#discussion_r2002`;
+    let body = withDeferredEntry("", {
+      source: THREAD,
+      finding: `Quoted:\n${SECTION_END}\n<!-- /deferred-entry -->\n<!-- deferred-entry: ${other} -->`,
+      reason: `see ${SECTION_END}`,
+    }).body;
+    body = withDeferredEntry(body, {
+      source: other,
+      finding: "second",
+      reason: "later",
+    }).body;
+    expect(deferredEntries(body).map((e) => e.source)).toEqual([THREAD, other]);
+    const filed = withFiledEntry(
+      body,
+      { source: THREAD },
+      { key: "#7", url: null },
+    );
+    expect(deferredEntries(filed).map((e) => e.source)).toEqual([
+      THREAD,
+      other,
+    ]);
+  });
+
+  test("an entry that loses its closing marker is refused, not merged into the next", () => {
+    const other = `${PR_URL}#discussion_r2002`;
+    let body = withDeferredEntry("", {
+      source: THREAD,
+      finding: "first",
+      reason: "later",
+    }).body;
+    body = withDeferredEntry(body, {
+      source: other,
+      finding: "second",
+      reason: "later",
+    }).body;
+    const broken = body.replace("<!-- /deferred-entry -->", "");
+    expect(() => deferredEntries(broken)).toThrow(/opens another/);
+    expect(() =>
+      withFiledEntry(broken, { source: THREAD }, { key: "#7", url: null }),
+    ).toThrow(/opens another/);
+    const last =
+      body.slice(0, body.lastIndexOf("<!-- /deferred-entry -->")) +
+      body.slice(body.lastIndexOf("<!-- /deferred-entry -->") + 24);
+    expect(() => deferredEntries(last)).toThrow(/never ends/);
   });
 });
 
@@ -292,7 +343,10 @@ describe("file-deferred.ts files each entry through the tracker", () => {
         .body,
     );
     const { t, calls } = trackerThatFiles([
-      { number: 7, body: `Filed by file-deferred.ts. Source: ${THREAD}` },
+      {
+        number: 7,
+        body: `Filed by file-deferred.ts.\n\n${identityLine({ source: THREAD })}`,
+      },
     ]);
     const r = await fileDeferred(forge, t, "42", { label: "pr-followup" });
     expect(r.why).toBeNull();
@@ -301,6 +355,103 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     ]);
     expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(0);
     expect(deferredEntries(forge.state.body)[0]?.filed?.key).toBe("#7");
+  });
+
+  test("an issue that only mentions the source, or names another fingerprint on it, is not reused", async () => {
+    const comment = `${PR_URL}#issuecomment-77`;
+    let body = withDeferredEntry("", {
+      source: comment,
+      fingerprint: "fp-a",
+      finding: "first",
+      reason: "r",
+    }).body;
+    body = withDeferredEntry(body, {
+      source: comment,
+      fingerprint: "fp-b",
+      finding: "second",
+      reason: "r",
+    }).body;
+    const forge = fakeForge(body);
+    const { t, calls } = trackerThatFiles([
+      {
+        number: 7,
+        body: `Mentions ${comment}.\n\n${identityLine({ source: comment, fingerprint: "fp-a" })}`,
+      },
+    ]);
+    const r = await fileDeferred(forge, t, "42", { label: "pr-followup" });
+    expect(r.filed.map((f) => [f.key, f.reused])).toEqual([
+      ["#7", true],
+      ["#41", false],
+    ]);
+    const created = calls.filter((c) => c.op === "TrackerCreate");
+    expect(created).toHaveLength(1);
+    expect(
+      String(
+        (created[0]?.variables.input as { body?: string } | undefined)?.body,
+      ),
+    ).toContain(identityLine({ source: comment, fingerprint: "fp-b" }));
+  });
+
+  test("an entry a person corrects during the run is filed as corrected", async () => {
+    const other = `${PR_URL}#discussion_r2002`;
+    let body = withDeferredEntry("", {
+      source: THREAD,
+      finding: "first",
+      reason: "r",
+    }).body;
+    body = withDeferredEntry(body, {
+      source: other,
+      finding: "second",
+      reason: "r",
+    }).body;
+    const forge = fakeForge(body);
+    // The initial read, then the first entry's fresh read and its write's
+    // three; the person corrects the second entry before its fresh read.
+    forge.beforeRead.push(...Array(5).fill(() => undefined), (st: PrBody) => {
+      st.body = st.body.replace("> second", "> second, corrected");
+    });
+    const { t, calls } = trackerThatFiles();
+    const r = await fileDeferred(forge, t, "42", { label: "pr-followup" });
+    expect(r.why).toBeNull();
+    const created = calls.filter((c) => c.op === "TrackerCreate");
+    expect(
+      String(
+        (created[1]?.variables.input as { body?: string } | undefined)?.body,
+      ),
+    ).toContain("second, corrected");
+  });
+
+  test("an entry removed or changed between filing and recording is reported, not counted as recorded", async () => {
+    for (const edit of [
+      (st: PrBody) => {
+        st.body = st.body.replace(
+          /<!-- deferred-entry:[\s\S]*?<!-- \/deferred-entry -->/,
+          "",
+        );
+      },
+      (st: PrBody) => {
+        st.body = st.body.replace("deferred: r", "deferred: r, and more");
+      },
+    ]) {
+      const forge = fakeForge(
+        withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
+          .body,
+      );
+      // The initial read and the fresh read, then the person edits.
+      forge.beforeRead.push(
+        () => undefined,
+        () => undefined,
+        edit,
+      );
+      const r = await fileDeferred(forge, trackerThatFiles().t, "42", {
+        label: "pr-followup",
+      });
+      expect(r.filed).toEqual([]);
+      expect(r.unrecorded.map((f) => f.key)).toEqual(["#41"]);
+      expect(r.why).toContain(
+        "#41 was filed, but its entry could not be replaced",
+      );
+    }
   });
 
   test("a filing whose entry cannot be replaced is reported with its key", async () => {

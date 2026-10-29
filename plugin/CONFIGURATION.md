@@ -364,7 +364,7 @@ What each level permits:
 | File a tracker issue a skill needs | Confirm first | File it; the body says which skill filed it, from which pull request and why | Same |
 | Defer a finding no tracker adapter can file | The pull request's `## Deferred` section | Same | Same |
 | A choice `decide` rules reversible inside one pull request | Decide and record | Same | Same |
-| A choice `decide` would rule underdetermined | Escalate | Gather the missing evidence, then apply the ladder | Same |
+| A choice `decide` would rule underdetermined | Escalate | Gather the missing evidence, then apply the ladder, escalating a call it still cannot settle | Same |
 | A choice `decide`'s last row would escalate, with no sensitivity flag, no stakeholder category and no persisted-data or published-contract consequence | Escalate | Escalate | Decide it, marked provisional |
 | A review thread the arbiter rules `escalate` with the class `escalated` and no recorded human decision behind it | Park it | Same | Reply with a provisional `rejected`, `wont-fix` or `deferred`, never a fix; resolve it; list it in the morning report |
 | Re-arm after `HITL_PARKED` with items unanswered | Never | Never | Once every unanswered item is of the class `escalated`, handed on to be decided provisionally |
@@ -828,7 +828,7 @@ These are set per machine or per run, not committed:
 | `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
-| `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees); `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
+| `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees), and `attach-pr.ts --place` choose the tree without attaching; `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
 | `DRIVE_PR_LEDGER` | `off` makes `drive.ts` drive without the drive ledger on the pull request: no seeding from it, no check for another clone's driver, no writes; `on` or unset uses it ([where its state lives](skills/drive-pr/README.md#where-its-state-lives)) |
 | `DRIVE_PR_STATE_DIR` | State root; rounds, locks and leases live in its `<clone-key>/` subdirectory. An inherited resolved leaf is also accepted. Flat legacy state refuses until explicitly relocated. |
 | `JIG_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |

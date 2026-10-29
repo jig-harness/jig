@@ -113,7 +113,9 @@ export function clearPendingVerdicts(stateDir: string, pr: string): void {
 /**
  * `notice` as it may go into `$DRIVE_PR_PASS_NOTICE`: unchanged when it fits
  * `PASS_NOTICE_ENV_MAX`, otherwise written whole to `noticeFile` and cut to a
- * head (whose first line still names the case) plus the file's path.
+ * head (whose first line still names the case) plus the file's path. Throws
+ * when that file cannot be written: a cut notice whose rest is lost would
+ * drop instructions the pass needs, so the caller must not dispatch it.
  */
 export function boundPassNotice(
   stateDir: string,
@@ -129,13 +131,8 @@ export function boundPassNotice(
     }
     return notice;
   }
-  let where = `read all of it in ${file} before acting`;
-  try {
-    atomicWrite(file, notice);
-  } catch (err) {
-    where = `writing it to ${file} failed (${String(err)}), so the rest is lost`;
-  }
-  const tail = `\n… (cut: this notice is longer than one environment variable may hold; ${where})`;
+  atomicWrite(file, notice);
+  const tail = `\n… (cut: this notice is longer than one environment variable may hold; read all of it in ${file} before acting)`;
   const room = PASS_NOTICE_ENV_MAX - Buffer.byteLength(tail) - 4;
   const head = Buffer.from(notice).subarray(0, room).toString("utf8");
   // A cut inside a multi-byte character decodes to U+FFFD; drop it.

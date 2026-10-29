@@ -158,12 +158,8 @@ export type LedgerWrite =
   | { kind: "skipped"; reason: string }
   | { kind: "failed"; reason: string };
 
-/** Whether the canonical ledger changed (or became unreadable) since `canonical` was read. */
-function moved(
-  reread: LedgerSnapshot | string,
-  canonical: ForgeComment,
-): boolean {
-  if (typeof reread === "string") return true;
+/** Whether the canonical ledger changed since `canonical` was read. */
+function moved(reread: LedgerSnapshot, canonical: ForgeComment): boolean {
   const now = reread.canonical?.comment;
   // `updated_at` has one-second precision: a write in the same second moves
   // the body and not the stamp.
@@ -289,29 +285,43 @@ export async function writeLedger(
   for (let attempt = 1; attempt <= WRITE_ATTEMPTS; attempt++) {
     if (typeof snapshot === "string")
       return { kind: "failed", reason: snapshot };
-    const next = bodyFor(snapshot, build);
-    if ("kind" in next) return next;
-    const canonical = snapshot.canonical?.comment ?? null;
-    if (canonical === null) {
-      const id = await postComment(pr, next.body);
-      return typeof id === "string"
-        ? {
-            kind: "failed",
-            reason: `the ledger comment was not created (${id})`,
-          }
-        : written(id, next.ledger);
-    }
-    const reread = await readLedgerSnapshot(pr, selfLogin);
-    if (moved(reread, canonical)) {
-      snapshot = reread;
-      continue;
-    }
-    return patchAndVerify(pr, selfLogin, snapshot, canonical, next);
+    const done = await writeOnce(pr, selfLogin, snapshot, build);
+    if ("kind" in done) return done;
+    snapshot = done.moved;
   }
   return {
     kind: "failed",
     reason: `the ledger changed under each of ${WRITE_ATTEMPTS} writes`,
   };
+}
+
+/**
+ * One write attempt from `snapshot`: its outcome, or the newer read to
+ * rebuild from when the ledger moved (or became unreadable) under it.
+ */
+async function writeOnce(
+  pr: string,
+  selfLogin: string | null,
+  snapshot: LedgerSnapshot,
+  build: (snapshot: LedgerSnapshot) => Ledger | string,
+): Promise<LedgerWrite | { moved: LedgerSnapshot | string }> {
+  const next = bodyFor(snapshot, build);
+  if ("kind" in next) return next;
+  const canonical = snapshot.canonical?.comment ?? null;
+  if (canonical === null) {
+    const id = await postComment(pr, next.body);
+    return typeof id === "string"
+      ? { kind: "failed", reason: `the ledger comment was not created (${id})` }
+      : written(id, next.ledger);
+  }
+  const reread = await readLedgerSnapshot(pr, selfLogin);
+  if (typeof reread === "string" || moved(reread, canonical))
+    return { moved: reread };
+  // The ledger stood still, but a claim may have arrived beside it: the body
+  // written is the one the newest read allows.
+  const final = bodyFor(reread, build);
+  if ("kind" in final) return final;
+  return patchAndVerify(pr, selfLogin, reread, canonical, final);
 }
 
 /** Post a takeover claim: its comment id, or why the post failed. */

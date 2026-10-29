@@ -6,7 +6,7 @@
  * is. And a seed the state store refuses keeps its exit.
  */
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -212,6 +212,56 @@ describe("recovering the ledger of a driver that could not write it", () => {
     expectSpawnExit(r, 0);
     expect(r.stderr).toContain("another clone's claim (comment 80)");
     expect(driverOf(s)?.state).toBe("running");
+  });
+
+  it("leaves it when the driver's own claim lost its generation to an earlier rival", async () => {
+    const at = new Date().toISOString();
+    const s = stage({ position: 9001 });
+    const own = renderClaim({
+      actor: s.actor,
+      clone: cloneId(s.leaf),
+      generation: 4,
+      at,
+    });
+    const rival = renderClaim({
+      actor: "wt-cccccccccccccccc",
+      clone: "clone-c",
+      generation: 4,
+      at,
+    });
+    // A lagging read hid the rival from the driver, which wrote by its own claim.
+    writeFileSync(
+      join(s.forge.dir, "comments.json"),
+      JSON.stringify([
+        forgeComment(40, s.forge.comments()[0]?.body ?? ""),
+        forgeComment(600, rival, "other-bot"),
+        forgeComment(9001, own, "drive-bot"),
+      ]),
+    );
+    plantLock(s, await deadPid());
+    const r = await drives(s, ["--doctor"]);
+    expectSpawnExit(r, 0);
+    expect(r.stderr).toContain("another clone's claim (comment 600)");
+    expect(driverOf(s)?.state).toBe("running");
+  });
+
+  it("marks it stopped from the driver record when a stop by signal released the lock", async () => {
+    for (const args of [["--stop", "999"], ["--doctor"]]) {
+      const s = stage();
+      writeFileSync(
+        join(s.leaf, "ledger-driver-999.json"),
+        JSON.stringify({
+          worktree: s.forge.repo,
+          started: s.started,
+          pid: await deadPid(),
+          host: hostname(),
+        }),
+      );
+      const r = await drives(s, args);
+      expectSpawnExit(r, args[0] === "--stop" ? 1 : 0);
+      expect(driverOf(s)).toMatchObject({ actor: s.actor, state: "stopped" });
+      expect(existsSync(join(s.leaf, "ledger-driver-999.json"))).toBe(false);
+    }
   });
 });
 

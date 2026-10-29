@@ -79,6 +79,22 @@ export interface BotMarkers {
 }
 
 /**
+ * The marker an entry declares, the built-in one when it declares none, or
+ * `null` when it declares something that is not a marker: an empty or blank
+ * string is contained in every body, and a marker is authority to leave a
+ * comment untriaged, so a malformed one grants nothing.
+ */
+function markerOf(
+  declared: unknown,
+  builtin: string | undefined,
+): string | null {
+  if (declared === undefined || declared === null) return builtin ?? null;
+  return typeof declared === "string" && declared.trim() !== ""
+    ? declared
+    : null;
+}
+
+/**
  * The bots in force and their markers: each `review.bots` entry, a marker it
  * leaves unset taking the built-in one for that login; then each built-in
  * bot the list leaves out, with its measured confirmation marker and no chat
@@ -91,9 +107,11 @@ export function botMarkers(
     const builtin = BUILTIN_MARKERS[normalizeLogin(e.login)];
     return {
       login: normalizeLogin(e.login),
-      confirmationMarker:
-        e.confirmation_marker ?? builtin?.confirmation_marker ?? null,
-      chatMarker: e.chat_marker ?? builtin?.chat_marker ?? null,
+      confirmationMarker: markerOf(
+        e.confirmation_marker,
+        builtin?.confirmation_marker,
+      ),
+      chatMarker: markerOf(e.chat_marker, builtin?.chat_marker),
     };
   });
   const unlisted = Object.entries(BUILTIN_MARKERS)
