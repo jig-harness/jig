@@ -269,6 +269,7 @@ autonomy:
     schedule:                # default once off_hours is on, in the machine's local time
       - "Mon-Fri 20:00-07:00"   # a window may cross midnight
       - "Sat-Sun"
+      - "Mon 00:00-07:00"       # Sunday night, which the two above leave out
 ```
 
 The repository sets the default `level` and the ceiling `max_level`; the
