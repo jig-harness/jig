@@ -179,11 +179,12 @@ export async function state(stateDir: string, args: string[], cwd?: string) {
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [stdout, exitCode] = await Promise.all([
+  const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
     proc.exited,
   ]);
-  return { stdout, exitCode };
+  return { stdout, stderr, exitCode };
 }
 
 // Every pass command must name PR 999 or drive.ts's mis-targeting guard
