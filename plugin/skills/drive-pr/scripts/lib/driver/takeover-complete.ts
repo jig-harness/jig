@@ -248,7 +248,7 @@ export async function completeTakeover(
 export async function pickUpDrive(
   pr: string,
   plan: TakeoverPlan | null,
-  state: DriveState | null,
+  state: DriveState,
   opts: { agent: string[]; botsOnly: boolean; dryRun: boolean },
 ): Promise<string> {
   const takeover =
@@ -257,9 +257,6 @@ export async function pickUpDrive(
       : await completeTakeover(pr, plan, opts.agent, opts.botsOnly);
   // A takeover is written to the drive ledger at once, not at the next boundary.
   if (plan !== null) await mirrorNow(pr);
-  const notices = [
-    takeover,
-    state === null ? "" : await admitAnsweredParks(state, opts.dryRun),
-  ];
+  const notices = [takeover, await admitAnsweredParks(state, opts.dryRun)];
   return notices.filter((part) => part !== "").join("\n\n");
 }

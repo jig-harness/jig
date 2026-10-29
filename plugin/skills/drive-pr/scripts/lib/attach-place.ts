@@ -174,13 +174,14 @@ async function headBranch(cwd: string, pr: string): Promise<string> {
     ],
     { cwd, stderr: "pipe", env: ghRepoEnv() },
   );
+  if (r.code !== 0) refuse(1, `cannot read PR #${pr}: ${r.stderr.trim()}`);
   let meta: unknown;
   try {
     meta = JSON.parse(r.stdout);
   } catch (err) {
     refuse(1, `cannot read PR #${pr}: ${String(err)}`);
   }
-  if (r.code !== 0 || !isRecord(meta) || typeof meta.headRefName !== "string")
+  if (!isRecord(meta) || typeof meta.headRefName !== "string")
     refuse(1, `cannot read PR #${pr}: ${r.stderr.trim()}`);
   if (meta.state !== "OPEN")
     refuse(
@@ -313,8 +314,14 @@ export async function placePr(ref: PrRef, cwd: string): Promise<Placement> {
     };
   const otherClone = clone !== cwd;
   const key = otherClone ? await cloneKeyOf(clone) : null;
-  const envFor = (tree: string) =>
-    destinationEnv(tree, otherClone, process.env, key);
+  const here = canonical(
+    await out(clone, ["rev-parse", "--show-toplevel"], "this working tree"),
+  );
+  // A tree placement creates is never this session's own, so it moves at
+  // least to another tree; its configuration is read with that same move.
+  const away: Move = otherClone ? "clone" : "tree";
+  const moveTo = (tree: string): Move =>
+    !otherClone && canonical(tree) === here ? "none" : away;
   const placed = (tree: string, created: boolean): Placement => ({
     kind: "placed",
     pr: ref.pr,
@@ -322,13 +329,10 @@ export async function placePr(ref: PrRef, cwd: string): Promise<Placement> {
     tree,
     created,
     otherClone,
-    env: envFor(tree),
+    env: destinationEnv(tree, moveTo(tree), process.env, key),
   });
   const all = await trees(clone);
   const primary = (all[0] as Tree).path;
-  const here = canonical(
-    await out(clone, ["rev-parse", "--show-toplevel"], "this working tree"),
-  );
   if (clone === cwd && here !== primary) return placed(here, false);
   const branch = await headBranch(clone, ref.pr);
   const holder = all.find((tree) => tree.branch === branch);
@@ -336,7 +340,12 @@ export async function placePr(ref: PrRef, cwd: string): Promise<Placement> {
   const recorded = await recordedTree(all, ref.pr);
   if (recorded !== null) return placed(recorded, false);
   return placed(
-    await createTree(primary, ref.pr, branch, envFor(primary)),
+    await createTree(
+      primary,
+      ref.pr,
+      branch,
+      destinationEnv(primary, away, process.env, key),
+    ),
     true,
   );
 }
@@ -366,8 +375,24 @@ const DRIVE_CONTEXT = [
   "DRIVE_PR_SESSION_STARTED",
 ];
 
-/** The variables that select another clone's configuration. */
-const CLONE_CONFIG = ["JIG_CONSUMER_ROOT", "JIG_OVERLAY"];
+/**
+ * The variables that override a location otherwise derived from the working
+ * tree: its configuration (`consumerRoot()`, the overlay) and the `.context/`
+ * directories of the handoff file, the mailbox and the intent-chain pin.
+ */
+const TREE_SELECTORS = [
+  "JIG_CONSUMER_ROOT",
+  "JIG_OVERLAY",
+  "DRIVE_PR_HANDOFF_DIR",
+  "DRIVE_PR_MAILBOX_DIR",
+  "DRIVE_PR_INTENT_CHAIN_DIR",
+];
+
+/**
+ * Where a placed tree is from this session: its own tree, another tree of
+ * the same clone, or a tree of another clone.
+ */
+export type Move = "none" | "tree" | "clone";
 
 /** What `destinationEnv` changes, so the arm step can make the same change. */
 export interface EnvChange {
@@ -385,29 +410,32 @@ export interface EnvChange {
  * - `GH_REPO` is removed always: placement reads `gh` without it, and the
  *   attach, the checkpoint and the driver must read the same repository.
  * - A running drive's own variables (`DRIVE_PR_WORKTREE` and its session)
- *   are removed when they name another tree.
- * - In another clone, the consumer root and the overlay are removed. The
- *   state directory a driver exports (`DRIVE_PR_STATE_DIR` with its identity)
- *   is its own clone's leaf: kept when it is the destination's too
- *   (`destinationKey`), removed with its identity when it is under the
- *   default root, so the destination resolves its own leaf there. A leaf
- *   under a relocated root is refused: the state fence accepts that root only
- *   with an identity a driver captured, so no setting here reaches the
- *   destination's leaf under it.
+ *   are removed when they name another tree, and always in another clone.
+ * - Placed in any tree other than this session's own, every location
+ *   override (`TREE_SELECTORS`) is removed, so the destination derives each
+ *   from itself.
+ * - In another clone, the state directory a driver exports
+ *   (`DRIVE_PR_STATE_DIR` with its identity) is its own clone's leaf: kept
+ *   when it is the destination's too (`destinationKey`), removed with its
+ *   identity when it is under the default root, so the destination resolves
+ *   its own leaf there. A leaf under a relocated root is refused: the state
+ *   fence accepts that root only with an identity a driver captured, so no
+ *   setting here reaches the destination's leaf under it. Within one clone
+ *   the leaf is shared by every tree, so it stays.
  */
 export function destinationEnv(
   tree: string,
-  otherClone: boolean,
+  move: Move,
   env: Record<string, string | undefined> = process.env,
   destinationKey: string | null = null,
 ): EnvChange {
   const unset = ["GH_REPO"];
   const anchor = env.DRIVE_PR_WORKTREE;
-  if (otherClone || (anchor !== undefined && canonical(anchor) !== tree))
+  if (move === "clone" || (anchor !== undefined && canonical(anchor) !== tree))
     unset.push(...DRIVE_CONTEXT);
+  if (move !== "none") unset.push(...TREE_SELECTORS);
   const leaf = env.DRIVE_PR_STATE_DIR ?? "";
-  if (otherClone) {
-    unset.push(...CLONE_CONFIG);
+  if (move === "clone") {
     const exported = (env.DRIVE_PR_STATE_DIR_IDENTITY ?? "") !== "";
     if (exported && leaf !== "" && basename(leaf) !== destinationKey) {
       if (canonical(dirname(leaf)) !== canonical(defaultStateRoot()))

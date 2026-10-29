@@ -248,9 +248,9 @@ export async function armLedger(
   pr: string,
   id: LedgerIdentity | null,
   plan: TakeoverPlan | null,
-  state: DriveState | null,
+  state: DriveState,
   takeOverCommand: string,
-): Promise<DriveState | null> {
+): Promise<DriveState> {
   if (id === null) return state;
   const crossClone = plan?.crossClone === true;
   const snapshot = await readLedgerSnapshot(pr, id.login);
@@ -280,10 +280,8 @@ export async function armLedger(
     if (own === null) throw new ExitError(TAKEN_OVER_EXIT);
     floor = own.id;
   }
-  if (ledger !== null && snapshot.canonical !== null) {
-    await seed(pr, ledger, snapshot.canonical.comment.body);
-    state = await readDriveState(pr);
-  }
+  if (ledger !== null && snapshot.canonical !== null)
+    state = await seeded(pr, ledger, snapshot.canonical.comment.body);
   publish(id, floor, own);
   // What a stop by signal leaves for `drives.ts` to recover from.
   const worktree = process.env.DRIVE_PR_WORKTREE ?? "";
@@ -295,6 +293,25 @@ export async function armLedger(
       host: hostname(),
     });
   return state;
+}
+
+/**
+ * The state to pick the drive up from once `ledger` is seeded; a state that
+ * cannot be read back refuses, as one unread under the locks does.
+ */
+async function seeded(
+  pr: string,
+  ledger: Ledger,
+  body: string,
+): Promise<DriveState> {
+  await seed(pr, ledger, body);
+  return (
+    (await readDriveState(pr)) ??
+    fail(
+      1,
+      `drive.ts: cannot read PR #${pr}'s drive state after seeding it from the ledger; refusing to pick the drive up without it`,
+    )
+  );
 }
 
 /** Report what is ignored, and refuse a version this code does not read. */

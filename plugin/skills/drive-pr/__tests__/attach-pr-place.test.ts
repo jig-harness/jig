@@ -66,6 +66,25 @@ describe("attach-pr.ts --place", () => {
     expect(branchOf(c, tree)).toBe("feature");
   });
 
+  test("with DRIVE_PR_ATTACH=off places the tree as it stands", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    c.env.DRIVE_PR_ATTACH = "off";
+    const r = c.attach(tree, "42", "--place");
+    expectSpawnExit(r, 0, "attach --place, attach off");
+    expect(JSON.parse(r.stdout)).toMatchObject({ tree, created: false });
+    expect(branchOf(c, tree)).toBe("");
+  });
+
+  test("with an invalid DRIVE_PR_ATTACH creates nothing", () => {
+    const { c, roots } = withRoots();
+    c.env.DRIVE_PR_ATTACH = "maybe";
+    const r = c.attach(c.primary, "42", "--place");
+    expectSpawnExit(r, 2, "attach --place, invalid attach switch");
+    expect(r.stderr).toContain("DRIVE_PR_ATTACH must be on or off");
+    expect(() => realpathSync(join(roots, "clone-pr-42"))).toThrow();
+  });
+
   test("refuses to create a tree with no gc.worktree_roots", () => {
     const c = fresh();
     const r = c.attach(c.primary, "42", "--place");
@@ -185,6 +204,31 @@ describe("attach-pr.ts --place", () => {
       tree: string;
       env: { unset: string[] };
     };
+    expect(placed.tree.startsWith(roots)).toBe(true);
+    expect(placed.env.unset).toContain("JIG_OVERLAY");
+  });
+
+  test("creates a tree from the primary checkout under the clone's roots, not this session's overlay", () => {
+    const c = fresh();
+    const roots = join(c.root, "trees");
+    mkdirSync(join(c.primary, ".config"), { recursive: true });
+    writeFileSync(
+      join(c.primary, ".config", "jig.yaml"),
+      `gc:\n  worktree_roots: [${roots}]\n`,
+    );
+    // The overlay selects this session's configuration; the new tree is
+    // driven without it, so its creation reads the clone's own file.
+    const overlay = join(c.root, "session-overlay.yaml");
+    writeFileSync(overlay, "gc:\n  worktree_roots: []\n");
+    c.env.JIG_OVERLAY = overlay;
+    const r = c.attach(c.primary, "42", "--place");
+    expectSpawnExit(r, 0, "attach --place");
+    const placed = JSON.parse(r.stdout) as {
+      tree: string;
+      created: boolean;
+      env: { unset: string[] };
+    };
+    expect(placed.created).toBe(true);
     expect(placed.tree.startsWith(roots)).toBe(true);
     expect(placed.env.unset).toContain("JIG_OVERLAY");
   });

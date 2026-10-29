@@ -412,6 +412,10 @@ interface Args {
   key: string;
   /** Every `--key`, in argv order (`unpark` takes several). */
   keys: string[];
+  /** Every `--parked-at`, in argv order: `unpark`'s park timestamps, one per `--key`. */
+  parkedAts: string[];
+  /** `unpark --every`: the named keys must be every park there is. */
+  every: boolean;
   kind: string;
   reason: string;
   sha: string;
@@ -464,7 +468,6 @@ type ValueField = Exclude<
 
 /** Every flag that takes one value, and the field it sets. */
 const VALUE_FLAGS: Readonly<Record<string, ValueField>> = {
-  "--key": "key",
   "--kind": "kind",
   "--reason": "reason",
   "--head": "sha",
@@ -490,18 +493,15 @@ const VALUE_FLAGS: Readonly<Record<string, ValueField>> = {
   "--account": "account",
 };
 
-/** Every value `flag` is given in `argv`, in order. */
-function flagValues(argv: string[], flag: string): string[] {
-  return argv.flatMap((arg, i) => (arg === flag ? [argv[i + 1] ?? ""] : []));
-}
-
 function parseArgs(argv: string[]): Args {
   const cmd = argv.shift() ?? "";
   const a: Args = {
     cmd,
     pr: "",
     key: "",
-    keys: flagValues(argv, "--key"),
+    keys: [],
+    parkedAts: [],
+    every: false,
     kind: "",
     reason: "",
     sha: "",
@@ -546,11 +546,20 @@ function parseArgs(argv: string[]): Args {
       continue;
     }
     switch (arg) {
+      // Every `--key` the parser consumed, in order, for `unpark`'s set: a
+      // value that merely reads `--key` is a value, not another flag.
+      case "--key":
+        a.key = take(arg, i++);
+        a.keys.push(a.key);
+        break;
       case "--unconfirmed":
         a.unconfirmed = true;
         break;
       case "--if-present":
         a.ifPresent = true;
+        break;
+      case "--every":
+        a.every = true;
         break;
       // Repeatable rather than a delimited list: an anchor path is an
       // arbitrary repository path, and every delimiter a list could use is a
@@ -560,6 +569,9 @@ function parseArgs(argv: string[]): Args {
       // "not armed" forever.
       case "--path":
         a.paths.push(take(arg, i++));
+        break;
+      case "--parked-at":
+        a.parkedAts.push(take(arg, i++));
         break;
       case "--stdin":
         a.stdin = true;
@@ -2163,7 +2175,7 @@ async function main(): Promise<number> {
     }
 
     case "unpark":
-      return unpark(store, a.keys);
+      return unpark(store, a.keys, a.parkedAts, a.every);
 
     case "parked-keys": {
       for (const p of store.read().state.parked)

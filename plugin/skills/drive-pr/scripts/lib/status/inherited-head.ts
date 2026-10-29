@@ -64,6 +64,12 @@ export async function headSyncState(
   localHead: string,
   inheritedHead: string,
 ): Promise<HeadSync> {
+  // On the PR head itself, the killed pass left uncommitted edits only: the
+  // round that settles them is still owed, whether or not the local head is
+  // compared at all (`--no-head-sync` leaves it unread).
+  const local = localHead === "" ? apiHead : localHead;
+  if (inheritedHead !== "" && apiHead === inheritedHead && local === apiHead)
+    return "inherited";
   if (!headSync || apiHead === localHead) return "in-sync";
   return (await acceptsInheritedHead(apiHead, localHead, inheritedHead))
     ? "inherited"
@@ -87,6 +93,6 @@ export function mayEndWithoutWork(
 /** What a ready round's reason adds when it pushes an inherited head. */
 export function inheritedReason(sync: HeadSync, localHead: string): string {
   return sync === "inherited"
-    ? ` — local HEAD ${localHead} carries commits a killed pass left unpushed; this round pushes them`
+    ? ` — local HEAD ${localHead} carries work a killed pass left unpushed or uncommitted; this round settles it`
     : "";
 }

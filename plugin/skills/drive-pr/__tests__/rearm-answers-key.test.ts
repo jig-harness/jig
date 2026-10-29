@@ -27,6 +27,25 @@ describe("answersKey", () => {
     expect(answersKey(tilde, "PRRT_p")).toBe(false);
   });
 
+  it("closes a fence only on a run of its own marker at least as long", () => {
+    const longer = ["````", "```", "answer PRRT_p: option B", "````"];
+    expect(answersKey(longer.join("\n"), "PRRT_p")).toBe(false);
+    const mixed = ["```", "~~~", "answer PRRT_p: option B", "```"];
+    expect(answersKey(mixed.join("\n"), "PRRT_p")).toBe(false);
+    const infoNotClose = ["```", "```ts", "answer PRRT_p: option B", "```"];
+    expect(answersKey(infoNotClose.join("\n"), "PRRT_p")).toBe(false);
+    const closed = ["````", "x", "`````", "answer PRRT_p: option B"];
+    expect(answersKey(closed.join("\n"), "PRRT_p")).toBe(true);
+  });
+
+  it("refuses an answer line in an indented code block", () => {
+    const spaces = "Example:\n\n    answer PRRT_p: choose option B";
+    expect(answersKey(spaces, "PRRT_p")).toBe(false);
+    expect(answersKey("\tanswer PRRT_p: option B", "PRRT_p")).toBe(false);
+    expect(answersKey("  \tanswer PRRT_p: option B", "PRRT_p")).toBe(false);
+    expect(answersKey("   answer PRRT_p: option B", "PRRT_p")).toBe(true);
+  });
+
   it("refuses a quoted line and a mere mention", () => {
     expect(answersKey("> answer PRRT_p: option B", "PRRT_p")).toBe(false);
     expect(answersKey("about PRRT_p: later", "PRRT_p")).toBe(false);

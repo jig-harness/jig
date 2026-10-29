@@ -185,9 +185,7 @@ export function defaultStateRoot(): string {
  */
 export function peekDefaultStateDirFor(legacyDir: string): string | null {
   const key = peekCloneKey(legacyDir);
-  return key === null
-    ? null
-    : join(homedir(), ".local", "state", "jig", "drive-pr", key);
+  return key === null ? null : join(defaultStateRoot(), key);
 }
 
 /**
