@@ -20,7 +20,8 @@
  * this tree; when the tree is the clone's primary checkout on another branch
  * (`attach-pr.ts --place` creates a tree for the drive instead); when the
  * pull request comes from a fork, whose head the drive cannot push to; and
- * when `origin` is not the repository `gh` read the pull request from.
+ * when the drive's remote is not the repository `gh` read the pull request
+ * from.
  *
  * Nothing moves without ownership. `drive.ts` attaches once it holds the
  * tree's driver lock and the pull request's; on its own the attach moves
@@ -41,6 +42,7 @@ import {
   removeDrivenTree,
   writeDrivenTree,
 } from "../../../../shared/driven-tree.ts";
+import { consumerRoot, remoteName } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { fetchTimeoutSeconds } from "./base-drift.ts";
 import { fail } from "./cli.ts";
@@ -66,11 +68,23 @@ import {
 import { openStore, resolveStateDir, worktreeLockName } from "./state/store.ts";
 
 /**
- * The remote the drive pushes to. `guarded-push.ts` pushes to `origin` and
- * refuses when `origin` is not the pull request's repository; no
- * configuration names another, so the attach fetches from the same one.
+ * The remote the drive fetches from and pushes to for the clone at `root`:
+ * `repository.remote`, else `origin` (`shared/consumer.ts`), the one
+ * `guarded-push.ts` pushes to and `base-sync.ts` fetches the base from. `env`
+ * governs both the configuration layers and which repository's configuration
+ * is read (`JIG_CONSUMER_ROOT`). A setting it cannot use refuses rather than
+ * falling back to `origin`.
  */
-export const DRIVE_REMOTE = "origin";
+export function driveRemote(
+  root: string,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  try {
+    return remoteName(consumerRoot(root, env), env);
+  } catch (err) {
+    refuse(1, err instanceof Error ? err.message : String(err));
+  }
+}
 
 /** Why the attach did not happen: the exit code and the message. */
 export class AttachRefusal extends Error {
@@ -152,9 +166,14 @@ export function canonical(path: string): string {
  * The pull request, read as every later call of the drive reads it: `gh`
  * from the tree, honouring an inherited `GH_REPO` like the rest of the drive
  * does, so the attach and the rounds select one repository. `requireOrigin`
- * then binds that repository to `origin` before anything is fetched.
+ * then binds that repository to the drive's remote before anything is
+ * fetched.
  */
-async function readPr(pr: string, cwd: string): Promise<PrHead> {
+async function readPr(
+  pr: string,
+  cwd: string,
+  remote: string,
+): Promise<PrHead> {
   const view = await ghCall(
     [
       "pr",
@@ -165,6 +184,8 @@ async function readPr(pr: string, cwd: string): Promise<PrHead> {
     ],
     { cwd, stderr: "pipe" },
   );
+  if (view.code !== 0)
+    refuse(1, `cannot read PR #${pr}: ${view.stderr.trim()}`);
   let parsed: unknown;
   try {
     parsed = JSON.parse(view.stdout);
@@ -172,14 +193,14 @@ async function readPr(pr: string, cwd: string): Promise<PrHead> {
     refuse(1, `cannot read PR #${pr}: ${String(err)}`);
   }
   const meta = isRecord(parsed) ? parsed : {};
-  if (view.code !== 0 || typeof meta.state !== "string")
-    refuse(1, `cannot read PR #${pr}: ${view.stderr.trim()}`);
+  if (typeof meta.state !== "string")
+    refuse(1, `cannot read PR #${pr}: no state in ${view.stdout.trim()}`);
   if (meta.state !== "OPEN")
     refuse(5, `PR #${pr} is ${meta.state}, not OPEN — nothing to drive`);
   if (meta.isCrossRepository !== false)
     refuse(
       2,
-      `PR #${pr} comes from a fork: the drive pushes only to '${DRIVE_REMOTE}', so it cannot push its head`,
+      `PR #${pr} comes from a fork: the drive pushes only to '${remote}', so it cannot push its head`,
     );
   const branch = typeof meta.headRefName === "string" ? meta.headRefName : "";
   const head = typeof meta.headRefOid === "string" ? meta.headRefOid : "";
@@ -197,8 +218,9 @@ async function readPr(pr: string, cwd: string): Promise<PrHead> {
 }
 
 /**
- * `origin` must be the repository the pull request was read from, for every
- * URL it fetches from and pushes to: a fork or a related repository shares
+ * The drive's `remote` must be the repository the pull request was read
+ * from, for every URL it fetches from and pushes to: a fork or a related
+ * repository shares
  * commit objects, so a fetched head commit proves nothing about which
  * repository it came from. Owner and name are compared, as `guarded-push.ts`
  * compares them, never the host (`lib/repo-url.ts` says why).
@@ -207,15 +229,16 @@ export async function requireOrigin(
   tree: string,
   pr: { repo: string },
   number: string,
+  remote: string,
 ): Promise<void> {
   const urls: string[] = [];
   for (const args of [
-    ["remote", "get-url", "--all", DRIVE_REMOTE],
-    ["remote", "get-url", "--push", "--all", DRIVE_REMOTE],
+    ["remote", "get-url", "--all", remote],
+    ["remote", "get-url", "--push", "--all", remote],
   ]) {
     const r = await g(tree, args);
     if (r.code !== 0)
-      refuse(1, `cannot read the URL of '${DRIVE_REMOTE}': ${r.stderr.trim()}`);
+      refuse(1, `cannot read the URL of '${remote}': ${r.stderr.trim()}`);
     urls.push(...r.stdout.split("\n").filter((u) => u !== ""));
   }
   for (const url of urls) {
@@ -223,7 +246,7 @@ export async function requireOrigin(
     if (repo.toLowerCase() !== pr.repo.toLowerCase())
       refuse(
         2,
-        `PR #${number}'s head is in ${pr.repo}, but '${DRIVE_REMOTE}' is ${repo === "" ? "a URL with no owner/name" : repo} (${url}) — gh read the pull request from another repository than this clone's (GH_REPO, gh repo set-default); drive it from a clone of ${pr.repo}`,
+        `PR #${number}'s head is in ${pr.repo}, but '${remote}' is ${repo === "" ? "a URL with no owner/name" : repo} (${url}) — gh read the pull request from another repository than this clone's (GH_REPO, gh repo set-default); drive it from a clone of ${pr.repo}`,
       );
   }
 }
@@ -298,7 +321,7 @@ async function isPrimary(tree: string, gitDir: string): Promise<boolean> {
  */
 async function moveTree(
   tree: string,
-  pr: PrHead & { number: string },
+  pr: PrHead & { number: string; remote: string },
   current: { branch: string; sha: string; primary: boolean },
   byName: boolean,
 ): Promise<void> {
@@ -323,7 +346,7 @@ async function moveTree(
     await must(tree, [
       "branch",
       "--quiet",
-      `--set-upstream-to=${DRIVE_REMOTE}/${pr.branch}`,
+      `--set-upstream-to=${pr.remote}/${pr.branch}`,
     ]);
     return;
   }
@@ -435,7 +458,7 @@ async function treeFence(pr: string): Promise<{ release(): void } | null> {
  */
 async function move(
   tree: string,
-  target: PrHead & { number: string },
+  target: PrHead & { number: string; remote: string },
   current: Current,
 ): Promise<boolean> {
   const holder = await holderOf(tree, target.branch);
@@ -506,12 +529,13 @@ export async function attachPr(
       "this working tree",
     ),
   );
-  const head = await readPr(pr, tree);
+  const remote = driveRemote(tree);
+  const head = await readPr(pr, tree, remote);
   const number = String(Number.parseInt(pr, 10));
   const base = {
     pr: number,
     branch: head.branch,
-    remote: DRIVE_REMOTE,
+    remote,
     head: head.head,
     worktree: tree,
     created: opts.created === true,
@@ -524,8 +548,8 @@ export async function attachPr(
   }
   const locks = locksHeld ? [] : await takeDriverLocks(number);
   try {
-    await requireOrigin(tree, head, number);
-    const fetched = await fetchHead(tree, head.branch);
+    await requireOrigin(tree, head, number, remote);
+    const fetched = await fetchHead(tree, head.branch, remote);
     if (fetched !== null) refuse(1, fetched);
     // The fetched branch tip, not merely a commit object this clone holds:
     // a head pushed again between the read and the fetch leaves the PR's
@@ -535,7 +559,7 @@ export async function attachPr(
       "rev-parse",
       "--verify",
       "--quiet",
-      `refs/remotes/${DRIVE_REMOTE}/${head.branch}^{commit}`,
+      `refs/remotes/${remote}/${head.branch}^{commit}`,
     ]);
     if (tip.code !== 0 || tip.stdout.trim() !== head.head)
       refuse(
@@ -555,7 +579,7 @@ export async function attachPr(
         (await ancestor(tree, head.head, current.sha));
       if (!inPlace) await requireSettled(tree, "this working tree");
       const old = readDrivenTree(current.gitDir);
-      detached = await move(tree, { ...head, number }, current);
+      detached = await move(tree, { ...head, number, remote }, current);
       created =
         opts.created === true ||
         (old?.pr === Number(number) && old.created === true);
@@ -565,7 +589,7 @@ export async function attachPr(
         writeDrivenTree(current.gitDir, {
           pr: Number(number),
           branch: head.branch,
-          remote: DRIVE_REMOTE,
+          remote,
           created,
           head: head.head,
         });
@@ -575,7 +599,7 @@ export async function attachPr(
     }
     created = await recordState(number, tree, {
       branch: head.branch,
-      remote: DRIVE_REMOTE,
+      remote,
       detached,
       created,
     });
@@ -606,7 +630,11 @@ async function requireHolderBehind(
 }
 
 /** Fetch the head branch; the error, or `null` when it was fetched. */
-async function fetchHead(tree: string, branch: string): Promise<string | null> {
+async function fetchHead(
+  tree: string,
+  branch: string,
+  remote: string,
+): Promise<string | null> {
   const timeout = fetchTimeoutSeconds();
   if (!timeout.ok) return `DRIVE_PR_FETCH_TIMEOUT='${timeout.raw}' is invalid`;
   const r = await g(
@@ -614,14 +642,14 @@ async function fetchHead(tree: string, branch: string): Promise<string | null> {
     [
       "fetch",
       "--quiet",
-      DRIVE_REMOTE,
-      `+refs/heads/${branch}:refs/remotes/${DRIVE_REMOTE}/${branch}`,
+      remote,
+      `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`,
     ],
     timeout.seconds,
   );
   return r.code === 0
     ? null
-    : `cannot fetch '${branch}' from '${DRIVE_REMOTE}': ${r.stderr.trim()}`;
+    : `cannot fetch '${branch}' from '${remote}': ${r.stderr.trim()}`;
 }
 
 /**

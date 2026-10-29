@@ -26,7 +26,8 @@
  *   list-unresolved-threads.ts <PR> --bots-only | self-inflicted.ts [PR] [flags]
  *
  *   --base REF     the PR's base. DEFAULT: read from the PR itself
- *                  (`gh pr view --json baseRefName`, as `origin/<name>`) —
+ *                  (`gh pr view --json baseRefName`, as `<remote>/<name>`,
+ *                  the remote being `repository.remote`, else `origin`) —
  *                  never a hardcoded `develop`, for the reason base-sync.ts
  *                  states about the identical question. A PR filed against a
  *                  release branch would otherwise have its whole base
@@ -149,7 +150,8 @@
  * naming a file that does not exist establishes nothing about who wrote it.
  */
 
-import { verifyOriginIsPrRepo } from "./lib/base-drift.ts";
+import { consumerRoot, readRemoteName } from "../../../shared/consumer.ts";
+import { verifyRemoteIsPrRepo } from "./lib/base-drift.ts";
 import { runMain } from "./lib/cli.ts";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
 import {
@@ -634,11 +636,12 @@ export function gitDeps(repo: string, base: string, head: string): LabelDeps {
  * which the caller turns into an all-`null` stream with a loud diagnostic —
  * not measured, rather than measured against a guess.
  *
- * Also REFRESHES `origin/<base>` before returning it — REQUIRED, not
+ * Also REFRESHES `<remote>/<base>` (`<remote>` is `repository.remote`, else
+ * `origin`) before returning it — REQUIRED, not
  * best-effort. Without this, a base the branch has since merged newer commits
  * INTO — the gate's own drift fetch failed, or this filter ran standalone with
- * nothing having fetched recently — leaves a stale local `origin/<base>`, and
- * `rev-list origin/<base>..HEAD` then counts those newer base commits as this
+ * nothing having fetched recently — leaves a stale local `<remote>/<base>`, and
+ * `rev-list <remote>/<base>..HEAD` then counts those newer base commits as this
  * PR's own, mislabelling a finding on one of them a confident
  * `selfInflicted: true` that can license skipping the blast-radius reread.
  * An EARLIER revision made this
@@ -648,21 +651,21 @@ export function gitDeps(repo: string, base: string, head: string): LabelDeps {
  * claim a caller acts on directly. A failed fetch is therefore UNRESOLVED
  * (`''`), the same NOT-MEASURED posture as every other failure in this
  * function, rather than a confident answer read off a possibly-stale ref. The
- * refspec is explicit (`+refs/heads/<name>:refs/remotes/origin/<name>`), not a
+ * refspec is explicit (`+refs/heads/<name>:refs/remotes/<remote>/<name>`), not a
  * plain branch name, for `base-drift.ts`'s own reason: a plain name resolves
- * through `origin`'s configured `remote.origin.fetch`, which can update a ref
+ * through `<remote>`'s configured `remote.<remote>.fetch`, which can update a ref
  * other than the exact one this function is about to read.
  *
  * `repo` is caller-controlled (`--repo`/`$DRIVE_PR_WORKTREE`), so it can name
- * any checkout on disk — and that checkout's `origin` is whatever it is, not
+ * any checkout on disk — and that checkout's `<remote>` is whatever it is, not
  * necessarily this PR's own repository. `git fetch` cannot detect a wrong
- * `origin` itself: it happily writes `refs/remotes/origin/<name>` from
- * whatever `origin` answers with, under the name asked for, so a
+ * `<remote>` itself: it happily writes `refs/remotes/<remote>/<name>` from
+ * whatever `<remote>` answers with, under the name asked for, so a
  * wrong-repository fetch reads exactly like a right one — dereferencing an
  * attacker-chosen or merely stale host with no signal that anything was wrong.
- * `verifyOriginIsPrRepo` — the same check
+ * `verifyRemoteIsPrRepo` — the same check
  * `base-sync.ts` runs before its own identical fetch — resolves the
- * expected `owner/name` via `gh repo view` and confirms `origin`'s fetch URL
+ * expected `owner/name` via `gh repo view` and confirms `<remote>`'s fetch URL
  * actually names it, BEFORE the fetch below ever runs. Unresolvable or
  * mismatched is UNRESOLVED, not a guess.
  *
@@ -690,50 +693,15 @@ async function resolveBaseRef(pr: string, repo: string): Promise<string> {
   if (r.code !== 0) return "";
   const name = r.stdout.trim();
   if (name === "") return "";
-
-  const repoView = await cachedRepoView(["--json", "owner,name"], {
-    stderr: "ignore",
-    cwd: repo,
-    env: ghRepoEnv(),
-  });
-  let expectedRepo = "";
-  if (repoView.code === 0) {
-    try {
-      const meta = JSON.parse(repoView.stdout) as {
-        owner?: { login?: string };
-        name?: string;
-      };
-      const owner = meta.owner?.login ?? "";
-      const repoName = meta.name ?? "";
-      if (owner !== "" && repoName !== "")
-        expectedRepo = `${owner}/${repoName}`;
-    } catch {
-      // Left empty — refused below, the same as an unreadable `gh repo view`.
-    }
-  }
-  if (expectedRepo === "") {
-    console.error(
-      "self-inflicted: could not resolve this repository via `gh repo view` — refusing to fetch the base branch from an unverified 'origin'.",
-    );
-    return "";
-  }
-  const originCheck = await verifyOriginIsPrRepo(
-    git,
-    repo,
-    expectedRepo,
-    gitIdentityEnv(),
-  );
-  if (!originCheck.ok) {
-    console.error(`self-inflicted: ${originCheck.why}`);
-    return "";
-  }
+  const remote = await verifiedRemote(repo);
+  if (remote === null) return "";
 
   const fetched = await git(
     [
       "fetch",
       "--quiet",
-      "origin",
-      `+refs/heads/${name}:refs/remotes/origin/${name}`,
+      remote,
+      `+refs/heads/${name}:refs/remotes/${remote}/${name}`,
     ],
     {
       cwd: repo,
@@ -744,11 +712,68 @@ async function resolveBaseRef(pr: string, repo: string): Promise<string> {
   );
   if (fetched.code !== 0) {
     console.error(
-      `self-inflicted: could not refresh origin/${name} — refusing to measure against a possibly stale local ref.`,
+      `self-inflicted: could not refresh ${remote}/${name} — refusing to measure against a possibly stale local ref.`,
     );
     return "";
   }
-  return `origin/${name}`;
+  return `${remote}/${name}`;
+}
+
+/** `owner/name` of the repository `gh` resolves at `repo`, or `""`. */
+async function ghRepository(repo: string): Promise<string> {
+  const view = await cachedRepoView(["--json", "owner,name"], {
+    stderr: "ignore",
+    cwd: repo,
+    env: ghRepoEnv(),
+  });
+  let repository = "";
+  if (view.code !== 0) return repository;
+  try {
+    const meta = JSON.parse(view.stdout) as {
+      owner?: { login?: string };
+      name?: string;
+    };
+    const owner = meta.owner?.login ?? "";
+    const repoName = meta.name ?? "";
+    if (owner !== "" && repoName !== "") repository = `${owner}/${repoName}`;
+  } catch {
+    // Left empty — refused by the caller, as an unreadable `gh repo view` is.
+  }
+  return repository;
+}
+
+/**
+ * The remote of the checkout at `repo` (`repository.remote`, else `origin`)
+ * once its fetch URL is verified to name the repository `gh` resolved there,
+ * or `null` with the reason on stderr.
+ */
+async function verifiedRemote(repo: string): Promise<string | null> {
+  const remote = readRemoteName(consumerRoot(repo));
+  const why =
+    "error" in remote
+      ? remote.error
+      : await remoteMismatch(repo, remote.remote);
+  if (why === null && "remote" in remote) return remote.remote;
+  console.error(`self-inflicted: ${why}`);
+  return null;
+}
+
+/** Why `remote` cannot be trusted as the PR's repository, or `null`. */
+async function remoteMismatch(
+  repo: string,
+  remote: string,
+): Promise<string | null> {
+  const expectedRepo = await ghRepository(repo);
+  if (expectedRepo === "")
+    return `could not resolve this repository via \`gh repo view\` — refusing to fetch the base branch from an unverified '${remote}'.`;
+  const check = await verifyRemoteIsPrRepo(
+    git,
+    repo,
+    expectedRepo,
+    gitIdentityEnv(),
+    remote,
+  );
+  return check.ok ? null : check.why;
 }
 
 /**

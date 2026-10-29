@@ -341,6 +341,84 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.96.0] - 2026-10-29
+
+A pull request can be driven from any working tree of its clone, from the clone's primary checkout, or from a session in another repository.
+
+### Added
+
+- `drive-pr` attaches the pull request to the working tree once it holds both the tree's lock and the pull request's (`plugin/skills/drive-pr/scripts/attach-pr.ts`, also runnable alone): it checks that the drive's remote (`repository.remote`, else `origin`) is the pull request's repository, fetches the head branch from it and checks it out when no other working tree of the clone holds it, or checks out the head commit detached when one does, and never creates a second branch with a suffixed name. It refuses, naming what is in the way, a tree it would move that has uncommitted changes or an unfinished git operation (a tree already on the head branch, at or past the head, is not moved), a tree holding the branch that is dirty or has commits the head lacks, a detached head with commits no branch or remote holds, the clone's primary checkout on another branch, and a pull request from a fork, and it moves no tree a live driver or an interactive session holds; run alone, it holds both driver locks while it moves the tree. `DRIVE_PR_ATTACH=off` drives the tree as it stands, and placement then attaches nothing. See [which working tree drives it](plugin/skills/drive-pr/README.md#which-working-tree-drives-it).
+- A detached tree records its pull request, head branch and attached commit in its own git directory, read while its head descends from that commit and the branch is on the remote; on a detached head every script that reads the branch name, counts unpushed commits or resolves the pull request from the current branch reads that record, so base sync, the intent-chain pin, the handoff's issue key, the round's base, `drives.ts --doctor`'s leftover check, `resolve-conflicts`' side labels, `resolve-review-comments`' thread and annotation listings and `fix-ci`'s log parser work in a detached tree. The drive state keeps a copy as `drivenBranch` for the handoff file.
+- `/jig:drive-pr <PR>` from the clone's primary checkout arms the drive in the tree that holds the pull request, or creates one with git's `worktree add --detach` under the first root `gc.worktree_roots` names (read as the new tree is driven, without this session's `JIG_OVERLAY` or `JIG_CONSUMER_ROOT`), after checking that that clone's remote is the pull request's repository, and records it at once, so an attach there that fails is retried in the same tree; resource collection's `worktrees` kind reads a detached tree's record to report it once its pull request merges or closes.
+- `/jig:drive-pr owner/name#N` or a pull request URL arms the drive of a pull request in another repository, in the clone the new user-file field `clones` maps it to, checking its human checkpoint against that repository's tracker, or prints the command to run in a checkout of that repository when none is mapped ([`clones`](plugin/CONFIGURATION.md#clones-user-file-only)). The placed tree's configuration is read, and its attach, checkpoint and driver run, without the variables that would select this session's repository, configuration, tree or drive state; `attach-pr.ts --place` names them in its output.
+
+### Changed
+
+- `do-item` never creates a branch or a second pull request for an item whose pull request is already open: it stops before delegating and hands the item to `/jig:drive-pr <PR>`, which places the drive in a working tree on the pull request's head.
+- `drive.ts` refuses a pull request number written with leading zeros (`042`), which GitHub reads as the number without them, so its locks, state and log are always keyed by the number GitHub uses.
+- Resource collection's `worktrees` kind reads a worktree's pull requests and its integration branch through `repository.remote` instead of always `origin`, and a detached tree's pull request through the remote the tree's record names; `jig gc install` proposes that remote, its URL and its integration branch for confirmation. A detached tree whose head another remote branch holds (a stacked pull request's work) is not reported by the pull request its record names.
+- The recovery advice after a stopped pass counts unpushed commits against `refs/remotes/<remote>/<head-branch>` instead of `@{u}`, which a detached tree does not have.
+
+## [0.95.0] - 2026-10-29
+
+### Added
+
+- The [`docs` skill](plugin/skills/docs/README.md) (`/jig:docs`), the runnable form of [M4](modules/M4-docs-governance/README.md): one pass over a repository's docs tree that runs the frontmatter check, the index freshness check, the `last_updated` check over the branch, the scar lint and the deferral check, prints the findings by file (or as JSON), warns of drafts not updated for longer than `docs.stale_after_days` (180 days by default), and lists the documents the project's type calls for and the tree lacks: an index, the wiki schema, an activity log and decision records for every project, runbooks for a service, a reference for a library. It detects the docs tree, the schema and the project type; the new `docs.root`, `docs.schema` and `docs.stale_after_days` fields correct it ([configuration](plugin/CONFIGURATION.md#procedure-skills)).
+
+### Changed
+
+- **Breaking** for a repository that runs one of M4's reference gates from a Jig checkout: the gates moved from `modules/M4-docs-governance/reference/` into the skill, at `plugin/skills/docs/scripts/` (`frontmatter-check/`, `index/`, `stale-last-updated/`, `stamp/`, `scar-lint/`, `deferral-references/`, and the shared reader at `lib/docs.ts`). Each keeps its command line, variables and exit codes, so a hook or CI job changes only the path; the scar lint's self-test is now `plugin/skills/docs/__tests__/check-descarring-scars.test.ts`. The frontmatter check reads its schema with the plugin's vendored js-yaml, so a vendored copy keeps the plugin's layout (`skills/docs/` beside `shared/`) instead of Jig's `lib/`. M4's [mappings](modules/M4-docs-governance/mappings.md) and the `deferral-liveness.yml` template name the new paths.
+- The audit's configuration-fit check runs the `docs` skill's own validation of the `docs` section, so it reports what `/jig:docs` refuses: a root or schema outside the repository, including through a symbolic link, and a `stale_after_days` that is not a whole number of days.
+- `descar` runs the `docs` skill's scar lint when the repository has none of its own, instead of reading every page by hand.
+
+## [0.94.2] - 2026-10-29
+
+### Changed
+
+- The [`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md) test that proves the history replay runs no configured filter no longer deletes its marker file before the replay, since no filter is configured until after the merge is recorded, and it says why the merge comes first. The skill itself is unchanged.
+
+## [0.94.1] - 2026-10-29
+
+### Changed
+
+- The values a repository already implies for its configuration (the gate
+  command, review bots, the repository the forge names, stacked pull
+  requests, the issue-tracker team, the change-area catalog, the integration
+  branch and the package manager) are read by one detector the skills share,
+  `plugin/shared/detect.ts`, which returns each value with the evidence it
+  was read from and drafts the starter configuration. The audit's
+  configuration fit and `fix-ci`'s package-manager detection call it; what
+  they report is unchanged.
+
+## [0.94.0] - 2026-10-29
+
+### Added
+
+- `repository.remote` names the git remote the delivery skills push to and fetch from, `origin` by default ([CONFIGURATION.md](plugin/CONFIGURATION.md#repository)). `drive-pr` fetches the pull request's base from it, diffs against `<remote>/<base>`, derives the integration branch from its `HEAD`, pushes through it, and refuses when its addresses do not name the pull request's repository; `do-item`'s `pr-plan.ts open` measures against it and prints it (`remote:`); `fix-ci`'s `probe-base.ts` uses it when `--remote` is not given; `resolve-conflicts` and `work-batch` fetch and merge through it; the GitHub Issues adapter derives its repository from it. A clone whose remote is called `upstream`, or a fork setup where `origin` is the fork, sets it once, in the repository's file or a person's user file. The name may hold ASCII letters, digits, `.`, `_`, `-` and `/` and must make a valid ref prefix; any other value, `null` included, is an error naming where it was set, and so is a `repository` section that is `null` or not a mapping. The audit's configuration-fit check reports both `null`s as errors.
+
+### Changed
+
+- The review-triage file's `severity_mapping.<severity>.linear_priority` is now `priority`, the tracker interface's name; `linear_priority` is accepted as an alias, and a row may not set both.
+- `fractal-metrics.ts --skip-linear` is now `--skip-tracker`; `--skip-linear` is accepted as an alias.
+
+## [0.93.0] - 2026-10-29
+
+### Added
+
+- `/jig:code-stats` reads the repository's test-runner configuration, so a
+  repository whose tests only its test runner names counts them as tests
+  with no `code_stats` section: jest's `testMatch`, `testRegex` and `roots`,
+  vitest's `test.include` and `test.exclude`, pytest's `testpaths` and
+  `python_files`, Gradle's `test` source set folders and Maven's
+  `testSourceDirectory`. The files are read as text and never run; a
+  configuration that exists only when it runs is reported as
+  `unreadable: <path> (<why>)` and nothing is claimed from it. The layer
+  sits between built-in detection and the `code_stats` configuration,
+  `--explain` names the reader, file and key behind a test it found, and
+  `--json` lists the configurations read and those that could not be under
+  `testRunners`
+  ([README](plugin/skills/code-stats/README.md#test-runner-configuration)).
+
 ## [0.92.0] - 2026-10-28
 
 ### Added
@@ -854,7 +932,7 @@ Documents that defer work to the tracker can no longer rot silently: M4 gains a 
 
 ### Added
 
-- [M4](modules/M4-docs-governance/README.md) states a new practice, deferrals name live items: a document that defers work to the tracker ("tracked to closure", "a follow-up will be filed") names the item that carries it, and the item stays open. [`reference/deferral-references/`](modules/M4-docs-governance/reference/deferral-references/README.md) is the gate. Its static half is offline and judges the lines a change adds (`--staged` for a hook, `--range` for a pull request), or every document with `--all`. A block of prose with a configured marker phrase and no item reference is a finding, a waiver needs a stated reason, and a configuration or range it cannot read is exit 2. Its live half (`--all --list-keys`, then `--all --states <file>`) takes the tracker's answers as a file, so the check never holds a credential: a deferral fails when none of the items it names is open, and an item with no recorded state fails the run instead of passing.
+- [M4](modules/M4-docs-governance/README.md) states a new practice, deferrals name live items: a document that defers work to the tracker ("tracked to closure", "a follow-up will be filed") names the item that carries it, and the item stays open. [`reference/deferral-references/`](plugin/skills/docs/scripts/deferral-references/README.md) is the gate. Its static half is offline and judges the lines a change adds (`--staged` for a hook, `--range` for a pull request), or every document with `--all`. A block of prose with a configured marker phrase and no item reference is a finding, a waiver needs a stated reason, and a configuration or range it cannot read is exit 2. Its live half (`--all --list-keys`, then `--all --states <file>`) takes the tracker's answers as a file, so the check never holds a credential: a deferral fails when none of the items it names is open, and an item with no recorded state fails the run instead of passing.
 - [`templates/deferral-references.yaml`](modules/M4-docs-governance/templates/deferral-references.yaml) (item patterns, marker phrases, scope) and [`templates/deferral-liveness.yml`](modules/M4-docs-governance/templates/deferral-liveness.yml), a scheduled workflow that holds the tracker credential in one step, on the default branch only. The [mappings](modules/M4-docs-governance/mappings.md#deferral-references) give the hook, CI and per-tracker provider recipes.
 - `tracker.ts issue-states` in the `do-item` skill reads item keys on standard input and prints each one's state as `open`, `closed` or `not_found` through the tracker interface; it is the provider the liveness check uses for Linear. A lookup that fails, or an issue the tracker reports without a state category or with one that is neither open nor closed, fails the command.
 - The audit scores new M4 criteria: `deferrals-name-items` (Standard, mechanical) and `deferral-liveness-scheduled` (Strict, mechanical). Each is `expected-absent` for a repository whose documents defer no work to a tracker. A re-audit reports them as added since the prior audit, not as regressions.
@@ -2859,7 +2937,7 @@ The plugin reads the change-area catalog through one reader.
 ### Added
 
 - M4's stale `last_updated` gate
-  ([reference/stale-last-updated/](modules/M4-docs-governance/reference/stale-last-updated/README.md)):
+  ([reference/stale-last-updated/](plugin/skills/docs/scripts/stale-last-updated/README.md)):
   a diff that changes a document's body must advance `last_updated`, or leave
   it at today's UTC date. It runs over a CI diff range (old side at the merge
   base for `A...B`) or the staged changes in a pre-commit hook, skips a file
@@ -2877,7 +2955,7 @@ The plugin reads the change-area catalog through one reader.
   repository, or an unknown option exits 2. A body line starting
   `last_updated:` or a comment added to the date is not a bump.
 - Sticky UTC stamping for generators
-  ([reference/stamp/](modules/M4-docs-governance/reference/stamp/README.md)):
+  ([reference/stamp/](plugin/skills/docs/scripts/stamp/README.md)):
   a generator writing into the docs tree advances `last_updated` only when its
   output changed, so it neither breaks the stale gate nor churns dates. It
   reads the date through the shared reader and refuses frontmatter that
@@ -3884,7 +3962,13 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.92.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.96.0...HEAD
+[0.96.0]: https://github.com/jig-harness/jig/compare/v0.95.0...v0.96.0
+[0.95.0]: https://github.com/jig-harness/jig/compare/v0.94.2...v0.95.0
+[0.94.2]: https://github.com/jig-harness/jig/compare/v0.94.1...v0.94.2
+[0.94.1]: https://github.com/jig-harness/jig/compare/v0.94.0...v0.94.1
+[0.94.0]: https://github.com/jig-harness/jig/compare/v0.93.0...v0.94.0
+[0.93.0]: https://github.com/jig-harness/jig/compare/v0.92.0...v0.93.0
 [0.92.0]: https://github.com/jig-harness/jig/compare/v0.91.3...v0.92.0
 [0.91.3]: https://github.com/jig-harness/jig/compare/v0.91.2...v0.91.3
 [0.91.2]: https://github.com/jig-harness/jig/compare/v0.91.1...v0.91.2

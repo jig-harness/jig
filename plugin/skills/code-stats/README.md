@@ -68,7 +68,8 @@ on.
 
 The repository's name and date, the files counted, the vendored files left
 out, the code and test LOC of the default area with their ratio, the
-unclassified share, then tables by area, kind, language and module.
+unclassified share, each test-runner configuration that could not be read,
+then tables by area, kind, language and module.
 
 ### The HTML report
 
@@ -105,6 +106,10 @@ sharing it.
   "unclassified": { "files": 0, "codeLines": 0, "filesShare": 0, "codeShare": 0, "kindOther": 0, "defaultArea": 0 },
   "vendored": { "included": false, "excludedFiles": 0, "excludedBytes": 0 },
   "missingFromWorkingTree": 0,
+  "testRunners": {
+    "configurations": [{ "reader": "jest", "file": "jest.config.js" }],
+    "unreadable": [{ "reader": "vitest", "path": "web/vitest.config.ts", "why": "…" }]
+  },
   "areas": [{ "name": "docs", "description": "…", "default": false }],
   "byArea": { "docs": { "files": 0, "bytes": 0, "raw": 0, "code": 0, "comment": 0, "blank": 0 } },
   "byKind": {},
@@ -123,6 +128,8 @@ sharing it.
   have both.
 - `missingFromWorkingTree` counts tracked files deleted in the working tree,
   which are not counted.
+- `testRunners` lists each test-runner configuration that named tests, and
+  each one that could not be read, with why.
 - Every `by…` value is a bucket: `files`, `bytes`, `raw` (all lines),
   `code` (LOC), `comment`, `blank`. `byArea` lists the areas in their rule
   order, `byKind` in the order of the kinds above, the others by name.
@@ -139,9 +146,10 @@ crates/core/build.rs
 ```
 
 Every dimension names the rule that set it: a convention, an attribute, a
-banner, an extension or shebang, a `code_stats` field with its position, a
-manifest, a fallback, or `classify_command`. `--json` prints the same as an
-object.
+banner, an extension or shebang, a test runner's configuration file and key,
+a `code_stats` field with its position, a manifest, a fallback, or
+`classify_command`. Each test-runner configuration that could not be read is
+listed below. `--json` prints the same as an object.
 
 ## How a file is classified
 
@@ -149,10 +157,11 @@ The layers, lowest precedence first; a later layer overrides an earlier one.
 
 1. **Built-in detection**, which needs no configuration (the rest of this
    section).
-2. **Test-runner configuration**: not read yet (planned: the test patterns
-   jest, vitest, pytest and Gradle declare).
+2. **[Test-runner configuration](#test-runner-configuration)**: the test
+   files jest, vitest, pytest, Gradle and Maven are configured to run are
+   tests, read from their configuration files with no setup.
 3. **The `code_stats` configuration**: the areas, the default area, and kind
-   globs checked before built-in detection.
+   globs checked before built-in detection and the test runners.
 4. **The [classify command](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)**, when the repository supplies one.
 
 ### Kinds
@@ -231,6 +240,65 @@ The conventions:
 | test | Shell | \*.bats |
 | test | Python, Rust, JavaScript/TypeScript and others | tests/ or test/ folder |
 
+
+### Test-runner configuration
+
+A repository whose tests do not follow a convention (checks named
+`*.check.js`, a `qa/` folder of Java tests) still tells its test runner
+where they are. Code-stats reads what each runner's configuration declares,
+so those files count as tests with no `code_stats` section. Each reader
+reads its files as text and never runs them: a configuration that exists
+only when it runs (a JavaScript file that exports a function, spreads
+another object over the keys it sets, changes or reuses the object it
+exports, or sets its export inside a function, a block or after an `if`;
+a Gradle script that builds its folders in code; a `pom.xml`
+value built from a property) is reported as
+`unreadable: <path> (<why>)`, and nothing is claimed from that file. The
+built-in conventions still apply to it.
+
+Two cases stop the run instead. A file code-stats opens that the file
+system refuses to read (its permissions, say) stops it with
+`cannot read <path> (<code>)` rather than leaving the file out. Every mode
+opens the configuration files these readers find and the workspace
+manifests that name the modules; a report also opens every tracked file it
+counts except an asset (an image, say), whose size is all it needs;
+`--explain` opens only the file it explains. And unless
+`code_stats.modules` is set, a `pyproject.toml` or `package.json` at the
+root that is not valid TOML or JSON stops every mode with
+`cannot read <file> to find the repository's modules`, since module
+detection reads it before the test runners do.
+
+Any other configuration file a reader selects and finds invalid is
+reported unreadable like the rest. A file no reader selects is not
+parsed and not reported: a `package.json` with no `jest` key or beside a
+`jest.config.*`, or a `pyproject.toml` in a folder where an earlier
+pytest file holds the section.
+
+| Runner | Files read | What is read | What is not read |
+|--------|------------|--------------|------------------|
+| jest | `jest.config.{js,ts,mjs,cjs,json}`, else the `jest` key of the `package.json` beside it | `testMatch` (in order, a later pattern overriding an earlier `!` exclusion), `testRegex`, `roots` (alone: jest's default `testMatch` under them), `rootDir`, `testPathIgnorePatterns` | `projects` (each project's own file is read), a `preset`; a `testMatch` pattern that is neither `<rootDir>/…` nor `**/…`, and a regular expression anchored with `^`, since jest matches them against absolute paths |
+| vitest | `vitest.config.{ts,mts,cts,js,mjs,cjs}`, else `vite.config.*` in the same folder | `test.include`, `test.exclude` (vitest's default exclusions when absent), relative to `test.dir`, `test.root` or `root`; a spread of `configDefaults.include` or `configDefaults.exclude` | `test.projects` and workspace files (each project's own file is read); an unreadable `vite.config.*` that mentions neither a `test` key nor vitest configures no tests and is never reported |
+| pytest | the first of `pytest.toml`, `.pytest.toml` (`[pytest]`), `pytest.ini`, `.pytest.ini`, `pyproject.toml` (`[tool.pytest]` or `[tool.pytest.ini_options]`), `tox.ini` (`[pytest]`), `setup.cfg` (`[tool:pytest]`) in a folder that holds the section, decided from the parsed TOML as pytest decides it (an empty `[tool.pytest]` holds none, an empty `[tool.pytest.ini_options]` does) | `testpaths` (globs too), `python_files` (pytest's `test_*.py` and `*_test.py` when absent) | nothing is computed; a TOML file that is not valid TOML (outside the root: see above), a native table (`[pytest]`, `[tool.pytest]`) whose `testpaths` or `python_files` is not a list of strings, an `ini_options` one whose value is neither a string nor such a list, and a `pyproject.toml` that sets something in both `[tool.pytest]` and `[tool.pytest.ini_options]`, are unreadable |
+| Gradle | `build.gradle`, `build.gradle.kts` | the `src/test/<language>` convention (`java`, `kotlin`, `groovy`, `scala`); `srcDir`, `srcDirs` and `setSrcDirs` of the `test` source set, as string literals, through `file`, `files` or `listOf`; `srcDirs =` and `setSrcDirs` replace the convention and the folders added before them | `resources` folders, other source sets; a variable, a `$` in a string or a loop over the source sets makes the script unreadable |
+| Maven | `pom.xml` | the project's own `<build><testSourceDirectory>` (`${project.basedir}` allowed), else the `src/test/java` default; a `pom.xml` with `<packaging>pom</packaging>` has no tests | a value inside a `<profile>` or a plugin's `<configuration>`, one inherited from a parent `pom.xml`, or one in a comment; another property, or a `pom.xml` that is not well-formed XML, makes the file unreadable: markup that is not one of XML's productions or never closes, a closing tag that does not match the open element, an element still open at the end, a second root element or other content XML does not allow outside the root, or an `&` that is not one of XML's predefined or numeric references (which are decoded). A `pom.xml` is decoded from its bytes by its [byte order mark](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) or declared encoding (UTF-8, UTF-16, Latin-1 or ASCII; another encoding, or bytes it does not decode, makes the file unreadable), and its line ends are read as XML normalizes them. The declarations inside a `<!DOCTYPE … [ … ]>` [internal subset](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) are read to their ends but not checked |
+
+A path in a configuration is relative to the file's folder, as the runner
+reads it; one that is absolute or leaves the repository makes the file
+unreadable. A configuration file in a vendored or fixture folder is not
+read. A jest, vitest or pytest configuration that sets none of these keys
+claims nothing, since those runners' defaults are what the conventions
+already say; a Gradle or Maven build claims its convention folder.
+
+The layer makes a file a test only when it is code, and it overrides the
+conventions (a `*.check.js` jest names, or a code file in a `fixtures/`
+folder under a test source folder), but not what makes a file vendored,
+generated, documentation or an asset. `--explain` names the reader, the
+file and the key:
+
+```text
+src/cart.check.js
+  kind:     test — test runner jest: jest.config.js testMatch "**/*.check.js"
+```
 
 ### Default areas
 

@@ -37,8 +37,7 @@ how much it could not classify, and names the rule behind any file.
   [`code-stats`](plugin/skills/code-stats/README.md)
 - **Practice:** every module's criteria, as
   [principle 6](principles/06-audit-first.md) asks
-- **On the roadmap:** test-runner configuration for `code-stats`, and its
-  figures as audit evidence (item 20)
+- **On the roadmap:** `code-stats` figures as audit evidence (item 20)
 
 ## A work item carried from pickup to merge
 
@@ -267,12 +266,16 @@ Instruction files are layered so a rule loads only where it applies, with a
 glossary so parallel agents use one word for one thing. The docs tree is
 governed: a schema, a generated index, and [de-scarring](GLOSSARY.md), which
 `descar` performs by removing review traces, struck corrections and
-superseded statements from a promoted page. `programmatic-execution` runs a
+superseded statements from a promoted page. `docs` checks the whole tree in
+one pass (frontmatter, index, dates, scars and deferrals), flags drafts left
+stale and lists the documents the project's type calls for and the tree
+lacks; its gates run the same way in a repository's hooks and CI. `programmatic-execution` runs a
 bulk read-only check (cross-references, links, a search across many files)
 as one script whose findings are a compact list, instead of reading every
 file into the conversation.
 
-- **Skills:** [`descar`](plugin/skills/descar/SKILL.md),
+- **Skills:** [`docs`](plugin/skills/docs/README.md),
+  [`descar`](plugin/skills/descar/SKILL.md),
   [`programmatic-execution`](plugin/skills/programmatic-execution/SKILL.md)
 - **Practice:** [M0](modules/M0-instruction-architecture/),
   [M4](modules/M4-docs-governance/)

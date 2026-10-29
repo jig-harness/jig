@@ -104,11 +104,12 @@ If an operation has already stopped on conflicts, go to Step 2.
 and let the changelog skill say whether the branch edited the changelog's
 Unreleased or release sections or a version file. It reads the repository's
 configuration as the base holds it, so a branch forked before the repository
-adopted the skill is covered too:
+adopted the skill is covered too (`<remote>` here and below is the
+repository's git remote: `repository.remote`, else `origin`):
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch origin <base>
-bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base origin/<base> --dry-run
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch <remote> <base>
+bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base <remote>/<base> --dry-run
 ```
 
 When it prints `not configured` (the base did not turn the skill on) or
@@ -118,7 +119,7 @@ before merging, so those files cannot conflict and no resolution made to
 another file is thrown away:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base origin/<base>
+bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base <remote>/<base>
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git add -A
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git commit -m "chore(changelog): move the branch's changelog edits into a change note"
 ```
@@ -132,8 +133,8 @@ To bring a branch up to date with its base (the `conflict-resolve` round of
 in, with a base section in the markers:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch origin <base>
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git -c merge.conflictStyle=zdiff3 merge origin/<base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch <remote> <base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git -c merge.conflictStyle=zdiff3 merge <remote>/<base>
 ```
 
 Never rebase or force-push a branch that has an open pull request under a

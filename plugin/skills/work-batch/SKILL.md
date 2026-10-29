@@ -199,11 +199,13 @@ file so the worktree stays clean. Keep the `pickupId` the first prints: the pull
 Name the branch with the pull-request policy, after the highest-priority
 issue in the batch. The `branch` operation of `pr-plan.ts` only prints the
 name; create the
-branch from the planned base and switch to it before the first commit:
+branch from the planned base and switch to it before the first commit
+(`<remote>` is the repository's git remote: `repository.remote`, else
+`origin`):
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" branch --issue "<highest-priority KEY>" --title "<that issue's title>"
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git switch -c <printed-branch-name> origin/<base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git switch -c <printed-branch-name> <remote>/<base>
 ```
 
 When a branch of that name already exists for this batch, switch to it

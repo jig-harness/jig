@@ -58,11 +58,19 @@ strict:
   - resolve_conflicts
   - reflection
   - code_stats
+  - docs
   - work_batch
   - work_batch.ranking
   - routing
   - routing.raise
   - verify
+
+# Sections and fields whose `null` a skill refuses rather than reading it as
+# not set: a higher layer's `null` there would otherwise put a lower layer's
+# value back to its default unnoticed. Elsewhere a `null` reads as not set.
+null_refused:
+  - repository
+  - repository.remote
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
@@ -201,8 +209,15 @@ fields:
   repository.base_branch:
     type: string
     pattern: "^(?!origin/)[^\\s~^:?*\\[\\\\]+$"
-    read_by: [drive-pr, do-item, review, descar, changelog]
+    read_by: [drive-pr, do-item, review, descar, changelog, docs]
     repository_only: true
+
+  repository.remote:
+    type: string
+    pattern: "^(?!-)(?!.*\\.\\.)(?!.*//)(?!/)(?!.*/$)(?!.*\\.$)(?!(?:.*/)?\\.)(?!.*\\.lock(?:/|$))[A-Za-z0-9._/-]+$"
+    default: origin
+    read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc]
+    since: 0.94.0
 
   pull_requests.stacking:
     type: enum
@@ -529,7 +544,7 @@ fields:
   adr.directory:
     type: path
     exists: required
-    read_by: [adr, review, decide, explain]
+    read_by: [adr, review, decide, explain, docs]
   adr.rules_file:
     type: path
     exists: required
@@ -542,6 +557,24 @@ fields:
   descar.lint_command:
     type: command
     read_by: [descar]
+  docs.root:
+    type: path
+    exists: required
+    read_by: [docs]
+    repository_only: true
+    since: 0.95.0
+  docs.schema:
+    type: path
+    exists: required
+    read_by: [docs]
+    repository_only: true
+    since: 0.95.0
+  docs.stale_after_days:
+    type: integer
+    min: 1
+    default: 180
+    read_by: [docs]
+    since: 0.95.0
   promote_memory.lint_command:
     type: command
     read_by: [promote-memory]

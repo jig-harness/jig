@@ -68,6 +68,31 @@ describe("attach-pr.ts attaches", () => {
     });
   });
 
+  test("through the configured remote, whatever origin names", () => {
+    const c = fresh();
+    c.git(c.primary, "remote", "rename", "origin", "upstream");
+    // A fork setup: origin is another repository, upstream the PR's.
+    c.git(
+      c.primary,
+      "remote",
+      "add",
+      "origin",
+      join(c.root, "someone-else", "app.git"),
+    );
+    c.env.JIG__REPOSITORY__REMOTE = "upstream";
+    const tree = c.tree("wt1");
+    const r = c.attach(tree, "42");
+    expectSpawnExit(r, 0, "attach");
+    expect(JSON.parse(r.stdout)).toMatchObject({ remote: "upstream" });
+    expect(branchOf(c, tree)).toBe("feature");
+    expect(c.git(tree, "rev-parse", "--abbrev-ref", "feature@{u}")).toBe(
+      "upstream/feature",
+    );
+    expect(driveState(c, tree).drivenBranch).toMatchObject({
+      remote: "upstream",
+    });
+  });
+
   test("the head commit detached when another tree holds the branch", () => {
     const { c } = held();
     const tree = c.tree("wt1");
@@ -326,6 +351,14 @@ describe("attach-pr.ts refuses", () => {
     expect(r.stderr).toContain("pushed again while attaching");
     expect(branchOf(c, tree)).toBe("");
     expect(c.git(tree, "rev-parse", "HEAD")).toBe(stale);
+  });
+
+  test("a pull request gh cannot read, naming gh's own reason", () => {
+    const c = fresh();
+    const r = c.attach(c.tree("wt1"), "43");
+    expectSpawnExit(r, 1, "attach");
+    expect(r.stderr).toContain("no pull requests found");
+    expect(r.stderr).not.toContain("JSON");
   });
 
   test("a closed pull request", () => {
