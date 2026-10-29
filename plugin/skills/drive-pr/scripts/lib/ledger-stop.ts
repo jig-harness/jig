@@ -45,6 +45,22 @@ export async function markLedgerStopped(
 ): Promise<void> {
   if ((process.env.DRIVE_PR_LEDGER ?? "") === "off" || diag === null) return;
   if (diag.worktree === "") return;
+  // Best-effort: the stop itself has already happened, and its exit stands.
+  try {
+    await markGuarded(stateDir, pr, diag, exit);
+  } catch (err) {
+    console.error(
+      `ledger: PR #${pr}'s ledger was not marked stopped: ${err instanceof Error ? err.message : String(err)}.`,
+    );
+  }
+}
+
+async function markGuarded(
+  stateDir: string,
+  pr: string,
+  diag: ClaimDiag,
+  exit: number | null,
+): Promise<void> {
   const who = {
     actor: `wt-${worktreePathKey(diag.worktree)}`,
     clone: cloneId(stateDir),
