@@ -3,10 +3,12 @@
  * adapters the resolver runs, in which order, and the heading of the body
  * section that names an item's spec. Read through the shared configuration
  * reader, so every layer applies; both fields describe one repository, so the
- * user file refuses them (`config-layers.ts`).
+ * user file refuses them (`config-layers.ts`). A field set to `null` reads
+ * as not set, as elsewhere in the configuration.
  */
 import { layeredConfig, withSource } from "../consumer.ts";
 import { isRecord } from "../guards.ts";
+import { headingKey, INLINE_HEADINGS } from "./markdown.ts";
 
 /** The fields of `specs`; any other key is refused. */
 export const SPECS_FIELDS = ["adapters", "body_section"] as const;
@@ -54,6 +56,13 @@ function heading(value: unknown): string {
     throw new SpecConfigError(
       "specs.body_section must be a heading's text on one line, without the leading #",
     );
+  const builtIn = Object.values(INLINE_HEADINGS).find(
+    (h) => headingKey(h) === headingKey(value),
+  );
+  if (builtIn !== undefined)
+    throw new SpecConfigError(
+      `specs.body_section must differ from the ${builtIn} heading, which is read on its own`,
+    );
   return value.trim();
 }
 
@@ -72,11 +81,11 @@ export function parseSpecsConfig(
       );
   return {
     adapters:
-      section.adapters === undefined
+      section.adapters === undefined || section.adapters === null
         ? null
         : adapterList(section.adapters, known),
     bodySection:
-      section.body_section === undefined
+      section.body_section === undefined || section.body_section === null
         ? DEFAULT_BODY_SECTION
         : heading(section.body_section),
   };

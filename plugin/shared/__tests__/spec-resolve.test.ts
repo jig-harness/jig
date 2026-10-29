@@ -6,67 +6,24 @@
  * holds every real adapter to the read-safety rules.
  */
 import { describe, expect, test } from "bun:test";
-import {
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-  symlinkSync,
-} from "node:fs";
+import { mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
-import type {
-  AdapterRead,
-  SpecAdapter,
-  SpecReference,
-} from "../spec/adapter.ts";
+import type { SpecReference } from "../spec/adapter.ts";
 import { bodyAdapter } from "../spec/adapters/body.ts";
 import { DEFAULT_BODY_SECTION, readSpecsConfig } from "../spec/config.ts";
 import { resolveSpec, summary } from "../spec/resolve.ts";
-import { NO_USER_LAYER, only, put, scratchRepo } from "./spec-helpers.ts";
+import {
+  issue,
+  NO_USER_LAYER,
+  only,
+  put,
+  scratchRepo,
+  stub,
+} from "./spec-helpers.ts";
 
 const RESOLVE = join(import.meta.dir, "..", "spec", "resolve.ts");
-
-/**
- * A layout adapter for the tests: claims `<folder>/*.md` and
- * `<folder>/*\/`, reads each line `ID text` of a file (or of every file in a
- * folder) as a requirement (`FR-`) or a criterion (anything else).
- */
-function stub(
-  name: string,
-  folder: string,
-  reads: SpecReference[] = [],
-  present = true,
-): SpecAdapter {
-  return {
-    name,
-    patterns: [`${folder}/*.md`, `${folder}/*/`],
-    detect: () => Promise.resolve(present),
-    read(ref) {
-      reads.push(ref);
-      if (ref.kind !== "file") throw new TypeError("files only");
-      if (ref.ref.includes("broken")) throw new TypeError("unparseable");
-      const text = statSync(ref.path).isDirectory()
-        ? readdirSync(ref.path)
-            .map((f) => readFileSync(join(ref.path, f), "utf8"))
-            .join("")
-        : readFileSync(ref.path, "utf8");
-      const out: AdapterRead = { requirements: [], acceptance: [], tasks: [] };
-      for (const line of text.split("\n").filter(Boolean)) {
-        const [id = "", ...rest] = line.split(" ");
-        const req = /FR-\d+/.exec(rest.join(" "))?.[0] ?? null;
-        if (id.startsWith("FR-"))
-          out.requirements.push({ id, text: rest.join(" ") });
-        else
-          out.acceptance.push({ id, text: rest.join(" "), requirement: req });
-      }
-      return Promise.resolve(out);
-    },
-  };
-}
-
-const issue = (description: string) => ({ found: true, description });
 
 describe("where references are found", () => {
   test("a file the body links twice is one source with both findings, read once", async () => {
@@ -270,6 +227,14 @@ describe("the specs configuration", () => {
         "specs.body_section must be a heading's text",
       ],
       [
+        "specs:\n  body_section: 'Acceptance criteria:'\n",
+        "specs.body_section must differ from the Acceptance criteria heading",
+      ],
+      [
+        "specs:\n  body_section: requirements\n",
+        "specs.body_section must differ from the Requirements heading",
+      ],
+      [
         "specs:\n  require_for_types: [feature]\n",
         "specs.require_for_types is not a field",
       ],
@@ -282,6 +247,19 @@ describe("the specs configuration", () => {
         ".config/jig.yaml",
       );
     }
+  });
+
+  test("a null field reads as not set", () => {
+    const { root } = scratchRepo("spec-config-");
+    put(
+      root,
+      ".config/jig.yaml",
+      "specs:\n  adapters: null\n  body_section: null\n",
+    );
+    expect(readSpecsConfig(root, ["body"], NO_USER_LAYER)).toEqual({
+      adapters: null,
+      bodySection: "Spec",
+    });
   });
 
   test("the user file may not set it: it describes one repository", () => {
@@ -338,6 +316,9 @@ describe("the command line", () => {
     expect(text.stdout.trim()).toBe(
       [
         "Spec: 2 sources, 0 requirements, 1 acceptance criterion, 0 tasks",
+        "Acceptance criteria:",
+        "- #body/Acceptance criteria#AC-1: Works",
+        "Sources:",
         "- #body/Acceptance criteria (body: section)",
         "- #body/Spec (body: section)",
         "Unresolved:",

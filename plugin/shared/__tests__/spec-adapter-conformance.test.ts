@@ -78,10 +78,10 @@ function spy(adapter: SpecAdapter, reads: SpecReference[]): SpecAdapter {
   return {
     name: adapter.name,
     patterns: adapter.patterns,
-    detect: (root) => adapter.detect(root),
-    read: (ref) => {
+    detect: (root, signal) => adapter.detect(root, signal),
+    read: (ref, signal) => {
       reads.push(ref);
-      return adapter.read(ref);
+      return adapter.read(ref, signal);
     },
   };
 }
@@ -107,7 +107,9 @@ for (const adapter of ADAPTERS)
         expect(pattern.split("/")).not.toContain("..");
       }
       const { root } = scratchRepo("spec-detect-");
-      expect(typeof (await adapter.detect(root))).toBe("boolean");
+      expect(
+        typeof (await adapter.detect(root, new AbortController().signal)),
+      ).toBe("boolean");
     });
 
     const folder = join(FIXTURES, adapter.name);

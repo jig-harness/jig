@@ -13,12 +13,12 @@ import { isAbsolute, join, posix, relative, sep } from "node:path";
 import { swallow } from "../errors.ts";
 import { spawnSync, withoutLeakyGitEnv } from "../guarded-git-spawn.ts";
 import type { BodySectionKind, SpecAdapter } from "./adapter.ts";
-
-/** The inline headings recognised beside the configured spec heading. */
-const INLINE_HEADINGS: Record<Exclude<BodySectionKind, "spec">, string> = {
-  requirements: "Requirements",
-  acceptance: "Acceptance criteria",
-};
+import {
+  headingKey,
+  INLINE_HEADINGS,
+  markdownLines,
+  trimEndOf,
+} from "./markdown.ts";
 
 /** One recognised section of the body, every occurrence joined. */
 export interface BodySection {
@@ -28,11 +28,16 @@ export interface BodySection {
   text: string;
 }
 
-const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
-const FENCE = /^ {0,3}(```|~~~)/;
+const HEADING = /^ {0,3}(#{1,6})(?:[ \t](.*))?$/;
 
-function headingKey(text: string): string {
-  return text.replace(/[*_`]/g, "").replace(/:\s*$/, "").trim().toLowerCase();
+/** The heading `line` is, its closing run of `#` dropped, or `null`. */
+function headingOf(line: string): { level: number; title: string } | null {
+  const match = HEADING.exec(line);
+  if (!match) return null;
+  let title = (match[2] ?? "").trim();
+  const bare = trimEndOf(title, "#");
+  if (bare === "" || bare.endsWith(" ")) title = bare.trim();
+  return { level: (match[1] ?? "").length, title };
 }
 
 /**
@@ -75,25 +80,17 @@ export function bodySections(body: string, specHeading: string): BodySection[] {
   return [...names.values()];
 }
 
-/** Each line of `body`, with its heading when it is one outside fenced code. */
+/** Each line of `body`, with its heading when it is one outside code. */
 function* headedLines(body: string): Generator<{
   line: string;
   heading: { level: number; title: string } | null;
 }> {
-  let inFence = false;
-  for (const line of body.split(/\r?\n/)) {
-    if (FENCE.test(line)) inFence = !inFence;
-    const match = inFence ? null : HEADING.exec(line);
-    yield {
-      line,
-      heading: match
-        ? { level: (match[1] ?? "").length, title: match[2] ?? "" }
-        : null,
-    };
-  }
+  for (const { line, kind } of markdownLines(body))
+    yield { line, heading: kind === "text" ? headingOf(line) : null };
 }
 
-const MARKDOWN_LINK = /\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g;
+const MARKDOWN_LINK =
+  /\[[^\]]*\]\([ \t]*<?([^)\s>]+)>?[ \t]*(?:"[^"]*"[ \t]*)?\)/g;
 const AUTOLINK = /<([a-z][a-z0-9+.-]*:[^>\s]+)>/gi;
 const BARE_URL = /\bhttps?:\/\/[^\s)>\]]+/gi;
 const DEFINITION = /^ {0,3}\[[^\]]+\]:\s*<?(\S+?)>?(?:\s|$)/;
@@ -128,13 +125,8 @@ function linkTargets(line: string): string[] {
  */
 export function sectionReferences(text: string): string[] {
   const found: string[] = [];
-  let inFence = false;
-  for (const line of text.split(/\r?\n/)) {
-    if (FENCE.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
+  for (const { line, kind } of markdownLines(text)) {
+    if (kind !== "text") continue;
     const targets = linkTargets(line);
     found.push(...targets);
     if (targets.length > 0) continue;
@@ -150,13 +142,8 @@ export function sectionReferences(text: string): string[] {
 /** Every link target and path-like code span anywhere in the body. */
 export function bodyMentions(body: string): string[] {
   const found: string[] = [];
-  let inFence = false;
-  for (const line of body.split(/\r?\n/)) {
-    if (FENCE.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
+  for (const { line, kind } of markdownLines(body)) {
+    if (kind !== "text") continue;
     found.push(...linkTargets(line));
     for (const m of line.matchAll(CODE_SPAN))
       if (pathLike(m[1] ?? "")) found.push(m[1] ?? "");
@@ -166,7 +153,9 @@ export function bodyMentions(body: string): string[] {
 
 /** A reference written as a repository path: separators made `/`, anchor and query dropped. */
 function asPath(reference: string): string {
-  let path = reference.replace(/\\/g, "/").replace(/[?#].*$/, "");
+  let path = reference.replace(/\\/g, "/");
+  const cut = path.search(/[?#]/);
+  if (cut >= 0) path = path.slice(0, cut);
   try {
     path = decodeURI(path);
   } catch (err) {
@@ -205,17 +194,28 @@ export function claimant(
   return adapters.find((a) => matches(a, path)) ?? null;
 }
 
-export type Checked =
-  | { ok: true; ref: string; path: string; adapter: SpecAdapter }
-  | { ok: false; reason: string };
+/** A path that passed every check but the adapter claim. */
+export interface CheckedPath {
+  ok: true;
+  /** Relative to the root, `/`-separated; a folder ends in `/`. */
+  ref: string;
+  /** The real, absolute location. */
+  path: string;
+  directory: boolean;
+}
 
-function refused(reason: string): Checked {
+export type Refused = { ok: false; reason: string };
+
+export type Checked = (CheckedPath & { adapter: SpecAdapter }) | Refused;
+
+function refused(reason: string): Refused {
   return { ok: false, reason };
 }
 
 function inside(root: string, path: string): string | null {
   const rel = relative(root, path);
-  if (rel.startsWith("..") || isAbsolute(rel)) return null;
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel))
+    return null;
   return rel.split(sep).join("/");
 }
 
@@ -232,17 +232,16 @@ function ignored(root: string, rel: string): boolean | null {
 }
 
 /**
- * Check one reference before anything reads it, in this order: a web link,
- * an absolute path, a path whose `..` leaves the root, a path that does not
- * exist, a real path (symbolic links followed) outside the root, a path Git
- * ignores, a path no enabled adapter claims. The first that applies refuses
- * it with that reason.
+ * Check one path before anything reads it, in this order: a web link, an
+ * absolute path, a path whose `..` leaves the root, a path that does not
+ * exist, a real path (symbolic links followed) outside the root or at the
+ * root itself, a path Git ignores. The first that applies refuses it with
+ * that reason.
  */
-export function checkReference(
+export function checkPath(
   reference: string,
   root: string,
-  adapters: readonly SpecAdapter[],
-): Checked {
+): CheckedPath | Refused {
   if (isWebLink(reference)) return refused("web link, not fetched");
   const path = asPath(reference);
   if (isAbsolutePath(path)) return refused("absolute path");
@@ -274,8 +273,22 @@ export function checkReference(
   if (verdict === null)
     return refused("Git could not say whether it is ignored");
   if (verdict) return refused("ignored by Git");
-  const ref = statSync(real).isDirectory() ? `${rel}/` : rel;
-  const adapter = adapters.find((a) => matches(a, ref));
+  const directory = statSync(real).isDirectory();
+  return { ok: true, ref: directory ? `${rel}/` : rel, path: real, directory };
+}
+
+/**
+ * Check one reference: every check of `checkPath`, then whether an enabled
+ * adapter's patterns claim it.
+ */
+export function checkReference(
+  reference: string,
+  root: string,
+  adapters: readonly SpecAdapter[],
+): Checked {
+  const checked = checkPath(reference, root);
+  if (!checked.ok) return checked;
+  const adapter = adapters.find((a) => matches(a, checked.ref));
   if (!adapter) return refused("no adapter claims it");
-  return { ok: true, ref, path: real, adapter };
+  return { ...checked, adapter };
 }

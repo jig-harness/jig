@@ -14,8 +14,13 @@
  * the one the working directory is in (`JIG_CONSUMER_ROOT` overrides it, as
  * for every plugin script); no argument names it, so nothing on the command
  * line can move the boundary the reads are held inside. `--summary` prints
- * the counts, the sources and the unresolved references as text instead of
- * JSON.
+ * the result as text for a person instead of JSON: the counts, every
+ * requirement, criterion and task with its key, the sources and the
+ * unresolved references.
+ *
+ * Each adapter's `detect` and `read` has a deadline (30 seconds): one that
+ * has not answered by then is given up on, its signal aborted, and the
+ * reference reported as unresolved, so a hung tool cannot stall a pickup.
  *
  * Exit codes: 0 resolved (an empty result included), 2 usage or an input
  * that is not an issue, 1 a `specs` configuration the resolver cannot use.
@@ -32,6 +37,7 @@ import { isRecord } from "../guards.ts";
 import { INVALID_JSON_INPUT, readJsonInput } from "../json-input.ts";
 import type { AdapterRead, SpecAdapter, SpecReference } from "./adapter.ts";
 import { readSpecsConfig, type SpecsConfig } from "./config.ts";
+import { checkedFiles } from "./files.ts";
 import {
   bodyMentions,
   bodySections,
@@ -86,7 +92,34 @@ export interface ResolveOptions {
   /** The `specs` configuration; read from the repository by default. */
   config?: SpecsConfig;
   env?: Record<string, string | undefined>;
+  /** How long each adapter call may take, in milliseconds; 30 seconds by default. */
+  deadlineMs?: number;
 }
+
+const DEADLINE_MS = 30_000;
+
+/** `run`'s answer, or a rejection once `ms` pass, its signal aborted. */
+async function withDeadline<T>(
+  ms: number,
+  run: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`no answer within ${ms / 1000} seconds`));
+    }, ms);
+  });
+  try {
+    return await Promise.race([run(controller.signal), expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const reasonOf = (err: unknown) =>
+  err instanceof Error ? err.message : String(err);
 
 /** The issue's body: `description`, else `body`, else empty. */
 function issueBody(issue: Record<string, unknown>): string {
@@ -95,12 +128,17 @@ function issueBody(issue: Record<string, unknown>): string {
   return "";
 }
 
-/** The adapters to run, in order: the configured ones, or every one whose layout is present. */
+/**
+ * The adapters to run, in order: the configured ones, or every one whose
+ * layout is present. One whose `detect` fails or misses its deadline is
+ * left out, and reported.
+ */
 async function enabledAdapters(
   registry: readonly SpecAdapter[],
   config: SpecsConfig,
   root: string,
-): Promise<SpecAdapter[]> {
+  deadlineMs: number,
+): Promise<{ adapters: SpecAdapter[]; unresolved: string[] }> {
   const chosen =
     config.adapters === null
       ? [
@@ -110,8 +148,34 @@ async function enabledAdapters(
       : config.adapters.flatMap((name) =>
           registry.filter((a) => a.name === name),
         );
-  const present = await Promise.all(chosen.map((a) => a.detect(root)));
-  return chosen.filter((_, i) => present[i]);
+  const unresolved: string[] = [];
+  const present = await Promise.all(
+    chosen.map((a) =>
+      withDeadline(deadlineMs, (signal) => a.detect(root, signal)).catch(
+        (err: unknown) => {
+          unresolved.push(
+            `${a.name} adapter (could not tell whether its layout is present: ${reasonOf(err)})`,
+          );
+          return false;
+        },
+      ),
+    ),
+  );
+  return { adapters: chosen.filter((_, i) => present[i]), unresolved };
+}
+
+/** An id `lists` give to more than one entry, or `null`. */
+function sharedId(lists: AdapterRead): string | null {
+  const seen = new Set<string>();
+  for (const { id } of [
+    ...lists.requirements,
+    ...lists.acceptance,
+    ...lists.tasks,
+  ]) {
+    if (seen.has(id)) return id;
+    seen.add(id);
+  }
+  return null;
 }
 
 interface Found {
@@ -173,7 +237,11 @@ function findReferences(
           ref: checked.ref,
           evidence: [],
         },
-        reference: { kind: "file", ref: checked.ref, path: checked.path },
+        reference: {
+          kind: "file",
+          ref: checked.ref,
+          files: checkedFiles(checked, root),
+        },
       },
       "body link",
     );
@@ -250,23 +318,34 @@ export async function resolveSpec(
       registry.map((a) => a.name),
       options.env,
     );
-  const adapters = await enabledAdapters(registry, config, root);
+  const deadlineMs = options.deadlineMs ?? DEADLINE_MS;
+  const enabled = await enabledAdapters(registry, config, root, deadlineMs);
   const { found, unresolved } = findReferences(
     issueBody(issue),
     root,
-    adapters,
+    enabled.adapters,
     config,
   );
+  unresolved.unshift(...enabled.unresolved);
   const read: { source: SpecSource; lists: AdapterRead }[] = [];
   for (const f of found) {
+    let lists: AdapterRead;
     try {
-      read.push({ source: f.source, lists: await f.adapter.read(f.reference) });
-    } catch (err) {
-      const why = err instanceof Error ? err.message : String(err);
-      unresolved.push(
-        `${f.source.ref} (${f.adapter.name} could not read it: ${why})`,
+      lists = await withDeadline(deadlineMs, (signal) =>
+        f.adapter.read(f.reference, signal),
       );
+    } catch (err) {
+      unresolved.push(
+        `${f.source.ref} (${f.adapter.name} could not read it: ${reasonOf(err)})`,
+      );
+      continue;
     }
+    const shared = sharedId(lists);
+    if (shared === null) read.push({ source: f.source, lists });
+    else
+      unresolved.push(
+        `${f.source.ref} (${f.adapter.name} gave the id ${shared} to more than one entry)`,
+      );
   }
   return { ...qualify(read), unresolved };
 }
@@ -274,12 +353,38 @@ export async function resolveSpec(
 const plural = (n: number, one: string, many: string) =>
   `${n} ${n === 1 ? one : many}`;
 
-/** The result as a few lines for a person: counts, sources, unresolved references. */
+/** One titled list of entries, or nothing when there are none. */
+function listed(title: string, items: string[]): string[] {
+  return items.length === 0 ? [] : [`${title}:`, ...items];
+}
+
+/**
+ * The result as text for a person: counts, every entry with its key, the
+ * sources and the unresolved references.
+ */
 export function summary(result: SpecResult): string {
   const lines = [
     `Spec: ${plural(result.sources.length, "source", "sources")}, ${plural(result.requirements.length, "requirement", "requirements")}, ${plural(result.acceptance.length, "acceptance criterion", "acceptance criteria")}, ${plural(result.tasks.length, "task", "tasks")}`,
-    ...result.sources.map(
-      (s) => `- ${s.ref} (${s.adapter}: ${s.evidence.join(", ")})`,
+    ...listed(
+      "Requirements",
+      result.requirements.map((r) => `- ${r.key}: ${r.text}`),
+    ),
+    ...listed(
+      "Acceptance criteria",
+      result.acceptance.map(
+        (c) =>
+          `- ${c.key}: ${c.text}${c.requirement === null ? "" : ` (serves ${c.requirement})`}`,
+      ),
+    ),
+    ...listed(
+      "Tasks",
+      result.tasks.map((t) => `- [${t.done ? "x" : " "}] ${t.key}: ${t.text}`),
+    ),
+    ...listed(
+      "Sources",
+      result.sources.map(
+        (s) => `- ${s.ref} (${s.adapter}: ${s.evidence.join(", ")})`,
+      ),
     ),
   ];
   if (result.unresolved.length > 0)
@@ -331,7 +436,7 @@ async function main(argv: string[]): Promise<number> {
   try {
     result = await resolveSpec(issue, consumerRoot());
   } catch (err) {
-    fail(1, err instanceof Error ? err.message : String(err));
+    fail(1, reasonOf(err));
   }
   console.log(
     values.summary ? summary(result) : JSON.stringify(result, null, 2),

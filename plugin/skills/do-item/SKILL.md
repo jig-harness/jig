@@ -302,8 +302,8 @@ bun "${CLAUDE_SKILL_DIR}/../../shared/spec/resolve.ts" --input spec-issue.json -
 ```
 
 Show the user what it prints: the number of requirements, acceptance
-criteria and tasks the item carries or links, each source, and every
-reference it did not read with the reason. It reads the body's
+criteria and tasks the item carries or links, each of them with its key and
+text, each source, and every reference it did not read with the reason. It reads the body's
 `specs.body_section` section (`## Spec` by default), `## Requirements` and
 `## Acceptance criteria`, and a path only inside the repository that Git does
 not ignore; it fetches no web link and writes nothing. Nothing later in this

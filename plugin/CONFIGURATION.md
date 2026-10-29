@@ -414,7 +414,7 @@ unknown key is refused.
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
 | `specs.adapters` | list of adapter names, in order: `body` | Every adapter whose layout the repository holds, then `body` | do-item | Orders or restricts the adapters: only those listed run, in this order, and the first whose path patterns claim a referenced path reads it. Leaving `body` out stops the item's own sections from being read |
-| `specs.body_section` | heading text, without the `#` | `Spec` | do-item | The heading of the body section that names the item's spec, by link or path, and may carry its requirements, criteria and tasks inline. Matched at any heading level, ignoring case and a trailing colon. `Requirements` and `Acceptance criteria` sections are read beside it |
+| `specs.body_section` | heading text, without the `#` | `Spec` | do-item | The heading of the body section that names the item's spec, by link or path, and may carry its requirements, criteria and tasks inline. Matched at any heading level, ignoring case and a trailing colon. `Requirements` and `Acceptance criteria` sections are read beside it, so neither may be the spec section's heading. Headings and entries inside code (a fence, or an indented code block) are not read |
 
 ## `work_batch`
 

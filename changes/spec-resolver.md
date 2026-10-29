@@ -12,7 +12,8 @@ release: minor
   The resolver behind it (`plugin/shared/spec/resolve.ts`) reads only inside
   the repository: an absolute path, a `..` that leaves the root, a symbolic
   link out of it and a file Git ignores, such as `.env`, are refused before
-  anything reads them, and no web link is fetched. Nothing else in the pickup
-  changes. Two new fields, `specs.adapters` and `specs.body_section`, set
+  anything reads them, each file in a referenced folder is checked on its
+  own, and no web link is fetched. A reader that does not answer within 30
+  seconds is given up on. Nothing else in the pickup changes. Two new fields, `specs.adapters` and `specs.body_section`, set
   which readers run and the spec section's heading
   ([configuration](../plugin/CONFIGURATION.md#specs)).

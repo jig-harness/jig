@@ -3,6 +3,8 @@ import { ExitError } from "../../../../shared/cli.ts";
 import { isMapping as isRecord } from "../../../../shared/config-layers.ts";
 import { parseReviewConfig } from "../../../../shared/consumer.ts";
 import { swallow } from "../../../../shared/errors.ts";
+import { parseSpecsConfig } from "../../../../shared/spec/config.ts";
+import { ADAPTERS } from "../../../../shared/spec/registry.ts";
 import { parseTrackerLabels } from "../../../../shared/tracker-labels.ts";
 import { adrConfig } from "../../../adr/scripts/locate.ts";
 import {
@@ -118,6 +120,12 @@ export function skillValidation(
   });
   attempt("do-item (routing)", () =>
     parseRouting(config, parseWorkTypes(config)),
+  );
+  attempt("do-item (spec resolver)", () =>
+    parseSpecsConfig(
+      config.specs,
+      ADAPTERS.map((a) => a.name),
+    ),
   );
   attempt("resolve-review-comments", () => parseReviewConfig(config.review));
   attempt("drive-pr (severity formats)", () => {

@@ -7,6 +7,11 @@
  * One the pull request does not account for, or accounts for without its
  * evidence, item or reason, is `unaccounted`. The renderer only writes the
  * section; it refuses nothing.
+ *
+ * Criterion text comes from the work item, which anyone who can write an
+ * issue writes. It is put on one line with `&`, `<` and `>` written as
+ * entities, so no HTML in it (an open comment, say) can hide the lines
+ * after it; a label is a code span longer than any backtick run inside it.
  */
 import type { Criterion } from "./resolve.ts";
 
@@ -21,7 +26,23 @@ function label(c: Criterion, all: readonly Criterion[]): string {
 }
 
 function oneLine(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** `text` as a code span that no backtick inside it can close. */
+function codeSpan(text: string): string {
+  const longest = Math.max(
+    0,
+    ...(text.match(/`+/g) ?? []).map((r) => r.length),
+  );
+  const fence = "`".repeat(longest + 1);
+  const pad = text.startsWith("`") || text.endsWith("`") ? " " : "";
+  return `${fence}${pad}${text.replace(/\s+/g, " ")}${pad}${fence}`;
 }
 
 /** The account given for `c`, by key, or by id where the id is unique. */
@@ -72,7 +93,7 @@ export function renderAcceptanceSection(
   if (acceptance.length === 0) lines.push("No acceptance criteria resolved.");
   for (const c of acceptance)
     lines.push(
-      `- \`${label(c, acceptance)}\` ${oneLine(c.text)}: ${verdict(accountOf(c, acceptance, accounts))}`,
+      `- ${codeSpan(label(c, acceptance))} ${oneLine(c.text)}: ${verdict(accountOf(c, acceptance, accounts))}`,
     );
   return lines.join("\n");
 }

@@ -34,6 +34,7 @@ import type {
   SpecAdapter,
   SpecReference,
 } from "../adapter.ts";
+import { markdownLines, trimEndOf } from "../markdown.ts";
 
 const ID = "[A-Z][A-Z0-9]*-\\d+(?:\\.\\d+)*";
 const REQUIREMENT_ID = /^(?:FR|NFR|REQ)-\d+(?:\.\d+)*$/;
@@ -42,10 +43,9 @@ const REQUIREMENT_MENTION = /\b(?:FR|NFR|REQ)-\d+(?:\.\d+)*\b/g;
 const LEADING_ID = new RegExp(
   `^(?:\\*\\*|__|\`|\\[)?(${ID})(?:\\*\\*|__|\`|\\])?(?=$|[\\s:.)\\u2013\\u2014-])[\\s:.)\\u2013\\u2014-]*(.*)$`,
 );
-const NUMBER_ID = /^(\d+(?:\.\d+)*)\.?(?=\s|$)\s*(.*)$/;
-const LIST_ITEM = /^( *)(?:[-*+]|\d+[.)])\s+(.*)$/;
-const CHECKBOX = /^\[([ xX])\]\s+(.*)$/;
-const FENCE = /^ {0,3}(```|~~~)/;
+const NUMBER_ID = /^(\d+(?:\.\d+)*)\.?(?:\s(.*))?$/;
+const LIST_ITEM = /^( *)(?:[-*+]|\d{1,9}[.)])\s(.*)$/;
+const CHECKBOX = /^\[([ xX])\]\s(.*)$/;
 const HEADING = /^ {0,3}#{1,6}\s/;
 
 /** One list item or id-led line, with the lines that continue it. */
@@ -69,14 +69,18 @@ function leadingId(
     return { id: lettered[1] ?? null, numeric: false, rest: lettered[2] ?? "" };
   const numbered = afterCheckbox ? NUMBER_ID.exec(text) : null;
   if (numbered)
-    return { id: numbered[1] ?? null, numeric: true, rest: numbered[2] ?? "" };
+    return {
+      id: numbered[1] ?? null,
+      numeric: true,
+      rest: (numbered[2] ?? "").trimStart(),
+    };
   return { id: null, numeric: false, rest: text };
 }
 
 function block(indent: number, list: boolean, content: string): Block {
   const box = list ? CHECKBOX.exec(content) : null;
   const { id, numeric, rest } = leadingId(
-    box ? (box[2] ?? "") : content,
+    box ? (box[2] ?? "").trimStart() : content,
     box !== null,
   );
   return {
@@ -91,18 +95,12 @@ function block(indent: number, list: boolean, content: string): Block {
 }
 
 /**
- * The section's lines outside fenced code, tabs as four spaces; `null`
- * stands where a fence opens or closes, since it ends the entry above it.
+ * The section's lines outside code, tabs as four spaces; `null` stands
+ * where code opens, closes or continues, since it ends the entry above it.
  */
 function* unfenced(text: string): Generator<string | null> {
-  let inFence = false;
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.replace(/\t/g, "    ");
-    if (FENCE.test(line)) {
-      inFence = !inFence;
-      yield null;
-    } else if (!inFence) yield line;
-  }
+  for (const { line, kind } of markdownLines(text))
+    yield kind === "text" ? line : null;
 }
 
 /** A new block the line opens, `"end"` when it ends the one above, or `"continue"`. */
@@ -113,7 +111,7 @@ function opens(
 ): Block | "end" | "continue" {
   const indent = line.length - line.trimStart().length;
   const item = LIST_ITEM.exec(line);
-  if (item) return block(indent, true, item[2] ?? "");
+  if (item) return block(indent, true, (item[2] ?? "").trimStart());
   if (HEADING.test(line)) return "end";
   if (indent < 4 && LEADING_ID.test(line.trim()))
     return block(indent, false, line.trim());
@@ -176,11 +174,10 @@ const DERIVED_PREFIX: Record<Kind, string> = {
 
 /** The id of an item that carries none: see the header. */
 function derivedId(kind: Kind, text: string): string {
-  const normal = text
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[.;:]+$/, "");
+  const normal = trimEndOf(
+    text.toLowerCase().replace(/\s+/g, " ").trim(),
+    ".;:",
+  );
   const digest = createHash("sha256").update(normal).digest("hex");
   return `${DERIVED_PREFIX[kind]}-${digest.slice(0, 8)}`;
 }

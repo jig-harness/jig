@@ -18,6 +18,16 @@ const criteria = [
   criterion("#body/Spec", "AC-5", "Exports are logged"),
 ];
 
+test("issue text cannot open HTML or close the label's code span", () => {
+  const section = renderAcceptanceSection(
+    [criterion("#body/a`b", "x`y", "Works <!-- & hides the rest")],
+    { "#body/a`b#x`y": { state: "met", evidence: "<b>shown</b>" } },
+  );
+  expect(section.split("\n").at(-1)).toBe(
+    "- ``x`y`` Works &lt;!-- &amp; hides the rest: **met**; evidence: &lt;b&gt;shown&lt;/b&gt;",
+  );
+});
+
 test("writes one line per criterion with its state and what accounts for it", () => {
   expect(
     renderAcceptanceSection(criteria, {
