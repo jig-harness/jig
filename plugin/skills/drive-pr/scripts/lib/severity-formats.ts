@@ -452,22 +452,34 @@ function configuredReviewerLogins(): string[] {
   return app !== "" ? [app] : reviewBots();
 }
 
-/** The formats in force in this repository, in the order they are tried. */
-function severityFormats(): SeverityFormat[] {
+/** The repository's own formats, then the built-in ones. */
+function declaredFormats(): SeverityFormat[] {
   return [
     ...parseSeverityFormats(
       reviewSeverityFormats(),
       configSource("review.severity_formats"),
     ),
     ...BUILTIN_FORMATS,
-    ...jigFormats(configuredReviewerLogins()),
   ];
 }
 
-/** Does any format in force read `login`'s severities? */
+/** The formats in force in this repository, in the order they are tried. */
+function severityFormats(): SeverityFormat[] {
+  return [...declaredFormats(), ...jigFormats(configuredReviewerLogins())];
+}
+
+/**
+ * Does a format known to be `login`'s read its severities? By default the
+ * repository's own formats, the built-in ones, and Jig's for the configured
+ * `review.reviewer_app`; not Jig's format for a `review.bots` login, which is
+ * assumed for a reviewer the configuration names no app for, not known.
+ */
 export function hasSeverityFormat(
   login: string,
-  formats: readonly SeverityFormat[] = severityFormats(),
+  formats: readonly SeverityFormat[] = [
+    ...declaredFormats(),
+    ...jigFormats(reviewerApp() !== "" ? [reviewerApp()] : []),
+  ],
 ): boolean {
   const author = normalizeLogin(login);
   return (

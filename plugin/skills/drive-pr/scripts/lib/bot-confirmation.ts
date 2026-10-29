@@ -19,9 +19,13 @@
  *    to case or a `[bot]` suffix), and it carries that bot's chat marker and
  *    none of the bot's finding shape: no line a severity format for that
  *    login reads as a severity (`lib/severity-formats.ts`), since a chat
- *    reply can embed a fresh finding. Only a recognizer can prove that
- *    absence, so a bot with no severity format in force has no transparent
- *    chat follow-ups, and neither has a bot the list leaves out.
+ *    reply can embed a fresh finding. Only a recognizer known to be the
+ *    bot's can prove that absence: one `review.severity_formats` declares,
+ *    a built-in one, or Jig's for the bot named as `review.reviewer_app`.
+ *    Jig's format is assumed for `review.bots` logins when no app is named,
+ *    and an assumed recognizer proves nothing, so a bot without a known
+ *    format has no transparent chat follow-ups, and neither has a bot the
+ *    list leaves out.
  *
  * Authorship is by login: an association check cannot tell a bot from a
  * person (both read `NONE`), and logins are unique across users and bots.
