@@ -17,6 +17,7 @@ import {
   settingsRequirement,
   validSettings,
 } from "../../../design-brief-builder/scripts/contracts.ts";
+import { parseDocsSettings } from "../../../docs/scripts/lib/settings.ts";
 import { parseRouting } from "../../../do-item/scripts/lib/routing.ts";
 import { parseTrackerConfig } from "../../../do-item/scripts/lib/tracker/config.ts";
 import { parseWorkTypes } from "../../../do-item/scripts/lib/work-types.ts";
@@ -132,6 +133,7 @@ export function skillValidation(
   );
   attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));
   attempt("gc", () => parseDeclaration(config.gc, root));
+  attempt("docs", () => parseDocsSettings(config.docs, root));
   attempt("design-brief-builder (handback)", () => {
     const handback = at(config, "design_brief.handback");
     if (handback !== undefined && !validSettings(handback))

@@ -61,12 +61,13 @@ runs, what it hands over to.
 | [promote-memory](skills/promote-memory/SKILL.md) | Turns an agent's private memory into a reviewed, shared document in the repository | `/jig:promote-memory` | Sends an architectural lesson to [adr](skills/adr/SKILL.md); a page it promotes gets a [descar](skills/descar/SKILL.md) pass before it becomes a permanent, approved document |
 | [descar](skills/descar/SKILL.md) | Removes review history, correction ledgers and finished-work rows from a promoted document, keeping what a reader needs now | `/jig:descar` | The pass a page [promote-memory](skills/promote-memory/SKILL.md) promoted gets before it becomes a permanent, approved document; runs on any docs page before it is promoted |
 
-**Inspect and analyse.** Tools that inspect the repository: `audit` records its findings; `code-stats` measures what it is made of; `changelog` keeps its changelog and version; `programmatic-execution` runs read-only analysis.
+**Inspect and analyse.** Tools that inspect the repository: `audit` records its findings; `code-stats` measures what it is made of; `docs` checks its docs tree; `changelog` keeps its changelog and version; `programmatic-execution` runs read-only analysis.
 
 | Skill | What it does | Invoke as | Works with |
 |-------|--------------|-----------|------------|
 | [audit](skills/audit/README.md) | Audits the repository against Jig's practice modules: checks its `.config/jig.yaml` against the repository, scores every module's maturity criteria with evidence, and records the result in the repository so the next audit reports what changed | `/jig:audit` | Opens the pull request for an applied recommendation under [do-item](skills/do-item/SKILL.md)'s pull-request policy and offers [drive-pr](skills/drive-pr/README.md) on it |
 | [code-stats](skills/code-stats/README.md) | Measures what the repository is made of: classifies every tracked file by area (what it is for), kind (what it is), language and module, counts its lines of code, and reports in the terminal, as JSON or as an interactive HTML report, with the share it could not classify. Detects without configuration; `.config/jig.yaml` corrects it, and `--explain` names the rule behind any file | `/jig:code-stats` | Stands alone for now; its JSON is meant as measured evidence for [audit](skills/audit/README.md) |
+| [docs](skills/docs/README.md) | Checks a docs tree in one pass against the docs-governance module's gates (frontmatter schema, generated index, `last_updated` dates, review scars, deferrals), flags drafts left stale, and lists the documents the project's type calls for and the tree lacks; holds those gates for a repository's hooks and CI | `/jig:docs` | Sends the scars it reports to [descar](skills/descar/SKILL.md); finds the decision records [adr](skills/adr/SKILL.md) keeps |
 | [changelog](skills/changelog/README.md) | Keeps a repository's changelog and version from change notes: each pull request adds a small note instead of editing the changelog, a release step writes the notes in after the merge, and the skill's commands check a branch and show the next release; a GitHub Action and workflow template run the check, the release and the tags in CI, and `/jig:changelog setup` walks through turning it on. On only where the repository's `.config/jig.yaml` sets `changelog.file` | `/jig:changelog` | Where it is on, [do-item](skills/do-item/SKILL.md) writes the note before it opens the pull request, [drive-pr](skills/drive-pr/SKILL.md) and [resolve-review-comments](skills/resolve-review-comments/SKILL.md) keep it true through review, and [resolve-conflicts](skills/resolve-conflicts/SKILL.md) converts a branch's changelog edits into a note before merging |
 | [programmatic-execution](skills/programmatic-execution/SKILL.md) | Runs bulk read-only analysis as one script instead of many tool calls, so large outputs stay out of the conversation | `/jig:programmatic-execution` | Supports every other skill; none depends on it |
 
@@ -510,7 +511,11 @@ adr:
   directory: docs/adr                 # decision records; default: detected (docs/adr, doc/adr, docs/decisions, …)
   rules_file: docs/adr/rules.yaml     # machine-readable rules (Jig M5); default: detected, else none
 descar:
-  lint_command: "bun scripts/check-descarring-scars.ts"   # scar lint taking document paths; default: detected (M4's lint), else a manual read
+  lint_command: "bun scripts/check-descarring-scars.ts"   # scar lint taking document paths; default: detected, else the docs skill's lint
+docs:
+  root: docs                          # the governed docs tree; default: detected (docs/, doc/, documentation/)
+  schema: docs/.frontmatter-schema.yaml   # default: detected under the docs tree, else no frontmatter check
+  stale_after_days: 180               # a draft older than this is reported stale; default: 180
 promote_memory:
   lint_command: "<your memory lint> --dir {dir} --file {file}"   # exit 0 = clean; default: none
   target_dir: docs/retrospection      # where promoted pages go (YYYY/MM/ below it); default: docs/retrospection

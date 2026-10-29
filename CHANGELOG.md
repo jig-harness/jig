@@ -341,6 +341,18 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.95.0] - 2026-10-29
+
+### Added
+
+- The [`docs` skill](plugin/skills/docs/README.md) (`/jig:docs`), the runnable form of [M4](modules/M4-docs-governance/README.md): one pass over a repository's docs tree that runs the frontmatter check, the index freshness check, the `last_updated` check over the branch, the scar lint and the deferral check, prints the findings by file (or as JSON), warns of drafts not updated for longer than `docs.stale_after_days` (180 days by default), and lists the documents the project's type calls for and the tree lacks: an index, the wiki schema, an activity log and decision records for every project, runbooks for a service, a reference for a library. It detects the docs tree, the schema and the project type; the new `docs.root`, `docs.schema` and `docs.stale_after_days` fields correct it ([configuration](plugin/CONFIGURATION.md#procedure-skills)).
+
+### Changed
+
+- **Breaking** for a repository that runs one of M4's reference gates from a Jig checkout: the gates moved from `modules/M4-docs-governance/reference/` into the skill, at `plugin/skills/docs/scripts/` (`frontmatter-check/`, `index/`, `stale-last-updated/`, `stamp/`, `scar-lint/`, `deferral-references/`, and the shared reader at `lib/docs.ts`). Each keeps its command line, variables and exit codes, so a hook or CI job changes only the path; the scar lint's self-test is now `plugin/skills/docs/__tests__/check-descarring-scars.test.ts`. The frontmatter check reads its schema with the plugin's vendored js-yaml, so a vendored copy keeps the plugin's layout (`skills/docs/` beside `shared/`) instead of Jig's `lib/`. M4's [mappings](modules/M4-docs-governance/mappings.md) and the `deferral-liveness.yml` template name the new paths.
+- The audit's configuration-fit check runs the `docs` skill's own validation of the `docs` section, so it reports what `/jig:docs` refuses: a root or schema outside the repository, including through a symbolic link, and a `stale_after_days` that is not a whole number of days.
+- `descar` runs the `docs` skill's scar lint when the repository has none of its own, instead of reading every page by hand.
+
 ## [0.94.2] - 2026-10-29
 
 ### Changed
@@ -902,7 +914,7 @@ Documents that defer work to the tracker can no longer rot silently: M4 gains a 
 
 ### Added
 
-- [M4](modules/M4-docs-governance/README.md) states a new practice, deferrals name live items: a document that defers work to the tracker ("tracked to closure", "a follow-up will be filed") names the item that carries it, and the item stays open. [`reference/deferral-references/`](modules/M4-docs-governance/reference/deferral-references/README.md) is the gate. Its static half is offline and judges the lines a change adds (`--staged` for a hook, `--range` for a pull request), or every document with `--all`. A block of prose with a configured marker phrase and no item reference is a finding, a waiver needs a stated reason, and a configuration or range it cannot read is exit 2. Its live half (`--all --list-keys`, then `--all --states <file>`) takes the tracker's answers as a file, so the check never holds a credential: a deferral fails when none of the items it names is open, and an item with no recorded state fails the run instead of passing.
+- [M4](modules/M4-docs-governance/README.md) states a new practice, deferrals name live items: a document that defers work to the tracker ("tracked to closure", "a follow-up will be filed") names the item that carries it, and the item stays open. [`reference/deferral-references/`](plugin/skills/docs/scripts/deferral-references/README.md) is the gate. Its static half is offline and judges the lines a change adds (`--staged` for a hook, `--range` for a pull request), or every document with `--all`. A block of prose with a configured marker phrase and no item reference is a finding, a waiver needs a stated reason, and a configuration or range it cannot read is exit 2. Its live half (`--all --list-keys`, then `--all --states <file>`) takes the tracker's answers as a file, so the check never holds a credential: a deferral fails when none of the items it names is open, and an item with no recorded state fails the run instead of passing.
 - [`templates/deferral-references.yaml`](modules/M4-docs-governance/templates/deferral-references.yaml) (item patterns, marker phrases, scope) and [`templates/deferral-liveness.yml`](modules/M4-docs-governance/templates/deferral-liveness.yml), a scheduled workflow that holds the tracker credential in one step, on the default branch only. The [mappings](modules/M4-docs-governance/mappings.md#deferral-references) give the hook, CI and per-tracker provider recipes.
 - `tracker.ts issue-states` in the `do-item` skill reads item keys on standard input and prints each one's state as `open`, `closed` or `not_found` through the tracker interface; it is the provider the liveness check uses for Linear. A lookup that fails, or an issue the tracker reports without a state category or with one that is neither open nor closed, fails the command.
 - The audit scores new M4 criteria: `deferrals-name-items` (Standard, mechanical) and `deferral-liveness-scheduled` (Strict, mechanical). Each is `expected-absent` for a repository whose documents defer no work to a tracker. A re-audit reports them as added since the prior audit, not as regressions.
@@ -2907,7 +2919,7 @@ The plugin reads the change-area catalog through one reader.
 ### Added
 
 - M4's stale `last_updated` gate
-  ([reference/stale-last-updated/](modules/M4-docs-governance/reference/stale-last-updated/README.md)):
+  ([reference/stale-last-updated/](plugin/skills/docs/scripts/stale-last-updated/README.md)):
   a diff that changes a document's body must advance `last_updated`, or leave
   it at today's UTC date. It runs over a CI diff range (old side at the merge
   base for `A...B`) or the staged changes in a pre-commit hook, skips a file
@@ -2925,7 +2937,7 @@ The plugin reads the change-area catalog through one reader.
   repository, or an unknown option exits 2. A body line starting
   `last_updated:` or a comment added to the date is not a bump.
 - Sticky UTC stamping for generators
-  ([reference/stamp/](modules/M4-docs-governance/reference/stamp/README.md)):
+  ([reference/stamp/](plugin/skills/docs/scripts/stamp/README.md)):
   a generator writing into the docs tree advances `last_updated` only when its
   output changed, so it neither breaks the stale gate nor churns dates. It
   reads the date through the shared reader and refuses frontmatter that
@@ -3932,7 +3944,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.94.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.95.0...HEAD
+[0.95.0]: https://github.com/jig-harness/jig/compare/v0.94.2...v0.95.0
 [0.94.2]: https://github.com/jig-harness/jig/compare/v0.94.1...v0.94.2
 [0.94.1]: https://github.com/jig-harness/jig/compare/v0.94.0...v0.94.1
 [0.94.0]: https://github.com/jig-harness/jig/compare/v0.93.0...v0.94.0

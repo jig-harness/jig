@@ -81,12 +81,10 @@ watchdogs for what is deployed (M10, M11), an acceptance stage (M6), a skill
 that runs M7's post-merge stage in any repository, and a generator for the
 model roster (M0).
 
-### 20. `code-stats`: test-runner configuration and audit evidence
+### 20. `code-stats`: a reference set and audit evidence
 
-The [code-stats skill](plugin/skills/code-stats/README.md) learns which
-files are tests from the test runner's own configuration (jest, vitest,
-pytest, Gradle, Maven), is checked against a recorded set of public
-repositories in several languages, and gives
+The [code-stats skill](plugin/skills/code-stats/README.md) is checked
+against a recorded set of public repositories in several languages, and gives
 [`jig:audit`](plugin/skills/audit/README.md) measured evidence: the test to
 code ratio, the generated share and the size of the agent scaffolding.
 

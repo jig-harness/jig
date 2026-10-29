@@ -39,12 +39,6 @@ rollout:
 - **Plan review**, folded into `review`, which already accepts a plan
   document: dependencies and critical path, completeness, simplification and
   effort checks.
-- **`docs`**: the runnable form of M4: runs the repository's frontmatter,
-  index and scar checks, flags stale drafts, and plans missing documentation by
-  project type. M4's gates (`modules/M4-docs-governance/reference/`) and their
-  self-tests move into the skill's `scripts/` and `__tests__/`, moved and not
-  copied, and M4's README links them there. The repository's M4 schema wins
-  over the source skill's own frontmatter rules.
 - **`upgrade-deps`**: grouped, changelog-driven dependency upgrades (the
   majors an update bot cannot do alone), opened through `do-item`'s
   pull-request policy and driven by `drive-pr`; the runnable side of M1's
@@ -211,7 +205,7 @@ how it works and what is left. Done when:
   time;
 - the home and adoption pages show an audit sheet of Jig's own audit.
 
-### 20. `code-stats`: test-runner configuration and audit evidence
+### 20. `code-stats`: a reference set and audit evidence
 
 The [code-stats skill](../plugin/skills/code-stats/README.md) classifies a
 repository's files from conventions, attributes, its test runners'
