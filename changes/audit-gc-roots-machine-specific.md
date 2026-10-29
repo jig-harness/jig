@@ -15,6 +15,8 @@ release: patch
   collects under the primary checkout's entry, while a report from it still
   reads that worktree's own declaration. A checkout Git fails to read there
   fails the collection's inventory (exit 1) rather than reading as a
-  repository with no entry. Paths compare with symbolic links
+  repository with no entry. A directory inside a checkout is none of the
+  clone's checkouts: collection from it finds no entry, and install and
+  uninstall refuse it. Paths compare with symbolic links
   resolved, so an entry naming the clone through another path is the same
   clone's.

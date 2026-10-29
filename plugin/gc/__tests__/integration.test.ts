@@ -313,6 +313,33 @@ test("collect from a path that is no checkout reports a missing entry", () => {
     reason: expect.stringContaining("no confirmed machine entry"),
   });
 });
+test("collect from a directory inside a linked worktree reports a missing entry", () => {
+  const f = setup();
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  const nested = join(linked, "nested");
+  mkdirSync(nested);
+  const result = run(f, ["--collect", "--repo", nested, "--json"]);
+  expectSpawnExit(result, 0);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.resources[0]).toMatchObject({
+    outcome: "finding",
+    reason: expect.stringContaining("no confirmed machine entry"),
+  });
+});
+test("install and uninstall refuse a directory inside a checkout", () => {
+  const f = setup();
+  const nested = join(f.repo, "nested");
+  mkdirSync(nested);
+  for (const args of [
+    ["install", "--repo", nested],
+    ["install", "--repo", nested, "--uninstall"],
+  ]) {
+    const result = run(f, args);
+    expectSpawnExit(result, 1);
+    expect(result.stderr.toString()).toContain("none of its checkouts");
+  }
+});
 test("install replaces and uninstall removes an entry naming a linked worktree", () => {
   const f = setup();
   const linked = join(f.root, "linked");

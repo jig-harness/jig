@@ -9,7 +9,12 @@ import {
   type MachineConfig,
   type RepositoryEntry,
 } from "./config.ts";
-import { canonicalPath, cloneCheckouts, primaryCheckout } from "./checkout.ts";
+import {
+  canonicalPath,
+  cloneCheckouts,
+  NotACheckoutError,
+  primaryCheckout,
+} from "./checkout.ts";
 import { baseDeclaration } from "./git.ts";
 import { receiptsKind } from "./kinds/receipts.ts";
 import { scratchKind } from "./kinds/scratch.ts";
@@ -166,9 +171,10 @@ function holdsNoGit(path: string): boolean {
  * The entries `--repo` selects, or why its clone cannot be identified. The
  * entry names the clone's primary checkout; collecting from a linked worktree
  * of it selects that entry. A report reads the selected checkout's own
- * declaration instead. A path holding no `.git` is no checkout and selects no
- * entry; a checkout Git fails to read leaves its clone unidentified, an
- * unverified inventory rather than a missing entry.
+ * declaration instead. A path holding no `.git`, or a directory inside a
+ * checkout, is no checkout and selects no entry; a checkout Git fails to
+ * read leaves its clone unidentified, an unverified inventory rather than a
+ * missing entry.
  */
 async function selection(
   selected: string,
@@ -188,7 +194,8 @@ async function selection(
     );
     return primary.length > 0 ? primary : [{ path: selected }];
   } catch (error) {
-    if (holdsNoGit(selected)) return [{ path: selected }];
+    if (error instanceof NotACheckoutError || holdsNoGit(selected))
+      return [{ path: selected }];
     const reason = error instanceof Error ? error.message : String(error);
     return `Cannot identify the clone at ${selected}: ${reason}`;
   }

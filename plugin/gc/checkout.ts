@@ -3,9 +3,16 @@ import { resolve } from "node:path";
 import { gcGit as git } from "./git.ts";
 
 /**
+ * `root` lies inside a clone but is none of its checkouts: Git discovers the
+ * enclosing clone from any directory beneath a checkout, and that clone is
+ * not the one the path names.
+ */
+export class NotACheckoutError extends Error {}
+/**
  * The clone's worktrees, as `git worktree list` names them, primary first.
  * Read NUL-delimited, since a path may hold any character but NUL. A bare
- * clone has no primary checkout: `primary` is then null.
+ * clone has no primary checkout: `primary` is then null. A `root` that is
+ * neither a worktree nor the bare clone throws `NotACheckoutError`.
  */
 export async function cloneCheckouts(
   root: string,
@@ -20,6 +27,15 @@ export async function cloneCheckouts(
       ? undefined
       : resolve(field.slice("worktree ".length));
   };
+  const own = canonicalPath(root);
+  const named = (fields: string[]) => {
+    const entry = path(fields);
+    return entry !== undefined && canonicalPath(entry) === own;
+  };
+  if (!blocks.some(named))
+    throw new NotACheckoutError(
+      `${root} lies inside a clone but is none of its checkouts`,
+    );
   const first = blocks[0];
   const primary =
     first === undefined || first.includes("bare") ? undefined : path(first);
