@@ -86,6 +86,11 @@ describe("drive.ts attaches under both its locks", () => {
     expect(r.stderr).toContain("not OPEN");
     // A drive of the reopened PR is a new drive, with the whole budget.
     expect(driveState(c, tree).deadlineRetries ?? 0).toBe(0);
+    // The clear ran as the driver's session, so no lease it took outlives
+    // the driver and blocks the next drive of this tree.
+    const leases = c.script(tree, "drive-state.ts", "lease", "42", "--all");
+    expectSpawnExit(leases, 0, "drive-state.ts lease");
+    expect(JSON.parse(leases.stdout)).toEqual([]);
   });
 
   test("refusing a PR number #42's own lock would not key", () => {
