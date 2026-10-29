@@ -541,7 +541,13 @@ export async function attachPr(
     let created: boolean;
     try {
       const current = await currentOf(tree);
-      await requireSettled(tree, "this working tree");
+      // A tree already on the head branch, at or past the PR's head, is not
+      // moved, so what it holds uncommitted is the drive's to handle, as on
+      // any re-arm; every other attach moves the tree and needs it settled.
+      const inPlace =
+        current.branch === head.branch &&
+        (await ancestor(tree, head.head, current.sha));
+      if (!inPlace) await requireSettled(tree, "this working tree");
       const old = readDrivenTree(current.gitDir);
       detached = await move(tree, { ...head, number }, current);
       created =
@@ -645,6 +651,17 @@ async function recordState(
 }
 
 /**
+ * Whether `DRIVE_PR_ATTACH=off` asks that no tree be moved; any value but
+ * `on`, `off` or unset is a usage error, named for `script`.
+ */
+export function attachOff(script: string): boolean {
+  const mode = process.env.DRIVE_PR_ATTACH ?? "";
+  if (mode !== "" && mode !== "on" && mode !== "off")
+    fail(2, `${script}: DRIVE_PR_ATTACH must be on or off (got '${mode}')`);
+  return mode === "off";
+}
+
+/**
  * `drive.ts`'s attach, once it holds the tree's driver lock and before it
  * takes the pull request's. Skipped by a dry run, which moves nothing, and by
  * `DRIVE_PR_ATTACH=off`, which drives the tree as it stands (a harness that
@@ -655,10 +672,7 @@ export async function attachForDrive(
   pr: string,
   dryRun: boolean,
 ): Promise<void> {
-  const mode = process.env.DRIVE_PR_ATTACH ?? "";
-  if (mode !== "" && mode !== "on" && mode !== "off")
-    fail(2, `drive.ts: DRIVE_PR_ATTACH must be on or off (got '${mode}')`);
-  if (dryRun || mode === "off") return;
+  if (dryRun || attachOff("drive.ts")) return;
   let attached: Attached;
   try {
     attached = await attachPr(pr, { treeLockHeld: true });

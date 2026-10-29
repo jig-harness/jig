@@ -66,6 +66,16 @@ describe("attach-pr.ts --place", () => {
     expect(branchOf(c, tree)).toBe("feature");
   });
 
+  test("with DRIVE_PR_ATTACH=off places the tree as it stands", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    c.env.DRIVE_PR_ATTACH = "off";
+    const r = c.attach(tree, "42", "--place");
+    expectSpawnExit(r, 0, "attach --place, attach off");
+    expect(JSON.parse(r.stdout)).toMatchObject({ tree, created: false });
+    expect(branchOf(c, tree)).toBe("");
+  });
+
   test("refuses to create a tree with no gc.worktree_roots", () => {
     const c = fresh();
     const r = c.attach(c.primary, "42", "--place");

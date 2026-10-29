@@ -33,7 +33,7 @@
 import { readFileSync } from "node:fs";
 import { runMain } from "../../../shared/cli.ts";
 import { detachedTreeRecord } from "../../../shared/driven-tree.ts";
-import { run } from "../../../shared/proc.ts";
+import { gitIdentityEnv, run } from "../../../shared/proc.ts";
 
 export type Category =
   | "schema_drift"
@@ -253,9 +253,12 @@ export interface CommandResult {
 export type Runner = (argv: string[]) => Promise<CommandResult>;
 
 /** `gh` lookups get the shared default deadline; a log download gets longer. */
+// Git runs without inherited location variables: an exported `GIT_DIR`
+// would read another tree's branch and attach record.
 export const defaultRunner: Runner = (argv) =>
   run(argv, {
     timeoutSec: argv[1] === "run" && argv[2] === "view" ? 300 : 30,
+    ...(argv[0] === "git" ? { env: gitIdentityEnv() } : {}),
   });
 
 export interface Args {

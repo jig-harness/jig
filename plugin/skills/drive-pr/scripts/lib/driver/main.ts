@@ -176,6 +176,11 @@ export async function main(): Promise<number> {
     );
   };
   hold(treeLock);
+  // Renewal starts the moment the first lock is held, and runs on its own
+  // timer for the rest of the drive — a claim must stay fresh DURING the
+  // attach and every pass, not only between them. It renews `held`, so the
+  // PR's lock joins it once taken.
+  startHeartbeat(held, agent);
   // Once this tree is ours and before the PR is: the tree is put on the PR's
   // head (its branch, or the head commit detached when another working tree
   // holds the branch), so every round's commit lands on what the attach left,
@@ -185,10 +190,6 @@ export async function main(): Promise<number> {
   createDriverRegistry(held);
   lockResources.use(driverStopCompletionCleanup(held));
   driverRuntime.driverLogRotates = true;
-  // Renewal starts the moment the last lock is held, and runs on its own timer
-  // for the rest of the drive — a claim must stay fresh DURING a pass, not
-  // only between passes.
-  startHeartbeat(held, agent);
 
   // The SESSION every drive-state mutation of this drive belongs to, exported
   // once the locks are actually held (`lease.ts`). This driver plus

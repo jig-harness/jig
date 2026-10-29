@@ -174,13 +174,14 @@ async function headBranch(cwd: string, pr: string): Promise<string> {
     ],
     { cwd, stderr: "pipe", env: ghRepoEnv() },
   );
+  if (r.code !== 0) refuse(1, `cannot read PR #${pr}: ${r.stderr.trim()}`);
   let meta: unknown;
   try {
     meta = JSON.parse(r.stdout);
   } catch (err) {
     refuse(1, `cannot read PR #${pr}: ${String(err)}`);
   }
-  if (r.code !== 0 || !isRecord(meta) || typeof meta.headRefName !== "string")
+  if (!isRecord(meta) || typeof meta.headRefName !== "string")
     refuse(1, `cannot read PR #${pr}: ${r.stderr.trim()}`);
   if (meta.state !== "OPEN")
     refuse(

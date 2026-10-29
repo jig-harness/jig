@@ -348,7 +348,9 @@ the remote; an attach by name removes it. The drive state's `drivenBranch`
 mirrors it for the handoff file.
 
 It refuses, naming what is in the way, when this tree has uncommitted changes
-or an unfinished merge, rebase or cherry-pick; when the tree holding the
+or an unfinished merge, rebase or cherry-pick and the attach would move it (a
+tree already on the head branch, at or past the head, is not moved, and what
+it holds uncommitted is the drive's to handle); when the tree holding the
 branch has uncommitted changes or commits the PR's head does not have
 (push them from there first); when this tree's detached head has commits no
 branch or remote holds; when a local branch of that name is ahead of the
@@ -358,7 +360,8 @@ its commits ahead of the head, and the drive pushes them); when this is the clon
 the drive cannot push to. It moves nothing while a live driver holds the tree
 or the PR, or an interactive session holds the tree. A dry run attaches
 nothing, and `DRIVE_PR_ATTACH=off` drives the tree as it stands, for a
-harness that prepares its own trees.
+harness that prepares its own trees: placement (below) still chooses the
+tree, and attaches nothing.
 
 `/jig:drive-pr <PR>` decides the tree before it arms the driver
 (`bun "<skill-dir>/scripts/attach-pr.ts" <PR> --place`): the session's own working tree, or, from the

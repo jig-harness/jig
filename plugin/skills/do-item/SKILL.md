@@ -126,12 +126,10 @@ bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" [--stack-on <b
   implementing agent writes anything. When the harness has already created
   the working branch and its instructions forbid renaming it, keep that
   branch and say so in the status message; the issue-link line in the body
-  still links the pull request. For an item that already has an open pull
-  request, never create a branch: the branch is the pull request's head.
-  Attach it to the working tree with
-  `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/attach-pr.ts" <PR>`, which
-  checks the head branch out, or its head commit detached when another
-  working tree holds the branch.
+  still links the pull request. An item that already has an open pull
+  request gets no branch and no second pull request: its work continues on
+  that pull request, driven with `/jig:drive-pr <PR>`, which places the
+  drive in a working tree on the pull request's head (Step 4).
 - `open` prints the plan for the current branch, after validation and the
   pre-PR review gate pass: the `base`, the `gh pr create` arguments the policy
   fixes (`createArgs`: base, `--draft` or not, labels), commands to run after
@@ -615,8 +613,12 @@ routing below remain **exact**.
    [Pull-request policy](#pull-request-policy)), from the integration branch,
    or from the predecessor's branch when this change builds on an unmerged
    pull request and `pull_requests.stacking` allows it. When the item already
-   has an open pull request, create no branch: attach its head instead
-   (`bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/attach-pr.ts" <PR>`).
+   has an open pull request, do not delegate: stop here, create no branch
+   and open no pull request, remove `issue.json` and
+   `intent-chain-input.json` (an attach refuses a tree it would move while
+   they are in it), and hand the item to that pull request's drive with
+   `/jig:drive-pr <PR>`. Its placement chooses or creates the working tree
+   on the pull request's head, so nothing here is pushed or attached.
 
    **Review gates — MANDATORY when declared.** Each entry of the overlay's
    `do_item.gates` is `{labels: [...], paths: [...], skill: <name>}`. A gate

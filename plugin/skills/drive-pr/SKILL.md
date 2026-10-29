@@ -325,8 +325,10 @@ directory; that record is what every script that reads the branch name or
 resolves the PR from the current branch reads, and only while the tree's
 head still descends from that commit and the branch is still on the remote.
 An attach by name removes it. (The drive state's `drivenBranch` mirrors it
-for the handoff file.) It refuses (exit `2`, naming the state) a tree with
-uncommitted changes or an unfinished git operation, a tree holding the branch
+for the handoff file.) It refuses (exit `2`, naming the state) a tree it
+would move that has uncommitted changes or an unfinished git operation (a
+tree already on the head branch, at or past the head, is not moved), a tree
+holding the branch
 that is dirty or has commits the PR's head lacks, a detached head with
 commits no branch or remote holds, a local branch of that name ahead of the
 head that this tree would switch to (a tree already on the branch keeps its
@@ -336,7 +338,8 @@ repository, and a PR from a fork; a PR that is not open is exit `5`. A live
 driver already holding the PR leaves the tree untouched, and the lock refuses
 next (exit `11`); run alone, it also leaves a tree another driver holds
 untouched and exits `11`, and an interactive session's lease on the tree
-refuses it. `--dry-run` and `DRIVE_PR_ATTACH=off` skip the attach.
+refuses it. `--dry-run` and `DRIVE_PR_ATTACH=off` skip the attach;
+with `off`, `--place` still chooses the tree and attaches nothing.
 
 Normally you do not run this by hand: a `/jig:do-item` run **arms the
 drive itself** the moment the draft PR opens (its § Arm the drive step).

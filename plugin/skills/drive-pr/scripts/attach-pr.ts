@@ -42,7 +42,7 @@
  *  11  a live driver holds this working tree or the PR: nothing moved
  */
 import { fail, runMain } from "./lib/cli.ts";
-import { AttachRefusal, attachPr } from "./lib/attach.ts";
+import { AttachRefusal, attachOff, attachPr } from "./lib/attach.ts";
 import {
   attachIn,
   type PrRef,
@@ -88,9 +88,13 @@ async function place(args: Args): Promise<number> {
     return 3;
   }
   const { tree, pr, created, slug, otherClone, env } = placement;
-  const attached = await attachIn(tree, pr, created, env);
-  process.stderr.write(attached.stderr);
-  if (attached.code !== 0) return attached.code;
+  // `DRIVE_PR_ATTACH=off` drives the chosen tree as it stands, as drive.ts
+  // does: a tree placement made is already at the head.
+  if (!attachOff("attach-pr.ts")) {
+    const attached = await attachIn(tree, pr, created, env);
+    process.stderr.write(attached.stderr);
+    if (attached.code !== 0) return attached.code;
+  }
   console.log(
     JSON.stringify({ pr, repo: slug, tree, created, otherClone, env }),
   );

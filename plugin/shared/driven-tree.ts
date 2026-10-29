@@ -157,5 +157,20 @@ export async function detachedTreeRecord(
   if (record === null) return null;
   for (const check of recordChecks(record))
     if ((await git(check)).code !== 0) return null;
+  // Descent from the attached commit does not tell this PR's commits from a
+  // stacked PR's, whose head descends from it too. A head some remote branch
+  // already holds is that branch's work: the record describes it only when
+  // its own branch is among them. A head no remote holds is the drive's own.
+  const holders = await git([
+    "for-each-ref",
+    "--contains",
+    "HEAD",
+    "--format=%(refname)",
+    "refs/remotes",
+  ]);
+  if (holders.code !== 0) return null;
+  const refs = holders.stdout.split("\n").filter((ref) => ref !== "");
+  const own = `refs/remotes/${record.remote}/${record.branch}`;
+  if (refs.length > 0 && !refs.includes(own)) return null;
   return record;
 }
