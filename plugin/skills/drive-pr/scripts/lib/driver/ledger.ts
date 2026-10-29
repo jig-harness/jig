@@ -59,11 +59,6 @@ export interface LedgerIdentity {
   login: string | null;
 }
 
-/** Whether this drive reads and writes the ledger. */
-export function ledgerOn(dryRun: boolean): boolean {
-  return !dryRun && (process.env.DRIVE_PR_LEDGER ?? "") !== "off";
-}
-
 /** The clone, by machine and state directory: stable across this clone's drives. */
 function cloneId(stateDir: string): string {
   return createHash("sha256")
@@ -72,10 +67,16 @@ function cloneId(stateDir: string): string {
     .slice(0, 16);
 }
 
+/**
+ * Who this driver is for the ledger; `null` when the drive runs without it
+ * (a dry run, or `$DRIVE_PR_LEDGER=off`).
+ */
 export async function ledgerIdentity(
+  dryRun: boolean,
   stateDir: string,
   agent: string[],
-): Promise<LedgerIdentity> {
+): Promise<LedgerIdentity | null> {
+  if (dryRun || (process.env.DRIVE_PR_LEDGER ?? "") === "off") return null;
   return {
     actor: await resolveActor(),
     account: accountHash(resolveAccountIdentity(agent)),
@@ -226,12 +227,14 @@ async function seed(
  */
 export async function armLedger(
   pr: string,
-  id: LedgerIdentity,
+  id: LedgerIdentity | null,
   admission: TakeoverAdmission | null,
 ): Promise<number | null> {
+  if (id === null) return null;
+  const crossClone = admission?.crossClone === true;
   const snapshot = await readLedgerSnapshot(pr, id.login);
   if (typeof snapshot === "string") {
-    if (admission?.crossClone === true)
+    if (crossClone)
       return fail(
         1,
         `drive.ts --take-over: PR #${pr}'s drive ledger: ${snapshot}; not claiming the drive.`,
@@ -242,39 +245,9 @@ export async function armLedger(
     publish(id, 0, null);
     return null;
   }
-  report(snapshot);
-  const parsed = snapshot.canonical?.parsed;
-  if (parsed?.kind === "unknown-version")
-    return fail(
-      1,
-      `drive.ts: PR #${pr}'s drive ledger (comment ${snapshot.canonical?.comment.id}) is ledgerVersion ${String(parsed.version)}, which this version of drive-pr does not read. Update the plugin and re-arm.`,
-    );
-  const ledger = readableLedger(snapshot);
-  const crossClone = admission?.crossClone === true;
-  if (ledger !== null && otherCloneDriving(ledger, id)) {
-    const age = heartbeatAgeMs(ledger, new Date());
-    const stale = age > stallThresholdMs();
-    if (!crossClone) {
-      console.error(
-        `drive.ts: PR #${pr} is driven from another clone: its drive ledger names a running driver (${ledger.driver.actor}) with a heartbeat ${minutes(age)} minute(s) old.`,
-      );
-      console.error(
-        stale
-          ? `Its heartbeat is past the lease window, so a takeover is admitted:\n  ${armCommand(driveTs, pr, " --take-over")}`
-          : "Do not drive beside it; a takeover is admitted once its heartbeat is older than the lease window.",
-      );
-      return DRIVE_HELD_ELSEWHERE_EXIT;
-    }
-    if (!stale)
-      return fail(
-        SINGLE_INSTANCE_LOCK_EXIT,
-        `drive.ts --take-over: PR #${pr}'s ledger was written again by the other clone's driver (heartbeat ${minutes(age)} minute(s) old); not taking over.`,
-      );
-  } else if (crossClone)
-    return fail(
-      SINGLE_INSTANCE_LOCK_EXIT,
-      `drive.ts --take-over: PR #${pr}'s ledger no longer names a running driver in another clone; re-arm without --take-over.`,
-    );
+  const ledger = readLedger(pr, snapshot);
+  const refusal = refuseBesideAnotherClone(pr, ledger, id, crossClone);
+  if (refusal !== null) return refusal;
   let floor = claimFloor(snapshot.claims);
   let own: ClaimComment | null = null;
   if (crossClone) {
@@ -287,6 +260,57 @@ export async function armLedger(
     if (seeded !== null) return seeded;
   }
   publish(id, floor, own);
+  return null;
+}
+
+/** Report what is ignored, and refuse a version this code does not read. */
+function readLedger(pr: string, snapshot: LedgerSnapshot): Ledger | null {
+  report(snapshot);
+  const parsed = snapshot.canonical?.parsed;
+  if (parsed?.kind === "unknown-version")
+    return fail(
+      1,
+      `drive.ts: PR #${pr}'s drive ledger (comment ${snapshot.canonical?.comment.id}) is ledgerVersion ${String(parsed.version)}, which this version of drive-pr does not read. Update the plugin and re-arm.`,
+    );
+  return readableLedger(snapshot);
+}
+
+/**
+ * The exit for a drive beside another clone's running driver: a plain arm
+ * refused with `13`, a takeover whose holder has written again since its
+ * admission refused with `11`; `null` drives on.
+ */
+function refuseBesideAnotherClone(
+  pr: string,
+  ledger: Ledger | null,
+  id: LedgerIdentity,
+  crossClone: boolean,
+): number | null {
+  if (ledger === null || !otherCloneDriving(ledger, id)) {
+    if (!crossClone) return null;
+    return fail(
+      SINGLE_INSTANCE_LOCK_EXIT,
+      `drive.ts --take-over: PR #${pr}'s ledger no longer names a running driver in another clone; re-arm without --take-over.`,
+    );
+  }
+  const age = heartbeatAgeMs(ledger, new Date());
+  const stale = age > stallThresholdMs();
+  if (!crossClone) {
+    console.error(
+      `drive.ts: PR #${pr} is driven from another clone: its drive ledger names a running driver (${ledger.driver.actor}) with a heartbeat ${minutes(age)} minute(s) old.`,
+    );
+    console.error(
+      stale
+        ? `Its heartbeat is past the lease window, so a takeover is admitted:\n  ${armCommand(driveTs, pr, " --take-over")}`
+        : "Do not drive beside it; a takeover is admitted once its heartbeat is older than the lease window.",
+    );
+    return DRIVE_HELD_ELSEWHERE_EXIT;
+  }
+  if (!stale)
+    return fail(
+      SINGLE_INSTANCE_LOCK_EXIT,
+      `drive.ts --take-over: PR #${pr}'s ledger was written again by the other clone's driver (heartbeat ${minutes(age)} minute(s) old); not taking over.`,
+    );
   return null;
 }
 

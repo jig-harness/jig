@@ -534,6 +534,15 @@ function isQuotaParkRecord(v: unknown): boolean {
   );
 }
 
+/** The fields a state written before they existed may lack, each well-formed when present. */
+function optionalFieldsUsable(s: Record<string, unknown>): boolean {
+  return (
+    isOptionalDrivenBranch(s.drivenBranch) &&
+    isOptionalTakeovers(s.takeovers) &&
+    (s.ledgerGeneration === undefined || isCount(s.ledgerGeneration))
+  );
+}
+
 export function isUsableState(v: unknown, pr: number): v is DriveState {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
   const s = v as Record<string, unknown>;
@@ -542,10 +551,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   if (typeof s.lastCountedHead !== "string") return false;
   if (typeof s.verifiedSha !== "string") return false;
   if (typeof s.phase !== "string") return false;
-  if (!isOptionalDrivenBranch(s.drivenBranch)) return false;
-  if (!isOptionalTakeovers(s.takeovers)) return false;
-  if (s.ledgerGeneration !== undefined && !isCount(s.ledgerGeneration))
-    return false;
+  if (!optionalFieldsUsable(s)) return false;
   if (!Array.isArray(s.parked)) return false;
   if (!(s.parked as unknown[]).every(isParkedItem)) return false;
   // Present AND well-typed, not "well-typed if present" — see `DriveState`.

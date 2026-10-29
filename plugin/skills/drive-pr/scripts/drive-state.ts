@@ -265,7 +265,7 @@ import {
   structuralEscalationArmed,
   withProgress,
 } from "./lib/state/schema.ts";
-import { openStore } from "./lib/state/store.ts";
+import { openStore, type StateStore } from "./lib/state/store.ts";
 import {
   attributeStatuses,
   checkRunsFor,
@@ -653,6 +653,18 @@ async function readCiHoldTimeline(
     return null;
   }
 }
+
+/** The commands whose record arrives on standard input. */
+const STDIN_COMMANDS = new Map<
+  string,
+  (store: StateStore, raw: string) => Promise<number>
+>([
+  [
+    "takeover",
+    async (store, raw) => recordTakeover(store, raw, await resolveActor()),
+  ],
+  ["seed-ledger", seedLedgerCommand],
+]);
 
 async function main(): Promise<number> {
   const a = parseArgs(process.argv.slice(2));
@@ -3101,12 +3113,6 @@ async function main(): Promise<number> {
     case "quota-park":
       return quotaPark(store, a);
 
-    case "takeover":
-      return recordTakeover(store, await readStdinAll(), await resolveActor());
-
-    case "seed-ledger":
-      return seedLedgerCommand(store, await readStdinAll());
-
     case "handoff": {
       await store.locked(async () => {
         const out = await renderHandoff(pr, store.read().state);
@@ -3561,10 +3567,17 @@ async function main(): Promise<number> {
     }
 
     default:
-      console.error(`unknown command: ${a.cmd}`);
-      usage();
-      return 2;
+      return stdinOrUnknown(a.cmd, store);
   }
+}
+
+/** A command whose record arrives on standard input, or the usage refusal. */
+async function stdinOrUnknown(cmd: string, store: StateStore): Promise<number> {
+  const fromStdin = STDIN_COMMANDS.get(cmd);
+  if (fromStdin !== undefined) return fromStdin(store, await readStdinAll());
+  console.error(`unknown command: ${cmd}`);
+  usage();
+  return 2;
 }
 
 runMain("drive-state.ts", main);

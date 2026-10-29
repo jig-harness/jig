@@ -56,7 +56,7 @@ import { attachForDrive } from "./../attach.ts";
 
 import { admitTakeover, explainingRefusal, pickUpDrive } from "./takeover.ts";
 
-import { armLedger, ledgerIdentity, ledgerOn, settleLedger } from "./ledger.ts";
+import { ledgerIdentity, settleLedger } from "./ledger.ts";
 
 export async function main(): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
@@ -172,9 +172,7 @@ export async function main(): Promise<number> {
   };
   // A takeover is decided, and a wedged holder stopped, before any lock is
   // taken: the holder's locks are what this driver is about to acquire.
-  const ledger = ledgerOn(dryRun)
-    ? await ledgerIdentity(stateDir, agent)
-    : null;
+  const ledger = await ledgerIdentity(dryRun, stateDir, agent);
   const admission = takeOver
     ? await admitTakeover(pr, prLock.dir, ledger)
     : null;
@@ -326,16 +324,11 @@ export async function main(): Promise<number> {
   const commandExit = validatePassCommand(explicitPr, agent, botsOnly);
   if (commandExit !== undefined) return commandExit;
 
-  // The pull request's drive ledger: seed this clone's state from it, refuse
-  // to drive beside another clone's driver, claim a cross-clone takeover.
-  if (ledger !== null) {
-    const ledgerExit = await armLedger(pr, ledger, admission);
-    if (ledgerExit !== null) return ledgerExit;
-  }
-
-  // Picking the drive up from its durable state: a quota wall another
-  // account may pass, a takeover, parked items a person has answered.
-  const firstPassNotice = await pickUpDrive(pr, admission, {
+  // Picking the drive up from its durable state: the pull request's drive
+  // ledger first (seed from it, refuse to drive beside another clone's
+  // driver, claim a cross-clone takeover), then a quota wall another account
+  // may pass, a takeover, parked items a person has answered.
+  const firstPassNotice = await pickUpDrive(pr, admission, ledger, {
     agent,
     botsOnly,
     windowReopened,

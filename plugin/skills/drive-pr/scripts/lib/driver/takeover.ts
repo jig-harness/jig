@@ -69,6 +69,7 @@ import { SINGLE_INSTANCE_LOCK_EXIT } from "./settings.ts";
 import {
   type LedgerIdentity,
   admitCrossCloneTakeover,
+  armLedger,
   mirrorNow,
 } from "./ledger.ts";
 
@@ -439,6 +440,7 @@ export async function completeTakeover(
 export async function pickUpDrive(
   pr: string,
   admission: TakeoverAdmission | null,
+  ledger: LedgerIdentity | null,
   opts: {
     agent: string[];
     botsOnly: boolean;
@@ -446,6 +448,8 @@ export async function pickUpDrive(
     dryRun: boolean;
   },
 ): Promise<number | string> {
+  const ledgerExit = await armLedger(pr, ledger, admission);
+  if (ledgerExit !== null) return ledgerExit;
   const state = await readDriveState(pr);
   const quotaExit =
     state === null

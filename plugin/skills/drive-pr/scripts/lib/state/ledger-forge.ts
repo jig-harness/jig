@@ -158,6 +158,62 @@ export type LedgerWrite =
   | { kind: "skipped"; reason: string }
   | { kind: "failed"; reason: string };
 
+/** Whether the canonical ledger changed (or became unreadable) since `canonical` was read. */
+function moved(
+  reread: LedgerSnapshot | string,
+  canonical: ForgeComment,
+): boolean {
+  if (typeof reread === "string") return true;
+  const now = reread.canonical?.comment;
+  return now?.id !== canonical.id || now.updatedAt !== canonical.updatedAt;
+}
+
+/** Delete the duplicates of the canonical ledger this login created. */
+async function deleteOwnDuplicates(
+  snapshot: LedgerSnapshot,
+  selfLogin: string | null,
+): Promise<number[]> {
+  const deleted: number[] = [];
+  const own = snapshot.duplicates.filter(
+    (dup) => selfLogin !== null && dup.login === selfLogin,
+  );
+  for (const dup of own) if (await deleteComment(dup.id)) deleted.push(dup.id);
+  return deleted;
+}
+
+/** The body this snapshot gets, or why there is none to write. */
+function bodyFor(
+  snapshot: LedgerSnapshot,
+  build: (snapshot: LedgerSnapshot) => Ledger | string,
+): { body: string; ledger: Ledger } | LedgerWrite {
+  const parsed = snapshot.canonical?.parsed;
+  if (parsed?.kind === "unknown-version")
+    return {
+      kind: "failed",
+      reason: `the ledger on the pull request is ledgerVersion ${String(parsed.version)}, which this version does not read; not overwriting it`,
+    };
+  const ledger = build(snapshot);
+  if (typeof ledger === "string") return { kind: "skipped", reason: ledger };
+  const rendered = renderLedger(ledger);
+  return "error" in rendered
+    ? { kind: "failed", reason: rendered.error }
+    : rendered;
+}
+
+function written(
+  id: number,
+  ledger: Ledger,
+  deleted: number[] = [],
+): LedgerWrite {
+  return {
+    kind: "written",
+    id,
+    generation: ledger.generation,
+    cut: ledger.cut,
+    deleted,
+  };
+}
+
 /**
  * Write the ledger `build` makes from the current comments; `build` returns
  * a reason string to skip the write. A canonical ledger in a version this
@@ -172,58 +228,34 @@ export async function writeLedger(
   for (let attempt = 1; attempt <= WRITE_ATTEMPTS; attempt++) {
     if (typeof snapshot === "string")
       return { kind: "failed", reason: snapshot };
-    const parsed = snapshot.canonical?.parsed;
-    if (parsed?.kind === "unknown-version")
-      return {
-        kind: "failed",
-        reason: `the ledger on the pull request is ledgerVersion ${String(parsed.version)}, which this version does not read; not overwriting it`,
-      };
-    const ledger = build(snapshot);
-    if (typeof ledger === "string") return { kind: "skipped", reason: ledger };
-    const rendered = renderLedger(ledger);
-    if ("error" in rendered) return { kind: "failed", reason: rendered.error };
+    const next = bodyFor(snapshot, build);
+    if ("kind" in next) return next;
     const canonical = snapshot.canonical?.comment ?? null;
     if (canonical === null) {
-      const id = await postComment(pr, rendered.body);
-      if (typeof id === "string")
-        return {
-          kind: "failed",
-          reason: `the ledger comment was not created (${id})`,
-        };
-      return {
-        kind: "written",
-        id,
-        generation: ledger.generation,
-        cut: rendered.ledger.cut,
-        deleted: [],
-      };
+      const id = await postComment(pr, next.body);
+      return typeof id === "string"
+        ? {
+            kind: "failed",
+            reason: `the ledger comment was not created (${id})`,
+          }
+        : written(id, next.ledger);
     }
     const reread = await readLedgerSnapshot(pr, selfLogin);
-    if (
-      typeof reread === "string" ||
-      reread.canonical?.comment.id !== canonical.id ||
-      reread.canonical.comment.updatedAt !== canonical.updatedAt
-    ) {
+    if (moved(reread, canonical)) {
       snapshot = reread;
       continue;
     }
-    const patched = await patchComment(canonical.id, rendered.body);
+    const patched = await patchComment(canonical.id, next.body);
     if (patched !== "")
       return {
         kind: "failed",
         reason: `the ledger comment was not updated (${patched})`,
       };
-    const deleted: number[] = [];
-    for (const dup of snapshot.duplicates)
-      if (selfLogin !== null && dup.login === selfLogin)
-        if (await deleteComment(dup.id)) deleted.push(dup.id);
-    return {
-      kind: "written",
-      id: canonical.id,
-      generation: ledger.generation,
-      cut: rendered.ledger.cut,
-      deleted,
-    };
+    return written(
+      canonical.id,
+      next.ledger,
+      await deleteOwnDuplicates(snapshot, selfLogin),
+    );
   }
   return {
     kind: "failed",
@@ -277,22 +309,27 @@ export async function listLedgerPullRequests(): Promise<
     "-f",
     "per_page=100",
   ]);
-  if (!r.ok) return null;
-  const pages = json(r.stdout, "the search");
-  const out: LedgerPullRequest[] = [];
-  for (const page of Array.isArray(pages) ? pages : [pages]) {
-    const items = isRecord(page) && Array.isArray(page.items) ? page.items : [];
-    for (const it of items)
-      if (
+  return r.ok ? searchResults(json(r.stdout, "the search")) : null;
+}
+
+/** The pull requests in the search's pages, by number. */
+function searchResults(pages: unknown): LedgerPullRequest[] {
+  const items = (Array.isArray(pages) ? pages : [pages]).flatMap((page) =>
+    isRecord(page) && Array.isArray(page.items) ? page.items : [],
+  );
+  return items
+    .filter(
+      (
+        it,
+      ): it is Record<string, unknown> & { number: number; html_url: string } =>
         isRecord(it) &&
         typeof it.number === "number" &&
-        typeof it.html_url === "string"
-      )
-        out.push({
-          number: it.number,
-          url: it.html_url,
-          title: typeof it.title === "string" ? it.title : "",
-        });
-  }
-  return out.sort((a, b) => a.number - b.number);
+        typeof it.html_url === "string",
+    )
+    .map((it) => ({
+      number: it.number,
+      url: it.html_url,
+      title: typeof it.title === "string" ? it.title : "",
+    }))
+    .sort((a, b) => a.number - b.number);
 }
