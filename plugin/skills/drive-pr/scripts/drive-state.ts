@@ -3120,17 +3120,8 @@ async function main(): Promise<number> {
     case "deadline-retries":
       return deadlineRetries(store, a.phaseName);
 
-    case "handoff": {
-      await store.locked(async () => {
-        const out = await renderHandoff(pr, store.read().state);
-        process.stdout.write(`${out}\n`);
-      });
-      // A ledger write that was attempted and did not land is told apart
-      // from success: a stop's last write keeps its recovery record on it.
-      return (await mirrorLedger(pr, store)) === "failed"
-        ? LEDGER_NOT_WRITTEN_EXIT
-        : 0;
-    }
+    case "handoff":
+      return handoff(pr, store);
 
     case "lease": {
       // Read-only, and ungated: asking who is driving must work FROM the
@@ -3580,6 +3571,19 @@ async function main(): Promise<number> {
     default:
       return stdinOrUnknown(a.cmd, store);
   }
+}
+
+/** `handoff`: (re)write the handoff file, and the ledger under a driver. */
+async function handoff(pr: string, store: StateStore): Promise<number> {
+  await store.locked(async () => {
+    const out = await renderHandoff(pr, store.read().state);
+    process.stdout.write(`${out}\n`);
+  });
+  // A ledger write that was attempted and did not land is told apart
+  // from success: a stop's last write keeps its recovery record on it.
+  return (await mirrorLedger(pr, store)) === "failed"
+    ? LEDGER_NOT_WRITTEN_EXIT
+    : 0;
 }
 
 /** A command whose record arrives on standard input, or the usage refusal. */

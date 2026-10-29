@@ -7,7 +7,9 @@ import { driverRuntime } from "./runtime.ts";
 
 import { sleep } from "./../cli.ts";
 
-import { unpushedCountCommand } from "./../driven-branch.ts";
+import { unpushedCountAdvice } from "./../driven-branch.ts";
+
+import { git, gitCallTimeoutSeconds } from "./../proc.ts";
 
 import {
   MAILBOX_POLL_SECONDS,
@@ -16,6 +18,8 @@ import {
 } from "./settings.ts";
 
 import { recordQuotaPark } from "./repair.ts";
+
+import { ledgerRenewal } from "./ledger.ts";
 
 import { driveState, driveTs } from "./paths.ts";
 
@@ -53,7 +57,15 @@ async function waitThroughQuotaWindow(
   driverRuntime.quotaSleepAbort = new AbortController();
   try {
     const quotaWaitStartedAt = performance.now();
+    // A sleep can outlast the ledger's lease window: the heartbeat is
+    // rewritten as the sleep starts and well inside the window after, so
+    // another clone never takes over a sleeping driver; a newer claim from
+    // another clone ends the sleep. A mailbox pause inside the checkpoint
+    // below renews it the same way.
+    const renewLedger = ledgerRenewal(context.pr);
     while (performance.now() - quotaWaitStartedAt < plan.ms) {
+      const takenOver = await renewLedger();
+      if (takenOver !== null) return takenOver;
       // Quota waiting is between passes, so a mailbox stop must not
       // sit behind this potentially multi-hour sleep. Keep the
       // takeover abort on each short sleep as before.
@@ -115,7 +127,11 @@ async function handleSleepableQuota(
     console.error(
       "  Check for work the killed pass left behind first — `git status --short` and",
     );
-    console.error(`  \`${unpushedCountCommand()}\`.`);
+    console.error(
+      `  ${await unpushedCountAdvice(git, process.cwd(), {
+        timeoutSec: gitCallTimeoutSeconds(),
+      })}.`,
+    );
     // Recorded even though nothing will sleep or resume: this exit is
     // NORMAL (not a crash), so `process.on('exit')` releases and
     // `rmdir`s the lock slot on the way out, same as the standalone
@@ -208,7 +224,11 @@ export async function handleQuotaBlock(
   console.error(
     "  Check for work the killed pass left behind first — `git status --short` and",
   );
-  console.error(`  \`${unpushedCountCommand()}\`.`);
+  console.error(
+    `  ${await unpushedCountAdvice(git, process.cwd(), {
+      timeoutSec: gitCallTimeoutSeconds(),
+    })}.`,
+  );
   const identity = wallIdentity(context);
   const account = accountHash(identity);
   console.error(
@@ -218,7 +238,7 @@ export async function handleQuotaBlock(
     "  Do not re-arm on that account before the reset; a pass billing ANOTHER account may pick it up now:",
   );
   console.error(
-    `    ${armCommand(driveTs, context.pr, passBotsOnly(context.agent))}`,
+    `    ${armCommand(driveTs, context.pr, passBotsOnly(context.agent), "", context.agent)}`,
   );
   // Record the park BEFORE this process exits: once this
   // returns, nothing refreshes this drive's claim any further, and

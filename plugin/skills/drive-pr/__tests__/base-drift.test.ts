@@ -25,7 +25,7 @@ import {
   OVERLAP_SAMPLE,
   probeBaseDrift,
   verifyCheckoutIsPrHead,
-  verifyOriginIsPrRepo,
+  verifyRemoteIsPrRepo,
 } from "../scripts/lib/base-drift.ts";
 
 /**
@@ -264,7 +264,7 @@ describe("probeBaseDrift", () => {
   );
 });
 
-describe("verifyOriginIsPrRepo", () => {
+describe("verifyRemoteIsPrRepo", () => {
   function fakeOrigin(url: string | null): GitRunner {
     return (args) => {
       if (
@@ -281,7 +281,7 @@ describe("verifyOriginIsPrRepo", () => {
   }
 
   it("passes when origin fetches exactly the PR-reported repository", async () => {
-    const r = await verifyOriginIsPrRepo(
+    const r = await verifyRemoteIsPrRepo(
       fakeOrigin("git@github.com:example-org/example-repo.git"),
       "/repo",
       "example-org/example-repo",
@@ -290,7 +290,7 @@ describe("verifyOriginIsPrRepo", () => {
   });
 
   it("ignores the host — an ssh config alias still matches on owner/name", async () => {
-    const r = await verifyOriginIsPrRepo(
+    const r = await verifyRemoteIsPrRepo(
       fakeOrigin("git@github-example:example-org/example-repo.git"),
       "/repo",
       "example-org/example-repo",
@@ -299,7 +299,7 @@ describe("verifyOriginIsPrRepo", () => {
   });
 
   it("refuses when origin fetches a different repository — the fork case", async () => {
-    const r = await verifyOriginIsPrRepo(
+    const r = await verifyRemoteIsPrRepo(
       fakeOrigin("https://github.com/someone-else/project.git"),
       "/repo",
       "example-org/example-repo",
@@ -312,7 +312,7 @@ describe("verifyOriginIsPrRepo", () => {
   });
 
   it("refuses on an unparseable origin URL rather than guessing", async () => {
-    const r = await verifyOriginIsPrRepo(
+    const r = await verifyRemoteIsPrRepo(
       fakeOrigin("not-a-url"),
       "/repo",
       "example-org/example-repo",
@@ -321,12 +321,68 @@ describe("verifyOriginIsPrRepo", () => {
   });
 
   it("refuses when origin has no fetch URL at all", async () => {
-    const r = await verifyOriginIsPrRepo(
+    const r = await verifyRemoteIsPrRepo(
       fakeOrigin(null),
       "/repo",
       "example-org/example-repo",
     );
     expect(r.ok).toBe(false);
+  });
+});
+
+// The default, `repository.remote` read from the configuration, is covered
+// end to end by round-plan-cli.test.ts and the guarded-push.ts probes, which
+// set it in a child's environment.
+describe("another remote than origin", () => {
+  it("is the remote whose URL is checked", async () => {
+    const asked: string[] = [];
+    const git: GitRunner = (args) => {
+      if (args[2] === "remote" && args[3] === "get-url") {
+        asked.push(args[4] ?? "");
+        return Promise.resolve({
+          code: 0,
+          stdout: "git@github.com:example-org/example-repo.git\n",
+        });
+      }
+      return Promise.resolve({ code: 1, stdout: "" });
+    };
+    const r = await verifyRemoteIsPrRepo(
+      git,
+      "/repo",
+      "example-org/example-repo",
+      undefined,
+      "upstream",
+    );
+    expect(r.ok).toBe(true);
+    expect(asked).toEqual(["upstream"]);
+  });
+
+  it("is the remote the base is fetched from and measured against", async () => {
+    const { git, calls } = fakeGit({});
+    const r = await probeBaseDrift(
+      git,
+      "/repo",
+      "develop",
+      120,
+      undefined,
+      "upstream",
+    );
+    expect(calls.find((c) => c[2] === "fetch")).toEqual([
+      "-C",
+      "/repo",
+      "fetch",
+      "--quiet",
+      "upstream",
+      "+refs/heads/develop:refs/remotes/upstream/develop",
+    ]);
+    expect(calls.find((c) => c[2] === "merge-base")).toEqual([
+      "-C",
+      "/repo",
+      "merge-base",
+      "upstream/develop",
+      "HEAD",
+    ]);
+    expect(r.ok && r.drift.baseRef).toBe("upstream/develop");
   });
 });
 

@@ -27,7 +27,7 @@ import {
 import { isRecord } from "../../../../shared/guards.ts";
 import {
   canonical,
-  DRIVE_REMOTE,
+  driveRemote,
   g,
   out,
   refuse,
@@ -161,9 +161,14 @@ async function recordedTree(all: Tree[], pr: string): Promise<string | null> {
 /**
  * The PR's head branch, refusing before anything is created for a PR the
  * attach would refuse anyway: one that is not open, one from a fork, or one
- * whose repository `origin` is not, for any URL it fetches from or pushes to.
+ * whose repository the drive's remote is not, for any URL it fetches from or
+ * pushes to.
  */
-async function headBranch(cwd: string, pr: string): Promise<string> {
+async function headBranch(
+  cwd: string,
+  pr: string,
+  remote: string,
+): Promise<string> {
   const r = await ghCall(
     [
       "pr",
@@ -198,7 +203,7 @@ async function headBranch(cwd: string, pr: string): Promise<string> {
     : undefined;
   if (typeof owner !== "string" || typeof name !== "string")
     refuse(1, `PR #${pr} did not report its head repository`);
-  await requireOrigin(cwd, { repo: `${owner}/${name}` }, pr);
+  await requireOrigin(cwd, { repo: `${owner}/${name}` }, pr, remote);
   return meta.headRefName;
 }
 
@@ -207,6 +212,7 @@ async function createTree(
   primary: string,
   pr: string,
   branch: string,
+  remote: string,
   env: EnvChange,
 ): Promise<string> {
   // The destination clone's configuration, not the one this session selects.
@@ -232,8 +238,8 @@ async function createTree(
     [
       "fetch",
       "--quiet",
-      DRIVE_REMOTE,
-      `+refs/heads/${branch}:refs/remotes/${DRIVE_REMOTE}/${branch}`,
+      remote,
+      `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`,
     ],
     {
       cwd: primary,
@@ -255,7 +261,7 @@ async function createTree(
       "--quiet",
       "--detach",
       path,
-      `refs/remotes/${DRIVE_REMOTE}/${branch}`,
+      `refs/remotes/${remote}/${branch}`,
     ],
     timeout.seconds,
   );
@@ -274,7 +280,7 @@ async function createTree(
     {
       pr: Number(pr),
       branch,
-      remote: DRIVE_REMOTE,
+      remote,
       created: true,
       head: await out(tree, ["rev-parse", "HEAD"], "the new tree's head"),
     },
@@ -334,18 +340,16 @@ export async function placePr(ref: PrRef, cwd: string): Promise<Placement> {
   const all = await trees(clone);
   const primary = (all[0] as Tree).path;
   if (clone === cwd && here !== primary) return placed(here, false);
-  const branch = await headBranch(clone, ref.pr);
+  const primaryEnv = destinationEnv(primary, away, process.env, key);
+  // The destination clone's remote, read as its configuration is.
+  const remote = driveRemote(primary, applyEnv(process.env, primaryEnv));
+  const branch = await headBranch(clone, ref.pr, remote);
   const holder = all.find((tree) => tree.branch === branch);
   if (holder !== undefined) return placed(holder.path, false);
   const recorded = await recordedTree(all, ref.pr);
   if (recorded !== null) return placed(recorded, false);
   return placed(
-    await createTree(
-      primary,
-      ref.pr,
-      branch,
-      destinationEnv(primary, away, process.env, key),
-    ),
+    await createTree(primary, ref.pr, branch, remote, primaryEnv),
     true,
   );
 }

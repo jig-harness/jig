@@ -1660,7 +1660,7 @@ async function evaluateFresh(
   let roundReadyReason = `${liveThreads} unresolved thread(s) and ${liveSummary} unaddressed summary finding(s) on ${report.apiHead}`;
   if (stalledCheckRunNote !== "")
     roundReadyReason += ` — ${stalledCheckRunNote}`;
-  roundReadyReason += inheritedReason(sync, ctx.localHead);
+  roundReadyReason += inheritedReason(sync, ctx.localHead, ctx.inheritedHead);
   if (conflicting) {
     roundReadyReason += ` — NOTE: PR #${ctx.pr} conflicts with its base, so no pull_request CI will run on what this round pushes; merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} in as part of the round`;
     // Say, in the reason itself, how current these findings are. The reviewer

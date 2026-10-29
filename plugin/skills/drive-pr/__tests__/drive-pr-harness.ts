@@ -78,8 +78,10 @@ export const PREV = "7bd2ca906c111111111111111111111111111111";
 export const GIT_PUSH_FLAG_GUARD = `(
   [[ "$1" == push ]] || exit 2
   shift
-  # guarded-push.ts always calls \`git(['push', ...extra, 'origin', refspec])\`
-  # — the remote comes immediately before the refspec, never after it. Track
+  # guarded-push.ts always calls \`git(['push', ...extra, remote, refspec])\`
+  # — the remote comes immediately before the refspec, never after it. The
+  # remote is the one the repository.remote setting names: the environment
+  # layer's JIG__REPOSITORY__REMOTE when a probe sets it, else origin. Track
   # POSITION, not mere presence: checking "did 'origin' and a refspec token
   # occur somewhere" would still pass an accidentally swapped invocation
   # (\`git push <refspec> origin\`), which git itself rejects (the refspec is
@@ -98,8 +100,8 @@ export const GIT_PUSH_FLAG_GUARD = `(
     esac
     case "$stage" in
       remote)
-        [[ "$argument" == origin ]] || {
-          echo "git push: expected remote 'origin' first, got '$argument'" >&2; exit 2;
+        [[ "$argument" == "\${JIG__REPOSITORY__REMOTE:-origin}" ]] || {
+          echo "git push: expected remote '\${JIG__REPOSITORY__REMOTE:-origin}' first, got '$argument'" >&2; exit 2;
         }
         stage=refspec ;;
       refspec)

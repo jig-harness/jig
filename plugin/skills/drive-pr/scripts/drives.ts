@@ -102,14 +102,10 @@ import {
   requestDriverStop,
   driverStopCompleted,
   consumeDriverStopCompletion,
+  takeExpectStarted,
+  requireStopForExpectStarted,
 } from "./lib/stop-request.ts";
-import {
-  markLedgerStopped,
-  recoverFromDriverRecord,
-  recoverStoppedLedger,
-  removeDriverRecord,
-  recoverStoppedLedgers,
-} from "./lib/ledger-stop.ts";
+import * as ledgerStop from "./lib/ledger-stop.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 import { driveRepository } from "./lib/drive-repository.ts";
@@ -1055,16 +1051,13 @@ async function stop(
   expectStarted: string,
 ): Promise<number> {
   const row = readLock(join(stateDir, `pr-drive-${pr}.lock`), "pr", pr);
-  if (row.state === "empty") {
-    console.log(`no drive holds PR #${pr}'s lock — nothing to stop.`);
-    await recoverFromDriverRecord(stateDir, pr, row);
-    return 1;
-  }
-  if (row.state === "stale") {
+  if (row.state === "empty" || row.state === "stale") {
     console.log(
-      `PR #${pr}'s lock is stale (owner pid ${row.pid} no longer counts as live) — nothing to stop; the next drive recovers it.`,
+      row.state === "empty"
+        ? `no drive holds PR #${pr}'s lock — nothing to stop.`
+        : `PR #${pr}'s lock is stale (owner pid ${row.pid} no longer counts as live) — nothing to stop; the next drive recovers it.`,
     );
-    await recoverStoppedLedger(stateDir, pr, row);
+    await ledgerStop.recoverIdleStop(stateDir, pr, row);
     return 1;
   }
   if (row.state !== "live") {
@@ -1088,18 +1081,14 @@ async function stop(
     );
     return 1;
   }
-  const verified = await verifyDriverClaim(row, pid);
+  const v = await verifyDriverClaim(row, pid);
   const code =
-    "code" in verified
-      ? verified.code
-      : consumeStopResult(row, await stopVerifiedDriver(row, verified.owner));
-  // Witnessed gone (or already gone): its ledger is marked stopped, guarded.
-  if (
-    code === 0 &&
-    (await markLedgerStopped(stateDir, pr, row.diag, null)) === "done" &&
-    row.diag !== null
-  )
-    removeDriverRecord(stateDir, pr, row.diag.started);
+    "code" in v
+      ? v.code
+      : consumeStopResult(row, await stopVerifiedDriver(row, v.owner));
+  // Witnessed gone, or already gone with nothing witnessing its pass.
+  if (code === 0)
+    await ledgerStop.settleStop(stateDir, pr, row, !("code" in v));
   return code;
 }
 
@@ -1346,23 +1335,6 @@ export async function forceStopDriver(
   return 0;
 }
 
-/**
- * Remove `--expect-started ISO` from `argv` and return ISO (`''` when
- * absent): the acquisition a `--stop` is bound to.
- */
-function takeExpectStarted(argv: string[]): string {
-  const at = argv.indexOf("--expect-started");
-  if (at < 0) return "";
-  const [, value = ""] = argv.splice(at, 2);
-  if (value === "") fail(2, "--expect-started takes a time");
-  return value;
-}
-
-function requireStopForExpectStarted(expectStarted: string, stopPr: string) {
-  if (expectStarted !== "" && stopPr === "")
-    fail(2, "--expect-started only qualifies --stop");
-}
-
 async function main(): Promise<number> {
   let json = false;
   let hereMode = false;
@@ -1450,9 +1422,7 @@ async function main(): Promise<number> {
   const lockRows = listRows(stateDir);
   // `--doctor`'s population is lock dirs ∪ state files; the plain listing and
   // plain `--json` stay lock rows only (`listStateOnlyRows` says why).
-  const rows = doctorMode
-    ? [...lockRows, ...listStateOnlyRows(stateDir, lockRows)]
-    : lockRows;
+  const rows = doctorMode ? await doctorRows(stateDir, lockRows) : lockRows;
   // Classified in every mode: `--json` always carries the verdict, and the
   // human listing's "stalled" annotation reads the same `.doctor` field.
   const repository = await driveRepository();
@@ -1460,11 +1430,15 @@ async function main(): Promise<number> {
     (row) => ({ ...row, repository }),
   );
   if (json) console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
-  else if (doctorMode) {
-    await recoverStoppedLedgers(stateDir, doctored);
-    printDoctor(stateDir, doctored, repository);
-  } else printHuman(stateDir, doctored, repository);
+  else if (doctorMode) printDoctor(stateDir, doctored, repository);
+  else printHuman(stateDir, doctored, repository);
   return 0;
+}
+
+/** `--doctor`'s population, recovered first (a takeover reads `--json`). */
+async function doctorRows(stateDir: string, lockRows: LockRow[]) {
+  await ledgerStop.recoverStoppedLedgers(stateDir);
+  return [...lockRows, ...listStateOnlyRows(stateDir, lockRows)];
 }
 
 // Gated, so a helper such as `gatherWorktreeLeftovers` can be imported

@@ -9,14 +9,14 @@
  * to each caller.
  *
  * Reading the shape needs configuration only (and, for GitHub, possibly the
- * `origin` remote), never the tracker: a caller that only recognises keys
+ * repository's git remote), never the tracker: a caller that only recognises keys
  * in text works offline.
  */
 
 import { readConfig } from "../../../../../shared/consumer.ts";
 import { swallow } from "../../../../../shared/errors.ts";
 import { trackerConfigFrom, type TrackerConfig } from "./config.ts";
-import { originUrl, repoFromRemote, slug } from "./github/refs.ts";
+import { remoteUrl, repoFromRemote, slug } from "./github/refs.ts";
 
 export interface IssueKeys {
   /** An example key, for messages: `ENG-123`, `#123`. */
@@ -222,17 +222,17 @@ function wholePattern(pattern: string, keys: IssueKeys): string {
  * The key shape of the configured tracker, or `null` when it cannot be
  * known: a Linear tracker with no `issue_tracker.team`. A GitHub tracker
  * with no `issue_tracker.github.repository` reads its issues' web addresses
- * on the repository the `origin` remote points to, as the adapter does
+ * on the repository its git remote points to, as the adapter does
  * (`homeRepo`): a local `git config` read, not a tracker call.
  */
 export function issueKeysOf(
   config: TrackerConfig,
-  origin: () => string | null = originUrl,
+  remote: () => string | null = remoteUrl,
 ): IssueKeys | null {
   if (config.adapter === "github") {
     if (config.github.repository !== null)
       return numberKeys(config.github.repository);
-    const url = origin();
+    const url = remote();
     const derived = url === null ? null : repoFromRemote(url);
     return numberKeys(derived === null ? null : slug(derived));
   }

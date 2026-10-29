@@ -485,6 +485,54 @@ describe("seed-ledger", () => {
     expect(text.trimEnd().endsWith("**Resume:** `/drive-pr 999`")).toBe(true);
   });
 
+  it("installs the narrative over a handoff file that lost its marker", async () => {
+    const forge = fakeForge([]);
+    const handoffDir = forge.env.DRIVE_PR_HANDOFF_DIR ?? "";
+    mkdirSync(handoffDir, { recursive: true });
+    const handoffFile = join(handoffDir, "pr-drive-999.md");
+    writeFileSync(handoffFile, "edited by hand\n");
+    const seeded = await runScript(
+      forge,
+      "drive-state.ts",
+      ["seed-ledger", "999"],
+      {},
+      ledgerBody({ ...ledger(4, 6), narrative: ["Notes to keep."] }),
+    );
+    expectSpawnExit(seeded, 0);
+    expect(readFileSync(handoffFile, "utf8")).toContain("Notes to keep.");
+  });
+
+  it("does not advance the generation when the notes cannot be installed", async () => {
+    const forge = fakeForge([]);
+    const blocker = join(forge.dir, "not-a-directory");
+    writeFileSync(blocker, "");
+    const body = ledgerBody({ ...ledger(4, 6), narrative: ["Notes to keep."] });
+    const refused = await runScript(
+      forge,
+      "drive-state.ts",
+      ["seed-ledger", "999"],
+      { DRIVE_PR_HANDOFF_DIR: join(blocker, "handoff") },
+      body,
+    );
+    expectSpawnExit(refused, 1);
+    expect(refused.stderr).toContain("could not be installed");
+    const retried = await runScript(
+      forge,
+      "drive-state.ts",
+      ["seed-ledger", "999"],
+      {},
+      body,
+    );
+    expectSpawnExit(retried, 0);
+    expect(retried.stdout).toContain("seeded from generation 4");
+    expect(
+      readFileSync(
+        join(forge.env.DRIVE_PR_HANDOFF_DIR ?? "", "pr-drive-999.md"),
+        "utf8",
+      ),
+    ).toContain("Notes to keep.");
+  });
+
   it("replaces this clone's notes with a newer ledger's empty narrative", async () => {
     const forge = fakeForge([]);
     expectSpawnExit(

@@ -13,7 +13,7 @@
  * the ledger alone.
  */
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { swallow } from "../../../../../shared/errors.ts";
@@ -23,6 +23,7 @@ import { fail } from "../cli.ts";
 import { handoffPath, installNarrative, narrativeOf } from "./handoff.ts";
 import {
   type ClaimComment,
+  type Ledger,
   type LedgerSnapshot,
   effectiveClaims,
   ledgerFromState,
@@ -32,7 +33,7 @@ import {
   seedFromLedger,
 } from "./ledger.ts";
 import { writeLedger } from "./ledger-forge.ts";
-import { freshState } from "./schema.ts";
+import { type DriveState, freshState } from "./schema.ts";
 import type { StateStore } from "./store.ts";
 
 export const LEDGER_DRIVER_ENV = "DRIVE_PR_LEDGER_DRIVER";
@@ -258,6 +259,27 @@ export async function mirrorLedger(
 }
 
 /**
+ * Install the ledger's narrative under the handoff file's marker, returning
+ * why it could not be, or null. The file is regenerated first, which writes
+ * the marker whatever the file held; a failure to render or install stops the
+ * seed before its generation advances.
+ */
+async function installLedgerNotes(
+  store: StateStore,
+  s: DriveState,
+  ledger: Ledger,
+): Promise<string | null> {
+  try {
+    await store.renderHandoff(s, { rethrow: true });
+    return (await installNarrative(String(ledger.pr), ledger.narrative))
+      ? null
+      : "the handoff file has no narrative marker";
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+/**
  * `drive-state.ts seed-ledger <PR>`: the ledger comment's body on standard
  * input, laid over this clone's state when it is newer than the generation
  * the state was last written or seeded at. Prints what it did.
@@ -292,10 +314,11 @@ export async function seedLedgerCommand(
       };
     const seeded = seedFromLedger(s, ledger);
     if ("error" in seeded) return { invalid: seeded.error };
-    // The notes go under the handoff file's marker, so the file exists first.
-    if (!existsSync(await handoffPath(String(ledger.pr))))
-      await store.renderHandoff(s);
-    await installNarrative(String(ledger.pr), ledger.narrative);
+    const notesFailure = await installLedgerNotes(store, s, ledger);
+    if (notesFailure !== null)
+      return {
+        invalid: `the last driver's notes could not be installed (${notesFailure}); nothing was seeded`,
+      };
     store.write(seeded.state);
     await store.renderHandoff(seeded.state);
     return {

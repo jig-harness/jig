@@ -120,9 +120,9 @@ Command-line flags, where a script has them, override all three.
   all three layers.
 - **Fields only a repository sets.** `gates.command`,
   `repository.base_branch`, `issue_tracker.team`, `review.repo_slug`,
-  `review.repo_label`, `ci.required_checks`, `autonomy.max_level`,
-  `autonomy.park_classes`, every `changelog` field and every `code_stats`
-  field describe one repository. Set in the user file
+  `review.repo_label`, `ci.required_checks`, `docs.root`, `docs.schema`,
+  `autonomy.max_level`, `autonomy.park_classes`, every `changelog` field and
+  every `code_stats` field describe one repository. Set in the user file
   they would apply to every repository on the machine, so the user file
   refuses them with an error naming the field. An environment variable may still override them for one run,
   except the `changelog` fields, which the `changelog` skill reads from the
@@ -161,7 +161,7 @@ field only to override the derivation:
 
 | Fact | Where it is read | Used for | Override |
 |------|------------------|----------|----------|
-| Integration branch (the branch pull requests land on) | The clone's `origin/HEAD`, else GitHub's default branch | Pull-request base, round diffs, CI policy | `repository.base_branch`, `DRIVE_PR_BASE_BRANCH` |
+| Integration branch (the branch pull requests land on) | The clone's `origin/HEAD` (drive-pr and do-item: the `HEAD` of `repository.remote`), else GitHub's default branch | Pull-request base, round diffs, CI policy | `repository.base_branch`, `DRIVE_PR_BASE_BRANCH` |
 | Pull-request template | `pull_request_template.md` (or `.txt`, any letter case) in the root, `.github/` or `docs/`, and the files of a `PULL_REQUEST_TEMPLATE/` folder there | The body an agent fills in | none: edit the template |
 | Title convention | A commitlint configuration (`commitlint.config.*`, `.commitlintrc*`, `commitlint` in `package.json`) that names the Conventional Commits rules, such as `@commitlint/config-conventional`; else at least 80% of the last 30 non-merge trunk commit subjects following [Conventional Commits](https://www.conventionalcommits.org/), and at least five such subjects to judge from | Whether titles take `type(scope): summary` | `pull_requests.title_format` |
 | Delete head branches on merge | GitHub repository settings | Warning for `branch` stacking: without it GitHub does not retarget the layer above a merged one | none: change the setting |
@@ -227,7 +227,7 @@ an error.
 | `fail_open.inert_when_unknown` | list drawn from `severity`, `category`, `tier`, `self_inflicted`; may be empty | yes | Inputs whose `unknown` value turns the ladder off for that finding |
 | `bands` | non-empty list of `{id, from_round, through_round, minimal_diff, accept_if}` | yes | Round ranges, contiguous from round 1; the last one has `through_round: null`. A finding is kept when it meets any clause of its band's `accept_if` (`unconditional`, `min_severity`, `categories`, `max_tier`, `self_inflicted`) and declined otherwise. `minimal_diff: true` limits the fix of a kept finding to the smallest change |
 | `reply.marker`, `reply.wont_fix`, `reply.deferred` | text | yes | The reply posted on a declined thread. Each template ends with a `<!-- {marker} -->` line, which the loop-cost reports look for |
-| `severity_mapping` | map from each severity, and `unknown`, to `{linear_priority, acceptance}` | no | The tracker priority and acceptance tier each severity corresponds to; checked when present, not used by the ladder |
+| `severity_mapping` | map from each severity, and `unknown`, to `{priority, acceptance}` | no | The tracker priority (0 none, 1 urgent to 4 low) and acceptance tier each severity corresponds to; checked when present, not used by the ladder. `linear_priority` is accepted as an alias of `priority` |
 | `calibration` | any | no | Notes for people; not read |
 
 The [test fixture](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
@@ -238,7 +238,8 @@ is a complete example.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `repository.base_branch` | branch name, without `origin/` | Derived: the clone's `origin/HEAD`, else GitHub's default branch | drive-pr, do-item, review, descar, changelog | The integration branch: where pull requests land. A round diffs against its pull request's own base, so a stacked layer's round covers that layer alone; it diffs against this branch only on a branch with no pull request, and refuses when the pull request's base cannot be read or fetched, or `origin` is not the pull request's repository. The required checks come from the protection of the pull request's base and, for a stacked layer, of the branch the stack's bottom layer targets; a walk down the stack stops at this branch, and an unknown integration branch is an error. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it. changelog: the integration branch its release, tag plan, status and `release-access.ts` work on |
+| `repository.base_branch` | branch name, without the remote's prefix (`origin/`) | Derived: the clone's `origin/HEAD` (drive-pr, do-item and gc: the `HEAD` of `repository.remote`), else GitHub's default branch | drive-pr, do-item, review, descar, changelog, docs | The integration branch: where pull requests land. A round diffs against its pull request's own base, so a stacked layer's round covers that layer alone; it diffs against this branch only on a branch with no pull request, and refuses when the pull request's base cannot be read or fetched, or the remote (`repository.remote`) is not the pull request's repository. The required checks come from the protection of the pull request's base and, for a stacked layer, of the branch the stack's bottom layer targets; a walk down the stack stops at this branch, and an unknown integration branch is an error. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it. changelog: the integration branch its release, tag plan, status and `release-access.ts` work on. docs: the base its `last_updated` check compares a branch with, and against which it finds the documents a branch adds; a value that resolves neither as `origin/<branch>` nor as `<branch>` stops the pass (exit 2). Without the field docs does not ask GitHub for the default branch: it takes the first of `origin/HEAD`, `origin/main`, `main`, `origin/master` and `master` that resolves, and skips the `last_updated` check when none does, so set the field when the default branch is named otherwise and `origin/HEAD` is unset |
+| `repository.remote` | git remote name: ASCII letters, digits, `.`, `_`, `-` and `/`; no leading `-`, and none of the sequences a ref name refuses (`..`, `//`, a leading or trailing `/`, a trailing `.`, a component starting with `.` or ending in `.lock`) | `origin` | drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc | The git remote of the clone the skills push to and fetch from. drive-pr: it fetches the pull request's head branch from it to attach the pull request to a working tree (and to place one), fetches the pull request's base from it, diffs against `<remote>/<base>`, derives the integration branch from `<remote>/HEAD`, pushes the round's commits to it, and refuses to fetch or push when the remote's addresses do not name the pull request's repository; the conflict fix it prints names it. do-item: `pr-plan.ts open` measures the change against `<remote>/<base>` and prints the remote (`remote:`) the branch is pushed to. fix-ci: the default of `probe-base.ts --remote`. resolve-conflicts: `<remote>/HEAD` names the default branch, and its merge commands fetch from it. gc: the `worktrees` kind reads a worktree's pull requests and its integration branch (`<remote>/HEAD`) through it, and a detached tree a drive attached through the remote its record names. do-item, work-batch, file-issue, reflect: with GitHub Issues and no `issue_tracker.github.repository`, the remote's address names the repository. Set it when the clone names that remote otherwise (`upstream`, or a fork setup where `origin` is the fork). A person may set it in the user file for every clone; an unusable name, `null` included, is an error naming where it was set, and so is a `repository` section that is `null` or not a mapping |
 
 ## `pull_requests`
 
@@ -360,7 +361,7 @@ in their own file or the environment.
 | `issue_tracker.adapter` | adapter name | `github` | do-item, drive-pr, decide, work-batch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers: `github` or `linear`. `github` (GitHub Issues) uses the signed-in `gh` command-line client, which also reads `GH_TOKEN` or `GITHUB_TOKEN`; with `JIG_GITHUB_GRAPHQL_URL` set it sends requests to that GraphQL endpoint (a GitHub Enterprise Server) with the token from `GH_TOKEN` or `GITHUB_TOKEN`. `linear` reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client. A file that sets `issue_tracker.team` without `issue_tracker.adapter` (or with it empty) is refused, since the default adapter has no team: add `adapter: linear` |
 | `issue_tracker.team` | team key such as `ENG` | **Required by the Linear adapter**; refused unless `issue_tracker.adapter` is set too | do-item, drive-pr, review, work-batch | Linear only: the key issue identifiers carry (`ENG` for `ENG-123`). GitHub Issues keys are `#123`, of the repository `issue_tracker.github.repository` names |
 | `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate`. On GitHub Issues, `done`, `canceled` and `duplicate` are an issue closed as completed, not planned or duplicate, and each open state is the label (or, with `issue_tracker.github.states_from: project`, the board option) of that name; `todo` carries no label, so a new issue is in `todo` |
-| `issue_tracker.github.repository` | `owner/name` | The repository the `origin` remote points to on github.com | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the repository whose issues the skills work on |
+| `issue_tracker.github.repository` | `owner/name` | The repository the git remote (`repository.remote`, else `origin`) points to on github.com | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the repository whose issues the skills work on |
 | `issue_tracker.github.states_from` | `labels` or `project` | `labels` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: where an open issue's workflow state is kept. `labels`: a label per state, named by `issue_tracker.states`. `project`: the option of a Projects board's single-select field; an open issue with no option is in `todo`, and one whose option names no open state is refused; the token then needs the `project` scope (`gh auth refresh -s project`) |
 | `issue_tracker.github.project` | a board's web address, `https://github.com/orgs/<org>/projects/<n>` or `https://github.com/users/<user>/projects/<n>` | **Required when `states_from` is `project`** | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the board whose field holds the state. Moving an issue to an open state adds it to the board when it is not there |
 | `issue_tracker.github.status_field` | field name | `Status` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the board's single-select field that holds the state |
@@ -685,8 +686,10 @@ job from the event that started it; elsewhere from `origin/HEAD`, then
 
 How the [code-stats](skills/code-stats/README.md) skill classifies the
 repository's files. Every field is optional: without the section the skill
-uses its built-in detection and the default areas, and the fields fix what
-detection gets wrong. Every field is repository-only. A value the skill
+uses its built-in detection, the test files its test runners' configuration
+names ([read before this section](skills/code-stats/README.md#test-runner-configuration):
+jest, vitest, pytest, Gradle and Maven), and the default areas, and the
+fields fix what those get wrong. Every field is repository-only. A value the skill
 cannot use (an unknown kind, a malformed glob, an empty or repeated area
 name, a value of the wrong type, an unknown key) is refused with a message
 naming the field.
@@ -710,7 +713,7 @@ code_stats:
 |-------|------|-------------|---------|--------------|
 | `code_stats.areas` | list of `{name, description?, paths: [globs], content?: true or false}`; globs are relative to the root (`**`, `*`, `?`, `{a,b}`, `[...]`) | The default areas below | code-stats | What each file is for, in order: the first rule whose glob matches names a file's area. The list replaces the default areas whole. `content: true` makes YAML, JSON and other configuration files in that area count as data. A name holds no `/` |
 | `code_stats.default_area` | area name | `production` | code-stats | The area of a file no rule matches; such a file counts as unclassified |
-| `code_stats.kinds` | map of kind (`code`, `test`, `docs`, `config`, `data`, `generated`, `fixture`, `asset`, `vendored`, `other`) to a list of globs | none: built-in detection alone | code-stats | Kinds checked before built-in detection, in the order written; the first glob that matches decides |
+| `code_stats.kinds` | map of kind (`code`, `test`, `docs`, `config`, `data`, `generated`, `fixture`, `asset`, `vendored`, `other`) to a list of globs | none: built-in detection and the test runners' configuration | code-stats | Kinds checked before built-in detection and the test runners' configuration, in the order written; the first glob that matches decides |
 | `code_stats.modules` | list of globs naming module folders | Detected from the [workspace manifests](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (pnpm, npm, Yarn or Bun workspaces, `go.work`, Cargo, Gradle, uv), else the top folders | code-stats | The module folders; a file belongs to the deepest one that holds it |
 | `code_stats.classify_command` | shell command | none | code-stats | The last layer, a [classify command](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): run once from the root with the tracked paths on standard input, one per line; prints JSON lines `{"path", "area"?, "kind"?, "language"?, "module"?}` whose values override every other layer. A non-zero exit, a line it cannot read, an untracked path, or an unknown area or kind fails the report ([contract](skills/code-stats/README.md#the-classify-command)) |
 
@@ -734,17 +737,23 @@ area's paths, the build tools and the database conventions.
 ## Procedure skills
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
-`promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
-`explain`, `resolve-conflicts`, `audit`) detect
+`docs`, `promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
+`explain`, `red-team`, `resolve-conflicts`, `audit`) detect
 what they need from the repository; set a field only when detection picks
-the wrong thing. `programmatic-execution` and `audit` read no field of their
-own; `audit` checks all the others.
+the wrong thing. `programmatic-execution`, `red-team` and `audit` read no
+field of their own; `audit` checks all the others. `red-team` reads a
+document's kind from its frontmatter `type:` or its headings (`--kind`
+overrides) and takes the agent command for its fresh runs on the command
+line.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `adr.directory` | folder, relative to the root | Detected: the first existing of `docs/adr`, `docs/adrs`, `doc/adr`, `docs/decisions`, `docs/architecture/decisions`, `doc/architecture/decisions`, `adr`, `decisions`; none means no records yet, and `decide` and `explain` then use `docs/adr` | adr, review, decide, explain | Where the decision records live. `decide` searches them for precedent, and `decide` and `explain` resolve a bare `ADR-NNNN` citation there when they check a sheet's freshness. `adr` and `review` require a configured folder to exist; `decide` and `explain` do not check, and find no records in a missing one |
+| `adr.directory` | folder, relative to the root | Detected: the first existing of `docs/adr`, `docs/adrs`, `doc/adr`, `docs/decisions`, `docs/architecture/decisions`, `doc/architecture/decisions`, `adr`, `decisions`; none means no records yet, and `decide` and `explain` then use `docs/adr` | adr, review, decide, explain, docs | Where the decision records live. `decide` searches them for precedent, and `decide` and `explain` resolve a bare `ADR-NNNN` citation there when they check a sheet's freshness; `docs` counts the folder as the project's decision records when it plans missing documents. `adr`, `review` and `docs` require a configured folder to exist; `decide` and `explain` do not check, and find no records in a missing one |
 | `adr.rules_file` | path, relative to the root | Detected: the one tracked `adr-rules.yaml`, `adr-rules.yml`, `.adr-rules.yaml` or `adr-rules/rules.yaml` (or `.yml`), outside test fixtures and templates; several matches are an error | adr, review | The machine-readable decision-rules catalog. A configured file must exist |
-| `descar.lint_command` | shell command taking document paths | Detected: the repository's copy of M4's scar lint; else the document is checked by hand | descar | Lint that finds review scars in documents |
+| `descar.lint_command` | shell command taking document paths | Detected: the repository's copy of M4's scar lint; else the scar lint the `docs` skill holds | descar | Lint that finds review scars in documents |
+| `docs.root` | folder, relative to the root | Detected: the first existing of `docs`, `doc`, `documentation`; none means the repository has no docs tree, and the checks that need one are skipped | docs | The governed docs tree. A configured path must name an existing folder, not a file. Configured or detected, it must lie inside the repository once symbolic links are followed. Repository-only |
+| `docs.schema` | path, relative to the repository root | Detected: the shallowest `frontmatter-schema.yaml` or `.frontmatter-schema.yaml` (or `.yml`) under the docs tree; none skips the frontmatter check | docs | The frontmatter schema the documents are checked against. A configured path must name an existing file, not a folder. Configured or detected, it must lie inside the repository once symbolic links are followed. Repository-only |
+| `docs.stale_after_days` | whole number, 1 or more | `180` | docs | A `status: draft` document whose `last_updated` is more than this many days old is reported as a stale draft (a warning) |
 | `promote_memory.lint_command` | shell command; `{dir}` and `{file}` stand for the memory folder and file | none: the check is done by hand | promote-memory | Checks one agent memory against the repository; exit 0 means clean |
 | `promote_memory.target_dir` | folder, relative to the root | `docs/retrospection` | promote-memory | Where promoted pages go, in `YYYY/MM/` below it |
 | `fix_ci.regenerate_commands` | list of shell commands | none: the agent finds the command | fix-ci | Commands that regenerate committed generated files a CI check compares |
@@ -836,7 +845,7 @@ command can be registered as a collection kind.
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
 | `gc.kinds` | distinct string list | Empty; supported repository kinds: `tool-state`, `scratch`, `worktrees` | audit, gc |
-| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute. `drive-pr` creates the working tree for a pull request that has none under the first root | audit, gc, drive-pr |
+| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute. `drive-pr` creates the working tree for a pull request that has none under the first root. A root that does not exist on the machine that runs the audit is not reported: a repository names the roots of every machine it is worked on | audit, gc, drive-pr |
 | `gc.scratch_prefixes` | distinct path list | Empty; path prefixes of scratch directory names, relative to the repository or absolute; a filesystem root is refused | audit, gc |
 
 A collecting run fetches `.config/jig.yaml` from the remote URL and base branch
@@ -921,6 +930,7 @@ review:
       severities: { Sev1: blocker, Sev2: high, Sev3: medium, Sev4: low }
 repository:
   base_branch: develop                   # default: the repository's default branch
+  remote: upstream                       # default: origin
 pull_requests:
   stacking: branch                       # none | native | branch
   max_stack_depth: 4
@@ -977,7 +987,7 @@ issue_tracker:
     task: [task, type:task, chore]
     spike: [spike, type:spike]
   github:                                # read by the github adapter only
-    repository: acme/app                 # default: the origin remote's
+    repository: acme/app                 # default: the git remote's
     states_from: project                 # default: labels
     project: https://github.com/orgs/acme/projects/1
     status_field: Status
@@ -1038,6 +1048,10 @@ sheets:
     beta: ../beta
 descar:
   lint_command: "bun scripts/check-descarring-scars.ts"
+docs:
+  root: docs
+  schema: docs/.frontmatter-schema.yaml
+  stale_after_days: 180
 promote_memory:
   lint_command: "<your memory lint> --dir {dir} --file {file}"
   target_dir: docs/retrospection

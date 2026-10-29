@@ -22,6 +22,8 @@
  *   the n-th listing, as another writer updating a local file would.
  * - `fail-list-after`: every listing after that number fails.
  * - `fail-search`: the search fails.
+ * - `fail-patch`: every comment update fails; a comment the file holds is
+ *   added as it fails, as another clone's claim landing meanwhile would be.
  */
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -79,6 +81,12 @@ if (one) {
   const all = read("");
   if (method === "DELETE") { save("", all.filter((c) => c.id !== id)); process.exit(0); }
   if (method === "PATCH") {
+    if (has("fail-patch")) {
+      const late = text("fail-patch").trim();
+      if (late !== "") { all.push(JSON.parse(late)); save("", all); }
+      process.stderr.write("update failed\\n");
+      process.exit(1);
+    }
     const c = all.find((x) => x.id === id);
     if (!c) process.exit(1);
     c.body = input.body; c.updated_at = stamp("");
