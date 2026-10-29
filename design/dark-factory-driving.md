@@ -172,8 +172,11 @@ decision:
   the account (hashed, as the claim records it), the caller's account is
   resolved from the pass command it will spawn (`lib/identity.ts`), and the
   re-arm is refused when either side is unknown. "Do not dispatch a
-  successor" stays for a successor on the same account, and the exit prints
-  the re-arm command with the account the wall belongs to;
+  successor" stays for a successor on the same account until the recorded
+  reset has passed, or until a person says the window reopened with
+  `--window-reopened`, a flag the skill forbids an agent to pass, as it
+  forbids clearing a lease. The exit prints the re-arm command with the
+  account the wall belongs to;
 - after `HITL_PARKED`, once every parked item is **answered**: a comment by
   an author with the repository's owner, member or collaborator association
   (the rule the summary-finding guard already uses), on the thread or the
