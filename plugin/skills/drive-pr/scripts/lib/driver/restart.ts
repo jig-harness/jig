@@ -29,6 +29,10 @@ import { swallow } from "../../../../../shared/errors.ts";
 
 import { driveState } from "./paths.ts";
 
+import { isRecord } from "../../../../../shared/guards.ts";
+
+import { parseJson } from "./rearm.ts";
+
 /**
  * Admit one more pass-deadline restart within `budget`, counting it in the
  * drive state only when it is admitted, so a deadline that stops the drive is
@@ -44,18 +48,11 @@ export async function admitDeadlineRestart(
     timeoutSec: helperTimeoutSeconds(),
   });
   if (got.code !== 0) return null;
-  let taken: unknown;
-  try {
-    taken = (JSON.parse(got.stdout) as { deadlineRetries?: unknown })
-      .deadlineRetries;
-  } catch (err) {
-    swallow(err, "drive-state.ts get printed no JSON");
-    return null;
-  }
-  taken ??= 0;
-  if (!Number.isSafeInteger(taken)) return null;
-  if ((taken as number) >= budget)
-    return { admitted: false, taken: taken as number };
+  const state = parseJson(got.stdout, "drive-state.ts get");
+  if (!isRecord(state)) return null;
+  const taken = state.deadlineRetries ?? 0;
+  if (typeof taken !== "number" || !Number.isSafeInteger(taken)) return null;
+  if (taken >= budget) return { admitted: false, taken };
   const bumped = await bumpDeadlineRetries(pr);
   return bumped === null ? null : { admitted: true, taken: bumped };
 }

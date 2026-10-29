@@ -275,7 +275,7 @@ import {
   evaluate,
   type StatusReport,
 } from "./lib/status/evaluate.ts";
-import { isFullSha } from "./lib/status/inherited-head.ts";
+import { takeInheritedHead } from "./lib/status/inherited-head.ts";
 // `report.state` and the emitted/returned exit code for these two
 // out-of-band states are derived from ONE lookup — see
 // `outOfBand()`'s own doc comment for the pairing-drift bug this closes.
@@ -347,12 +347,12 @@ async function main(): Promise<number> {
   let botsOnly = false;
   let localHead = "";
   let headSync = true;
-  let inheritedHead = "";
   let noCount = false;
   let noReconcile = false;
   let bumpAttempt = false;
 
   const argv = process.argv.slice(2);
+  const inheritedHead = takeInheritedHead(argv);
   const take = (flag: string, i: number): string => {
     const value = argv[i + 1];
     if (value === undefined) fail(2, `${flag} requires a value`);
@@ -392,10 +392,6 @@ async function main(): Promise<number> {
         break;
       case "--head":
         localHead = take(a, i++);
-        break;
-      case "--inherited-head":
-        inheritedHead = take(a, i++);
-        if (!isFullSha(inheritedHead)) fail(2, `${a} takes a full commit SHA`);
         break;
       default:
         if (a.startsWith("--")) fail(2, `unknown flag: ${a}`);

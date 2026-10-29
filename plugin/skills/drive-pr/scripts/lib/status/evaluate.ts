@@ -73,7 +73,11 @@ import {
   type UnresolvedThread,
   unresolvedThreads,
 } from "./evidence.ts";
-import { acceptsInheritedHead } from "./inherited-head.ts";
+import {
+  headSyncState,
+  inheritedReason,
+  mayEndWithoutWork,
+} from "./inherited-head.ts";
 import { terminal } from "./terminal-states.ts";
 import type { WaitingEvaluationCache } from "./waiting-cache.ts";
 
@@ -923,15 +927,13 @@ async function evaluateFresh(
   report.isDraft = draft;
 
   // The witnessed inherited head passes; the round is judged on the API head.
-  const inherited =
-    ctx.headSync &&
-    report.apiHead !== ctx.localHead &&
-    (await acceptsInheritedHead(
-      report.apiHead,
-      ctx.localHead,
-      ctx.inheritedHead ?? "",
-    ));
-  if (ctx.headSync && report.apiHead !== ctx.localHead && !inherited) {
+  const sync = await headSyncState(
+    ctx.headSync,
+    report.apiHead,
+    ctx.localHead,
+    ctx.inheritedHead ?? "",
+  );
+  if (sync === "lagging") {
     return terminal(
       report,
       "HEAD_LAG",
@@ -1594,7 +1596,8 @@ async function evaluateFresh(
   const liveSummary = report.summaryUnaddressed - summaryParked;
 
   // Over unpushed inherited commits only a conflict stops; else push them.
-  if (liveThreads <= 0 && liveSummary <= 0 && (!inherited || conflicting)) {
+  const liveWork = Math.max(liveThreads, 0) + Math.max(liveSummary, 0);
+  if (mayEndWithoutWork(liveWork, sync, conflicting)) {
     // A conflict with NOTHING left to work is unconvergeable: no round can be
     // reviewed, and no amount of waiting changes that. Checked before
     // HITL_PARKED because a merge is a concrete command and a parked item is a
@@ -1657,8 +1660,7 @@ async function evaluateFresh(
   let roundReadyReason = `${liveThreads} unresolved thread(s) and ${liveSummary} unaddressed summary finding(s) on ${report.apiHead}`;
   if (stalledCheckRunNote !== "")
     roundReadyReason += ` — ${stalledCheckRunNote}`;
-  if (inherited)
-    roundReadyReason += ` — local HEAD ${ctx.localHead} carries commits a killed pass left unpushed; this round pushes them`;
+  roundReadyReason += inheritedReason(sync, ctx.localHead);
   if (conflicting) {
     roundReadyReason += ` — NOTE: PR #${ctx.pr} conflicts with its base, so no pull_request CI will run on what this round pushes; merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} in as part of the round`;
     // Say, in the reason itself, how current these findings are. The reviewer
