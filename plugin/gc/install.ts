@@ -5,6 +5,7 @@ import { gcConfiguration } from "./config.ts";
 import { baseDeclaration, gcGit as git } from "./git.ts";
 import { dump, load } from "../shared/yaml.ts";
 import { isMapping } from "../shared/config-layers.ts";
+import { worktreePolicy } from "./kinds/worktree-proof.ts";
 import { exclusiveGcLock } from "../shared/gc-lock.ts";
 import {
   installedScript,
@@ -100,19 +101,21 @@ export async function install(options: {
     return 0;
   });
 }
-/** The entry install proposes for the repository at `root`. */
+/**
+ * The entry install proposes for the repository at `root`: the remote and
+ * integration branch collection reads its worktrees against
+ * (`worktreePolicy`), and that remote's URL, shown for confirmation.
+ */
 async function proposedEntry(root: string, repository: unknown) {
-  let base: string;
-  if (isMapping(repository) && typeof repository.base_branch === "string")
-    base = repository.base_branch;
-  else {
-    const head = await git(root, ["symbolic-ref", "refs/remotes/origin/HEAD"]);
-    base = head.replace(/^refs\/remotes\/origin\//, "");
-  }
+  const policy = await worktreePolicy(root);
+  const base =
+    isMapping(repository) && typeof repository.base_branch === "string"
+      ? repository.base_branch
+      : policy.base;
   const entry = {
     path: root,
-    remote: "origin",
-    remote_url: (await git(root, ["remote", "get-url", "origin"])).trim(),
+    remote: policy.remote,
+    remote_url: (await git(root, ["remote", "get-url", policy.remote])).trim(),
     base_branch: base,
     bounds: { kinds: [], worktree_roots: [], scratch_prefixes: [] },
   };

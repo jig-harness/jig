@@ -2,7 +2,7 @@
 import { lstatSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { layeredConfig, remoteName } from "../../shared/consumer.ts";
-import { readDrivenTree } from "../../shared/driven-tree.ts";
+import { readDrivenTree, type DrivenTree } from "../../shared/driven-tree.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { GcError } from "../../shared/gc-error.ts";
 import { gcGit as git } from "../git.ts";
@@ -83,6 +83,51 @@ async function mergedHeadCoverage(
   }
   return unknown ? null : false;
 }
+/**
+ * Whether a detached tree's record still names the work its head holds.
+ * Descent from the attached commit does not tell the pull request's commits
+ * from a stacked pull request's, whose head descends from it too: a head some
+ * remote-tracking branch holds is that branch's work unless the record's own
+ * branch is among them, or the pull request's head contains it. The own
+ * branch is not required, since a merged pull request's is often deleted.
+ */
+async function describesHead(
+  path: string,
+  record: DrivenTree,
+  prs: WorktreeRequest[],
+): Promise<boolean> {
+  const holders = (
+    await git(path, [
+      "for-each-ref",
+      "--contains",
+      "HEAD",
+      "--format=%(refname)",
+      "refs/remotes",
+    ])
+  )
+    .split("\n")
+    .filter((ref) => ref !== "");
+  if (
+    holders.length === 0 ||
+    holders.includes(`refs/remotes/${record.remote}/${record.branch}`)
+  )
+    return true;
+  for (const pr of prs)
+    if ((await ancestry(path, "HEAD", pr.head)) === true) return true;
+  return false;
+}
+/** The recorded pull request of a detached tree whose head is still its work. */
+async function drivenRequests(
+  path: string,
+  record: DrivenTree,
+): Promise<WorktreeRequest[]> {
+  const prs = await requestByNumber(path, record.remote, record.pr);
+  if (!(await describesHead(path, record, prs)))
+    throw new GcError(
+      "HEAD is detached on another branch's work since a drive attached the worktree",
+    );
+  return prs;
+}
 export async function worktreeProof(
   path: string,
   policy: WorktreePolicy,
@@ -96,7 +141,8 @@ export async function worktreeProof(
   const admin = isAbsolute(dir) ? dir : resolve(path, dir);
   // A detached tree a drive attached names its pull request, and the remote
   // that pull request was fetched through, in its record, for as long as its
-  // head still descends from the commit attached. Unlike
+  // head still descends from the commit attached and holds no other branch's
+  // work (`describesHead`). Unlike
   // the drive's readers, no remote branch is required: a merged pull
   // request's branch is often deleted, and that is when the tree is reported.
   const record = name === "HEAD" ? readDrivenTree(admin) : null;
@@ -138,7 +184,7 @@ export async function worktreeProof(
   facts.requests =
     driven === null
       ? await requests(path, policy.remote, name)
-      : await requestByNumber(path, driven.remote, driven.pr);
+      : await drivenRequests(path, driven);
   if (facts.requests.some((pr) => pr.state === "OPEN"))
     return classifyWorktree(facts, idleDays * 86_400_000);
   facts.localOnlyCommits = await localOnlyCommits(path, head);

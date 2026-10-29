@@ -196,6 +196,20 @@ test("install previews without writing a machine file or job", () => {
   expect(readFileSync(f.homeFile, "utf8")).toBe(previous);
   expect(existsSync(join(f.user, "Library", "LaunchAgents"))).toBe(false);
 });
+test("install proposes the configured remote, not origin", () => {
+  const f = setup();
+  f.command(["git", "remote", "rename", "origin", "upstream"]);
+  writeFileSync(
+    join(f.repo, ".config/jig.yaml"),
+    dump({ gc: f.declaration, repository: { remote: "upstream" } }),
+  );
+  const result = run(f, ["install", "--repo", f.repo]);
+  expectSpawnExit(result, 0);
+  const preview = result.stdout.toString();
+  expect(preview).toContain("remote: upstream");
+  expect(preview).toContain("base_branch: main");
+  expect(preview).not.toContain("remote: origin");
+});
 test("uninstall reads only machine policy, so a broken checkout cannot block it", () => {
   const f = setup();
   writeFileSync(join(f.repo, ".config/jig.yaml"), "gc: {kinds: [unknown]}\n");
