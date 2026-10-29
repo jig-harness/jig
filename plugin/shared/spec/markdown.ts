@@ -159,8 +159,9 @@ function shallowLine(
     closeItemsPast(state, strip);
     return itemLine(line, strip + item, state);
   }
-  if (/^ {0,3}#/.test(line)) state.lists.length = 0;
-  return HEADING.test(own) ? "heading" : "text";
+  if (!HEADING.test(own)) return "text";
+  state.lists.length = 0;
+  return "heading";
 }
 
 /** `"fence"` with the fence `own` opens at `column` recorded, or `null`. */

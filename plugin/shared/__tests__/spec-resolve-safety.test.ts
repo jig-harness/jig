@@ -316,6 +316,24 @@ test("a line that ends a nested item leaves its enclosing item open", async () =
   }
 });
 
+test("text that starts with # but is no heading leaves the open items open", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  for (const note of ["  #58 tracks this", "#58 tracks this", "  #tag"]) {
+    const body = [
+      "## Spec",
+      "- [ ] 1. Outer task",
+      note,
+      "",
+      "    - [ ] 2. Nested task",
+    ].join("\n");
+    const result = await resolveSpec(issue(body), root, {
+      registry: [bodyAdapter],
+      config: only("body"),
+    });
+    expect(result.tasks.map((t) => t.id)).toEqual(["1", "2"]);
+  }
+});
+
 test("a fence before a list item's column ends the item", async () => {
   const { root } = scratchRepo("spec-safety-");
   for (const gap of [[""], []]) {
