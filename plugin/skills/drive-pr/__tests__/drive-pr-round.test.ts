@@ -1679,6 +1679,11 @@ describe("guarded-push.ts", () => {
      * to EVERY one of them, so the guard has to check every one of them.
      */
     pushUrls?: string[];
+    /**
+     * The only remote name the stubbed `git remote get-url` answers for
+     * (default `origin`); any other name fails as an unknown argument.
+     */
+    remote?: string;
     /** Seconds the stubbed `git push` blocks for, to exercise the deadline. */
     slowPushSec?: number;
     /** A native descendant waits for an explicit release after cancellation. */
@@ -1789,7 +1794,7 @@ describe("guarded-push.ts", () => {
         "#!/usr/bin/env bash",
         'case "$1" in',
         '  rev-parse) case "$*" in "rev-parse HEAD"|"rev-parse --git-dir"|"rev-parse --git-common-dir"|"rev-parse --show-toplevel") ;; *) echo "git rev-parse: unknown argument: $*" >&2; exit 2 ;; esac ;;',
-        '  remote) [ "$*" = "remote get-url --push --all origin" ] || { echo "git remote: unknown argument: $*" >&2; exit 2; } ;;',
+        `  remote) [ "$*" = "remote get-url --push --all ${opts.remote ?? "origin"}" ] || { echo "git remote: unknown argument: $*" >&2; exit 2; } ;;`,
         `  push) ${GIT_PUSH_FLAG_GUARD} ;;`,
         '  *) echo "unexpected fake git command: $*" >&2; exit 2 ;;',
         "esac",
@@ -1870,7 +1875,26 @@ describe("guarded-push.ts", () => {
   it("pushes while the PR is open", async () => {
     const r = await guardedPush({ threads: [] });
     expect(r.exitCode).toBe(0);
-    expect(r.stderr).toContain("PUSHED");
+    expect(r.stderr).toContain("PUSHED push origin ");
+  });
+
+  it("checks and pushes through the remote repository.remote names", async () => {
+    const r = await guardedPush(
+      { threads: [] },
+      { remote: "upstream", env: { JIG__REPOSITORY__REMOTE: "upstream" } },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stderr).toContain("PUSHED push upstream ");
+  });
+
+  it("refuses to push when repository.remote is not a usable remote name", async () => {
+    const r = await guardedPush(
+      { threads: [] },
+      { env: { JIG__REPOSITORY__REMOTE: "-upstream" } },
+    );
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("repository.remote must be a git remote name");
+    expect(r.stderr).not.toContain("PUSHED");
   });
 
   it("--expect-head refuses BEFORE pushing when local HEAD moved since the caller’s own preflight read", async () => {

@@ -65,7 +65,7 @@ hook or the interface instead.
 | AI reviewer | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats); GitHub code scanning alerts from any tool, SonarQube Cloud's included | [Configuration](#ai-reviewers) | — |
 | Forge (where pull requests live) | GitHub, through the `gh` command | — | [No forge interface yet](#forge-github): roadmap, later |
 | CI system | Any CI that reports checks to GitHub | `ci.required_checks`; `fix-ci --log` | [Log download and workflow review](#ci-system) are GitHub Actions only |
-| Git remote | `origin` | — | Roadmap item 10 |
+| Git remote | Any name, `origin` by default | [`repository.remote`](CONFIGURATION.md#repository) | [`review`, `review-reflections`, `reflect`, `code-stats`, `changelog` and the audit](#forge-github) still read `origin` |
 | Agent tool | Claude Code, Codex | [Copying the skills](#agent-tools) for any other | — |
 | Workspace launcher | Linear; Herdr (the primary target) on macOS and Linux, locally or on a host over SSH; Orca on macOS and Linux, locally or on a paired Orca server; Conductor on macOS | [A provider](#workspace-launcher) in Jig | — |
 | Workspace runtime | Herdr, through the [workspace tool](https://github.com/jig-harness/jig/blob/main/tools/herdr/README.md) and its plugin; Orca, through [its workspace tool](https://github.com/jig-harness/jig/blob/main/tools/orca/README.md); any runtime that creates worktrees and starts sessions, for the skills | M12's [hook points](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md) | — |
@@ -142,7 +142,7 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
 - **GitHub Issues** (`github`, the default for `issue_tracker.adapter`;
   [`github/`](skills/do-item/scripts/lib/tracker/github/tracker.ts)), the
   issues of one repository (`issue_tracker.github.repository`, else the
-  `origin` remote's). It uses the signed-in `gh` command-line client. Keys
+  git remote's, `repository.remote`). It uses the signed-in `gh` command-line client. Keys
   are `#<n>`; a key of another repository (a sub-issue or a blocker may live
   elsewhere) is `owner/name#<n>`. How the interface's vocabulary maps onto
   GitHub:
@@ -209,9 +209,10 @@ second adapter does not yet reach them:
 - **Response shapes.** `do-item`'s parent-status reconciliation, on its
   native path, reads the shape of Linear's own answers; its script path
   works on every adapter.
-- **Names.** The review-triage file's `severity_mapping.<severity>.linear_priority`;
-  `fractal-metrics.ts --skip-linear`; the change-area catalog still accepts
-  the older `linear:` block beside `tracker:`.
+- **Names.** The change-area catalog still accepts the older `linear:` block
+  beside `tracker:`. The review-triage file's
+  `severity_mapping.<severity>.priority` also accepts `linear_priority`, and
+  `fractal-metrics.ts --skip-tracker` also accepts `--skip-linear`.
 - **The launcher**, which has a tracker interface of its own
   ([below](#workspace-launcher)), and opens Linear issues only.
 
@@ -220,10 +221,9 @@ repository) keeps the rest of the plugin's code, and the planning skills'
 procedures, from reaching Linear except through the interface; the deferral
 step is the one file it still allows.
 
-Fixing it means adding file attachment to the interface, moving the
-deferral step and the skills' instructions onto it, and renaming the
-Linear-named fields with their old names still read. Roadmap item 10 holds
-the deferral step and the names; item 12 holds the next
+Fixing it means adding file attachment to the interface, and moving the
+deferral step and the skills' instructions onto it. Roadmap item 10 holds
+the deferral step; item 12 holds the next
 adapters (Jira, and a plan file kept in the repository), behind open
 decisions: the plan file's format, and whether an adapter may leave out the
 reporting operations.
@@ -348,10 +348,13 @@ local diff, `fix-ci` on a saved log (`--log <file>`), and the audit with
 arguments, and [M7's mappings](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/mappings.md)
 state the review practice for GitLab and Gitea as well.
 
-**The git remote** is `origin`: the drive pushes to it, fetches from it and
-derives the integration branch from `origin/HEAD`. It refuses rather than
-pushes when `origin` is not the pull request's repository. Roadmap item 10
-makes the name configurable.
+**The git remote** is the one `repository.remote` names, `origin` by
+default ([CONFIGURATION.md](CONFIGURATION.md#repository)): the drive pushes to
+it, fetches the base from it and derives the integration branch from its
+`HEAD`, and `do-item`, `fix-ci`, `resolve-conflicts` and `work-batch` fetch
+and push through it. The drive refuses rather than pushes when that remote
+is not the pull request's repository. `review`, `review-reflections`,
+`reflect`, `code-stats`, `changelog` and the audit still read `origin`.
 
 **What a second forge needs.** A forge interface on the model of the tracker
 interface: the operations above, a GitHub implementation that the skills'

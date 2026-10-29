@@ -178,7 +178,8 @@ what it installed without activation: `uv run pytest`, `.venv/bin/python -m
 pytest`, `bundle exec rspec`, never a bare `pytest` that resolves from the
 caller's environment.
 
-It fetches `<remote> <base>` first, into a ref of its own, and checks out
+It fetches `<remote> <base>` first (`--remote`, by default the repository's
+remote: `repository.remote`, else `origin`), into a ref of its own, and checks out
 the commit that ref names: never the remote-tracking ref already present
 locally, which is only as fresh as the last fetch, and never `FETCH_HEAD`,
 which another fetch can overwrite. `--timeout` bounds each git call, the

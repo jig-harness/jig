@@ -351,9 +351,9 @@ you look:
   unset) `oauthAccount` for a Claude pass,
   `OPENAI_API_KEY` (same fingerprint treatment) / `$CODEX_HOME/auth.json` for
   a Codex one, `null` with a stated reason when neither resolves); `--json`
-  for machines. Each row's `repository` names the origin's owner/repository,
-  falling back to the clone's Git common directory when origin is unavailable
-  or yields no plain owner/repository pair; the origin URL is never printed.
+  for machines. Each row's `repository` names the owner/repository of the drive's remote,
+  falling back to the clone's Git common directory when that remote is unavailable
+  or yields no plain owner/repository pair; the remote's URL is never printed.
   `--stop <PR>` requests that a live driver stop its pass
   tree and then release its locks. Process identity is verified through the
   platform process table (`ps` on POSIX, PowerShell on Windows), and a
@@ -1731,8 +1731,8 @@ finding, not a checkpoint. Unpark with
 `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" unpark [PR] --key K` once the human answers.
 
 **The change note — only where the repository has opted in.** When
-`bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/check.ts" --base origin/<base>`
-(the pull request's base; it reads the configuration the base holds, not the
+`bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/check.ts" --base <remote>/<base>`
+(the pull request's base, through the drive's git remote: `repository.remote`, else `origin`; it reads the configuration the base holds, not the
 branch's own) prints anything
 but `not configured` and the pull request carries a change note, an accepted
 fix that changes what the pull request does for someone using the released
@@ -1784,7 +1784,7 @@ loop cannot see, such as converging and wanting the local gates and the
 | Exit | Means | What to do |
 |---|---|---|
 | `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which — do not infer it from the code. Continue |
-| `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git merge origin/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
+| `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git merge <remote>/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
 | `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
 | `5` | The PR is not `OPEN` | Stop — the same liveness posture `finish-round.ts` takes before its push |
 | `11` | Another live session holds this working tree's tree lease (never under `--check`) | Stop, as for `finish-round.ts`'s `11` below |
@@ -1796,13 +1796,13 @@ is something to say, so a round that needs this arrives knowing. Silence on
 stderr is not one state, though: a genuinely in-sync base — `base.drift` holds
 a real measurement, `behind: 0` — prints nothing on purpose, since a line
 every round for the state that needs no action is how a warning stops being
-read, but a drift measurement that could not be taken at all — origin not
+read, but a drift measurement that could not be taken at all — the remote not
 resolving to this PR's own repository, an unresolvable merge-base, or an
 unreadable checkout — is *also* silent there, distinguishable only by
 `base.drift: null` in the JSON. (An unreachable remote alone is NOT this case:
 `lib/base-drift.ts`'s `probeBaseDrift` treats fetch failure as a soft degrade,
 not a probe failure, so it still reports — annotated as unfetched — off
-whatever `origin/<base>` was last fetched to.) Read the JSON, not the
+whatever `<remote>/<base>` was last fetched to.) Read the JSON, not the
 narration's silence, when you need to tell "confirmed in sync" apart from
 "unknown."
 
@@ -1823,7 +1823,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts" [PR]
 ```
 
 It resolves the validation plan for the PR's **whole** diff against the PR's
-own base (`origin/<base>`: for a stacked layer, the layer below; [README.md §
+own base (`<remote>/<base>`: for a stacked layer, the layer below; [README.md §
 Consumer configuration](README.md#consumer-configuration) says when it uses
 the integration branch instead, and when it refuses) and prints exactly what to run. The plan is the repository's: when it sets
 `drive.validation_plan_command`, `round-plan.ts` runs that command with the
@@ -2750,7 +2750,7 @@ changes for a checkout — goes through `lib/gh-conditional.ts`'s `cachedRepoVie
 rather than one GraphQL call per script per round. The cache key is the
 checkout's remotes, `gh repo set-default` and `$GH_REPO`, read from the same
 `cwd`/`env` the `gh` call receives (so `ghRepoEnv()`'s "the repository *at* `cwd`"
-guarantee is preserved, and the origin-URL verification in `base-sync.ts` /
+guarantee is preserved, and the remote-URL verification in `base-sync.ts` /
 `self-inflicted.ts` still runs against the value `gh` resolved). Only a
 successful, non-empty answer is cached. The reads that want a PR's state
 and nothing else — `drive-status.ts`'s sweep liveness probe and `evaluate()`'s

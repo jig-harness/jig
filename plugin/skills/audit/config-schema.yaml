@@ -64,6 +64,13 @@ strict:
   - routing.raise
   - verify
 
+# Sections and fields whose `null` a skill refuses rather than reading it as
+# not set: a higher layer's `null` there would otherwise put a lower layer's
+# value back to its default unnoticed. Elsewhere a `null` reads as not set.
+null_refused:
+  - repository
+  - repository.remote
+
 # Sections a skill refuses outright, with what to do instead.
 refused:
   do_issue: "renamed do_item: rename the section (its fields are unchanged); do-item refuses to run while it exists"
@@ -203,6 +210,13 @@ fields:
     pattern: "^(?!origin/)[^\\s~^:?*\\[\\\\]+$"
     read_by: [drive-pr, do-item, review, descar, changelog]
     repository_only: true
+
+  repository.remote:
+    type: string
+    pattern: "^(?!-)(?!.*\\.\\.)(?!.*//)(?!/)(?!.*/$)(?!.*\\.$)(?!(?:.*/)?\\.)(?!.*\\.lock(?:/|$))[A-Za-z0-9._/-]+$"
+    default: origin
+    read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect]
+    since: next
 
   pull_requests.stacking:
     type: enum
