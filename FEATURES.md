@@ -37,8 +37,7 @@ how much it could not classify, and names the rule behind any file.
   [`code-stats`](plugin/skills/code-stats/README.md)
 - **Practice:** every module's criteria, as
   [principle 6](principles/06-audit-first.md) asks
-- **On the roadmap:** test-runner configuration for `code-stats`, and its
-  figures as audit evidence (item 20)
+- **On the roadmap:** `code-stats` figures as audit evidence (item 20)
 
 ## A work item carried from pickup to merge
 

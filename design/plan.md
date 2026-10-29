@@ -219,7 +219,7 @@ how it works and what is left. Done when:
   time;
 - the home and adoption pages show an audit sheet of Jig's own audit.
 
-### 20. `code-stats`: test-runner configuration and audit evidence
+### 20. `code-stats`: a reference set and audit evidence
 
 The [code-stats skill](../plugin/skills/code-stats/README.md) classifies a
 repository's files from conventions, attributes, its test runners'
