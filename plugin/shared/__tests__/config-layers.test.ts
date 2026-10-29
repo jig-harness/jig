@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  clonePath,
   environmentLayer,
   fieldInMessage,
   formatField,
@@ -142,6 +143,31 @@ for (const field of [
     user(`${field}\n`);
     expect(() => loadLayeredConfig(repo)).toThrow("describes one repository");
   });
+
+test("a repository's file refuses the machine's own clones map", () => {
+  repository("clones:\n  example/app: /work/app\n");
+  expect(() => loadLayeredConfig(repo)).toThrow("describes one machine");
+});
+
+test("clones maps a repository slug to a local clone, from the user file", () => {
+  user("clones:\n  Example/App: ~/work/app\n  example/api: /srv/api\n");
+  const { values } = loadLayeredConfig(repo);
+  const env = { HOME: "/home/someone" };
+  expect(clonePath(values, "example/app", env)).toBe(
+    join("/home/someone", "work/app"),
+  );
+  expect(clonePath(values, "example/api", env)).toBe("/srv/api");
+  expect(clonePath(values, "example/web", env)).toBeUndefined();
+  expect(clonePath({}, "example/app", env)).toBeUndefined();
+});
+
+test.each([
+  ["a relative path", { "example/app": "work/app" }, "absolute path"],
+  ["a key that is not owner/name", { app: "/work/app" }, "not owner/name"],
+  ["a list", ["/work/app"], "must map"],
+])("clones refuses %s", (_, clones, message) => {
+  expect(() => clonePath({ clones }, "example/app")).toThrow(message);
+});
 
 test("the environment may override a repository's own field for one run", () => {
   repository("repository:\n  base_branch: main\n");
