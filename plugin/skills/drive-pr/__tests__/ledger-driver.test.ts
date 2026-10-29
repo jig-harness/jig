@@ -440,4 +440,43 @@ console.log("RENEW_MS " + d.LEDGER_RENEW_MS);`,
     expect(r.stderr).toContain("taken over");
     expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(0);
   });
+
+  it("stands down on a newer claim even when its own write did not land", async () => {
+    const forge = fakeForge(
+      [
+        forgeComment(
+          40,
+          ledgerBody(
+            ledgerFromState(freshState(999), {
+              generation: 2,
+              driver: {
+                actor: "wt-bbbbbbbbbbbbbbbb",
+                clone: "clone-b",
+                heartbeat: "2026-10-01T11:00:00.000Z",
+                state: "running",
+                position: 40,
+              },
+              narrative: [],
+              claims: [],
+            }),
+          ),
+        ),
+      ],
+      { login: "drive-bot" },
+    );
+    writeFileSync(
+      join(forge.dir, "fail-patch"),
+      JSON.stringify(forgeComment(50, claim("clone-c", 2))),
+    );
+    const r = await probe(
+      forge,
+      `console.log("RENEWED " + (await d.ledgerRenewal("999")()));`,
+      { DRIVE_PR_LEDGER_DRIVER: driverEnv("clone-b", 40) },
+    );
+    expectSpawnExit(r, 0);
+    expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(1);
+    expect(r.stderr).toContain("heartbeat write did not land");
+    expect(r.stdout).toContain("RENEWED 20");
+    expect(r.stderr).toContain("taken over");
+  });
 });

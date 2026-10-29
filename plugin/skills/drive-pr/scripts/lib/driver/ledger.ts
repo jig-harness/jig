@@ -476,9 +476,10 @@ export const LEDGER_RENEW_MS = (STALL_THRESHOLD_MIN_DEFAULT * 60_000) / 4;
  * first call writes the ledger, since the wait may begin with a heartbeat
  * already aged by a long pass, and later calls write once `LEDGER_RENEW_MS`
  * has passed since the last, or `LEDGER_RETRY_MS` after a write that did not
- * land. `handoff` exits `0` on a write its guards refused too, so each write
- * is followed by the claims: `TAKEN_OVER_EXIT` when another clone's newer
- * claim beats this driver, which the wait returns; otherwise `null`.
+ * land. `handoff` exits `0` on a write its guards refused too, so each write,
+ * landed or not, is followed by the claims: `TAKEN_OVER_EXIT` when another
+ * clone's newer claim beats this driver, which the wait returns; otherwise
+ * `null`.
  */
 export function ledgerRenewal(pr: string): () => Promise<number | null> {
   let dueAt = Number.NEGATIVE_INFINITY;
@@ -491,7 +492,6 @@ export function ledgerRenewal(pr: string): () => Promise<number | null> {
       console.error(
         `ledger: PR #${pr}'s heartbeat write did not land (drive-state.ts handoff exited ${code}); trying again in ${minutes(LEDGER_RETRY_MS)} minute(s).`,
       );
-      return null;
     }
     return await standDownOnNewerClaim(pr);
   };
