@@ -15,10 +15,12 @@
  * The text after a list marker is read the same way, at the item's content
  * column, so `- ```md` opens a fence, `- - x` opens a nested item and
  * `-     x` is the item's indented code. A line at or past that column
- * belongs to the item and does not close the list; a heading, or a line
- * before that column after a blank line, does. A fence opened inside an item
- * ends with it: a line before the item's column closes the fence and is read
- * as ordinary Markdown. Past a nesting depth of 64 markers on one line the
+ * belongs to the item and does not close the list; a heading closes every
+ * open item, and a fence, a list marker, or any line after a blank line
+ * closes the items whose column it does not reach, leaving the enclosing
+ * items it does reach open. A fence opened inside an item ends with it: a line before the
+ * item's column closes the fence and those items, and is read as ordinary
+ * Markdown in the item that remains. Past a nesting depth of 64 markers on one line the
  * rest is the item's text, so a line of markers cannot run the scan deep.
  */
 import type { BodySectionKind } from "./adapter.ts";
@@ -111,10 +113,29 @@ function closes(raw: string, fence: Fence): boolean {
 interface ScanState {
   fence: Fence | null;
   indentedCode: boolean;
-  listOpen: boolean;
-  /** The content column of the innermost list item open. */
-  listIndent: number;
+  /** The content columns of the open list items, outermost first, ascending. */
+  lists: number[];
   afterBlank: boolean;
+}
+
+/** The content column of the innermost open item `indent` reaches, or 0. */
+function container(state: ScanState, indent: number): number {
+  const { lists } = state;
+  let low = 0;
+  let high = lists.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if ((lists[mid] ?? 0) <= indent) low = mid + 1;
+    else high = mid;
+  }
+  return low === 0 ? 0 : (lists[low - 1] ?? 0);
+}
+
+/** End every open item whose content column is past `indent`. */
+function closeItemsPast(state: ScanState, indent: number): void {
+  const { lists } = state;
+  while (lists.length > 0 && (lists[lists.length - 1] ?? 0) > indent)
+    lists.pop();
 }
 
 /**
@@ -129,11 +150,16 @@ function shallowLine(
   state.indentedCode = false;
   const own = line.slice(strip);
   const opened = opensFence(own, strip, state);
-  if (opened !== null) return opened;
+  if (opened !== null) {
+    closeItemsPast(state, strip);
+    return opened;
+  }
   const item = listContent(own);
-  if (item !== null) return itemLine(line, strip + item, state);
-  if (/^ {0,3}#/.test(line) || (state.afterBlank && strip === 0))
-    state.listOpen = false;
+  if (item !== null) {
+    closeItemsPast(state, strip);
+    return itemLine(line, strip + item, state);
+  }
+  if (/^ {0,3}#/.test(line)) state.lists.length = 0;
   return HEADING.test(own) ? "heading" : "text";
 }
 
@@ -161,8 +187,7 @@ function itemLine(
   state: ScanState,
 ): MarkdownLine["kind"] {
   for (let depth = 1; ; depth++) {
-    state.listOpen = true;
-    state.listIndent = column;
+    state.lists.push(column);
     if (line.length <= column) return "text";
     const own = line.slice(column);
     if (indentOf(own) >= 4) {
@@ -189,7 +214,7 @@ function fencedLine(
 ): MarkdownLine["kind"] | null {
   if (fence.strip > 0 && line.trim() !== "" && indentOf(line) < fence.strip) {
     state.fence = null;
-    state.listOpen = false;
+    closeItemsPast(state, indentOf(line));
     return null;
   }
   if (!closes(line, fence)) return "code";
@@ -208,8 +233,8 @@ function classify(line: string, state: ScanState): MarkdownLine["kind"] {
     return "text";
   }
   const indent = indentOf(line);
-  const strip =
-    state.listOpen && indent >= state.listIndent ? state.listIndent : 0;
+  if (state.afterBlank) closeItemsPast(state, indent);
+  const strip = container(state, indent);
   let kind: MarkdownLine["kind"];
   if (indent - strip >= 4) {
     state.indentedCode ||= state.afterBlank;
@@ -224,8 +249,7 @@ export function* markdownLines(text: string): Generator<MarkdownLine> {
   const state: ScanState = {
     fence: null,
     indentedCode: false,
-    listOpen: false,
-    listIndent: 0,
+    lists: [],
     afterBlank: true,
   };
   for (const raw of text.split(/\r?\n/)) {

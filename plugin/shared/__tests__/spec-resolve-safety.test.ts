@@ -296,6 +296,47 @@ test("a fence opened in a list item ends with the item", async () => {
   expect(result.acceptance.map((c) => c.id)).toEqual(["AC-1"]);
 });
 
+test("a line that ends a nested item leaves its enclosing item open", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  for (const inner of [["  - ~~~md", "    example"], ["  - Inner note"]]) {
+    const body = [
+      "## Spec",
+      "- [ ] 1. Outer task",
+      ...inner,
+      "",
+      "  Outer explanation",
+      "",
+      "    - [ ] 2. Nested task",
+    ].join("\n");
+    const result = await resolveSpec(issue(body), root, {
+      registry: [bodyAdapter],
+      config: only("body"),
+    });
+    expect(result.tasks.map((t) => t.id)).toEqual(["1", "2"]);
+  }
+});
+
+test("a fence before a list item's column ends the item", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  for (const gap of [[""], []]) {
+    const body = [
+      "## Spec",
+      "- [ ] 1. Real task",
+      ...gap,
+      "```md",
+      "x",
+      "```",
+      "",
+      "    - [ ] 2. Example in indented code",
+    ].join("\n");
+    const result = await resolveSpec(issue(body), root, {
+      registry: [bodyAdapter],
+      config: only("body"),
+    });
+    expect(result.tasks.map((t) => t.id)).toEqual(["1"]);
+  }
+});
+
 test("a line of list markers past the nesting bound is read without running the scan deep", async () => {
   const { root } = scratchRepo("spec-safety-");
   const body = [
