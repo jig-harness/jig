@@ -14,7 +14,9 @@
  * Usage:
  *   confirm-step.ts [--skill <name> --pr <url> --why <one line>]
  *
- * Prints `confirm: <level line>` or `skip: <level line>`, then, when the
+ * Prints `skip: <level line>` only under `unattended` with all three options
+ * given (a run with no pull request behind it always confirms), else
+ * `confirm: <level line>`; then, when the
  * three options are given, the filed-by line for the body.
  *
  * Exit codes: 0 printed, 1 the autonomy configuration is invalid, 2 usage.
@@ -60,7 +62,8 @@ async function main(): Promise<number> {
   try {
     const a = currentAutonomy();
     line = describeAutonomy(a);
-    confirm = a.level === "attended";
+    // With no pull request behind the run there is no skip: confirm.
+    confirm = a.level === "attended" || given.length !== 3;
   } catch (err) {
     fail(
       1,

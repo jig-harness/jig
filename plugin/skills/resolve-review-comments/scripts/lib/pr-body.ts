@@ -10,6 +10,7 @@
  * not inside a round. After the write the body is read back and the change
  * confirmed in it. Every forge call carries the plugin's `gh` deadline.
  */
+import { isRecord } from "../../../../shared/guards.ts";
 import { ghCall } from "../../../../shared/proc.ts";
 
 const WRITE_ATTEMPTS = 3;
@@ -26,11 +27,42 @@ export interface PrBody {
   url: string;
 }
 
-/** What the scripts need of the forge: a pull request's body, read and written. */
+/** A resolved review thread answered `**deferred**` with a link to the section. */
+export interface DeferredReply {
+  /** The thread's first comment: the source its deferred entry is keyed on. */
+  thread: string;
+  /** The `**deferred**` reply itself. */
+  reply: string;
+}
+
+/**
+ * What the scripts need of the forge: a pull request's body, read and
+ * written, and its resolved threads whose `**deferred**` reply links the
+ * body's `## Deferred` section.
+ */
 export interface PrBodyForge {
   read(pr: string): Promise<PrBody>;
   write(pr: string, body: string): Promise<void>;
+  deferredReplies(pr: string): Promise<DeferredReply[]>;
 }
+
+/** The review threads, each with its comments' urls and bodies. */
+const THREADS_QUERY = `query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $pr) {
+      reviewThreads(first: 100, after: $endCursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { isResolved comments(first: 100) { nodes { url body } } }
+      }
+    }
+  }
+}`;
+
+/**
+ * Each resolved thread's first comment and its `**deferred**` replies that
+ * link `#deferred`, one JSON object per line.
+ */
+const DEFERRED_REPLIES_JQ = `.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved) | {thread: .comments.nodes[0].url, replies: [.comments.nodes[1:][] | select(.body | startswith("**deferred**")) | select(.body | contains("#deferred")) | .url]} | select(.replies | length > 0) | @json`;
 
 async function gh(args: string[], stdin?: string): Promise<string> {
   const r = await ghCall(args, {
@@ -55,8 +87,9 @@ export function ghPrBodyForge(): PrBodyForge {
         "--jq",
         '{body: (.body // ""), updatedAt: .updated_at, url: .html_url}',
       ]);
-      const v = JSON.parse(raw) as Partial<PrBody>;
+      const v: unknown = JSON.parse(raw);
       if (
+        !isRecord(v) ||
         typeof v.body !== "string" ||
         typeof v.updatedAt !== "string" ||
         typeof v.url !== "string"
@@ -76,6 +109,40 @@ export function ghPrBodyForge(): PrBodyForge {
         ],
         JSON.stringify({ body }),
       );
+    },
+    async deferredReplies(pr) {
+      const raw = await gh([
+        "api",
+        "graphql",
+        "--paginate",
+        "-f",
+        `query=${THREADS_QUERY}`,
+        "-F",
+        "owner={owner}",
+        "-F",
+        "name={repo}",
+        "-F",
+        `pr=${pr}`,
+        "--jq",
+        DEFERRED_REPLIES_JQ,
+      ]);
+      return raw
+        .split("\n")
+        .filter((l) => l.trim() !== "")
+        .flatMap((l) => {
+          const v: unknown = JSON.parse(l);
+          if (
+            !isRecord(v) ||
+            typeof v.thread !== "string" ||
+            !Array.isArray(v.replies) ||
+            !v.replies.every((r) => typeof r === "string")
+          )
+            throw new PrBodyError(
+              `pull request #${pr}'s review threads could not be read`,
+            );
+          const thread = v.thread;
+          return (v.replies as string[]).map((reply) => ({ thread, reply }));
+        });
     },
   };
 }

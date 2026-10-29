@@ -345,6 +345,13 @@ describe("drive.ts loop control", () => {
     expect(r.exitCode).toBe(6);
     expect(r.stderr).not.toContain("changed NOTHING");
     expect(r.stderr).toContain("--- round 3/3");
+    // Every round header is followed by the autonomy level and its source.
+    const headers = r.stderr.match(/^--- round \d+\/3 on PR #999 ---$/gm);
+    const levels = r.stderr.match(
+      /^--- round \d+\/3 on PR #999 ---\nautonomy: attended \(attended from the default\)$/gm,
+    );
+    expect(headers?.length).toBe(3);
+    expect(levels?.length).toBe(3);
   }, 120_000);
 
   it("has no --head to forward: a frozen head is not a measurement", async () => {

@@ -9,16 +9,27 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
-import { gitHub, repoLabels } from "../../do-item/__tests__/github-fixtures.ts";
+import {
+  conn,
+  gitHub,
+  issueNode,
+  oneIssue,
+  repoLabels,
+} from "../../do-item/__tests__/github-fixtures.ts";
 import { deferInPr, deferralRoute } from "../scripts/defer-in-pr.ts";
-import { fileDeferred } from "../scripts/file-deferred.ts";
+import { fileDeferred, missingEntries } from "../scripts/file-deferred.ts";
 import {
   deferredEntries,
   SECTION_END,
   SECTION_START,
   withDeferredEntry,
+  withFiledEntry,
 } from "../scripts/lib/deferred-section.ts";
-import type { PrBody, PrBodyForge } from "../scripts/lib/pr-body.ts";
+import type {
+  DeferredReply,
+  PrBody,
+  PrBodyForge,
+} from "../scripts/lib/pr-body.ts";
 
 const PR_URL = "https://github.com/example/project/pull/42";
 const THREAD = `${PR_URL}#discussion_r1001`;
@@ -30,6 +41,8 @@ function fakeForge(initial: string): PrBodyForge & {
   state: PrBody;
   beforeRead: Array<(s: PrBody) => void>;
   writes: number;
+  replies: DeferredReply[];
+  failWrites: boolean;
 } {
   let clock = 0;
   const state: PrBody = {
@@ -41,11 +54,17 @@ function fakeForge(initial: string): PrBodyForge & {
     state,
     beforeRead: [] as Array<(s: PrBody) => void>,
     writes: 0,
+    replies: [] as DeferredReply[],
+    failWrites: false,
+    async deferredReplies() {
+      return forge.replies;
+    },
     async read() {
       forge.beforeRead.shift()?.(state);
       return { ...state };
     },
     async write(_pr: string, body: string) {
+      if (forge.failWrites) throw new Error("the forge refused the write");
       forge.writes += 1;
       state.body = body;
       state.updatedAt = `2026-10-29T00:00:0${++clock}Z`;
@@ -108,7 +127,43 @@ describe("the deferred section", () => {
   });
 });
 
+describe("a deferred reply whose entry the body lost", () => {
+  test("is named, and an entry still there is not", async () => {
+    const other = `${PR_URL}#discussion_r2002`;
+    const forge = fakeForge(
+      withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
+        .body,
+    );
+    forge.replies = [
+      { thread: THREAD, reply: `${THREAD}-reply` },
+      { thread: other, reply: `${other}-reply` },
+    ];
+    expect(await missingEntries(forge, "42")).toEqual([
+      { thread: other, reply: `${other}-reply` },
+    ]);
+  });
+});
+
 describe("written by read-modify-write against updated_at", () => {
+  test("a person's edit within the same second, updated_at unchanged, survives", async () => {
+    const forge = fakeForge("## Summary\n\nWhat changed.");
+    forge.beforeRead.push(
+      (s) => void s,
+      (s) => {
+        s.body = "## Summary\n\nEdited within the same second.";
+      },
+    );
+    const r = await deferInPr(forge, {
+      pr: "42",
+      source: THREAD,
+      reason: "later",
+      finding: FINDING,
+    });
+    expect(r.added).toBe(true);
+    expect(forge.state.body).toContain("Edited within the same second.");
+    expect(deferredEntries(forge.state.body)).toHaveLength(1);
+  });
+
   test("a person's edit between the reads survives, and the entry lands", async () => {
     const forge = fakeForge("## Summary\n\nWhat changed.");
     // The second read (just before the write) finds a person's edit.
@@ -148,9 +203,28 @@ describe("written by read-modify-write against updated_at", () => {
 });
 
 describe("file-deferred.ts files each entry through the tracker", () => {
-  function trackerThatFiles() {
+  function trackerThatFiles(
+    existing: Array<{ number: number; body: string }> = [],
+  ) {
     let next = 40;
     return gitHub((c) => {
+      if (c.op === "TrackerSearch")
+        return {
+          search: {
+            issueCount: existing.length,
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: existing.map((e) => issueNode(e)),
+          },
+        };
+      if (c.op === "TrackerIssue") {
+        const n = Number(String(c.variables.number ?? "").replace("#", ""));
+        const hit = existing.find((e) => e.number === n) ?? existing[0];
+        return oneIssue(
+          hit === undefined
+            ? null
+            : issueNode({ ...hit, extra: { subIssues: conn([]) } }),
+        );
+      }
       if (c.op === "TrackerRepository") return { repository: { id: "R_1" } };
       if (c.op === "TrackerLabels") return repoLabels("pr-followup");
       if (c.op === "TrackerCreate") {
@@ -210,6 +284,61 @@ describe("file-deferred.ts files each entry through the tracker", () => {
     const again = await fileDeferred(forge, t, "42", { label: "pr-followup" });
     expect(again.filed).toEqual([]);
     expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(0);
+  });
+
+  test("an issue an earlier run filed for the entry is reused, not filed twice", async () => {
+    const forge = fakeForge(
+      withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
+        .body,
+    );
+    const { t, calls } = trackerThatFiles([
+      { number: 7, body: `Filed by file-deferred.ts. Source: ${THREAD}` },
+    ]);
+    const r = await fileDeferred(forge, t, "42", { label: "pr-followup" });
+    expect(r.why).toBeNull();
+    expect(r.filed).toEqual([
+      expect.objectContaining({ key: "#7", reused: true }),
+    ]);
+    expect(calls.filter((c) => c.op === "TrackerCreate")).toHaveLength(0);
+    expect(deferredEntries(forge.state.body)[0]?.filed?.key).toBe("#7");
+  });
+
+  test("a filing whose entry cannot be replaced is reported with its key", async () => {
+    const forge = fakeForge(
+      withDeferredEntry("", { source: THREAD, finding: FINDING, reason: "r" })
+        .body,
+    );
+    forge.failWrites = true;
+    const heard: string[] = [];
+    const r = await fileDeferred(forge, trackerThatFiles().t, "42", {
+      label: "pr-followup",
+      onFiled: (f) => heard.push(f.key),
+    });
+    expect(heard).toEqual(["#41"]);
+    expect(r.unrecorded.map((f) => f.key)).toEqual(["#41"]);
+    expect(r.why).toContain(
+      "#41 was filed, but its entry could not be replaced",
+    );
+  });
+
+  test("an issue url carrying = survives the entry's marker", async () => {
+    const body = withDeferredEntry("", {
+      source: THREAD,
+      finding: FINDING,
+      reason: "r",
+    }).body;
+    const filed = withFiledEntry(
+      body,
+      { source: THREAD },
+      {
+        key: "ENG-9",
+        url: "https://tracker.example/issue?id=ENG-9&view=a",
+      },
+    );
+    expect(deferredEntries(filed)[0]?.filed).toEqual({
+      key: "ENG-9",
+      url: "https://tracker.example/issue?id=ENG-9&view=a",
+    });
   });
 
   test("with no tracker, the entries stay and say why", async () => {

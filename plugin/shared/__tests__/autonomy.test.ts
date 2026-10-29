@@ -167,7 +167,7 @@ describe("what the resolver refuses", () => {
         driver: true,
         env: { JIG__AUTONOMY__MAX_LEVEL: "wide" },
       }),
-    ).toThrow(/repository's ceiling/);
+    ).toThrow(/repository's to set/);
   });
 
   test("a ceiling from the user layer", () => {
@@ -177,22 +177,68 @@ describe("what the resolver refuses", () => {
   });
 });
 
+describe("a person's session against the ceiling", () => {
+  test("an environment level above the ceiling is capped in an interactive session", () => {
+    const a = resolve({
+      repository: "autonomy:\n  level: attended\n  max_level: unattended\n",
+      env: { JIG__AUTONOMY__LEVEL: "wide" },
+    });
+    expect(a.interactive).toBe(true);
+    expect(a.chosen).toBe("wide");
+    expect(a.level).toBe("unattended");
+    expect(a.capped).toBe(true);
+    expect(a.ceilingSource).toContain("autonomy.max_level");
+  });
+
+  test("a user level above a declared max_level is capped in an interactive session", () => {
+    const a = resolve({
+      repository: "autonomy:\n  max_level: attended\n",
+      user: "autonomy:\n  level: unattended\n",
+    });
+    expect(a.interactive).toBe(true);
+    expect(a.level).toBe("attended");
+    expect(a.capped).toBe(true);
+    expect(describeAutonomy(a)).toContain(
+      "capped at attended by autonomy.max_level",
+    );
+  });
+});
+
 describe("the park classes", () => {
+  const classes = (c: Case) => {
+    const { root, env } = setup(c);
+    return parkClasses(loadLayeredConfig(root, env));
+  };
+
   test("default to the registry rows plus escalated and human-decision", () => {
-    expect(parkClasses({})).toEqual([...DEFAULT_PARK_CLASSES]);
-    expect(parkClasses({})).toContain("human-decision");
+    expect(classes({})).toEqual([...DEFAULT_PARK_CLASSES]);
+    expect(classes({})).toContain("human-decision");
   });
 
   test("a repository's own list keeps the arbiter's classes", () => {
     expect(
-      parkClasses({ autonomy: { park_classes: ["merge", "data-retention"] } }),
+      classes({
+        repository: "autonomy:\n  park_classes: [merge, data-retention]\n",
+      }),
     ).toEqual(["merge", "data-retention", "escalated", "human-decision"]);
   });
 
   test("a malformed list is refused", () => {
     expect(() =>
-      parkClasses({ autonomy: { park_classes: ["Merge it"] } }),
+      classes({ repository: 'autonomy:\n  park_classes: ["Merge it"]\n' }),
     ).toThrow(AutonomyConfigError);
+  });
+
+  test("the environment cannot widen the list", () => {
+    expect(() =>
+      classes({ env: { JIG__AUTONOMY__PARK_CLASSES: "[whatever]" } }),
+    ).toThrow(/repository's to set.*JIG__AUTONOMY__PARK_CLASSES/);
+  });
+
+  test("the user file cannot set the list", () => {
+    expect(() =>
+      classes({ user: "autonomy:\n  park_classes: [whatever]\n" }),
+    ).toThrow(/describes one repository/);
   });
 });
 

@@ -248,7 +248,13 @@ merging:
 bun "<skill-dir>/scripts/file-deferred.ts" <PR#>
 ```
 
-It exits `3` when entries remain because no adapter could file them. With no
+It reuses an issue the tracker already holds for an entry's source (a run
+stopped after filing it), prints each filing as it is made, and exits `3`
+when entries remain because no adapter could file them. The body's write is
+not atomic against a person's own save of the body, so the script also
+checks every resolved thread whose `**deferred**` reply links the section:
+one whose entry is gone is named, and it exits `4`. Restore that entry from
+the reply, or file the finding by hand. With no
 tracker at all, the entries stay in the merged pull request's body for a
 person to file.
 

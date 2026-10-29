@@ -53,8 +53,8 @@ The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
   against each candidate thread individually. A hold on *this* thread's own key still is not
   enough on its own: the hold's recorded `commentUrl` must also match the
   thread's *latest* comment — **or** be followed only by transparent
-  comments: a listed review bot's confirmation, or its acknowledgement that
-  carries no outcome token and no finding (`isThreadHoldCurrent`, through
+  comments: a review bot's confirmation, or a listed bot's acknowledgement
+  that carries no outcome token and no finding (`isThreadHoldCurrent`, through
   `lib/bot-confirmation.ts`; see the paragraph on this below). A reviewer or human can post a new
   comment on a thread after it was held but before this round's push
   completes, and a key-only match would still exempt it — silently closing
@@ -333,8 +333,8 @@ separate `claim-held`/`release-held` call for you to make; skip straight to
 dispatching via the wrapper. After the claim, the wrapper re-reads the
 thread's live comments and refuses (restoring the hold) when anything landed
 after the held reply — except a thread already resolved on GitHub, which
-drains without a mutation, and a transparent follow-up from a bot
-`review.bots` lists (its confirmation marker, or its chat marker with no
+drains without a mutation, and a transparent follow-up (a bot's
+confirmation marker, or the chat marker of a bot `review.bots` lists with no
 finding shape, and no outcome token), which is compatible with the hold. Calling `release-held --key` on a thread
 afterward finds nothing there and refuses loudly, by the same "no silent
 no-op on an already-released key" design `release-held` uses everywhere else.

@@ -128,6 +128,76 @@ describe("park records a framed decision", () => {
   });
 });
 
+describe("the class is the arbiter's ruling", () => {
+  const rule = (d: string, ruling: Record<string, unknown>) =>
+    state(d, ["rule", "999"], {}, JSON.stringify(ruling));
+
+  it("an escalate ruling needs its class", async () => {
+    const r = await rule(stateDirFor("rule-no-class"), {
+      key: "PRRT_a",
+      verdict: "escalate",
+    });
+    expectSpawnExit(r, 2);
+    expect(r.stderr).toContain("an escalate ruling needs its class");
+  });
+
+  it("a call touching a person's decision is always human-decision", async () => {
+    const d = stateDirFor("rule-human-decision");
+    const refused = await rule(d, {
+      key: "PRRT_a",
+      verdict: "escalate",
+      class: "escalated",
+      humanDecision: true,
+    });
+    expectSpawnExit(refused, 2);
+    expect(refused.stderr).toContain("has the class human-decision");
+    expectSpawnExit(
+      await rule(d, {
+        key: "PRRT_a",
+        verdict: "escalate",
+        humanDecision: true,
+      }),
+      0,
+    );
+    const got = JSON.parse((await state(d, ["get", "999"])).stdout) as {
+      rulings: Array<{ class: string }>;
+    };
+    expect(got.rulings[0]?.class).toBe("human-decision");
+    const park = await state(
+      d,
+      parkArgs("PRRT_a", "thread", "escalated"),
+      {},
+      parkRecord(QUESTION, "escalated"),
+    );
+    expectSpawnExit(park, 2);
+    expect(park.stderr).toContain(
+      "the arbiter ruled the class 'human-decision' for PRRT_a",
+    );
+    expectSpawnExit(
+      await state(
+        d,
+        parkArgs("PRRT_a", "thread", "human-decision"),
+        {},
+        parkRecord(QUESTION, "human-decision"),
+      ),
+      0,
+    );
+  });
+
+  it("a thread the arbiter ruled on with another verdict is not parked", async () => {
+    const d = stateDirFor("rule-rejected");
+    expectSpawnExit(await rule(d, { key: "PRRT_a", verdict: "rejected" }), 0);
+    const park = await state(
+      d,
+      parkArgs("PRRT_a", "thread"),
+      {},
+      parkRecord(QUESTION),
+    );
+    expectSpawnExit(park, 2);
+    expect(park.stderr).toContain("the arbiter ruled 'rejected'");
+  });
+});
+
 describe("the decision record's sections", () => {
   const complete = parkRecord(QUESTION);
   const problems = (text: string, cls = "escalated") => {
@@ -139,10 +209,12 @@ describe("the decision record's sections", () => {
     expect(problems(complete)).toEqual([]);
   });
 
-  it("the question is one sentence ending with a question mark", () => {
-    expect(problems(complete.replace(QUESTION, "Keep it. Or not?"))).toContain(
-      "Question must be one sentence",
-    );
+  it("the question is one line ending with a question mark", () => {
+    expect(
+      problems(
+        complete.replace(QUESTION, "Should it keep, e.g. the thirty days?"),
+      ),
+    ).toEqual([]);
     expect(problems(complete.replace(QUESTION, "Keep the window"))).toContain(
       "Question must end with '?'",
     );

@@ -224,9 +224,10 @@ pull request closed without merging, files each entry through the tracker
 interface where an adapter can and replaces it with its issue's link.
 
 A review bot's follow-up to a reply (a confirmation, or a chat
-acknowledgement with no outcome token and no finding) is transparent when the
-bot is listed in `review.bots`: it is never triaged or answered, and a held
-thread resolves over it. A comment the check cannot classify is a new
+acknowledgement with no outcome token and no finding) is transparent: it is
+never triaged or answered, and a held thread resolves over it. A confirmation
+needs the bot's confirmation marker; an acknowledgement needs the bot listed
+in `review.bots`. A comment the check cannot classify is a new
 comment.
 
 Where the repository turned on the [`changelog`](../changelog/README.md) skill

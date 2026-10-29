@@ -8,17 +8,22 @@
  * confirmation marker. A bot's **chat acknowledgement** of a reply
  * ("acknowledged, nothing further requested") is a chat feature, carries the
  * bot's generated-reply marker (its chat marker) and lands on every answered
- * thread every round. Both are transparent when:
+ * thread every round. A follow-up is transparent when no unquoted line of
+ * its body opens with an outcome token, and:
  *
- *  - the author is a listed review bot (`review.bots`, compared by login
- *    without regard to case or a `[bot]` suffix; with no list, the built-in
- *    entries below). An association check cannot tell a bot from a person
- *    (both read `NONE`), and logins are unique across users and bots;
- *  - no unquoted line of the body opens with an outcome token;
- *  - the body carries that bot's confirmation marker, or its chat marker and
+ *  - it carries its author's confirmation marker: a marker measured on a
+ *    bot's own comments (`BUILTIN_MARKERS`) applies whether or not
+ *    `review.bots` lists the bot, one a `review.bots` entry declares applies
+ *    to that bot; or
+ *  - its author is listed in `review.bots` (compared by login without regard
+ *    to case or a `[bot]` suffix), and it carries that bot's chat marker and
  *    none of the bot's finding shape: no line a severity format for that
  *    login reads as a severity (`lib/severity-formats.ts`), since a chat
- *    reply can embed a fresh finding.
+ *    reply can embed a fresh finding. A bot the list leaves out has no
+ *    transparent chat follow-ups.
+ *
+ * Authorship is by login: an association check cannot tell a bot from a
+ * person (both read `NONE`), and logins are unique across users and bots.
  *
  * Anything else is a newer comment and is triaged. No override exists for an
  * agent to assert that a comment is harmless: a comment this predicate
@@ -66,7 +71,7 @@ const BUILTIN_MARKERS: Readonly<
   },
 };
 
-/** One listed bot with the markers in force for it. */
+/** One bot with the markers in force for it. */
 export interface BotMarkers {
   login: string;
   confirmationMarker: string | null;
@@ -75,17 +80,14 @@ export interface BotMarkers {
 
 /**
  * The bots in force and their markers: each `review.bots` entry, a marker it
- * leaves unset taking the built-in one for that login; with no list, the
- * built-in entries alone.
+ * leaves unset taking the built-in one for that login; then each built-in
+ * bot the list leaves out, with its measured confirmation marker and no chat
+ * marker.
  */
 export function botMarkers(
   entries: readonly (string | ReviewBot)[] | undefined,
 ): BotMarkers[] {
-  const listed: ReviewBot[] =
-    entries === undefined
-      ? Object.keys(BUILTIN_MARKERS).map((login) => ({ login }))
-      : botEntries(entries);
-  return listed.map((e) => {
+  const listed = botEntries(entries ?? []).map((e) => {
     const builtin = BUILTIN_MARKERS[normalizeLogin(e.login)];
     return {
       login: normalizeLogin(e.login),
@@ -94,6 +96,14 @@ export function botMarkers(
       chatMarker: e.chat_marker ?? builtin?.chat_marker ?? null,
     };
   });
+  const unlisted = Object.entries(BUILTIN_MARKERS)
+    .filter(([login]) => !listed.some((b) => b.login === login))
+    .map(([login, m]) => ({
+      login,
+      confirmationMarker: m.confirmation_marker,
+      chatMarker: null,
+    }));
+  return [...listed, ...unlisted];
 }
 
 /**

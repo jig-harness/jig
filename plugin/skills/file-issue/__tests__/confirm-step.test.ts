@@ -62,6 +62,11 @@ describe("the confirm step", () => {
     );
   });
 
+  test("a driver pass under unattended confirms when no pull request is named", async () => {
+    const { stdout } = await run(UNATTENDED, { driver: true });
+    expect(stdout).toStartWith("confirm: autonomy: unattended");
+  });
+
   test("a driver pass under attended confirms", async () => {
     const { stdout } = await run("autonomy:\n  level: attended\n", {
       driver: true,

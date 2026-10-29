@@ -144,20 +144,33 @@ interface Ceiling {
 }
 
 /**
+ * The repository layer's values, for a field only the repository's file may
+ * set: the user file refuses it when it is read (`REPOSITORY_ONLY_FIELDS`),
+ * and an environment variable for it is refused here, so no layer but the
+ * repository's can move it.
+ */
+function repositoryValues(
+  config: LayeredConfig,
+  field: string,
+): Record<string, unknown> {
+  for (const layer of config.layers)
+    if (
+      layer.name !== "repository" &&
+      valueAt(layer.values, field) !== undefined
+    )
+      throw new AutonomyConfigError(
+        `${field} is the repository's to set, so ${sourceOf(config, field)} cannot set it: set it in the repository's ${OVERLAY_RELPATH}`,
+      );
+  return config.layers.find((l) => l.name === "repository")?.values ?? {};
+}
+
+/**
  * The repository's level and its ceiling, from the repository's file alone:
  * a ceiling another layer could move would be no ceiling.
  */
 function repositoryCeiling(config: LayeredConfig): Ceiling {
-  const environment = config.layers.find((l) => l.name === "environment");
-  if (
-    environment !== undefined &&
-    valueAt(environment.values, "autonomy.max_level") !== undefined
-  )
-    throw new AutonomyConfigError(
-      `autonomy.max_level is the repository's ceiling, so ${sourceOf(config, "autonomy.max_level")} cannot set it: set it in the repository's ${OVERLAY_RELPATH}`,
-    );
+  const values = repositoryValues(config, "autonomy.max_level");
   const repository = config.layers.find((l) => l.name === "repository");
-  const values = repository?.values ?? {};
   const where = repository?.source ?? config.repositoryPath;
   const repositoryLevel = levelAt(values, "autonomy.level", where);
   const declared = levelAt(values, "autonomy.max_level", where);
@@ -259,12 +272,17 @@ export function describeAutonomy(a: Autonomy): string {
 }
 
 /**
- * The classes a park may name: `autonomy.park_classes` when set, else the
- * registry template's rows; `escalated` and `human-decision` always, since
- * the review arbiter emits them.
+ * The classes a park may name: `autonomy.park_classes` from the repository's
+ * own file when it sets them, else the registry template's rows; `escalated`
+ * and `human-decision` always, since the review arbiter emits them. No other
+ * layer may set the list: a person or a run that could widen it could park
+ * whatever they liked.
  */
-export function parkClasses(values: Record<string, unknown>): string[] {
-  const raw = valueAt(values, "autonomy.park_classes");
+export function parkClasses(config: LayeredConfig): string[] {
+  const raw = valueAt(
+    repositoryValues(config, "autonomy.park_classes"),
+    "autonomy.park_classes",
+  );
   if (raw === undefined || raw === null) return [...DEFAULT_PARK_CLASSES];
   if (
     !Array.isArray(raw) ||
@@ -295,7 +313,7 @@ async function main(): Promise<number> {
   }
   try {
     if (command === "classes") {
-      for (const c of parkClasses(layeredConfig().values))
+      for (const c of parkClasses(layeredConfig()))
         process.stdout.write(`${c}\n`);
       return 0;
     }

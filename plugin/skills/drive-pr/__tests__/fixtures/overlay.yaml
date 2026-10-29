@@ -5,8 +5,8 @@ repository:
 gates:
   command: bun run gates
 review:
-  # CodeRabbit is listed so its confirmations and acknowledgements are
-  # transparent after a held reply (lib/bot-confirmation.ts).
+  # CodeRabbit is listed so its chat acknowledgements are transparent after
+  # a held reply (lib/bot-confirmation.ts).
   bots: ["review-bot[bot]", "coderabbitai[bot]"]
   job_pattern: ""
   reviewer_app: example-review

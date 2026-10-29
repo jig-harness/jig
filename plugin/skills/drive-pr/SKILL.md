@@ -1977,8 +1977,21 @@ lists them): by default the registry template's rows (`ready`, `merge`,
 `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`),
 `escalated` for a product or stakeholder call the arbiter or `decide`
 escalates, and `human-decision` for a value the pull request records as a
-person's decision or a rule inside a human-decided span. An arbiter
-`escalate` carries its `class:`; park under that class, never one you chose.
+person's decision or a rule inside a human-decided span. Record every
+arbiter ruling on a thread as it arrives, its verdict, its `class:` and its
+`human-decision:` answer as one JSON object on stdin
+(`{"key": "PRRT_…", "verdict": "escalate", "class": "scope", "humanDecision": false}`):
+
+**exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/ruling.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" rule [PR]
+```
+
+An `escalate` ruling needs its class; one whose `human-decision:` is yes is
+always `human-decision`, and another class is refused. The park of that
+thread then takes the recorded class and no other, and a thread the arbiter
+ruled any other way is not parked.
 A decision outside the classes is yours to take: decide it, and record it
 where a person can reverse it (§ 8). A park with no class is refused with
 "decide and record it", at every autonomy level.
@@ -3261,11 +3274,13 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   after the held reply, with narrow exceptions for the reviewer bots'
   automated follow-up, which otherwise wins that race on every drain: a thread **already resolved** on GitHub drains without a
   mutation, and a later comment that is **transparent** is compatible with
-  the hold: its author is a bot `review.bots` lists, no line opens with an
-  outcome token, and it carries that bot's confirmation marker, or its chat
-  marker and none of the bot's finding shape (a severity line). Any other
-  later comment — human, an unlisted bot, an unrecognized body, an
-  acknowledgement that embeds a finding — still refuses.
+  the hold: no line opens with an outcome token, and it carries its author's
+  confirmation marker (CodeRabbit's measured one whether or not
+  `review.bots` lists it), or its author is a bot `review.bots` lists and it
+  carries that bot's chat marker and none of its finding shape (a severity
+  line). Any other later comment — human, an unlisted bot's chat reply, an
+  unrecognized body, an acknowledgement that embeds a finding — still
+  refuses.
 - **Never answer a transparent comment, and never assert one.** A bot's
   confirmation or finding-free acknowledgement after a held reply is not
   work: do not triage it or reply to it. No override lets you declare a

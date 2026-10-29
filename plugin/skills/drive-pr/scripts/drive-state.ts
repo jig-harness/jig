@@ -48,6 +48,8 @@
  *   drive-state.ts set-reflected [PR]                # record a completed /reflect at the current round
  *   drive-state.ts park         [PR] --key K --kind thread|finding --class C  < record.md
  *   drive-state.ts record-decision [PR]  < {"class","what","reverse","record"?}
+ *   drive-state.ts rule         [PR]  < {"key","verdict","class"?,"humanDecision"?}
+ *                                     # the review arbiter's ruling on a thread
  *   drive-state.ts unpark       [PR] --key K [--key K …]   # all, or none
  *   drive-state.ts parked-keys  [PR]                 # newline-delimited keys
  *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome accepted|moot
@@ -226,6 +228,7 @@ import {
 import { quotaPark } from "./lib/state/quota-park.ts";
 import { framedPark } from "./lib/state/framed-park.ts";
 import { recordDecision } from "./lib/state/decisions.ts";
+import { recordRuling } from "./lib/state/rulings.ts";
 import { deadlineRetries } from "./lib/state/deadline-retries.ts";
 import { unpark } from "./lib/state/unpark.ts";
 import { clearPendingVerdicts } from "./lib/state/pass-handoff.ts";
@@ -343,6 +346,7 @@ function usage(): void {
                                     claim rather than preserving it.
   park         [PR] --key K --kind thread|finding --class C  (decision record on stdin)
   record-decision [PR]              a decision the agent took, JSON on stdin
+  rule         [PR]                 the arbiter's ruling on a thread, JSON on stdin
   unpark       [PR] --key K [--key K …]  every key, or none when one is not parked
   parked-keys  [PR]                 newline-delimited keys
   hold         [PR] --key K --kind thread|finding --outcome accepted|moot
@@ -697,6 +701,7 @@ const STDIN_COMMANDS = new Map<
   ],
   ["seed-ledger", seedLedgerCommand],
   ["record-decision", recordDecision],
+  ["rule", recordRuling],
 ]);
 
 async function main(): Promise<number> {
@@ -766,6 +771,7 @@ async function main(): Promise<number> {
     "park",
     "unpark",
     "record-decision",
+    "rule",
     "hold",
     "claim-held",
     "unclaim-held",

@@ -13,7 +13,7 @@
  *
  * The record is Markdown with six headings, in this order, each once:
  *
- *   ## Question        one sentence, ending with `?`
+ *   ## Question        one sentence on one line, ending with `?`
  *   ## Options         two or more `- **<name>** …` items, each with
  *                      `Changes:` and `Costs:`
  *   ## Recommended     the recommended option's `**<name>**`, and why
@@ -27,8 +27,9 @@
 import { isRecord } from "../../../../../shared/guards.ts";
 import { parkClasses } from "../../../../../shared/autonomy.ts";
 import { fail, readStdinAll } from "../cli.ts";
-import { readOptionalOverlay } from "../overlay.ts";
-import type { ParkedItem } from "./schema.ts";
+import { layeredConfig } from "../../../../../shared/consumer.ts";
+import type { DriveState, ParkedItem } from "./schema.ts";
+import { parkRefusal } from "./rulings.ts";
 import type { StateStore } from "./store.ts";
 
 /** The record's headings, in the order it must carry them. */
@@ -114,9 +115,10 @@ function sections(text: string): {
 }
 
 function checkQuestion(q: string, problems: string[]): void {
+  // One line, ending with `?`: whether it is one sentence is the writing
+  // rules' to judge, since an abbreviation such as "e.g." is punctuation too.
   if (q.includes("\n")) problems.push("Question must be one line");
   else if (!q.endsWith("?")) problems.push("Question must end with '?'");
-  else if (/[.?!]\s+\S/.test(q)) problems.push("Question must be one sentence");
 }
 
 function checkOptions(text: string, problems: string[]): string[] {
@@ -224,7 +226,7 @@ export async function framedPark(
       2,
       "park no longer takes --reason: give --class and the decision record on stdin (drive-pr SKILL.md § 4).",
     );
-  const classes = parkClasses(readOptionalOverlay());
+  const classes = parkClasses(layeredConfig());
   if (a.parkClass === "" || !classes.includes(a.parkClass))
     fail(
       2,
@@ -247,7 +249,21 @@ export async function framedPark(
       ...parsed.problems.map((p) => `  - ${p}`),
     );
   const record = parsed.record;
-  await store.update((s) => ({
+  await store.update((s) => {
+    const refusal = parkRefusal(s, a.key, a.kind, a.parkClass);
+    if (refusal !== null) fail(2, `park: ${refusal}.`);
+    return parkedWith(s, a, record);
+  });
+  return 0;
+}
+
+/** `s` with `a.key` parked under its framed decision. */
+function parkedWith(
+  s: DriveState,
+  a: ParkArgs,
+  record: DecisionRecord,
+): DriveState {
+  return {
     ...s,
     parked: [
       ...s.parked.filter((p) => p.key !== a.key),
@@ -261,6 +277,5 @@ export async function framedPark(
         at: new Date().toISOString(),
       },
     ],
-  }));
-  return 0;
+  };
 }

@@ -108,7 +108,11 @@ function entryFrom(m: RegExpExecArray, text: string[]): DeferredEntry {
       .trim()
       .split(" ")
       .filter(Boolean)
-      .map((f) => f.split("=", 2) as [string, string]),
+      // Split on the first `=` only: a url value can carry its own.
+      .map((f): [string, string] => [
+        f.slice(0, f.indexOf("=")),
+        f.slice(f.indexOf("=") + 1),
+      ]),
   );
   const key = fields.get("filed");
   const fingerprint = fields.get("fp");

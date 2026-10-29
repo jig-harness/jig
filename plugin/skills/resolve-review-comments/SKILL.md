@@ -1022,9 +1022,9 @@ invocation and reported — see below.
 
 Resolving another person's thread is a social act:
 
-- **A bot's transparent follow-up** — a confirmation, or an acknowledgement
-  with no outcome token and no finding, from a bot `review.bots` lists,
-  posted after your reply — is not a new comment: never triage it or answer
+- **A bot's transparent follow-up** — a confirmation carrying the bot's
+  confirmation marker, or an acknowledgement with no outcome token and no
+  finding from a bot `review.bots` lists, posted after your reply — is not a new comment: never triage it or answer
   it ([`review.bots`](../../CONFIGURATION.md#review)). Anything the
   predicate cannot classify is a new comment.
 - **Bot threads** — address, reject, or defer and resolve freely. The expected identities come from `review.bots`, when set; `--bots-only` uses

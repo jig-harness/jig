@@ -44,6 +44,7 @@ import { type TakeoverRecord, isOptionalTakeovers } from "./takeover.ts";
 import { isOptionalRetryCount } from "./deadline-retries.ts";
 import { isOptionalFrame } from "./park-frame.ts";
 import { type UnattendedDecision, isOptionalDecisions } from "./decisions.ts";
+import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
 
 /**
  * The persisted shape of a recorded quota park — what
@@ -406,6 +407,8 @@ export interface DriveState {
   deadlineRetries?: number;
   /** Decisions the agent took and recorded, oldest first (`decisions.ts`). */
   decisions?: UnattendedDecision[];
+  /** The review arbiter's ruling per thread (`rulings.ts`). */
+  rulings?: ArbiterRuling[];
   [extra: string]: unknown;
 }
 
@@ -553,6 +556,7 @@ function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
     isOptionalTakeovers(s.takeovers),
     isOptionalRetryCount(s.deadlineRetries),
     isOptionalDecisions(s.decisions),
+    isOptionalRulings(s.rulings),
     s.ledgerGeneration === undefined || isCount(s.ledgerGeneration),
   ].every(Boolean);
 }

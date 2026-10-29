@@ -332,6 +332,45 @@ describe("seeding", () => {
     expect(dropped).toEqual(["PRRT_held"]);
   });
 
+  it("carries the decisions taken unattended, listed in the body and seeded back", () => {
+    const decided: DriveState = {
+      ...driveState(),
+      decisions: [
+        {
+          at: "2026-10-01T10:30:00.000Z",
+          round: 3,
+          level: "unattended",
+          class: "file-issue",
+          what: "filed the follow-up for the retry budget",
+          record: "https://example.invalid/issues/7",
+          reverse: "close the issue",
+        },
+      ],
+    };
+    const l = ledgerFromState(decided, {
+      generation: 5,
+      driver: {
+        actor: ACTOR_A,
+        clone: "clone-a",
+        heartbeat: "2026-10-01T11:00:00.000Z",
+        state: "running",
+      },
+      narrative: [],
+      claims: [],
+    });
+    const rendered = renderLedger(l);
+    if ("error" in rendered) throw new Error(rendered.error);
+    expect(rendered.body).toContain("## Decisions taken unattended");
+    expect(rendered.body).toContain(
+      "- **file-issue** at `unattended`, round 3: filed the follow-up for the retry budget",
+    );
+    const parsed = parseLedger(rendered.body);
+    if (parsed?.kind !== "ledger") throw new Error("not a ledger");
+    const seeded = seedFromLedger(freshState(999), parsed.ledger);
+    if ("error" in seeded) throw new Error(seeded.error);
+    expect(seeded.state.decisions).toEqual(decided.decisions);
+  });
+
   it("refuses a ledger that would make an unusable state", () => {
     const l = ledger();
     l.held = [{ ...l.held[0], actor: "not-an-actor" } as Ledger["held"][0]];

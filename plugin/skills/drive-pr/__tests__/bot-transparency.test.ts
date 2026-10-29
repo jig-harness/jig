@@ -64,9 +64,17 @@ describe("a transparent follow-up", () => {
     ).toBe(true);
   });
 
-  test("with no review.bots, the built-in entries apply", () => {
+  test("a measured confirmation marker applies though review.bots leaves the bot out", () => {
+    const confirmation = `${CODERABBIT_CONFIRMATION_MARKER}\nConfirmed.`;
     expect(
-      transparent("coderabbitai", ACKNOWLEDGEMENT, botMarkers(undefined)),
+      transparent("coderabbitai", confirmation, botMarkers(undefined)),
+    ).toBe(true);
+    expect(
+      transparent(
+        "coderabbitai",
+        confirmation,
+        botMarkers(["example-review[bot]"]),
+      ),
     ).toBe(true);
   });
 });
@@ -92,6 +100,12 @@ describe("a newer comment, never transparent", () => {
   test("an acknowledgement from an author review.bots does not list", () => {
     const bots = botMarkers(["example-review[bot]"]);
     expect(transparent("coderabbitai", ACKNOWLEDGEMENT, bots)).toBe(false);
+  });
+
+  test("an acknowledgement when review.bots is not set", () => {
+    expect(
+      transparent("coderabbitai", ACKNOWLEDGEMENT, botMarkers(undefined)),
+    ).toBe(false);
   });
 
   test("a person's comment carrying the marker", () => {

@@ -145,6 +145,7 @@ One block per thread, nothing else:
 thread: <threadId or url>
 verdict: fix-now | rejected | wont-fix | defer | escalate
 class: <escalate only: the decision class that keeps this call a person's>
+human-decision: <escalate only: yes when the fix would change a value the PR records as a human decision, or a rule inside a human-decided span; else no>
 rationale: <ONE sentence, concrete, citing the code/rule/priority that decided it>
 reply-draft: <the reply body, opening with the matching outcome token per
   `/jig:resolve-review-comments` § 3. When the verdict came from a `declined`
@@ -175,8 +176,10 @@ it by these rules, in order:
    thread, `legal` for a privacy or regulatory call, and so on.
 3. `escalated` for a product or stakeholder call no row names.
 
-The class is your ruling, not the caller's claim: the caller parks the thread
-under it as given. A call that fits no class is not an escalation; rule it.
+The class is your ruling, not the caller's claim: the caller records it with
+the thread's state (`drive-state.ts rule`), whose park then takes that class
+and no other, and `human-decision: yes` forces the class `human-decision`
+there. A call that fits no class is not an escalation; rule it.
 
 ## When NOT to be invoked
 
