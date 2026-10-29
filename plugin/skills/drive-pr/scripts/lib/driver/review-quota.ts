@@ -19,7 +19,7 @@ import { recordQuotaPark } from "./repair.ts";
 
 import { driveState, driveTs } from "./paths.ts";
 
-import { armCommand } from "./rearm.ts";
+import { armCommand, passBotsOnly } from "./rearm.ts";
 
 import {
   accountHash,
@@ -207,7 +207,9 @@ export async function handleQuotaBlock(
   console.error(
     "  Do not re-arm on that account before the reset; a pass billing ANOTHER account may pick it up now:",
   );
-  console.error(`    ${armCommand(driveTs, context.pr)}`);
+  console.error(
+    `    ${armCommand(driveTs, context.pr, passBotsOnly(context.agent))}`,
+  );
   // Record the park BEFORE this process exits: once this
   // returns, nothing refreshes this drive's claim any further, and
   // `release()` (`process.on('exit')`) `rmdir`s the lock slot on the

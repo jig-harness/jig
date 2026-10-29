@@ -15,6 +15,9 @@ import {
   git,
   gitCallTimeoutSeconds,
   gitIdentityEnv,
+  helperTimeoutSeconds,
+  run,
+  tsArgv,
   unconcludedGitOpMarker,
 } from "./../proc.ts";
 
@@ -23,6 +26,36 @@ import { unpushedRange } from "./../driven-branch.ts";
 import { handoffPath, NARRATIVE_MARKER } from "./../state/handoff.ts";
 
 import { swallow } from "../../../../../shared/errors.ts";
+
+import { driveState } from "./paths.ts";
+
+/**
+ * Count one more pass-deadline restart in the drive state and return the
+ * drive's total; `null` when it could not be recorded.
+ */
+export async function bumpDeadlineRetries(pr: string): Promise<number | null> {
+  const res = await run(
+    tsArgv(driveState, ["deadline-retries", pr, "--set", "bump"]),
+    { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
+  );
+  const n = Number.parseInt(res.stdout.trim(), 10);
+  return res.code === 0 && Number.isSafeInteger(n) ? n : null;
+}
+
+/**
+ * Clear the count once the drive ends (converged, or the PR closed): a later
+ * drive of the same PR is a new drive. Best effort; a failure is reported.
+ */
+export async function clearDeadlineRetries(pr: string): Promise<void> {
+  const res = await run(
+    tsArgv(driveState, ["deadline-retries", pr, "--set", "clear"]),
+    { stdout: "ignore", stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
+  );
+  if (res.code !== 0)
+    console.error(
+      `drive.ts: could not clear the pass-deadline restart count (drive-state.ts exited ${res.code}).`,
+    );
+}
 
 /** What a stopped pass left in the driven tree; `null` where a probe failed. */
 export interface PassLeftovers {

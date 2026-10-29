@@ -23,6 +23,8 @@ import type { DriveRoundContext } from "./round-context.ts";
 
 import { runRoundIteration } from "./round-step.ts";
 
+import { clearDeadlineRetries } from "./restart.ts";
+
 interface DriverRoundOptions {
   pr: string;
   mailboxDir: string;
@@ -180,10 +182,10 @@ export async function runDriverRounds({
     witnessWaitHead,
     witnessWaitLimit,
     maxRoundsN,
-    deadlineRetries: 0,
     deadlineRetryBudget,
     stallExtraRound: false,
-    passNotice: firstPassNotice,
+    passNotice: "",
+    carriedNotice: firstPassNotice,
   };
   for (;;) {
     {
@@ -195,7 +197,12 @@ export async function runDriverRounds({
         markReadyPolicy,
       );
       if (stage === "continue") continue;
-      if (stage !== null) return stage;
+      if (stage === null) continue;
+      // The drive is over once it converged or the PR closed: its
+      // pass-deadline restarts stop counting against a later drive.
+      if (!dryRun && (stage === 0 || stage === 5))
+        await clearDeadlineRetries(pr);
+      return stage;
     }
   }
 }

@@ -54,7 +54,15 @@ import { runDriverRounds } from "./rounds.ts";
 
 import { attachForDrive } from "./../attach.ts";
 
-import { admitTakeover, explainingRefusal, pickUpDrive } from "./takeover.ts";
+import {
+  decideTakeover,
+  explainingRefusal,
+  holdTreeAroundTakeover,
+} from "./takeover.ts";
+
+import { pickUpDrive } from "./takeover-complete.ts";
+
+import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
 export async function main(): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
@@ -125,6 +133,15 @@ export async function main(): Promise<number> {
   const logPath = join(stateDir, `drive-pr-${pr}.log`);
   startDriverLog(logPath);
 
+  // Everything that can refuse from the arguments and the durable state runs
+  // before any lock is taken and before a takeover stops anyone: the pass
+  // command's target and scope, and a re-arm behind a quota wall.
+  const state = await readDriveState(pr);
+  const refusal =
+    validatePassCommand(explicitPr, agent, botsOnly) ??
+    quotaRefusal(state, agent, windowReopened);
+  if (refusal !== undefined) return refusal;
+
   // What this driver publishes about itself into its lock claims — the answer
   // to "who is working my worktree, and on what?" that the exit-11 refusal
   // and the `drives.ts` listing surface. Advisory: lock liveness
@@ -168,9 +185,9 @@ export async function main(): Promise<number> {
     what: `PR #${pr}`,
     diag,
   };
-  // A takeover is decided, and a wedged holder stopped, before any lock is
-  // taken: the holder's locks are what this driver is about to acquire.
-  const admission = takeOver ? await admitTakeover(pr, prLock.dir) : null;
+  // A takeover is decided before any lock is taken (`takeover.ts`); its
+  // holder is stopped around this tree's lock.
+  const plan = takeOver ? await decideTakeover(pr) : null;
   const held: DriveLock[] = [];
   using lockResources = new DisposableStack();
   await using lifecycle = installDriverLifecycle(held);
@@ -178,7 +195,7 @@ export async function main(): Promise<number> {
   const hold = async (lock: DriveLock): Promise<void> => {
     // A refusal names the holder's doctor verdict, and the takeover command
     // when a takeover would be admitted.
-    await explainingRefusal(lock, driveTs, () => acquire(lock, pr));
+    await explainingRefusal(lock, driveTs, botsOnly, () => acquire(lock, pr));
     held.push(lock);
     lockResources.use(
       registerCleanup(() => {
@@ -188,7 +205,13 @@ export async function main(): Promise<number> {
       }),
     );
   };
-  await hold(treeLock);
+  await holdTreeAroundTakeover(
+    plan,
+    pr,
+    { tree: treeLock.dir, pr: prLock.dir },
+    () => hold(treeLock),
+    armCommand(driveTs, pr, botsOnly),
+  );
   // Once this tree is ours and before the PR is: the tree is put on the PR's
   // head (its branch, or the head commit detached when another working tree
   // holds the branch), so every round's commit lands on what the attach left,
@@ -316,18 +339,13 @@ export async function main(): Promise<number> {
 
   await ensureContinuousHandoff(handoffAt, pr);
 
-  const commandExit = validatePassCommand(explicitPr, agent, botsOnly);
-  if (commandExit !== undefined) return commandExit;
-
   // Picking the drive up from its durable state: a quota wall another
   // account may pass, a takeover, parked items a person has answered.
-  const firstPassNotice = await pickUpDrive(pr, admission, {
+  const firstPassNotice = await pickUpDrive(pr, plan, state, {
     agent,
     botsOnly,
-    windowReopened,
     dryRun,
   });
-  if (typeof firstPassNotice === "number") return firstPassNotice;
 
   // A dry run inspects; it does not work a round. Counting it would inflate
   // the round total the bound is measured against.

@@ -1,38 +1,36 @@
 /**
  * Replacing a driver that still holds a drive's locks: `drive.ts <PR>
- * --take-over`, in the same clone.
+ * --take-over`, in the same clone. This file decides the takeover and stops
+ * the holder; `takeover-complete.ts` finishes it once this driver holds the
+ * locks.
  *
  * Admitted against exactly two holders, both decided by `drives.ts --doctor`
  * rather than by the caller: one whose verdict is `WEDGED` (a live driver,
  * progress older than the stall threshold, no pass process under it), and one
- * whose process is gone with nothing left in its working tree (no uncommitted
- * changes, no unpushed commits, no unconcluded git operation). Against any
- * other holder the takeover refuses as exit `11` does, naming the verdict: a
- * driver that is making progress is never stopped, and a dead one's
- * leftovers are pushed or discarded by a person first, since a successor
- * driving around them would strand or overwrite them.
+ * whose process is confirmed gone with nothing left in its working tree (no
+ * uncommitted changes, no unpushed commits, no unconcluded git operation). A
+ * lock reads stale also when its process is alive with an old heartbeat, so
+ * staleness alone never admits it. Against any other holder the takeover
+ * refuses as exit `11` does, naming the verdict: a driver that is making
+ * progress is never stopped, and a dead one's leftovers are pushed or
+ * discarded by a person first, since a successor driving around them would
+ * strand or overwrite them.
  *
- * A wedged holder is stopped with the identity check `drives.ts --stop`
- * performs, through that command itself. Once this driver holds the locks it
- * records the takeover in the drive state (who drove, who drives now, the
- * verdict, the round it resumes at), runs `reconcile-replied-threads.ts`
- * before the first triage, and carries the held batch over: a hold whose fix
- * was pushed is left for the round to resolve as usual; a hold whose promised
- * fix never landed is reopened with a superseding reply that says so, and the
- * first pass is told to redo the fix and hold it again or to triage it
- * afresh.
+ * Everything that can refuse runs before the holder is stopped: the pass
+ * command's check, the quota re-arm, the held batch's read, and this tree's
+ * own lock unless the holder holds it. A wedged holder is stopped with the
+ * identity check `drives.ts --stop` performs, through that command itself,
+ * after its doctor row is read again. A refusal that still comes after the
+ * stop (the attach, the PR lock) says the holder was stopped and prints the
+ * plain re-arm command.
  */
 import { ExitError, fail, isDigits, sleep } from "./../cli.ts";
 
-import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
+import { helperTimeoutSeconds, pidAlive, run, tsArgv } from "./../proc.ts";
 
 import type { ClaimDiag } from "./../claim.ts";
 
-import {
-  accountHash,
-  formatAccountIdentity,
-  resolveAccountIdentity,
-} from "./../identity.ts";
+import { accountHash, formatAccountIdentity } from "./../identity.ts";
 
 import { worktreePathKey } from "./../state/actor.ts";
 
@@ -40,28 +38,19 @@ import type { HeldItem } from "./../state/schema.ts";
 
 import { gatherWorktreeLeftovers } from "../../drives.ts";
 
-import {
-  drives,
-  driveState,
-  reconcileRepliedThreads,
-  replyToThread,
-} from "./paths.ts";
+import { drives, driveState } from "./paths.ts";
 
 import { type DriveLock, liveHolder } from "./locks.ts";
 
-import {
-  admitAnsweredParks,
-  admitQuotaRearm,
-  armCommand,
-  parseJson,
-  readDriveState,
-} from "./rearm.ts";
+import { armCommand, parseJson } from "./rearm.ts";
 
 import { swallow } from "../../../../../shared/errors.ts";
 
 import { isRecord } from "../../../../../shared/guards.ts";
 
 import { SINGLE_INSTANCE_LOCK_EXIT } from "./settings.ts";
+
+import { registerCleanup } from "../../../../../shared/cleanup.ts";
 
 /** One `drives.ts --doctor --json` row, as far as a takeover reads it. */
 interface DoctorRowJson {
@@ -74,11 +63,15 @@ interface DoctorRowJson {
   doctor: { verdict: string; reason: string; recovery: string | null } | null;
 }
 
-/** What an admitted takeover hands to `completeTakeover`. */
-export interface TakeoverAdmission {
+/** What an admitted takeover carries to `takeover-complete.ts`. */
+export interface TakeoverPlan {
   verdict: "WEDGED" | "DEAD";
   fromActor: string | null;
   fromAccount: string | null;
+  /** The holder's claim acquisition time: which instance is being replaced. */
+  holderStarted: string | null;
+  /** The held batch as it stood before anything was stopped. */
+  held: HeldItem[];
 }
 
 /** The doctor's row for `pr`; `null` when no lock or state names it. */
@@ -136,14 +129,42 @@ function holderLines(row: DoctorRowJson): string[] {
   return lines;
 }
 
+function refuse(pr: string, row: DoctorRowJson, ...why: string[]): never {
+  return fail(
+    SINGLE_INSTANCE_LOCK_EXIT,
+    `drive.ts --take-over: refusing to take over PR #${pr}.`,
+    ...holderLines(row),
+    ...why,
+  );
+}
+
+/** The held batch, read before anything is stopped; refuses when unreadable. */
+async function heldSnapshot(pr: string): Promise<HeldItem[]> {
+  const res = await run(tsArgv(driveState, ["held", pr]), {
+    stderr: "pipe",
+    timeoutSec: helperTimeoutSeconds(),
+  });
+  const parsed =
+    res.code === 0 ? parseJson(res.stdout, "drive-state.ts held") : null;
+  if (!Array.isArray(parsed))
+    return fail(
+      1,
+      `drive.ts --take-over: the held batch of PR #${pr} could not be read (drive-state.ts held exited ${res.code}); refusing to take over without knowing which holds to carry.`,
+    );
+  return parsed.filter(
+    (h): h is HeldItem =>
+      isRecord(h) &&
+      typeof h.key === "string" &&
+      (h.kind === "thread" || h.kind === "finding") &&
+      typeof h.actor === "string",
+  );
+}
+
 /**
- * Decide a takeover before any lock is taken, and stop a wedged holder.
- * Refuses (throws the exit) for every holder the module header excludes.
+ * Decide a takeover before anything is stopped or locked. Refuses (throws the
+ * exit) for every holder the module header excludes.
  */
-export async function admitTakeover(
-  pr: string,
-  prLockDir: string,
-): Promise<TakeoverAdmission> {
+export async function decideTakeover(pr: string): Promise<TakeoverPlan> {
   const row = await doctorRowFor(pr);
   if (row === "unreadable")
     fail(
@@ -157,39 +178,125 @@ export async function admitTakeover(
       "Re-arm it without --take-over.",
     );
   const verdict = row.doctor?.verdict ?? "UNKNOWN";
-  const from = {
-    fromActor: actorOf(row.diag),
-    fromAccount: row.diag === null ? null : accountHash(row.diag.account),
-  };
-  if (row.state === "live" && verdict === "WEDGED") {
-    await stopWedgedHolder(pr, prLockDir, row);
-    return { verdict: "WEDGED", ...from };
-  }
-  if (row.state === "stale") {
+  let admitted: TakeoverPlan["verdict"];
+  if (row.state === "live" && verdict === "WEDGED") admitted = "WEDGED";
+  else if (row.state === "stale") {
+    requireProcessGone(pr, row);
     await requireNoLeftovers(pr, row);
     console.error(
       `drive.ts --take-over: PR #${pr}'s previous driver (pid ${row.pid ?? "?"}) is gone and left nothing in its tree; taking the drive over.`,
     );
-    return { verdict: "DEAD", ...from };
-  }
-  return fail(
-    SINGLE_INSTANCE_LOCK_EXIT,
-    `drive.ts --take-over: refusing to take over PR #${pr}.`,
-    ...holderLines(row),
-    "A takeover is admitted only against a WEDGED driver, or a dead one whose leftovers",
-    "are pushed or discarded. Do not stop a driver that is making progress.",
+    admitted = "DEAD";
+  } else
+    refuse(
+      pr,
+      row,
+      "A takeover is admitted only against a WEDGED driver, or a dead one whose leftovers",
+      "are pushed or discarded. Do not stop a driver that is making progress.",
+    );
+  return {
+    verdict: admitted,
+    fromActor: actorOf(row.diag),
+    fromAccount: row.diag === null ? null : accountHash(row.diag.account),
+    holderStarted: row.diag?.started ?? null,
+    held: await heldSnapshot(pr),
+  };
+}
+
+/** A stale lock admits a takeover only when its process is confirmed gone. */
+function requireProcessGone(pr: string, row: DoctorRowJson): void {
+  if (row.pid !== null && !pidAlive(row.pid, row.host ?? "")) return;
+  refuse(
+    pr,
+    row,
+    "Its lock is stale, but its process is not confirmed gone: a driver alive with an old",
+    "heartbeat is not a dead one. Wait for its doctor verdict, or stop it with --stop first.",
   );
 }
 
-async function stopWedgedHolder(
+async function requireNoLeftovers(
   pr: string,
-  prLockDir: string,
   row: DoctorRowJson,
 ): Promise<void> {
+  const tree = row.diag?.worktree ?? "";
+  const leftovers = tree === "" ? null : await gatherWorktreeLeftovers(tree);
+  if (leftovers === null)
+    refuse(
+      pr,
+      row,
+      `Its previous driver is gone, but its working tree ${tree === "" ? "is not recorded" : `(${tree}) could not be inspected`} for leftovers.`,
+      "Check it by hand, push or discard what it holds, then take over.",
+    );
+  const found = [
+    leftovers.uncommitted ? "uncommitted changes" : "",
+    leftovers.unpushed ? "unpushed commits" : "",
+    leftovers.unconcludedOp !== null
+      ? `an unconcluded git operation (${leftovers.unconcludedOp})`
+      : "",
+  ].filter((s) => s !== "");
+  if (found.length > 0)
+    refuse(
+      pr,
+      row,
+      `Its previous driver is gone (DEAD_WITH_LEFTOVERS) and ${tree} still holds ${found.join(", ")}.`,
+      `Push or discard them first (git -C ${JSON.stringify(tree)} status --short), then take over.`,
+    );
+}
+
+let stoppedNotice: Disposable | null = null;
+let takeoverSettled = false;
+
+/**
+ * Said on any exit after the holder was stopped and before the takeover was
+ * recorded: nothing drives the PR now, and the plain re-arm picks it up.
+ */
+function announceStoppedOnExit(pr: string, rearm: string): void {
+  stoppedNotice = registerCleanup(() => {
+    if (takeoverSettled) return;
+    console.error(
+      `drive.ts --take-over: PR #${pr}'s previous driver WAS STOPPED, but this driver stopped before taking the drive over, so nothing drives the PR now. Re-arm it:`,
+    );
+    console.error(`  ${rearm}`);
+  });
+}
+
+/** The takeover is recorded; the exit notice is no longer owed. */
+export function settleTakeover(): void {
+  takeoverSettled = true;
+  stoppedNotice?.[Symbol.dispose]();
+  stoppedNotice = null;
+}
+
+/** Stop a WEDGED holder, once its doctor row still says so. */
+async function stopWedgedHolder(
+  plan: TakeoverPlan,
+  pr: string,
+  prLockDir: string,
+  rearm: string,
+): Promise<void> {
+  // Read again right before the stop: a holder that spawned a pass since the
+  // decision is no longer wedged, and is not stopped mid-pass.
+  const row = await doctorRowFor(pr);
+  if (row === "unreadable" || row === null)
+    fail(
+      SINGLE_INSTANCE_LOCK_EXIT,
+      `drive.ts --take-over: PR #${pr}'s doctor row could not be read again before the stop; not stopping its driver.`,
+    );
+  if (
+    row.state !== "live" ||
+    row.doctor?.verdict !== "WEDGED" ||
+    (row.diag?.started ?? null) !== plan.holderStarted
+  )
+    refuse(
+      pr,
+      row,
+      "It changed since the takeover was decided; not stopping it.",
+    );
   console.error(
     `drive.ts --take-over: PR #${pr}'s driver is WEDGED; stopping it through drives.ts --stop.`,
   );
   for (const line of holderLines(row)) console.error(`  ${line}`);
+  announceStoppedOnExit(pr, rearm);
   const stop = await run(tsArgv(drives, ["--stop", pr]), {
     stdout: "inherit",
     stderr: "inherit",
@@ -201,7 +308,7 @@ async function stopWedgedHolder(
       `drive.ts --take-over: drives.ts --stop ${pr} exited ${stop.code}; the holder may still be running. Not taking over.`,
     );
   // The stopped driver releases its locks on the way out; a forced one leaves
-  // a claim whose pid is gone, which the acquisition below recovers.
+  // a claim whose pid is gone, which the acquisition recovers.
   const deadline = Date.now() + helperTimeoutSeconds() * 1000;
   while (liveHolder(prLockDir) !== null) {
     if (Date.now() >= deadline)
@@ -213,33 +320,28 @@ async function stopWedgedHolder(
   }
 }
 
-async function requireNoLeftovers(
+/**
+ * Take this tree's lock around the takeover: before stopping the holder, so a
+ * refusal leaves it running, unless the holder itself holds this tree, which
+ * only its stop can free.
+ */
+export async function holdTreeAroundTakeover(
+  plan: TakeoverPlan | null,
   pr: string,
-  row: DoctorRowJson,
+  locks: { tree: string; pr: string },
+  holdTree: () => Promise<void>,
+  rearm: string,
 ): Promise<void> {
-  const tree = row.diag?.worktree ?? "";
-  const leftovers = tree === "" ? null : await gatherWorktreeLeftovers(tree);
-  if (leftovers === null)
-    fail(
-      SINGLE_INSTANCE_LOCK_EXIT,
-      `drive.ts --take-over: PR #${pr}'s previous driver is gone, but its working tree ${tree === "" ? "is not recorded" : `(${tree}) could not be inspected`} for leftovers.`,
-      ...holderLines(row),
-      "Check it by hand, push or discard what it holds, then take over.",
-    );
-  const found = [
-    leftovers.uncommitted ? "uncommitted changes" : "",
-    leftovers.unpushed ? "unpushed commits" : "",
-    leftovers.unconcludedOp !== null
-      ? `an unconcluded git operation (${leftovers.unconcludedOp})`
-      : "",
-  ].filter((s) => s !== "");
-  if (found.length > 0)
-    fail(
-      SINGLE_INSTANCE_LOCK_EXIT,
-      `drive.ts --take-over: refusing to take over PR #${pr}: its previous driver is gone (DEAD_WITH_LEFTOVERS) and ${tree} still holds ${found.join(", ")}.`,
-      ...holderLines(row),
-      `Push or discard them first (git -C ${JSON.stringify(tree)} status --short), then take over.`,
-    );
+  const stopFirst =
+    plan !== null &&
+    plan.verdict === "WEDGED" &&
+    plan.holderStarted !== null &&
+    liveHolder(locks.tree)?.diag?.started === plan.holderStarted;
+  if (plan !== null && stopFirst)
+    await stopWedgedHolder(plan, pr, locks.pr, rearm);
+  await holdTree();
+  if (plan !== null && plan.verdict === "WEDGED" && !stopFirst)
+    await stopWedgedHolder(plan, pr, locks.pr, rearm);
 }
 
 /**
@@ -250,6 +352,7 @@ async function requireNoLeftovers(
 export async function explainHolder(
   lock: DriveLock,
   driveTs: string,
+  botsOnly: boolean,
 ): Promise<void> {
   const holder = liveHolder(lock.dir);
   const pr = holder?.diag?.pr ?? "";
@@ -265,7 +368,7 @@ export async function explainHolder(
   );
   if (verdict === "WEDGED") {
     console.error("It is wedged, so a takeover is admitted:");
-    console.error(`  ${armCommand(driveTs, pr, " --take-over")}`);
+    console.error(`  ${armCommand(driveTs, pr, botsOnly, " --take-over")}`);
   } else {
     console.error(
       "Do not stop a driver that is making progress; a takeover is admitted only once it is WEDGED or dead.",
@@ -277,162 +380,14 @@ export async function explainHolder(
 export async function explainingRefusal<T>(
   lock: DriveLock,
   driveTs: string,
+  botsOnly: boolean,
   fn: () => T,
 ): Promise<T> {
   try {
     return fn();
   } catch (e) {
     if (e instanceof ExitError && e.code === SINGLE_INSTANCE_LOCK_EXIT)
-      await explainHolder(lock, driveTs).catch(() => undefined);
+      await explainHolder(lock, driveTs, botsOnly).catch(() => undefined);
     throw e;
   }
-}
-
-async function driveStateRun(
-  args: string[],
-  stdin?: string,
-): Promise<{ code: number; stdout: string }> {
-  return run(tsArgv(driveState, args), {
-    stderr: "inherit",
-    timeoutSec: helperTimeoutSeconds(),
-    ...(stdin === undefined ? {} : { stdin }),
-  });
-}
-
-const REOPEN_REPLY =
-  "Reopened: the driver that posted the reply above stopped before the fix it promised was pushed, and another driver has taken this pull request's drive over. It redoes the fix and holds this thread again, or triages the finding afresh.";
-
-/**
- * Reopen one hold whose promised fix never landed: a superseding reply on
- * its thread, then the hold released. Returns what the pass is told.
- */
-async function reopenHold(pr: string, item: HeldItem): Promise<string> {
-  let replied = "";
-  if (item.kind === "thread") {
-    const reply = await run(tsArgv(replyToThread, [item.key, "--no-outcome"]), {
-      stdin: REOPEN_REPLY,
-      stderr: "inherit",
-      timeoutSec: helperTimeoutSeconds(),
-      env: { ...process.env, DRIVE_PR_TARGET: pr },
-    });
-    replied =
-      reply.code === 0
-        ? "; superseding reply posted"
-        : `; the superseding reply FAILED (exit ${reply.code}) — post it yourself`;
-  }
-  const release = await driveStateRun([
-    "release-held",
-    pr,
-    "--key",
-    item.key,
-    "--if-present",
-    ...(item.commentUrl === undefined
-      ? []
-      : ["--if-comment-url", item.commentUrl]),
-  ]);
-  if (release.code !== 0)
-    return `- [${item.kind}] ${item.key}: could NOT be released (exit ${release.code}); it stays held${replied}`;
-  return `- [${item.kind}] ${item.key} (was ${item.outcome}, round ${item.round})${replied}`;
-}
-
-/**
- * Finish an admitted takeover once this driver holds the locks: record it,
- * reconcile replied threads, carry the held batch over. Returns the notice
- * the first pass reads in `$DRIVE_PR_PASS_NOTICE`.
- */
-export async function completeTakeover(
-  pr: string,
-  admission: TakeoverAdmission,
-  agent: string[],
-  botsOnly: boolean,
-): Promise<string> {
-  const heldRes = await driveStateRun(["held", pr]);
-  const parsed =
-    heldRes.code === 0 ? parseJson(heldRes.stdout, "drive-state.ts held") : [];
-  const held: HeldItem[] = Array.isArray(parsed)
-    ? parsed.filter(
-        (h): h is HeldItem =>
-          isRecord(h) &&
-          typeof h.key === "string" &&
-          (h.kind === "thread" || h.kind === "finding") &&
-          typeof h.actor === "string",
-      )
-    : [];
-  const reconcile = await run(
-    tsArgv(reconcileRepliedThreads, [pr, ...(botsOnly ? ["--bots-only"] : [])]),
-    { stdout: "pipe", stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
-  );
-  // The first round's gate runs the same sweep before it evaluates anything,
-  // so a failed run here delays the reconciliation by one gate, never skips it.
-  console.error(
-    `takeover: ran reconcile-replied-threads.ts before the first triage (exit ${reconcile.code}${reconcile.code === 0 ? "" : "; the first gate's own sweep runs it again"}).`,
-  );
-  const unlanded = held.filter(
-    (h) =>
-      h.verifiedSha === undefined &&
-      (admission.fromActor === null || h.actor === admission.fromActor),
-  );
-  const reopened: string[] = [];
-  const lines: string[] = [];
-  for (const item of unlanded) {
-    lines.push(await reopenHold(pr, item));
-    reopened.push(item.key);
-  }
-  const toAccount = accountHash(resolveAccountIdentity(agent));
-  const record = await driveStateRun(
-    ["takeover", pr],
-    JSON.stringify({
-      fromActor: admission.fromActor,
-      fromAccount: admission.fromAccount,
-      toAccount,
-      verdict: admission.verdict,
-      reopened,
-    }),
-  );
-  console.error(
-    record.code === 0
-      ? `takeover: recorded in the drive state (from ${admission.fromActor ?? "an unnamed tree"}, account ${admission.fromAccount ?? "unknown"}, to account ${toAccount ?? "unknown"}, verdict ${admission.verdict}, ${reopened.length} hold(s) reopened).`
-      : `takeover: could not record the takeover (drive-state.ts exited ${record.code}); driving on.`,
-  );
-  const notice = [
-    `TAKEN OVER: this drive was taken over from a ${admission.verdict === "WEDGED" ? "wedged" : "dead"} driver and resumes at its durable round.`,
-  ];
-  if (lines.length > 0)
-    notice.push(
-      "These holds' promised fixes never landed, and they are reopened. For each, redo the fix and hold it again with a fresh outcome reply, or triage it afresh:",
-      ...lines,
-    );
-  else notice.push("No held item was left waiting on an unpushed fix.");
-  return notice.join("\n");
-}
-
-/**
- * Pick the drive up from its durable state once this driver holds the locks:
- * refuse a re-arm behind a quota wall the pass's account cannot pass, finish
- * an admitted takeover, and unpark items a person has answered. Returns the
- * exit for a refusal, else the first pass's notice (`''` for none).
- */
-export async function pickUpDrive(
-  pr: string,
-  admission: TakeoverAdmission | null,
-  opts: {
-    agent: string[];
-    botsOnly: boolean;
-    windowReopened: boolean;
-    dryRun: boolean;
-  },
-): Promise<number | string> {
-  const state = await readDriveState(pr);
-  const quotaExit =
-    state === null
-      ? null
-      : admitQuotaRearm(state, opts.agent, opts.windowReopened, new Date());
-  if (quotaExit !== null) return quotaExit;
-  const notices = [
-    admission === null
-      ? ""
-      : await completeTakeover(pr, admission, opts.agent, opts.botsOnly),
-    state === null ? "" : await admitAnsweredParks(state, opts.dryRun),
-  ];
-  return notices.filter((part) => part !== "").join("\n\n");
 }

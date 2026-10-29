@@ -6,17 +6,11 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { hostname } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { formatClaim } from "../scripts/lib/claim.ts";
-import { accountHash } from "../scripts/lib/identity.ts";
 import {
-  gitCleanEnv,
   hold,
-  makeScratchRepo,
   park,
   scratchClean,
   tmpRoot,
@@ -29,35 +23,19 @@ import {
   runDriveIn,
   state,
 } from "./drive-loop-harness.ts";
+import {
+  alive,
+  deadPid,
+  fakeDriver,
+  ownTree,
+  plantPrLock,
+  progressAt,
+  stale,
+  tokenAccount,
+  trackedTree,
+} from "./drive-pr-pickup-fixtures.ts";
 
 useDrivePrSuite();
-
-/** The hashed account a `CLAUDE_CODE_OAUTH_TOKEN` pass bills. */
-function tokenAccount(token: string): string {
-  const fp = createHash("sha256").update(token).digest("hex").slice(0, 12);
-  const hash = accountHash({
-    account: `token:${fp}`,
-    vendor: "claude",
-    provenance: "CLAUDE_CODE_OAUTH_TOKEN",
-    reason: null,
-  });
-  if (hash === null) throw new Error("a resolved identity always hashes");
-  return hash;
-}
-
-/** Whether a process is still running, by the signal-0 probe. */
-function alive(pid: number): boolean {
-  try {
-    return process.kill(pid, 0);
-  } catch {
-    return false;
-  }
-}
-
-/** A scratch repository of the test's own, so leftovers stay out of the shared one. */
-function ownTree(name: string): string {
-  return makeScratchRepo(`pickup-${name}`).dir;
-}
 
 describe("drive.ts restarts a pass killed at its deadline", () => {
   it("restarts the round, tells the next pass what the killed one left, and drives on", async () => {
@@ -93,6 +71,28 @@ describe("drive.ts restarts a pass killed at its deadline", () => {
     expect(r.stderr).toContain("wip.txt");
     expect(r.stderr).toContain("RETRY_PASS_OK");
     expect(r.stderr).not.toContain("retry budget is spent");
+  }, 120_000);
+
+  it("carries the restart count across a re-arm instead of granting a fresh budget", async () => {
+    const tree = ownTree("deadline-carried");
+    const hang = ["sh", "-c", ": pass for 999; sleep 60"];
+    const args = ["--no-head-sync", "--pass-timeout", "1", "--", ...hang];
+    const env = { env: { JIG__DRIVE__PASS_DEADLINE_RETRIES: "1" } };
+    const { dir, stateDir } = writeFixture(
+      { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] },
+      tree,
+    );
+    const first = await runDriveIn(dir, stateDir, args, tree, env);
+    expectSpawnExit({ ...first, stdout: null }, 15);
+    expect(first.stderr).toContain("deadline retry 1 of 1");
+    // The re-arm finds the budget already spent: one killed pass, no restart.
+    const again = await runDriveIn(dir, stateDir, args, tree, env);
+    expectSpawnExit({ ...again, stdout: null }, 15);
+    expect(again.stderr).not.toContain("Restarting");
+    expect(again.stderr.match(/was killed/g)?.length).toBe(1);
+    expect(again.stderr).toContain("2 restart(s) already taken by this drive");
+    const after = await state(stateDir, ["get", "999"], tree);
+    expect(JSON.parse(after.stdout).deadlineRetries).toBe(3);
   }, 120_000);
 
   it("stops as PASS_DEADLINE once drive.pass_deadline_retries is spent", async () => {
@@ -270,6 +270,34 @@ describe("drive.ts re-arms a HITL-parked drive once every item is answered", () 
     expect(JSON.parse(after.stdout).parked).toEqual([]);
   });
 
+  it("keeps the answers for the next pass when the first one is killed at its deadline", async () => {
+    const { dir, stateDir } = await parkedThread(true);
+    const marker = join(tmpRoot, "pickup-answers-kept-killed");
+    const pass = [
+      "sh",
+      "-c",
+      [
+        ": pass for 999",
+        `if [ ! -e '${marker}' ]; then : > '${marker}'; sleep 60; fi`,
+        'case "$DRIVE_PR_PASS_NOTICE" in "RESTARTED AFTER A PASS DEADLINE"*) echo "pass for 999: RESTART_NOTICE" >&2 ;; esac',
+        'printf "%s" "$DRIVE_PR_PASS_NOTICE" | grep -q "option B" && echo "pass for 999: ANSWER_KEPT" >&2',
+        "exit 0",
+      ].join("\n"),
+    ];
+    const r = await runDriveIn(dir, stateDir, [
+      "--no-head-sync",
+      "--pass-timeout",
+      "1",
+      "--max-rounds",
+      "2",
+      "--",
+      ...pass,
+    ]);
+    expectSpawnExit({ ...r, stdout: null }, 6);
+    expect(r.stderr).toContain("RESTART_NOTICE");
+    expect(r.stderr).toContain("ANSWER_KEPT");
+  }, 120_000);
+
   it("leaves every item parked and stops HITL_PARKED while one is unanswered", async () => {
     const { dir, stateDir } = await parkedThread(false);
     const r = await runDriveIn(dir, stateDir, [
@@ -285,48 +313,6 @@ describe("drive.ts re-arms a HITL-parked drive once every item is answered", () 
 });
 
 describe("drive.ts --take-over", () => {
-  /** A process whose command line reads as a driver's, as `--stop` checks. */
-  function fakeDriver() {
-    return Bun.spawn(
-      [
-        process.execPath,
-        "-e",
-        "setInterval(() => {}, 1000)",
-        "drive.ts",
-        "999",
-      ],
-      { stdout: "ignore", stderr: "ignore" },
-    );
-  }
-
-  function plantPrLock(stateDir: string, pid: number, worktree: string): void {
-    const lock = join(stateDir, "pr-drive-999.lock");
-    mkdirSync(lock, { recursive: true });
-    writeFileSync(
-      join(lock, "claim.feedc0de"),
-      formatClaim(pid, hostname(), {
-        pr: "999",
-        worktree,
-        log: join(stateDir, "drive-pr-999.log"),
-        started: new Date().toISOString(),
-        account: {
-          account: "dev@example.invalid",
-          vendor: "claude",
-          provenance: "oauthAccount",
-          reason: null,
-        },
-      }),
-    );
-  }
-
-  /** Back-date (or freshen) the drive's progress, as the doctor reads it. */
-  async function progressAt(stateDir: string, iso: string): Promise<void> {
-    await state(stateDir, ["phase", "999", "--set", "probe"]);
-    const file = join(stateDir, "drive-pr-999.json");
-    const s = JSON.parse(readFileSync(file, "utf8"));
-    writeFileSync(file, JSON.stringify({ ...s, lastProgressAt: iso }));
-  }
-
   it("refuses against a HEALTHY holder, naming its verdict, and leaves it running", async () => {
     const owner = fakeDriver();
     try {
@@ -366,10 +352,7 @@ describe("drive.ts --take-over", () => {
       );
       await hold(stateDir, "PRRT_h", "thread");
       plantPrLock(stateDir, owner.pid, scratchClean.dir);
-      await progressAt(
-        stateDir,
-        new Date(Date.now() - 5 * 3600_000).toISOString(),
-      );
+      await progressAt(stateDir, stale());
       const r = await runDriveIn(
         dir,
         stateDir,
@@ -402,33 +385,13 @@ describe("drive.ts --take-over", () => {
   }, 120_000);
 
   it("refuses a dead holder on this machine while its tree holds leftovers", async () => {
-    const dead = Bun.spawn(["sh", "-c", ":"], {
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    await dead.exited;
-    // The dead driver's tree tracks a remote, so its leftovers can be counted.
-    const tree = ownTree("takeover-leftovers");
-    const origin = join(tmpRoot, "pickup-takeover-leftovers-origin");
-    const git = (cwd: string, ...args: string[]) =>
-      expectSpawnExit(
-        Bun.spawnSync(["git", ...args], {
-          cwd,
-          env: gitCleanEnv(),
-          stdout: "pipe",
-          stderr: "pipe",
-        }),
-        0,
-      );
-    git(tmpRoot, "init", "-q", "--bare", origin);
-    git(tree, "remote", "add", "origin", origin);
-    git(tree, "push", "-q", "-u", "origin", "main");
+    const tree = trackedTree("takeover-leftovers");
     writeFileSync(join(tree, "stranded.txt"), "unfinished fix\n");
     const { dir, stateDir } = writeFixture(
       { prState: "MERGED" },
       scratchClean.dir,
     );
-    plantPrLock(stateDir, dead.pid, tree);
+    plantPrLock(stateDir, await deadPid(), tree);
     await progressAt(stateDir, new Date().toISOString());
     const r = await runDriveIn(dir, stateDir, [
       "--take-over",

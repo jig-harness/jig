@@ -41,6 +41,7 @@ import { isActorId } from "./actor.ts";
 import { type DrivenBranch, isOptionalDrivenBranch } from "./driven-branch.ts";
 import { isAccountHash } from "../identity.ts";
 import { type TakeoverRecord, isOptionalTakeovers } from "./takeover.ts";
+import { isOptionalRetryCount } from "./deadline-retries.ts";
 
 /**
  * The persisted shape of a recorded quota park — what
@@ -393,6 +394,8 @@ export interface DriveState {
   drivenBranch?: DrivenBranch | null;
   /** Every `drive.ts --take-over` of this drive, oldest first (`takeover.ts`). */
   takeovers?: TakeoverRecord[];
+  /** Passes killed at their deadline this drive restarted from (`deadline-retries.ts`). */
+  deadlineRetries?: number;
   [extra: string]: unknown;
 }
 
@@ -532,6 +535,15 @@ function isQuotaParkRecord(v: unknown): boolean {
   );
 }
 
+/** The fields a stored state may lack: absent, or well-formed. */
+function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
+  return [
+    isOptionalDrivenBranch(s.drivenBranch),
+    isOptionalTakeovers(s.takeovers),
+    isOptionalRetryCount(s.deadlineRetries),
+  ].every(Boolean);
+}
+
 export function isUsableState(v: unknown, pr: number): v is DriveState {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
   const s = v as Record<string, unknown>;
@@ -540,8 +552,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   if (typeof s.lastCountedHead !== "string") return false;
   if (typeof s.verifiedSha !== "string") return false;
   if (typeof s.phase !== "string") return false;
-  if (!isOptionalDrivenBranch(s.drivenBranch)) return false;
-  if (!isOptionalTakeovers(s.takeovers)) return false;
+  if (!hasUsableOptionalFields(s)) return false;
   if (!Array.isArray(s.parked)) return false;
   if (!(s.parked as unknown[]).every(isParkedItem)) return false;
   // Present AND well-typed, not "well-typed if present" — see `DriveState`.

@@ -55,7 +55,7 @@
  *   --dry-run        report each round's decision; never invoke the pass.
  *   --take-over      replace the driver holding this PR's lock when
  *                    `drives.ts --doctor` calls it WEDGED (it is stopped
- *                    through `drives.ts --stop`), or when its process is gone
+ *                    through `drives.ts --stop`), or when its process is confirmed gone
  *                    and its tree holds nothing unpushed; refused with 11
  *                    against any other holder (`lib/driver/takeover.ts`).
  *   --window-reopened  a person's statement that a quota-parked drive's

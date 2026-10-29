@@ -15,7 +15,12 @@ import { handleQuotaBlock } from "./review-quota.ts";
 
 import { unpushedCountCommand } from "./../driven-branch.ts";
 
-import { deadlineNotice, describeLeftovers, passLeftovers } from "./restart.ts";
+import {
+  bumpDeadlineRetries,
+  deadlineNotice,
+  describeLeftovers,
+  passLeftovers,
+} from "./restart.ts";
 
 async function handlePassDeadline(
   passDeadlineSec: number,
@@ -80,10 +85,16 @@ async function restartAfterDeadline(
     "  The pass tree is gone; what it was doing when the clock ran out is NOT rolled back.",
   );
   for (const line of describeLeftovers(leftovers)) console.error(`  ${line}`);
-  if (context.deadlineRetries < context.deadlineRetryBudget) {
-    context.deadlineRetries += 1;
+  // Counted in the drive state, so the budget spans every process that
+  // drives this PR: a re-arm or a takeover does not get a fresh one.
+  const retries = await bumpDeadlineRetries(context.pr);
+  if (retries === null) {
     console.error(
-      `  Restarting: deadline retry ${context.deadlineRetries} of ${context.deadlineRetryBudget} (drive.pass_deadline_retries). The leftovers stay in the tree for the next pass.`,
+      "  Could not record this restart in the drive state, so the retry budget cannot be enforced: stopping.",
+    );
+  } else if (retries <= context.deadlineRetryBudget) {
+    console.error(
+      `  Restarting: deadline retry ${retries} of ${context.deadlineRetryBudget} for this drive (drive.pass_deadline_retries). The leftovers stay in the tree for the next pass.`,
     );
     context.passNotice = deadlineNotice(round, passDeadlineSec, leftovers);
     // A killed pass is not a completed one: it must not count toward the
@@ -92,9 +103,10 @@ async function restartAfterDeadline(
     context.noopRounds = 0;
     return "continue";
   }
-  console.error(
-    `  The pass-deadline retry budget is spent (${context.deadlineRetryBudget}, drive.pass_deadline_retries): stopping.`,
-  );
+  if (retries !== null)
+    console.error(
+      `  The pass-deadline retry budget is spent (${context.deadlineRetryBudget}, drive.pass_deadline_retries; ${retries - 1} restart(s) already taken by this drive): stopping.`,
+    );
   console.error(
     `  Before re-arming, settle what the pass left: \`git status --short\` and \`${unpushedCountCommand()}\`.`,
   );

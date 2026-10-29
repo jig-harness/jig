@@ -5,7 +5,7 @@ import { run, tsArgv } from "./../proc.ts";
 
 import { driveState, driveTs } from "./paths.ts";
 
-import { armCommand } from "./rearm.ts";
+import { armCommand, passBotsOnly } from "./rearm.ts";
 
 import { runConvergencePhase } from "./convergence.ts";
 
@@ -76,13 +76,15 @@ async function gateRoundStatus(
       }
       // What picks it up again: answers, not a wake-up (`rearm.ts`).
       console.error(
-        "  Answer each one on its thread, or in a pull-request comment that names its key, as an",
+        "  Answer each one on its thread, or in a pull-request comment with a line `answer <key>: …`, as an",
       );
       console.error(
         "  owner, member or collaborator. Once every one is answered, re-arm: the re-arm unparks",
       );
       console.error("  them and hands the answers to the first round:");
-      console.error(`    ${armCommand(driveTs, context.pr)}`);
+      console.error(
+        `    ${armCommand(driveTs, context.pr, passBotsOnly(context.agent))}`,
+      );
       // A park is a finished drive too, and the one whose cost a human is
       // about to weigh by hand — so it gets the same economy block the
       // converged and exhausted exits do.

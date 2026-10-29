@@ -17,12 +17,15 @@
  *   - HITL_PARKED. Once EVERY parked item has an answer — a comment by an
  *     author GitHub vouches for as an owner, member or collaborator
  *     (`TRUSTED_ASSOCIATIONS`, the summary-finding guard's rule), later than
- *     the park, on the item's thread or as a pull-request comment that names
- *     the item's key — the re-arm unparks them all and hands the answers to
+ *     the park, on the item's thread or as a pull-request comment with a line
+ *     `answer <key>: …` — the re-arm unparks them all and hands the answers to
  *     the first round as human verdicts. With any item unanswered nothing is
  *     unparked, and the drive stops `HITL_PARKED` at its first gate as
  *     before. A comment the drive itself writes (one opening with an outcome
- *     token, or carrying a hidden marker) is never read as an answer.
+ *     token, or carrying a hidden marker) is never read as an answer, and a
+ *     pull-request comment counts only in the stated `answer <key>:` form:
+ *     the drive posts with the operator's own credentials, so a comment that
+ *     merely mentions a parked key must not unpark it.
  */
 import { shellQuote } from "./../cli.ts";
 
@@ -62,9 +65,30 @@ const ANSWER_BODY_MAX = 1500;
 /** The longest notice the first pass is handed, whatever the number of answers. */
 const NOTICE_MAX = 16_000;
 
-/** The canonical arm command, as the exits print it for a person to copy. */
-export function armCommand(driveTs: string, pr: string, extra = ""): string {
-  return `bun ${shellQuote(driveTs)} ${pr}${extra} --bots-only -- claude -p "/jig:drive-pr --bots-only ${pr}"`;
+/** The canonical arm command, in the drive's own mode, for a person to copy. */
+export function armCommand(
+  driveTs: string,
+  pr: string,
+  botsOnly: boolean,
+  extra = "",
+): string {
+  const mode = botsOnly ? " --bots-only" : "";
+  return `bun ${shellQuote(driveTs)} ${pr}${extra}${mode} -- claude -p "/jig:drive-pr${mode} ${pr}"`;
+}
+
+/** Whether a pass command is scoped to bot threads, as `drive.ts` checks it. */
+export function passBotsOnly(agent: readonly string[]): boolean {
+  return agent.some((word) => word.includes("--bots-only"));
+}
+
+/** `admitQuotaRearm` for a state that may be unreadable (the gate refuses it). */
+export function quotaRefusal(
+  state: DriveState | null,
+  agent: string[],
+  windowReopened: boolean,
+): number | undefined {
+  if (state === null) return undefined;
+  return admitQuotaRearm(state, agent, windowReopened, new Date()) ?? undefined;
 }
 
 /** The drive state, or `null` when it cannot be read (the gate then refuses). */
@@ -136,8 +160,8 @@ export function admitQuotaRearm(
   for (const line of [
     `refusing to re-arm PR #${pr}: it is quota-parked on a ${park.vendor} ${park.window}-window wall (reset ${park.resetAt ?? "unresolved"}), and ${why}.`,
     "A successor on the same subscription is behind the same wall. Re-arm from a session",
-    "whose pass bills another account, or after the reset; a person who knows the window has",
-    "reopened adds --window-reopened.",
+    "whose pass bills another account, or after the reset. --window-reopened only if a person",
+    "knows the window has reopened: an agent never passes it.",
   ])
     console.error(line);
   return QUOTA_PARKED_EXIT;
@@ -156,6 +180,14 @@ interface CommentLike {
   at: string;
   url: string;
   body: string;
+}
+
+/** A pull-request comment answers a parked key only with a line `answer <key>:`. */
+export function answersKey(body: string, key: string): boolean {
+  const prefix = `answer ${key}:`.toLowerCase();
+  return body
+    .split("\n")
+    .some((line) => line.trim().toLowerCase().startsWith(prefix));
 }
 
 /** A comment a person wrote after the park, not one the drive wrote. */
@@ -198,7 +230,7 @@ async function prComments(pr: string): Promise<CommentLike[] | null> {
       "--slurp",
       `repos/{owner}/{repo}/issues/${pr}/comments?per_page=100`,
     ],
-    { stderr: "pipe" },
+    { stderr: "pipe", env: ghRepoEnv() },
   );
   if (res.code !== 0) return null;
   const pages = parseJson(res.stdout, "the pull request's comments");
@@ -226,7 +258,7 @@ async function answersTo(
   if (thread === null && conversation === null) return null;
   const candidates = [
     ...(thread ?? []),
-    ...(conversation ?? []).filter((c) => c.body.includes(item.key)),
+    ...(conversation ?? []).filter((c) => answersKey(c.body, item.key)),
   ];
   return candidates
     .filter((c) => isAnswer(c, after))

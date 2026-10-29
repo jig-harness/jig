@@ -384,7 +384,9 @@ A pass killed at its deadline is not rolled back: the drive runs the two
 checks it used to leave to you (uncommitted edits, and commits the head
 branch's remote ref lacks), prints what it finds, leaves it in the tree and
 starts the next round, whose pass is told what it inherits. It does that up
-to `drive.pass_deadline_retries` times per drive (default 2) and then stops
+to `drive.pass_deadline_retries` times per drive (default 2; the count is
+kept in the drive state, so a re-arm or a takeover does not reset it, and it
+clears when the drive converges or the PR closes) and then stops
 with exit `15`, saying the budget is spent. A stall gets one more round with
 the stall's diagnostics in the pass's notice before the drive stops with exit
 `14`, and the stop prints what the passes recorded deciding. A short usage
@@ -401,9 +403,10 @@ mechanical state rather than on anyone's judgement:
   pass bills **another** account is admitted, and one on the same account, or
   on an account that cannot be resolved, is refused with exit `16`. After the
   reset any account may re-arm; if the reset time was never known and you
-  know the limit has lifted, add `--window-reopened`.
+  know the limit has lifted, add `--window-reopened`. Only a person passes it:
+  the skill forbids an agent to, as it does for `clear-lease`.
 - **HITL-parked (exit `8`).** Answer each parked item on its thread, or in a
-  pull-request comment that names its key, as an owner, member or
+  pull-request comment with a line `answer <key>: …`, as an owner, member or
   collaborator. Once every item is answered, the re-arm unparks them all and
   hands your answers to the first round as your verdicts. With any item
   unanswered nothing is unparked and the drive stops `8` again.
@@ -416,14 +419,16 @@ bun "<skill-dir>/scripts/drive.ts" <PR> --take-over --bots-only -- claude -p "/j
 
 The takeover reads the holder's verdict from `bun "<skill-dir>/scripts/drives.ts" --doctor` and is
 admitted only when the holder is `WEDGED` (alive, no progress past the stall
-threshold, no pass running), or when its process is gone and its tree holds
+threshold, no pass running), or when its process is confirmed gone and its tree holds
 nothing unpushed (on this machine it refuses, naming the leftovers, until you
 push or discard them). Against any other holder it refuses as exit `11` does.
 It stops a wedged holder with the same identity check that `--stop`
 makes, records the takeover in the drive state, reconciles the threads that
 already carry a reply, and resumes at the same round. A held thread whose
-promised fix was never pushed is reopened with a reply that says so, and the
-new driver redoes the fix or triages it afresh. Do not stop a driver that is
+promised fix is not verified as pushed is reopened with a reply that says so,
+and the new driver redoes the fix or triages it afresh. Everything that can
+refuse runs before the holder is stopped; if a later step still refuses, the
+stop says the holder was stopped and prints the plain re-arm command. Do not stop a driver that is
 making progress.
 
 ## The exit states — what you do now
@@ -432,7 +437,7 @@ making progress.
 |------|-------|-------------|
 | `0` | **`CONVERGED`** | The exact head is reviewer-clean, the worktree is clean, the CI hold label (if the repository has one) is absent, and full non-reviewer CI is green with a fresh exact-head witness from the required checks. The merge decision is yours. **One caveat that is not optional:** if this drive marked the PR Ready, convergence is against the draft-reviewing AI reviewer **only** — marking Ready is what summons the reviewers that skip drafts, so anything they post lands *after* the drive ends. The drive says so on stderr; re-run it once they settle. `drive.ts` does **not** post the merge-ready announcement itself — run `bun "<skill-dir>/scripts/announce-merge-ready.ts" <PR>` if you want one on the PR. It re-checks convergence, non-reviewer CI, the absent hold, and a clean worktree before posting. `--dry-run` never invokes a pass, so a `0` from it is either this same convergence (the gate reached it first) or simply the command it *would* have run — the printed output says which. |
 | `5` | **PR not open** (`PR_NOT_OPEN`) | The PR merged or closed while driving. Usually nothing to do — but if it happened *mid-round*, `guarded-push.ts` refused the push and **this round's commits are still local**, deliberately, so the work stays visible instead of landing on an orphaned branch. Check `bun "<skill-dir>/../../shared/command.ts" -- git log 'origin/<branch>..HEAD'` and either port those commits somewhere that will merge or discard them on purpose. |
-| `8` | **HITL-parked** (`HITL_PARKED`) | Everything left needs a human call — arbiter escalations, human threads, parked summary findings. Read the round report / the `.context/pr-drive-<PR>.md` handoff, then answer each parked item on its thread or in a PR comment naming its key. Once every one is answered, re-run the command the stop prints: the re-arm unparks them and hands your answers to the first round ([picking up](#picking-up-a-stopped-drive)). It does not wake itself up. |
+| `8` | **HITL-parked** (`HITL_PARKED`) | Everything left needs a human call — arbiter escalations, human threads, parked summary findings. Read the round report / the `.context/pr-drive-<PR>.md` handoff, then answer each parked item on its thread or in a PR comment with a line `answer <key>: …`. Once every one is answered, re-run the command the stop prints: the re-arm unparks them and hands your answers to the first round ([picking up](#picking-up-a-stopped-drive)). It does not wake itself up. |
 | `9` | **Conflicting, nothing to work, and the repair budget is spent** (`PR_CONFLICTING`) | Either the drive spent the conflict-repair budget (`DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1) trying to resolve it and could not, or no repair pass ran at all — the budget is `0`/disabled, or the PR's base ref could not be read. Either way, merge the PR's **own base** in — not necessarily the default branch, since a release or stacked PR has a different one. The drive prints the exact command (`bun "<skill-dir>/../../shared/command.ts" -- git fetch origin`, followed on success by `bun "<skill-dir>/../../shared/command.ts" -- git merge origin/<base>`) rather than guessing; use that. Then resolve, run the emitted validation plan, push, re-run. (A conflicting PR gets zero `pull_request` CI until you do.) |
 | `12` | **Converged, but the tree is not clean** | The convergence is real; something local is unshipped. The causes and their fixes: uncommitted edits → commit or discard; an unconcluded merge/cherry-pick/revert/rebase/am → resolve or abort it; a local `HEAD` no longer matching the reviewed head → push it or reset. The last two leave `git status` **clean**, so don't stop there — the drive names which probe failed, and [`terminal-states.md`](references/terminal-states.md) lists them all. Then re-run. |
 | `4` | Timed out / Ready-lease held elsewhere / no fresh CI witness (`NOT_SETTLED`) | Usually a reviewer that never answered, or another worktree's driver holds the Ready-mark lease. Check the reviewer check-run on the PR; re-run, or find the other driver. A third cause: the review converged and nothing is failing, but no fresh exact-head required-check witness showed up within `DRIVE_PR_FINAL_CI_WITNESS_POLLS` (default 30 minutes) — a required check whose fresh run completed **skipped** can never resolve this by waiting, so re-run the required checks on this head (a fresh run, not `gh run rerun` of the old one) and re-arm. |

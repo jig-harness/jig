@@ -342,7 +342,9 @@ checks that stop used to leave to a person (uncommitted edits, and the
 commits the head branch's remote ref lacks), prints both, leaves both in the
 tree and starts the next round, whose pass is told what it inherits
 (`$DRIVE_PR_PASS_NOTICE`, § Driver pass). It does that up to
-`drive.pass_deadline_retries` (default 2) times per drive; past that budget
+`drive.pass_deadline_retries` (default 2) times per drive — counted in the
+drive state (`deadlineRetries`), so a re-arm or a takeover does not reset it,
+and cleared when the drive converges or the PR closes; past that budget
 it exits `15` and says the budget is spent. A stall (exit `14`) gets one more
 round with the stand-down diagnostics in the pass's notice before it stops,
 and the stop prints what the passes recorded deciding at the end of the
@@ -589,14 +591,14 @@ mechanical state:
   unknown or still ahead), `drive.ts` resolves the account its own pass will
   bill from the pass command and refuses with exit `16` when either account
   is unknown or both are the same: a successor on the same subscription is
-  behind the same wall. A pass that bills **another** account is admitted,
-  and so is any re-arm once the reset has passed. `--window-reopened` admits
-  any account: it is a person's statement that the window is open again,
-  which an agent never makes.
+  behind the same wall. A pass that bills **another** account is admitted.
+  A same-account re-arm is admitted once the recorded reset has passed, or
+  with `--window-reopened` only if you know the window has reopened: a person
+  passes it, never an agent, as with `clear-lease`.
 - **`HITL_PARKED` (exit `8`).** Once **every** parked item has an answer — a
   comment by an author GitHub reports as the repository's owner, member or
   collaborator, later than the park, on the item's thread or in a
-  pull-request comment that names the item's key — the re-arm unparks them
+  pull-request comment with a line `answer <key>: …` — the re-arm unparks them
   all and hands the answers to the first round as human verdicts
   (`$DRIVE_PR_PASS_NOTICE`). A comment the drive itself writes (one opening
   with an outcome token, or carrying a hidden marker) is never an answer.
@@ -612,7 +614,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" <PR> --take-over --bots-only -- claud
 ```
 
 It reads the holder's `drives.ts` `--doctor` verdict and is admitted only
-against a holder that is `WEDGED`, or whose process is gone with nothing left
+against a holder that is `WEDGED`, or whose process is confirmed gone with nothing left
 in its tree (no uncommitted changes, unpushed commits or unconcluded git
 operation; on this machine the takeover refuses, naming them, until they are
 pushed or discarded). Against any other holder it refuses as exit `11` does,
@@ -623,7 +625,7 @@ account to which, the verdict, the round), runs
 `reconcile-replied-threads.ts` before the first triage, and resumes at the
 drive's durable round. Held items carry over by their state: a hold whose
 fix was pushed is resolved by the round as usual; a hold whose promised fix
-never landed is released and reopened with a superseding reply that says so,
+is not verified as pushed is released and reopened with a superseding reply that says so,
 and the first pass is told to redo the fix and hold it again or to triage it
 afresh. A takeover reaches only this clone's drivers.
 
@@ -888,7 +890,7 @@ two (a takeover and the answers a re-arm read):
 |---|---|---|
 | `RESTARTED AFTER A PASS DEADLINE` | The previous pass was killed at its deadline; its uncommitted edits and unpushed commits are listed and are still in the tree | Start from that state: finish, validate and push what is sound, discard what is not on purpose, then triage as usual |
 | `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14` | Act on the open work; if you decide not to, end the handoff narrative with one paragraph saying what you decided and why — the stop prints it |
-| `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix never landed are listed, released and reopened with a superseding reply | For each, redo the fix and hold it again with a fresh outcome reply, or triage it afresh |
+| `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed, released and reopened with a superseding reply; a failed reconciliation is said here | Read each listed thread's last reply first. For each, redo the fix and hold it again with a fresh outcome reply, or triage it afresh |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; each answer is quoted with its url | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
 
 ## One round
