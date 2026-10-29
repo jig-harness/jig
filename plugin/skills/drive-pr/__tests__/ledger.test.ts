@@ -117,6 +117,24 @@ describe("render and parse", () => {
     expect(parseLedger(`quoting ${LEDGER_MARKER} in a discussion`)).toBeNull();
     expect(parseLedger(`${LEDGER_MARKER}\nno data`)?.kind).toBe("malformed");
   });
+
+  it("reads a data block without a version number as damage, never a future ledger", () => {
+    for (const data of ["{}", '{"ledgerVersion":"2"}', '{"ledgerVersion":0}'])
+      expect(
+        parseLedger(
+          `${LEDGER_MARKER}\n<!-- drive-pr-ledger-data\n${data}\n-->\n`,
+        )?.kind,
+      ).toBe("malformed");
+  });
+
+  it("round-trips an unconfirmed hold's round", () => {
+    const l = ledger();
+    l.held = l.held.map((h) => ({ ...h, round: -1 }));
+    const rendered = renderLedger(l);
+    if ("error" in rendered) throw new Error(rendered.error);
+    const parsed = parseLedger(rendered.body);
+    expect(parsed?.kind === "ledger" && parsed.ledger.held[0]?.round).toBe(-1);
+  });
 });
 
 describe("the size cut", () => {
@@ -257,6 +275,35 @@ describe("what is posted", () => {
     expect(l.parked[0]?.reason).toBe("Ask <redacted>");
     expect(l.narrative).toEqual(["mailed <redacted> today"]);
   });
+
+  it("redacts account identifiers inside agent-authored text", () => {
+    const l = ledgerFromState(
+      {
+        ...driveState(),
+        parked: [
+          {
+            key: "PRRT_p",
+            kind: "thread",
+            reason: "quota wall on acct-0123456789abcdef",
+            round: 1,
+          },
+        ],
+      },
+      {
+        generation: 1,
+        driver: {
+          actor: ACTOR_A,
+          clone: "clone-a",
+          heartbeat: "2026-10-01T11:00:00.000Z",
+          state: "running",
+        },
+        narrative: ["billed to token:0123456789ab and api-key:ba9876543210"],
+        claims: [],
+      },
+    );
+    expect(l.parked[0]?.reason).toBe("quota wall on <redacted>");
+    expect(l.narrative).toEqual(["billed to <redacted> and <redacted>"]);
+  });
 });
 
 describe("takeover claims", () => {
@@ -308,6 +355,22 @@ describe("takeover claims", () => {
     ).claims;
     expect(newerClaim(later, 200, "clone-c", own)).toBeNull();
   });
+
+  it("lets a claim posted past the lease window replace an abandoned winner", () => {
+    const at = (iso: string): string =>
+      renderClaim({ actor: ACTOR_A, clone: "clone-c", generation: 4, at: iso });
+    const snap = snapshotFrom(
+      [
+        comment(150, claimBody("clone-b", 4)),
+        // Within the window of the winner: it lost.
+        comment(200, at("2026-10-01T13:00:00.000Z")),
+        // Past the window (240 minutes by default): the winner was abandoned.
+        comment(300, at("2026-10-01T16:30:00.000Z")),
+      ],
+      null,
+    );
+    expect(effectiveClaims(snap.claims).map((c) => c.id)).toEqual([300]);
+  });
 });
 
 describe("seeding", () => {
@@ -330,6 +393,57 @@ describe("seeding", () => {
     const { state, dropped } = seeded;
     expect(state.held).toEqual([]);
     expect(dropped).toEqual(["PRRT_held"]);
+  });
+
+  it("carries a held finding's answer and the per-head budgets through a render", () => {
+    const state: DriveState = {
+      ...driveState(),
+      attempts: 2,
+      attemptsHead: SHA,
+      deadlineRetries: 1,
+      held: [
+        ...driveState().held,
+        {
+          key: "b9a7a18089043564",
+          kind: "finding",
+          outcome: "accepted",
+          round: 3,
+          actor: ACTOR_A,
+          reason: "fixed the missing lock",
+        },
+      ],
+    };
+    const rendered = renderLedger(
+      ledgerFromState(state, {
+        generation: 4,
+        driver: {
+          actor: ACTOR_A,
+          clone: "clone-a",
+          heartbeat: "2026-10-01T11:00:00.000Z",
+          state: "running",
+        },
+        narrative: [],
+        claims: [],
+      }),
+    );
+    if ("error" in rendered) throw new Error(rendered.error);
+    const parsed = parseLedger(rendered.body);
+    if (parsed?.kind !== "ledger") throw new Error("the ledger does not parse");
+    const seeded = seedFromLedger(freshState(999), parsed.ledger);
+    if ("error" in seeded) throw new Error(seeded.error);
+    expect(seeded.state.held.find((h) => h.kind === "finding")?.reason).toBe(
+      "fixed the missing lock",
+    );
+    expect(seeded.state).toMatchObject({
+      attempts: 2,
+      attemptsHead: SHA,
+      deadlineRetries: 1,
+    });
+  });
+
+  it("refuses another pull request's ledger", () => {
+    const seeded = seedFromLedger(freshState(998), ledger());
+    expect("error" in seeded && seeded.error).toContain("PR #999");
   });
 
   it("refuses a ledger that would make an unusable state", () => {

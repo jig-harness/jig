@@ -9,26 +9,32 @@
  * ledger arbitrates. Its driver heartbeat is the time of its last write
  * (every round boundary, park and takeover); a heartbeat older than the lease
  * window, the doctor's stall threshold (`stallThresholdMs`), is what admits
- * a takeover from another clone. The taker posts a claim naming the ledger
- * generation it read; of the claims on one generation the earliest comment
- * id wins and every later claimant stands down, at once when it sees the
- * earlier claim and at its next round boundary when a lagging read hid it.
- * Every driver reads the claims at each round boundary and exits
+ * a takeover from another clone. A driver that does not continue its own
+ * clone's ledger (a takeover, a pull request with no ledger yet, another
+ * clone's stopped one) posts a claim naming the ledger generation it read;
+ * of the claims on one generation the earliest comment id wins and every
+ * later claimant stands down, at once when it sees the earlier claim and at
+ * its next check when a lagging read hid it. A claim whose owner never wrote
+ * the ledger past its generation lapses after the lease window, and a retry
+ * from the same clone drives by that clone's earlier claim. Every driver
+ * reads the claims at each round boundary and before each pass, and exits
  * `TAKEN_OVER` when one in force from another clone is newer than its own
  * position. The arbitration holds only once every driver of a pull request
  * runs a version that reads the ledger: an older driver neither reads a
  * claim nor writes a heartbeat.
  *
  * Nothing that identifies an account is posted: no account hash in the
- * ledger or a claim, and email-shaped text redacted from the narrative and
- * the parked reasons (`ledger.ts`).
+ * ledger or a claim, and email-shaped text and account identifiers redacted
+ * from the narrative, the parked reasons and the held answers (`ledger.ts`).
  *
  * `$DRIVE_PR_LEDGER=off` runs a drive without the ledger, as a dry run does.
- * A forge that cannot be read starts the drive without the ledger rather
- * than refusing it, and says so; the first round boundary that reads it sets
- * this driver's position.
+ * A forge that cannot be read at arm refuses the drive: whether another
+ * clone drives the pull request is unknown.
  */
+import { hostname } from "node:os";
 import { ExitError, fail } from "./../cli.ts";
+import { removeDriverRecord, writeDriverRecord } from "./../ledger-stop.ts";
+import { resolveStateDir } from "./../state/store.ts";
 import { stallThresholdMs } from "./../doctor.ts";
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 import { resolveActor } from "./../state/actor.ts";
@@ -37,6 +43,7 @@ import {
   type Ledger,
   type LedgerSnapshot,
   claimFloor,
+  effectiveClaims,
   heldFromLedger,
   newerClaim,
 } from "./../state/ledger.ts";
@@ -132,8 +139,7 @@ export async function admitCrossCloneTakeover(
       1,
       `drive.ts --take-over: PR #${pr}'s drive ledger: ${snapshot}; refusing to take over blind.`,
     );
-  report(snapshot);
-  const ledger = readableLedger(snapshot);
+  const ledger = readLedger(pr, snapshot);
   if (ledger === null || !otherCloneDriving(ledger, id)) return null;
   const age = heartbeatAgeMs(ledger, new Date());
   const window = stallThresholdMs();
@@ -176,32 +182,34 @@ export async function claimDrive(
   if (typeof own === "string")
     return fail(
       1,
-      `drive.ts --take-over: could not post the takeover claim on PR #${pr} (${own}); not taking over.`,
+      `drive.ts: could not post the drive claim on PR #${pr} (${own}); not starting the drive.`,
     );
   const after = await readLedgerSnapshot(pr, id.login);
   if (typeof after === "string")
     return fail(
       1,
-      `drive.ts --take-over: posted claim ${own} on PR #${pr}, but ${after}, so whether an earlier claim beat it is unknown; not taking over.`,
-      "The claim stays on the pull request. Re-arm with --take-over once the comments read.",
+      `drive.ts: posted claim ${own} on PR #${pr}, but ${after}, so whether an earlier claim beat it is unknown; not starting the drive.`,
+      "The claim stays on the pull request, and a re-arm from this clone drives by it once the comments read.",
     );
   const mine: ClaimComment = { id: own, claim };
   const claims = after.claims.some((c) => c.id === own)
     ? after.claims
     : [...after.claims, mine];
-  const first = claims
-    .filter((c) => c.claim.generation === generation)
-    .sort((a, b) => a.id - b.id)[0];
-  if (first !== undefined && first.id !== own) {
+  const winner =
+    effectiveClaims(claims).find((c) => c.claim.generation === generation) ??
+    mine;
+  if (winner.claim.clone !== id.clone) {
     console.error(
-      `drive.ts --take-over: standing down. Claim ${first.id} from another clone (${first.claim.actor}) was posted before this one (${own}) on the same ledger generation ${generation}, so that clone drives PR #${pr}.`,
+      `drive.ts: standing down. Claim ${winner.id} from another clone (${winner.claim.actor}) was posted before this one (${own}) on the same ledger generation ${generation}, so that clone drives PR #${pr}.`,
     );
     return null;
   }
+  // An earlier claim of this clone's own that never reached a ledger write
+  // (a refused or failed arm) is this clone's still: the retry drives by it.
   console.error(
-    `ledger: claimed PR #${pr}'s drive (comment ${own}, ledger generation ${generation}).`,
+    `ledger: claimed PR #${pr}'s drive (comment ${winner.id}, ledger generation ${generation}).`,
   );
-  return mine;
+  return winner;
 }
 
 /**
@@ -246,18 +254,14 @@ export async function armLedger(
   if (id === null) return state;
   const crossClone = plan?.crossClone === true;
   const snapshot = await readLedgerSnapshot(pr, id.login);
-  if (typeof snapshot === "string") {
-    if (crossClone)
-      return fail(
-        1,
-        `drive.ts --take-over: PR #${pr}'s drive ledger: ${snapshot}; not claiming the drive.`,
-      );
-    console.error(
-      `ledger: ${snapshot}; this drive starts without seeding from PR #${pr}'s ledger or checking another clone's driver, and takes its claim position from the first round boundary that reads it.`,
+  // Unread, the ledger cannot say whether another clone drives: no driver
+  // is admitted on that silence.
+  if (typeof snapshot === "string")
+    return fail(
+      1,
+      `drive.ts: PR #${pr}'s drive ledger: ${snapshot}; not starting the drive, since whether another clone drives it is unknown.`,
+      "Re-arm once the pull request's comments read, or set DRIVE_PR_LEDGER=off to drive without the ledger.",
     );
-    publish(id, null, null);
-    return state;
-  }
   const ledger = readLedger(pr, snapshot);
   const refusal = refuseBesideAnotherClone(
     pr,
@@ -268,7 +272,10 @@ export async function armLedger(
   if (refusal !== null) throw new ExitError(refusal);
   let floor = claimFloor(snapshot.claims);
   let own: ClaimComment | null = null;
-  if (crossClone) {
+  // This clone's own ledger is guarded by this clone's locks. Any other
+  // start (no ledger yet, another clone's stopped one, a takeover) is
+  // arbitrated by a claim, so two clones arming together do not both drive.
+  if (crossClone || ledger === null || ledger.driver.clone !== id.clone) {
     own = await claimDrive(pr, id, ledger?.generation ?? 0);
     if (own === null) throw new ExitError(TAKEN_OVER_EXIT);
     floor = own.id;
@@ -278,6 +285,15 @@ export async function armLedger(
     state = await readDriveState(pr);
   }
   publish(id, floor, own);
+  // What a stop by signal leaves for `drives.ts` to recover from.
+  const worktree = process.env.DRIVE_PR_WORKTREE ?? "";
+  if (worktree !== "")
+    writeDriverRecord(await resolveStateDir(), pr, {
+      worktree,
+      started: id.started,
+      pid: process.pid,
+      host: hostname(),
+    });
   return state;
 }
 
@@ -343,22 +359,19 @@ function publish(
 }
 
 /**
- * At a round boundary: `TAKEN_OVER_EXIT` when another clone's claim beats
- * this driver's position. A driver that started without reading the
- * comments takes its position from the first read here instead.
+ * At a round boundary and again just before a pass is dispatched:
+ * `TAKEN_OVER_EXIT` when another clone's claim beats this driver's position.
  */
 export async function standDownOnNewerClaim(
   pr: string,
 ): Promise<number | null> {
   const driver = ledgerDriverFromEnv();
-  if (driver === null) return null;
+  if (driver === null || driver.floor === null) return null;
   const snapshot = await readLedgerSnapshot(pr, driver.login);
-  // Unread, the claims are read again at the next boundary.
+  // Unread, the claims are read again at the next check. This driver's
+  // ownership was established by a read at arm; a lapse here delays seeing a
+  // claim, and every ledger write re-checks the claims before it lands.
   if (typeof snapshot === "string") return null;
-  if (driver.floor === null) {
-    publish(driver, claimFloor(snapshot.claims), driver.claim);
-    return null;
-  }
   const claim = newerClaim(
     snapshot.claims,
     driver.floor,
@@ -391,17 +404,30 @@ export async function mirrorNow(pr: string): Promise<void> {
  * once; not at all after `TAKEN_OVER`, when the ledger is the successor's.
  * A stop by signal or by `drives.ts --stop` cannot write it here: once
  * shutdown begins the process starts no new command (`shared/cleanup.ts`).
- * `drives.ts` writes it from outside instead (`lib/ledger-stop.ts`).
+ * `drives.ts` writes it from outside instead (`lib/ledger-stop.ts`), from
+ * the driver record written at arm, which this removes once settled.
  */
 export function ledgerSettlement(pr: string): AsyncDisposable & {
   done(code: number): Promise<number>;
 } {
   let settled = false;
+  // Taken over, the driver variable is gone; the record still names it.
+  const started = ledgerDriverFromEnv()?.started ?? "";
+  const dropRecord = async (): Promise<void> => {
+    if (started !== "")
+      removeDriverRecord(await resolveStateDir(), pr, started);
+  };
   const settle = async (code: number | null): Promise<void> => {
+    if (settled) return;
     const driver = ledgerDriverFromEnv();
-    if (settled || driver === null || code === TAKEN_OVER_EXIT) return;
+    if (code === TAKEN_OVER_EXIT) {
+      settled = true;
+      await dropRecord();
+      return;
+    }
+    if (driver === null) return;
     settled = true;
-    await run(tsArgv(driveState, ["handoff", pr]), {
+    const res = await run(tsArgv(driveState, ["handoff", pr]), {
       stdout: "ignore",
       stderr: "inherit",
       timeoutSec: helperTimeoutSeconds(),
@@ -410,6 +436,7 @@ export function ledgerSettlement(pr: string): AsyncDisposable & {
         [LEDGER_DRIVER_ENV]: JSON.stringify({ ...driver, stopped: code }),
       },
     });
+    if (res.code === 0) await dropRecord();
   };
   return {
     async done(code: number): Promise<number> {

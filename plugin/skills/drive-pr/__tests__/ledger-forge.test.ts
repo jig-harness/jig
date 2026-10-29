@@ -297,6 +297,63 @@ describe("the ledger written from the drive state", () => {
     expect(r.stderr).toContain("newer takeover claim (comment 80)");
     expect(ledgersOn(forge).get(40)?.generation).toBe(3);
   });
+
+  it("skips the write when a claim appears beside a ledger that did not move", async () => {
+    const claim = renderClaim({
+      actor: "wt-cccccccccccccccc",
+      clone: "clone-c",
+      generation: 3,
+      at: "2026-10-01T12:00:00.000Z",
+    });
+    const forge = fakeForge(
+      [
+        forgeComment(40, ledgerBody(ledger(3))),
+        forgeComment(80, claim, "other-bot"),
+      ],
+      { login: "drive-bot" },
+    );
+    // The first read misses the claim; the re-read before the write sees it.
+    writeFileSync(
+      join(forge.dir, "hide-ids"),
+      JSON.stringify({ ids: [80], until: 2 }),
+    );
+    const r = await handoff(forge);
+    expectSpawnExit(r, 0);
+    expect(r.stderr).toContain("newer takeover claim (comment 80)");
+    expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(0);
+  });
+
+  it("is not written for a driver that no longer holds the PR's lock", async () => {
+    const forge = fakeForge([], { login: "drive-bot" });
+    const env = JSON.parse(driverEnv(CLONE));
+    const r = await handoff(forge, {
+      DRIVE_PR_LEDGER_DRIVER: JSON.stringify({
+        ...env,
+        started: "2026-10-01T09:00:00.000Z",
+      }),
+    });
+    expectSpawnExit(r, 0);
+    expect(r.stderr).toContain("no longer holds PR #999's lock");
+    expect(forge.comments()).toEqual([]);
+  });
+
+  it("does not mark stopped, in a recovery, a ledger that names another driver", async () => {
+    const forge = fakeForge([forgeComment(40, ledgerBody(ledger(3)))], {
+      login: "drive-bot",
+    });
+    const env = JSON.parse(driverEnv(CLONE));
+    const r = await handoff(forge, {
+      DRIVE_PR_LEDGER_DRIVER: JSON.stringify({
+        ...env,
+        started: "2026-10-01T09:00:00.000Z",
+        stopped: null,
+        recovering: true,
+      }),
+    });
+    expectSpawnExit(r, 0);
+    expect(r.stderr).toContain("is not the stopped driver's");
+    expect(ledgersOn(forge).get(40)?.driver.state).toBe("running");
+  });
 });
 
 describe("seed-ledger", () => {
@@ -328,6 +385,29 @@ describe("seed-ledger", () => {
       "pr-drive-999.md",
     );
     expect(readFileSync(handoffFile, "utf8")).toContain("**Round**: 6");
+  });
+
+  it("installs the last driver's narrative in the handoff file", async () => {
+    const forge = fakeForge([]);
+    const l = {
+      ...ledger(4, 6),
+      narrative: ["Round 6 left the parser half done."],
+    };
+    const seeded = await runScript(
+      forge,
+      "drive-state.ts",
+      ["seed-ledger", "999"],
+      {},
+      ledgerBody(l),
+    );
+    expectSpawnExit(seeded, 0);
+    const handoffFile = join(
+      forge.env.DRIVE_PR_HANDOFF_DIR ?? "",
+      "pr-drive-999.md",
+    );
+    const text = readFileSync(handoffFile, "utf8");
+    expect(text).toContain("Round 6 left the parser half done.");
+    expect(text.trimEnd().endsWith("**Resume:** `/drive-pr 999`")).toBe(true);
   });
 
   it("does not seed back what a reset forgot", async () => {

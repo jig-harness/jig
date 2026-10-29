@@ -229,6 +229,12 @@ export async function runRoundIteration(
     );
     if (stage !== null) return stage;
   }
+  // The boundary's claim check can be minutes old by now (a mailbox pause, a
+  // status wait): checked again so no pass replies beside a successor.
+  {
+    const takenOver = await standDownOnNewerClaim(context.pr);
+    if (takenOver !== null) return takenOver;
+  }
   // A pass that discovers the PR merged mid-round exits 5 —
   // `guarded-push.ts` refuses on a merged or closed PR and the pass
   // propagates it. That is the documented terminal `PR_NOT_OPEN`, not a

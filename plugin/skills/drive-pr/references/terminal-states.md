@@ -558,16 +558,24 @@ the marker is ignored and reported, and so is a trusted comment opening with
 it whose data does not read (a person's comment, a damaged body), which is
 never taken for the ledger or overwritten. Nothing that identifies an account
 is posted: neither the ledger nor a claim carries an account hash, and
-email-shaped text in the narrative and the parked reasons is replaced with
-`<redacted>`. The driver's last write marks it stopped, naming its exit, on
-a returned exit and on a thrown refusal. Once a driver's shutdown begins it
-starts no new command, so a stop writes from outside it (`lib/ledger-stop.ts`):
-`drives.ts`'s `--stop` marks the ledger stopped once the driver is witnessed
-gone, and `--stop` or `--doctor` against a lock whose process is confirmed gone
-does the same, which is the recovery after a crash, a kill or a signal stop.
-Each writes only while the ledger still names that driver as running (its
-tree, clone and run) with no claim in force from another clone past its
-recorded position, and leaves any other ledger as it is, saying so. Until one
+email-shaped text and account identifiers in the narrative, the parked
+reasons and the held findings' answers are replaced with `<redacted>`. A
+write is made only for the driver acquisition that still holds the PR's
+lock, so a child that outlived its driver writes nothing, and each write is
+rebuilt from the state and the claims of the newest read. The driver's last
+write marks it stopped, naming its exit, on a returned exit and on a thrown
+refusal. Once a driver's shutdown begins it starts no new command, so a stop
+writes from outside it (`lib/ledger-stop.ts`): `drives.ts`'s `--stop` marks
+the ledger stopped once the driver is witnessed gone, and `--stop` or
+`--doctor` against a lock whose process is confirmed gone, or against the
+driver record a stop by signal leaves once its lock is released
+(`ledger-driver-<PR>.json` in the state directory), does the same, which is
+the recovery after a crash, a kill or a signal stop. Each writes only while
+the ledger still names that driver as running (its tree, clone and run) with
+no claim in force from another clone past its recorded position, its own
+claim arbitrated as the live driver arbitrates it, re-checked against every
+read the write is built from, and leaves any other ledger as it is, saying
+so. Until one
 runs in that clone, a dead driver's ledger keeps saying "running" until its
 heartbeat ages past the lease window. The body is cut to the forge's 65,536 limit by dropping
 held items' outcomes first, the narrative second and the visible list of
@@ -579,14 +587,22 @@ At arm, once its locks are held, `drive.ts` seeds this clone's state from a
 trusted ledger whose generation is newer than the state's own
 (`ledgerGeneration`, which a fresh state lacks): `drive-state.ts`'s `seed-ledger`
 lays the resumable subset over the local state under the state lock and
-regenerates the handoff. It keeps this clone's own quota park, since the
-ledger carries no account to judge a wall by. A held item whose outcome the
-size cut dropped is not seeded, and the round triages it afresh. A seed the
-state store refuses keeps its exit (`13` when another working tree holds the
-PR). A `ledgerVersion` it does not read refuses with exit `1`, naming the
-version. `drive-state.ts`'s `reset` keeps the generation the state had
-reached, so the next arm does not seed back what the reset forgot. A forge
-that cannot be read starts the drive without the ledger, and says so.
+regenerates the handoff, installing the ledger's narrative under its marker.
+The round, attempt and deadline-restart budgets travel with it, so moving a
+drive between clones grants no fresh passes. It keeps this clone's own quota
+park, since the ledger carries no account to judge a wall by. A held item
+whose outcome the size cut dropped is not seeded, and the round triages it
+afresh. A ledger of another pull request is refused. A seed the state store
+refuses keeps its exit (`13` when another working tree holds the PR). A
+`ledgerVersion` it does not read refuses with exit `1`, naming the version.
+`drive-state.ts`'s `reset` keeps the generation the state had reached, so the
+next arm does not seed back what the reset forgot. A forge that cannot be read
+at arm refuses the drive with exit `1`: whether another clone drives the pull
+request is unknown. A driver that does not continue its own clone's ledger (a
+pull request with no ledger yet, another clone's stopped one, a takeover)
+posts a claim, so two clones arming at once do not both drive. A claim whose
+owner never wrote the ledger past its generation lapses after the lease
+window, and a retry from the same clone drives by its own earlier claim.
 
 The following properties of that file are load-bearing rather than incidental. Updates
 take a per-PR `mkdir` lock (`$DRIVE_PR_LOCK_TIMEOUT`,

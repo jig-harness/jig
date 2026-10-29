@@ -153,7 +153,7 @@ checked against this and the other prose restatements by
 [`__tests__/terminal-states-consistency.ts`](https://github.com/jig-harness/jig/blob/main/plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts).
 `PASS_DEADLINE`, `QUOTA_PARKED`, `MAILBOX_STOPPED`, `MAILBOX_PAUSE_TIMEOUT` and `TAKEN_OVER` are the
 exception: named exits `drive.ts` returns directly, never through this report — a
-consumer polling `--json` for one of these five will never see it there.
+consumer polling `--json` for one of these states will never see it there.
 
 | State | Exit | Meaning |
 |---|---|---|

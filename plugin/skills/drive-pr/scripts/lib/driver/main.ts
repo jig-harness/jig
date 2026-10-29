@@ -403,7 +403,7 @@ export async function main(): Promise<number> {
     deadlineRetryBudget,
     firstPassNotice,
   });
-  return settlement.done(roundsExit);
+  return await settlement.done(roundsExit);
 }
 
 /** Refuse a pass whose declared target or thread scope differs from the driver. */

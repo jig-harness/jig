@@ -105,7 +105,9 @@ import {
 } from "./lib/stop-request.ts";
 import {
   markLedgerStopped,
+  recoverFromDriverRecord,
   recoverStoppedLedger,
+  removeDriverRecord,
   recoverStoppedLedgers,
 } from "./lib/ledger-stop.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -1052,6 +1054,7 @@ async function stop(
   const row = readLock(join(stateDir, `pr-drive-${pr}.lock`), "pr", pr);
   if (row.state === "empty") {
     console.log(`no drive holds PR #${pr}'s lock — nothing to stop.`);
+    await recoverFromDriverRecord(stateDir, pr, row);
     return 1;
   }
   if (row.state === "stale") {
@@ -1088,7 +1091,12 @@ async function stop(
       ? verified.code
       : consumeStopResult(row, await stopVerifiedDriver(row, verified.owner));
   // Witnessed gone (or already gone): its ledger is marked stopped, guarded.
-  if (code === 0) await markLedgerStopped(stateDir, pr, row.diag, null);
+  if (
+    code === 0 &&
+    (await markLedgerStopped(stateDir, pr, row.diag, null)) === "done" &&
+    row.diag !== null
+  )
+    removeDriverRecord(stateDir, pr, row.diag.started);
   return code;
 }
 

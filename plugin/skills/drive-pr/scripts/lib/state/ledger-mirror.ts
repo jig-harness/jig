@@ -13,16 +13,20 @@
  * the ledger alone.
  */
 import { createHash } from "node:crypto";
-import { readFileSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
+import { join } from "node:path";
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
+import { CLAIM_PREFIX, parseClaimText } from "../claim.ts";
 import { fail } from "../cli.ts";
-import { handoffNarrative } from "./handoff.ts";
+import { handoffNarrative, installNarrative } from "./handoff.ts";
 import {
   type ClaimComment,
+  type LedgerSnapshot,
   effectiveClaims,
   ledgerFromState,
+  ledgerOfStoppedDriver,
   newerClaim,
   parseLedger,
   seedFromLedger,
@@ -49,6 +53,12 @@ export interface LedgerDriverEnv {
   stopped?: number | null;
   /** The driver's lock acquisition time. */
   started?: string;
+  /**
+   * Set by a stop recovery from outside the driver (`lib/ledger-stop.ts`):
+   * every snapshot the write is built from must still name this driver as
+   * running (`ledgerOfStoppedDriver`), so it never overwrites a successor.
+   */
+  recovering?: boolean;
 }
 
 export function ledgerDriverFromEnv(): LedgerDriverEnv | null {
@@ -66,13 +76,59 @@ export function ledgerDriverFromEnv(): LedgerDriverEnv | null {
       (v.stopped === undefined ||
         v.stopped === null ||
         typeof v.stopped === "number") &&
-      (v.started === undefined || typeof v.started === "string")
+      (v.started === undefined || typeof v.started === "string") &&
+      (v.recovering === undefined || typeof v.recovering === "boolean")
     )
       return v as unknown as LedgerDriverEnv;
   } catch {
     // An unreadable variable is no driver: the ledger is left alone.
   }
   return null;
+}
+
+/** Whether PR `pr`'s drive lock is held by the acquisition made at `started`. */
+function holdsPrLock(stateDir: string, pr: string, started: string): boolean {
+  const dir = join(stateDir, `pr-drive-${pr}.lock`);
+  try {
+    const claims = readdirSync(dir).filter(
+      (n) => n.startsWith(CLAIM_PREFIX) && n.length > CLAIM_PREFIX.length,
+    );
+    if (claims.length !== 1) return false;
+    const record = parseClaimText(
+      readFileSync(join(dir, claims[0] as string), "utf8"),
+    );
+    return record?.diag?.started === started;
+  } catch (err) {
+    swallow(err, "the PR's drive lock could not be read");
+    return false;
+  }
+}
+
+/** Why `driver` may not write over `snapshot`; `''` when it may. */
+function writeRefused(
+  snapshot: LedgerSnapshot,
+  driver: LedgerDriverEnv,
+): string {
+  if (driver.recovering === true) {
+    const found = ledgerOfStoppedDriver(snapshot, {
+      actor: driver.actor,
+      clone: driver.clone,
+      started: driver.started ?? "",
+    });
+    if ("why" in found)
+      return `the ledger is not the stopped driver's: ${found.why}`;
+  }
+  // With no position yet nothing is newer than this driver: the round
+  // boundary sets the position before this driver writes again.
+  const claim = newerClaim(
+    snapshot.claims,
+    driver.floor ?? Number.POSITIVE_INFINITY,
+    driver.clone,
+    driver.claim,
+  );
+  return claim === null
+    ? ""
+    : `a newer takeover claim (comment ${claim.id}) from another clone is on the pull request`;
 }
 
 /**
@@ -88,23 +144,30 @@ export async function mirrorLedger(
 ): Promise<void> {
   const driver = ledgerDriverFromEnv();
   if (driver === null) return;
+  // A child that outlived its driver keeps the driver's variable: only the
+  // acquisition it names, still holding the PR's lock, writes as that driver.
+  // A stop recovery writes for a driver that is gone, under its own guard.
+  if (
+    driver.recovering !== true &&
+    driver.started !== undefined &&
+    !holdsPrLock(store.stateDir, pr, driver.started)
+  ) {
+    console.error(
+      `ledger: not written — the driver this process writes for (acquired ${driver.started}) no longer holds PR #${pr}'s lock.`,
+    );
+    return;
+  }
   const narrative = await handoffNarrative(pr);
-  const { state } = store.read();
   const result = await writeLedger(pr, driver.login, (snapshot) => {
     if (snapshot.untrusted.length > 0)
       console.error(
         `ledger: ignored ${snapshot.untrusted.length} comment(s) carrying a drive marker from an untrusted author (ids ${snapshot.untrusted.map((c) => c.id).join(", ")}).`,
       );
-    // With no position yet nothing is newer than this driver: the round
-    // boundary sets the position before this driver writes again.
-    const claim = newerClaim(
-      snapshot.claims,
-      driver.floor ?? Number.POSITIVE_INFINITY,
-      driver.clone,
-      driver.claim,
-    );
-    if (claim !== null)
-      return `a newer takeover claim (comment ${claim.id}) from another clone is on the pull request`;
+    const refused = writeRefused(snapshot, driver);
+    if (refused !== "") return refused;
+    // Read on every attempt: a write rebuilt after another writer moved the
+    // ledger carries the state that writer published, not an older read.
+    const { state } = store.read();
     return ledgerFromState(state, {
       generation:
         Math.max(snapshot.maxGeneration, state.ledgerGeneration ?? 0) + 1,
@@ -187,6 +250,10 @@ export async function seedLedgerCommand(
     return seeded.state;
   });
   if (invalid !== "") return fail(1, `seed-ledger: ${invalid}`);
+  // The last driver's notes travel with its state, or the next write here
+  // would replace them on the pull request with this clone's older ones.
+  if (outcome.startsWith("seeded"))
+    await installNarrative(String(ledger.pr), ledger.narrative);
   process.stdout.write(`${outcome}\n`);
   return 0;
 }
