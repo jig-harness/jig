@@ -14,4 +14,5 @@ A pull request can be driven from any working tree of its clone, from the clone'
 ### Changed
 
 - `do-item` never creates a branch or a second pull request for an item whose pull request is already open: it stops before delegating and hands the item to `/jig:drive-pr <PR>`, which places the drive in a working tree on the pull request's head.
+- `drive.ts` refuses a pull request number written with leading zeros (`042`), which GitHub reads as the number without them, so its locks, state and log are always keyed by the number GitHub uses.
 - The recovery advice after a stopped pass counts unpushed commits against `origin/<head-branch>` instead of `@{u}`, which a detached tree does not have.

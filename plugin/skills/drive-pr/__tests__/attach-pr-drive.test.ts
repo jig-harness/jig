@@ -65,6 +65,20 @@ describe("drive.ts attaches under both its locks", () => {
     expect(r.stderr).not.toContain("attach:");
     expect(c.git(tree, "rev-parse", "HEAD")).toBe(before);
   });
+
+  test("refusing a PR number #42's own lock would not key", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    const before = c.git(tree, "rev-parse", "HEAD");
+    plantLiveLock(c, "pr-drive-42.lock");
+    // GitHub reads `042` as #42; a lock keyed `042` would not exclude #42's
+    // live driver.
+    const r = c.script(tree, "drive.ts", "042", "--", "true", "042");
+    expectSpawnExit(r, 2, "drive.ts");
+    expect(r.stderr).toContain("write PR #42 as 42");
+    expect(r.stderr).not.toContain("attach:");
+    expect(c.git(tree, "rev-parse", "HEAD")).toBe(before);
+  });
 });
 
 describe("DRIVE_PR_ATTACH", () => {

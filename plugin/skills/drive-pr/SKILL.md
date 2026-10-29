@@ -334,11 +334,14 @@ commits no branch or remote holds, a local branch of that name ahead of the
 head that this tree would switch to (a tree already on the branch keeps its
 commits ahead of the head, and the drive pushes them), the clone's primary
 checkout on another branch, an `origin` that is another
-repository, and a PR from a fork; a PR that is not open is exit `5`. A live
-driver already holding the PR leaves the tree untouched, and the lock refuses
-next (exit `11`); run alone, it also leaves a tree another driver holds
-untouched and exits `11`, and an interactive session's lease on the tree
-refuses it. `--dry-run` and `DRIVE_PR_ATTACH=off` skip the attach;
+repository, and a PR from a fork; a PR that is not open is exit `5`. Under
+`drive.ts`, a live driver already holding the PR makes the PR's lock refuse
+(exit `11`) before the attach runs, so the tree is untouched; run alone, the
+attach leaves a tree that a live driver of the PR or another driver of the
+tree holds untouched and exits `11`, and an interactive session's lease on
+the tree refuses it. `drive.ts` refuses a PR number written with leading
+zeros (exit `2`), since GitHub reads it as the number without them and the
+locks would not. `--dry-run` and `DRIVE_PR_ATTACH=off` skip the attach;
 with `off`, `--place` still chooses the tree and attaches nothing.
 
 Normally you do not run this by hand: a `/jig:do-item` run **arms the

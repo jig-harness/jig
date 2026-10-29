@@ -89,6 +89,17 @@ export async function main(): Promise<number> {
   // string and refuse for a less obvious reason. Both of those already apply
   // isDigits; this is the entry point that did not.
   if (!isDigits(pr)) fail(2, `drive.ts: PR must be a number (got '${pr}')`);
+  // Canonical before anything is keyed by it: `042` is PR 42 to GitHub, so a
+  // raw `042` would take `pr-drive-042.lock` beside a live #42 driver's
+  // `pr-drive-42.lock` and write #42's state and log under a second name.
+  // Refused rather than rewritten, because the pass names the PR in its own
+  // argv and drive-status.ts compares that against $DRIVE_PR_TARGET verbatim.
+  const canonicalPr = BigInt(pr).toString();
+  if (canonicalPr !== pr)
+    fail(
+      2,
+      `drive.ts: write PR #${canonicalPr} as ${canonicalPr} (got '${pr}')`,
+    );
   process.env.PR = pr;
   // The authoritative, out-of-band statement of which PR this drive is about.
   // drive-status.ts refuses to run when a pass resolves a different one, which
