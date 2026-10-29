@@ -7,11 +7,13 @@
  * newer ledger over this clone's state.
  *
  * Only a driver writes the ledger. `drive.ts` publishes who it is in
- * `$DRIVE_PR_LEDGER_DRIVER` (its working tree, hashed account, clone, forge
+ * `$DRIVE_PR_LEDGER_DRIVER` (its working tree, clone, forge
  * login and claim floor) once it holds its locks, and every child inherits
  * it; a session that is not a drive's child has no such variable and leaves
  * the ledger alone.
  */
+import { readFileSync, rmSync } from "node:fs";
+import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { fail } from "../cli.ts";
 import { handoffNarrative } from "./handoff.ts";
@@ -24,6 +26,7 @@ import {
   seedFromLedger,
 } from "./ledger.ts";
 import { writeLedger } from "./ledger-forge.ts";
+import { freshState } from "./schema.ts";
 import type { StateStore } from "./store.ts";
 
 export const LEDGER_DRIVER_ENV = "DRIVE_PR_LEDGER_DRIVER";
@@ -31,15 +34,17 @@ export const LEDGER_DRIVER_ENV = "DRIVE_PR_LEDGER_DRIVER";
 /** What a driver publishes about itself for the ledger's writers. */
 export interface LedgerDriverEnv {
   actor: string;
-  account: string | null;
   clone: string;
   login: string | null;
-  /** This driver's own claim id, or the newest claim in force when it started. */
-  floor: number;
+  /**
+   * This driver's own claim id, or the newest claim in force when it started;
+   * `null` until the comments have been read once.
+   */
+  floor: number | null;
   /** This driver's own takeover claim, when it took the drive over by one. */
   claim: ClaimComment | null;
-  /** Set on the driver's last write: the exit it stops with. */
-  stopped?: number;
+  /** Set on the driver's last write: the exit it stops with, `null` unknown. */
+  stopped?: number | null;
 }
 
 export function ledgerDriverFromEnv(): LedgerDriverEnv | null {
@@ -50,12 +55,13 @@ export function ledgerDriverFromEnv(): LedgerDriverEnv | null {
     if (
       isRecord(v) &&
       typeof v.actor === "string" &&
-      (v.account === null || typeof v.account === "string") &&
       typeof v.clone === "string" &&
       (v.login === null || typeof v.login === "string") &&
-      typeof v.floor === "number" &&
+      (v.floor === null || typeof v.floor === "number") &&
       (v.claim === null || isRecord(v.claim)) &&
-      (v.stopped === undefined || typeof v.stopped === "number")
+      (v.stopped === undefined ||
+        v.stopped === null ||
+        typeof v.stopped === "number")
     )
       return v as unknown as LedgerDriverEnv;
   } catch {
@@ -84,9 +90,11 @@ export async function mirrorLedger(
       console.error(
         `ledger: ignored ${snapshot.untrusted.length} comment(s) carrying a drive marker from an untrusted author (ids ${snapshot.untrusted.map((c) => c.id).join(", ")}).`,
       );
+    // With no position yet nothing is newer than this driver: the round
+    // boundary sets the position before this driver writes again.
     const claim = newerClaim(
       snapshot.claims,
-      driver.floor,
+      driver.floor ?? Number.POSITIVE_INFINITY,
       driver.clone,
       driver.claim,
     );
@@ -97,11 +105,10 @@ export async function mirrorLedger(
         Math.max(snapshot.maxGeneration, state.ledgerGeneration ?? 0) + 1,
       driver: {
         actor: driver.actor,
-        account: driver.account,
         clone: driver.clone,
         heartbeat: new Date().toISOString(),
         state: driver.stopped === undefined ? "running" : "stopped",
-        ...(driver.stopped === undefined ? {} : { exit: driver.stopped }),
+        ...(typeof driver.stopped === "number" ? { exit: driver.stopped } : {}),
       },
       narrative,
       claims: effectiveClaims(
@@ -175,4 +182,28 @@ export async function seedLedgerCommand(
   if (invalid !== "") return fail(1, `seed-ledger: ${invalid}`);
   process.stdout.write(`${outcome}\n`);
   return 0;
+}
+
+/**
+ * `drive-state.ts reset`'s removal of the state file, keeping the ledger
+ * generation the state had reached: without it, the next arm would read the
+ * ledger as newer than the fresh state and seed back everything the reset
+ * forgot. The ledger's next write then carries the reset state. A file too
+ * damaged to read a generation from is removed outright.
+ */
+export function removeStateKeepingLedgerGeneration(
+  store: StateStore,
+  pr: number,
+): void {
+  let generation = 0;
+  try {
+    const raw: unknown = JSON.parse(readFileSync(store.file, "utf8"));
+    if (isRecord(raw) && typeof raw.ledgerGeneration === "number")
+      generation = raw.ledgerGeneration;
+  } catch (err) {
+    swallow(err, "the state file being reset holds no ledger generation");
+  }
+  rmSync(store.file, { force: true });
+  if (Number.isInteger(generation) && generation > 0)
+    store.write({ ...freshState(pr), ledgerGeneration: generation });
 }

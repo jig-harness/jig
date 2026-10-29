@@ -25,9 +25,10 @@
  * Nothing moves without ownership. `drive.ts` attaches after it takes the
  * tree's driver lock and before the pull request's; on its own the attach
  * moves nothing while a live driver holds this tree or the pull request
- * (exit 11 from `attach-pr.ts`), and it holds the tree's session-lease fence
- * (`lib/state/lease.ts`) across the checkout and the records, so an
- * interactive session working this tree refuses it too.
+ * (exit 11 from `attach-pr.ts`), and takes both driver locks itself, in the
+ * same order, until it is done. It holds the tree's session-lease fence
+ * (`lib/state/lease.ts`) across reading the tree, the checkout and the
+ * tree's record, so an interactive session working this tree refuses it too.
  *
  * Every git and `gh` call is bounded; the fetch by `DRIVE_PR_FETCH_TIMEOUT`.
  */
@@ -44,7 +45,12 @@ import { isRecord } from "../../../../shared/guards.ts";
 import { fetchTimeoutSeconds } from "./base-drift.ts";
 import { fail } from "./cli.ts";
 import { setDrivenRemoteRef } from "./driven-branch.ts";
-import { liveHolder } from "./driver/locks.ts";
+import {
+  acquire,
+  type DriveLock,
+  liveHolder,
+  release,
+} from "./driver/locks.ts";
 import {
   ghCall,
   git,
@@ -197,7 +203,11 @@ async function readPr(pr: string, cwd: string): Promise<PrHead> {
  * repository it came from. Owner and name are compared, as `guarded-push.ts`
  * compares them, never the host (`lib/repo-url.ts` says why).
  */
-async function requireOrigin(tree: string, pr: PrHead, number: string) {
+export async function requireOrigin(
+  tree: string,
+  pr: { repo: string },
+  number: string,
+): Promise<void> {
   const urls: string[] = [];
   for (const args of [
     ["remote", "get-url", "--all", DRIVE_REMOTE],
@@ -425,7 +435,8 @@ async function treeFence(pr: string): Promise<{ release(): void } | null> {
 
 /**
  * Put the tree on the head; whether it ended detached. A detached tree this
- * PR was attached to keeps its own commits on top of the head.
+ * PR was attached to keeps its own commits on top of the head, and takes the
+ * branch by name once no other tree holds it and it has none of its own.
  */
 async function move(
   tree: string,
@@ -438,7 +449,11 @@ async function move(
     return false;
   }
   const recorded = await detachedTreeRecord((args) => g(tree, args));
-  if (current.branch === "" && recorded?.pr === Number(target.number)) {
+  if (
+    current.branch === "" &&
+    recorded?.pr === Number(target.number) &&
+    (holder !== null || !(await ancestor(tree, current.sha, target.head)))
+  ) {
     if (holder !== null) await requireHolderBehind(holder, target);
     await catchUp(tree, target, current.sha, true);
     return true;
@@ -449,9 +464,41 @@ async function move(
 }
 
 /**
+ * The driver locks a standalone attach takes, in `drive.ts`'s order (the
+ * tree's, then the pull request's), so no driver starts on this tree or the
+ * pull request while it moves the tree; released by the caller.
+ */
+async function takeDriverLocks(pr: string): Promise<DriveLock[]> {
+  const stateDir = await resolveStateDir();
+  const locks: DriveLock[] = [
+    { dir: join(stateDir, await worktreeLockName()), what: "worktree" },
+    { dir: join(stateDir, `pr-drive-${pr}.lock`), what: `PR #${pr}` },
+  ];
+  const taken: DriveLock[] = [];
+  try {
+    for (const lock of locks) {
+      acquire(lock, pr);
+      taken.push(lock);
+    }
+  } catch (e) {
+    for (const lock of taken.reverse()) release(lock);
+    throw e;
+  }
+  return taken;
+}
+
+/**
  * Attach PR `pr` to the working tree the process runs in. A live driver of
  * this tree (unless the caller holds its lock) or of the PR leaves it as it
  * is and says so in `skipped`.
+ *
+ * The tree is read only once it is owned: alone, the attach takes both driver
+ * locks; then, after the fetch, the tree's session-lease fence; and only then
+ * reads the tree's head, cleanliness and reachable commits it moves on, so
+ * nothing that commits in between is moved around. The drive state is
+ * written after the fence is released, because a state write takes the
+ * store's lock before a tree fence, and the attach must not take them in the
+ * opposite order.
  */
 export async function attachPr(
   pr: string,
@@ -466,7 +513,6 @@ export async function attachPr(
   );
   const head = await readPr(pr, tree);
   const number = String(Number.parseInt(pr, 10));
-  const current = await currentOf(tree);
   const base = {
     pr: number,
     branch: head.branch,
@@ -476,36 +522,46 @@ export async function attachPr(
     created: opts.created === true,
   };
   const live = await liveDriver(number, opts.treeLockHeld === true);
-  if (live !== null)
-    return { ...base, detached: current.branch === "", skipped: live };
-  await requireOrigin(tree, head, number);
-  await requireSettled(tree, "this working tree");
-  const fetched = await fetchHead(tree, head.branch);
-  if (fetched !== null) refuse(1, fetched);
-  if ((await g(tree, ["cat-file", "-e", `${head.head}^{commit}`])).code !== 0)
-    refuse(
-      1,
-      `the fetched '${head.branch}' does not hold PR #${number}'s head ${head.head.slice(0, 12)} (pushed again while attaching?) — run the attach again`,
-    );
-  const fence = await treeFence(number);
+  if (live !== null) {
+    const symbolic = await g(tree, ["symbolic-ref", "--quiet", "HEAD"]);
+    return { ...base, detached: symbolic.code !== 0, skipped: live };
+  }
+  const locks = opts.treeLockHeld === true ? [] : await takeDriverLocks(number);
   try {
-    const old = readDrivenTree(current.gitDir);
-    const detached = await move(tree, { ...head, number }, current);
-    const created =
-      opts.created === true ||
-      (old?.pr === Number(number) && old.created === true);
-    // The tree's record exists only while the tree is detached: on a
-    // branch, the branch answers, and a stale record could only mislead.
-    if (detached)
-      writeDrivenTree(current.gitDir, {
-        pr: Number(number),
-        branch: head.branch,
-        remote: DRIVE_REMOTE,
-        created,
-        head: head.head,
-      });
-    else removeDrivenTree(current.gitDir);
-    await recordState(number, tree, {
+    await requireOrigin(tree, head, number);
+    const fetched = await fetchHead(tree, head.branch);
+    if (fetched !== null) refuse(1, fetched);
+    if ((await g(tree, ["cat-file", "-e", `${head.head}^{commit}`])).code !== 0)
+      refuse(
+        1,
+        `the fetched '${head.branch}' does not hold PR #${number}'s head ${head.head.slice(0, 12)} (pushed again while attaching?) — run the attach again`,
+      );
+    const fence = await treeFence(number);
+    let detached: boolean;
+    let created: boolean;
+    try {
+      const current = await currentOf(tree);
+      await requireSettled(tree, "this working tree");
+      const old = readDrivenTree(current.gitDir);
+      detached = await move(tree, { ...head, number }, current);
+      created =
+        opts.created === true ||
+        (old?.pr === Number(number) && old.created === true);
+      // The tree's record exists only while the tree is detached: on a
+      // branch, the branch answers, and a stale record could only mislead.
+      if (detached)
+        writeDrivenTree(current.gitDir, {
+          pr: Number(number),
+          branch: head.branch,
+          remote: DRIVE_REMOTE,
+          created,
+          head: head.head,
+        });
+      else removeDrivenTree(current.gitDir);
+    } finally {
+      fence?.release();
+    }
+    created = await recordState(number, tree, {
       branch: head.branch,
       remote: DRIVE_REMOTE,
       detached,
@@ -513,7 +569,7 @@ export async function attachPr(
     });
     return { ...base, detached, created };
   } finally {
-    fence?.release();
+    for (const lock of locks.reverse()) release(lock);
   }
 }
 
@@ -556,25 +612,36 @@ async function fetchHead(tree: string, branch: string): Promise<string | null> {
     : `cannot fetch '${branch}' from '${DRIVE_REMOTE}': ${r.stderr.trim()}`;
 }
 
+/**
+ * Copy the attach into the drive state; whether the tree was created for the
+ * drive. That provenance outlives an attach by name, which removes the tree's
+ * record: a later attach of the same tree keeps what the state says of it.
+ */
 async function recordState(
   pr: string,
   tree: string,
   record: Pick<DrivenTree, "branch" | "remote" | "created"> & {
     detached: boolean;
   },
-): Promise<void> {
+): Promise<boolean> {
   const store = await openStore(pr);
-  await store.update((s) => ({
-    ...s,
-    drivenBranch: {
-      branch: record.branch,
-      remote: record.remote,
-      worktree: tree,
-      detached: record.detached,
-      created: record.created,
-      at: new Date().toISOString(),
-    },
-  }));
+  let created = record.created;
+  await store.update((s) => {
+    created ||=
+      s.drivenBranch?.worktree === tree && s.drivenBranch.created === true;
+    return {
+      ...s,
+      drivenBranch: {
+        branch: record.branch,
+        remote: record.remote,
+        worktree: tree,
+        detached: record.detached,
+        created,
+        at: new Date().toISOString(),
+      },
+    };
+  });
+  return created;
 }
 
 /**

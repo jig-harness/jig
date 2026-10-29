@@ -25,7 +25,6 @@
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { TRUSTED_ASSOCIATIONS } from "../../summary-findings.ts";
-import { isAccountHash } from "../identity.ts";
 import {
   type DriveState,
   type HeldItem,
@@ -68,8 +67,6 @@ export interface LedgerHeld {
 export interface LedgerDriver {
   /** The working tree driving (`resolveActor`). */
   actor: string;
-  /** The account its pass bills, hashed; `null` when unknown. */
-  account: string | null;
   /** The clone, by machine and state directory: two clones never share one. */
   clone: string;
   /** When this ledger was written: the driver's heartbeat across clones. */
@@ -98,8 +95,9 @@ export interface Ledger {
   readyMarkedRound: number;
   parked: ParkedItem[];
   held: LedgerHeld[];
-  quotaPark: QuotaParkRecord | null;
-  takeovers: TakeoverRecord[];
+  /** The quota park, without the account it belongs to. */
+  quotaPark: Omit<QuotaParkRecord, "account"> | null;
+  takeovers: LedgerTakeover[];
   claims: LedgerClaimRef[];
   /** The decisions the agent took and recorded (`decisions.ts`). */
   decisions: UnattendedDecision[];
@@ -110,6 +108,9 @@ export interface Ledger {
   cut: string[];
 }
 
+/** A takeover record as the ledger carries it: without either account. */
+export type LedgerTakeover = Omit<TakeoverRecord, "fromAccount" | "toAccount">;
+
 export type ParsedLedger =
   | { kind: "ledger"; ledger: Ledger }
   | { kind: "unknown-version"; version: unknown }
@@ -117,7 +118,6 @@ export type ParsedLedger =
 
 export interface TakeoverClaim {
   actor: string;
-  account: string | null;
   clone: string;
   /** The ledger generation the claimant read before claiming. */
   generation: number;
@@ -143,16 +143,47 @@ export function ledgerFromState(
     lastCountedHead: s.lastCountedHead,
     verifiedSha: s.verifiedSha,
     readyMarkedRound: s.readyMarkedRound,
-    parked: s.parked,
+    parked: s.parked.map((p) => ({
+      ...p,
+      reason: redact(p.reason),
+      ...(p.record === undefined ? {} : { record: redact(p.record) }),
+    })),
     held: s.held.map(ledgerHeld),
-    quotaPark: s.quotaPark,
-    takeovers: s.takeovers ?? [],
+    quotaPark: withoutAccount(s.quotaPark),
+    takeovers: (s.takeovers ?? []).map(
+      ({ fromAccount: _from, toAccount: _to, ...t }) => t,
+    ),
     claims: opts.claims,
-    decisions: s.decisions ?? [],
+    decisions: (s.decisions ?? []).map((d) => ({
+      ...d,
+      what: redact(d.what),
+      reverse: redact(d.reverse),
+    })),
     driver: opts.driver,
-    narrative: opts.narrative.slice(-NARRATIVE_LINES),
+    narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
     cut: [],
   };
+}
+
+/** An email-shaped string anywhere in a text. */
+const EMAIL =
+  /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+
+/**
+ * `text` with every email-shaped string replaced: the narrative and the
+ * parked reasons are agent-authored, and a pull request comment is public to
+ * everyone who can read the repository.
+ */
+export function redact(text: string): string {
+  return text.replace(EMAIL, "<redacted>");
+}
+
+function withoutAccount(
+  park: QuotaParkRecord | null,
+): Omit<QuotaParkRecord, "account"> | null {
+  if (park === null) return null;
+  const { account: _account, ...rest } = park;
+  return rest;
 }
 
 function ledgerHeld(h: HeldItem): LedgerHeld {
@@ -195,7 +226,7 @@ function ledgerBody(l: Ledger, parkedList: boolean): string {
     LEDGER_MARKER,
     `**Drive ledger** · \`drive-pr-ledger\` v${l.ledgerVersion} · generation ${l.generation}. Written by the drive at each round boundary, park and takeover; an edit here is overwritten.`,
     "",
-    `Round ${l.round}, phase \`${l.phase === "" ? "unset" : l.phase}\` · driver \`${d.actor}\` ${d.state === "running" ? "running" : `stopped (exit ${d.exit ?? "?"})`}, last heartbeat ${d.heartbeat} · ${l.parked.length} parked, ${l.held.length} held, ${l.takeovers.length} takeover(s)`,
+    `Round ${l.round}, phase \`${l.phase === "" ? "unset" : l.phase}\` · driver \`${d.actor}\` ${d.state === "running" ? "running" : `stopped${d.exit === undefined ? "" : ` (exit ${d.exit})`}`}, last heartbeat ${d.heartbeat} · ${l.parked.length} parked, ${l.held.length} held, ${l.takeovers.length} takeover(s)`,
   ];
   if (parkedList && l.parked.length > 0) {
     lines.push("", "Parked, awaiting a person:");
@@ -288,7 +319,6 @@ function isLedgerDriver(v: unknown): v is LedgerDriver {
   return (
     isRecord(v) &&
     isText(v.actor) &&
-    (v.account === null || isAccountHash(v.account)) &&
     isText(v.clone) &&
     isText(v.heartbeat) &&
     Number.isFinite(Date.parse(v.heartbeat)) &&
@@ -318,7 +348,12 @@ function ledgerFault(v: Record<string, unknown>): string {
     ["quotaPark", v.quotaPark === null || isRecord(v.quotaPark)],
     [
       "takeovers",
-      Array.isArray(v.takeovers) && v.takeovers.every(isTakeoverRecord),
+      Array.isArray(v.takeovers) &&
+        v.takeovers.every(
+          (t) =>
+            isRecord(t) &&
+            isTakeoverRecord({ ...t, fromAccount: null, toAccount: null }),
+        ),
     ],
     ["claims", Array.isArray(v.claims) && v.claims.every(isClaimRef)],
     [
@@ -384,7 +419,6 @@ export function parseClaim(body: string): TakeoverClaim | null {
   if (
     !isRecord(v) ||
     !isText(v.actor) ||
-    !(v.account === null || isAccountHash(v.account)) ||
     !isText(v.clone) ||
     !isCount(v.generation) ||
     !isText(v.at)
@@ -392,7 +426,6 @@ export function parseClaim(body: string): TakeoverClaim | null {
     return null;
   return {
     actor: v.actor,
-    account: v.account as string | null,
     clone: v.clone,
     generation: v.generation,
     at: v.at,
@@ -415,10 +448,18 @@ export interface ClaimComment {
 
 /** What the comments on a pull request say about its drive. */
 export interface LedgerSnapshot {
-  /** The lowest-id trusted ledger comment, and what it parses to. */
+  /**
+   * The lowest-id trusted ledger comment whose data reads (in this version
+   * or another), and what it parses to.
+   */
   canonical: { comment: ForgeComment; parsed: ParsedLedger } | null;
-  /** Every other trusted ledger comment: a lost creation race. */
+  /** Every other trusted, readable ledger comment: a lost creation race. */
   duplicates: ForgeComment[];
+  /**
+   * Trusted comments opening with the ledger marker whose data does not read
+   * (a person's comment, a damaged body): reported, never overwritten.
+   */
+  malformed: ForgeComment[];
   /** Comments opening with a marker whose author is not trusted. */
   untrusted: ForgeComment[];
   /** Trusted, well-formed takeover claims, ascending by id. */
@@ -434,49 +475,69 @@ export function isTrusted(c: ForgeComment, selfLogin: string | null): boolean {
   );
 }
 
+/** Which drive marker a comment opens with, from a trusted author or not. */
+function markerKind(
+  c: ForgeComment,
+  selfLogin: string | null,
+): "ledger" | "claim" | "untrusted" | null {
+  const isLedger = opensWith(c.body, LEDGER_MARKER);
+  const isClaim = opensWith(c.body, CLAIM_MARKER);
+  if (!isLedger && !isClaim) return null;
+  if (!isTrusted(c, selfLogin)) return "untrusted";
+  return isClaim ? "claim" : "ledger";
+}
+
+interface Sorted {
+  ledgers: Array<{ comment: ForgeComment; parsed: ParsedLedger }>;
+  malformed: ForgeComment[];
+  untrusted: ForgeComment[];
+  claims: ClaimComment[];
+  maxGeneration: number;
+}
+
+/** File one comment under what it is. */
+function sortComment(
+  into: Sorted,
+  c: ForgeComment,
+  kind: ReturnType<typeof markerKind>,
+): void {
+  if (kind === "untrusted") into.untrusted.push(c);
+  if (kind === "claim") {
+    const claim = parseClaim(c.body);
+    if (claim !== null) into.claims.push({ id: c.id, claim });
+  }
+  if (kind !== "ledger") return;
+  const parsed = parseLedger(c.body);
+  if (parsed === null || parsed.kind === "malformed") {
+    into.malformed.push(c);
+    return;
+  }
+  into.ledgers.push({ comment: c, parsed });
+  if (parsed.kind === "ledger")
+    into.maxGeneration = Math.max(into.maxGeneration, parsed.ledger.generation);
+}
+
 export function snapshotFrom(
   comments: readonly ForgeComment[],
   selfLogin: string | null,
 ): LedgerSnapshot {
-  const sorted = [...comments].sort((a, b) => a.id - b.id);
-  const ledgers: ForgeComment[] = [];
-  const untrusted: ForgeComment[] = [];
-  const claims: ClaimComment[] = [];
-  let maxGeneration = 0;
-  for (const c of sorted) {
-    const isLedger = opensWith(c.body, LEDGER_MARKER);
-    const isClaim = opensWith(c.body, CLAIM_MARKER);
-    if (!isLedger && !isClaim) continue;
-    if (!isTrusted(c, selfLogin)) {
-      untrusted.push(c);
-      continue;
-    }
-    if (isClaim) {
-      const claim = parseClaim(c.body);
-      if (claim !== null) claims.push({ id: c.id, claim });
-      continue;
-    }
-    ledgers.push(c);
-    const parsed = parseLedger(c.body);
-    if (parsed?.kind === "ledger")
-      maxGeneration = Math.max(maxGeneration, parsed.ledger.generation);
-  }
-  const [first, ...rest] = ledgers;
+  const into: Sorted = {
+    ledgers: [],
+    malformed: [],
+    untrusted: [],
+    claims: [],
+    maxGeneration: 0,
+  };
+  for (const c of [...comments].sort((a, b) => a.id - b.id))
+    sortComment(into, c, markerKind(c, selfLogin));
+  const [first, ...rest] = into.ledgers;
   return {
-    canonical:
-      first === undefined
-        ? null
-        : {
-            comment: first,
-            parsed: parseLedger(first.body) ?? {
-              kind: "malformed",
-              reason: "no marker",
-            },
-          },
-    duplicates: rest,
-    untrusted,
-    claims,
-    maxGeneration,
+    canonical: first ?? null,
+    duplicates: rest.map((l) => l.comment),
+    malformed: into.malformed,
+    untrusted: into.untrusted,
+    claims: into.claims,
+    maxGeneration: into.maxGeneration,
   };
 }
 
@@ -498,9 +559,11 @@ export function effectiveClaims(
 /**
  * The claim that ends this driver's drive: one in force, from another
  * clone, newer than `floor` (this driver's own claim, or the newest claim
- * in force when it started). `own` is this driver's own claim, counted
- * whether or not the listing shows it yet, so a rival it beat never reads
- * as in force.
+ * in force when it started); or, when this driver took the drive by its own
+ * claim (`own`), a rival's earlier claim on the same generation, which won
+ * even if the read after posting did not show it yet. `own` is counted
+ * whether or not the listing shows it, so a rival it beat never reads as in
+ * force.
  */
 export function newerClaim(
   claims: readonly ClaimComment[],
@@ -512,10 +575,18 @@ export function newerClaim(
     own === null || claims.some((c) => c.id === own.id)
       ? claims
       : [...claims, own];
+  const inForce = effectiveClaims(all);
+  const beaten = inForce.find(
+    (c) =>
+      own !== null &&
+      c.claim.generation === own.claim.generation &&
+      c.id !== own.id &&
+      c.claim.clone !== ownClone,
+  );
   return (
-    effectiveClaims(all).find(
-      (c) => c.id > floor && c.claim.clone !== ownClone,
-    ) ?? null
+    beaten ??
+    inForce.find((c) => c.id > floor && c.claim.clone !== ownClone) ??
+    null
   );
 }
 
@@ -550,7 +621,10 @@ export function heldFromLedger(held: readonly LedgerHeld[]): {
 }
 
 /**
- * `local` with the ledger's resumable subset laid over it. `dropped` names
+ * `local` with the ledger's resumable subset laid over it. The quota park
+ * stays this clone's own: the ledger carries no account, and a wall another
+ * clone hit is met again, and slept through or parked on, by this clone's
+ * pass. `dropped` names
  * the held items the size cut left without an outcome: they are not held
  * here, and the round triages them afresh. An `error` when the result is not
  * a usable state, so a ledger can never seed a state the store would refuse.
@@ -569,8 +643,11 @@ export function seedFromLedger(
     readyMarkedRound: l.readyMarkedRound,
     parked: l.parked,
     held,
-    quotaPark: l.quotaPark,
-    takeovers: l.takeovers,
+    takeovers: l.takeovers.map((t) => ({
+      ...t,
+      fromAccount: null,
+      toAccount: null,
+    })),
     decisions: l.decisions,
     ledgerGeneration: l.generation,
   };

@@ -504,7 +504,8 @@ item links its requirements; the delivery loop writes no spec) is a decision rec
 `resolve-review-comments` lists the findings a static-analysis app reports as
 check-run annotations (`review.scanner_apps`), and `drive-pr` tells the agent
 to work them, but the drive's verdict reads threads and summary comments
-only, so a drive can still end `CONVERGED` over an annotation. What it will
+only, so a drive with annotations as its only findings can end `CONVERGED`
+without starting a round. What it will
 build: the annotation listing as a third source of open work beside threads
 and summary findings, read by `drive-status`, `round-plan` and `converge`,
 so the verdict withholds `CONVERGED` while a scanner check is running on the
@@ -533,12 +534,11 @@ conflict; a pinned agent keeping its pin; the reason, the source and
 whether it was applied on the pull request, where the drive's loop-cost
 report joins them to the outcome; a person's choice always winning; opt-in
 until a repository declares its rules; no model asked to route. The design
-is written and decided, so what stays open under this item is the build,
-its own epic, one pull request per step, after item 27's type derivation:
+is written and decided, and its first step is built: `determine_route.ts`
+derives the route from the `routing` section and its defaults, and
+`do-item` prints it and forwards nothing. What stays open is the rest of
+the build, its own epic, one pull request per step:
 
-- **The derivation**: `determine_route.ts`, the `routing` section and its
-  defaults as data with their tests, in CONFIGURATION.md; `do-item` prints
-  the route and changes nothing yet.
 - **The record**: the `## Route` section written and parsed from
   `plugin/shared/`, and the loop-cost report reading it.
 - **M0's declaration point**: the policy, the criterion and the loader's

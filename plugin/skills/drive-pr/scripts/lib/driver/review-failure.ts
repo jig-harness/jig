@@ -16,9 +16,10 @@ import { handleQuotaBlock } from "./review-quota.ts";
 import { unpushedCountCommand } from "./../driven-branch.ts";
 
 import {
-  bumpDeadlineRetries,
+  admitDeadlineRestart,
   deadlineNotice,
   describeLeftovers,
+  inheritedHeadOf,
   passLeftovers,
 } from "./restart.ts";
 
@@ -87,25 +88,32 @@ async function restartAfterDeadline(
   for (const line of describeLeftovers(leftovers)) console.error(`  ${line}`);
   // Counted in the drive state, so the budget spans every process that
   // drives this PR: a re-arm or a takeover does not get a fresh one.
-  const retries = await bumpDeadlineRetries(context.pr);
-  if (retries === null) {
+  const restart = await admitDeadlineRestart(
+    context.pr,
+    context.deadlineRetryBudget,
+  );
+  if (restart === null) {
     console.error(
       "  Could not record this restart in the drive state, so the retry budget cannot be enforced: stopping.",
     );
-  } else if (retries <= context.deadlineRetryBudget) {
+  } else if (restart.admitted) {
     console.error(
-      `  Restarting: deadline retry ${retries} of ${context.deadlineRetryBudget} for this drive (drive.pass_deadline_retries). The leftovers stay in the tree for the next pass.`,
+      `  Restarting: deadline retry ${restart.taken} of ${context.deadlineRetryBudget} for this drive (drive.pass_deadline_retries). The leftovers stay in the tree for the next pass.`,
     );
     context.passNotice = deadlineNotice(round, passDeadlineSec, leftovers);
+    // Committed but unpushed work puts local HEAD ahead of the PR head, which
+    // the next gate would read as head lag and never hand out the round that
+    // pushes it. That gate accepts exactly this witnessed head instead.
+    context.inheritedHead = inheritedHeadOf(leftovers);
     // A killed pass is not a completed one: it must not count toward the
     // stall streak, which compares the gates around COMPLETED passes.
     context.prevFingerprint = null;
     context.noopRounds = 0;
     return "continue";
   }
-  if (retries !== null)
+  if (restart !== null)
     console.error(
-      `  The pass-deadline retry budget is spent (${context.deadlineRetryBudget}, drive.pass_deadline_retries; ${retries - 1} restart(s) already taken by this drive): stopping.`,
+      `  The pass-deadline retry budget is spent (${context.deadlineRetryBudget}, drive.pass_deadline_retries; ${restart.taken} restart(s) already taken by this drive): stopping.`,
     );
   console.error(
     `  Before re-arming, settle what the pass left: \`git status --short\` and \`${unpushedCountCommand()}\`.`,

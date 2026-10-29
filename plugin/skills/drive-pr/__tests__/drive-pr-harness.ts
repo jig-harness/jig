@@ -1915,6 +1915,8 @@ for a in "$@"; do
       st=$(jq -r '.state // "OPEN"' "$F/pr-view.json")
       printf '{"data":{"node":{"__typename":"PullRequestReviewThread","id":"%s","pullRequest":{"number":999,"state":"%s"}}}}' "$tid" "$st"
       exit 0 ;;
+    *"pullRequest { number repository"*) printf '%s' '{"data":{"node":{"pullRequest":{"number":999,"repository":{"owner":{"login":"example-org"},"name":"example-repo"}}}}}' | jq -r "\${filter:-.}"; exit 0 ;;
+    repos/*/code-scanning/alerts/[0-9]*) cat "$F/alert-\${a##*/}.json"; exit $? ;;
   esac
 done
 

@@ -1143,7 +1143,7 @@ make, use the entry's term instead.
   in (converged, pull request merged or closed, round limit reached, waiting
   on a human, …), each reported with a documented exit code, so a script or a
   person can tell from the exit alone what to do next.
-- **Re-arm and takeover (of a drive)** — the two ways a *PR drive loop* that
+- **Re-arm and takeover (of a drive)** — how a *PR drive loop* that
   stopped is picked up again. A **re-arm** starts the drive afresh from its
   saved state once the reason it stopped is gone: a usage limit another
   billing account is not behind, or every decision it parked answered by a
@@ -1342,6 +1342,11 @@ make, use the entry's term instead.
   out so that it alone runs on an expensive *model tier* while the evidence
   gathering and ranking around it run on cheaper ones. The unit the *Judgment
   tier* is assigned to, rather than a whole skill or agent.
+- **Route** — the agent, the *model tier* and the effort an item's
+  implementer runs on, derived from the item's *work type*, its *flag
+  labels* and size and the change areas it touches, by rules a repository
+  keeps as data, with the rule behind each part recorded; a person's choice
+  always wins ([design](design/agent-routing.md)).
 - **Family alias** — a model name that selects a model family rather than
   one release (`opus`, `sonnet`). A pin written with it ordinarily resolves to
   the family's current release, though not always: a session already on an

@@ -165,7 +165,38 @@ function moved(
 ): boolean {
   if (typeof reread === "string") return true;
   const now = reread.canonical?.comment;
-  return now?.id !== canonical.id || now.updatedAt !== canonical.updatedAt;
+  // `updated_at` has one-second precision: a write in the same second moves
+  // the body and not the stamp.
+  return (
+    now?.id !== canonical.id ||
+    now.updatedAt !== canonical.updatedAt ||
+    now.body !== canonical.body
+  );
+}
+
+/**
+ * Read the ledger back after a write: `''` when it holds this write, else
+ * what replaced it. A read that fails is no evidence either way, and the
+ * write stands.
+ */
+async function replacedBy(
+  pr: string,
+  selfLogin: string | null,
+  ours: Ledger,
+): Promise<string> {
+  const back = await readLedgerSnapshot(pr, selfLogin);
+  if (typeof back === "string") return "";
+  const parsed = back.canonical?.parsed;
+  const theirs = parsed?.kind === "ledger" ? parsed.ledger : null;
+  if (
+    theirs !== null &&
+    theirs.generation === ours.generation &&
+    theirs.driver.heartbeat === ours.driver.heartbeat
+  )
+    return "";
+  return theirs === null
+    ? "a comment this version does not read"
+    : `generation ${theirs.generation}, written at ${theirs.driver.heartbeat}`;
 }
 
 /** Delete the duplicates of the canonical ledger this login created. */
@@ -215,6 +246,36 @@ function written(
 }
 
 /**
+ * Update the canonical ledger, read it back, and delete this login's own
+ * duplicates once the write stands.
+ */
+async function patchAndVerify(
+  pr: string,
+  selfLogin: string | null,
+  snapshot: LedgerSnapshot,
+  canonical: ForgeComment,
+  next: { body: string; ledger: Ledger },
+): Promise<LedgerWrite> {
+  const patched = await patchComment(canonical.id, next.body);
+  if (patched !== "")
+    return {
+      kind: "failed",
+      reason: `the ledger comment was not updated (${patched})`,
+    };
+  const replaced = await replacedBy(pr, selfLogin, next.ledger);
+  if (replaced !== "")
+    return {
+      kind: "failed",
+      reason: `another writer replaced this write at once (${replaced}); that one stands`,
+    };
+  return written(
+    canonical.id,
+    next.ledger,
+    await deleteOwnDuplicates(snapshot, selfLogin),
+  );
+}
+
+/**
  * Write the ledger `build` makes from the current comments; `build` returns
  * a reason string to skip the write. A canonical ledger in a version this
  * code does not read is never overwritten.
@@ -245,17 +306,7 @@ export async function writeLedger(
       snapshot = reread;
       continue;
     }
-    const patched = await patchComment(canonical.id, next.body);
-    if (patched !== "")
-      return {
-        kind: "failed",
-        reason: `the ledger comment was not updated (${patched})`,
-      };
-    return written(
-      canonical.id,
-      next.ledger,
-      await deleteOwnDuplicates(snapshot, selfLogin),
-    );
+    return patchAndVerify(pr, selfLogin, snapshot, canonical, next);
   }
   return {
     kind: "failed",
@@ -279,9 +330,12 @@ export interface LedgerPullRequest {
 
 /**
  * The open pull requests of the current repository that carry a drive
- * ledger, through the forge's search (the ledger's visible summary names
- * `drive-pr-ledger`, which the search indexes); `null` when the search
- * cannot be run. The population a morning report reads.
+ * ledger: the forge's search (the ledger's visible summary names
+ * `drive-pr-ledger`, which the search indexes) narrowed to the pull requests
+ * whose comments hold a trusted ledger this version reads, since a comment
+ * that merely mentions the marker matches the search too. `null` when the
+ * search cannot be run. The population a morning report reads; narrowing it
+ * to the pull requests this account drove is the report's own step.
  */
 export async function listLedgerPullRequests(): Promise<
   LedgerPullRequest[] | null
@@ -309,7 +363,23 @@ export async function listLedgerPullRequests(): Promise<
     "-f",
     "per_page=100",
   ]);
-  return r.ok ? searchResults(json(r.stdout, "the search")) : null;
+  if (!r.ok) return null;
+  const login = await resolveLogin();
+  const found: LedgerPullRequest[] = [];
+  for (const hit of searchResults(json(r.stdout, "the search")))
+    if (await carriesLedger(String(hit.number), login)) found.push(hit);
+  return found;
+}
+
+/** Whether the pull request's comments hold a trusted ledger this version reads. */
+async function carriesLedger(
+  pr: string,
+  login: string | null,
+): Promise<boolean> {
+  const snapshot = await readLedgerSnapshot(pr, login);
+  return (
+    typeof snapshot !== "string" && snapshot.canonical?.parsed.kind === "ledger"
+  );
 }
 
 /** The pull requests in the search's pages, by number. */

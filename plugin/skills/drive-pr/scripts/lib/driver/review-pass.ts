@@ -7,6 +7,10 @@ import { passExitDisposition } from "./settings.ts";
 
 import { handleFailedReviewPass } from "./review-failure.ts";
 
+import { clearPendingVerdicts } from "./../state/pass-handoff.ts";
+
+import { resolveStateDir } from "./../state/store.ts";
+
 export async function runReviewPassPhase(
   context: DriveRoundContext,
   apiHead: string,
@@ -35,8 +39,13 @@ export async function runReviewPassPhase(
     return dispatchReviewPassResult;
   const { passRes, passHandle } = dispatchReviewPassResult;
   const disposition = passExitDisposition(passRes.code);
-  // A pass that completed has acted on what it was carried.
-  if (disposition.kind === "ok") context.carriedNotice = "";
+  // A pass that completed has acted on what it was carried, and pushed or
+  // discarded what it inherited.
+  if (disposition.kind === "ok") {
+    context.carriedNotice = "";
+    clearPendingVerdicts(await resolveStateDir(), context.pr);
+    context.inheritedHead = "";
+  }
   // A directive sent WHILE this pass ran must still be honored before a
   // non-success terminal result for it is reported, PR_NOT_OPEN included.
   // NOT extended to the

@@ -48,7 +48,7 @@
  *   drive-state.ts set-reflected [PR]                # record a completed /reflect at the current round
  *   drive-state.ts park         [PR] --key K --kind thread|finding --class C  < record.md
  *   drive-state.ts record-decision [PR]  < {"class","what","reverse","record"?}
- *   drive-state.ts unpark       [PR] --key K
+ *   drive-state.ts unpark       [PR] --key K [--key K …]   # all, or none
  *   drive-state.ts parked-keys  [PR]                 # newline-delimited keys
  *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome accepted|moot
  *                                     [--comment-url URL] [--unconfirmed]
@@ -218,11 +218,17 @@ import {
 } from "./lib/proc.ts";
 import { isActorId, resolveActor } from "./lib/state/actor.ts";
 import { recordTakeover } from "./lib/state/takeover.ts";
-import { mirrorLedger, seedLedgerCommand } from "./lib/state/ledger-mirror.ts";
+import {
+  mirrorLedger,
+  removeStateKeepingLedgerGeneration,
+  seedLedgerCommand,
+} from "./lib/state/ledger-mirror.ts";
 import { quotaPark } from "./lib/state/quota-park.ts";
 import { framedPark } from "./lib/state/framed-park.ts";
 import { recordDecision } from "./lib/state/decisions.ts";
 import { deadlineRetries } from "./lib/state/deadline-retries.ts";
+import { unpark } from "./lib/state/unpark.ts";
+import { clearPendingVerdicts } from "./lib/state/pass-handoff.ts";
 import {
   breakStaleClaimLocked,
   claimCreate,
@@ -337,7 +343,7 @@ function usage(): void {
                                     claim rather than preserving it.
   park         [PR] --key K --kind thread|finding --class C  (decision record on stdin)
   record-decision [PR]              a decision the agent took, JSON on stdin
-  unpark       [PR] --key K
+  unpark       [PR] --key K [--key K …]  every key, or none when one is not parked
   parked-keys  [PR]                 newline-delimited keys
   hold         [PR] --key K --kind thread|finding --outcome accepted|moot
                [--comment-url URL] [--unconfirmed]
@@ -408,6 +414,8 @@ interface Args {
   cmd: string;
   pr: string;
   key: string;
+  /** Every `--key`, in argv order (`unpark` takes several). */
+  keys: string[];
   kind: string;
   reason: string;
   sha: string;
@@ -490,7 +498,7 @@ const VALUE_FLAGS: Readonly<Record<string, ValueField>> = {
 };
 
 /** Every flag's value before the command line sets it. */
-const ARG_DEFAULTS: Omit<Args, "cmd" | "paths"> = {
+const ARG_DEFAULTS: Omit<Args, "cmd" | "paths" | "keys"> = {
   pr: "",
   key: "",
   kind: "",
@@ -522,9 +530,19 @@ const ARG_DEFAULTS: Omit<Args, "cmd" | "paths"> = {
   parkClass: "",
 };
 
+/** Every value `flag` is given in `argv`, in order. */
+function flagValues(argv: string[], flag: string): string[] {
+  return argv.flatMap((arg, i) => (arg === flag ? [argv[i + 1] ?? ""] : []));
+}
+
 function parseArgs(argv: string[]): Args {
   const cmd = argv.shift() ?? "";
-  const a: Args = { ...ARG_DEFAULTS, cmd, paths: [] };
+  const a: Args = {
+    ...ARG_DEFAULTS,
+    cmd,
+    keys: flagValues(argv, "--key"),
+    paths: [],
+  };
   const take = (flag: string, i: number): string => {
     const value = argv[i + 1];
     if (value === undefined) fail(2, `${flag} requires a value`);
@@ -2116,14 +2134,8 @@ async function main(): Promise<number> {
       return parked;
     }
 
-    case "unpark": {
-      if (a.key === "") fail(2, "unpark requires --key");
-      await store.update((s) => ({
-        ...s,
-        parked: s.parked.filter((p) => p.key !== a.key),
-      }));
-      return 0;
-    }
+    case "unpark":
+      return unpark(store, a.keys);
 
     case "parked-keys": {
       for (const p of store.read().state.parked)
@@ -3491,8 +3503,9 @@ async function main(): Promise<number> {
           return 9;
         }
 
-        rmSync(store.file, { force: true });
+        removeStateKeepingLedgerGeneration(store, Number(pr));
         rmSync(orphanMarkerPath(store.stateDir, pr), { force: true });
+        clearPendingVerdicts(store.stateDir, pr);
         await removeHandoff(pr);
         // Every claim file for this PR too — live, or an abandoned
         // `.released.` leftover. Without this, "forget everything for this PR"

@@ -380,6 +380,55 @@ describe("finish-round.ts", () => {
       expect(String(r.report.reason)).toContain("PRRT_human_untouched");
     });
 
+    // A code-scanning thread's moot is never held: its alert settles only
+    // after the push that carries this round's fix, so the push must go.
+    const scanningMoot = (id: string, opener: string) => ({
+      id,
+      path: "seed.txt",
+      bot: true,
+      comments: [
+        { author: opener, authorAssociation: "NONE", body: "a finding" },
+        {
+          author: "example-user-2",
+          authorAssociation: "OWNER",
+          body: "**moot** — this round's unpushed fix removes the flagged code.",
+        },
+      ],
+    });
+
+    it("does not refuse an unheld moot on a thread GitHub's code scanning account opened", async () => {
+      const r = await finishRound({
+        fixture: {
+          threads: [scanningMoot("PRRT_scan_moot", "github-advanced-security")],
+        },
+      });
+      expect(r.report.state).toBe("FINISHED");
+      expect(r.pushed).not.toBe("");
+    });
+
+    it("does not refuse that moot once a trusted bot's confirmation follows it", async () => {
+      const thread = scanningMoot("PRRT_scan_conf", "github-advanced-security");
+      thread.comments.push({
+        author: "coderabbitai",
+        authorAssociation: "NONE",
+        body: "Thanks, confirmed.\n\n<!-- coderabbit-skip-review-comment-follow-up -->",
+      });
+      const r = await finishRound({ fixture: { threads: [thread] } });
+      expect(r.report.state).toBe("FINISHED");
+      expect(r.pushed).not.toBe("");
+    });
+
+    it("still refuses the identical unheld moot on another bot's thread", async () => {
+      const r = await finishRound({
+        fixture: {
+          threads: [scanningMoot("PRRT_bot_moot", "example-review-bot")],
+        },
+      });
+      expect(r.report.state).toBe("REFUSED_UNTRIAGED");
+      expect(r.pushed).toBe("");
+      expect(String(r.report.reason)).toContain("PRRT_bot_moot");
+    });
+
     it("the identical human-started thread does NOT refuse a round finished with --bots-only", async () => {
       const r = await finishRound({
         fixture: {

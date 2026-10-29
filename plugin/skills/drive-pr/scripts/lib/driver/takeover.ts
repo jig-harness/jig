@@ -23,7 +23,8 @@
  * command's check, the quota re-arm, the held batch's read, and this tree's
  * own lock unless the holder holds it. A wedged holder is stopped with the
  * identity check `drives.ts --stop` performs, through that command itself,
- * after its doctor row is read again. A refusal that still comes after the
+ * after its doctor row is read again, and only the acquisition that row
+ * names (`--expect-started`). A refusal that still comes after the
  * stop (the attach, the PR lock) says the holder was stopped and prints the
  * plain re-arm command.
  */
@@ -52,6 +53,9 @@ import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 
 import { SINGLE_INSTANCE_LOCK_EXIT } from "./settings.ts";
+
+/** `drives.ts --stop --expect-started`: the lock is held by another acquisition. */
+const STOP_OTHER_HOLDER_EXIT = 3;
 
 import { registerCleanup } from "../../../../../shared/cleanup.ts";
 
@@ -276,11 +280,16 @@ function announceStoppedOnExit(pr: string, rearm: string): void {
   });
 }
 
+/** The holder was not stopped after all; the exit notice would be false. */
+function withdrawStoppedNotice(): void {
+  stoppedNotice?.[Symbol.dispose]();
+  stoppedNotice = null;
+}
+
 /** The takeover is recorded; the exit notice is no longer owed. */
 export function settleTakeover(): void {
   takeoverSettled = true;
-  stoppedNotice?.[Symbol.dispose]();
-  stoppedNotice = null;
+  withdrawStoppedNotice();
 }
 
 /** Stop a WEDGED holder, once its doctor row still says so. */
@@ -298,26 +307,40 @@ async function stopWedgedHolder(
       SINGLE_INSTANCE_LOCK_EXIT,
       `drive.ts --take-over: PR #${pr}'s doctor row could not be read again before the stop; not stopping its driver.`,
     );
+  const started = row.diag?.started ?? null;
   if (
     row.state !== "live" ||
     row.doctor?.verdict !== "WEDGED" ||
-    (row.diag?.started ?? null) !== plan.holderStarted
+    started === null ||
+    started !== plan.holderStarted
   )
     refuse(
       pr,
       row,
-      "It changed since the takeover was decided; not stopping it.",
+      "It changed since the takeover was decided, or its claim names no acquisition time to bind the stop to; not stopping it.",
     );
   console.error(
     `drive.ts --take-over: PR #${pr}'s driver is WEDGED; stopping it through drives.ts --stop.`,
   );
   for (const line of holderLines(row)) console.error(`  ${line}`);
-  announceStoppedOnExit(pr, rearm);
-  const stop = await run(tsArgv(drives, ["--stop", pr]), {
-    stdout: "inherit",
-    stderr: "inherit",
-    timeoutSec: helperTimeoutSeconds(),
-  });
+  // Bound to the diagnosed acquisition: `--stop` refuses (exit 3) a holder
+  // that acquired the lock after this row was read, so a healthy successor
+  // of an exited wedged driver is never the one stopped.
+  const stop = await run(
+    tsArgv(drives, ["--stop", pr, "--expect-started", started]),
+    {
+      stdout: "inherit",
+      stderr: "inherit",
+      timeoutSec: helperTimeoutSeconds(),
+    },
+  );
+  if (stop.code === STOP_OTHER_HOLDER_EXIT) {
+    refuse(
+      pr,
+      row,
+      "Another driver acquired the lock before the stop; not stopping it.",
+    );
+  }
   if (stop.code !== 0)
     fail(
       SINGLE_INSTANCE_LOCK_EXIT,
@@ -334,6 +357,9 @@ async function stopWedgedHolder(
       );
     await sleep(0.25);
   }
+  // Only now is the stop witnessed: a refusal before this point says the
+  // holder may still be running, and the exit must not claim otherwise.
+  announceStoppedOnExit(pr, rearm);
 }
 
 /**
