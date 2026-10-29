@@ -13,11 +13,13 @@ import {
   type HeadingVersion,
   headingVersion,
   isDate,
+  isDefinition,
   label,
   type Rule,
   type Section,
   uncovered,
 } from "./lint-structure.ts";
+import { prose } from "./markdown-inline.ts";
 
 const SPEC = "https://keepachangelog.com/en/1.1.0/";
 
@@ -160,13 +162,15 @@ function titleFindings(changelog: Changelog): Finding[] {
 }
 
 function semverFindings(changelog: Changelog): Finding[] {
-  // Only what renders counts: an HTML comment or a code example states no policy.
-  const text = changelog.preamble
-    .filter((l) => !l.inFence)
+  // Only prose that renders counts: an HTML comment, a code example, a link's
+  // destination or a link reference definition states no policy. An HTML
+  // block that opens with a comment runs to the line that closes it.
+  const source = changelog.preamble
+    .filter((l) => !l.inFence && !isDefinition(l))
     .map((l) => l.text)
     .join("\n")
-    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
-    .replace(/(`+)[\s\S]*?\1/g, "");
+    .replace(/(^|\n) {0,3}<!--[\s\S]*?(?:-->[^\n]*|$)/g, "$1");
+  const text = prose(source, (l) => changelog.definitions.has(label(l)));
   if (/semantic versioning|semver/i.test(text)) return [];
   return [
     finding(

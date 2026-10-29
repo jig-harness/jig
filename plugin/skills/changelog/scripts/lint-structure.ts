@@ -1,20 +1,18 @@
 // The whole changelog as the format checks read it: its lines with their
 // numbers, its title, the text before the first release, each `##` section
 // with the `###` groups under it, and its link reference definitions. Headings
-// inside fenced code blocks are examples, not structure. Shared by the rules
+// inside fenced code blocks are examples, not structure; inline Markdown is
+// read through markdown-inline.ts, by CommonMark's grammar. Shared by the rules
 // of each format (lint-keep-a-changelog.ts, lint-common-changelog.ts) and the
 // command (lint.ts).
 import { Defect } from "../../../shared/errors.ts";
 import { fenced, heading } from "./markdown-blocks.ts";
-
-/**
- * A link reference definition on one line, as Markdown reads one: up to three
- * spaces of indentation, the label, a colon, the destination (bare or in angle
- * brackets) and an optional title in double quotes, single quotes or
- * parentheses.
- */
-const DEFINITION =
-  /^ {0,3}\[((?:[^\]\\]|\\.)+)\]:[ \t]*(<[^>\n]*>|\S+)(?:[ \t]+(?:"[^"]*"|'[^']*'|\([^)]*\)))?[ \t]*$/;
+import {
+  definition,
+  inlineLink,
+  linkLabel,
+  linkText,
+} from "./markdown-inline.ts";
 
 /** One rule a finding names: its id and where the format's specification states it. */
 export interface Rule {
@@ -43,6 +41,8 @@ export interface Line {
   inFence: boolean;
   /** Whether the line opens or closes its fenced code block. */
   delimiter: "open" | "close" | null;
+  /** Whether the line is part of a link reference definition, which renders as nothing. */
+  definition: boolean;
 }
 
 /** A `###` heading and the lines under it, up to the next heading of level 3 or less. */
@@ -92,46 +92,102 @@ export interface HeadingVersion {
   rest: string;
 }
 
+/** A version written as a link, as `[version]` opens `title`. */
+function linkedVersion(
+  title: string,
+  text: { text: string; end: number },
+): HeadingVersion {
+  const version = text.text;
+  const inline = title[text.end] === "(" ? inlineLink(title, text.end) : null;
+  if (inline !== null)
+    return { version, link: "inline", ref: null, rest: title.slice(inline) };
+  const ref = title[text.end] === "[" ? linkLabel(title, text.end) : null;
+  return {
+    version,
+    link: "reference",
+    ref: ref?.text ? ref.text : version,
+    rest: title.slice(ref ? ref.end : text.end),
+  };
+}
+
 export function headingVersion(title: string): HeadingVersion | null {
-  const linked =
-    /^\[([^\]]+)\](?:\((?:<[^>]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'))?\)|\[([^\]]*)\])?(.*)$/.exec(
-      title,
-    );
-  if (linked?.[1] !== undefined) {
-    const [whole, version, ref, rest] = linked;
-    const inline = whole.slice(version.length + 2).startsWith("(");
-    return inline
-      ? { version, link: "inline", ref: null, rest: rest ?? "" }
-      : {
-          version,
-          link: "reference",
-          ref: ref ? ref : version,
-          rest: rest ?? "",
-        };
-  }
+  const text = title.startsWith("[") ? linkText(title, 0) : null;
+  if (text?.text) return linkedVersion(title, text);
   const plain = /^([^\s[\]]+)(.*)$/.exec(title);
   return plain?.[1] === undefined
     ? null
     : { version: plain[1], link: "plain", ref: null, rest: plain[2] ?? "" };
 }
 
-/** Whether a line is a link reference definition, which renders as nothing. */
-export const isDefinition = (line: Line): boolean =>
-  !line.inFence && DEFINITION.test(line.text);
+/** Whether a line is part of a link reference definition, which renders as nothing. */
+export const isDefinition = (line: Line): boolean => line.definition;
 
 /** The lines that render: not blank, not a link reference definition. */
 export const content = (lines: Line[]): Line[] =>
   lines.filter((l) => l.text.trim() !== "" && !isDefinition(l));
 
-/** The link reference definitions of `lines`, the first of each label winning as in Markdown. */
+/**
+ * The link reference definition that starts at `lines[at]`, read from the
+ * lines up to its third (a destination and a title may each take a line of
+ * their own), stopping at a blank line or a fence. `lines` is how many lines
+ * it takes.
+ */
+function definitionAt(
+  lines: Line[],
+  at: number,
+): { name: string; url: string; lines: number } | null {
+  const run: string[] = [];
+  for (const line of lines.slice(at, at + 3)) {
+    if (line.inFence || (run.length > 0 && line.text.trim() === "")) break;
+    run.push(line.text);
+  }
+  const s = run.join("\n");
+  const found = definition(s);
+  return found
+    ? { ...found, lines: s.slice(0, found.end).split("\n").length }
+    : null;
+}
+
+/** A thematic break: three or more `-`, `*` or `_`, spaces between allowed. */
+export const BREAK = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+
+/**
+ * Whether a paragraph is open after `line`, given whether one was before it.
+ * Text opens or continues one; a blank line, a fence, a heading, a thematic
+ * break or an indented code block (which takes no lazy continuation) does not.
+ */
+function paragraphAfter(line: Line, open: boolean): boolean {
+  const code = !open && /^(?: {4}|\t)/.test(line.text);
+  return !(
+    line.inFence ||
+    code ||
+    line.text.trim() === "" ||
+    heading(line.text) !== null ||
+    BREAK.test(line.text)
+  );
+}
+
+/**
+ * Mark the lines of `lines` that are link reference definitions and return
+ * the definitions by label, the first of each label winning as in Markdown. A
+ * definition cannot interrupt a paragraph, so one is read only where no
+ * paragraph is open.
+ */
 function definitionsOf(lines: Line[]): Changelog["definitions"] {
   const definitions: Changelog["definitions"] = new Map();
-  for (const line of lines) {
-    const match = line.inFence ? null : DEFINITION.exec(line.text);
-    const [, name, destination] = match ?? [];
-    const url = destination?.replace(/^<(.*)>$/, "$1");
-    if (name && url !== undefined && !definitions.has(label(name)))
-      definitions.set(label(name), { line: line.n, url });
+  let paragraph = false;
+  for (let i = 0; i < lines.length; ) {
+    const line = lines[i] as Line;
+    const found = line.inFence || paragraph ? null : definitionAt(lines, i);
+    if (!found) {
+      paragraph = paragraphAfter(line, paragraph);
+      i++;
+      continue;
+    }
+    for (const l of lines.slice(i, i + found.lines)) l.definition = true;
+    if (!definitions.has(label(found.name)))
+      definitions.set(label(found.name), { line: line.n, url: found.url });
+    i += found.lines;
   }
   return definitions;
 }
@@ -174,6 +230,7 @@ export function readChangelog(file: string, text: string): Changelog {
     text: l.line,
     inFence: l.inFence,
     delimiter: l.delimiter,
+    definition: false,
   }));
   const changelog: Changelog = {
     file,

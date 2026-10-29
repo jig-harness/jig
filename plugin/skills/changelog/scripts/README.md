@@ -225,8 +225,14 @@ format is `changelog.format`, else the one the file names (`formats.ts`), and
 - `lint-structure.ts` reads the file into what the rules look at: its lines
   with their numbers, the title, the text above the first `##` section, each
   section with its `###` groups, and the link reference definitions, with
-  headings inside fenced code blocks left out. It also holds the date rule
-  (year-month-day, a day that exists) and Semantic Versioning precedence.
+  headings inside fenced code blocks left out; a definition is read as a
+  block, its destination and title allowed on lines of their own. It also
+  holds the date rule (year-month-day, a day that exists) and Semantic
+  Versioning precedence.
+- `markdown-inline.ts` reads inline Markdown by CommonMark's grammar (escapes,
+  code spans, raw HTML, autolinks, links with their destinations and titles),
+  so a rule sees what renders: a version link, a change's references, the
+  prose of the Semantic Versioning statement.
 - `lint-keep-a-changelog.ts` holds Keep a Changelog 1.1.0's rules.
 - `lint-common-changelog.ts` holds Common Changelog's.
 

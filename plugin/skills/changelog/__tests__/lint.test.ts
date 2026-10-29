@@ -419,6 +419,31 @@ describe("headings and definitions read as Markdown writes them", () => {
     ).toEqual([]);
   });
 
+  test("a definition may put its destination and title on lines of their own", () => {
+    expect(
+      commonWith(
+        "[1.9.0]: https://example.com/o/r/releases/tag/v1.9.0",
+        "[1.9.0]:\n  https://example.com/o/r/releases/tag/v1.9.0\n  (1.9.0)",
+      ),
+    ).toEqual([]);
+  });
+
+  test("a destination must be one Markdown reads as one", () => {
+    const found = commonWith(
+      "[1.9.0]: https://example.com/o/r/releases/tag/v1.9.0",
+      "[1.9.0]: <https://example.com/o/r/releases/tag/v1.9.0>garbage",
+    );
+    expect(found).toContain(COMMON_RULES.versionLink.id);
+  });
+
+  test("an inline version link may hold balanced parentheses and a parenthesized title", () => {
+    for (const heading of [
+      "## [2.0.0](https://example.com/o/r/release_(stable)) - 2024-03-01",
+      "## [2.0.0](https://example.com/o/r/releases/tag/v2.0.0 (Release)) - 2024-03-01",
+    ])
+      expect(commonWith("## [2.0.0] - 2024-03-01", heading)).toEqual([]);
+  });
+
   test("a title, a list and its items may be indented up to three spaces", () => {
     expect(commonWith("# Changelog", "   # Changelog")).toEqual([]);
     expect(keepWith("# Changelog", " # Changelog")).toEqual([]);
@@ -445,14 +470,30 @@ describe("changes and notices read as they render", () => {
       "- Fix the parser ([#7][missing])",
       "- Fix the parser ([#7](https://example.com/o/r/pull/7)",
       "- ([#7](https://example.com/o/r/pull/7))",
+      "- Fix the parser <!-- ([#7](https://example.com/o/r/pull/7)) -->",
+      "- Fix the parser\n\n      ([#7](https://example.com/o/r/pull/7))",
+      "- Fix the parser ([#7](https://example.com/o/r/pull/7)) ([#8][missing])",
+      "- Fix the parser (![#7](https://example.com/o/r/pull/7))",
     ])
       expect(commonWith(item, broken)).toEqual([COMMON_RULES.reference.id]);
+    for (const linked of [
+      "- Fix the parser ([#7][pr-7])\n\n[pr-7]: https://example.com/o/r/pull/7",
+      "- Fix the parser ([`abc1234`])\n\n[`abc1234`]: https://example.com/o/r/commit/abc1234",
+      '- Fix the parser ([#7](<https://example.com/o/r/pull/7> "#7"))',
+      "- Fix the parser (<https://example.com/o/r/pull/7>)",
+    ])
+      expect(commonWith(item, linked)).toEqual([]);
+  });
+
+  test("text after a fence that closes inside a change is outside the list", () => {
+    const item = "- Fix the parser ([#7](https://example.com/o/r/pull/7))";
     expect(
       commonWith(
         item,
-        "- Fix the parser ([#7][pr-7])\n\n[pr-7]: https://example.com/o/r/pull/7",
+        `${item}\n\n  \`\`\`\n  code\n  \`\`\`\nOutside the list.`,
       ),
-    ).toEqual([]);
+    ).toEqual([COMMON_RULES.list.id]);
+    expect(commonWith(item, `${item}\nwrapped onto a lazy line.`)).toEqual([]);
   });
 
   test("a fence outside the list is not part of a change", () => {
@@ -514,8 +555,11 @@ describe("orders, links and statements read as they render", () => {
       "and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).";
     for (const hidden of [
       "<!-- semver -->",
+      "<!--\n\nsemver\n\n-->",
       "```text\nsemver\n```",
       "`semver`",
+      "and this project adheres to [a policy](https://semver.org/).",
+      "and this project adheres to a policy.\n\n[policy]: https://semver.org/",
     ])
       expect(keepWith(statement, hidden)).toEqual([KEEP_RULES.semver.id]);
   });

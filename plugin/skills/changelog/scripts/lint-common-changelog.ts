@@ -7,7 +7,9 @@
 // lint.ts runs these on a changelog whose format is Common Changelog and on no
 // other.
 import { heading } from "./markdown-blocks.ts";
+import { marked } from "./markdown-inline.ts";
 import {
+  BREAK,
   type Changelog,
   type Coverage,
   content,
@@ -151,43 +153,29 @@ interface Release {
 const ITEM = /^( {0,3}[-*+][ \t]+)\S/;
 
 /**
- * A Markdown link: inline (`[#12](https://…)`), or a reference (`[#12][pr-12]`,
- * `[#12][]`, `[#12]`) that links only where its label has a definition.
+ * A reference in a change's text as `marked` (markdown-inline.ts) shows it:
+ * an opening parenthesis, links separated by commas, the closing parenthesis,
+ * spacing within one paragraph. `\uE001` is a link that renders, `\uE002` one
+ * that does not.
  */
-const LINK = String.raw`\[[^\]]+\](?:\((?:<[^>]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'))?\)|\[[^\]]*\])?`;
-
-/** A reference: an opening parenthesis, links separated by commas, the closing parenthesis. */
-const REFERENCE = new RegExp(
-  String.raw`\(\s*(${LINK}(?:\s*,\s*${LINK})*)\s*\)`,
-  "g",
-);
-
-/** One link of a reference, with the label a reference-style link resolves through. */
-const EACH_LINK =
-  /\[([^\]]+)\](\((?:<[^>]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'))?\)|\[([^\]]*)\])?/g;
-
-/** A code span, whose text renders literally: no link inside it is one. */
-const CODE_SPAN = /(`+)[\s\S]*?\1/g;
+const REFERENCE =
+  /\([ \t]*\n?[ \t]*[\uE001\uE002](?:[ \t]*\n?[ \t]*,[ \t]*\n?[ \t]*[\uE001\uE002])*[ \t]*\n?[ \t]*\)/g;
 
 /**
- * Whether a change's text holds a reference after some text of its own, each
- * of whose links renders as a link: inline, or by a label `changelog` defines.
+ * Whether a change's text holds a reference after some text of its own, and
+ * every link of every reference renders as a link: inline, an autolink, or by
+ * a label `changelog` defines. A link inside a code span or an HTML comment
+ * is not one.
  */
 function referenced(changelog: Changelog, text: string): boolean {
-  const visible = text
-    .replace(/^ {0,3}[-*+][ \t]+/, (marker) => " ".repeat(marker.length))
-    .replace(CODE_SPAN, (span) => " ".repeat(span.length));
-  for (const match of visible.matchAll(REFERENCE)) {
-    if (visible.slice(0, match.index).trim() === "") continue;
-    const links = [...(match[1] ?? "").matchAll(EACH_LINK)];
-    const resolves = links.every(
-      ([, text, inline, ref]) =>
-        inline?.startsWith("(") ||
-        changelog.definitions.has(label(ref ? ref : (text ?? ""))),
-    );
-    if (resolves) return true;
-  }
-  return false;
+  const visible = marked(text.replace(/^ {0,3}[-*+][ \t]+/, ""), (l) =>
+    changelog.definitions.has(label(l)),
+  );
+  const references = [...visible.matchAll(REFERENCE)];
+  return (
+    references.some((r) => visible.slice(0, r.index).trim() !== "") &&
+    references.every((r) => !r[0].includes("\uE002"))
+  );
 }
 
 function fileFindings(changelog: Changelog): Finding[] {
@@ -325,9 +313,6 @@ function dateAndOrderFindings(
   return findings;
 }
 
-/** A thematic break: three or more `-`, `*` or `_`, spaces between allowed. */
-const BREAK = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
-
 /**
  * Whether a line opens something other than a paragraph: a list, a heading, a
  * fence, a quote, a thematic break.
@@ -396,19 +381,22 @@ const indentOf = (text: string): number =>
 
 /**
  * Whether a line other than an item's first belongs to the item whose text
- * starts at column `offset`. After a blank line it must be indented to that
- * column; directly after the item's text it may also continue the paragraph
- * at any indentation, unless it opens a block of its own.
+ * starts at column `offset`: indented to that column, or, while a paragraph
+ * of the item is open, continuing it at any indentation (a lazy
+ * continuation) unless it opens a block of its own.
  */
-const continues = (line: Line, offset: number, afterBlank: boolean): boolean =>
-  indentOf(line.text) >= offset || (!afterBlank && !opensBlock(line));
+const continues = (line: Line, offset: number, paragraph: boolean): boolean =>
+  indentOf(line.text) >= offset || (paragraph && !opensBlock(line));
 
 /** Where a walk down a list stands: the item it is in and what came last. */
 interface ListWalk {
   items: { line: number; text: string }[];
   /** The column the current item's text starts at. */
   offset: number;
-  afterBlank: boolean;
+  /** Whether the last line was paragraph text of the item, which a lazy line may continue. */
+  paragraph: boolean;
+  /** Whether a blank line or a block that is not text came since the item's last text. */
+  broken: boolean;
   /** Whether the fenced code block the walk is in belongs to the item. */
   fenceInside: boolean;
 }
@@ -417,7 +405,7 @@ interface ListWalk {
 function belongs(line: Line, walk: ListWalk): boolean {
   if (line.inFence && line.delimiter !== "open") return walk.fenceInside;
   const inside: boolean =
-    walk.items.length > 0 && continues(line, walk.offset, walk.afterBlank);
+    walk.items.length > 0 && continues(line, walk.offset, walk.paragraph);
   if (line.delimiter === "open") walk.fenceInside = inside;
   return inside;
 }
@@ -427,8 +415,22 @@ const isGap = (line: Line): boolean =>
   !line.inFence && (line.text.trim() === "" || isDefinition(line));
 
 /**
- * A group's top-level list items, each as the text of its lines, and the
- * first line that renders outside the list, if one does.
+ * Add a line that belongs to the current item. Only text that renders as
+ * text joins the item's text: a fenced or indented code block shows its
+ * content literally, so a link in it is no reference.
+ */
+function extend(walk: ListWalk, line: Line): void {
+  const code =
+    line.inFence || (!walk.paragraph && indentOf(line.text) >= walk.offset + 4);
+  const item = walk.items.at(-1) as { text: string };
+  if (!code) item.text += `${walk.broken ? "\n\n" : "\n"}${line.text}`;
+  walk.broken = code;
+  walk.paragraph = !code && !BREAK.test(line.text) && !heading(line.text);
+}
+
+/**
+ * A group's top-level list items, each as the text of its lines that renders
+ * as text, and the first line that renders outside the list, if one does.
  */
 function listOf(group: Group): {
   items: { line: number; text: string }[];
@@ -437,22 +439,24 @@ function listOf(group: Group): {
   const walk: ListWalk = {
     items: [],
     offset: 0,
-    afterBlank: false,
+    paragraph: false,
+    broken: false,
     fenceInside: false,
   };
   for (const line of group.body) {
     if (isGap(line)) {
-      walk.afterBlank ||= line.text.trim() === "";
+      walk.paragraph = false;
+      walk.broken = true;
       continue;
     }
     const item = line.inFence ? null : ITEM.exec(line.text);
     if (item?.[1] !== undefined) {
       walk.items.push({ line: line.n, text: line.text });
       walk.offset = item[1].replaceAll("\t", "    ").length;
-    } else if (belongs(line, walk))
-      (walk.items.at(-1) as { text: string }).text += `\n${line.text}`;
+      walk.paragraph = true;
+      walk.broken = false;
+    } else if (belongs(line, walk)) extend(walk, line);
     else return { items: walk.items, stray: line };
-    walk.afterBlank = false;
   }
   return { items: walk.items, stray: null };
 }
