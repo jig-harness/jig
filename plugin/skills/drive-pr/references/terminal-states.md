@@ -563,8 +563,16 @@ never taken for the ledger or overwritten. Nothing that identifies an account
 is posted: neither the ledger nor a claim carries an account hash, and
 email-shaped text in the narrative and the parked reasons is replaced with
 `<redacted>`. The driver's last write marks it stopped, naming its exit, on
-a returned exit and on a thrown refusal; a stop by signal or by `drives.ts`'s `--stop` starts no new command once shutdown begins, so that ledger keeps
-saying "running" until its heartbeat ages past the lease window. The body is cut to the forge's 65,536 limit by dropping
+a returned exit and on a thrown refusal. Once a driver's shutdown begins it
+starts no new command, so a stop writes from outside it (`lib/ledger-stop.ts`):
+`drives.ts`'s `--stop` marks the ledger stopped once the driver is witnessed
+gone, and `--stop` or `--doctor` against a lock whose process is confirmed gone
+does the same, which is the recovery after a crash, a kill or a signal stop.
+Each writes only while the ledger still names that driver as running (its
+tree, clone and run) with no claim in force from another clone past its
+recorded position, and leaves any other ledger as it is, saying so. Until one
+runs in that clone, a dead driver's ledger keeps saying "running" until its
+heartbeat ages past the lease window. The body is cut to the forge's 65,536 limit by dropping
 held items' outcomes first, the narrative second and the visible list of
 parked decisions third; a parked decision is never dropped from the data, so
 a ledger that still does not fit is not written, and says so. A canonical

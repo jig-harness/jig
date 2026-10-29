@@ -12,7 +12,9 @@
  * it; a session that is not a drive's child has no such variable and leaves
  * the ledger alone.
  */
+import { createHash } from "node:crypto";
 import { readFileSync, rmSync } from "node:fs";
+import { hostname } from "node:os";
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { fail } from "../cli.ts";
@@ -45,6 +47,8 @@ export interface LedgerDriverEnv {
   claim: ClaimComment | null;
   /** Set on the driver's last write: the exit it stops with, `null` unknown. */
   stopped?: number | null;
+  /** The driver's lock acquisition time. */
+  started?: string;
 }
 
 export function ledgerDriverFromEnv(): LedgerDriverEnv | null {
@@ -61,7 +65,8 @@ export function ledgerDriverFromEnv(): LedgerDriverEnv | null {
       (v.claim === null || isRecord(v.claim)) &&
       (v.stopped === undefined ||
         v.stopped === null ||
-        typeof v.stopped === "number")
+        typeof v.stopped === "number") &&
+      (v.started === undefined || typeof v.started === "string")
     )
       return v as unknown as LedgerDriverEnv;
   } catch {
@@ -109,6 +114,8 @@ export async function mirrorLedger(
         heartbeat: new Date().toISOString(),
         state: driver.stopped === undefined ? "running" : "stopped",
         ...(typeof driver.stopped === "number" ? { exit: driver.stopped } : {}),
+        ...(driver.started === undefined ? {} : { started: driver.started }),
+        ...(driver.floor === null ? {} : { position: driver.floor }),
       },
       narrative,
       claims: effectiveClaims(
@@ -191,6 +198,14 @@ export async function seedLedgerCommand(
  * forgot. The ledger's next write then carries the reset state. A file too
  * damaged to read a generation from is removed outright.
  */
+/** The clone, by machine and state directory: stable across this clone's drives. */
+export function cloneId(stateDir: string): string {
+  return createHash("sha256")
+    .update(`${hostname()}\0${stateDir}`)
+    .digest("hex")
+    .slice(0, 16);
+}
+
 export function removeStateKeepingLedgerGeneration(
   store: StateStore,
   pr: number,

@@ -190,7 +190,7 @@ export async function main(): Promise<number> {
   // A takeover is decided before any lock is taken (`takeover.ts`); its
   // holder is stopped around this tree's lock. Across clones it is decided
   // by the pull request's drive ledger.
-  const ledger = await ledgerIdentity(dryRun, stateDir);
+  const ledger = await ledgerIdentity(dryRun, stateDir, diag.started);
   const plan = takeOver ? await decideTakeover(pr, ledger) : null;
   const held: DriveLock[] = [];
   using lockResources = new DisposableStack();
