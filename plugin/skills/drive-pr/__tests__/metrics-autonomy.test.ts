@@ -7,6 +7,7 @@
 import { describe, expect, it } from "bun:test";
 import { botMarkers } from "../scripts/lib/bot-confirmation.ts";
 import {
+  type DurableAutonomy,
   autonomyMetrics,
   renderAutonomyMetrics,
   threadAutonomy,
@@ -134,6 +135,7 @@ describe("the per-pull-request counters and the measure", () => {
       reversedBeforeMerge: 2,
       reversedShare: 0.5,
       incompleteThreads: 0,
+      uncheckedRulings: 0,
       transparentAcknowledgements: 1,
       restarts: { "pass-deadline": 2, stall: 1 },
       rearms: { provisional: 1 },
@@ -292,9 +294,8 @@ describe("the durable record loop-metrics.ts reads", () => {
     });
   });
 
-  it("reads a provisional ruling's reversal from the conversation, after the drive stopped", async () => {
-    const forge = fakeForge("");
-    forge.write("login", "drive-bot");
+  /** A stopped drive's ledger holding one standing provisional `decide` ruling. */
+  const rulingLedger = (): string => {
     const ledger = renderLedger(
       ledgerFromState(
         {
@@ -328,16 +329,23 @@ describe("the durable record loop-metrics.ts reads", () => {
       ),
     );
     if ("error" in ledger) throw new Error(ledger.error);
+    return ledger.body;
+  };
+  const ledgerComment = (body: string) => ({
+    id: 120,
+    body,
+    user: { login: "drive-bot" },
+    author_association: "NONE",
+    updated_at: at(2),
+    created_at: at(2),
+    html_url: "https://example.invalid/comment-120",
+  });
+
+  it("reads a provisional ruling's reversal from the conversation, after the drive stopped", async () => {
+    const forge = fakeForge("");
+    forge.write("login", "drive-bot");
     forge.write("comments-12.json", [
-      {
-        id: 120,
-        body: ledger.body,
-        user: { login: "drive-bot" },
-        author_association: "NONE",
-        updated_at: at(2),
-        created_at: at(2),
-        html_url: "https://example.invalid/comment-120",
-      },
+      ledgerComment(rulingLedger()),
       {
         id: 130,
         body: "answer budget: raise it after all",
@@ -356,6 +364,27 @@ describe("the durable record loop-metrics.ts reads", () => {
       by: "lead",
       url: "https://example.invalid/comment-130",
     });
+  });
+
+  it("withholds the share while the conversation a ruling's reversal is read from is unreadable", async () => {
+    const forge = fakeForge("");
+    forge.write("login", "drive-bot");
+    forge.write("comments-12.json", [ledgerComment(rulingLedger())]);
+    // The ledger read succeeds; the conversation read after it fails.
+    forge.write("fail-comments-after", "1");
+    const r = await runIn(forge, "-e", [
+      `import(${JSON.stringify(join(import.meta.dir, "..", "scripts", "loop-metrics.ts"))}).then(async (m) => console.log(JSON.stringify(await m.durableAutonomy("12"))))`,
+    ]);
+    expectSpawnExit(r, 0);
+    expect(r.stderr).toContain("could not be read");
+    const durable = JSON.parse(r.stdout) as DurableAutonomy;
+    expect(durable.uncheckedRulings).toBe(1);
+    const m = autonomyMetrics([], null, durable);
+    expect(m.provisional).toBe(1);
+    expect(m.reversedShare).toBeNull();
+    expect(renderAutonomyMetrics(m).join("\n")).toContain(
+      "share withheld: 1 provisional ruling(s) whose reversal could not be read",
+    );
   });
 
   it("prefers a newer ledger another clone wrote over this clone's state, and this clone's at an equal generation", async () => {
@@ -414,6 +443,8 @@ describe("the durable record loop-metrics.ts reads", () => {
       { stdin: ledgerAt(2, "quota-reset") },
     );
     expectSpawnExit(seed, 0);
+    // The forge's ledger differs from this clone's at the same generation.
+    ledgerAt(2, "answered");
     expect((await durable()).events.map((e) => e.cause)).toEqual([
       "quota-reset",
     ]);

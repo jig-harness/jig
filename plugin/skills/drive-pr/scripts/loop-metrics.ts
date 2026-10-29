@@ -265,7 +265,8 @@ export async function durableAutonomy(
  * The record with each provisional `decide` ruling's reversal read from the
  * pull request's conversation, as a thread's is read from the thread: a
  * person's `answer <key>:` after the drive stopped is recorded by no round
- * boundary. An unreadable conversation leaves the record as recorded.
+ * boundary. An unreadable conversation leaves the record as recorded, with
+ * those rulings counted as unchecked, so the validation share is withheld.
  */
 async function withConversationReversals(
   pr: string,
@@ -278,9 +279,9 @@ async function withConversationReversals(
   const conversation = await prComments(pr);
   if (conversation === null) {
     console.error(
-      `loop-metrics: #${pr}'s conversation could not be read, so a reversal of its provisional rulings since the drive stopped is not counted.`,
+      `loop-metrics: #${pr}'s conversation could not be read, so a reversal of its provisional rulings since the drive stopped is not counted and the reversal share is withheld.`,
     );
-    return rec;
+    return { ...rec, uncheckedRulings: open.length };
   }
   return {
     ...rec,

@@ -263,6 +263,35 @@ await drive();`,
     expect(ledgers.map((l) => l.driver.state)).toEqual(["stopped"]);
   });
 
+  it("publishes a thrown stop's unknown exit over an earlier run's, in the ledger's events", async () => {
+    const forge = fakeForge([], { login: "drive-bot" });
+    const r = await probe(
+      forge,
+      `const cli = await import(${JSON.stringify(join(SCRIPTS, "lib", "cli.ts"))});
+const seeded = Bun.spawnSync([process.execPath, ${JSON.stringify(join(SCRIPTS, "drive-state.ts"))}, "record-event", "999"], { stdin: Buffer.from('{"kind":"stop","cause":"0"}') });
+if (seeded.exitCode !== 0) throw new Error("seed: " + seeded.stderr.toString());
+async function drive() {
+  await using settlement = d.ledgerSettlement("999", [{ dir: "held-lock" }]);
+  void settlement;
+  throw new cli.ExitError(1);
+}
+await drive();`,
+      { DRIVE_PR_LEDGER_DRIVER: driverEnv("clone-b") },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("EXIT 1");
+    const ledgers: Ledger[] = forge
+      .comments()
+      .map((c) => parseLedger(c.body))
+      .flatMap((p) => (p?.kind === "ledger" ? [p.ledger] : []));
+    const last = ledgers.at(-1);
+    expect(last?.driver.state).toBe("stopped");
+    expect(last?.driver.exit).toBeUndefined();
+    const stops = (last?.events ?? []).filter((e) => e.kind === "stop");
+    expect(stops.map((e) => e.cause)).toEqual(["0", "unknown"]);
+    expect(lastStop(last?.events ?? [])).toBeNull();
+  });
+
   it("names the exit a returned stop ends with, and writes once", async () => {
     const forge = fakeForge(
       [

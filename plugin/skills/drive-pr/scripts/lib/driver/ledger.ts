@@ -489,22 +489,20 @@ export function ledgerSettlement(
       await dropRecord();
       return;
     }
-    // The exit goes into the state for a report this clone reads, after the
-    // ledger's last write, which names it in its driver record already. An
-    // unknown exit is recorded too, so the previous run's stop does not speak
-    // for this one; a dry run (no ledger driver either) records nothing.
-    const recordStop = async () => {
-      if (!dryRun)
-        await recordDriveEvent(pr, "stop", String(code ?? "unknown"));
-    };
     settled = true;
-    if (driver === null) return recordStop();
-    if (held.length === 0) {
+    if (driver !== null && held.length === 0) {
       console.error(
         `ledger: PR #${pr}'s ledger is left naming this driver running: its locks are retained, so its pass may still act.`,
       );
       return;
     }
+    // The exit goes into the state before the ledger's last write, which
+    // mirrors the state's events: an unknown exit names none in the driver
+    // record, so a report reading the ledger falls back to those events, and
+    // the previous run's stop must not be the last of them. A dry run (no
+    // ledger driver either) records nothing.
+    if (!dryRun) await recordDriveEvent(pr, "stop", String(code ?? "unknown"));
+    if (driver === null) return;
     const res = await run(tsArgv(driveState, ["handoff", pr]), {
       stdout: "ignore",
       stderr: "inherit",
@@ -517,7 +515,6 @@ export function ledgerSettlement(
     // Any other exit, `LEDGER_NOT_WRITTEN_EXIT` included, keeps the record:
     // it is the recovery's only evidence once the locks are released.
     if (res.code === 0) await dropRecord();
-    await recordStop();
   };
   return {
     async done(code: number): Promise<number> {

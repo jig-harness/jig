@@ -95,6 +95,11 @@ if (joined.includes("node(id:$id)") || joined.includes("node(id:")) {
   out(JSON.stringify({ data: { node: { isResolved: has("resolved.txt") && read("resolved.txt").split("\\n").includes(id), comments: { pageInfo: { hasNextPage: has("more-" + id) }, nodes: comments } } } }));
 }
 const issue = joined.match(/issues\\/(\\d+)\\/comments/);
+if (issue && has("fail-comments-after")) {
+  const reads = (has("comments-reads") ? Number(read("comments-reads")) : 0) + 1;
+  fs.writeFileSync(file("comments-reads"), String(reads));
+  if (reads > Number(read("fail-comments-after"))) { process.stderr.write("comments failed\\n"); process.exit(1); }
+}
 if (issue) out(JSON.stringify([has("comments-" + issue[1] + ".json") ? JSON.parse(read("comments-" + issue[1] + ".json")) : []]));
 if (joined.includes("search/issues") && has("fail-search")) { process.stderr.write("search failed\\n"); process.exit(1); }
 if (joined.includes("search/issues")) {

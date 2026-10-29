@@ -108,6 +108,11 @@ export interface DurableAutonomy {
   decisions: readonly UnattendedDecision[];
   events: readonly DriveEvent[];
   takeovers: number;
+  /**
+   * Provisional `decide` rulings whose reversal could not be checked (the
+   * pull request's conversation was unreadable); absent reads as none.
+   */
+  uncheckedRulings?: number;
 }
 
 export interface AutonomyMetrics {
@@ -116,11 +121,14 @@ export interface AutonomyMetrics {
   reversedBeforeMerge: number;
   /**
    * The validation measure: reversed over provisional; `null` with none, or
-   * while any thread is incomplete, since its decisions are unknown.
+   * while any thread is incomplete or any ruling unchecked, since its
+   * decisions or reversals are unknown.
    */
   reversedShare: number | null;
   /** Threads too long to read whole, whose decisions the counts leave out. */
   incompleteThreads: number;
+  /** Provisional rulings whose reversal could not be read, so may be undercounted. */
+  uncheckedRulings: number;
   transparentAcknowledgements: number;
   /** `null` when this clone holds no drive state for the pull request. */
   restarts: Record<string, number> | null;
@@ -148,14 +156,16 @@ export function autonomyMetrics(
       (t) => t.autonomy.provisional && before(t.autonomy.reversedAt, mergedAt),
     ).length + rulings.filter((d) => before(d.reversed?.at, mergedAt)).length;
   const incompleteThreads = threads.filter((t) => t.autonomy.incomplete).length;
+  const uncheckedRulings = durable?.uncheckedRulings ?? 0;
   return {
     provisional,
     reversedBeforeMerge,
     reversedShare:
-      provisional === 0 || incompleteThreads > 0
+      provisional === 0 || incompleteThreads > 0 || uncheckedRulings > 0
         ? null
         : reversedBeforeMerge / provisional,
     incompleteThreads,
+    uncheckedRulings,
     transparentAcknowledgements: threads.reduce(
       (n, t) => n + t.autonomy.chatAcknowledgements,
       0,
@@ -185,9 +195,21 @@ export function renderAutonomyMetrics(a: AutonomyMetrics): string[] {
     a.incompleteThreads === 0
   )
     return [];
+  const withheld = [
+    ...(a.incompleteThreads > 0
+      ? [
+          `${a.incompleteThreads} thread(s) too long to read whole, whose decisions are not counted`,
+        ]
+      : []),
+    ...(a.uncheckedRulings > 0
+      ? [
+          `${a.uncheckedRulings} provisional ruling(s) whose reversal could not be read from the conversation`,
+        ]
+      : []),
+  ];
   const share =
-    a.incompleteThreads > 0
-      ? ` (share withheld: ${a.incompleteThreads} thread(s) too long to read whole, whose decisions are not counted)`
+    withheld.length > 0
+      ? ` (share withheld: ${withheld.join("; ")})`
       : a.reversedShare === null
         ? ""
         : ` (${(a.reversedShare * 100).toFixed(1)}%; wide stays documented as unvalidated until this share, pooled over a month, is under 1 in 10)`;
