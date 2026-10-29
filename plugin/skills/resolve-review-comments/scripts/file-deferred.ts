@@ -25,14 +25,17 @@
  * with its key.
  *
  * The body's write cannot be made atomic against a person's own save, so
- * every run also checks the section against the review threads: a resolved
- * thread whose `**deferred**` reply links the section must still have its
- * entry, filed or not. A missing one is named, and the run exits `4`.
+ * every run also checks the section against the answers: a resolved thread
+ * whose `**deferred**` reply links the section, and a summary finding whose
+ * `**deferred**` answer links it (by the fingerprint its marker carries),
+ * must still have its entry, filed or not. A missing one is named, and the
+ * run exits `4`. A thread whose comments run past one page cannot be checked,
+ * and fails the run rather than passing it unread.
  *
  * Exit codes: 0 every entry filed (or none to file), 1 the forge or the
- * tracker failed, or a filing could not be recorded, 2 usage, 3 entries
- * remain because no adapter could file, 4 a resolved `**deferred**` reply
- * links an entry the section lacks.
+ * tracker failed, a filing could not be recorded, or the answers could not
+ * all be read, 2 usage, 3 entries remain because no adapter could file, 4 a
+ * `**deferred**` answer links an entry the section lacks.
  */
 import { fail, runMain } from "../../../shared/cli.ts";
 import { readConfig } from "../../../shared/consumer.ts";
@@ -279,8 +282,10 @@ export async function fileDeferred(
 }
 
 /**
- * The resolved `**deferred**` replies whose thread has no entry in the
- * section: an entry a person's save of the body dropped.
+ * The `**deferred**` answers whose entry the section lacks: an entry a
+ * person's save of the body dropped. A thread's entry is keyed on its source,
+ * a summary finding's on its fingerprint, so losing one of several findings
+ * deferred from the same comment is seen.
  */
 export async function missingEntries(
   forge: PrBodyForge,
@@ -290,8 +295,21 @@ export async function missingEntries(
     forge.deferredReplies(pr),
     forge.read(pr),
   ]);
-  const sources = new Set(deferredEntries(body).map((e) => e.source));
-  return replies.filter((r) => !sources.has(r.thread));
+  const entries = deferredEntries(body);
+  const sources = new Set(entries.map((e) => e.source));
+  const fingerprints = new Set(
+    entries.flatMap((e) =>
+      e.fingerprint === undefined ? [] : [e.fingerprint],
+    ),
+  );
+  return replies.filter((r) =>
+    "thread" in r ? !sources.has(r.thread) : !fingerprints.has(r.fingerprint),
+  );
+}
+
+/** What a missing entry's answer was deferring. */
+function answered(m: DeferredReply): string {
+  return "thread" in m ? m.thread : `the summary finding ${m.fingerprint}`;
 }
 
 /** The configured tracker and its follow-up label, or why none can file. */
@@ -360,7 +378,7 @@ async function main(): Promise<number> {
   }
   for (const m of missing)
     console.error(
-      `file-deferred: ${m.reply} answers ${m.thread} **deferred** and links the Deferred section, which has no entry for it; restore the entry from the reply or file the finding by hand`,
+      `file-deferred: ${m.reply} answers ${answered(m)} **deferred** and links the Deferred section, which has no entry for it; restore the entry from the reply or file the finding by hand`,
     );
   if (code === 1) return 1;
   return missing.length > 0 ? 4 : code;

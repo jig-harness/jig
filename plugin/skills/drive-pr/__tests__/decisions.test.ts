@@ -9,6 +9,8 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { isRecordUrl } from "../scripts/lib/state/decisions.ts";
+import { redact } from "../scripts/lib/state/ledger.ts";
 import { useDrivePrSuite } from "./drive-pr-harness.ts";
 import { createStateDurabilityFixtures } from "./drive-pr-state-durability-fixtures.ts";
 
@@ -104,6 +106,29 @@ describe("record-decision", () => {
       );
       expectSpawnExit(r, 2);
       expect(r.stderr).toContain("record an http(s) url");
+    }
+  });
+});
+
+describe("a record url in the ledger", () => {
+  it("refuses user information, which redaction would turn into an unreadable url", () => {
+    for (const url of [
+      "https://first.last@example.co.uk/issues/7",
+      "https://user:secret@example.invalid/issues/7",
+      "https://user@example.invalid/issues/7",
+    ])
+      expect(isRecordUrl(url)).toBe(false);
+  });
+
+  it("stays a record url once redacted", () => {
+    for (const url of [
+      "https://example.invalid/issues/7",
+      "https://example.invalid/people/first.last@example.co.uk/issues/7",
+      "https://example.invalid/issues?by=first.last@example.co.uk",
+      "https://example.invalid/runs/acct-0123456789abcdef",
+    ]) {
+      expect(isRecordUrl(url)).toBe(true);
+      expect(isRecordUrl(redact(url))).toBe(true);
     }
   });
 });

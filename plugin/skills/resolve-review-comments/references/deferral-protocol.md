@@ -256,8 +256,11 @@ prints each filing as it is made, and reports a filing as not recorded when
 its entry was removed, changed or filed as another issue in the meantime. It
 exits `3` when entries remain because no adapter could file them. The body's write is
 not atomic against a person's own save of the body, so the script also
-checks every resolved thread whose `**deferred**` reply links the section:
-one whose entry is gone is named, and it exits `4`. Restore that entry from
+checks every resolved thread whose `**deferred**` reply links the section,
+and every summary finding whose `**deferred**` answer links it (by its
+fingerprint): one whose entry is gone is named, and it exits `4`. A thread
+whose comments run past one page cannot be checked, and the run fails with
+exit `1` rather than passing it unread. Restore that entry from
 the reply, or file the finding by hand. With no
 tracker at all, the entries stay in the merged pull request's body for a
 person to file.

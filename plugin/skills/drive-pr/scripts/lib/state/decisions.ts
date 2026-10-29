@@ -56,16 +56,22 @@ const oneLine = (v: unknown): v is string =>
   typeof v === "string" && v.trim() !== "" && !/[\n\r]/.test(v);
 
 /**
- * A record a person can open: an `http(s)` url with a host, or `''` for none.
- * A placeholder (`none`, `TODO`, `#`) is neither, so it cannot pass a missing
- * record off as a present one.
+ * A record a person can open: an `http(s)` url with a host and no user
+ * information, or `''` for none. A placeholder (`none`, `TODO`, `#`) is
+ * neither, so it cannot pass a missing record off as a present one. User
+ * information is refused because it is a credential or an address: the
+ * ledger's redaction would replace it and leave a url this check refuses, so
+ * the ledger could not be read back.
  */
-function isRecordUrl(v: unknown): v is string {
+export function isRecordUrl(v: unknown): v is string {
   if (v === "") return true;
   if (typeof v !== "string" || /\s/.test(v) || !URL.canParse(v)) return false;
   const url = new URL(v);
   return (
-    (url.protocol === "https:" || url.protocol === "http:") && url.host !== ""
+    (url.protocol === "https:" || url.protocol === "http:") &&
+    url.host !== "" &&
+    url.username === "" &&
+    url.password === ""
   );
 }
 
@@ -147,7 +153,7 @@ export async function recordDecision(
     if (!isUnattendedDecision(entry))
       fail(
         2,
-        `record-decision: class must be one of ${DECISION_CLASSES.join(", ")}; what and reverse one nonempty line each; record an http(s) url or absent`,
+        `record-decision: class must be one of ${DECISION_CLASSES.join(", ")}; what and reverse one nonempty line each; record an http(s) url without user information, or absent`,
       );
     return { ...s, decisions: [...(s.decisions ?? []), entry] };
   });

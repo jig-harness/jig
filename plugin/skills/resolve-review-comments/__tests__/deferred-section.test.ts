@@ -193,6 +193,25 @@ describe("a deferred reply whose entry the body lost", () => {
       { thread: other, reply: `${other}-reply` },
     ]);
   });
+
+  test("a summary finding's lost entry is named by its fingerprint, beside a sibling still there", async () => {
+    const comment = `${PR_URL}#issuecomment-77`;
+    const forge = fakeForge(
+      withDeferredEntry("", {
+        source: comment,
+        fingerprint: "fp-a",
+        finding: "first",
+        reason: "r",
+      }).body,
+    );
+    forge.replies = [
+      { fingerprint: "fp-a", reply: `${PR_URL}#issuecomment-90` },
+      { fingerprint: "fp-b", reply: `${PR_URL}#issuecomment-90` },
+    ];
+    expect(await missingEntries(forge, "42")).toEqual([
+      { fingerprint: "fp-b", reply: `${PR_URL}#issuecomment-90` },
+    ]);
+  });
 });
 
 describe("written by read-modify-write against updated_at", () => {

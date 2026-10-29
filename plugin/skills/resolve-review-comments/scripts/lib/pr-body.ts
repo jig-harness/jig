@@ -27,18 +27,29 @@ export interface PrBody {
   url: string;
 }
 
-/** A resolved review thread answered `**deferred**` with a link to the section. */
-export interface DeferredReply {
-  /** The thread's first comment: the source its deferred entry is keyed on. */
-  thread: string;
-  /** The `**deferred**` reply itself. */
-  reply: string;
-}
+/**
+ * A `**deferred**` answer that links the section, so its entry must be there:
+ * a resolved review thread's reply, keyed on the thread's first comment, or a
+ * summary finding's answer, keyed on the fingerprint its marker carries.
+ */
+export type DeferredReply =
+  | {
+      /** The thread's first comment: the source its deferred entry is keyed on. */
+      thread: string;
+      /** The `**deferred**` reply itself. */
+      reply: string;
+    }
+  | {
+      /** The summary finding's fingerprint, from its answer's marker. */
+      fingerprint: string;
+      /** The `**deferred**` answer comment itself. */
+      reply: string;
+    };
 
 /**
  * What the scripts need of the forge: a pull request's body, read and
- * written, and its resolved threads whose `**deferred**` reply links the
- * body's `## Deferred` section.
+ * written, and every `**deferred**` answer that links the body's
+ * `## Deferred` section, complete or refused.
  */
 export interface PrBodyForge {
   read(pr: string): Promise<PrBody>;
@@ -52,17 +63,65 @@ const THREADS_QUERY = `query($owner: String!, $name: String!, $pr: Int!, $endCur
     pullRequest(number: $pr) {
       reviewThreads(first: 100, after: $endCursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { isResolved comments(first: 100) { nodes { url body } } }
+        nodes {
+          isResolved
+          comments(first: 100) { pageInfo { hasNextPage } nodes { url body } }
+        }
       }
     }
   }
 }`;
 
 /**
- * Each resolved thread's first comment and its `**deferred**` replies that
- * link `#deferred`, one JSON object per line.
+ * Each resolved thread's first comment, whether its comments were cut at the
+ * page, and its `**deferred**` replies that link `#deferred`, one JSON object
+ * per line. A cut thread is emitted whatever its visible replies say: a reply
+ * past the page is one the census cannot see.
  */
-const DEFERRED_REPLIES_JQ = `.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved) | {thread: .comments.nodes[0].url, replies: [.comments.nodes[1:][] | select(.body | startswith("**deferred**")) | select(.body | contains("#deferred")) | .url]} | select(.replies | length > 0) | @json`;
+const DEFERRED_REPLIES_JQ = `.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved) | {thread: .comments.nodes[0].url, truncated: .comments.pageInfo.hasNextPage, replies: [.comments.nodes[1:][] | select(.body | startswith("**deferred**")) | select(.body | contains("#deferred")) | .url]} | select(.truncated or (.replies | length > 0)) | @json`;
+
+/**
+ * Each top-level `**deferred**` answer that links `#deferred`, with the
+ * fingerprints its `drive-pr-addressed` markers name, one JSON object per
+ * line (`answer-summary-finding.ts` writes them).
+ */
+const SUMMARY_DEFERRED_JQ = `.[] | select(.body | startswith("**deferred**")) | select(.body | contains("#deferred")) | {reply: .html_url, fingerprints: [.body | scan("<!-- drive-pr-addressed: ([^\\\\s>@#]+)") | .[0]]} | @json`;
+
+/** The JSON lines `gh … --jq` printed, each checked by `ok`. */
+function jsonLines<T>(
+  raw: string,
+  ok: (v: unknown) => v is T,
+  why: string,
+): T[] {
+  return raw
+    .split("\n")
+    .filter((l) => l.trim() !== "")
+    .map((l) => {
+      const v: unknown = JSON.parse(l);
+      if (!ok(v)) throw new PrBodyError(why);
+      return v;
+    });
+}
+
+const isStrings = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((s) => typeof s === "string");
+
+interface ThreadLine {
+  thread: string;
+  truncated: boolean;
+  replies: string[];
+}
+
+const isThreadLine = (v: unknown): v is ThreadLine =>
+  isRecord(v) &&
+  typeof v.thread === "string" &&
+  typeof v.truncated === "boolean" &&
+  isStrings(v.replies);
+
+const isSummaryLine = (
+  v: unknown,
+): v is { reply: string; fingerprints: string[] } =>
+  isRecord(v) && typeof v.reply === "string" && isStrings(v.fingerprints);
 
 async function gh(args: string[], stdin?: string): Promise<string> {
   const r = await ghCall(args, {
@@ -111,38 +170,52 @@ export function ghPrBodyForge(): PrBodyForge {
       );
     },
     async deferredReplies(pr) {
-      const raw = await gh([
-        "api",
-        "graphql",
-        "--paginate",
-        "-f",
-        `query=${THREADS_QUERY}`,
-        "-F",
-        "owner={owner}",
-        "-F",
-        "name={repo}",
-        "-F",
-        `pr=${pr}`,
-        "--jq",
-        DEFERRED_REPLIES_JQ,
-      ]);
-      return raw
-        .split("\n")
-        .filter((l) => l.trim() !== "")
-        .flatMap((l) => {
-          const v: unknown = JSON.parse(l);
-          if (
-            !isRecord(v) ||
-            typeof v.thread !== "string" ||
-            !Array.isArray(v.replies) ||
-            !v.replies.every((r) => typeof r === "string")
-          )
-            throw new PrBodyError(
-              `pull request #${pr}'s review threads could not be read`,
-            );
-          const thread = v.thread;
-          return (v.replies as string[]).map((reply) => ({ thread, reply }));
-        });
+      const threads = jsonLines(
+        await gh([
+          "api",
+          "graphql",
+          "--paginate",
+          "-f",
+          `query=${THREADS_QUERY}`,
+          "-F",
+          "owner={owner}",
+          "-F",
+          "name={repo}",
+          "-F",
+          `pr=${pr}`,
+          "--jq",
+          DEFERRED_REPLIES_JQ,
+        ]),
+        isThreadLine,
+        `pull request #${pr}'s review threads could not be read`,
+      );
+      const cut = threads.find((t) => t.truncated);
+      if (cut !== undefined)
+        throw new PrBodyError(
+          `${cut.thread} has more than 100 comments, so its **deferred** replies cannot all be read; check that thread's entry by hand`,
+        );
+      const summaries = jsonLines(
+        await gh([
+          "api",
+          "--paginate",
+          `repos/{owner}/{repo}/issues/${pr}/comments`,
+          "--jq",
+          SUMMARY_DEFERRED_JQ,
+        ]),
+        isSummaryLine,
+        `pull request #${pr}'s comments could not be read`,
+      );
+      return [
+        ...threads.flatMap((t) =>
+          t.replies.map((reply) => ({ thread: t.thread, reply })),
+        ),
+        ...summaries.flatMap((s) =>
+          s.fingerprints.map((fingerprint) => ({
+            fingerprint,
+            reply: s.reply,
+          })),
+        ),
+      ];
     },
   };
 }
