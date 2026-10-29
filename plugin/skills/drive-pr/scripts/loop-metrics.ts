@@ -212,8 +212,13 @@ function autonomyOf(s: {
   };
 }
 
-/** This clone's drive state, `null` when it holds none that ever drove. */
-async function localAutonomy(pr: string): Promise<DurableAutonomy | null> {
+/**
+ * This clone's drive state, with the ledger generation it last wrote or
+ * seeded from; `null` when it holds none that ever drove.
+ */
+async function localAutonomy(
+  pr: string,
+): Promise<{ rec: DurableAutonomy; generation: number } | null> {
   const r = await run(tsArgv(driveState, ["get", pr]), {
     stderr: "ignore",
     timeoutSec: helperTimeoutSeconds(),
@@ -222,7 +227,7 @@ async function localAutonomy(pr: string): Promise<DurableAutonomy | null> {
   try {
     const s: unknown = JSON.parse(r.stdout);
     return isUsableState(s, Number.parseInt(pr, 10)) && s.rounds > 0
-      ? autonomyOf(s)
+      ? { rec: autonomyOf(s), generation: s.ledgerGeneration ?? 0 }
       : null;
   } catch (err) {
     swallow(err, "drive-state.ts get printed no JSON");
@@ -232,22 +237,28 @@ async function localAutonomy(pr: string): Promise<DurableAutonomy | null> {
 
 /**
  * What the drive recorded of its autonomy: its decisions, its self-restarts
- * and re-arms, and how many takeovers. From this clone's state, else from
- * the pull request's drive ledger, so a drive run from another clone counts
- * toward the validation measure too. `null` when neither holds one, soft
- * like `durableRounds`.
+ * and re-arms, and how many takeovers. From the newer of this clone's state
+ * and the pull request's drive ledger, by the rule the morning report picks
+ * its record with (a ledger whose generation is past the one this clone last
+ * wrote is another clone's later drive), so a drive run or taken over from
+ * another clone counts toward the validation measure too. An unreadable
+ * ledger leaves this clone's state. `null` when neither holds one, soft like
+ * `durableRounds`.
  */
 export async function durableAutonomy(
   pr: string,
 ): Promise<DurableAutonomy | null> {
   const local = await localAutonomy(pr);
-  if (local !== null) return withConversationReversals(pr, local);
   const snapshot = await readLedgerSnapshot(pr, await resolveLogin());
-  if (typeof snapshot === "string") return null;
-  const parsed = snapshot.canonical?.parsed;
-  return parsed?.kind === "ledger"
-    ? withConversationReversals(pr, autonomyOf(parsed.ledger))
-    : null;
+  const parsed =
+    typeof snapshot === "string" ? undefined : snapshot.canonical?.parsed;
+  const ledger = parsed?.kind === "ledger" ? parsed.ledger : null;
+  if (
+    ledger !== null &&
+    (local === null || ledger.generation > local.generation)
+  )
+    return withConversationReversals(pr, autonomyOf(ledger));
+  return local === null ? null : withConversationReversals(pr, local.rec);
 }
 
 /**

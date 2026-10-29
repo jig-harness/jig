@@ -410,5 +410,8 @@ describe("drives.ts --report", () => {
     const forge = setUp();
     const r = await report(forge, ["--since", "999999999999999999999h"]);
     expectSpawnExit(r, 2);
+    expect(r.stderr).toContain(
+      "--since takes an ISO-8601 time or a span such as 12h or 2d",
+    );
   });
 });

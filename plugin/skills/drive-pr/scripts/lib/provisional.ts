@@ -146,14 +146,19 @@ const lines = (text: string): string[] =>
  * The round gate's parked keys, and those of them that hold a reversed
  * provisional decision; `null` when either could not be read, which the
  * gate takes as INDETERMINATE: an unreadable parked set would re-arm work a
- * person parked. drive-state's stderr is passed through.
+ * person parked. drive-state's stderr is passed through; each read is
+ * bounded by the helper deadline, and a fired deadline reads as unreadable.
  */
 export async function readParkedSets(ctx: {
   driveStateScript: string;
   pr: string;
+  helperTimeoutSec: number;
 }): Promise<{ keys: Set<string>; reversals: string[] } | null> {
   const read = (cmd: string) =>
-    run(tsArgv(ctx.driveStateScript, [cmd, ctx.pr]), { stderr: "inherit" });
+    run(tsArgv(ctx.driveStateScript, [cmd, ctx.pr]), {
+      stderr: "inherit",
+      timeoutSec: ctx.helperTimeoutSec,
+    });
   const all = await read("parked-keys");
   if (all.code !== 0) return null;
   const reversals = await read("reversal-parked-keys");

@@ -37,12 +37,15 @@ export interface ThreadAutonomy {
   reversedAt: string | null;
   /** Review-bot chat acknowledgements, which the drive reads as transparent. */
   chatAcknowledgements: number;
+  /** The thread was truncated, so its counters are unknown, not zero. */
+  incomplete: boolean;
 }
 
-const NONE: ThreadAutonomy = {
+const UNREAD: ThreadAutonomy = {
   provisional: false,
   reversedAt: null,
   chatAcknowledgements: 0,
+  incomplete: true,
 };
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -69,15 +72,15 @@ function isChatAcknowledgement(
 }
 
 /**
- * The counters one thread's comments carry; nothing for a truncated thread,
- * whose later comments could say otherwise.
+ * The counters one thread's comments carry; for a truncated thread, whose
+ * later comments could say otherwise, none, marked incomplete.
  */
 export function threadAutonomy(
   nodes: readonly Record<string, unknown>[],
   truncated: boolean,
   bots: readonly BotMarkers[] = botMarkers(reviewBotEntries()),
 ): ThreadAutonomy {
-  if (truncated) return NONE;
+  if (truncated) return UNREAD;
   const comments = nodes.map((n) => ({
     author: str((n.author as Record<string, unknown> | null)?.login),
     association: str(n.authorAssociation),
@@ -96,6 +99,7 @@ export function threadAutonomy(
     chatAcknowledgements: comments.filter((c) =>
       isChatAcknowledgement(c.author, c.body, bots),
     ).length,
+    incomplete: false,
   };
 }
 
@@ -110,8 +114,13 @@ export interface AutonomyMetrics {
   provisional: number;
   /** Reversed by a person before the merge; for an open pull request, so far. */
   reversedBeforeMerge: number;
-  /** The validation measure: reversed over provisional; `null` with none. */
+  /**
+   * The validation measure: reversed over provisional; `null` with none, or
+   * while any thread is incomplete, since its decisions are unknown.
+   */
   reversedShare: number | null;
+  /** Threads too long to read whole, whose decisions the counts leave out. */
+  incompleteThreads: number;
   transparentAcknowledgements: number;
   /** `null` when this clone holds no drive state for the pull request. */
   restarts: Record<string, number> | null;
@@ -138,10 +147,15 @@ export function autonomyMetrics(
     threads.filter(
       (t) => t.autonomy.provisional && before(t.autonomy.reversedAt, mergedAt),
     ).length + rulings.filter((d) => before(d.reversed?.at, mergedAt)).length;
+  const incompleteThreads = threads.filter((t) => t.autonomy.incomplete).length;
   return {
     provisional,
     reversedBeforeMerge,
-    reversedShare: provisional === 0 ? null : reversedBeforeMerge / provisional,
+    reversedShare:
+      provisional === 0 || incompleteThreads > 0
+        ? null
+        : reversedBeforeMerge / provisional,
+    incompleteThreads,
     transparentAcknowledgements: threads.reduce(
       (n, t) => n + t.autonomy.chatAcknowledgements,
       0,
@@ -167,13 +181,16 @@ export function renderAutonomyMetrics(a: AutonomyMetrics): string[] {
     a.transparentAcknowledgements === 0 &&
     restarts === 0 &&
     rearms === 0 &&
-    (a.takeovers ?? 0) === 0
+    (a.takeovers ?? 0) === 0 &&
+    a.incompleteThreads === 0
   )
     return [];
   const share =
-    a.reversedShare === null
-      ? ""
-      : ` (${(a.reversedShare * 100).toFixed(1)}%; wide stays documented as unvalidated until this share, pooled over a month, is under 1 in 10)`;
+    a.incompleteThreads > 0
+      ? ` (share withheld: ${a.incompleteThreads} thread(s) too long to read whole, whose decisions are not counted)`
+      : a.reversedShare === null
+        ? ""
+        : ` (${(a.reversedShare * 100).toFixed(1)}%; wide stays documented as unvalidated until this share, pooled over a month, is under 1 in 10)`;
   return [
     `  autonomy   ${a.provisional} provisional decision(s), ${a.reversedBeforeMerge} reversed by a person before the merge${share}`,
     `             self-restarts: ${causes(a.restarts)} · re-arms: ${causes(a.rearms)} · takeovers: ${a.takeovers ?? "not held in this clone"} · transparent acknowledgements: ${a.transparentAcknowledgements}`,

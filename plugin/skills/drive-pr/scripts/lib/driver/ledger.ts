@@ -497,8 +497,8 @@ export function ledgerSettlement(
       if (!dryRun)
         await recordDriveEvent(pr, "stop", String(code ?? "unknown"));
     };
-    if (driver === null) return recordStop();
     settled = true;
+    if (driver === null) return recordStop();
     if (held.length === 0) {
       console.error(
         `ledger: PR #${pr}'s ledger is left naming this driver running: its locks are retained, so its pass may still act.`,

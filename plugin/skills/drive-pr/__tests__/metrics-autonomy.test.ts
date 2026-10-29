@@ -62,14 +62,18 @@ describe("one thread's counters", () => {
       provisional: true,
       reversedAt: at(5),
       chatAcknowledgements: 1,
+      incomplete: false,
     });
   });
 
-  it("read nothing from a truncated thread, and no reversal from a bot or an untrusted author", () => {
+  it("read nothing from a truncated thread but mark it incomplete, and no reversal from a bot or an untrusted author", () => {
     expect(
-      threadAutonomy(commentNodes("PRRT_x", [FINDING, PROVISIONAL]), true, BOTS)
-        .provisional,
-    ).toBe(false);
+      threadAutonomy(
+        commentNodes("PRRT_x", [FINDING, PROVISIONAL]),
+        true,
+        BOTS,
+      ),
+    ).toMatchObject({ provisional: false, incomplete: true });
     const t = thread([
       FINDING,
       PROVISIONAL,
@@ -129,6 +133,7 @@ describe("the per-pull-request counters and the measure", () => {
       provisional: 4,
       reversedBeforeMerge: 2,
       reversedShare: 0.5,
+      incompleteThreads: 0,
       transparentAcknowledgements: 1,
       restarts: { "pass-deadline": 2, stall: 1 },
       rearms: { provisional: 1 },
@@ -213,6 +218,22 @@ describe("the per-pull-request counters and the measure", () => {
       "autonomy   2 provisional decision(s), 1 reversed by a person before the merge (50.0%",
     );
     expect(written[0]).toContain("re-arms: answered 1");
+  });
+
+  it("withholds the share while a thread is truncated, never reading it as zeroes", () => {
+    const truncated = {
+      autonomy: threadAutonomy(
+        commentNodes("PRRT_y", [FINDING, PROVISIONAL]),
+        true,
+        BOTS,
+      ),
+    };
+    const m = autonomyMetrics([standing, truncated], null, null);
+    expect(m.incompleteThreads).toBe(1);
+    expect(m.reversedShare).toBeNull();
+    expect(renderAutonomyMetrics(m).join("\n")).toContain(
+      "share withheld: 1 thread(s) too long to read whole",
+    );
   });
 
   it("prints nothing for a drive that did nothing without a person", () => {
@@ -335,5 +356,68 @@ describe("the durable record loop-metrics.ts reads", () => {
       by: "lead",
       url: "https://example.invalid/comment-130",
     });
+  });
+
+  it("prefers a newer ledger another clone wrote over this clone's state, and this clone's at an equal generation", async () => {
+    const forge = fakeForge("");
+    forge.write("login", "drive-bot");
+    const ledgerAt = (
+      generation: number,
+      cause: "answered" | "quota-reset",
+    ) => {
+      const l = renderLedger(
+        ledgerFromState(
+          {
+            ...freshState(12),
+            rounds: 3,
+            events: [{ at: at(1), round: 1, kind: "rearm", cause }],
+          },
+          {
+            generation,
+            driver: {
+              actor: "wt-cccccccccccccccc",
+              clone: "clone-b",
+              heartbeat: at(2),
+              state: "stopped",
+              exit: 0,
+            },
+            narrative: [],
+            claims: [],
+          },
+        ),
+      );
+      if ("error" in l) throw new Error(l.error);
+      forge.write("comments-12.json", [
+        {
+          id: 120,
+          body: l.body,
+          user: { login: "drive-bot" },
+          author_association: "NONE",
+          updated_at: at(2),
+          created_at: at(2),
+          html_url: "https://example.invalid/comment-120",
+        },
+      ]);
+      return l.body;
+    };
+    const durable = async () => {
+      const r = await runIn(forge, "-e", [
+        `import(${JSON.stringify(join(import.meta.dir, "..", "scripts", "loop-metrics.ts"))}).then(async (m) => console.log(JSON.stringify(await m.durableAutonomy("12"))))`,
+      ]);
+      expectSpawnExit(r, 0);
+      return JSON.parse(r.stdout) as { events: Array<{ cause: string }> };
+    };
+    const seed = await runIn(
+      forge,
+      join(import.meta.dir, "..", "scripts", "drive-state.ts"),
+      ["seed-ledger", "12"],
+      { stdin: ledgerAt(2, "quota-reset") },
+    );
+    expectSpawnExit(seed, 0);
+    expect((await durable()).events.map((e) => e.cause)).toEqual([
+      "quota-reset",
+    ]);
+    ledgerAt(3, "answered");
+    expect((await durable()).events.map((e) => e.cause)).toEqual(["answered"]);
   });
 });

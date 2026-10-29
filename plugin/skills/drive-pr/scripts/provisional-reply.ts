@@ -24,8 +24,9 @@
  * thread is not recorded again, so a retry after a crash completes only the
  * missing steps: with the outcome the reply posted, and whatever the level
  * is by then. The decision is recorded before the thread is resolved. A
- * reply a person commented after, or a later outcome superseded, is never
- * completed: the retry is refused.
+ * reply a person commented after, or a later outcome superseded, is
+ * recorded but never resolved: the retry is refused, and the round's sweep
+ * parks the person's comment as the decision's reversal.
  *
  * Usage:
  *   provisional-reply.ts <THREAD_NODE_ID> [PR] --class escalated --what "<one line>" <<'EOF'
@@ -143,13 +144,12 @@ function refuseLevel(): void {
 
 /**
  * The trusted provisional reply already on the thread, with the outcome it
- * posted; `null` for none. One a person commented after, or a later outcome
- * superseded, no longer stands, and recovering it would resolve the
- * person's thread over them: refused.
+ * posted and whether it still stands; `null` for none. One a person
+ * commented after, or a later outcome superseded, no longer stands.
  */
 async function existingReply(
   thread: string,
-): Promise<{ url: string; outcome: string } | null> {
+): Promise<{ url: string; outcome: string; stands: boolean } | null> {
   const comments = await threadComments(thread);
   if (comments === null)
     fail(1, `provisional-reply: could not read thread ${thread}`);
@@ -162,14 +162,10 @@ async function existingReply(
     authorAssociation: c.association,
     body: c.body,
   }));
-  if (!standsOnProvisionalReply(listed))
-    fail(
-      3,
-      `provisional-reply: the provisional reply on ${thread} (${found.url}) no longer stands: a person commented after it, or a later outcome superseded it. The round parks it under human-thread; it is never decided provisionally again.`,
-    );
   return {
     url: found.url,
     outcome: qualifyingOutcome(found.body)?.outcome ?? "",
+    stands: standsOnProvisionalReply(listed),
   };
 }
 
@@ -234,7 +230,12 @@ function requireRuling(state: StateView, thread: string): void {
 async function replied(
   a: Args,
   body: string,
-): Promise<{ url: string; outcome: string; posted: boolean }> {
+): Promise<{
+  url: string;
+  outcome: string;
+  posted: boolean;
+  stands: boolean;
+}> {
   // A reply already posted is completed whatever the level is now: it was
   // posted at `wide`, and leaving it unrecorded would hide it from the
   // boundary sweep and the report. Its outcome is the one posted, never this
@@ -247,6 +248,7 @@ async function replied(
     url,
     outcome: qualifyingOutcome(body)?.outcome ?? "",
     posted: false,
+    stands: true,
   };
 }
 
@@ -288,6 +290,14 @@ async function main(): Promise<number> {
   const reply = await replied(a, body);
   const url = reply.url;
   await recordOnce(state, pr, a, reply);
+  // A reply that no longer stands is recorded all the same, so the boundary
+  // sweep finds a person's comment after it and parks the reversal; resolving
+  // it would close the person's thread over them.
+  if (!reply.stands)
+    fail(
+      3,
+      `provisional-reply: the provisional reply on ${a.thread} (${url}) no longer stands: a person commented after it, or a later outcome superseded it. Its decision is recorded and the thread left open; the round parks it under human-thread, and it is never decided provisionally again.`,
+    );
   const resolved = await run(
     tsArgv(join(rrc, "resolve-thread.ts"), [a.thread]),
     {

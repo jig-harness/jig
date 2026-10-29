@@ -9,6 +9,7 @@ import { describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { type DriveEvent, lastStop } from "../scripts/lib/state/events.ts";
 import {
   type Ledger,
   ledgerFromState,
@@ -343,5 +344,28 @@ console.log("RETURNED " + (await drive()));`,
       "running",
     );
     expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(0);
+  });
+
+  it("with the ledger off, records the returned stop once, never an unknown one after it", async () => {
+    const forge = fakeForge([], { login: "drive-bot" });
+    const r = await probe(
+      forge,
+      `async function drive() {
+  await using settlement = d.ledgerSettlement("999", [{ dir: "held-lock" }]);
+  return settlement.done(8);
+}
+await drive();
+const got = Bun.spawnSync([process.execPath, ${JSON.stringify(join(SCRIPTS, "drive-state.ts"))}, "get", "999"]);
+console.log("EVENTS " + JSON.stringify(JSON.parse(got.stdout.toString()).events));`,
+      { DRIVE_PR_LEDGER: "off" },
+    );
+    expectSpawnExit(r, 0);
+    const events = JSON.parse(
+      r.stdout.split("EVENTS ")[1] ?? "null",
+    ) as DriveEvent[];
+    expect(events.filter((e) => e.kind === "stop")).toEqual([
+      expect.objectContaining({ cause: "8" }),
+    ]);
+    expect(lastStop(events)).toBe(8);
   });
 });

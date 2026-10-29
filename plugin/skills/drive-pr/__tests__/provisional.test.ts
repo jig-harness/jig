@@ -199,7 +199,7 @@ describe("provisional-reply.ts", () => {
     expect(d[0]).toMatchObject({ level: "wide", outcome: "wont-fix" });
   });
 
-  it("a retry never completes a reply a person commented after", async () => {
+  it("a retry records but never resolves a reply a person commented after, and the sweep parks its reversal", async () => {
     const forge = fakeForge(WIDE);
     await rule(forge, { verdict: "escalate", class: "escalated" });
     forge.thread("PRRT_p", [
@@ -216,7 +216,18 @@ describe("provisional-reply.ts", () => {
     expectSpawnExit(r, 3);
     expect(r.stderr).toContain("no longer stands");
     expect(forge.resolved()).toEqual([]);
-    expect((await decisions(forge)).decisions).toEqual([]);
+    const recorded = (await decisions(forge)).decisions;
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toMatchObject({
+      key: "PRRT_p",
+      outcome: "wont-fix",
+      record: "https://example.invalid/PRRT_p/comment-1",
+    });
+    expectSpawnExit(await sweep(forge), 0);
+    const { decisions: d, parked } = await decisions(forge);
+    expect(d[0].reversed).toMatchObject({ by: "lead" });
+    expect(parked).toHaveLength(1);
+    expect(parked[0]).toMatchObject({ key: "PRRT_p", class: "human-thread" });
   });
 });
 

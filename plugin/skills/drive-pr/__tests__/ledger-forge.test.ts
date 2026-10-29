@@ -635,4 +635,34 @@ describe("the population for the morning report", () => {
     writeFileSync(join(forge.dir, "fail-search"), "");
     expect(await population(forge)).toBeNull();
   });
+
+  it("is null when the search answers a page it cannot read, never an empty population", async () => {
+    for (const page of [null, {}, { items: "none" }]) {
+      const forge = fakeForge([]);
+      writeFileSync(join(forge.dir, "search.json"), JSON.stringify(page));
+      expect(await population(forge)).toBeNull();
+    }
+  });
+
+  it("names a hit whose canonical ledger this version cannot interpret", async () => {
+    const forge = fakeForge([]);
+    search(forge, [7]);
+    writeFileSync(
+      join(forge.dir, "comments-7.json"),
+      JSON.stringify([
+        forgeComment(
+          70,
+          ledgerBody(ledger(2)).replace(
+            '"ledgerVersion":1',
+            '"ledgerVersion":9',
+          ),
+        ),
+      ]),
+    );
+    const got = await population(forge);
+    expect(got?.found).toEqual([]);
+    expect(got?.unread).toHaveLength(1);
+    expect(got?.unread[0]).toContain("#7's drive ledger could not be read");
+    expect(got?.unread[0]).toContain("does not read");
+  });
 });

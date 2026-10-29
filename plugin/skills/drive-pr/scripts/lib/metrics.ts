@@ -600,6 +600,7 @@ export function computeLoopMetrics(
           provisional: false,
           reversedAt: null,
           chatAcknowledgements: 0,
+          incomplete: false,
         },
       })),
       sample.mergedAt,

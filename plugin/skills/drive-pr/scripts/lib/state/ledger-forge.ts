@@ -416,7 +416,8 @@ export function listAuthoredPullRequests(
 
 /**
  * The trusted ledger this version reads on the pull request, and its
- * writer; `null` for none, and why when its comments could not be read.
+ * writer; `null` for none, and why when its comments could not be read or
+ * its canonical ledger cannot be interpreted (a newer version, or malformed).
  */
 async function ledgerOf(
   pr: string,
@@ -425,16 +426,28 @@ async function ledgerOf(
   const snapshot = await readLedgerSnapshot(pr, login);
   if (typeof snapshot === "string") return snapshot;
   const canonical = snapshot.canonical;
-  return canonical?.parsed.kind === "ledger"
-    ? { ledger: canonical.parsed.ledger, ledgerBy: canonical.comment.login }
-    : null;
+  if (canonical === null) return null;
+  const parsed = canonical.parsed;
+  if (parsed.kind === "ledger")
+    return { ledger: parsed.ledger, ledgerBy: canonical.comment.login };
+  return parsed.kind === "unknown-version"
+    ? `its ledger (comment ${canonical.comment.id}) has version ${JSON.stringify(parsed.version)}, which this version does not read`
+    : `its ledger (comment ${canonical.comment.id}) is malformed: ${parsed.reason}`;
 }
 
-/** The pull requests in the search's pages, by number. */
-function searchResults(pages: unknown): SearchHit[] {
-  const items = (Array.isArray(pages) ? pages : [pages]).flatMap((page) =>
-    isRecord(page) && Array.isArray(page.items) ? page.items : [],
-  );
+/**
+ * The pull requests in the search's pages (`--slurp`: an array of pages,
+ * each with an `items` array), by number; `null` when the response is not
+ * that shape, so an unreadable search is never an empty one.
+ */
+function searchResults(pages: unknown): SearchHit[] | null {
+  if (
+    !Array.isArray(pages) ||
+    pages.length === 0 ||
+    !pages.every((page) => isRecord(page) && Array.isArray(page.items))
+  )
+    return null;
+  const items = pages.flatMap((page) => (page as { items: unknown[] }).items);
   return items
     .filter(
       (
