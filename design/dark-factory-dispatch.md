@@ -30,13 +30,14 @@ execution line only. Its first [session runtime](../GLOSSARY.md) is Orca
 
 ## How it works
 
-`jig dispatch` runs one **tick**: it reads three records it does not own,
+`jig dispatch` runs one **tick**: it reads records it does not own,
 computes the stages that are wanted and not running, and, when told to,
 starts each one as an agent session. A timer runs the tick every few
 minutes. What is *wanted* is always derived from those records, never from
-the dispatcher's memory; the dispatcher keeps only a launch record per
-session it started (what, where, on which account, and how it ended) and a
-receipt per tick. Stopping it loses nothing, and there is no resident
+the dispatcher's memory; the dispatcher keeps only what it did: a launch
+record per session it started (what, where, on which account, and how it
+ended), a receipt per tick, and the account walls and repeat suppressions
+those imply. Stopping it loses nothing, and there is no resident
 process to supervise: the "daemon" is the timer.
 
 ```mermaid
@@ -55,7 +56,7 @@ flowchart LR
 ### Guards against a second launch
 
 A tick acts on facts that can go stale between its read and its launch,
-and two ticks can overlap (the timer and a person's manual run). Four
+and two ticks can overlap (the timer and a person's manual run). These
 guards keep one stage from starting twice:
 
 - **One tick at a time per machine.** A tick takes an exclusive lock under
@@ -65,18 +66,39 @@ guards keep one stage from starting twice:
   action's own facts again just before it starts it: the item still
   assigned and in a dispatch state, the ledger still re-armable, no running
   session for it.
-- **The stages' own refusals.** `do-item` claims an item by moving it to its
-  in-progress state, so a second pickup finds it out of the pool; `drive.ts`
-  refuses a second driver by its lock and the ledger's claim, and admits a
-  re-arm or takeover only on a mechanical state.
+- **The stages' own refusals.** `drive.ts` refuses a second driver by its
+  lock and the ledger's claim, and admits a re-arm or takeover only on a
+  mechanical state. `do-item` has no such refusal today: its start step
+  moves the item to its in-progress state "if not already active" and goes
+  on, so a person's manual pickup racing a dispatched one starts beside it.
+  The pickup stage (build step 4) therefore depends on a change to
+  `do-item`'s claim: it refuses an item already in its in-progress state or
+  assigned to anyone but the session's own identity, and it re-reads the
+  item after its transition and stands down when another claim landed
+  first. A tracker offers no conditional write, so a race inside that
+  re-read is narrowed, not closed; the stalled-pickup report below is what
+  shows a double claim to a person.
 - **A marker on the pull request for the follow-up**, which has no claim of
   its own: the tick posts a hidden-marker comment
   (`<!-- jig-dispatch-followup -->`) on the merged pull request before it
-  starts the follow-up session, and a pull request that carries the marker
-  wants no follow-up. The marker lives on the forge, so a lost launch record
-  or a second machine does not start a second follow-up.
+  starts the follow-up session, carrying the launch record's id. The marker
+  is trusted only as the drive trusts a ledger: written by the dispatcher's
+  own login or by an owner, member or collaborator; a marker from anyone
+  else is ignored and reported, and an unreadable marker leaves the pull
+  request unplaced (reported, nothing started). A trusted marker is a
+  claim, not a completion: the tick classifies a marked pull request by the
+  launch record it names. A record still running holds the follow-up; one
+  that ended with the follow-up command's success is done; one that failed,
+  died, or is missing on this machine is a failed follow-up, notified once
+  and never relaunched by the tick. A person settles it by running the
+  follow-up or by deleting the marker, which makes the follow-up wanted
+  again. The marker lives on the forge, so a lost launch record does not
+  start a second follow-up on this machine. It does not arbitrate between
+  machines (two ticks can each read no marker and each post one), so one
+  machine dispatches a repository: at most one machine file lists it (see
+  Left out, several Orca hosts).
 
-### The three records
+### The records it reads
 
 | Record | Read through | What the tick takes from it |
 | --- | --- | --- |
@@ -113,20 +135,25 @@ each one's comments for the ledger's marker, as the drive itself does; it
 does not rely on the forge's search to find the marker. It trusts only a
 ledger the drive trusts: written by the drive's own login or by an owner,
 member or collaborator. Each ledger is classified from its driver's state
-and exit code ([terminal states](../plugin/skills/drive-pr/references/terminal-states.md)),
-first match wins:
+and exit code, first match wins. The exit is the one `drive.ts` returned,
+which the driver writes into its ledger as it stops, not the status
+reporter's: `drive.ts` maps convergence to `0`, where `drive-status.ts`
+reports `3`
+([terminal states](../plugin/skills/drive-pr/references/terminal-states.md)).
+A stop `drives.ts --stop` records carries no exit.
 
 | Ledger says | Class | The tick |
 | --- | --- | --- |
 | running, heartbeat inside the lease window | driven | nothing |
 | running, heartbeat past the lease window | silent | takes it over only when this machine's launch record started that driver; otherwise reports it |
-| stopped `5` (merged or closed), `3` (converged), `20` (taken over) | done | nothing; a merge is the follow-up's |
-| stopped `18` or `19` (a mailbox stop or pause), or marked stopped by `drives.ts --stop` | stopped by a person | nothing: a person's stop is never re-armed |
+| stopped `0` (converged), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
+| stopped `18` or `19` (a mailbox stop or pause), or stopped with no exit (`drives.ts --stop`) | stopped by a person | nothing: a person's stop is never re-armed |
 | stopped `16` (quota-parked) | re-armable | re-arms on an admitted account other than the one its launch record names, when one does, or after the wall's reset |
 | stopped `8` (parked), every parked item answered | re-armable | re-arms on any admitted account |
+| stopped `4` (not judgeable yet: a converged drive that left the Ready mark to another driver, or whose final CI witness did not arrive) | re-armable | re-arms on any admitted account, as `drive-pr` asks an unattended wrapper to |
 | stopped `8`, an item unanswered | parked | notifies once per park |
 | stopped `11` or `13` | refused | nothing; another driver holds it |
-| stopped on any other exit (`1`, `6`, `7`, `9`, `12`, `14`, `15`) | needs a person | notifies once per stop, with the exit and the drive's handoff |
+| stopped on any other exit (`1`, `2`, `6`, `7`, `9`, `12`, `14`, `15`, or one this table does not know) | needs a person | notifies once per stop, with the exit and the drive's handoff |
 
 Merged pull requests are those merged after the date the follow-up stage
 was switched on for the repository (`followup_since` in the machine file,
@@ -144,7 +171,7 @@ agent counts as running when the runtime reports it working or waiting; a
 finished agent does not hold the stage, and the report shows its state as
 evidence. A headless drive started in a terminal is not an agent the
 runtime reports, so its running state comes from its launch record (below)
-and from the ledger's heartbeat. Three answers are unknowns, never "no
+and from the ledger's heartbeat. These answers are unknowns, never "no
 session": a host the runtime's answer marks as not covered, a page cut
 short by its row limit, and a workspace on a branch that matches the item
 or pull request but whose agents the runtime does not report. The tick
@@ -179,9 +206,18 @@ tick that started it has ended, so the tick never sees its exit directly.
 Each launch therefore goes through a small wrapper, `plugin/dispatch/run.ts`,
 which writes a launch record under `~/.local/state/jig/dispatch/launches/`
 before it starts the stage (the action, the item or pull request, the
-account, its process id) and records the stage's exit when it ends. The
-next tick reads the records: a record whose process is alive holds its
-stage; one that ended carries the stage's answer. A refusal (`drive.ts`
+account, and its process identity: host, boot id, process id and the
+process's start time, as `drives.ts` captures a driver's to rule out a
+reused process id) and records the stage's exit when it ends. The next
+tick reads the records: a record whose process is alive under that same
+identity holds its stage; one that ended carries the stage's answer; one
+whose identity cannot be checked (another boot, an unreadable process
+table) is an unknown, reported, holding its stage and its account slot
+until a person clears it. The one exception to "alive holds its stage" is
+a takeover: a drive whose ledger is `silent` and whose driver this
+machine's launch record started is planned for takeover although that
+record is alive, since a wedged driver stays alive by definition; whether
+the takeover is admitted stays `drive.ts --take-over`'s decision. A refusal (`drive.ts`
 exiting `11`, `13`, `16` or `20`; `do-item` finding the item already
 claimed) is recorded as the stage's own answer and never fought: an action
 whose facts have not changed since the refusal is reported, not launched
@@ -196,7 +232,7 @@ item's state.
 
 ### The session runtime interface
 
-The tick reaches the runtime only through four methods:
+The tick reaches the runtime only through these methods:
 
 | Method | What it does |
 | --- | --- |
@@ -210,8 +246,12 @@ retried only through the runtime's own retry for that launch, never as a
 fresh one. Orca is the first implementation:
 
 - `sessions` from `orca worktree ps --json`;
-- `openWorkspace` through the [Orca workspace tool](../tools/orca/README.md)
-  (`orca worktree create` with the pull request or issue linked);
+- `openWorkspace` as `orca worktree create` with the pull request or issue
+  linked, called by the adapter itself in `plugin/dispatch/`: the
+  [Orca workspace tool](../tools/orca/README.md) runs from a checkout of
+  Jig, not from the plugin, so the installed dispatcher does not depend on
+  it, and reuses its rules (an existing checkout of the branch first) only
+  by moving what it needs into the plugin when the pickup stage is built;
 - `launch` for a **headless pass** (a drive re-arm or takeover) as
   `orca terminal create --worktree <selector> --title <stage> --command
   <wrapper>`, the account's configuration directory set in the command's
@@ -220,12 +260,18 @@ fresh one. Orca is the first implementation:
   --prompt "<skill> <key>"`, with the model and effort from the item's
   route where the repository declares `routing`; a lost answer is retried
   with `--retry-launch`;
-- `notify` as the workspace marked unread with the message as its comment,
+- `notify` as a workspace marked unread with the message as its comment,
   which Orca's phone app shows. A workspace's comment carries a kickoff
-  prompt only until its agent starts, and the tick notifies only on
-  workspaces whose agent has started.
+  prompt until its agent starts, so the tick never writes one on a
+  workspace that may yet start an agent with it. The target is the item's
+  or pull request's workspace when its agent has started; otherwise
+  (a drive a person or another machine started, a pull request with no
+  local workspace, a pickup whose agent never started) it is a
+  notification workspace the dispatcher keeps per repository, on the
+  default branch, into which it never launches an agent, its comment
+  naming the item or pull request the message is about.
 
-A second runtime is a second implementation of the same four methods, with
+A second runtime is a second implementation of the same methods, with
 nothing in the tick changed.
 
 ### Admission by account
@@ -235,11 +281,15 @@ and a cap for each (`max_per_account`, 2 by default): the number of
 sessions the dispatcher started on that account that are still running,
 waiting ones included. Sessions a person started are not counted: the
 runtime does not report their account, and a person who shares an account
-with the dispatcher lowers its cap. An action is admitted on an account with
-a free slot and no wall in effect, the accounts taken in turn starting
-after the account of the most recent launch record, so the turn survives
-between ticks without state of its own. With no account free, the action
-waits for a later tick and the report names the full caps.
+with the dispatcher lowers its cap. A headless pass is admitted on an
+account with a free slot and no wall in effect, the accounts taken in turn
+starting after the account of the most recent launch record, so the turn
+survives between ticks without state of its own. An interactive session
+(a pickup, a follow-up) is admitted only on the host's active account,
+read from the runtime before the launch, since that is the account it runs
+on (below); when that account is full, walled, not one the machine file
+lists, or cannot be read, the session waits. With no account free, the
+action waits for a later tick and the report names the full caps.
 
 **Walls.** The dispatcher keeps its own record of each account's
 usage-limit wall, under `~/.local/state/jig/dispatch/walls/`, keyed by the
@@ -307,7 +357,12 @@ Every tick writes one receipt under `~/.local/state/jig/dispatch/`, as
 `jig gc` does: the records it read and from where, each planned action with
 its reason, each launch with the runtime's answer, each notification. A
 tick removes receipts and ended launch records older than the machine
-file's retention, keeping the latest completed receipt. `jig dispatch
+file's retention, keeping the latest completed receipt. What suppresses a
+repeat is kept apart from them and does not expire: a small suppression
+record per cause (an unchanged refusal not to retry, a notification
+already sent), keyed by the cause's own facts (the item and its state, the
+ledger's generation and exit, the park), and dropped only when those facts
+change or the item or pull request leaves every record the tick reads. `jig dispatch
 receipts` lists them; once item 32's morning report is built, it lists the
 launches, refusals and notifications since the last report beside the
 drives' own.
@@ -331,6 +386,15 @@ session runs. Its values are split as configuration always is:
   Jig; a consumer repository names its own post-merge command),
   `stalled_after` and `blocked_after`.
 
+A repository's `dispatch` section is read from its default branch as the
+forge holds it, fetched afresh at every tick, never from a workspace's
+checkout: the tick opens workspaces on pull requests' head branches, and a
+section read there would let an unreviewed change choose the command a
+timer launches. A change to the section therefore takes effect at the
+first tick after it merges, and reverting it on the default branch
+revokes it at the next. A tick that cannot read the default branch's
+section plans nothing for that repository and says why.
+
 ### The installed timer
 
 `jig dispatch install` writes a systemd user timer on Linux and a launchd
@@ -348,7 +412,7 @@ route into the host is opened for events (see Left out).
 One pull request each, in this order; each is usable on its own.
 
 1. **This design**, its plan item, ADR-0011 and the glossary terms.
-2. **The tick as a report.** `jig dispatch` reads the three records and
+2. **The tick as a report.** `jig dispatch` reads the records and
    prints every action it would take with its evidence; `--apply` is
    accepted and refused. `assignedIssues` in the tracker interface and both
    adapters, with the assigner check; the ledger classification; the
@@ -368,9 +432,10 @@ One pull request each, in this order; each is usable on its own.
    configuration directory; launch records, walls, the machine file,
    `jig dispatch install`. Usable alone: drives that stop on a usage limit
    or an answered park restart without a person.
-4. **Pickups.** With `--apply`, a workspace and a `do-item` session per item
-   assigned to the factory identity in a dispatch state; the fresh read at
-   launch; stalled pickups and waiting sessions reported. Usable alone:
+4. **Pickups.** `do-item`'s claim refusal (above) first; then, with
+   `--apply`, a workspace and a `do-item` session per item assigned to the
+   factory identity in a dispatch state; the fresh read at launch; stalled
+   pickups and waiting sessions reported. Usable alone:
    assigning an item is the start button.
 5. **Follow-ups and notifications.** The follow-up marker and a follow-up
    session per merged pull request with the repository's follow-up
@@ -397,7 +462,10 @@ One pull request each, in this order; each is usable on its own.
   spreading load before a wall is reached needs usage telemetry Jig does
   not read yet.
 - **Several Orca hosts.** One tick dispatches on the host it runs on, and
-  takes over only drivers that host started.
+  takes over only drivers that host started. A repository is listed in one
+  machine's file only: nothing arbitrates two dispatchers on one
+  repository, the follow-up marker included, until a forge-side claim is
+  designed.
 - **Interactive sessions on a chosen account**, until an Orca launch that
   names the account is shown to work.
 - **The merge**, which stays a person's

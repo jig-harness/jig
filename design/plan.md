@@ -28,8 +28,8 @@ the keyboard the line stops at the first stage boundary.
 [design/dark-factory-dispatch.md](dark-factory-dispatch.md) has how it
 works: `jig dispatch` in `plugin/dispatch/`, a stateless tick on a timer
 `jig dispatch install` writes, reads the items assigned to the repository's
-factory identity in a dispatch state (through the tracker interface's pool
-query, which gains an assignee and state filter), the drive ledger on each
+factory identity in a dispatch state (through a new tracker-interface read,
+`assignedIssues(identity, states)`, beside the unchanged pool query), the drive ledger on each
 pull request and the session runtime's list of running sessions; it
 reports every stage it would start with its evidence, and with `--apply`
 starts each one through a session runtime interface whose first
@@ -47,8 +47,10 @@ a person, and writes a receipt per tick. Machine values in `~/.jig/dispatch.yaml
 in a `dispatch` section of `.config/jig.yaml`. Built in the design's order:
 the report, then re-arms within account caps with the timer, then pickups,
 then follow-ups and notifications; the re-arm step waits on the drive
-running in a session of its own, the notifications on item 32's framed
-park.
+running in a session of its own, and the pickups on `do-item` refusing an
+item already claimed. Notifications do not wait on item 32's framed park:
+a park's notification carries the parked questions as they are and gains
+the framed decision once that is built.
 
 Done when, on a host running Orca, an item assigned to the factory
 identity gets one workspace and one `do-item` session within one interval,

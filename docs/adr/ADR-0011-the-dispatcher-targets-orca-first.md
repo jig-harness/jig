@@ -28,8 +28,8 @@ The [dispatcher](../../GLOSSARY.md)
 ([design/dark-factory-dispatch.md](../../design/dark-factory-dispatch.md))
 is a new kind of tooling. It runs with nobody at the keyboard, on a timer,
 and starts the execution line's stages as agent sessions: pickups, drive
-re-arms and takeovers, follow-ups. To do that it needs three things from
-the runtime it launches through, beyond a workspace:
+re-arms and takeovers, follow-ups. To do that it needs these from the
+runtime it launches through, beyond a workspace:
 
 - **an account roster**: the subscription accounts on the host, so a drive
   stopped by one account's usage limit is re-armed on another, and each
@@ -41,7 +41,7 @@ the runtime it launches through, beyond a workspace:
   item or pull request, read by a program, so the dispatcher starts only
   what is not already running.
 
-Orca has all three today: managed accounts per host (`orca account list`),
+Orca has each of them today: managed accounts per host (`orca account list`),
 a headless server (`orca serve`) that a paired desktop or phone app
 reaches, and a machine-readable summary of every workspace and its agents
 (`orca worktree ps --json`). Herdr keeps sessions alive on a remote host
