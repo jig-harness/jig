@@ -99,15 +99,14 @@ against a recorded set of public repositories in several languages, and gives
 [`jig:audit`](plugin/skills/audit/README.md) measured evidence: the test to
 code ratio, the generated share and the size of the agent scaffolding.
 
-### 21. `changelog` skill: several artifacts, and the whole file checked
+### 21. `changelog` skill: several artifacts
 
 A repository that releases several things at their own versions, such as a
 monorepo's packages, keeps a changelog and a version for each with the
 [`changelog` skill](plugin/skills/changelog/README.md), as
 [M16](modules/M16-releases-versions/README.md) asks; today the skill keeps
-one per repository. The skill also checks the whole changelog against the
-rules of its format, and gets workflow templates for CI providers other than
-GitHub.
+one per repository. The skill also gets workflow templates for CI providers
+other than GitHub.
 
 ### 23. Seed review lenses
 

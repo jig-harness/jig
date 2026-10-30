@@ -183,5 +183,10 @@ export async function handleFailedReviewPass(
   console.error(
     `pass failed on round ${round} (exit ${passRes.code}); not driving further`,
   );
+  // What it left stays in the tree; the stop names it, so a re-arm starts
+  // from the fixes the pass made rather than finding them by hand.
+  console.error("  What the failed pass left in the tree:");
+  for (const line of describeLeftovers(await passLeftovers()))
+    console.error(`  ${line}`);
   return disposition.exit;
 }
