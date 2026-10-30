@@ -8,7 +8,13 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -411,6 +417,30 @@ describe("a head that was pushed, in a real tree", () => {
       const handed = measure(dir, "", "");
       expect(handed.inheritedHead).toBe(h);
       expect(handed.uncommittedMeasured).not.toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("hands on an untracked symbolic link retargeted or left dangling", () => {
+    const { dir, h } = tree();
+    try {
+      git(dir, "update-ref", "refs/remotes/origin/main", h);
+      writeFileSync(join(dir, "one.txt"), "same\n");
+      writeFileSync(join(dir, "two.txt"), "same\n");
+      symlinkSync("one.txt", join(dir, "link"));
+      const before = String(measure(dir, "").uncommittedBeforePass);
+      expect(measure(dir, "", before).inheritedHead).toBe("");
+      // Retargeted between files of the same contents.
+      rmSync(join(dir, "link"));
+      symlinkSync("two.txt", join(dir, "link"));
+      expect(measure(dir, "", before).inheritedHead).toBe(h);
+      // Left dangling: still measured, and still a change.
+      rmSync(join(dir, "link"));
+      symlinkSync("missing.txt", join(dir, "link"));
+      const dangling = measure(dir, "", before);
+      expect(dangling.uncommittedMeasured).not.toBeNull();
+      expect(dangling.inheritedHead).toBe(h);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

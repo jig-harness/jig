@@ -255,10 +255,7 @@ async function digestTree(
     submodules === null
   )
     return false;
-  const blobs = await hashFiles(
-    untracked.stdout.split("\0").filter((p) => p !== ""),
-    at,
-  );
+  const blobs = await probeEntries("digest", untracked.stdout, dir);
   if (blobs === null) return false;
   for (const part of [dir, staged.stdout, unstaged.stdout, untracked.stdout])
     hash.update(part).update("\0");
@@ -285,43 +282,65 @@ async function checkedOutSubmodules(
     if (tab >= 0 && entry.startsWith("160000 "))
       paths.add(join(dir, entry.slice(tab + 1)));
   }
-  return [...paths].filter((sub) => existsSync(join(sub, ".git")));
+  if (paths.size === 0) return [];
+  const listed = await probeEntries("checked-out", [...paths].join("\0"), dir);
+  return listed === null ? null : listed.split("\0").filter((p) => p !== "");
 }
 
-/** Bytes of file names one `hash-object` call is given as arguments. */
-const HASH_ARG_BYTES = 32_000;
-
 /**
- * The blob ids of `paths`, in order; `null` when a call fails. Names go as
- * literal arguments, never one per line on stdin, so a name holding a newline
- * stays one name.
+ * The filesystem reads behind the fingerprint, in a child process with a
+ * deadline: a stalled filesystem (a submodule on a network mount, say) then
+ * ends one probe instead of blocking the driver's event loop, its round loop
+ * and its lock heartbeat. Paths arrive NUL-separated on stdin, so a name
+ * holding a newline stays one name.
+ *
+ * `digest`: a SHA-256 over each path, its type and what Git would commit for
+ * it, read without following links: a symbolic link's target text (a
+ * dangling one included), a file's bytes and executable bit, a directory (an
+ * untracked nested repository) as itself. A path gone since Git listed it is
+ * recorded as gone. `checked-out`: the paths holding a `.git`, which a
+ * submodule never checked out does not.
  */
-async function hashFiles(
-  paths: string[],
-  opts: Parameters<typeof git>[1],
-): Promise<string | null> {
-  let out = "";
-  let batch: string[] = [];
-  let bytes = 0;
-  const flush = async (): Promise<boolean> => {
-    if (batch.length === 0) return true;
-    const hashed = await git(
-      ["hash-object", "--no-filters", "--", ...batch],
-      opts,
-    );
-    batch = [];
-    bytes = 0;
-    if (hashed.code !== 0) return false;
-    out += hashed.stdout;
-    return true;
-  };
-  for (const path of paths) {
-    const size = Buffer.byteLength(path) + 1;
-    if (bytes + size > HASH_ARG_BYTES && !(await flush())) return null;
-    batch.push(path);
-    bytes += size;
+const ENTRY_PROBE_SCRIPT = `
+const fs = require('node:fs');
+const { createHash } = require('node:crypto');
+const mode = process.argv[1];
+const paths = fs.readFileSync(0, 'utf8').split('\\0').filter((p) => p !== '');
+if (mode === 'checked-out') {
+  process.stdout.write(paths.filter((p) => fs.existsSync(p + '/.git')).join('\\0'));
+  process.exit(0);
+}
+const hash = createHash('sha256');
+const field = (b) => hash.update(String(Buffer.byteLength(b)) + ':').update(b);
+for (const p of paths) {
+  field(p);
+  let s;
+  try {
+    s = fs.lstatSync(p);
+  } catch (e) {
+    if (e && e.code === 'ENOENT') { field('gone'); continue; }
+    throw e;
   }
-  return (await flush()) ? out : null;
+  if (s.isSymbolicLink()) { field('link'); field(fs.readlinkSync(p, 'buffer')); }
+  else if (s.isFile()) { field(s.mode & 0o111 ? 'exec' : 'file'); field(fs.readFileSync(p)); }
+  else if (s.isDirectory()) field('dir');
+  else field('other');
+}
+process.stdout.write(hash.digest('hex'));
+`;
+
+async function probeEntries(
+  mode: "digest" | "checked-out",
+  paths: string,
+  cwd: string,
+): Promise<string | null> {
+  const probe = await run([process.execPath, "-e", ENTRY_PROBE_SCRIPT, mode], {
+    stderr: "pipe",
+    timeoutSec: helperTimeoutSeconds(),
+    cwd,
+    stdin: paths,
+  });
+  return probe.code === 0 ? probe.stdout : null;
 }
 
 /**
