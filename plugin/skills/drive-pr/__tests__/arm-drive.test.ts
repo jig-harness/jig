@@ -26,6 +26,7 @@ import {
   driveArgv,
   type LiveDrive,
   liveDriveIn,
+  DROP_LOGIN_FIELDS,
   quoteWord,
   sessionOverrides,
   type TabDeps,
@@ -36,6 +37,8 @@ const IN_ORCA = { CLAUDECODE: "1", ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
 const CLAUDE = { CLAUDECODE: "1" };
 const TREE = "/work/trees/my tree";
 const REQUEST: ArmRequest = { pr: "42", tree: TREE, forward: [] };
+/** What opens every tab command's configuration prefix. */
+const LOGIN_PREFIX = ["sh", "-c", DROP_LOGIN_FIELDS, "sh", "env"];
 
 /** What a POSIX shell reads `line` back as, one word per line. */
 function shellWords(line: string): string[] {
@@ -126,7 +129,7 @@ describe("the configuration the tab reads", () => {
       HOME: "/home/me",
     };
     expect(sessionOverrides(env, "/work/tree")).toEqual([
-      "env",
+      ...LOGIN_PREFIX,
       "JIG__DRIVE__PASS_MODEL=opus",
       `JIG_OVERLAY=${resolve("/work/tree", "scratch/jig.yaml")}`,
       `JIG_HOME=${resolve("/work/tree", "/home/me/.jig-alt")}`,
@@ -134,10 +137,61 @@ describe("the configuration the tab reads", () => {
     ]);
   });
 
-  it("leaves out a blank selector and carries nothing when none is set", () => {
-    expect(sessionOverrides({ JIG_OVERLAY: " ", HOME: "/h" }, "/w")).toEqual(
-      [],
-    );
+  it("carries a blank selector as blank, so the login shell cannot fill it", () => {
+    expect(
+      sessionOverrides(
+        { JIG_OVERLAY: "", JIG_HOME: " ", JIG_USER_LAYER: "", HOME: "/h" },
+        "/w",
+      ),
+    ).toEqual([
+      ...LOGIN_PREFIX,
+      "JIG_OVERLAY=",
+      "JIG_HOME= ",
+      "JIG_USER_LAYER=",
+    ]);
+  });
+
+  it("unsets a selector the session leaves unset", () => {
+    expect(sessionOverrides({ HOME: "/h" }, "/w")).toEqual([
+      ...LOGIN_PREFIX,
+      "-u",
+      "JIG_HOME",
+      "-u",
+      "JIG_OVERLAY",
+      "-u",
+      "JIG_USER_LAYER",
+    ]);
+  });
+
+  it("reads back, in a shell whose profile exports configuration, the session's and nothing else", () => {
+    exceptOnWindows("the tab's shell is POSIX", () => {
+      const line = commandLine(
+        [
+          ...sessionOverrides({ JIG__A: "kept", JIG_OVERLAY: "" }, "/w"),
+          "sh",
+          "-c",
+          'echo "$JIG__A|$JIG__B|[$JIG_OVERLAY]|[$JIG_HOME]"',
+        ],
+        "linux",
+      );
+      const done = Bun.spawnSync(["sh", "-c", line], {
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          PATH: process.env.PATH ?? "",
+          JIG__A: "profile",
+          JIG__B: "profile",
+          JIG_OVERLAY: "/other/jig.yaml",
+          JIG_HOME: "/other",
+        },
+      });
+      expectSpawnExit(
+        { exitCode: done.exitCode, stdout: done.stdout, stderr: done.stderr },
+        0,
+        "sh",
+      );
+      expect(done.stdout.toString().trim()).toBe("kept||[]|[]");
+    });
   });
 });
 
@@ -699,9 +753,8 @@ describe("arm-drive.ts", () => {
       "JIG_USER_LAYER=off",
       ...["JIG_HOME", "JIG_OVERLAY"].flatMap((key) => {
         const value = process.env[key];
-        return value === undefined || value.trim() === ""
-          ? []
-          : [`${key}=${resolve(tree, value)}`];
+        if (value === undefined) return [];
+        return [`${key}=${value.trim() === "" ? value : resolve(tree, value)}`];
       }),
     ];
     exceptOnWindows("a Windows host opens no Orca tab", () => {
@@ -727,8 +780,16 @@ describe("arm-drive.ts", () => {
       const command = answer.command ?? "";
       expect(typed.endsWith(` ${command}`)).toBe(true);
       const prefix = shellWords(typed.slice(0, -command.length - 1));
-      expect(prefix[0]).toBe("env");
-      expect(prefix.slice(1).sort()).toEqual(carried.sort());
+      expect(prefix.slice(0, LOGIN_PREFIX.length)).toEqual(LOGIN_PREFIX);
+      const rest = prefix.slice(LOGIN_PREFIX.length);
+      expect(rest.filter((word) => word.includes("=")).sort()).toEqual(
+        carried.sort(),
+      );
+      expect(rest.filter((word) => word === "-u").length).toBe(
+        ["JIG_HOME", "JIG_OVERLAY", "JIG_USER_LAYER"].filter(
+          (key) => !carried.some((entry) => entry.startsWith(`${key}=`)),
+        ).length,
+      );
       expect(readBack(command)).toEqual(answer.argv.slice(1));
     });
   });

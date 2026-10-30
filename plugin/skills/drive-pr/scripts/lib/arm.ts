@@ -92,13 +92,24 @@ export function commandLine(
 }
 
 /**
- * The session's configuration as an `env KEY=value` prefix: its `JIG__`
- * field overrides and the variables that choose the layers (`JIG_HOME`,
- * `JIG_OVERLAY`, `JIG_USER_LAYER`), so the fresh login shell of a tab reads
- * the same configuration the arm resolved the model and the options from.
- * A path selector is made absolute against `cwd`, since the tab may start
- * elsewhere; a blank one is left out, as the reader leaves it out. Empty when
- * there are none.
+ * What the tab's login shell runs first: it drops every `JIG__` field the
+ * shell's own profile exported, so only the session's reach the drive, then
+ * runs the rest of the command line.
+ */
+export const DROP_LOGIN_FIELDS =
+  'for n in $(env | sed -n \'s/^\\(JIG__[A-Za-z0-9_]*\\)=.*/\\1/p\'); do unset "$n"; done; exec "$@"';
+
+/**
+ * The session's configuration as the prefix of the tab's command, so the
+ * fresh login shell of a tab reads the configuration the arm resolved the
+ * model and the options from, whatever its profile exports. The session's
+ * `JIG__` field overrides and the variables that choose the layers
+ * (`JIG_HOME`, `JIG_OVERLAY`, `JIG_USER_LAYER`) are carried as
+ * `env KEY=value`; a blank selector stays blank, since the reader treats a
+ * blank one as unset and the profile must not fill it. A path selector with a
+ * value is made absolute against `cwd`, since the tab may start elsewhere. A
+ * selector the session leaves unset is unset in the tab, and the `JIG__`
+ * fields the profile exports are dropped first.
  */
 export function sessionOverrides(
   env: Env,
@@ -108,12 +119,15 @@ export function sessionOverrides(
   for (const [key, v] of Object.entries(env)) {
     if (typeof v !== "string") continue;
     if (key.startsWith(ENV_PREFIX)) set.push(`${key}=${v}`);
-    else if (LAYER_SELECTORS.includes(key) && v.trim() !== "")
+    else if (LAYER_SELECTORS.includes(key))
       set.push(
-        `${key}=${PATH_LAYER_SELECTORS.includes(key) ? resolve(cwd, v) : v}`,
+        `${key}=${PATH_LAYER_SELECTORS.includes(key) && v.trim() !== "" ? resolve(cwd, v) : v}`,
       );
   }
-  return set.length === 0 ? [] : ["env", ...set];
+  const unset = LAYER_SELECTORS.filter(
+    (key) => typeof env[key] !== "string",
+  ).flatMap((key) => ["-u", key]);
+  return ["sh", "-c", DROP_LOGIN_FIELDS, "sh", "env", ...unset, ...set];
 }
 
 /** The argument list that starts the drive: `drive.ts` in the tree, its pass on `model`. */
