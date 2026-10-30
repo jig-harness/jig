@@ -16,7 +16,9 @@ release: patch
   the tree afresh before every round's status check, the commits local HEAD
   has on top of the head branch's remote ref and the edits the last pass left
   uncommitted, compared by content (a symbolic link by its target), inside
-  submodules too, without a stalled filesystem holding up the driver (a tree dirty at arm still stops at
+  submodules and untracked nested repositories too (a commit in one
+  included), however large an untracked file, and without a stalled
+  filesystem holding up the driver (a tree dirty at arm still stops at
   convergence), hands
   the round out over that head as it already did after a pass killed at its
   deadline, and tells the round's pass to push them (a notice opening

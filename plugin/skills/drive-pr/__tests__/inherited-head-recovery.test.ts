@@ -436,6 +436,21 @@ describe("a head that was pushed, in a real tree", () => {
       const handed = measure(dir, "", "");
       expect(handed.uncommittedMeasured).not.toBeNull();
       expect(handed.inheritedHead).toBe(h);
+      // Present at arm, then changed inside: the outer status line stays
+      // `?? nested/` throughout.
+      const before = String(measure(dir, "").uncommittedBeforePass);
+      expect(measure(dir, "", before).inheritedHead).toBe("");
+      writeFileSync(join(nested, "x.ts"), "edited\n");
+      expect(measure(dir, "", before).inheritedHead).toBe(h);
+      git(nested, "config", "user.email", "t@example.invalid");
+      git(nested, "config", "user.name", "t");
+      git(nested, "add", "x.ts");
+      git(nested, "commit", "-q", "-m", "x");
+      const committed = String(measure(dir, "").uncommittedBeforePass);
+      expect(measure(dir, "", committed).inheritedHead).toBe("");
+      // A commit inside it moves only its HEAD.
+      git(nested, "commit", "-q", "--allow-empty", "-m", "y");
+      expect(measure(dir, "", committed).inheritedHead).toBe(h);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -135,9 +135,10 @@ export interface PassLeftovers {
   baseExists: boolean | null;
   /**
    * The edits by content: the status lines and a digest of the staged diff,
-   * the unstaged diff and every untracked file's content, in the tree and in
-   * each checked-out submodule, so an edit to a file already shown as
-   * modified changes it. `''` for a clean tree.
+   * the unstaged diff and every untracked file's content, with the HEAD, of
+   * the tree, each checked-out submodule and each untracked nested
+   * repository, so an edit to a file already shown as modified, or a commit
+   * inside a nested repository, changes it. `''` for a clean tree.
    */
   edits: string | null;
 }
@@ -226,9 +227,11 @@ async function editsOf(
 }
 
 /**
- * Feed one tree's edits into `hash`, then each checked-out submodule's. The
- * superproject's diff shows a dirty submodule only as its gitlink and a dirty
- * mark, so a further edit inside one is read from the submodule itself.
+ * Feed one tree's HEAD and edits into `hash`, then each checked-out
+ * submodule's and each untracked nested repository's. The superproject's diff
+ * shows a dirty submodule only as its gitlink and a dirty mark, and lists an
+ * untracked nested repository only by its directory, so a commit or a further
+ * edit inside either is read from that repository itself.
  * Text conversion is off: a converter may leave out the bytes an edit changed.
  */
 async function digestTree(
@@ -249,18 +252,37 @@ async function digestTree(
     ["ls-files", "-z", "--others", "--exclude-standard"],
     at,
   );
+  // Exit 1 is an unborn HEAD, which has no commit to record.
+  const head = await git(["rev-parse", "--verify", "--quiet", "HEAD"], at);
   const submodules = await checkedOutSubmodules(dir, at);
   if (
     [staged, unstaged, untracked].some((r) => r.code !== 0) ||
+    head.code > 1 ||
     submodules === null
   )
     return false;
   const blobs = await probeEntries("digest", untracked.stdout, dir);
-  if (blobs === null) return false;
-  for (const part of [dir, staged.stdout, unstaged.stdout, untracked.stdout])
+  // Git lists an untracked nested repository as its directory, `path/`.
+  const dirs = untracked.stdout
+    .split("\0")
+    .filter((p) => p.endsWith("/"))
+    .map((p) => join(dir, p));
+  const listed =
+    dirs.length === 0
+      ? ""
+      : await probeEntries("checked-out", dirs.join("\0"), dir);
+  if (blobs === null || listed === null) return false;
+  const nested = listed.split("\0").filter((p) => p !== "");
+  for (const part of [
+    dir,
+    head.stdout.trim(),
+    staged.stdout,
+    unstaged.stdout,
+    untracked.stdout,
+  ])
     hash.update(part).update("\0");
   hash.update(blobs).update("\0");
-  for (const sub of submodules)
+  for (const sub of [...submodules, ...nested])
     if (!(await digestTree(sub, opts, hash))) return false;
   return true;
 }
@@ -296,10 +318,12 @@ async function checkedOutSubmodules(
  *
  * `digest`: a SHA-256 over each path, its type and what Git would commit for
  * it, read without following links: a symbolic link's target text (a
- * dangling one included), a file's bytes and executable bit, a directory (an
- * untracked nested repository) as itself. A path gone since Git listed it is
- * recorded as gone. `checked-out`: the paths holding a `.git`, which a
- * submodule never checked out does not.
+ * dangling one included), a file's bytes (read through a fixed buffer, so a
+ * large file costs no more memory than a small one) and executable bit, a
+ * directory (an untracked nested repository, whose own HEAD and edits the
+ * caller reads) as itself. A path gone since Git listed it is recorded as
+ * gone. `checked-out`: the paths holding a `.git`: a submodule that is checked
+ * out, or a directory that is a repository of its own.
  */
 const ENTRY_PROBE_SCRIPT = `
 const fs = require('node:fs');
@@ -312,6 +336,17 @@ if (mode === 'checked-out') {
 }
 const hash = createHash('sha256');
 const field = (b) => hash.update(String(Buffer.byteLength(b)) + ':').update(b);
+const buf = Buffer.alloc(1 << 16);
+const contentOf = (p) => {
+  const h = createHash('sha256');
+  const fd = fs.openSync(p, 'r');
+  try {
+    for (let n; (n = fs.readSync(fd, buf, 0, buf.length, null)) > 0; ) h.update(buf.subarray(0, n));
+  } finally {
+    fs.closeSync(fd);
+  }
+  return h.digest('hex');
+};
 for (const p of paths) {
   field(p);
   let s;
@@ -322,7 +357,7 @@ for (const p of paths) {
     throw e;
   }
   if (s.isSymbolicLink()) { field('link'); field(fs.readlinkSync(p, 'buffer')); }
-  else if (s.isFile()) { field(s.mode & 0o111 ? 'exec' : 'file'); field(fs.readFileSync(p)); }
+  else if (s.isFile()) { field(s.mode & 0o111 ? 'exec' : 'file'); field(contentOf(p)); }
   else if (s.isDirectory()) field('dir');
   else field('other');
 }
