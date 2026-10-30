@@ -5,9 +5,10 @@
  * A pass killed at its deadline is not rolled back, so the driver runs the
  * two checks the stop used to ask a person to run (uncommitted edits,
  * unpushed commits) and leaves both in the tree for the next pass, which is
- * told what it inherits. A stall gets one more round with the stand-down
- * diagnostics in the pass's notice; the stop that follows names what the
- * passes recorded deciding in the handoff narrative.
+ * told what it inherits. The same probes name what a failed pass left, and
+ * measure the tree before every gate (`unpushed.ts`). A stall gets one more
+ * round with the stand-down diagnostics in the pass's notice; the stop that
+ * follows names what the passes recorded deciding in the handoff narrative.
  */
 import { existsSync, readFileSync } from "node:fs";
 
@@ -23,7 +24,7 @@ import {
   unconcludedGitOpMarker,
 } from "./../proc.ts";
 
-import { unpushedRange } from "./../driven-branch.ts";
+import { unpushedBase, unpushedRange } from "./../driven-branch.ts";
 
 import { readPrState } from "./../pr-state.ts";
 
@@ -120,7 +121,14 @@ export interface PassLeftovers {
   operation: string | null;
   /** The tree's HEAD after the kill: the head the next gate may inherit. */
   head: string | null;
+  /** The newest unpushed commits, `<short sha> <subject>` each. */
+  commits: string[] | null;
+  /** Whether HEAD contains the driven branch's remote ref. */
+  onRemote: boolean | null;
 }
+
+/** How many unpushed commits the leftovers name one by one. */
+const LISTED_COMMITS = 20;
 
 export async function passLeftovers(): Promise<PassLeftovers> {
   const anchor = process.env.DRIVE_PR_WORKTREE;
@@ -133,6 +141,21 @@ export async function passLeftovers(): Promise<PassLeftovers> {
   const status = await git(["status", "--short"], opts);
   const count = await git(["rev-list", "--count", unpushedRange()], opts);
   const unpushed = Number.parseInt(count.stdout.trim(), 10);
+  const log = await git(
+    [
+      "log",
+      "--no-decorate",
+      "--format=%h %s",
+      `--max-count=${LISTED_COMMITS}`,
+      unpushedRange(),
+    ],
+    opts,
+  );
+  // Exit 1 is git's "not an ancestor"; anything else is a probe that failed.
+  const based = await git(
+    ["merge-base", "--is-ancestor", unpushedBase(), "HEAD"],
+    opts,
+  );
   const head = await git(["rev-parse", "HEAD"], opts);
   const op = await unconcludedGitOpMarker(gitCallTimeoutSeconds(), {
     ...(anchor ? { cwd: anchor } : {}),
@@ -144,6 +167,9 @@ export async function passLeftovers(): Promise<PassLeftovers> {
     operation: op.ok ? op.marker : null,
     head:
       head.code === 0 && head.stdout.trim() !== "" ? head.stdout.trim() : null,
+    commits:
+      log.code === 0 ? log.stdout.split("\n").filter((l) => l !== "") : null,
+    onRemote: based.code === 0 ? true : based.code === 1 ? false : null,
   };
 }
 
@@ -177,6 +203,11 @@ export function describeLeftovers(l: PassLeftovers): string[] {
       ? `Unpushed commits: could not be counted (${unpushedRange()}).`
       : `Unpushed commits: ${l.unpushed} (${unpushedRange()}).`,
   );
+  if (l.unpushed !== null && l.unpushed > 0 && l.commits !== null) {
+    lines.push(...l.commits.map((c) => `  ${c}`));
+    if (l.unpushed > l.commits.length)
+      lines.push(`  … and ${l.unpushed - l.commits.length} more`);
+  }
   if (l.operation !== null)
     lines.push(`An unconcluded git operation is open: ${l.operation}.`);
   return lines;

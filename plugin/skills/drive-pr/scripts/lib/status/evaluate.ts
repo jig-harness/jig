@@ -200,7 +200,7 @@ export interface EvaluateContext {
   botsOnly: boolean;
   headSync: boolean;
   localHead: string;
-  /** The witnessed head a killed pass left unpushed (`inherited-head.ts`). */
+  /** The witnessed head a pass left work on, unpushed (`inherited-head.ts`). */
   inheritedHead?: string;
   /** Absolute paths to the sibling scripts this decision spawns. */
   driveStateScript: string;

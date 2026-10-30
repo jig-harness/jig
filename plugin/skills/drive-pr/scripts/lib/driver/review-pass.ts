@@ -39,9 +39,10 @@ export async function runReviewPassPhase(
     return dispatchReviewPassResult;
   const { passRes, passHandle } = dispatchReviewPassResult;
   const disposition = passExitDisposition(passRes.code);
-  // A pass that completed has acted on what it was carried, and pushed or
-  // discarded what it inherited. Until one does (a quota wall retried, say),
-  // every pass is told again.
+  // A pass that completed has acted on what it was carried. Until one does (a
+  // quota wall retried, say), every pass is told again. Whether it pushed what
+  // it inherited is not taken on its word: the next gate measures the tree
+  // again (`unpushed.ts`) and hands on any commit it left unpushed.
   if (disposition.kind === "ok") {
     context.passNotice = "";
     context.carriedNotice = "";

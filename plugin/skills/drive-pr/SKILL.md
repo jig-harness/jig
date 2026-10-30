@@ -373,6 +373,21 @@ round with the stand-down diagnostics in the pass's notice before it stops,
 and the stop prints what the passes recorded deciding at the end of the
 handoff narrative. A short usage wall is slept through as before.
 
+**Unpushed commits never become a `HEAD_LAG` wait.** A pass can end without
+pushing whatever it exits with, and a drive can be armed over local commits
+nobody pushed. So before every gate the driver counts the commits local HEAD
+has on top of the head branch's remote ref. When there are some, it hands
+that HEAD to the gate as an inherited head, as after a deadline, and the
+round's pass is told to push them (`UNPUSHED COMMITS`, § Driver pass). When
+local HEAD has commits of its own and does not contain that ref, no round
+can push it as a fast-forward: the drive stops at once with exit `1`, naming
+the commits, and you reconcile the tree with the PR head before re-arming. A
+head that was pushed and that the API has not caught up with leaves local
+HEAD on the remote ref, so the gate is told nothing and still polls its
+`HEAD_LAG`. A pass that fails (any exit but `0` and `5` that is neither a
+deadline nor a usage wall) stops the drive, and the stop lists the paths it
+left uncommitted and the commits it left unpushed.
+
 Normally you do not run this by hand: a `/jig:do-item` run **arms the
 drive itself** the moment the draft PR opens (its § Arm the drive step).
 Manual invocation — `/jig:drive-pr [PR]`, which arms this same command
@@ -909,8 +924,9 @@ person can put their own tool's command after the `--` and run it.
 
 A `claude -p` pass has no next turn. When it stops producing output the process
 exits and any background-task notification is lost — `drive.ts` then reads exit
-`0` as a finished round, finds the commit unpushed, and waits out its whole
-`HEAD_LAG` budget. So in a driver pass: never end your turn waiting for a
+`0` as a finished round with the commit unpushed: the replies that promised it
+are not true on the PR, CI stays on the old head, and the next round spends a
+pass on pushing it. So in a driver pass: never end your turn waiting for a
 background command, a remote test box above all; run every step the round
 depends on to completion **within the turn**, and do not stop until
 `finish-round.ts` returns.
@@ -987,6 +1003,7 @@ state directory holding all of it: read that file before acting.
 | Opens with | What happened | What this round does |
 |---|---|---|
 | `RESTARTED AFTER A PASS DEADLINE` | The previous pass was killed at its deadline; its uncommitted edits and unpushed commits are listed and are still in the tree | Start from that state: finish, validate and push what is sound, discard what is not on purpose, then triage as usual. When it names an inherited head, add `--inherited-head <sha>` to § 1's gate (without it the gate reads unpushed commits as `HEAD_LAG`, and a tree with only uncommitted edits as converged) and push them through `finish-round.ts` with the round's own fixes |
+| `UNPUSHED COMMITS` | Local HEAD carries commits the PR's head lacks: a pass ended without pushing them, or the drive was armed over them. They are listed, with the uncommitted edits, and are still in the tree | Validate what is sound and push it through `finish-round.ts` with the round's own fixes; discard what is not on purpose. Add the `--inherited-head <sha>` it names to § 1's gate: without it the gate reads the unpushed commits as `HEAD_LAG` |
 | `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14` | Act on the open work; if you decide not to, end the handoff narrative with one paragraph saying what you decided and why — the stop prints it |
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed: each thread re-held unconfirmed on its reply, each finding released, and apart those that could not be reopened; a failed reconciliation is said here | For a re-held thread, read the anchored code, make the promised fix if it is missing, then confirm it with the hold command shown; or supersede the reply with a fresh outcome. Triage a released finding afresh. Check each item that could not be reopened against the held batch first |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; every item has a `[kind] key — url` entry, answer bodies may be cut, and the file named on its third line holds every answer in full | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
@@ -2247,8 +2264,8 @@ pre-commit hook that runs a long suite, and the push runs the pre-push hook.
 
 **In a driver pass, never background either one.** A pass that hands
 `finish-round.ts` to `run_in_background` and ends its turn exits with the
-commit unpushed — `drive.ts` then spends its whole `HEAD_LAG` budget on a
-commit GitHub never received. Run both in the
+commit unpushed — the round's replies promise a fix GitHub never received,
+and `drive.ts` spends the next round's pass on pushing it. Run both in the
 foreground; where one can exceed the ceiling, use the **foreground wait** in
 § Entry mode → Driver pass, which blocks inside the turn until the command's
 exit status lands. A cut-off **wait** is resumed by calling `wait` again — the

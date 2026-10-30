@@ -49,8 +49,8 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                        when you know the local tree is not the PR branch).
  *   --inherited-head SHA let the guard pass a local HEAD that is exactly SHA
  *                        and descends from the API head: the commits a pass
- *                        killed at its deadline left unpushed (the driver's
- *                        restart notice names it). Any other mismatch lags.
+ *                        left unpushed, or the drive was armed over (the
+ *                        driver's notice names it). Any other mismatch lags.
  *   --no-count           do not count this evaluation as a worked round. Also
  *                        suppresses the replied-thread reconciliation sweep
  *                        below — a mid-round re-read is not a pass entry.

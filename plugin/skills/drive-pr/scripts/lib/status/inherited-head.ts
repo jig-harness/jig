@@ -1,10 +1,12 @@
 /**
  * The one local head the head-sync guard accepts while it differs from the
- * API head: the head a pass killed at its deadline left with unpushed
- * commits, which the driver witnessed after the kill and names to the next
- * gate (`--inherited-head`). Without it, that gate reads the unpushed
- * commits as replication lag and waits out its timeout, and the pass that
- * would push them never runs.
+ * API head: a head a pass left with unpushed commits (killed at its deadline,
+ * or ended without pushing), or one the drive was armed over, which the
+ * driver measured and names to the next gate (`--inherited-head`). Without
+ * it, that gate reads the unpushed commits as replication lag and waits out
+ * its timeout, and the pass that would push them never runs. A head that was
+ * pushed and that the API has not caught up with is never named, so its lag
+ * is still polled.
  */
 import { fail } from "../cli.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "../proc.ts";
@@ -70,7 +72,7 @@ export async function headSyncState(
   localHead: string,
   inheritedHead: string,
 ): Promise<HeadSync> {
-  // On the PR head itself, the killed pass left uncommitted edits only: the
+  // On the PR head itself, a killed pass left uncommitted edits only: the
   // round that settles them is still owed, whether or not the local head is
   // compared at all (`--no-head-sync` leaves it unread).
   const local = localHead === "" ? apiHead : localHead;
@@ -111,6 +113,6 @@ export function inheritedReason(
   inheritedHead = "",
 ): string {
   return sync === "inherited"
-    ? ` — local HEAD ${localHead || inheritedHead} carries work a killed pass left unpushed or uncommitted; this round settles it`
+    ? ` — local HEAD ${localHead || inheritedHead} carries work a pass left unpushed or uncommitted; this round settles it`
     : "";
 }

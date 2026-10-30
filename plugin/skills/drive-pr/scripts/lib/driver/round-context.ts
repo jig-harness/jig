@@ -59,9 +59,16 @@ export interface DriveRoundContext {
    */
   carriedNotice: string;
   /**
-   * The local HEAD a pass killed at its deadline left ahead of the PR head,
-   * witnessed after the kill; `''` when it left nothing unpushed. Every gate
-   * is told it (`drive-status.ts --inherited-head`) until a pass completes.
+   * The local HEAD a pass left work on that the PR head lacks: witnessed after
+   * a pass killed at its deadline, and measured before every gate when the
+   * tree holds commits on top of the head branch's remote ref (`unpushed.ts`);
+   * `''` when there is none. Every gate is told it
+   * (`drive-status.ts --inherited-head`) until a pass completes.
    */
   inheritedHead: string;
+  /**
+   * What the next review pass is told about the unpushed commits the last
+   * gate measured; `''` when there were none. Recomputed before every gate.
+   */
+  unpushedNotice: string;
 }
