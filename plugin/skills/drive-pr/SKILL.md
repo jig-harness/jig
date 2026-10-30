@@ -374,8 +374,8 @@ and the stop prints what the passes recorded deciding at the end of the
 handoff narrative. A short usage wall is slept through as before.
 
 **Unpushed work never becomes a `HEAD_LAG` wait or a dirty convergence.** A
-pass can end without committing or pushing whatever it exits with, and a
-drive can be armed over local commits nobody pushed. So before every gate
+pass can exit `0` without committing or pushing, and a drive can be armed
+over local commits nobody pushed. So before every gate
 the driver measures the tree afresh: the commits local HEAD has on top of
 the head branch's remote ref, and the uncommitted edits whose content differs
 from what the tree held before the last completed pass ran (at arm, until one
@@ -390,13 +390,16 @@ has commits of its own and does not contain that ref, no round can push it
 as a fast-forward: the drive stops at once with exit `1`, naming the
 commits, and you reconcile the tree with the PR head before re-arming. A
 drive armed over such a tree meets the attach first, which refuses with
-exit `2` and names the same commits. A head that was pushed and that the API
+exit `2` and names the same commits; with the attach skipped
+(`DRIVE_PR_ATTACH=off`, `--dry-run`) the first gate's measurement stops it
+with exit `1` instead. A head that was pushed and that the API
 has not caught up with is still polled as `HEAD_LAG`: the gate refuses an
 inherited head the head branch's ref on the drive's remote
 (`repository.remote`, else `origin`) already contains, or whose pushed state
 it cannot read. A pass that
 fails (any exit but `0` and `5` that is neither a deadline nor a usage wall)
-stops the drive, and the stop lists the paths it left uncommitted and the
+stops the drive instead of handing its work to a round (re-arm to hand it
+on), and the stop lists the paths it left uncommitted and the
 commits it left unpushed.
 
 Normally you do not run this by hand: a `/jig:do-item` run **arms the

@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -369,6 +369,13 @@ describe("a head that was pushed, in a real tree", () => {
       const before = String(atArm.uncommittedBeforePass);
       writeFileSync(join(dir, "fix.ts"), "fixed further\n");
       expect(measure(dir, "", before).inheritedHead).toBe(h);
+      // A new file in a directory already untracked: the status line stays
+      // `?? scratch/`, the files under it do not.
+      mkdirSync(join(dir, "scratch"));
+      writeFileSync(join(dir, "scratch", "a.ts"), "a\n");
+      const withDir = String(measure(dir, "").uncommittedBeforePass);
+      writeFileSync(join(dir, "scratch", "b.ts"), "b\n");
+      expect(measure(dir, "", withDir).inheritedHead).toBe(h);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

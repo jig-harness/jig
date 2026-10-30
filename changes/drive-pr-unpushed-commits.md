@@ -6,7 +6,7 @@ release: patch
 
 - `drive-pr`: work nobody pushed no longer stalls a drive in a `HEAD_LAG`
   wait that cannot end, or ends it over a dirty tree. When a pass ended its
-  turn after committing without pushing, whatever it exited with, or a drive
+  turn after committing without pushing and still exited `0`, or a drive
   was armed over local commits, the next status check read local HEAD ahead
   of the pull request's head as GitHub lagging behind a push and polled for
   its whole timeout (30 minutes by default) before stopping; meanwhile
@@ -23,6 +23,7 @@ release: patch
   do not build on that ref, which no round could push, stop the drive at once
   with exit `1`, naming them; the attach's refusal of a diverged tree at arm
   time names them too. A head that was pushed and that GitHub has not caught
-  up with is still waited for. A failed pass's stop now lists the paths it
+  up with is still waited for. A failed pass still stops the drive, to be
+  re-armed; its stop now lists the paths it
   left uncommitted, untracked files and modified submodules included, and the
   commits it left unpushed.

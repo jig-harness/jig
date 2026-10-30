@@ -3,9 +3,9 @@
  * every gate: commits nobody pushed, and edits nobody committed.
  *
  * A pass can end its turn after committing a round's fixes and before
- * `finish-round.ts` pushes them, or after editing and before committing,
- * whatever it exits with; a drive can be armed over local commits nobody
- * pushed. Local HEAD is then ahead of the PR head, and a gate told nothing
+ * `finish-round.ts` pushes them, or after editing and before committing, and
+ * still exit `0` (a pass that fails stops the drive, `review-failure.ts`); a
+ * drive can be armed over local commits nobody pushed. Local HEAD is then ahead of the PR head, and a gate told nothing
  * reads that as `HEAD_LAG` and polls for its whole `--timeout`, although no
  * push happened and the wait cannot succeed; over edits alone it can read the
  * PR as converged, and the drive then stops over a dirty tree. So the driver
