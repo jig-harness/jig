@@ -473,6 +473,52 @@ test("a line that lazily continues a block quote's paragraph is quoted, not an e
     "AC-9 Real criterion",
   ]);
   expect(after.acceptance.map((c) => c.id)).toEqual(["AC-9"]);
+  for (const marker of ["2.", "3)"]) {
+    const ordered = await read([
+      "## Spec",
+      "> Example only:",
+      `${marker} AC-9 Example criterion`,
+    ]);
+    expect(ordered.acceptance).toEqual([]);
+  }
+  const indented = await read([
+    "## Spec",
+    "> Example only:",
+    "    AC-9 Example criterion",
+  ]);
+  expect(indented.acceptance).toEqual([]);
+});
+
+test("only a quoted paragraph is continued lazily: a line after quoted code, a heading or a break is read", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  for (const quoted of [
+    ["> # Note"],
+    ["> ---"],
+    ["> ```"],
+    ["> ```", "> AC-8 in quoted code"],
+    [">     quoted indented code"],
+    ["> - "],
+    ["> Text", "> ***"],
+  ]) {
+    const body = ["## Spec", ...quoted, "AC-1 Works"].join("\n");
+    const result = await resolveSpec(issue(body), root, {
+      registry: [bodyAdapter],
+      config: only("body"),
+    });
+    expect(result.acceptance.map((c) => c.id)).toEqual(["AC-1"]);
+  }
+  for (const quoted of [
+    ["> - quoted item"],
+    ["> Text", ">     still the paragraph"],
+    ["> ```", "> code", "> ```", "> Text"],
+  ]) {
+    const body = ["## Spec", ...quoted, "AC-1 Example"].join("\n");
+    const result = await resolveSpec(issue(body), root, {
+      registry: [bodyAdapter],
+      config: only("body"),
+    });
+    expect(result.acceptance).toEqual([]);
+  }
 });
 
 test("a fence before a list item's column ends the item", async () => {

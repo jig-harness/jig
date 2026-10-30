@@ -23,8 +23,10 @@
  * (`inItem`). Only a paragraph's text continues an item from before its
  * column. A thematic break, and a block quote outside the innermost open
  * item, is marked `boundary`: it ends the entry above it and is no part of
- * one, and so is a line that lazily continues that quote's paragraph (plain
- * text right after it, with no `>`). Which list a line belongs to is decided
+ * one, and so is a line that lazily continues that quote's paragraph: a line
+ * with no `>` right after quoted paragraph text (not a quoted heading,
+ * thematic break or code), which starts no block that could end a paragraph
+ * (an ordered item starting past 1 cannot, nor indented code). Which list a line belongs to is decided
  * here, once: a line that opens a list item is marked with the number of
  * open items around it (`depth`), so a reader nests items by that and not by
  * indentation, and an item after a block that ended the list above it starts
@@ -83,8 +85,6 @@ const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const LIST_ITEM = /^( {0,3})([-*+]|\d{1,9}[.)])( *)(?=\S|$)/;
 /** A block quote or a thematic break: blocks that end a list item they are not inside. */
 const INTERRUPTS = /^ {0,3}(?:>|([-*_])(?: *\1){2,} *$)/;
-/** A block quote line with text, which opens or continues a paragraph in the quote. */
-const QUOTED_TEXT = /^ {0,3}>.*\S/;
 /** List markers past this many on one line are read as the item's text. */
 const MAX_LIST_DEPTH = 64;
 
@@ -145,10 +145,76 @@ interface ScanState {
   boundary: boolean;
   /** The line just read opens a list item nested in this many (see `MarkdownLine`). */
   depth: number | null;
-  /** Whether the line just read is paragraph text, which a quote's paragraph takes in. */
+  /** The block quote the line just read is in, or `null`. */
+  quote: Quote | null;
+}
+
+/**
+ * An open block quote: whether its lines are boundaries, the fence open
+ * inside it, and whether its text ends in an open paragraph, the one block a
+ * line without `>` can lazily continue.
+ */
+interface Quote {
+  boundary: boolean;
+  fence: Fence | null;
   paragraph: boolean;
-  /** An open block quote paragraph: whether its lines are boundaries, or `null`. */
-  quote: boolean | null;
+}
+
+/** The `>` markers that open a block quote line, nested ones included. */
+const QUOTE_MARKERS = /^(?: {0,3}> ?)+/;
+/** A setext heading's underline of `=`, which ends a paragraph. */
+const SETEXT_EQUALS = /^ {0,3}=+ *$/;
+
+/**
+ * Whether `own` (a line at its container's content column) starts a block
+ * that ends an open paragraph rather than continuing it. Indented code
+ * cannot, and a list item can only with text, and an ordered one only when
+ * it starts at 1.
+ */
+function interruptsParagraph(own: string): boolean {
+  if (HEADING.test(own) || fenceRun(own) !== null || INTERRUPTS.test(own))
+    return true;
+  const match = LIST_ITEM.exec(own);
+  if (match === null || listContent(own) === null) return false;
+  if (own.slice(match[0].length).trim() === "") return false;
+  const marker = match[2] ?? "";
+  return !/\d/.test(marker) || Number.parseInt(marker, 10) === 1;
+}
+
+/** The fence and paragraph a quote's content line leaves open, after `prev`. */
+function quoteContent(
+  content: string,
+  prev: Quote | null,
+): Pick<Quote, "fence" | "paragraph"> {
+  const fence = prev?.fence ?? null;
+  if (fence !== null)
+    return { fence: closes(content, fence) ? null : fence, paragraph: false };
+  if (content.trim() === "") return { fence: null, paragraph: false };
+  if (
+    prev?.paragraph === true &&
+    !interruptsParagraph(content) &&
+    !SETEXT_EQUALS.test(content)
+  )
+    return { fence: null, paragraph: true };
+  return quoteBlock(content);
+}
+
+/**
+ * What a block a quote's content line starts leaves open: a paragraph,
+ * unless it is code, a fence, a heading, a thematic break or an empty list
+ * item. Markers are followed to their text as `itemLine` follows them.
+ */
+function quoteBlock(content: string): Pick<Quote, "fence" | "paragraph"> {
+  const none = { fence: null, paragraph: false };
+  for (let depth = 0; ; depth++) {
+    if (content.trim() === "" || indentOf(content) >= 4) return none;
+    const run = fenceRun(content);
+    if (run !== null) return { fence: { ...run, strip: 0 }, paragraph: false };
+    if (HEADING.test(content) || INTERRUPTS.test(content)) return none;
+    const item = depth < MAX_LIST_DEPTH ? listContent(content) : null;
+    if (item === null) return { fence: null, paragraph: true };
+    content = content.slice(item);
+  }
 }
 
 /** The content column of the innermost open item `indent` reaches, or 0. */
@@ -179,6 +245,7 @@ function shallowLine(
   line: string,
   strip: number,
   state: ScanState,
+  quote: Quote | null,
 ): MarkdownLine["kind"] {
   state.indentedCode = false;
   const own = line.slice(strip);
@@ -191,8 +258,11 @@ function shallowLine(
   if (interrupt) {
     const inItem = strip > 0 && state.lists.at(-1) === strip;
     state.boundary = interrupt[1] !== undefined || !inItem;
-    if (interrupt[1] === undefined && QUOTED_TEXT.test(own))
-      state.quote = state.boundary;
+    if (interrupt[1] === undefined)
+      state.quote = {
+        boundary: state.boundary,
+        ...quoteContent(own.replace(QUOTE_MARKERS, ""), quote),
+      };
     closeItemsPast(state, strip);
     return "text";
   }
@@ -202,10 +272,7 @@ function shallowLine(
     state.depth = state.lists.length;
     return itemLine(line, strip + item, state);
   }
-  if (!HEADING.test(own)) {
-    state.paragraph = true;
-    return "text";
-  }
+  if (!HEADING.test(own)) return "text";
   closeItemsPast(state, strip);
   state.headingInItem = strip > 0;
   return "heading";
@@ -285,22 +352,27 @@ function classify(line: string, state: ScanState): MarkdownLine["kind"] {
   const indent = indentOf(line);
   if (state.afterBlank) closeItemsPast(state, indent);
   const strip = container(state, indent);
+  if (quote?.paragraph === true && lazy(line.slice(strip))) {
+    state.quote = quote;
+    state.boundary = quote.boundary;
+    state.afterBlank = false;
+    return "text";
+  }
   let kind: MarkdownLine["kind"];
   if (indent - strip >= 4) {
     state.indentedCode ||= state.afterBlank;
     kind = state.indentedCode ? "code" : "text";
-    state.paragraph = kind === "text";
-  } else kind = shallowLine(line, strip, state);
+  } else kind = shallowLine(line, strip, state, quote);
   state.afterBlank = false;
-  if (state.paragraph) continueQuote(state, quote);
   return kind;
 }
 
-/** A paragraph line right after a quote's text continues the quote, lazily. */
-function continueQuote(state: ScanState, quote: boolean | null): void {
-  if (quote === null) return;
-  state.quote = quote;
-  state.boundary = quote;
+/**
+ * Whether `own`, after a quote's open paragraph, continues it lazily: it
+ * starts no block that could end the paragraph, and no `>` of its own.
+ */
+function lazy(own: string): boolean {
+  return indentOf(own) >= 4 || !interruptsParagraph(own);
 }
 
 /** Each line of `text`, classified; see the header. */
@@ -313,14 +385,12 @@ export function* markdownLines(text: string): Generator<MarkdownLine> {
     headingInItem: false,
     boundary: false,
     depth: null,
-    paragraph: false,
     quote: null,
   };
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.replace(/\t/g, "    ");
     state.boundary = false;
     state.depth = null;
-    state.paragraph = false;
     const kind = classify(line, state);
     const out: MarkdownLine = { line, kind };
     if (kind === "heading" && state.headingInItem) out.inItem = true;
