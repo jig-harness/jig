@@ -458,9 +458,6 @@ filed item, or not applicable. The delivery loop writes no spec and
 dictates no format.
 What it will build, one pull request per step:
 
-- **The resolver and the `body` adapter**, with the conformance test every
-  adapter passes and the pull-request section; `do-item` prints the result
-  and changes nothing else.
 - **The repository adapters**, two or three layouts per pull request, each
   with its fixture folder; M6's audit criterion with the last of them.
 - **`do-item` reads and requires**: the `spec` pre-scout by work type

@@ -79,6 +79,9 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   // Where a repository keeps its docs tree and its schema.
   "docs.root",
   "docs.schema",
+  // Where a repository keeps its specs, and how its items name them.
+  "specs.adapters",
+  "specs.body_section",
 ];
 
 /**

@@ -1,0 +1,66 @@
+{
+  "sources": [
+    {
+      "adapter": "body",
+      "ref": "#body/Spec",
+      "evidence": [
+        "section"
+      ]
+    },
+    {
+      "adapter": "body",
+      "ref": "#body/Acceptance criteria",
+      "evidence": [
+        "section"
+      ]
+    }
+  ],
+  "requirements": [],
+  "acceptance": [
+    {
+      "id": "ac-ba09c66f",
+      "key": "#body/Acceptance criteria#ac-ba09c66f",
+      "text": "The new name shows everywhere at once including the sidebar",
+      "requirement": null,
+      "source": 1
+    },
+    {
+      "id": "AC-2",
+      "key": "#body/Acceptance criteria#AC-2",
+      "text": "An empty name is refused (REQ-4)",
+      "requirement": null,
+      "source": 1
+    },
+    {
+      "id": "AC-5",
+      "key": "#body/Acceptance criteria#AC-5",
+      "text": "A name in use is refused",
+      "requirement": null,
+      "source": 1
+    }
+  ],
+  "tasks": [
+    {
+      "id": "2",
+      "key": "#body/Spec#2",
+      "text": "Add the rename command",
+      "done": false,
+      "source": 0
+    },
+    {
+      "id": "2.1",
+      "key": "#body/Spec#2.1",
+      "text": "Validate the new name with a note that is not a task",
+      "done": false,
+      "source": 0
+    },
+    {
+      "id": "2.1~2",
+      "key": "#body/Spec#2.1~2",
+      "text": "Validate the new name",
+      "done": false,
+      "source": 0
+    }
+  ],
+  "unresolved": []
+}

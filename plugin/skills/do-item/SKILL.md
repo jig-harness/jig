@@ -76,6 +76,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `do_item.scouts` | Pre-flight [scouts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) per agent, `{agent: [scouts]}` | No scouts |
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
 | `do_item.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
+| `specs.adapters`, `specs.body_section` | Which spec adapters the resolver runs, in order, and the heading of the body section that names the item's spec ([Step 1](#step-1-fetch-the-issue)) | Every adapter whose layout the repository holds, then `body`; the heading `Spec` |
 | `drive.change_areas_catalog` | Path to the repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (areas, their agents, validation plan and mandatory review skills) | No catalog: validate with the repository's gate command |
 | `repository.base_branch` | The integration branch pull requests land on | The repository's default branch |
 | `drive.reviews_drafts` | `false` makes new pull requests open Ready, since the reviewer would not review a draft | Pull requests open as drafts |
@@ -291,6 +292,24 @@ with `evidence.summary`; and the type's row of the
 Exit `1` is a configuration the loading rules refuse: stop the pickup and
 report its message. The route (Step 4a item 1) reads the same settings, so
 going on would start and assign the item only for the route to refuse it.
+
+**Resolve the spec it links** (**exact**). Write the issue JSON the fetch
+returned (on the native transport, the issue as the integration returned it)
+to `spec-issue.json` with the file-writing tool, then run:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/spec/resolve.ts" --input spec-issue.json --summary
+```
+
+Show the user what it prints: the number of requirements, acceptance
+criteria and tasks the item carries or links, each of them with its key and
+text, each source, and every reference it did not read with the reason. It reads the body's
+`specs.body_section` section (`## Spec` by default), `## Requirements` and
+`## Acceptance criteria`, and a path only inside the repository that Git does
+not ignore; it fetches no web link and writes nothing. Nothing later in this
+procedure depends on the result: an empty one, or an exit other than `0` (a
+`specs` configuration it cannot use, which it names), is shown and the
+pickup goes on.
 
 ### Step 2: Check for prior scout findings
 
@@ -615,8 +634,8 @@ routing below remain **exact**.
    pull request and `pull_requests.stacking` allows it. When the item already
    has an open pull request, do not delegate: stop here, create no branch
    and open no pull request, remove the scratch files this procedure wrote
-   (`issue.json`, `comments.json`, `intent-chain-input.json` and
-   `scout-findings.md`, whichever exist; an
+   (`issue.json`, `spec-issue.json`, `comments.json`,
+   `intent-chain-input.json` and `scout-findings.md`, whichever exist; an
    attach refuses a tree it would move while they are in it), and hand the item to that pull request's drive with
    `/jig:drive-pr <PR>`. Its placement chooses or creates the working tree
    on the pull request's head, so nothing here is pushed or attached.
@@ -1422,3 +1441,4 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 | `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (`--input` or stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |
 | `pr-plan.ts` | Apply the pull-request policy: a branch name, or the plan for opening the current branch's PR | `branch --issue "<KEY>" --title <title>`, or `open [--issue "<KEY>"] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name, or the plan (text or `--json`); exit `3` when the policy refuses |
 | `intent-chain.ts` | Write the Refocus intent-chain snapshot (Step 3.5); `--clear-session` removes this session's copy | `IntentChainInput` JSON (stdin or `--input`); nothing with `--clear-session` | Snapshot files and a JSON summary (`path`, `sessionPath`, `pickupId`, `chars`, `arm`, `truncated`, `pointerErrors`); with `--clear-session`, `{ sessionPath, removed }` |
+| `${CLAUDE_SKILL_DIR}/../../shared/spec/resolve.ts` | Resolve the requirements, acceptance criteria and tasks the issue carries or links (Step 1) | Issue JSON (`--input` or stdin), optional `--summary` | JSON `{ sources, requirements, acceptance, tasks, unresolved }`, or with `--summary` as text: the counts, every requirement, criterion and task with its key and text, the sources and the unresolved references |
