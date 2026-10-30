@@ -270,13 +270,16 @@ command refuses a token that is not the record's own and a record that
 already has a result, so a session settles its own launch and no other,
 once; the token binds a session to its record, and does not guard the
 state directory against a process of the same user, which can write it
-directly. A record that has a result ended with it. Otherwise the record's
-state is its agent's: the agent `sessions` reports under the record's
-agent id holds the stage while working or waiting, and a record whose
-agent the runtime reports finished or gone with no result recorded ended
-as failed, since a session that stopped on a
-question or a crash records none; a pickup's record is read beside the
-item's state, and a follow-up's result is what its outcome record keeps.
+directly. The result is the stage's answer, not proof that its session
+stopped: an agent can record its result and go on working or wait for
+another prompt. So the record's state is its agent's: the agent `sessions`
+reports under the record's agent id holds the stage and its account slot
+while working or waiting, whether or not a result is recorded, and the
+record ends only when the runtime reports that agent finished or gone. It
+ends with its result, or as failed when none was recorded, since a session
+that stopped on a question or a crash records none; a pickup's record is
+read beside the item's state, and a follow-up's result is what its outcome
+record keeps.
 
 ### The session runtime interface
 
@@ -285,7 +288,6 @@ The tick reaches the runtime only through these methods:
 | Method | What it does |
 | --- | --- |
 | `sessions(repo)` | the workspaces and their agents, joined to items and pull requests, with each agent's id and state and each workspace's comment and unread mark |
-| `activeAccount()` | the account the host's interactive sessions run on, or an unknown when it cannot be read |
 | `openWorkspace(...)` | a workspace for an item (a new branch) or a pull request (its head branch), reused when one exists |
 | `launch(workspace, stage, account)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id |
 | `notify(target, message)` | a message that reaches a person; its receipt carries the target's comment as written |
@@ -301,11 +303,6 @@ fresh one. Orca is the first implementation:
   worktree ps --json` reports it under is checked when the pickup stage is
   built, and until it does, interactive sessions are not launched, since
   their launch records could not be joined to their agents;
-- `activeAccount` from Orca's account roster (`orca account list`), the
-  host's active account matched to an account the machine file lists by
-  its configuration directory; that the roster's output names the active
-  account is checked when the pickup stage is built, and until it does the
-  answer is an unknown, so interactive sessions wait;
 - `openWorkspace` as `orca worktree create` with the pull request or issue
   linked, called by the adapter itself in `plugin/dispatch/`: the
   [Orca workspace tool](../tools/orca/README.md) runs from a checkout of
@@ -321,7 +318,10 @@ fresh one. Orca is the first implementation:
   environment (below); for an **interactive session** (a pickup, a
   follow-up) as `orca agent launch --agent <id> --worktree <selector>
   --prompt "<skill> <key>"`, with the model and effort from the item's
-  route where the repository declares `routing`; a lost answer is retried
+  route where the repository declares `routing`, bound to the account as a
+  headless pass is (below); that `orca agent launch` can bind its agent to
+  an account so is checked when the pickup stage is built, and until it
+  does, interactive sessions are not launched; a lost answer is retried
   with `--retry-launch`;
 - `notify` as a workspace marked unread with the message as its comment,
   appended to the comment while the workspace is still unread (see
@@ -363,18 +363,14 @@ before it drives, so the account never runs more than its cap of drivers
 that work. A takeover `drive.ts` refuses ends its own record, and the old
 record keeps its slot.
 
-An interactive session (a pickup, a follow-up) runs on the host's active
-account (below), which the launch cannot name and which can change under
-it at any moment: a person switching accounts, even away and back between
-two reads, leaves every read before and after the launch agreeing on an
-account the session may not bill. No read proves the account, so an
-interactive session's launch record names none and holds a slot on every
-account the machine file lists until it ends. It is admitted only when
-every listed account has a free slot and the host's active account, read
-through the runtime interface's `activeAccount` before the launch, is a
-listed account with no wall in effect; otherwise, or when the account
-cannot be read, the session waits. With no account free, the
-action waits for a later tick and the report names the full caps.
+An interactive session (a pickup, a follow-up) is admitted the same way, on
+one account with a free slot and no wall in effect, and its launch binds
+it to that account (below), so its launch record names the account and
+holds one slot. A session whose launch cannot bind its account is never
+started: the host's active account can change under it at any moment, and
+no read before or after the launch proves which account it bills, or that
+the account is listed and unwalled. With no account free, the action waits
+for a later tick and the report names the full caps.
 
 **Walls.** The dispatcher keeps its own record of each account's
 usage-limit wall, under `~/.local/state/jig/dispatch/walls/`, keyed by the
@@ -389,20 +385,19 @@ first stages: that session shows as waiting, holds its slot, and is
 reported once it has waited past `dispatch.blocked_after` (30 minutes by
 default).
 
-**Binding a pass to its account.** A headless pass is bound to its account
-through the configuration directory of that account's Orca profile, set in
-the wrapper's environment (`CLAUDE_CONFIG_DIR` for Claude Code, `CODEX_HOME`
-for Codex), so the drive's identity resolver and quota adapters see the
-account the pass bills. Switching Orca's active account before a launch is
-not used: it is host-wide and would move every other session's next pass
-too. Whether an Orca launch can name the account of an *interactive*
-session is not verified (Orca's command line selects accounts only for some
-agents), so the first stages bind accounts for headless passes only:
-pickups and follow-ups run on the host's active account, which must be one
-the machine file lists, and hold a slot on every listed account's cap
-(above). A runtime that names an interactive session's account at launch,
-or reports it per session, lets its record name that account and hold one
-slot.
+**Binding a session to its account.** A headless pass is bound to its
+account through the configuration directory of that account's Orca
+profile, set in the wrapper's environment (`CLAUDE_CONFIG_DIR` for Claude
+Code, `CODEX_HOME` for Codex), so the drive's identity resolver and quota
+adapters see the account the pass bills. An interactive session is bound
+the same way, through the environment or account selection of its agent's
+launch, and a person switching the host's active account does not move it.
+Switching Orca's active account before a launch is not used: it is
+host-wide and would move every other session's next pass too. Whether an
+Orca agent launch can bind its agent to an account is not verified (Orca's
+command line selects accounts only for some agents), so until it is shown
+to work the dispatcher launches headless passes only, and pickups and
+follow-ups are reported, not started.
 
 **Sessions that wait.** Pickups and follow-ups are interactive skills, and
 with nobody to answer a question they stop and state it, as every Jig skill
@@ -542,10 +537,11 @@ One pull request each, in this order; each is usable on its own.
    or an answered park restart without a person.
 4. **Pickups.** `do-item`'s claim refusal (above) first; then, with
    `--apply`, a workspace and a `do-item` session per item assigned to the
-   factory identity in a dispatch state, admitted while the account
-   `activeAccount` reads (added to the runtime interface here) is listed
-   and every listed account has a free slot, holding a slot on each, its result
-   recorded through `jig dispatch result`; the fresh read at launch; stalled
+   factory identity in a dispatch state, admitted on an account with a free
+   slot and bound to it at launch, once an Orca agent launch is shown to
+   bind its account (until then this step reports pickups and starts
+   none), its result recorded through `jig dispatch result` and its slot
+   held until its agent ends; the fresh read at launch; stalled
    pickups, double claims and waiting sessions reported. Usable alone:
    assigning an item is the start button.
 5. **Follow-ups and notifications.** The follow-up marker, the follow-up's
@@ -578,8 +574,9 @@ One pull request each, in this order; each is usable on its own.
   machine's file only: nothing arbitrates two dispatchers on one
   repository, the follow-up marker included, until a forge-side claim is
   designed.
-- **Interactive sessions on a chosen account**, until an Orca launch that
-  names the account is shown to work.
+- **Interactive sessions**, pickups and follow-ups, until an Orca agent
+  launch that binds its agent to an account is shown to work; headless
+  passes run meanwhile.
 - **The merge**, which stays a person's
   ([ADR-0003](../docs/adr/ADR-0003-a-person-merges.md)); delegated merge is
   item 9, decided on its own.

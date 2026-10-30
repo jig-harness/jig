@@ -99,9 +99,9 @@ interface, with nothing in the tick changed.
   Orca release that changes them is work for Jig.
 - Herdr and Orca are each first for different tooling: documents that name
   a runtime say which one a given tool targets first.
-- Whether an Orca launch can name the account of an interactive session is
-  unverified, so the dispatcher's first stage binds accounts for headless
-  passes only.
+- Whether an Orca agent launch can bind an interactive session to an
+  account is unverified, so the dispatcher launches headless passes only
+  until it is shown to work.
 
 ## Extraction (decisions-become-checks)
 
