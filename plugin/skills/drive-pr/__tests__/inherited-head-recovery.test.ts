@@ -402,4 +402,79 @@ describe("a head that was pushed, in a real tree", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("hands on an untracked file whose name holds a newline", () => {
+    const { dir, h } = tree();
+    try {
+      git(dir, "update-ref", "refs/remotes/origin/main", h);
+      writeFileSync(join(dir, "fix\npart.ts"), "fix\n");
+      const handed = measure(dir, "", "");
+      expect(handed.inheritedHead).toBe(h);
+      expect(handed.uncommittedMeasured).not.toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("hands on an edit a configured text converter leaves out", () => {
+    const { dir } = tree();
+    try {
+      // The converter keeps only the first line, so the edit below is
+      // invisible to a converted diff.
+      writeFileSync(join(dir, ".gitattributes"), "*.dat diff=first\n");
+      git(dir, "config", "diff.first.textconv", "head -n 1");
+      writeFileSync(join(dir, "a.dat"), "same\none\n");
+      git(dir, "add", ".");
+      git(dir, "commit", "-q", "-m", "a.dat");
+      const h = git(dir, "rev-parse", "HEAD");
+      git(dir, "update-ref", "refs/remotes/origin/main", h);
+      writeFileSync(join(dir, "a.dat"), "same\ntwo\n");
+      const before = String(measure(dir, "").uncommittedBeforePass);
+      writeFileSync(join(dir, "a.dat"), "same\nthree\n");
+      expect(measure(dir, "", before).inheritedHead).toBe(h);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("hands on a further edit inside an already-dirty submodule", () => {
+    const { dir } = tree();
+    const lib = mkdtempSync(join(tmpdir(), "inherited-head-lib-"));
+    try {
+      git(lib, "init", "-q", "-b", "main");
+      git(lib, "config", "user.email", "t@example.invalid");
+      git(lib, "config", "user.name", "t");
+      writeFileSync(join(lib, "x.ts"), "one\n");
+      git(lib, "add", "x.ts");
+      git(lib, "commit", "-q", "-m", "x");
+      git(
+        dir,
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        "-q",
+        lib,
+        "lib",
+      );
+      git(dir, "commit", "-q", "-m", "lib");
+      const h = git(dir, "rev-parse", "HEAD");
+      git(dir, "update-ref", "refs/remotes/origin/main", h);
+      writeFileSync(join(dir, "lib", "x.ts"), "two\n");
+      const before = String(measure(dir, "").uncommittedBeforePass);
+      // Left as handed: nothing to hand on.
+      expect(measure(dir, "", before).inheritedHead).toBe("");
+      // Edited again inside the submodule: the superproject's status and
+      // diff are unchanged.
+      writeFileSync(join(dir, "lib", "x.ts"), "three\n");
+      expect(measure(dir, "", before).inheritedHead).toBe(h);
+      // A new untracked file inside it counts too.
+      writeFileSync(join(dir, "lib", "x.ts"), "two\n");
+      writeFileSync(join(dir, "lib", "new.ts"), "new\n");
+      expect(measure(dir, "", before).inheritedHead).toBe(h);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(lib, { recursive: true, force: true });
+    }
+  });
 });

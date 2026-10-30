@@ -12,6 +12,7 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { shellQuote } from "./../cli.ts";
 
@@ -134,8 +135,9 @@ export interface PassLeftovers {
   baseExists: boolean | null;
   /**
    * The edits by content: the status lines and a digest of the staged diff,
-   * the unstaged diff and every untracked file's content, so an edit to a
-   * file already shown as modified changes it. `''` for a clean tree.
+   * the unstaged diff and every untracked file's content, in the tree and in
+   * each checked-out submodule, so an edit to a file already shown as
+   * modified changes it. `''` for a clean tree.
    */
   edits: string | null;
 }
@@ -207,43 +209,119 @@ export async function passLeftovers(): Promise<PassLeftovers> {
 /**
  * The edits in the tree by content (`PassLeftovers.edits`): `status` and a
  * digest of the staged diff, the unstaged diff and the untracked files'
- * contents. `null` when any probe fails, so a changed edit is never read as
- * the same one.
+ * contents, of the tree and of every checked-out submodule within it. `null`
+ * when any probe fails, so a changed edit is never read as the same one.
  */
 async function editsOf(
   status: string | null,
   opts: Parameters<typeof git>[1],
 ): Promise<string | null> {
   if (status === null || status === "") return status;
-  const diff = ["--binary", "--no-ext-diff", "--ignore-submodules=none"];
-  const staged = await git(["diff", "--cached", ...diff], opts);
-  const unstaged = await git(["diff", ...diff], opts);
+  const top = await git(["rev-parse", "--show-toplevel"], opts);
+  const root = top.stdout.trim();
+  if (top.code !== 0 || root === "") return null;
+  const hash = createHash("sha256");
+  if (!(await digestTree(root, opts, hash))) return null;
+  return `${status}\n${hash.digest("hex")}`;
+}
+
+/**
+ * Feed one tree's edits into `hash`, then each checked-out submodule's. The
+ * superproject's diff shows a dirty submodule only as its gitlink and a dirty
+ * mark, so a further edit inside one is read from the submodule itself.
+ * Text conversion is off: a converter may leave out the bytes an edit changed.
+ */
+async function digestTree(
+  dir: string,
+  opts: Parameters<typeof git>[1],
+  hash: ReturnType<typeof createHash>,
+): Promise<boolean> {
+  const at = { ...opts, cwd: dir };
+  const diff = [
+    "--binary",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--ignore-submodules=none",
+  ];
+  const staged = await git(["diff", "--cached", ...diff], at);
+  const unstaged = await git(["diff", ...diff], at);
   const untracked = await git(
     ["ls-files", "-z", "--others", "--exclude-standard"],
-    opts,
+    at,
   );
-  if (staged.code !== 0 || unstaged.code !== 0 || untracked.code !== 0)
-    return null;
-  const paths = untracked.stdout.split("\0").filter((p) => p !== "");
-  let blobs = "";
-  if (paths.length > 0) {
-    const hashed = await git(["hash-object", "--no-filters", "--stdin-paths"], {
-      ...opts,
-      stdin: `${paths.join("\n")}\n`,
-    });
-    if (hashed.code !== 0) return null;
-    blobs = hashed.stdout;
+  const submodules = await checkedOutSubmodules(dir, at);
+  if (
+    [staged, unstaged, untracked].some((r) => r.code !== 0) ||
+    submodules === null
+  )
+    return false;
+  const blobs = await hashFiles(
+    untracked.stdout.split("\0").filter((p) => p !== ""),
+    at,
+  );
+  if (blobs === null) return false;
+  for (const part of [dir, staged.stdout, unstaged.stdout, untracked.stdout])
+    hash.update(part).update("\0");
+  hash.update(blobs).update("\0");
+  for (const sub of submodules)
+    if (!(await digestTree(sub, opts, hash))) return false;
+  return true;
+}
+
+/**
+ * The checked-out submodules of the tree at `dir`, as absolute paths; `null`
+ * when the index cannot be read. A submodule never checked out holds no edits.
+ */
+async function checkedOutSubmodules(
+  dir: string,
+  opts: Parameters<typeof git>[1],
+): Promise<string[] | null> {
+  const index = await git(["ls-files", "-z", "--stage"], opts);
+  if (index.code !== 0) return null;
+  // `<mode> <object> <stage>\t<path>`; a conflicted gitlink lists once a stage.
+  const paths = new Set<string>();
+  for (const entry of index.stdout.split("\0")) {
+    const tab = entry.indexOf("\t");
+    if (tab >= 0 && entry.startsWith("160000 "))
+      paths.add(join(dir, entry.slice(tab + 1)));
   }
-  const digest = createHash("sha256")
-    .update(staged.stdout)
-    .update("\0")
-    .update(unstaged.stdout)
-    .update("\0")
-    .update(untracked.stdout)
-    .update("\0")
-    .update(blobs)
-    .digest("hex");
-  return `${status}\n${digest}`;
+  return [...paths].filter((sub) => existsSync(join(sub, ".git")));
+}
+
+/** Bytes of file names one `hash-object` call is given as arguments. */
+const HASH_ARG_BYTES = 32_000;
+
+/**
+ * The blob ids of `paths`, in order; `null` when a call fails. Names go as
+ * literal arguments, never one per line on stdin, so a name holding a newline
+ * stays one name.
+ */
+async function hashFiles(
+  paths: string[],
+  opts: Parameters<typeof git>[1],
+): Promise<string | null> {
+  let out = "";
+  let batch: string[] = [];
+  let bytes = 0;
+  const flush = async (): Promise<boolean> => {
+    if (batch.length === 0) return true;
+    const hashed = await git(
+      ["hash-object", "--no-filters", "--", ...batch],
+      opts,
+    );
+    batch = [];
+    bytes = 0;
+    if (hashed.code !== 0) return false;
+    out += hashed.stdout;
+    return true;
+  };
+  for (const path of paths) {
+    const size = Buffer.byteLength(path) + 1;
+    if (bytes + size > HASH_ARG_BYTES && !(await flush())) return null;
+    batch.push(path);
+    bytes += size;
+  }
+  return (await flush()) ? out : null;
 }
 
 /**

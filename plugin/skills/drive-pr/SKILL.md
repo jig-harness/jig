@@ -357,7 +357,9 @@ tree and starts the next round, whose pass is told what it inherits
 (`$DRIVE_PR_PASS_NOTICE`, § Driver pass). Committed but unpushed work leaves
 local HEAD ahead of the PR head; the driver records that HEAD after the kill,
 and its gates accept exactly it (the gate's `--inherited-head` flag, which
-also requires the PR head to be its ancestor) until a pass completes. Any
+also requires the PR head to be its ancestor) for as long as the tree,
+measured afresh before every gate, still holds that work; a measurement that
+finds none left drops it, whether or not a pass has completed. Any
 other mismatch is still `HEAD_LAG`; with no live work left, a `CONVERGED` or
 `HITL_PARKED` over those commits is reported as `ROUND_READY`, so a pass
 pushes them. Uncommitted edits alone leave HEAD on the PR head; the driver
