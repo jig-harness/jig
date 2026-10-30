@@ -545,7 +545,7 @@ round. A repository that did not is never asked for one.
 
 Where the repository sets
 [`workspace_name.template`](../../CONFIGURATION.md#workspace_name) and the
-agent runs in Orca, the workspace is renamed at two points: when a session
+agent runs in Orca, the workspace is renamed at the following points: when a session
 arms the drive (the driving stage, `[D]` by default) and after the
 merge-ready announcement (the ready stage, `[R]`). Without the template, or
 outside Orca, nothing is renamed, and a rename that fails only warns.
