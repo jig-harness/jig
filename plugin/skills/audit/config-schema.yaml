@@ -297,7 +297,7 @@ fields:
     type: string
     pattern: "^[A-Za-z0-9][A-Za-z0-9._:/@[\\]-]*$"
     default: sonnet
-    since: next
+    since: 0.102.0
     read_by: [drive-pr, do-item]
   drive.escape_baseline_doc:
     type: path
@@ -445,7 +445,7 @@ fields:
     type: enum
     values: [auto, tab, background, print]
     default: auto
-    since: next
+    since: 0.102.0
     read_by: [do-item, drive-pr]
 
   specs.adapters:
