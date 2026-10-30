@@ -306,13 +306,15 @@ requires, for every issue.
 
 Capture the intent chain with the `pickupId` from step 3 (or step 4's
 rewrite), then arm the drive exactly as `/jig:do-item`'s "Arm the drive"
-(Step 4a) says: emit the command, spawn it under Claude Code, never a second
-driver, and post the tracker comment with the arm outcome on every issue in
-the batch. One drive covers every issue.
+(Step 4a) says: run drive-pr's arm script, emit its `command`, act on its
+`status` as do-item's step 2 lists (a terminal tab, a background spawn
+under Claude Code, or the command only), never a second driver, and post
+the tracker comment with the arm outcome on every issue in the batch. One
+drive covers every issue.
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/capture-intent-chain.ts" <PR> --pickup <pickupId>
-bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
+bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/arm-drive.ts" <PR>
 ```
 
 ## After the merge

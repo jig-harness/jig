@@ -69,6 +69,14 @@ import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
 import { armLedger, ledgerIdentity, ledgerSettlement } from "./ledger.ts";
 
+import {
+  type EffectivePass,
+  effectivePass,
+  PassModelUsageError,
+  passModelLine,
+  withoutModel,
+} from "./../pass-model.ts";
+
 import type { DriveState } from "./../state/schema.ts";
 
 /**
@@ -133,8 +141,13 @@ async function stateUnderLocks(
 export async function main(): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
   let { pr, keepDraft, handoffAt } = options;
-  const { maxRounds, dryRun, botsOnly, passTimeout, forward, agent } = options;
+  const { maxRounds, dryRun, botsOnly, passTimeout, forward } = options;
   const { takeOver, windowReopened } = options;
+  // The pass command as it runs, its model decided (`pass-model.ts`): every
+  // later use of it — the rounds, a re-arm or takeover command printed for a
+  // person — carries that model.
+  const pass = decidePass(options.agent, options.passModel);
+  const agent = pass.argv;
 
   const maxRoundsN = resolveMaxRounds(maxRounds);
   const deadlineRetryBudget = resolvePassDeadlineRetries();
@@ -192,6 +205,7 @@ export async function main(): Promise<number> {
   // mark-Ready outcomes, and the terminal state.
   const logPath = join(stateDir, `drive-pr-${pr}.log`);
   startDriverLog(logPath);
+  console.error(passModelLine(pass));
 
   // Everything that can refuse from the arguments and the durable state runs
   // before any lock is taken and before a takeover stops anyone: the pass
@@ -199,7 +213,7 @@ export async function main(): Promise<number> {
   // check is repeated once the locks are held (`stateUnderLocks`).
   const state = await readDriveState(pr);
   const refusal =
-    validatePassCommand(explicitPr, agent, botsOnly) ??
+    validatePassCommand(explicitPr, withoutModel(options.agent), botsOnly) ??
     quotaRefusal(state, agent, windowReopened);
   if (refusal !== undefined) return refusal;
 
@@ -235,6 +249,7 @@ export async function main(): Promise<number> {
     log: logPath,
     started: new Date().toISOString(),
     account,
+    model: pass.model,
   };
   const treeLock: DriveLock = {
     dir: join(stateDir, await worktreeLockName()),
@@ -429,7 +444,7 @@ export async function main(): Promise<number> {
     ledger,
     plan,
     current,
-    armCommand(driveTs, pr, botsOnly, " --take-over"),
+    armCommand(driveTs, pr, botsOnly, " --take-over", agent),
   );
   // From here the ledger says this driver is running, so whatever ends the
   // drive (an exit, a thrown refusal, a stop) marks it stopped.
@@ -481,6 +496,18 @@ export async function main(): Promise<number> {
     firstPassNotice,
   });
   return await settlement.done(roundsExit);
+}
+
+/** The pass command with its model decided; a refused `--pass-model` exits 2, an unreadable setting 1. */
+function decidePass(agent: string[], flag: string | undefined): EffectivePass {
+  try {
+    return effectivePass(agent, flag);
+  } catch (e) {
+    return fail(
+      e instanceof PassModelUsageError ? 2 : 1,
+      `drive.ts: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
 }
 
 /** Refuse a pass whose declared target or thread scope differs from the driver. */

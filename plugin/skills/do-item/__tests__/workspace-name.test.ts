@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ExitError } from "../../../shared/cli.ts";
-import type { OrcaRunner } from "../scripts/orca-board.ts";
+import type { OrcaRunner } from "../../../shared/orca.ts";
 import {
   DEFAULT_STATUSES,
   type NameRequest,

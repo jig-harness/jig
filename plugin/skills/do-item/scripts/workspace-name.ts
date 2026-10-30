@@ -32,12 +32,12 @@ import { fail, isDigits, runMain } from "../../../shared/cli.ts";
 import { readConfig } from "../../../shared/consumer.ts";
 import { run } from "../../../shared/proc.ts";
 import {
-  currentWorktree,
-  failure,
   type OrcaRunner,
   orcaCommand,
-  resultOf,
-} from "./orca-board.ts";
+  orcaFailure,
+  orcaResult,
+} from "../../../shared/orca.ts";
+import { currentWorktree } from "./orca-board.ts";
 
 const USAGE =
   "usage: workspace-name.ts <implementing|driving|ready|done> [--id <key>] [--title <text> | --title-file <path>] [--pr <number>]";
@@ -218,8 +218,8 @@ export async function renameWorkspace(
     name,
     "--json",
   ]);
-  if (resultOf(done) === null)
-    return `workspace-name: ⚠ could not rename the workspace ${failure(done)}`;
+  if (orcaResult(done) === null)
+    return `workspace-name: ⚠ could not rename the workspace ${orcaFailure(done)}`;
   return `workspace-name: ${name}`;
 }
 
