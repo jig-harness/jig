@@ -107,7 +107,7 @@ function envelopeOf(stdout: string): Envelope | null {
 }
 
 /** The `result` of a call that exited 0 with a successful envelope; null for anything else. */
-function resultOf(done: {
+export function resultOf(done: {
   code: number;
   stdout: string;
 }): Record<string, unknown> | null {
@@ -116,7 +116,11 @@ function resultOf(done: {
 }
 
 /** A failed call's exit code and first output, for a warning. */
-function failure(done: { code: number; stdout: string; stderr: string }) {
+export function failure(done: {
+  code: number;
+  stdout: string;
+  stderr: string;
+}) {
   return `(exit ${done.code}): ${(done.stdout || done.stderr).trim().slice(0, 300)}`;
 }
 
@@ -124,7 +128,7 @@ function failure(done: { code: number; stdout: string; stderr: string }) {
  * The Orca worktree id of the working directory: `none` when Orca answers
  * that no worktree contains it, a warning when the lookup itself failed (no command, a timeout, an answer that is not Orca's).
  */
-async function currentWorktree(
+export async function currentWorktree(
   command: string,
   runner: OrcaRunner,
 ): Promise<{ id: string } | "none" | { warning: string }> {

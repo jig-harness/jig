@@ -94,6 +94,12 @@ with the pull request linked, once the pull request opens. Nothing turns
 this on and nothing in another runtime changes: outside Orca it makes no
 call, and an Orca call that fails only warns.
 
+A repository can also have the workspace renamed at each stage, from a
+template over the item key, title, pull request and a short status (`[I]`
+implementing, `[D]` driving, `[R]` ready to merge, `✅` done): set
+[`workspace_name`](../../CONFIGURATION.md#workspace_name). Nothing is renamed
+without it.
+
 Orca's own Linear skill (`orca-linear`) has a completion flow of its own.
 Inside this skill the ticket's comments and transitions stay with `do-item`,
 so that flow is not run beside it.

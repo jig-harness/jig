@@ -1,0 +1,151 @@
+import { describe, expect, test } from "bun:test";
+import { ExitError } from "../../../shared/cli.ts";
+import type { OrcaRunner } from "../scripts/orca-board.ts";
+import {
+  DEFAULT_STATUSES,
+  type NameRequest,
+  nameConfig,
+  parseArgs,
+  renameWorkspace,
+  renderName,
+} from "../scripts/workspace-name.ts";
+
+const ORCA = { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
+const ID = "repo-1::/ws/app/feat-x";
+const request: NameRequest = {
+  stage: "driving",
+  id: "JIG-12",
+  title: "Rename workspaces",
+  pr: "42",
+};
+const config = (template: string | null) => ({
+  template,
+  statuses: { ...DEFAULT_STATUSES },
+});
+
+function orcaAnswering(answers: Record<string, string>) {
+  const calls: string[] = [];
+  const runner: OrcaRunner = async (_command, args) => {
+    const key = args.join(" ");
+    calls.push(key);
+    const stdout = answers[key];
+    if (stdout === undefined) throw new Error(`unexpected call: ${key}`);
+    return { code: stdout.includes('"ok":true') ? 0 : 1, stdout, stderr: "" };
+  };
+  return { calls, runner };
+}
+const ok = JSON.stringify({ ok: true, result: { worktree: { id: ID } } });
+const renameKey = (name: string) =>
+  `worktree set --worktree id:${ID} --display-name ${name} --json`;
+
+describe("renderName", () => {
+  test("fills every variable and the default status text", () => {
+    expect(
+      renderName("{status} {id} {title} {pr}", request, DEFAULT_STATUSES),
+    ).toBe("[D] JIG-12 Rename workspaces #42");
+  });
+
+  test("an empty variable leaves no gap", () => {
+    expect(
+      renderName(
+        "{status} {id} {pr}",
+        { ...request, pr: "" },
+        DEFAULT_STATUSES,
+      ),
+    ).toBe("[D] JIG-12");
+  });
+
+  test("each stage has its status text", () => {
+    const texts = (["implementing", "driving", "ready", "done"] as const).map(
+      (stage) =>
+        renderName("{status}", { ...request, stage }, DEFAULT_STATUSES),
+    );
+    expect(texts).toEqual(["[I]", "[D]", "[R]", "✅"]);
+  });
+
+  test("an unknown variable is refused", () => {
+    expect(() => renderName("{branch}", request, DEFAULT_STATUSES)).toThrow(
+      ExitError,
+    );
+  });
+});
+
+describe("nameConfig", () => {
+  test("absent means off, with the default statuses", () => {
+    expect(nameConfig({})).toEqual(config(null));
+  });
+
+  test("a status entry overrides one stage and keeps the rest", () => {
+    const read = nameConfig({
+      workspace_name: { template: "{id}", statuses: { ready: "READY" } },
+    });
+    expect(read.statuses).toEqual({ ...DEFAULT_STATUSES, ready: "READY" });
+    expect(read.template).toBe("{id}");
+  });
+
+  test("a stage outside the four is refused", () => {
+    expect(() =>
+      nameConfig({ workspace_name: { statuses: { merged: "M" } } }),
+    ).toThrow(ExitError);
+  });
+});
+
+describe("parseArgs", () => {
+  test("reads the stage and flags", () => {
+    expect(
+      parseArgs(["ready", "--id", "JIG-1", "--title", "T", "--pr", "7"]),
+    ).toEqual({ stage: "ready", id: "JIG-1", title: "T", pr: "7" });
+  });
+
+  test("refuses a missing id, a bad stage and a non-numeric pr", () => {
+    expect(() => parseArgs(["ready"])).toThrow(ExitError);
+    expect(() => parseArgs(["merged", "--id", "A"])).toThrow(ExitError);
+    expect(() => parseArgs(["ready", "--id", "A", "--pr", "x"])).toThrow(
+      ExitError,
+    );
+  });
+});
+
+describe("renameWorkspace", () => {
+  test("makes no call without a template", async () => {
+    const { calls, runner } = orcaAnswering({});
+    expect(
+      await renameWorkspace(request, config(null), ORCA, runner),
+    ).toContain("nothing to do");
+    expect(calls).toEqual([]);
+  });
+
+  test("makes no call outside Orca", async () => {
+    const { calls, runner } = orcaAnswering({});
+    expect(await renameWorkspace(request, config("{id}"), {}, runner)).toBe(
+      "workspace-name: not in Orca; nothing to do",
+    );
+    expect(calls).toEqual([]);
+  });
+
+  test("renames the current worktree", async () => {
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": ok,
+      [renameKey("[D] JIG-12 Rename workspaces")]: ok,
+    });
+    expect(
+      await renameWorkspace(
+        request,
+        config("{status} {id} {title}"),
+        ORCA,
+        runner,
+      ),
+    ).toBe("workspace-name: [D] JIG-12 Rename workspaces");
+    expect(calls).toHaveLength(2);
+  });
+
+  test("a failed rename warns and does not throw", async () => {
+    const { runner } = orcaAnswering({
+      "worktree current --json": ok,
+      [renameKey("JIG-12")]: JSON.stringify({ ok: false }),
+    });
+    expect(
+      await renameWorkspace(request, config("{id}"), ORCA, runner),
+    ).toContain("⚠ could not rename the workspace");
+  });
+});

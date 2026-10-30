@@ -2924,6 +2924,14 @@ On verified convergence only:
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file followups.md -- bun "${CLAUDE_SKILL_DIR}/scripts/announce-merge-ready.ts" [PR]
 ```
 
+**judgment** — After the announcement posts, name the workspace for the stage
+when the repository sets `workspace_name.template` (it does nothing without
+it, outside Orca, and never fails the step):
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" ready --id <item key> --title "<item title>" --pr <PR>
+```
+
 It re-checks `drive-status.ts` itself and refuses unless the state is
 `CONVERGED` **and** the non-reviewer CI verdict is exactly `green` **and** this
 worktree is clean — an announcement is the artefact a human is most likely to

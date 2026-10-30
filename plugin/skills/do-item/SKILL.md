@@ -600,6 +600,15 @@ routing below remain **exact**.
    bun "${CLAUDE_SKILL_DIR}/scripts/orca-board.ts" in-progress
    ```
 
+   Then name the workspace for the stage. With `workspace_name.template` set
+   and a runtime that can rename its workspaces (Orca), this renames it, for
+   example to `[I] JIG-12 Rename workspaces`; without the template, or
+   anywhere else, it does nothing and never fails the step:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id <KEY> --title "<issue title>"
+   ```
+
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
    first line is exactly `## Scout Findings (<hash>)`, where `<hash>` is
    the output of `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --short HEAD`. That heading is the exact shape
@@ -1036,6 +1045,13 @@ routing below remain **exact**.
       - Exit `0` → the drive already reached a terminal state within the
         window: report its outcome rather than assuming it is running.
       - Still running → armed; move on without further polling.
+
+      Once armed, name the workspace for the driving stage (same rules as at
+      pickup):
+
+      ```bash
+      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id <KEY> --title "<issue title>" --pr <PR>
+      ```
 
       Post the prepared tracker comment with the arm outcome and the
       observability handles. Report the log path's verified, unavailable or
