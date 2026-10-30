@@ -799,7 +799,7 @@ function printHuman(
       `● ${label} — LIVE, driver pid ${pid} (${group[0]?.host || "this host"}), claim refreshed ${age ?? "?"}s ago`,
     );
     console.log(`    repository: ${repository}`);
-    if (diag !== null) for (const line of diagLines(diag)) console.log(line);
+    if (diag !== null) console.log(diagLines(diag).join("\n"));
     else console.log("    (claim predates diagnostics — pid/host only)");
     console.log(
       `    locks:    ${group.map((r) => (r.kind === "pr" ? `PR #${r.key}` : "worktree")).join(" + ")}`,

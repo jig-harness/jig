@@ -17,7 +17,7 @@ import { run } from "./proc.ts";
 type Env = Record<string, string | undefined>;
 
 /** Seconds one Orca call may take. */
-export const ORCA_CALL_TIMEOUT_SEC = 20;
+const ORCA_CALL_TIMEOUT_SEC = 20;
 
 /** Runs Orca's command with `args`; the seam tests replace. */
 export type OrcaRunner = (

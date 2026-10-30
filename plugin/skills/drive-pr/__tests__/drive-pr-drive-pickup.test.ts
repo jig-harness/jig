@@ -290,11 +290,14 @@ describe("drive.ts re-arms a quota-parked drive only from another account", () =
     // A second credential can bill the same account, so it is not "another".
     expectSpawnExit({ ...r, stdout: null }, 16);
     expect(r.stderr).toContain("the account this pass bills is unknown");
-    // The refusal still names the wall's account and the command to re-arm.
+    // The refusal still names the wall's account and the command to re-arm,
+    // which carries the pass model the drive decided.
     expect(r.stderr).toContain(
       `The wall belongs to account ${loginAccount("wall@example.invalid")}`,
     );
-    expect(r.stderr).toContain("drive.ts 999 -- claude -p '/jig:drive-pr 999'");
+    expect(r.stderr).toContain(
+      "drive.ts 999 -- claude --model sonnet -p '/jig:drive-pr 999'",
+    );
   });
 
   it("refuses when the wall's account was not recorded", async () => {

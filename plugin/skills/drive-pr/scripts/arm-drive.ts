@@ -65,6 +65,14 @@ interface Args {
   forward: string[];
 }
 
+/** The flags that take a value. */
+const VALUE_FLAGS = new Set([
+  "--mode",
+  "--pass-model",
+  "--max-rounds",
+  "--handoff-at",
+]);
+
 function value(argv: string[], index: number): string {
   const v = argv[index + 1];
   if (v === undefined || v.startsWith("--"))
@@ -72,7 +80,28 @@ function value(argv: string[], index: number): string {
   return v;
 }
 
-export function parseArgs(argv: string[]): Args {
+/** Record one flag's value, refusing one the flag does not take. */
+function takeValue(args: Args, flag: string, v: string): void {
+  switch (flag) {
+    case "--mode":
+      if (!isArmDriveMode(v))
+        fail(2, `--mode takes one of ${ARM_DRIVE_MODES.join(", ")}`, USAGE);
+      args.mode = v;
+      return;
+    case "--pass-model":
+      args.passModel = v;
+      return;
+    case "--max-rounds":
+      if (!isDigits(v) || Number.parseInt(v, 10) < 1)
+        fail(2, "--max-rounds takes a whole number of at least 1", USAGE);
+      args.forward.push(flag, v);
+      return;
+    default:
+      args.forward.push(flag, v);
+  }
+}
+
+function parseArgs(argv: string[]): Args {
   const args: Args = {
     pr: "",
     mode: undefined,
@@ -81,19 +110,7 @@ export function parseArgs(argv: string[]): Args {
   };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i] as string;
-    if (flag === "--mode") {
-      const mode = value(argv, i++);
-      if (!isArmDriveMode(mode))
-        fail(2, `--mode takes one of ${ARM_DRIVE_MODES.join(", ")}`, USAGE);
-      args.mode = mode;
-    } else if (flag === "--pass-model") args.passModel = value(argv, i++);
-    else if (flag === "--max-rounds") {
-      const n = value(argv, i++);
-      if (!isDigits(n) || Number.parseInt(n, 10) < 1)
-        fail(2, "--max-rounds takes a whole number of at least 1", USAGE);
-      args.forward.push(flag, n);
-    } else if (flag === "--handoff-at")
-      args.forward.push(flag, value(argv, i++));
+    if (VALUE_FLAGS.has(flag)) takeValue(args, flag, value(argv, i++));
     else if (flag === "--keep-draft") args.forward.push(flag);
     else if (flag.startsWith("-") || args.pr !== "") fail(2, USAGE);
     else args.pr = flag;

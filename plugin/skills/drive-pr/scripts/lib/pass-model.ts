@@ -123,6 +123,13 @@ export interface EffectivePass {
   source: string;
 }
 
+/** The driver log's line naming the pass model and where it came from. */
+export function passModelLine(pass: EffectivePass): string {
+  return pass.model === null
+    ? `pass model: ${pass.source}`
+    : `pass model: ${pass.model} (${pass.source})`;
+}
+
 /**
  * The pass command with its model decided (see the module header), from the
  * command as given, the `--pass-model` flag and the configured model, which

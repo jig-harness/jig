@@ -73,6 +73,7 @@ import {
   type EffectivePass,
   effectivePass,
   PassModelUsageError,
+  passModelLine,
   withoutModel,
 } from "./../pass-model.ts";
 
@@ -204,11 +205,7 @@ export async function main(): Promise<number> {
   // mark-Ready outcomes, and the terminal state.
   const logPath = join(stateDir, `drive-pr-${pr}.log`);
   startDriverLog(logPath);
-  console.error(
-    pass.model === null
-      ? `pass model: ${pass.source}`
-      : `pass model: ${pass.model} (${pass.source})`,
-  );
+  console.error(passModelLine(pass));
 
   // Everything that can refuse from the arguments and the durable state runs
   // before any lock is taken and before a takeover stops anyone: the pass
