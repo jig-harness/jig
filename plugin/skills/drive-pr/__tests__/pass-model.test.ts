@@ -79,9 +79,9 @@ describe("effectivePass", () => {
     });
   });
 
-  it("keeps the pass command's own --model, in either spelling, without reading the setting", () => {
+  it("keeps the pass command's own --model, in either spelling, whatever the setting says", () => {
     const unread = () => {
-      throw new Error("the setting was read");
+      throw new Error("the setting cannot be read");
     };
     const own = ["claude", "--model", "opus", ...PASS.slice(1)];
     expect(effectivePass(own, undefined, unread)).toEqual({
@@ -91,6 +91,38 @@ describe("effectivePass", () => {
     });
     const inline = ["claude", "--model=haiku", ...PASS.slice(1)];
     expect(effectivePass(inline, undefined, unread).model).toBe("haiku");
+    expect(effectivePass(own, undefined, configured).source).toBe(
+      "the pass command's own --model",
+    );
+  });
+
+  it("names the setting an own --model came from when the configuration resolves to it", () => {
+    const own = ["claude", "--model", "sonnet", ...PASS.slice(1)];
+    expect(effectivePass(own, undefined, configured)).toEqual({
+      argv: own,
+      model: "sonnet",
+      source: "the default, as the pass command's --model",
+    });
+  });
+
+  it("reads an own --model that names no model as none", () => {
+    for (const own of [
+      ["claude", "--model=", ...PASS.slice(1)],
+      ["claude", "--model", "", ...PASS.slice(1)],
+    ]) {
+      const pass = effectivePass(own, undefined, configured);
+      expect([pass.model, pass.argv]).toEqual([null, own]);
+      expect(pass.source).toContain("which names no model");
+    }
+  });
+
+  it("names --pass-model alone when it names the model the pass command already carries", () => {
+    const own = ["claude", "--model", "opus", ...PASS.slice(1)];
+    const pass = effectivePass(own, "strategic", configured);
+    expect([pass.argv, pass.source]).toEqual([
+      own,
+      "--pass-model: the strategic tier, routing.models.claude-code.strategic",
+    ]);
   });
 
   it("lets --pass-model replace the pass command's own --model where it stands", () => {
@@ -171,15 +203,17 @@ describe("the drives listing", () => {
     );
   });
 
-  it("reads a claim from before the model as unknown, and a malformed model as no diagnostics", () => {
+  it("reads a claim from before the model, or with a malformed one, as unknown, keeping the rest", () => {
     const older = parseClaimText(formatClaim(1, "h", diag));
     expect(older?.diag).toEqual(diag);
     expect(diagLines(diag)).toContain(
       "    model:    unknown (claim predates the model)",
     );
-    const torn = parseClaimText(
-      `1 h\n${JSON.stringify({ ...diag, model: 4 })}\n`,
-    );
-    expect(torn?.diag).toBeNull();
+    for (const model of [4, "", ["opus"]]) {
+      const torn = parseClaimText(
+        `1 h\n${JSON.stringify({ ...diag, model })}\n`,
+      );
+      expect(torn?.diag).toEqual(diag);
+    }
   });
 });

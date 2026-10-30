@@ -8,7 +8,9 @@
  *   1. `--pass-model` on `drive.ts`, for one run: it replaces the pass
  *      command's own `--model`, or is added after `claude`;
  *   2. the pass command's own `--model`, kept as written (the arm command
- *      `arm-drive.ts` builds carries the configured model there);
+ *      `arm-drive.ts` builds carries the configured model there, and the
+ *      driver log then names the setting it came from); an own `--model`
+ *      that names no model (empty, or not one word) is reported as none;
  *   3. `drive.pass_model`, else `sonnet`, added after `claude`.
  *
  * A value is a model id, a Claude Code alias (`sonnet` follows the latest
@@ -20,6 +22,7 @@
  * `--pass-model` is refused for it rather than guessed into its grammar.
  */
 import { basename } from "node:path";
+import { swallow } from "../../../../shared/errors.ts";
 import {
   parseRoutingModels,
   RoutingError,
@@ -130,10 +133,46 @@ export function passModelLine(pass: EffectivePass): string {
     : `pass model: ${pass.model} (${pass.source})`;
 }
 
+/** The configured model, or `null` when the configuration cannot say. */
+function configuredOrNull(configured: () => PassModel): PassModel | null {
+  try {
+    return configured();
+  } catch (error) {
+    swallow(error, "the configured pass model only names a source here");
+    return null;
+  }
+}
+
+/**
+ * A pass command's own `--model`: the model it names, with the setting it
+ * came from when the configuration resolves to the same model; none when the
+ * value names no model.
+ */
+function ownModel(
+  argv: readonly string[],
+  value: string,
+  configured: () => PassModel,
+): EffectivePass {
+  if (!PASS_MODEL_PATTERN.test(value))
+    return {
+      argv: [...argv],
+      model: null,
+      source: `the pass command's own --model '${value}', which names no model`,
+    };
+  const config = configuredOrNull(configured);
+  return {
+    argv: [...argv],
+    model: value,
+    source:
+      config?.model === value
+        ? `${config.source}, as the pass command's --model`
+        : "the pass command's own --model",
+  };
+}
+
 /**
  * The pass command with its model decided (see the module header), from the
- * command as given, the `--pass-model` flag and the configured model, which
- * is read only when neither of the others names one.
+ * command as given, the `--pass-model` flag and the configured model.
  */
 export function effectivePass(
   argv: readonly string[],
@@ -157,21 +196,17 @@ export function effectivePass(
   const own = modelOption(argv);
   if (flag !== undefined) {
     const chosen = resolveModelValue(flag, "--pass-model");
+    const replaced = own === null || own.value === chosen.model ? null : own;
     return {
       argv: withModel(argv, chosen.model),
       model: chosen.model,
       source:
-        own === null
+        replaced === null
           ? chosen.source
-          : `${chosen.source}, replacing the pass command's --model ${own.value}`,
+          : `${chosen.source}, replacing the pass command's --model ${replaced.value}`,
     };
   }
-  if (own !== null)
-    return {
-      argv: [...argv],
-      model: own.value,
-      source: "the pass command's own --model",
-    };
+  if (own !== null) return ownModel(argv, own.value, configured);
   const chosen = configured();
   return {
     argv: withModel(argv, chosen.model),

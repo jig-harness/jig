@@ -953,19 +953,26 @@ routing below remain **exact**.
       ```
 
       It reads `do_item.arm_drive` (default `auto`: a terminal tab of this
-      workspace where the session can open one, in Orca; the session's
-      background execution elsewhere) and `drive.pass_model` (default
-      `sonnet`), and prints one JSON object: `command`, the drive's start
-      command on one line (`bun --cwd <tree> <drive.ts> <PR> --bots-only --
-      claude --model <model> -p "/jig:drive-pr --bots-only <PR>"`); `status`,
-      what to do next (step 2); `way`, `reason` and `fallback`, why; `model`;
-      `tab`, `tail` and `drive` for a tab; and `handles`. Exit `1` means the
-      setting cannot be honoured here (`tab` outside Orca, or a tab Orca
-      refused) or a setting cannot be read: report `reason` with `command`,
-      and spawn nothing. The pass command (`claude --model <model> -p "..."`)
-      is Claude Code's, today the one documented pass command; in another
-      agent tool the script answers `print`. Do not guess one for another
-      agent tool.
+      workspace where the session can open one, in Orca on a macOS or Linux
+      host; the session's background execution elsewhere, Windows hosts
+      included) and `drive.pass_model` (default `sonnet`), and prints one
+      JSON object: `command`, the drive's start command on one line
+      (`bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model
+      <model> -p "/jig:drive-pr --bots-only <PR>"`); `status`, what to do
+      next (step 2); `way`, `reason` and `fallback`, why; `model`; `tab`,
+      `tail` and `drive` for a tab; and `handles`. A tab is a fresh login
+      shell of the user's: `bun`, `claude` and the Claude account or profile
+      the drive uses come from that shell, not from this session. Every
+      failure prints the same JSON with `status: failed` and `reason`, with
+      `command` built where the tree is known (on the default model when
+      the configured one cannot be read). Exit `1`: the setting cannot be
+      honoured here (`tab` outside Orca, on a Windows host, or a tab Orca
+      refused) or a setting, the model or the working tree cannot be read;
+      exit `2`: a malformed command line. Report `reason` with `command`, and
+      spawn nothing. The pass command (`claude --model <model> -p "..."`) is
+      Claude Code's, today the one documented pass command; in another agent
+      tool the script answers `print`. Do not guess one for another agent
+      tool.
 
       **Always emit `command`**, the exact unattended drive command, in the
       end-of-run status message **and** in the tracker comment that links the
@@ -1004,10 +1011,11 @@ routing below remain **exact**.
       - `already-live` → a drive already holds the PR (`drive`, with its
         `doctor` verdict) and no tab was opened: report it as step 3 reports
         a per-PR lock refusal.
-      - `unconfirmed` → the tab opened, but `drives.ts` did not list the
-        drive in time; `tail` is what the tab printed. Read it once as step
-        3 reads a spawned task's output, and report what it shows; do not
-        open another tab or spawn the command as well.
+      - `unconfirmed` (only under `arm_drive: tab`) → the tab opened, but
+        `drives.ts` did not list the drive in time; `tail` is what the tab
+        printed. Read it once as step 3 reads a spawned task's output, and
+        report what it shows; do not open another tab or spawn the command
+        as well.
       - `spawn` → **spawn `command` in the background** (the harness's
         background execution; do not block the session on it). Spawning is
         then mandatory: an emitted but unspawned command reintroduces the
@@ -1018,8 +1026,11 @@ routing below remain **exact**.
         without it (10 in a `claude -p` run whose prompt is passed as text),
         and after 2 hours unless `BASH_MAX_TIMEOUT_MS` is raised (see
         [drive-pr's README](../drive-pr/README.md#the-background-time-limit)).
-        Report the task handle. When `fallback` is set, say that the tab
-        could not open and why.
+        Report the task handle. When `fallback` is set, `auto` meant a tab
+        and the drive goes to the background instead: say why (Orca refused
+        the tab, a Windows host, or a tab whose drive `drives.ts` did not list
+        in time, whose `tail` to report too; a drive that tab did start holds
+        the PR's lock, so this spawn then meets step 3's exit `11`).
       - `print` → emit the command only, with `reason`: for an uncleared
         `hitl` checkpoint, starting review rounds would pre-empt the human
         judgment; for another agent tool (Codex, for one), which has no

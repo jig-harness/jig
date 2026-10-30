@@ -94,6 +94,39 @@ describe("the pass model", () => {
     );
   });
 
+  it("names where the model of an arm command came from: the setting, or the forwarded --pass-model", async () => {
+    const armed = (flags: string[], model: string, env = {}) =>
+      runDrive(
+        ROUND_READY,
+        [
+          "--dry-run",
+          "--no-head-sync",
+          ...flags,
+          "--",
+          "claude",
+          "--model",
+          model,
+          "-p",
+          "/jig:drive-pr 999",
+        ],
+        undefined,
+        { env: { DRIVE_PR_QUOTA_NO_SPAWN_PREP: "1", ...env } },
+      );
+    const setting = await armed([], "opus", {
+      JIG__DRIVE__PASS_MODEL: "strategic",
+    });
+    expect(setting.stderr).toContain(
+      "pass model: opus (drive.pass_model: the strategic tier, routing.models.claude-code.strategic, as the pass command's --model)",
+    );
+    const flag = await armed(["--pass-model", "strategic"], "opus");
+    expect(wouldRun(flag.stderr)).toBe(
+      "claude --model opus -p /jig:drive-pr 999",
+    );
+    expect(flag.stderr).toContain(
+      "pass model: opus (--pass-model: the strategic tier, routing.models.claude-code.strategic)",
+    );
+  });
+
   it("refuses --pass-model for a pass command that chooses its own model", async () => {
     const r = await runDrive({ threads: [] }, [
       "--pass-model",

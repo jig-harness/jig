@@ -349,12 +349,12 @@ It builds the command above for that tree and prints it with what to do next, as
 
 | Value | The drive starts |
 |-------|------------------|
-| `auto` (default) | In a terminal tab of the pull request's workspace, titled `drive #<PR>`, where the session can open one (an [Orca](https://www.onorca.dev) workspace); with the session's background execution elsewhere, and where Orca refuses the tab, saying why |
-| `tab` | In a terminal tab, or the arm reports why it could not open one |
+| `auto` (default) | In a terminal tab of the pull request's workspace, titled `drive #<PR>`, where the session can open one (an [Orca](https://www.onorca.dev) workspace on a macOS or Linux host); with the session's background execution elsewhere, and, saying why, where Orca refuses the tab or the tab's drive is not listed in time |
+| `tab` | In a terminal tab, or the arm reports why it could not open one or did not see its drive |
 | `background` | With the session's background execution, as below |
 | `print` | Nowhere: the command is printed for a person to run |
 
-A tab outlives the session and shows the passes as they run, and the session that armed it ends without a drive running beside it. The script waits for `drives.ts` to list the new drive (`DRIVE_PR_ARM_CONFIRM_SEC`, 45 seconds by default), and opens no tab while a drive already holds the pull request. `--mode` overrides the setting for one arm, `--pass-model` the pass model, and `--max-rounds`, `--keep-draft` and `--handoff-at` pass through to `drive.ts`. A session that is not Claude Code's, or a human checkpoint the run has no clearance for, gets the command only.
+A tab outlives the session and shows the passes as they run, and the session that armed it ends without a drive running beside it. It is a fresh login shell of yours: `bun`, `claude` and the Claude account or profile the drive uses come from that shell, not from the session. The script waits for `drives.ts` to list the new drive (`DRIVE_PR_ARM_CONFIRM_SEC`, 45 seconds by default), and opens no tab while a drive already holds the pull request; under `auto`, a drive it does not see in time is started in the background instead, and one the tab did start meets the second on its lock (exit `11`). A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the command is quoted for a POSIX shell. `--mode` overrides the setting for one arm, `--pass-model` the pass model (forwarded to `drive.ts`, so the driver log names it), and `--max-rounds`, `--keep-draft` and `--handoff-at` pass through to `drive.ts`. A failure answers with the same JSON, `status: failed` and its `reason`. A session that is not Claude Code's, or a human checkpoint the run has no clearance for, gets the command only.
 
 ### Which working tree drives it
 

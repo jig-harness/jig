@@ -13,11 +13,14 @@ release: minor
   `arm-drive.ts`, which prints the command, what to do next, the pass model
   and the commands that list and stop the drive. It opens no tab while a
   drive already holds the pull request, and confirms that `drives.ts` lists
-  the drive it started.
+  the drive it started. The tab is a fresh login shell of the user's, so
+  `bun`, `claude` and the Claude account come from it. A Windows host opens
+  no tab: Orca's tab there can run `cmd.exe` or PowerShell, and the command
+  is quoted for a POSIX shell.
 - `do_item.arm_drive` says how a drive is armed: `auto` (the default: a tab
   where the session can open one, else the background, falling back to the
-  background when Orca refuses the tab), `tab`, `background` or `print`
-  (the command only). Both skills read it
+  background when Orca refuses the tab or the tab's drive is not listed in
+  time), `tab`, `background` or `print` (the command only). Both skills read it
   ([configuration](../plugin/CONFIGURATION.md#do_item)).
 - `drive.pass_model` names the model each pass runs on: a model id, a
   Claude Code alias, or a routing tier resolved through `routing.models`.
@@ -35,3 +38,4 @@ release: minor
   line and the `drives.ts` listing name the model, and the re-arm and
   takeover commands the driver prints carry it. A pass command that is not
   `claude` chooses its own model as before.
+- `/jig:work-batch` arms its drive through the same script.

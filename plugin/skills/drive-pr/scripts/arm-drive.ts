@@ -14,26 +14,35 @@
  *                 `print` where a human checkpoint withholds the drive
  *   --pass-model  the model each pass runs on, for this drive: a model id, a
  *                 Claude Code alias or a routing tier; default
- *                 `drive.pass_model`, else `sonnet`. Written into the pass
- *                 command as `claude --model <model>`
+ *                 `drive.pass_model`, else `sonnet`. The model it resolves to
+ *                 is written into the pass command as `claude --model
+ *                 <model>`; the flag itself is forwarded to `drive.ts`, so the
+ *                 driver log names it as the source
  *   --max-rounds, --keep-draft, --handoff-at  forwarded to `drive.ts`
  *
  * Prints one JSON object (`ArmReport` in `lib/arm.ts`): `status` says what
  * the caller does next — `armed` (a tab runs the drive and `drives.ts` lists
- * it), `unconfirmed` (a tab opened, the drive was not listed in time; `tail`
- * is what the tab printed), `already-live` (a drive holds the PR; no tab
- * opened), `spawn` (start `command` with the session's background
- * execution), `print` (emit `command` only, for the `reason` given).
+ * it), `unconfirmed` (under `tab`: a tab opened, the drive was not listed in
+ * time; `tail` is what the tab printed), `already-live` (a drive holds the
+ * PR; no tab opened), `spawn` (start `command` with the session's background
+ * execution; `fallback` says why when `auto` meant a tab), `print` (emit
+ * `command` only, for the `reason` given), `failed` (`reason` says why, and
+ * `command` is still built where the tree is known).
  * `DRIVE_PR_ARM_CONFIRM_SEC` (default 45) bounds the wait for a tab's drive.
  *
  * Exit codes: 0 decided (and, for a tab, opened); 1 `tab` could not be
- * honoured, or a setting or the working tree could not be read; 2 usage.
+ * honoured, or a setting, the model or the working tree could not be read;
+ * 2 usage: a malformed command line prints its usage only, a `--pass-model`
+ * that names no model prints the `failed` report.
  */
 import { resolve } from "node:path";
 import { fail, isDigits, runMain, sleep } from "./lib/cli.ts";
 import {
   arm,
+  type ArmInputs,
+  type ArmReport,
   type ArmRequest,
+  failedReport,
   type LiveDrive,
   liveDriveIn,
   type TabDeps,
@@ -43,6 +52,7 @@ import {
   type ArmDriveMode,
   armDriveSetting,
   DEFAULT_ARM_DRIVE,
+  DEFAULT_PASS_MODEL,
   isArmDriveMode,
   ARM_DRIVE_MODES,
 } from "./lib/overlay.ts";
@@ -90,6 +100,7 @@ function takeValue(args: Args, flag: string, v: string): void {
       return;
     case "--pass-model":
       args.passModel = v;
+      args.forward.push(flag, v);
       return;
     case "--max-rounds":
       if (!isDigits(v) || Number.parseInt(v, 10) < 1)
@@ -120,21 +131,73 @@ function parseArgs(argv: string[]): Args {
   return args;
 }
 
-/** The working tree this runs in; the drive runs there. */
-async function workingTree(): Promise<string> {
+/** The working tree this runs in, where the drive runs; an error when there is none. */
+async function workingTree(): Promise<string | Error> {
   const top = await git(["rev-parse", "--show-toplevel"], {
     stderr: "pipe",
     timeoutSec: 30,
     env: gitIdentityEnv(),
   });
   const tree = top.stdout.trim();
-  if (top.code !== 0 || tree === "")
-    fail(
-      1,
-      "arm-drive.ts: not in a git working tree; run it in the PR's tree",
-      top.stderr.trim(),
-    );
-  return resolve(tree);
+  if (top.code === 0 && tree !== "") return resolve(tree);
+  const said = top.stderr.trim();
+  return new Error(
+    `not in a git working tree; run it in the PR's tree${said === "" ? "" : ` (${said})`}`,
+  );
+}
+
+/** `read()`, or the error it threw. */
+function attempt<T>(read: () => T): T | Error {
+  try {
+    return read();
+  } catch (e) {
+    return e instanceof Error ? e : new Error(String(e));
+  }
+}
+
+/**
+ * The arm's inputs, or the `failed` report of the first one that could not
+ * be read (exit 2 for a `--pass-model` that names no model, else 1). The
+ * report's command is built on the default model when the model could not
+ * be read, and without the `--pass-model` that failed.
+ */
+async function readInputs(
+  args: Args,
+): Promise<ArmInputs | { report: ArmReport; exit: number }> {
+  const tree = await workingTree();
+  const armDrive = attempt(() => setting(args.mode));
+  const model = attempt(() => passModel(args.passModel));
+  const problems = [tree, armDrive, model].filter((v) => v instanceof Error);
+  const problem = problems[0];
+  if (
+    problem === undefined &&
+    !(tree instanceof Error) &&
+    !(armDrive instanceof Error) &&
+    !(model instanceof Error)
+  )
+    return {
+      request: { pr: args.pr, tree, forward: args.forward },
+      setting: armDrive,
+      model,
+      env: process.env,
+    };
+  const fallback = {
+    model: DEFAULT_PASS_MODEL,
+    source: "the default, since the configured model could not be read",
+  };
+  const pr = args.pr;
+  const forward = args.forward.filter(
+    (word, i, all) => word !== "--pass-model" && all[i - 1] !== "--pass-model",
+  );
+  return {
+    report: failedReport(
+      { pr, tree: tree instanceof Error ? null : tree, forward },
+      armDrive instanceof Error ? null : armDrive,
+      model instanceof Error ? fallback : model,
+      `arm-drive.ts: ${problem?.message ?? "unknown"}`,
+    ),
+    exit: problem instanceof PassModelUsageError ? 2 : 1,
+  };
 }
 
 function setting(mode: ArmDriveMode | undefined): {
@@ -176,23 +239,19 @@ function confirmSeconds(): number {
   return isDigits(raw) ? Number.parseInt(raw, 10) : 45;
 }
 
+/** Print the report on stdout and its one-line summary on stderr; return the exit. */
+function answer({ report, exit }: { report: ArmReport; exit: number }): number {
+  console.log(JSON.stringify(report, null, 2));
+  console.error(
+    `arm-drive.ts: ${report.status}${report.way === null ? "" : ` (${report.way})`} — ${report.fallback ?? report.reason}; pass model ${report.model} (${report.modelSource})`,
+  );
+  return exit;
+}
+
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
-  const tree = await workingTree();
-  let inputs: Parameters<typeof arm>[0];
-  try {
-    inputs = {
-      request: { pr: args.pr, tree, forward: args.forward },
-      setting: setting(args.mode),
-      model: passModel(args.passModel),
-      env: process.env,
-    };
-  } catch (e) {
-    return fail(
-      e instanceof PassModelUsageError ? 2 : 1,
-      `arm-drive.ts: ${e instanceof Error ? e.message : String(e)}`,
-    );
-  }
+  const inputs = await readInputs(args);
+  if ("report" in inputs) return answer(inputs);
   const deps: TabDeps = {
     orca: runOrca,
     liveDrive,
@@ -201,12 +260,7 @@ async function main(): Promise<number> {
     confirmMs: confirmSeconds() * 1000,
     pollMs: 1500,
   };
-  const { report, exit } = await arm(inputs, deps);
-  console.log(JSON.stringify(report, null, 2));
-  console.error(
-    `arm-drive.ts: ${report.status}${report.way === null ? "" : ` (${report.way})`} — ${report.fallback ?? report.reason}; pass model ${report.model} (${report.modelSource})`,
-  );
-  return exit;
+  return answer(await arm(inputs, deps));
 }
 
 if (import.meta.main) runMain("arm-drive.ts", main);

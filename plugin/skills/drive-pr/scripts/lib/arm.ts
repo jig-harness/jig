@@ -18,11 +18,15 @@
  *
  * In a tab the drive outlives the session and has a window a person can
  * watch, and the session that implemented the item ends without a drive
- * running beside it. The tab only starts the drive: the command it types is
- * the one this module builds, quoted for a POSIX shell (Orca's tab shells
- * are the host's login shell, and Orca runs on POSIX hosts). Under `auto` a
- * tab Orca refuses falls back to the background, saying so; under `tab` the
- * refusal is the answer.
+ * running beside it. The tab is a fresh login shell of the user's: `bun`,
+ * `claude` and the Claude account come from it, not from the session. The
+ * tab only starts the drive: the command it types is the one this module
+ * builds, quoted for a POSIX shell. On a Windows host Orca's tab can be
+ * `cmd.exe` or PowerShell, which that quoting is not written for, so a
+ * Windows host opens no tab. Under `auto` a tab that cannot be opened, or
+ * whose drive `drives.ts` does not list in time, falls back to the
+ * background, saying why (a drive the tab did start refuses the second on
+ * its lock); under `tab` that is the answer.
  */
 import { shellQuote } from "../../../../shared/cli.ts";
 import { detectHarness } from "../../../../shared/harness.ts";
@@ -47,7 +51,11 @@ export interface ArmRequest {
   pr: string;
   /** The working tree the drive runs in. */
   tree: string;
-  /** Drive flags for `drive.ts`, before its `--`: `--max-rounds N` and the like. */
+  /**
+   * Drive flags for `drive.ts`, before its `--`: `--max-rounds N` and the
+   * like, and `--pass-model` when the caller names the model, so the driver
+   * log says it came from there.
+   */
   forward: string[];
 }
 
@@ -101,15 +109,37 @@ export function driveHandles(request: ArmRequest): {
   };
 }
 
-/** The way chosen, and why; a tab carries Orca's command. */
+/** The way chosen, and why; a tab carries Orca's command, a fallback says what was not done. */
 export type WayChoice =
   | { way: "tab"; orca: string; reason: string }
-  | { way: "background" | "print"; reason: string };
+  | { way: "background" | "print"; reason: string; fallback?: string };
+
+/** Why a Windows host opens no tab. */
+const WINDOWS_TAB =
+  "on a Windows host Orca's tab can run cmd.exe or PowerShell, and the drive's command is quoted for a POSIX shell";
+
+/** The tab, or on a Windows host the background (under `auto`) or a refusal (under `tab`). */
+function tabOn(
+  setting: "auto" | "tab",
+  orca: string,
+  platform: NodeJS.Platform,
+): WayChoice | { error: string } {
+  if (platform !== "win32")
+    return { way: "tab", orca, reason: `arm_drive is ${setting}` };
+  if (setting === "tab")
+    return { error: `arm_drive is tab, but ${WINDOWS_TAB}` };
+  return {
+    way: "background",
+    reason: "arm_drive is auto",
+    fallback: `${WINDOWS_TAB}; arming in the background instead`,
+  };
+}
 
 /** The way to arm, and why; `error` when the setting asks for what this session cannot do. */
 export function chooseWay(
   setting: ArmDriveMode,
   env: Env,
+  platform: NodeJS.Platform = process.platform,
 ): WayChoice | { error: string } {
   if (setting === "print")
     return { way: "print", reason: "arm_drive is print: the command only" };
@@ -122,20 +152,16 @@ export function chooseWay(
   const orca = orcaTabCommand(env);
   if (setting === "background")
     return { way: "background", reason: "arm_drive is background" };
+  if (orca !== null) return tabOn(setting, orca, platform);
   if (setting === "tab")
-    return orca !== null
-      ? { way: "tab", orca, reason: "arm_drive is tab" }
-      : {
-          error:
-            "arm_drive is tab, but this session cannot open a terminal tab: it does not run in an Orca terminal",
-        };
-  return orca !== null
-    ? { way: "tab", orca, reason: "arm_drive is auto, and Orca can open a tab" }
-    : {
-        way: "background",
-        reason:
-          "arm_drive is auto, and this session cannot open a terminal tab",
-      };
+    return {
+      error:
+        "arm_drive is tab, but this session cannot open a terminal tab: it does not run in an Orca terminal",
+    };
+  return {
+    way: "background",
+    reason: "arm_drive is auto, and this session cannot open a terminal tab",
+  };
 }
 
 /** The arguments of Orca's call that opens the drive's tab in the tree's workspace. */
@@ -280,8 +306,10 @@ export function liveDriveIn(json: unknown, pr: string): LiveDrive | null {
 /** The whole answer `arm-drive.ts` prints. */
 export interface ArmReport {
   pr: string;
-  tree: string;
-  armDrive: { value: ArmDriveMode; source: string };
+  /** `null` when the arm failed before it knew the tree. */
+  tree: string | null;
+  /** `null` when the setting could not be read. */
+  armDrive: { value: ArmDriveMode; source: string } | null;
   way: ArmWay | null;
   /**
    * What the caller does next: `armed`, `unconfirmed` and `already-live`
@@ -296,17 +324,51 @@ export interface ArmReport {
     | "print"
     | "failed";
   reason: string;
-  /** Set when a tab could not open under `auto` and the drive goes to the background. */
+  /** Set when `auto` meant a tab and the drive goes to the background instead: why. */
   fallback: string | null;
   model: string;
   modelSource: string;
-  command: string;
+  /** `null`, with `argv` empty, when the arm failed before it knew the tree. */
+  command: string | null;
   argv: string[];
   tab: { title: string; terminal: string | null } | null;
   /** The tab's last lines, when the drive did not show up. */
   tail: string[];
   drive: LiveDrive | null;
-  handles: { list: string; stop: string };
+  handles: { list: string; stop: string } | null;
+}
+
+/**
+ * The report of an arm that failed before it decided: a setting, the model
+ * or the working tree could not be read. `command` is built on `model` (the
+ * default where the configured one could not be read) once the tree is known.
+ */
+export function failedReport(
+  request: { pr: string; tree: string | null; forward: string[] },
+  setting: ArmReport["armDrive"],
+  model: PassModel,
+  reason: string,
+): ArmReport {
+  const tree = request.tree;
+  const known = tree === null ? null : { ...request, tree };
+  const argv = known === null ? [] : driveArgv(known, model.model);
+  return {
+    pr: request.pr,
+    tree,
+    armDrive: setting,
+    way: null,
+    status: "failed",
+    reason,
+    fallback: null,
+    model: model.model,
+    modelSource: model.source,
+    command: known === null ? null : commandLine(argv),
+    argv,
+    tab: null,
+    tail: [],
+    drive: null,
+    handles: known === null ? null : driveHandles(known),
+  };
 }
 
 /** Everything the arm decides from, read before it acts. */
@@ -315,6 +377,7 @@ export interface ArmInputs {
   setting: { value: ArmDriveMode; source: string };
   model: PassModel;
   env: Env;
+  platform?: NodeJS.Platform;
 }
 
 /** Decide, open a tab where that is the way, and report; exit 1 when the setting cannot be honoured. */
@@ -323,26 +386,8 @@ export async function arm(
   deps: TabDeps,
 ): Promise<{ report: ArmReport; exit: number }> {
   const { request, setting, model, env } = inputs;
-  const argv = driveArgv(request, model.model);
-  const command = commandLine(argv);
-  const base: ArmReport = {
-    pr: request.pr,
-    tree: request.tree,
-    armDrive: setting,
-    way: null,
-    status: "failed",
-    reason: "",
-    fallback: null,
-    model: model.model,
-    modelSource: model.source,
-    command,
-    argv,
-    tab: null,
-    tail: [],
-    drive: null,
-    handles: driveHandles(request),
-  };
-  const choice = chooseWay(setting.value, env);
+  const base = failedReport(request, setting, model, "");
+  const choice = chooseWay(setting.value, env, inputs.platform);
   if ("error" in choice)
     return { report: { ...base, reason: choice.error }, exit: 1 };
   const chosen = { ...base, way: choice.way, reason: choice.reason };
@@ -351,11 +396,46 @@ export async function arm(
       report: {
         ...chosen,
         status: choice.way === "print" ? "print" : "spawn",
+        fallback: choice.fallback ?? null,
       },
       exit: 0,
     };
-  const outcome = await armInTab(choice.orca, request, command, deps);
-  const tab = { title: tabTitle(request.pr), terminal: null };
+  const outcome = await armInTab(
+    choice.orca,
+    request,
+    commandLine(base.argv),
+    deps,
+  );
+  return tabReport(chosen, outcome, setting.value === "auto");
+}
+
+/** `report` sent to the background instead of a tab, saying why. */
+function fallBack(
+  report: ArmReport,
+  why: string,
+): { report: ArmReport; exit: number } {
+  return {
+    report: {
+      ...report,
+      way: "background",
+      status: "spawn",
+      fallback: `${why}; arming in the background instead`,
+    },
+    exit: 0,
+  };
+}
+
+/**
+ * The report after a tab. Under `auto`, a tab that did not open, or whose
+ * drive was not listed in time, falls back to the background: a drive the
+ * tab did start holds the PR's lock, so the second refuses (exit `11`).
+ */
+function tabReport(
+  chosen: ArmReport,
+  outcome: TabOutcome,
+  auto: boolean,
+): { report: ArmReport; exit: number } {
+  const tab = { title: tabTitle(chosen.pr), terminal: null };
   switch (outcome.status) {
     case "already-live":
       return {
@@ -372,27 +452,21 @@ export async function arm(
         },
         exit: 0,
       };
-    case "unconfirmed":
-      return {
-        report: {
-          ...chosen,
-          status: "unconfirmed",
-          tab: { ...tab, terminal: outcome.terminal },
-          tail: outcome.tail,
-        },
-        exit: 0,
+    case "unconfirmed": {
+      const seen = {
+        ...chosen,
+        tab: { ...tab, terminal: outcome.terminal },
+        tail: outcome.tail,
       };
+      if (auto)
+        return fallBack(
+          seen,
+          "the tab opened, but drives.ts did not list its drive in time (tail has what the tab printed)",
+        );
+      return { report: { ...seen, status: "unconfirmed" }, exit: 0 };
+    }
     case "failed":
-      if (setting.value === "auto")
-        return {
-          report: {
-            ...chosen,
-            way: "background",
-            status: "spawn",
-            fallback: `${outcome.why}; arming in the background instead`,
-          },
-          exit: 0,
-        };
+      if (auto) return fallBack(chosen, outcome.why);
       return {
         report: { ...chosen, status: "failed", reason: outcome.why },
         exit: 1,

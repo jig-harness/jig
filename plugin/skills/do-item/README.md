@@ -114,8 +114,13 @@ call, and an Orca call that fails only warns.
 It also arms the drive in a terminal tab of its own in the workspace, titled
 `drive #<PR>`, so the drive outlives the session, a person can watch its
 rounds, and the session that implemented the item ends without a drive
-running beside it. If Orca cannot open the tab, the drive starts in the
-background as it does elsewhere, and the skill says why.
+running beside it. The tab is a fresh login shell of yours, so `bun`,
+`claude` and the Claude account or profile the drive uses come from it, not
+from the session. If Orca cannot open the tab, or the tab's drive does not
+show up in time, the drive starts in the background as it does elsewhere,
+and the skill says why. On a Windows host the drive always starts in the
+background: Orca's tab there can run `cmd.exe` or PowerShell, and the
+command is written for a POSIX shell.
 
 Orca's own Linear skill (`orca-linear`) has a completion flow of its own.
 Inside this skill the ticket's comments and transitions stay with `do-item`,

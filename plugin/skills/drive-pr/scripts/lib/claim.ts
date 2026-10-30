@@ -170,11 +170,21 @@ function parseDiag(rest: string): ClaimDiag | null {
   const account =
     "account" in o ? parseAccount(o.account) : PRE_STAMPING_ACCOUNT;
   if (account === null) return null;
-  if (!("model" in o)) return { pr, worktree, log, started, account };
+  const model = claimModel(o);
+  const diag = { pr, worktree, log, started, account };
+  return model === undefined ? diag : { ...diag, model };
+}
+
+/**
+ * A claim's pass model: absent when the claim has none, and read as
+ * absent when it is not a nonempty string or `null`. The model only labels a
+ * listing, so a bad one costs its own line, never the record `--stop` and the
+ * parent-driver check read.
+ */
+function claimModel(o: Record<string, unknown>): string | null | undefined {
   const { model } = o;
-  if (model !== null && (typeof model !== "string" || model === ""))
-    return null;
-  return { pr, worktree, log, started, account, model };
+  if (model === null) return null;
+  return typeof model === "string" && model !== "" ? model : undefined;
 }
 
 /** The pass model as a listing shows it. */

@@ -13,6 +13,7 @@ import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { exceptOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import type { OrcaRunner } from "../../../shared/orca.ts";
 import {
   arm,
@@ -107,29 +108,46 @@ describe("the command that starts the drive", () => {
 
 describe("the way a drive is armed", () => {
   it("auto opens a tab in Orca and starts in the background elsewhere", () => {
-    expect(chooseWay("auto", IN_ORCA)).toMatchObject({
+    expect(chooseWay("auto", IN_ORCA, "linux")).toMatchObject({
       way: "tab",
       orca: "/opt/orca/bin/orca",
     });
-    expect(chooseWay("auto", CLAUDE)).toMatchObject({ way: "background" });
-  });
-
-  it("tab outside Orca is refused rather than quietly backgrounded", () => {
-    expect(chooseWay("tab", CLAUDE)).toEqual({
-      error:
-        "arm_drive is tab, but this session cannot open a terminal tab: it does not run in an Orca terminal",
-    });
-    expect(chooseWay("background", IN_ORCA)).toMatchObject({
+    expect(chooseWay("auto", CLAUDE, "linux")).toMatchObject({
       way: "background",
     });
   });
 
-  it("prints the command only for print, and in a session that is not Claude Code's", () => {
-    expect(chooseWay("print", IN_ORCA)).toMatchObject({ way: "print" });
-    const codex = chooseWay("auto", {
-      CODEX_HOME: "/x",
-      ORCA_CLI_COMMAND: "/opt/orca/bin/orca",
+  it("tab outside Orca is refused rather than quietly backgrounded", () => {
+    expect(chooseWay("tab", CLAUDE, "linux")).toEqual({
+      error:
+        "arm_drive is tab, but this session cannot open a terminal tab: it does not run in an Orca terminal",
     });
+    expect(chooseWay("background", IN_ORCA, "linux")).toMatchObject({
+      way: "background",
+    });
+  });
+
+  it("opens no tab on a Windows host, whose tab shell the command is not quoted for", () => {
+    const auto = chooseWay("auto", IN_ORCA, "win32");
+    expect(auto).toMatchObject({ way: "background" });
+    expect(JSON.stringify(auto)).toContain(
+      "on a Windows host Orca's tab can run cmd.exe or PowerShell",
+    );
+    expect(chooseWay("tab", IN_ORCA, "win32")).toEqual({
+      error:
+        "arm_drive is tab, but on a Windows host Orca's tab can run cmd.exe or PowerShell, and the drive's command is quoted for a POSIX shell",
+    });
+  });
+
+  it("prints the command only for print, and in a session that is not Claude Code's", () => {
+    expect(chooseWay("print", IN_ORCA, "linux")).toMatchObject({
+      way: "print",
+    });
+    const codex = chooseWay(
+      "auto",
+      { CODEX_HOME: "/x", ORCA_CLI_COMMAND: "/opt/orca/bin/orca" },
+      "linux",
+    );
     expect(codex).toMatchObject({ way: "print" });
     expect(JSON.stringify(codex)).toContain("this session runs codex");
   });
@@ -271,12 +289,14 @@ describe("arming in a tab", () => {
 function inputs(
   value: ArmInputs["setting"]["value"],
   env: Record<string, string>,
+  platform: NodeJS.Platform = "linux",
 ): ArmInputs {
   return {
     request: REQUEST,
     setting: { value, source: "do_item.arm_drive" },
     model: { model: "sonnet", source: "the default" },
     env,
+    platform,
   };
 }
 
@@ -289,6 +309,52 @@ describe("the arm's answer", () => {
     expect(exit).toBe(0);
     expect(report).toMatchObject({ way: "background", status: "spawn" });
     expect(report.fallback).toContain("arming in the background instead");
+  });
+
+  it("falls back to the background under auto when the tab's drive does not show up, keeping what the tab printed", async () => {
+    const { report, exit } = await arm(
+      inputs("auto", IN_ORCA),
+      deps(fakeOrca(OPENED).runner, [null]),
+    );
+    expect(exit).toBe(0);
+    expect(report).toMatchObject({
+      way: "background",
+      status: "spawn",
+      tab: { title: "drive #42", terminal: "term_1" },
+      tail: ["$ bun …", "drive.ts: exit 11"],
+    });
+    expect(report.fallback).toContain(
+      "drives.ts did not list its drive in time",
+    );
+  });
+
+  it("leaves an unlisted tab's drive unconfirmed under tab, spawning nothing", async () => {
+    const { report, exit } = await arm(
+      inputs("tab", IN_ORCA),
+      deps(fakeOrca(OPENED).runner, [null]),
+    );
+    expect([exit, report.way, report.status]).toEqual([
+      0,
+      "tab",
+      "unconfirmed",
+    ]);
+    expect(report.fallback).toBeNull();
+  });
+
+  it("on a Windows host falls back under auto without calling Orca, and fails under tab", async () => {
+    const orca = fakeOrca(OPENED);
+    const auto = await arm(
+      inputs("auto", IN_ORCA, "win32"),
+      deps(orca.runner, []),
+    );
+    expect([auto.exit, auto.report.status]).toEqual([0, "spawn"]);
+    expect(auto.report.fallback).toContain("arming in the background instead");
+    const tab = await arm(
+      inputs("tab", IN_ORCA, "win32"),
+      deps(orca.runner, []),
+    );
+    expect([tab.exit, tab.report.status]).toEqual([1, "failed"]);
+    expect(orca.calls).toEqual([]);
   });
 
   it("fails under tab when Orca refuses the tab", async () => {
@@ -314,7 +380,7 @@ describe("the arm's answer", () => {
     expect(report.command).toContain(
       '-- claude --model sonnet -p "/jig:drive-pr --bots-only 42"',
     );
-    expect(report.handles.stop).toEndWith("--stop 42");
+    expect(report.handles?.stop).toEndWith("--stop 42");
     expect(orca.calls).toEqual([]);
   });
 });
@@ -426,8 +492,30 @@ describe("arm-drive.ts", () => {
       model: "sonnet",
       armDrive: { value: "auto", source: "the default" },
     });
-    expect(readBack(answer.command)).toEqual(answer.argv.slice(1));
-    expect(answer.argv.slice(1, 3)).toEqual(["--cwd", answer.tree]);
+    expect(readBack(answer.command ?? "")).toEqual(answer.argv.slice(1));
+    expect(answer.argv.slice(1, 3)).toEqual(["--cwd", answer.tree ?? ""]);
+  });
+
+  it("forwards --pass-model to drive.ts, so the driver log names it, and writes the model it resolves", async () => {
+    const tree = scratchTree();
+    const run = await runArm(
+      tree,
+      ["42", "--mode", "print", "--pass-model", "strategic"],
+      CLAUDE,
+    );
+    expectSpawnExit(run, 0);
+    const { argv } = report(run);
+    const separator = argv.indexOf("--");
+    expect(argv.slice(5, separator)).toEqual([
+      "--bots-only",
+      "--pass-model",
+      "strategic",
+    ]);
+    expect(argv.slice(separator + 1, separator + 4)).toEqual([
+      "claude",
+      "--model",
+      "opus",
+    ]);
   });
 
   it("reads do_item.arm_drive and drive.pass_model from the configuration", async () => {
@@ -446,21 +534,65 @@ describe("arm-drive.ts", () => {
     expect(report(run).command).toContain("claude --model opus -p");
   });
 
-  it("refuses a setting outside its values, and a tab outside Orca", async () => {
+  it("answers a setting outside its values with a failed report, its command on the configured model", async () => {
     const tree = scratchTree();
     const bad = await runArm(tree, ["42"], {
       ...CLAUDE,
       JIG__DO_ITEM__ARM_DRIVE: "window",
     });
     expectSpawnExit(bad, 1);
-    expect(bad.stderr).toContain("do_item.arm_drive");
+    expect(report(bad)).toMatchObject({
+      status: "failed",
+      armDrive: null,
+      model: "sonnet",
+    });
+    expect(report(bad).reason).toContain("do_item.arm_drive");
+    expect(report(bad).command).toContain("claude --model sonnet -p");
     const tab = await runArm(tree, ["42", "--mode", "tab"], CLAUDE);
     expectSpawnExit(tab, 1);
     expect(report(tab).status).toBe("failed");
     expectSpawnExit(await runArm(tree, ["042"], CLAUDE), 2);
   });
 
-  it("in Orca hands the tab's shell the command, quoted, and reports what the tab printed", async () => {
+  it("answers a model it cannot resolve with a failed report on the default model", async () => {
+    const tree = scratchTree();
+    const tier = await runArm(tree, ["42"], {
+      ...CLAUDE,
+      JIG__DRIVE__PASS_MODEL: "strategic",
+      JIG__ROUTING: "not-a-mapping",
+    });
+    expectSpawnExit(tier, 1);
+    expect(report(tier)).toMatchObject({ status: "failed", model: "sonnet" });
+    expect(report(tier).reason).toContain("routing");
+    expect(report(tier).command).toContain("claude --model sonnet -p");
+    const flag = await runArm(
+      tree,
+      ["42", "--pass-model", "two words"],
+      CLAUDE,
+    );
+    expectSpawnExit(flag, 2);
+    expect(report(flag).reason).toContain("--pass-model");
+    expect(report(flag).argv).not.toContain("--pass-model");
+  });
+
+  it("answers a directory that is no git working tree with a failed report and no command", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "arm-drive-outside-"));
+    const run = await runArm(outside, ["42"], {
+      ...CLAUDE,
+      GIT_CEILING_DIRECTORIES: tmpdir(),
+    });
+    expectSpawnExit(run, 1);
+    expect(report(run)).toMatchObject({
+      status: "failed",
+      tree: null,
+      command: null,
+      argv: [],
+      handles: null,
+    });
+    expect(report(run).reason).toContain("not in a git working tree");
+  });
+
+  it("in Orca hands the tab's shell the command, quoted, then falls back to the background when its drive does not show up", async () => {
     const tree = scratchTree();
     const bin = mkdtempSync(join(tmpdir(), "arm-drive-orca-"));
     const record = join(bin, "calls.jsonl");
@@ -488,27 +620,29 @@ describe("arm-drive.ts", () => {
     });
     expectSpawnExit(run, 0);
     const answer = report(run);
-    expect(answer).toMatchObject({
-      way: "tab",
-      status: "unconfirmed",
-      tab: { title: "drive #42", terminal: "term_9" },
-      tail: ["drive.ts: refused"],
+    expect(answer).toMatchObject({ way: "background", status: "spawn" });
+    exceptOnWindows("a Windows host opens no Orca tab", () => {
+      expect(answer).toMatchObject({
+        tab: { title: "drive #42", terminal: "term_9" },
+        tail: ["drive.ts: refused"],
+      });
+      expect(answer.fallback).toContain("did not list its drive in time");
+      const calls = readFileSync(record, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as string[]);
+      const create = calls[0] ?? [];
+      expect(create.slice(0, 6)).toEqual([
+        "terminal",
+        "create",
+        "--worktree",
+        `path:${answer.tree}`,
+        "--title",
+        "drive #42",
+      ]);
+      const typed = create[create.indexOf("--command") + 1] ?? "";
+      expect(typed).toBe(answer.command ?? "");
+      expect(readBack(typed)).toEqual(answer.argv.slice(1));
     });
-    const calls = readFileSync(record, "utf8")
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as string[]);
-    const create = calls[0] ?? [];
-    expect(create.slice(0, 6)).toEqual([
-      "terminal",
-      "create",
-      "--worktree",
-      `path:${answer.tree}`,
-      "--title",
-      "drive #42",
-    ]);
-    const typed = create[create.indexOf("--command") + 1] ?? "";
-    expect(typed).toBe(answer.command);
-    expect(readBack(typed)).toEqual(answer.argv.slice(1));
   });
 });

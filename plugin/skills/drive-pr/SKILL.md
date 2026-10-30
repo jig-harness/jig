@@ -317,8 +317,10 @@ driver decides: `--pass-model <model>` for this run, else the pass command's
 own `--model`, else `drive.pass_model`, else `sonnet` (Claude Code's alias
 for the latest Sonnet), added after `claude`. A model id, an alias or a
 routing tier (`execution`, `strategic`, resolved through
-`routing.models.claude-code`). The driver log's `pass model:` line and the
-`drives.ts` row name it, and every re-arm or takeover command the driver
+`routing.models.claude-code`). The driver log's `pass model:` line names it
+and where it came from (an own `--model` the configuration resolves to is
+named as that setting's; one that names no model is reported as none), the
+`drives.ts` row names it, and every re-arm or takeover command the driver
 prints carries it. Another agent tool's pass command chooses its own model,
 and `--pass-model` is refused for it (exit `2`).
 
@@ -818,9 +820,11 @@ could forge or forget.
    checkpoint — fail closed: do not arm, report the read failure (the same
    stance `/jig:do-item` takes on an unreadable gate). If any of them carries an
    uncleared checkpoint and this run has no human clearance to proceed
-   end-to-end, print the
-   command below and stop — review rounds pre-empt a judgment the issue exists
-   to collect (the same rule `/jig:do-item`'s § Arm the drive applies).
+   end-to-end, run step 4's command with `--mode print` added
+   (`bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/scripts/arm-drive.ts" <PR> --mode print`),
+   print its `command` and stop — review rounds pre-empt a judgment the
+   issue exists to collect (the same rule `/jig:do-item`'s § Arm the drive
+   applies). Without `--mode print` the script would arm the drive.
 4. **Arm the driver** with the arm script, run in `<tree>` with `<PR>` as
    step 2 printed and without the variables its `env.unset` names:
 
@@ -831,12 +835,15 @@ could forge or forget.
    ```
 
    It reads `do_item.arm_drive` (default `auto`: a terminal tab of the
-   PR's workspace where this session can open one, in Orca; the session's
-   background execution elsewhere) and `drive.pass_model` (default
-   `sonnet`) in that tree, and prints one JSON object: `command`, the
-   driver's start command in the portable one-line form,
+   PR's workspace where this session can open one, in Orca on a macOS or
+   Linux host; the session's background execution elsewhere, Windows hosts
+   included) and `drive.pass_model` (default `sonnet`) in that tree, and
+   prints one JSON object: `command`, the driver's start command in the
+   portable one-line form,
    `bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model <model> -p "/jig:drive-pr --bots-only <PR>"`;
-   `model`; `handles`; and `status`, which says what to do:
+   `model`; `handles`; and `status`, which says what to do. A tab is a
+   fresh login shell of the user's: `bun`, `claude` and the Claude account
+   or profile the driver uses come from that shell, not from this session.
    - `armed` → the driver runs in a terminal tab of its own (`tab.title`)
      in the PR's workspace, and `drives.ts` lists it (`drive`): go to step
      6. Nothing runs in this session's background, and step 5 has nothing
@@ -844,17 +851,23 @@ could forge or forget.
    - `already-live` → a drive already holds the PR (`drive`, with its
      `doctor` verdict) and no tab was opened: report it as step 5 reports a
      per-PR lock refusal, and stop.
-   - `unconfirmed` → the tab opened, but `drives.ts` did not list the drive
-     in time: read `tail`, what the tab printed, once, as step 5 reads a
-     spawned driver's output. Open no second tab and spawn nothing.
+   - `unconfirmed` (only under `arm_drive: tab`) → the tab opened, but
+     `drives.ts` did not list the drive in time: read `tail`, what the tab
+     printed, once, as step 5 reads a spawned driver's output. Open no
+     second tab and spawn nothing.
    - `spawn` → spawn `command` with the harness's background execution
      (Bash `run_in_background`), never blocking the session on it. When
-     `fallback` is set, Orca refused the tab: say so.
+     `fallback` is set, `auto` meant a tab and the driver goes to the
+     background instead: say why (Orca refused the tab, a Windows host, or
+     a tab whose drive `drives.ts` did not list in time, whose `tail` to
+     report too; a driver that tab did start holds the PR's lock, so this
+     spawn then meets step 5's exit `11`).
    - `print` → print `command` with `reason`, and stop.
-
-   Exit `1` → the setting cannot be honoured here (`tab` outside Orca, or a
-   tab Orca refused) or a setting cannot be read: report `reason` with
-   `command`, and stop.
+   - `failed` → report `reason` with `command` (built where the tree is
+     known, on the default model when the configured one cannot be read),
+     and stop. Exit `1`: the setting cannot be honoured here (`tab` outside
+     Orca, on a Windows host, or a tab Orca refused) or a setting, the model
+     or the working tree cannot be read; exit `2`: a malformed command line.
 
    **exact** — For `spawn`, pass the Bash call's `timeout` of `28800000` (8 hours) with
    `run_in_background`; a drive runs up to `--max-rounds` rounds of up to 90
@@ -890,7 +903,9 @@ could forge or forget.
    (§ 2). Forward the invocation's own drive flags — `--keep-draft`,
    `--max-rounds N`, `--handoff-at …`, `--pass-model M` — to `arm-drive.ts`,
    which puts them in `command` before `drive.ts`'s `--`, never in the pass
-   prompt. Without `--max-rounds` the budget is the
+   prompt; for `--pass-model` it also writes the model the value resolves
+   to into the pass command's `--model`, and the driver log names the flag
+   as the source. Without `--max-rounds` the budget is the
    repository's `drive.max_rounds` (default 10); pass the flag only to override
    it. `--max-rounds` counts from the durable state, so
    re-arming a PR that has already run rounds resumes it ("at round 4 of 10")
