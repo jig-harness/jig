@@ -535,6 +535,60 @@ test("only a quoted paragraph is continued lazily: a line after quoted code, a h
   }
 });
 
+test("a quote's content is read by the same rules as the text around it", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  const ids = async (lines: string[]) =>
+    (
+      await resolveSpec(issue(lines.join("\n")), root, {
+        registry: [bodyAdapter],
+        config: only("body"),
+      })
+    ).acceptance.map((c) => c.id);
+  for (const underline of ["===", "-", "--"])
+    expect(
+      await ids(["## Spec", "> Note", `> ${underline}`, "AC-1 Works"]),
+    ).toEqual(["AC-1"]);
+  expect(await ids(["## Spec", "> ===", "AC-1 Example"])).toEqual([]);
+  for (const fence of ["~~~", "```"])
+    expect(
+      await ids([
+        "## Spec",
+        `> - ${fence}`,
+        ">   example",
+        "> Outside paragraph",
+        "AC-9 Example",
+      ]),
+    ).toEqual([]);
+});
+
+test("quotes nested in list items past the nesting bound are read without running the scan deep", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  const lines = Array.from(
+    { length: 200 },
+    (_, level) => `${">   ".repeat(level)}> - quoted`,
+  );
+  const body = ["## Spec", ...lines, "", "AC-1 Works"].join("\n");
+  const result = await resolveSpec(issue(body), root, {
+    registry: [bodyAdapter],
+    config: only("body"),
+  });
+  expect(result.acceptance.map((c) => c.id)).toEqual(["AC-1"]);
+});
+
+test("an ordered item after an item's paragraph is the list's next item", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  const body = [
+    "## Acceptance criteria",
+    "1. AC-1 Works",
+    "2. AC-2 Also works",
+  ].join("\n");
+  const result = await resolveSpec(issue(body), root, {
+    registry: [bodyAdapter],
+    config: only("body"),
+  });
+  expect(result.acceptance.map((c) => c.id)).toEqual(["AC-1", "AC-2"]);
+});
+
 test("a fence before a list item's column ends the item", async () => {
   const { root } = scratchRepo("spec-safety-");
   for (const gap of [[""], []]) {
