@@ -19,7 +19,7 @@
  * list marker, or any line after a blank line closes the items whose column
  * it does not reach, leaving the enclosing items it does reach open: a
  * heading at the margin closes every item, one indented to an item's column
- * is that item's. A fence opened inside an item ends with it: a line before the
+ * is that item's, and marked so (`inItem`). A fence opened inside an item ends with it: a line before the
  * item's column closes the fence and those items, and is read as ordinary
  * Markdown in the item that remains. Past a nesting depth of 64 markers on one line the
  * rest is the item's text, so a line of markers cannot run the scan deep.
@@ -52,11 +52,13 @@ export function trimEndOf(text: string, chars: string): string {
 /**
  * A line in a section: `text` is content, `heading` a heading outside code,
  * `code` is inside a fence or an indented code block, `fence` opens or
- * closes a fence. Tabs are four spaces.
+ * closes a fence. Tabs are four spaces. `inItem` marks a heading inside an
+ * open list item: it belongs to the item, so it opens or closes no section.
  */
 export interface MarkdownLine {
   line: string;
   kind: "text" | "heading" | "code" | "fence";
+  inItem?: true;
 }
 
 /** A heading: its run of `#` and its title. */
@@ -117,6 +119,8 @@ interface ScanState {
   /** The content columns of the open list items, outermost first, ascending. */
   lists: number[];
   afterBlank: boolean;
+  /** Whether the last heading read sits inside an open list item. */
+  headingInItem: boolean;
 }
 
 /** The content column of the innermost open item `indent` reaches, or 0. */
@@ -162,6 +166,7 @@ function shallowLine(
   }
   if (!HEADING.test(own)) return "text";
   closeItemsPast(state, strip);
+  state.headingInItem = strip > 0;
   return "heading";
 }
 
@@ -253,9 +258,13 @@ export function* markdownLines(text: string): Generator<MarkdownLine> {
     indentedCode: false,
     lists: [],
     afterBlank: true,
+    headingInItem: false,
   };
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.replace(/\t/g, "    ");
-    yield { line, kind: classify(line, state) };
+    const kind = classify(line, state);
+    yield kind === "heading" && state.headingInItem
+      ? { line, kind, inItem: true }
+      : { line, kind };
   }
 }

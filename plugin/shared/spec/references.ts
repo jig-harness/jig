@@ -47,8 +47,10 @@ function headingOf(line: string): { level: number; title: string } | null {
  * next heading of the same or a higher level closes it; a line belongs to the
  * innermost recognised section around it, so an `### Acceptance criteria`
  * inside `## Spec` is its own section, not part of the Spec section. A
- * section's `lines` keep every heading in it, and the heading of each of its
- * occurrences (kind `heading`), since a heading ends the entry above it.
+ * heading inside a list item (`inItem`) is the item's, whatever its level:
+ * it neither opens nor closes a section. A section's `lines` keep every
+ * heading in it, and the heading of each of its occurrences (kind
+ * `heading`), since a heading ends the entry above it.
  */
 export function bodySections(body: string, specHeading: string): BodySection[] {
   const names = new Map<BodySectionKind, BodySection>();
@@ -91,8 +93,12 @@ function* headedLines(
 ): Generator<
   MarkdownLine & { heading: { level: number; title: string } | null }
 > {
-  for (const { line, kind } of markdownLines(body))
-    yield { line, kind, heading: kind === "heading" ? headingOf(line) : null };
+  for (const { line, kind, inItem } of markdownLines(body))
+    yield {
+      line,
+      kind,
+      heading: kind === "heading" && !inItem ? headingOf(line) : null,
+    };
 }
 
 const MARKDOWN_LINK =

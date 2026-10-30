@@ -334,19 +334,24 @@ test("text that starts with # but is no heading leaves the open items open", asy
   }
 });
 
-test("a heading inside a list item leaves the item open", async () => {
+test("a heading inside a list item leaves the item and its section open", async () => {
   const { root } = scratchRepo("spec-safety-");
-  for (const heading of [["", "    ### Notes", ""], ["  ### Notes"]]) {
+  const cases = ["###", "##", "#"].flatMap((run) => [
+    { run, notes: ["", `    ${run} Notes`, ""] },
+    { run, notes: [`  ${run} Notes`] },
+    { run, notes: [`  ${run} Notes`, ""] },
+  ]);
+  for (const { run, notes } of cases) {
     const body = [
       "## Spec",
       "- [ ] 1. Outer task",
-      ...heading,
+      ...notes,
       "    - [ ] 2. Nested task",
       "",
       "## Acceptance criteria",
       "- AC-1 Works",
       "",
-      "  ### Details",
+      `  ${run} Details`,
       "",
       "  - AC-2 Nested criterion",
     ].join("\n");
