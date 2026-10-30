@@ -256,6 +256,7 @@ legitimate step keeps hitting it, rather than removing it.
 | `DRIVE_PR_FINAL_CI_WITNESS_POLLS` | How long to wait for the required checks to report on the final commit, in 10-second polls (`0`: wait forever) | `180` (30 minutes) |
 | `DRIVE_PR_STALL_ROUNDS` | Consecutive rounds that change nothing before the drive stops with exit `14` (`0`: off) | `2` |
 | `DRIVE_PR_PASS_TIMEOUT` | One round's agent pass, in seconds; also `bun "<skill-dir>/scripts/drive.ts" --pass-timeout` (`0`: off) | `5400` (90 minutes) |
+| `DRIVE_PR_ARM_CONFIRM_SEC` | How long `arm-drive.ts` waits for a drive it started in a terminal tab to be listed | `45` |
 | `DRIVE_PR_QUOTA_MAX_SLEEP_SEC` | The longest usage-limit reset the drive sleeps through rather than stopping with exit `16` | `21600` (6 hours) |
 | `DRIVE_PR_PAUSE_MAX_SEC` | How long a mailbox `pause` may last before exit `19` | `1800` (30 minutes) |
 | `DRIVE_PR_PUSH_TIMEOUT` | One `git push`, pre-push hooks included, in seconds | `3600` |
@@ -310,8 +311,8 @@ sleep can last up to `DRIVE_PR_QUOTA_MAX_SLEEP_SEC` (6 hours by default)
 between passes, and a long `--max-rounds` adds 90 minutes a round, so such a
 drive is stopped at 8 hours all the same. Re-arm it after the checks above;
 it resumes where it stopped. A drive likely to run past the ceiling is better
-started outside the harness (a terminal or terminal-multiplexer pane of its
-own). Run the same `bun` command there, redirecting output to a file if
+started outside the harness: a terminal tab, which `do_item.arm_drive: auto`
+opens in Orca, or a terminal or terminal-multiplexer pane of its own. Run the same `bun` command there, redirecting output to a file if
 needed, and stop it with `bun "<skill-dir>/scripts/drives.ts" --stop <PR>`.
 The stop command checks the driver's identity and cancels its active pass
 before releasing locks.
@@ -322,7 +323,7 @@ Code needs version 2.1.285 or later for them to take effect.
 
 ## When to reach for it
 
-- **A PR exists and you want the review loop run to completion** → this skill. Normally you don't even start it by hand: a `/jig:do-item` run arms the drive when it opens the draft PR. Typing `/jig:drive-pr [PR]` in a session does the same thing: the agent starts the driver below in the background, reports its log path, and stops — it does not work a round itself.
+- **A PR exists and you want the review loop run to completion** → this skill. Normally you don't even start it by hand: a `/jig:do-item` run arms the drive when it opens the draft PR. Typing `/jig:drive-pr [PR]` in a session does the same thing: the agent starts the driver below (in a terminal tab of its own in Orca, in the background elsewhere; see [Arming from a session](#arming-from-a-session)), reports its log path, and stops — it does not work a round itself.
 - **You want exactly one round, interactively, with yourself in the loop** → `/jig:drive-pr --interactive [PR]` (one in-session round, then stop), or [`/jig:resolve-review-comments`](../resolve-review-comments/README.md) (the drive wraps it).
 - **CI is red and that's the only problem** → repair it directly, with [`/jig:fix-ci`](../fix-ci/SKILL.md). (A drive already in flight repairs red CI itself, up to `DRIVE_PR_CI_REPAIR_ROUNDS` times; repair by hand when there is no drive running, or when its budget is spent.)
 
@@ -332,7 +333,28 @@ Code needs version 2.1.285 or later for them to take effect.
 bun "<skill-dir>/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
 ```
 
-The `bun` prefix and the single line are deliberate: every TypeScript command explicitly names its runtime. On Windows, run it in PowerShell after installing Git for Windows. It is the same command `/jig:do-item` emits and spawns when it arms the drive for you, and the one `/jig:drive-pr` spawns from a session. The agent tells "a session asking for a drive" from "a pass the driver spawned" by `$DRIVE_PR_TARGET`, which only `drive.ts` sets — so a driver's own passes never arm another driver.
+The `bun` prefix and the single line are deliberate: every TypeScript command explicitly names its runtime. On Windows, run it in PowerShell after installing Git for Windows. It is the command `/jig:do-item` and `/jig:drive-pr` start when they arm the drive for you, with the pass model written in (`claude --model <model> -p …`). The agent tells "a session asking for a drive" from "a pass the driver spawned" by `$DRIVE_PR_TARGET`, which only `drive.ts` sets — so a driver's own passes never arm another driver.
+
+**The pass model.** Each round's agent runs on `sonnet`, Claude Code's alias for the latest Sonnet, unless `drive.pass_model` in the [configuration](../../CONFIGURATION.md#drive) names another model, an alias, or a routing tier (`execution`, `strategic`), which resolves through the same tier-to-model table as do-item's implementer (`routing.models`). `--pass-model <model>` overrides both for one run, and replaces a `--model` the pass command carries; without it, a `--model` in the pass command is kept. The driver log's `pass model:` line and `drives.ts` name the model. A pass command that is not Claude Code's chooses its own model.
+
+### Arming from a session
+
+`/jig:do-item` and `/jig:drive-pr` arm the drive through one script, run in the tree the drive drives:
+
+```bash
+bun --cwd "<tree>" "<skill-dir>/scripts/arm-drive.ts" <PR>
+```
+
+It builds the command above for that tree and prints it with what to do next, as JSON. `do_item.arm_drive` in the [configuration](../../CONFIGURATION.md#do_item) says how the drive starts:
+
+| Value | The drive starts |
+|-------|------------------|
+| `auto` (default) | In a terminal tab of the pull request's workspace, titled `drive #<PR>`, where the session can open one (an [Orca](https://www.onorca.dev) workspace); with the session's background execution elsewhere, and where Orca refuses the tab, saying why |
+| `tab` | In a terminal tab, or the arm reports why it could not open one |
+| `background` | With the session's background execution, as below |
+| `print` | Nowhere: the command is printed for a person to run |
+
+A tab outlives the session and shows the passes as they run, and the session that armed it ends without a drive running beside it. The script waits for `drives.ts` to list the new drive (`DRIVE_PR_ARM_CONFIRM_SEC`, 45 seconds by default), and opens no tab while a drive already holds the pull request. `--mode` overrides the setting for one arm, `--pass-model` the pass model, and `--max-rounds`, `--keep-draft` and `--handoff-at` pass through to `drive.ts`. A session that is not Claude Code's, or a human checkpoint the run has no clearance for, gets the command only.
 
 ### Which working tree drives it
 

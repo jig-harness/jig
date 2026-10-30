@@ -20,7 +20,11 @@
 
 import { hostname } from "node:os";
 import { isDigits } from "./cli.ts";
-import type { AccountIdentity, AccountVendor } from "./identity.ts";
+import {
+  type AccountIdentity,
+  type AccountVendor,
+  formatAccountIdentity,
+} from "./identity.ts";
 import { pidAlive } from "./proc.ts";
 
 export const CLAIM_PREFIX = "claim.";
@@ -30,7 +34,8 @@ export function claimName(nonce: string): string {
 }
 
 /** The diagnostics line — every field required, either a string or (for
- * `account`) a shape-checked nested object; none optional. */
+ * `account`) a shape-checked nested object, except `model`, which a claim
+ * written before the pass model was stamped lacks. */
 export interface ClaimDiag {
   /** PR number the owner is driving. */
   pr: string;
@@ -44,6 +49,9 @@ export interface ClaimDiag {
    * re-resolved on `drive.ts`'s heartbeat timer whenever no pass is
    * actively running; see `./identity.ts` for how and why. */
   account: AccountIdentity;
+  /** The model each pass runs on (`pass-model.ts`); `null` when the pass
+   * command chooses its own, absent from a claim that predates it. */
+  model?: string | null;
 }
 
 export interface ClaimRecord {
@@ -162,7 +170,28 @@ function parseDiag(rest: string): ClaimDiag | null {
   const account =
     "account" in o ? parseAccount(o.account) : PRE_STAMPING_ACCOUNT;
   if (account === null) return null;
-  return { pr, worktree, log, started, account };
+  if (!("model" in o)) return { pr, worktree, log, started, account };
+  const { model } = o;
+  if (model !== null && (typeof model !== "string" || model === ""))
+    return null;
+  return { pr, worktree, log, started, account, model };
+}
+
+/** The pass model as a listing shows it. */
+function formatPassModel(diag: ClaimDiag): string {
+  if (diag.model === undefined) return "unknown (claim predates the model)";
+  return diag.model ?? "chosen by the pass command";
+}
+
+/** A live drive's diagnostics as `drives.ts` lists them, one indented line each. */
+export function diagLines(diag: ClaimDiag): string[] {
+  return [
+    `    worktree: ${diag.worktree}`,
+    `    since:    ${diag.started}`,
+    `    log:      ${diag.log}`,
+    `    account:  ${formatAccountIdentity(diag.account)}`,
+    `    model:    ${formatPassModel(diag)}`,
+  ];
 }
 
 /**

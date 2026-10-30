@@ -312,6 +312,16 @@ bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- claude -p "/jig:dr
 Each round is a **fresh agent process**, so a long converge never depends on one
 session's context surviving. That is the preferred unattended mode.
 
+**The pass model.** A Claude Code pass (`claude …`) runs on the model the
+driver decides: `--pass-model <model>` for this run, else the pass command's
+own `--model`, else `drive.pass_model`, else `sonnet` (Claude Code's alias
+for the latest Sonnet), added after `claude`. A model id, an alias or a
+routing tier (`execution`, `strategic`, resolved through
+`routing.models.claude-code`). The driver log's `pass model:` line and the
+`drives.ts` row name it, and every re-arm or takeover command the driver
+prints carries it. Another agent tool's pass command chooses its own model,
+and `--pass-model` is refused for it (exit `2`).
+
 **The attach.** Once it holds the tree's driver lock and the PR's,
 `drive.ts` attaches the PR to the tree it runs in
 (`scripts/attach-pr.ts`, which you can also run alone:
@@ -382,9 +392,9 @@ in-session instead. Either way a second invocation against
 an already-driven PR refuses on the single-instance lock (exit `11`) — arming
 is idempotent in the only way that matters.
 
-**Where a running drive is visible.** A drive armed in the
-background outlives the session that spawned it, so its console is not where
-you look:
+**Where a running drive is visible.** A drive armed in a terminal tab
+shows its passes there. One armed in the background outlives the session
+that spawned it, so its console is not where you look:
 
 - **Driver log** — every line the driver prints is also appended to
   `<state dir>/drive-pr-<PR>.log`, next to the per-PR state, each line
@@ -402,7 +412,7 @@ you look:
 - **Fleet listing** — `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts"` lists
   every drive lock in this clone's state universe with repository, owner, liveness (by
   exactly the rule recovery uses — `lib/claim.ts`), worktree, start time,
-  log path and billing account (the billing identity the pass is
+  log path, pass model and billing account (the billing identity the pass is
   billing against, a subscription account or an API/Console key, resolved at
   arm time from the environment `drive.ts`
   itself held then, and re-resolved on the heartbeat timer whenever no pass
@@ -739,7 +749,7 @@ skill runs — before § 0 and before the gate, because the gate's
 | Signal | Mode | What you do |
 |---|---|---|
 | `$DRIVE_PR_TARGET` set | **Driver pass** | You are one round of a running drive. Read § Driver pass below first — it carries the never-background prohibition — then work one round, § 0 onward. Nothing else in this section applies. |
-| `$DRIVE_PR_TARGET` unset, no `--interactive` | **Arm** (the default) | Start the unattended driver in the background, report, and stop. Do **not** work a round yourself. |
+| `$DRIVE_PR_TARGET` unset, no `--interactive` | **Arm** (the default) | Start the unattended driver (in a terminal tab of its own or in the background, as `do_item.arm_drive` says), report, and stop. Do **not** work a round yourself. |
 | `$DRIVE_PR_TARGET` unset, `--interactive` | **One in-session round** | Work exactly one round, § 0 onward, then stop — for a human who wants to steer each round. |
 
 `$DRIVE_PR_TARGET` is the discriminator because only `drive.ts` sets it (see
@@ -811,17 +821,42 @@ could forge or forget.
    end-to-end, print the
    command below and stop — review rounds pre-empt a judgment the issue exists
    to collect (the same rule `/jig:do-item`'s § Arm the drive applies).
-4. **Spawn the driver in the background** with the harness's background
-   execution (Bash `run_in_background`), never blocking the session on it, in
-   the portable one-line form, `<tree>` and `<PR>` being what step 2 printed:
+4. **Arm the driver** with the arm script, run in `<tree>` with `<PR>` as
+   step 2 printed and without the variables its `env.unset` names:
 
    **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
    ```bash
-   bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
+   bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/scripts/arm-drive.ts" <PR>
    ```
 
-   **exact** — Pass the Bash call's `timeout` of `28800000` (8 hours) with
+   It reads `do_item.arm_drive` (default `auto`: a terminal tab of the
+   PR's workspace where this session can open one, in Orca; the session's
+   background execution elsewhere) and `drive.pass_model` (default
+   `sonnet`) in that tree, and prints one JSON object: `command`, the
+   driver's start command in the portable one-line form,
+   `bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model <model> -p "/jig:drive-pr --bots-only <PR>"`;
+   `model`; `handles`; and `status`, which says what to do:
+   - `armed` → the driver runs in a terminal tab of its own (`tab.title`)
+     in the PR's workspace, and `drives.ts` lists it (`drive`): go to step
+     6. Nothing runs in this session's background, and step 5 has nothing
+     to check.
+   - `already-live` → a drive already holds the PR (`drive`, with its
+     `doctor` verdict) and no tab was opened: report it as step 5 reports a
+     per-PR lock refusal, and stop.
+   - `unconfirmed` → the tab opened, but `drives.ts` did not list the drive
+     in time: read `tail`, what the tab printed, once, as step 5 reads a
+     spawned driver's output. Open no second tab and spawn nothing.
+   - `spawn` → spawn `command` with the harness's background execution
+     (Bash `run_in_background`), never blocking the session on it. When
+     `fallback` is set, Orca refused the tab: say so.
+   - `print` → print `command` with `reason`, and stop.
+
+   Exit `1` → the setting cannot be honoured here (`tab` outside Orca, or a
+   tab Orca refused) or a setting cannot be read: report `reason` with
+   `command`, and stop.
+
+   **exact** — For `spawn`, pass the Bash call's `timeout` of `28800000` (8 hours) with
    `run_in_background`; a drive runs up to `--max-rounds` rounds of up to 90
    minutes each, so it outlives the harness's default. Eight hours does not
    cover every drive: a quota sleep (up to `DRIVE_PR_QUOTA_MAX_SLEEP_SEC`,
@@ -844,21 +879,27 @@ could forge or forget.
 
    A drive likely to run past the ceiling (8 hours here, or 2 hours on a
    machine without `BASH_MAX_TIMEOUT_MS`) must start outside the harness
-   instead: a terminal or terminal-multiplexer pane of its own. Run the same
-   `bun` command there and redirect output to a file if needed. Stop it with
+   instead: a terminal tab is outside it, so in Orca `auto` already does
+   this; elsewhere, a terminal or terminal-multiplexer pane of its own. Run
+   `command` there (`--mode print` prints it) and redirect output to a file
+   if needed. Stop it with
    `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop <PR>`, which verifies the
    driver's identity and cancels its pass before releasing locks.
 
    `--bots-only` is always on: an unattended sweep never acts on human threads
    (§ 2). Forward the invocation's own drive flags — `--keep-draft`,
-   `--max-rounds N`, `--handoff-at …` — to `drive.ts` **before** the `--`, and
-   never to the pass argv. Without `--max-rounds` the budget is the
+   `--max-rounds N`, `--handoff-at …`, `--pass-model M` — to `arm-drive.ts`,
+   which puts them in `command` before `drive.ts`'s `--`, never in the pass
+   prompt. Without `--max-rounds` the budget is the
    repository's `drive.max_rounds` (default 10); pass the flag only to override
    it. `--max-rounds` counts from the durable state, so
    re-arming a PR that has already run rounds resumes it ("at round 4 of 10")
-   rather than restarting the budget.
+   rather than restarting the budget. `--pass-model` names the model each
+   pass runs on for this drive (a model id, a Claude Code alias or a routing
+   tier) over `drive.pass_model`; the driver log and `drives.ts` name it.
 5. **Check the spawn once, a few seconds later** — not immediately and not in a
-   poll loop, so lock acquisition has time to resolve:
+   poll loop, so lock acquisition has time to resolve (for an `unconfirmed`
+   tab, read its `tail` the same way; the script already waited):
    - exit `11` (single-instance lock), or a `SESSION_LEASE_HELD` diagnostic on
      the driver's output, naming a **per-PR** or **worktree**
      lock → a drive is already live: report it with the holder's details and
@@ -888,20 +929,23 @@ could forge or forget.
    - exit `0` inside the window → the drive already reached a terminal state;
      report its own reason.
    - still running → armed. Do not poll.
-6. **Report and stop.** State: armed, the PR, the tree it drives from, the verified driver-log path
-   (`drive.ts: driver log → …` in its output, or `drive.ts: driver log
+6. **Report and stop.** State: armed, the PR, the tree it drives from, where
+   it runs (the tab's title, or the background task's handle), the pass
+   model (`model`), the verified driver-log path
+   (`drive.log` when the script found the drive listed, else
+   `drive.ts: driver log → …` in its output, or `drive.ts: driver log
    unavailable: <reason>` when it keeps none; confirm it is a regular file
    and can be opened for append with `bun "${CLAUDE_SKILL_DIR}/scripts/portable.ts" check-log <path>` before
    quoting it — `drive.ts` prints the path before taking its locks and its log
    writes are best effort — never a `<state dir>` template), and the handles
-   `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts"` (list) and
-   `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop <PR>` (stop). Then end the turn. After handing over, do
+   `handles.list` (list) and `handles.stop` (stop). Then end the turn. After handing over, do
    not touch the drive's state, threads, or worktree: the driver owns them.
 
 Today the one documented pass command is Claude Code's `claude -p`. In
-another agent tool (Codex, for one), do not arm: print the command and say
-why, as `/jig:do-item` does, and do not substitute a guessed pass command. A
-person can put their own tool's command after the `--` and run it.
+another agent tool (Codex, for one), do not arm: `arm-drive.ts` answers
+`print` there, so print the command and say why, as `/jig:do-item` does,
+and do not substitute a guessed pass command. A person can put their own
+tool's command after the `--` and run it.
 
 ### Driver pass: you are headless and one-shot
 

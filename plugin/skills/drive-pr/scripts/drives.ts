@@ -115,6 +115,7 @@ import {
   CLAIM_PREFIX,
   type ClaimDiag,
   claimLive,
+  diagLines,
   samePidNamespace,
   parseClaimText,
 } from "./lib/claim.ts";
@@ -129,7 +130,6 @@ import {
   stallThresholdMs,
 } from "./lib/doctor.ts";
 import { attachedTree } from "./lib/driven-branch.ts";
-import { formatAccountIdentity } from "./lib/identity.ts";
 import {
   findPassChild,
   type PassChildAnswer,
@@ -799,14 +799,8 @@ function printHuman(
       `● ${label} — LIVE, driver pid ${pid} (${group[0]?.host || "this host"}), claim refreshed ${age ?? "?"}s ago`,
     );
     console.log(`    repository: ${repository}`);
-    if (diag !== null) {
-      console.log(`    worktree: ${diag.worktree}`);
-      console.log(`    since:    ${diag.started}`);
-      console.log(`    log:      ${diag.log}`);
-      console.log(`    account:  ${formatAccountIdentity(diag.account)}`);
-    } else {
-      console.log("    (claim predates diagnostics — pid/host only)");
-    }
+    if (diag !== null) for (const line of diagLines(diag)) console.log(line);
+    else console.log("    (claim predates diagnostics — pid/host only)");
     console.log(
       `    locks:    ${group.map((r) => (r.kind === "pr" ? `PR #${r.key}` : "worktree")).join(" + ")}`,
     );
