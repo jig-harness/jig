@@ -92,8 +92,10 @@ guards keep one stage from starting twice:
   own login or by an owner, member or collaborator; a marker from anyone
   else is ignored and reported, and an unreadable marker leaves the pull
   request unplaced (reported, nothing started). A trusted marker is a
-  claim, not a completion: the tick classifies a marked pull request by the
-  launch record it names and by the follow-up's outcome record. Both must
+  claim, not a completion: the tick classifies a pull request its own
+  marker claims by the launch record that marker names and by the
+  follow-up's outcome record (a manual run's marker names none; see
+  below). Both must
   name that pull request and the follow-up action; a marker naming a
   record for anything else (one copied from another pull request) leaves
   the pull request unplaced (reported, nothing started). When a
@@ -108,7 +110,7 @@ guards keep one stage from starting twice:
   current attempt's outcome replaces it when its launch record ends. An
   outcome of done means the follow-up is done; a launch record
   still running holds it; a failed outcome, a launch record that died, or
-  a marker whose launch record and outcome are both absent on this
+  a tick's marker whose launch record and outcome are both absent on this
   machine is a failed follow-up, notified once and never relaunched by the
   tick. A person settles it by deleting the marker, which makes the
   follow-up wanted again, then running the follow-up or leaving it to the
@@ -120,7 +122,15 @@ guards keep one stage from starting twice:
   its own. The follow-up stage (build step 5) therefore depends on the
   repository's follow-up command claiming the same way: it posts a marker
   of its own before it acts and refuses a pull request that already carries
-  a trusted marker from another run. Whoever posts a marker, the tick or a
+  a trusted marker from another run. A manual run has no launch record on
+  the dispatching machine, and may run on another host, so its marker
+  names none: it says the run is manual (`run: manual`). The tick reads
+  nothing on this machine for it: a trusted manual marker holds the
+  follow-up (never started by the tick, never notified as failed) and is
+  reported on every tick with its author and age, since the person who
+  ran it sees its outcome and the tick has no record that could. A manual
+  follow-up that failed is settled as the tick's are, by deleting the
+  marker. Whoever posts a marker, the tick or a
   manual run, reads the markers back after posting, and of two trusted
   markers on one pull request the earlier comment wins, as the drive's
   takeover claims do: the later poster deletes its marker and stands down
@@ -573,7 +583,7 @@ One pull request each, in this order; each is usable on its own.
    assigning an item is the start button.
 5. **Follow-ups and notifications.** The follow-up marker, the follow-up's
    outcome record, and a follow-up session per merged pull request with the repository's follow-up
-   command, which claims the pull request with the same marker when a
+   command, which claims the pull request with a manual marker when a
    person runs it by hand (Jig's `/followup` first); the notifications above
    through `notify`. The park's
    notification carries item 32's framed decision once that is built, and
