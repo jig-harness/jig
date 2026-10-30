@@ -7,7 +7,10 @@
 # `.config/jig.yaml` (`issue_tracker.states`) and by its defaults.
 version: 1
 
-# types — CLOSED. What kind of work this is. Exactly one per issue.
+# types — CLOSED. What kind of work this is. Exactly one per issue. The
+# label is the source the skills read; set GitHub's own issue type to match
+# as well (bug: Bug, feature: Feature, the rest: Task) until the tracker
+# scripts write it themselves (https://github.com/jig-harness/jig/issues/345).
 types:
   - id: bug
     notes: a defect against documented or expected behaviour
