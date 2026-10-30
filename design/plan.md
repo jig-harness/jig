@@ -37,9 +37,13 @@ implementation is Orca
 ([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
 within a cap per account, round-robin among the accounts without a usage
 wall, binding a headless pass to its account through the Orca profile's
-configuration directory. It never merges, answers a park, stops a driver
-making progress or passes a flag reserved for a person, and writes a
-receipt per tick. Machine values in `~/.jig/dispatch.yaml`, a repository's
+configuration directory. Each launch leaves a launch record that brings the
+stage's answer back to the next tick, and a merged pull request's
+follow-up is guarded by a marker comment on it. A stop only a person can
+settle (a park, a drive stopped on a failure, a stalled pickup) is notified
+once. It never merges, answers a park, re-arms a drive a person stopped,
+takes over a driver another machine started or passes a flag reserved for
+a person, and writes a receipt per tick. Machine values in `~/.jig/dispatch.yaml`, a repository's
 in a `dispatch` section of `.config/jig.yaml`. Built in the design's order:
 the report, then re-arms within account caps with the timer, then pickups,
 then follow-ups and notifications; the re-arm step waits on the drive
@@ -51,7 +55,8 @@ identity gets one workspace and one `do-item` session within one interval,
 a drive stopped on one account's usage limit is re-armed on another account
 by the next tick, a merged pull request gets one follow-up session, a park
 reaches a person's phone and its answer on the pull request re-arms the
-drive, and the receipts of all of it are in the morning report.
+drive, and every launch, refusal and notification is in the tick's
+receipts.
 
 ### 3. The kickoff family
 

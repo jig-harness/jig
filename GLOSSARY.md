@@ -1681,7 +1681,8 @@ make, use the entry's term instead.
 - **Tick** — one run of the *dispatcher*: read the tracker, the pull
   requests' drive ledgers and the running sessions, work out which stages
   are wanted and not running, report them, and start them only when told
-  to. It keeps no state of its own beyond a receipt, so stopping it loses
+  to. What is wanted comes from those records alone; the dispatcher keeps
+  only what it started and a receipt per tick, so stopping it loses
   nothing and the next tick finds the same facts.
 - **Session runtime** — the interface the *dispatcher* starts agent
   sessions through: list the sessions in a repository's workspaces, open a
@@ -1691,8 +1692,9 @@ make, use the entry's term instead.
   *workspace runtime* becomes another by implementing the same methods.
 - **Factory identity** — the tracker user a repository assigns an item to
   when the *dispatcher* should pick it up. An item assigned to it and in
-  one of the repository's dispatch states is started; the pickup's move to
-  the in-progress state is the claim, so no item is picked up twice.
+  one of the repository's dispatch states is started, when a person with
+  write access made the assignment; the pickup's move to the in-progress
+  state is the claim, so no item is picked up twice.
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of
