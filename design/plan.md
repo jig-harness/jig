@@ -225,7 +225,7 @@ is left:
 Done when the reference set's recorded results are checked by a test, and
 an audit sheet cites code-stats figures as evidence.
 
-### 21. `changelog` skill: several artifacts, and the whole file checked
+### 21. `changelog` skill: several artifacts
 
 The [`changelog` skill](../plugin/skills/changelog/README.md) is the
 runnable form of [M16](../modules/M16-releases-versions/README.md) for a
