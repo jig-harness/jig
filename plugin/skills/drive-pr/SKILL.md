@@ -3029,18 +3029,6 @@ On verified convergence only:
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file followups.md -- bun "${CLAUDE_SKILL_DIR}/scripts/announce-merge-ready.ts" [PR]
 ```
 
-**judgment** — After the announcement posts, name the workspace for the stage
-when the repository sets `workspace_name.template` (it does nothing without
-it, outside Orca, and never fails the step). The item is the one tracker issue
-the PR serves ([Arm](#arm) step 3 reads it); write its title alone to
-`.context/workspace-title.md` with the file editor and pass the file, never
-the title inside the command, and quote the key. For a PR that serves no item,
-or more than one, leave out `--id` and `--title-file`:
-
-```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" ready --id "<item key>" --title-file .context/workspace-title.md --pr <PR>
-```
-
 It re-checks `drive-status.ts` itself and refuses unless the state is
 `CONVERGED` **and** the non-reviewer CI verdict is exactly `green` **and** this
 worktree is clean — an announcement is the artefact a human is most likely to
@@ -3090,6 +3078,18 @@ trains readers to skip the block where the non-empty case needs their eyes.
 
 The wording is "safe to merge from the driver's perspective". Marking a PR ready
 and merging it stay human steps.
+
+**judgment** — After the announcement posts, name the workspace for the stage
+when the repository sets `workspace_name.template` (it does nothing without
+it, outside Orca, and never fails the step). The item is the one tracker issue
+the PR serves ([Arm](#arm) step 3 reads it); write its title alone to
+`.context/workspace-title.md` with the file editor and pass the file, never
+the title inside the command, and quote the key. For a PR that serves no item,
+or more than one, leave out `--id` and `--title-file`:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" ready --id "<item key>" --title-file .context/workspace-title.md --pr <PR>
+```
 
 ## Deadlines
 

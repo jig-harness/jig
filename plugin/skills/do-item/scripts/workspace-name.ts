@@ -57,6 +57,9 @@ export const DEFAULT_STATUSES: Record<Stage, string> = {
 
 const VARIABLES = ["id", "status", "title", "pr"] as const;
 
+/** Braces only in complete, unnested pairs; which names they hold is checked on rendering. */
+const TEMPLATE_GRAMMAR = /^(?:[^{}]|\{[^{}]*\})*$/;
+
 export interface NameRequest {
   stage: Stage;
   id: string;
@@ -138,7 +141,13 @@ export function nameConfig(config: Record<string, unknown>): NameConfig {
     return { template: null, statuses: { ...DEFAULT_STATUSES } };
   if (typeof section !== "object" || Array.isArray(section))
     fail(2, "workspace_name must be a mapping");
-  const { template, statuses } = section as Record<string, unknown>;
+  const { template, statuses, ...unknown } = section as Record<string, unknown>;
+  const [unknownKey] = Object.keys(unknown);
+  if (unknownKey !== undefined)
+    fail(
+      2,
+      `workspace_name: unknown key "${unknownKey}" (known: template, statuses)`,
+    );
   return {
     template: parseTemplate(template),
     statuses: parseStatuses(statuses),
@@ -149,6 +158,11 @@ function parseTemplate(template: unknown): string | null {
   if (template === undefined || template === null) return null;
   if (typeof template !== "string" || template.trim() === "")
     fail(2, "workspace_name.template must be a non-empty string");
+  if (!TEMPLATE_GRAMMAR.test(template))
+    fail(
+      2,
+      `workspace_name.template: unbalanced or nested braces; write each variable as one of ${VARIABLES.map((v) => `{${v}}`).join(", ")}`,
+    );
   return template;
 }
 

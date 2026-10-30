@@ -91,6 +91,22 @@ describe("nameConfig", () => {
       nameConfig({ workspace_name: { statuses: { merged: "M" } } }),
     ).toThrow(ExitError);
   });
+
+  test("a key the section does not declare is refused", () => {
+    expect(() => nameConfig({ workspace_name: { templtae: "{id}" } })).toThrow(
+      ExitError,
+    );
+  });
+
+  test("a template with unbalanced or nested braces is refused", () => {
+    for (const template of ["{id", "id}", "{{id}}", "{id}}"])
+      expect(() => nameConfig({ workspace_name: { template } })).toThrow(
+        ExitError,
+      );
+    expect(
+      nameConfig({ workspace_name: { template: "{id} {pr}" } }).template,
+    ).toBe("{id} {pr}");
+  });
 });
 
 describe("parseArgs", () => {
