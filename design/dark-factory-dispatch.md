@@ -135,7 +135,17 @@ guards keep one stage from starting twice:
   markers on one pull request the earlier comment wins, as the drive's
   takeover claims do: the later poster deletes its marker and stands down
   (the tick ends its launch record without starting a session; a manual run
-  stops before it acts). A read-back that fails starts nothing. The marker
+  stops before it acts). A read-back that fails starts nothing. The forge
+  offers no conditional create for a comment, so the read-back is not
+  atomic: a read that lags can omit a marker posted a moment earlier, and
+  two runs can each read themselves the winner. The follow-up command
+  therefore reads the markers again before each act that writes outside
+  the pull request (an issue closed, a tag pushed) and stops when an
+  earlier trusted marker than its own has appeared, as a drive stands down
+  at its next round boundary on a claim a lagging read hid. What remains is
+  a read that lags past every one of those checks; the tick reports two
+  trusted markers on one pull request whenever it finds them, so a double
+  run is seen and a person settles it. The marker
   settles who starts the follow-up, but the outcome record stays on the
   machine that launched it, and another machine cannot tell its done from
   its failed; so one machine dispatches a repository: at most one machine
