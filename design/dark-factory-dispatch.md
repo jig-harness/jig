@@ -93,7 +93,10 @@ guards keep one stage from starting twice:
   else is ignored and reported, and an unreadable marker leaves the pull
   request unplaced (reported, nothing started). A trusted marker is a
   claim, not a completion: the tick classifies a marked pull request by the
-  launch record it names and by the follow-up's outcome record. When a
+  launch record it names and by the follow-up's outcome record. Both must
+  name that pull request and the follow-up action; a marker naming a
+  record for anything else (one copied from another pull request) leaves
+  the pull request unplaced (reported, nothing started). When a
   follow-up's launch record ends, the tick writes a compact outcome record
   for that pull request (done or failed, and the launch record's id), which
   the receipts' retention never removes (see Receipts), so a launch record
@@ -125,10 +128,15 @@ adapters answer it natively. It is a new read rather than a change to
 `openIssues`, which keeps refusing an empty label list. The trigger needs no
 label in any repository's taxonomy.
 
-Only an assignment a person with write access made is acted on: the tick
-reads who assigned the item from the tracker's history and requires a
-member of the team (Linear) or an owner, member or collaborator of the
-repository (GitHub), as the drive requires of a ledger or an answer. The
+Only an assignment a person with write access made starts a pickup: for an
+item in a dispatch state, the tick reads who made its current assignment
+from the tracker's history and requires a member of the team (Linear) or an
+owner, member or collaborator of the repository (GitHub), as the drive
+requires of a ledger or an answer. The check gates pickups only. A claimed
+item's current assignment is the claim's own, made by the factory
+identity, so the stalled and double-claim reports below read claimed items
+without it; they start nothing, so an unauthorized assignment gains
+nothing from them. The
 item's text is untrusted data: the tick passes the session the item's key
 and nothing else, and `do-item` reads the item as it reads any issue.
 
@@ -264,17 +272,19 @@ The tick reaches the runtime only through these methods:
 
 | Method | What it does |
 | --- | --- |
-| `sessions(repo)` | the workspaces and their agents, joined to items and pull requests, with each agent's state |
+| `sessions(repo)` | the workspaces and their agents, joined to items and pull requests, with each agent's state and each workspace's comment and unread mark |
 | `activeAccount()` | the account the host's interactive sessions run on, or an unknown when it cannot be read |
 | `openWorkspace(...)` | a workspace for an item (a new branch) or a pull request (its head branch), reused when one exists |
 | `launch(workspace, stage, account)` | a session in the workspace that runs the stage, billed to the account |
-| `notify(target, message)` | a message that reaches a person |
+| `notify(target, message)` | a message that reaches a person; its receipt carries the target's comment as written |
 
 Each returns the runtime's receipt. A launch whose answer is lost is
 retried only through the runtime's own retry for that launch, never as a
 fresh one. Orca is the first implementation:
 
-- `sessions` from `orca worktree ps --json`;
+- `sessions` from `orca worktree ps --json`; that it carries a workspace's
+  comment and unread mark is checked when the notifications are built, and
+  until it does, notifications are reported in the receipts and not sent;
 - `activeAccount` from Orca's account roster (`orca account list`), the
   host's active account matched to an account the machine file lists by
   its configuration directory; that the roster's output names the active
@@ -341,7 +351,12 @@ An interactive session (a pickup, a follow-up) is admitted only on the
 host's active account, read through the runtime interface's
 `activeAccount` before the launch, since that is the account it runs on
 (below); when that account is full, walled, not one the machine file
-lists, or cannot be read, the session waits. With no account free, the
+lists, or cannot be read, the session waits. The launch cannot name that
+account, so the tick reads `activeAccount` again as soon as the launch
+returns: when the answer differs or cannot be read, the account may have
+changed under the launch, and its launch record names no account. Such a
+record is reported and holds a slot on the account admitted and on the one
+read after, until it ends. With no account free, the
 action waits for a later tick and the report names the full caps.
 
 **Walls.** The dispatcher keeps its own record of each account's
@@ -408,8 +423,14 @@ A workspace holds one comment, so a message never replaces one a person has
 not read. The tick joins every cause it notifies to one target in a tick
 into one message, and when the target is still marked unread from an
 earlier notification it appends the new causes to that comment rather than
-overwriting it. A cause counts as sent, and is suppressed from then on,
-only once the runtime's receipt shows the comment carrying its text.
+overwriting it. Each cause's text carries its key (the facts its
+suppression record is keyed by). A cause counts as sent, and its
+suppression record is written, only once the runtime's receipt shows the
+comment carrying its key, so a cause never delivered is never suppressed.
+Before it notifies, the tick reads the target's comment, and a cause whose
+key is already there is recorded as sent without being sent again, so a
+tick that stopped between delivering and recording does not send a second
+copy.
 
 The answer to a park stays where the drive reads it, a
 comment on the pull request, so the next tick re-arms the drive with
