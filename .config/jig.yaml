@@ -16,6 +16,7 @@ gc:
   worktree_roots:
     - ../../orca/workspaces/jig
     - ../../worktrees/jig # Herdr-era worktrees, until none remain
+    - .claude/worktrees # Claude Code's isolated subagent worktrees, inside the clone
 gates:
   command: bun run gates
 review:
