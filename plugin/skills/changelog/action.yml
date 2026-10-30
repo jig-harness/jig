@@ -6,6 +6,8 @@
 #
 #   check    the branch check of a pull request (scripts/check.ts); needs the
 #            whole history (actions/checkout with fetch-depth: 0)
+#   lint     the whole changelog against its format's rules (scripts/lint.ts);
+#            reads the tags too, for release coverage
 #   release  the release step (scripts/release.ts) on the integration branch,
 #            `after_version` included, then commits what it wrote and writes
 #            that commit to a git bundle for a later job to push. Use it only
@@ -23,14 +25,14 @@
 # temporary folder holding an empty bunfig.toml and an empty tsconfig.json,
 # with --config naming that bunfig.toml and .env files off, and is given the
 # checkout by its absolute path (--root). Git runs on the checkout as data.
-# So `check` and `tag` run only this action's code, and a tag job that holds
+# So `check`, `lint` and `tag` run only this action's code, and a tag job that holds
 # a token with Actions write runs nothing the repository wrote.
 name: jig changelog
-description: Change notes in CI with Jig's changelog skill — the branch check, the release step and the tag plan.
+description: Change notes in CI with Jig's changelog skill — the branch check, the whole-changelog check, the release step and the tag plan.
 
 inputs:
   command:
-    description: "The command to run: check, release or tag."
+    description: "The command to run: check, lint, release or tag."
     required: true
   root:
     description: The repository's checkout, relative to the workspace.
@@ -106,9 +108,9 @@ runs:
         RERUN: ${{ inputs.rerun }}
       run: |
         case "$COMMAND" in
-          check | release | tag) ;;
+          check | lint | release | tag) ;;
           *)
-            echo "::error::jig changelog: command must be check, release or tag, not '$COMMAND'"
+            echo "::error::jig changelog: command must be check, lint, release or tag, not '$COMMAND'"
             exit 2
             ;;
         esac
@@ -147,6 +149,16 @@ runs:
         cd "$RUNNER_TEMP/jig-changelog-bun" || exit 2
         bun --no-env-file --config=./bunfig.toml \
           "$GITHUB_ACTION_PATH/scripts/check.ts" "${args[@]}"
+    - name: Check the whole changelog against its format
+      if: inputs.command == 'lint'
+      shell: bash
+      working-directory: ${{ inputs.root }}
+      run: |
+        set -euo pipefail
+        args=(--root "$PWD")
+        cd "$RUNNER_TEMP/jig-changelog-bun" || exit 2
+        bun --no-env-file --config=./bunfig.toml \
+          "$GITHUB_ACTION_PATH/scripts/lint.ts" "${args[@]}"
     - name: Write and commit the change notes
       id: release
       if: inputs.command == 'release'
