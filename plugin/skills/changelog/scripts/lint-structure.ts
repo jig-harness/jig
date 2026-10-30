@@ -116,15 +116,15 @@ export function headingVersion(inline: Inline[]): HeadingVersion | null {
       ref: bracket[2]?.trim() ? bracket[2] : bracket[1],
       rest: text.slice(bracket[0].length),
     };
-  const bare = /^([^\s[\]]+)([\s\S]*)$/.exec(text);
-  return bare?.[1] === undefined
+  const bare = /^[^\s[\]]+/.exec(text)?.[0];
+  return bare === undefined
     ? null
     : {
-        version: bare[1],
+        version: bare,
         link: "plain",
         href: null,
         ref: null,
-        rest: bare[2] ?? "",
+        rest: text.slice(bare.length),
       };
 }
 

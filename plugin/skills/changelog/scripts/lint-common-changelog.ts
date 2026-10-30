@@ -274,13 +274,17 @@ function referenced(item: Block[]): boolean {
   let broken = false;
   for (const paragraph of paragraphsOf(item)) {
     const syms = symbols(paragraph);
-    for (let i = 0; i < syms.length; i++) {
+    let i = 0;
+    while (i < syms.length) {
       const ref = syms[i] === "(" ? reference(syms, i) : null;
       if (ref) {
         after ||= text;
         broken ||= !ref.linked;
-        i = ref.end - 1;
-      } else if (!space(syms[i])) text = true;
+        i = ref.end;
+        continue;
+      }
+      if (!space(syms[i])) text = true;
+      i++;
     }
   }
   return after && !broken;
