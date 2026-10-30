@@ -43,7 +43,7 @@ import {
   traceGhRunner,
 } from "../../../../shared/trace.ts";
 import { readdirSync, readFileSync } from "node:fs";
-import { hostname, tmpdir } from "node:os";
+import { hostname } from "node:os";
 import { resolve } from "node:path";
 import {
   ghCallTimeoutSeconds,
@@ -1001,14 +1001,11 @@ export function git(args: string[], opts: RunOptions = {}): Promise<RunResult> {
  * index/worktree while `rebase-merge`/`rebase-apply` remain — both checked here
  * too.
  *
- * The git-dir resolution runs through `git()` itself (already bounded, already
- * cross-platform — the same `git rev-parse` every other call in this file
- * uses). The marker CHECK is where a synchronous `existsSync()` in THIS process
- * would have no deadline or cancellation of its own — on a stalled filesystem
- * it would hang indefinitely regardless of `GIT_CALL_TIMEOUT`, and the caller's
- * documented fail-closed refusal would never be reached. So the check runs as
- * an inline probe (`runInlineProbe`) bounded by `run()`'s deadline, with no
- * shell, which Windows may not have.
+ * The git-dir resolution runs through the bounded `git()`. A synchronous
+ * `existsSync()` in THIS process would have no deadline: on a stalled
+ * filesystem it would hang past `GIT_CALL_TIMEOUT` and the caller's fail-closed
+ * refusal would never be reached. So the marker check runs as an inline probe
+ * (`runInlineProbe`) bounded by `run()`'s deadline, with no shell.
  *
  * `ok: false` means either probe could not complete (an unresolvable
  * git-dir, a timeout, an unreadable filesystem) — fail-closed, the same
@@ -1051,21 +1048,25 @@ for (const m of markers) {
 process.exit(0);
 `;
 
+const PROBE_FLAGS = [
+  "--no-env-file",
+  `--config=${resolve(import.meta.dir, "probe-bunfig.toml")}`,
+];
+
 /**
- * Run `script` as an inline `-e` probe of this runtime, from the system
- * temporary directory and without `.env` files: Bun reads `bunfig.toml` (a
- * `preload` included) from its working directory, so a measured repository's
- * runtime configuration could fail the probe or write into its output. Paths
- * in `args` and `stdin` must be absolute.
+ * Run `script` as an inline `-e` probe of this runtime under the plugin's own
+ * empty configuration, without `.env` files: Bun otherwise reads `bunfig.toml`
+ * (a `preload` included) from its working directory, and no directory outside
+ * the plugin is known to hold none. Paths in `args` and `stdin` are absolute.
  */
 export function runInlineProbe(
   script: string,
   args: string[],
   opts: Omit<RunOptions, "cwd">,
 ): Promise<RunResult> {
-  return run([process.execPath, "--no-env-file", "-e", script, ...args], {
+  return run([process.execPath, ...PROBE_FLAGS, "-e", script, ...args], {
     ...opts,
-    cwd: tmpdir(),
+    cwd: import.meta.dir,
   });
 }
 

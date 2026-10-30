@@ -291,6 +291,7 @@ describe("a head that was pushed, in a real tree", () => {
     inherited: string,
     before: string | null = null,
     from = dir,
+    env: Record<string, string> = {},
   ): Record<string, unknown> =>
     JSON.parse(
       inTree(
@@ -305,7 +306,7 @@ describe("a head that was pushed, in a real tree", () => {
          };
          const code = await measureUnpushed(context);
          console.log(JSON.stringify({ code, ...context }));`,
-        { INHERITED: inherited, BEFORE: JSON.stringify(before) },
+        { INHERITED: inherited, BEFORE: JSON.stringify(before), ...env },
         from,
       ),
     ) as Record<string, unknown>;
@@ -467,6 +468,10 @@ describe("a head that was pushed, in a real tree", () => {
       const handed = measure(dir, "", "", outside);
       expect(handed.uncommittedMeasured).not.toBeNull();
       expect(handed.inheritedHead).toBe(h);
+      // The temporary directory is no trusted place either.
+      const viaTemp = measure(dir, "", "", outside, { TMPDIR: dir });
+      expect(viaTemp.uncommittedMeasured).not.toBeNull();
+      expect(viaTemp.inheritedHead).toBe(h);
     } finally {
       rmSync(dir, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
