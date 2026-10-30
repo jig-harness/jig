@@ -144,53 +144,96 @@ export function isUnreleased(inline: Inline[], bare: boolean): boolean {
   );
 }
 
-/** Whether `blocks` holds the block, or the list item, `path` names. */
-function holds(blocks: Block[], [index, item]: number[]): boolean {
-  const block = blocks[index as number];
-  if (!block || item === undefined) return block !== undefined;
-  return block.k === "list" && block.items.length > item;
+/** What kind of block `b` is, as far as later lines cannot change it. */
+const shape = (b: Block | undefined): string =>
+  b === undefined
+    ? ""
+    : b.k === "heading"
+      ? `h${b.level}`
+      : b.k === "list"
+        ? `list ${b.ordered}`
+        : b.k === "other"
+          ? b.kind
+          : b.k;
+
+/**
+ * Whether a prefix of the file, rendered as `blocks`, holds the block (or
+ * list item) `path` names in the whole file's `target`: the blocks before it
+ * are those of the whole file, kind for kind, and it is there, of its kind.
+ * Kinds, not contents: a definition later in the file may turn bracketed
+ * text into a link. Matching the blocks before it keeps a block that shows
+ * only in a prefix (an unfinished definition reads as a paragraph) from
+ * standing in for it.
+ */
+function holds(blocks: Block[], target: Block[], path: number[]): boolean {
+  const [index, item] = path as [number, number?];
+  const block = blocks[index];
+  if (!block || shape(block) !== shape(target[index])) return false;
+  for (let i = 0; i < index; i++)
+    if (shape(blocks[i]) !== shape(target[i])) return false;
+  return (
+    item === undefined || (block.k === "list" && block.items.length > item)
+  );
 }
 
 /**
  * The first line whose prefix of the file renders the block `path` names: a
- * search over the file's prefixes, since the parser reports no positions.
+ * search over the file's prefixes, since the parser reports no positions. A
+ * heading or table whose first lines render as a paragraph until its last
+ * (a setext underline, a delimiter row) is found at that paragraph's start.
  */
-function locate(lines: string[], path: number[]): number {
+function locate(lines: string[], target: Block[], path: number[]): number {
+  const prefix = (n: number) => parseBlocks(lines.slice(0, n).join("\n"));
   let [lo, hi] = [1, lines.length];
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (holds(parseBlocks(lines.slice(0, mid).join("\n")), path)) hi = mid;
+    if (holds(prefix(mid), target, path)) hi = mid;
     else lo = mid + 1;
   }
+  const [index, item] = path as [number, number?];
+  if (item !== undefined || shape(target[index]) === "paragraph") return lo;
+  const paragraph = { k: "paragraph", inline: [] } as Block;
+  const swapped = target.map((b, i) => (i === index ? paragraph : b));
+  while (lo > 1 && holds(prefix(lo - 1), swapped, [index])) lo--;
   return lo;
 }
 
 /**
  * The lines of the top-level headings of levels 1 to 3, by their index among
- * the blocks. Where the `#` heading lines outside fenced code are those headings,
- * level for level, they are their lines; otherwise (a setext heading, or a
- * heading line that renders as something else) each is located.
+ * the blocks. A `#` heading line outside fenced code is its heading's line
+ * when it renders as that heading: each such line is tagged with its number
+ * and the tagged file parsed once, so a line inside an HTML comment, or one
+ * that renders as something else, names no heading. A heading no line names
+ * this way (a setext heading) is located.
  */
 function headingLines(
   lines: string[],
   blocks: Block[],
   at: (path: number[]) => number,
 ): Map<number, number> {
-  const rendered = blocks.flatMap((b, index) =>
-    b.k === "heading" && b.level <= 3 ? [{ index, level: b.level }] : [],
-  );
   const written = fenced(lines.join("\n")).flatMap((l, i) => {
     const h = l.inFence ? null : heading(l.line);
-    return h && h.level <= 3 ? [{ n: i + 1, level: h.level }] : [];
+    return h ? [i + 1] : [];
   });
-  const agree =
-    rendered.length === written.length &&
-    rendered.every((r, i) => r.level === written[i]?.level);
+  const tag = "";
+  const tagged = [...lines];
+  if (!lines.some((l) => l.includes(tag)))
+    for (const n of written) tagged[n - 1] += ` ${tag}${n}${tag}`;
+  const seen = parseBlocks(tagged.join("\n"));
+  const lineOf = (index: number): number | null => {
+    const b = seen[index];
+    const want = blocks[index];
+    if (seen.length !== blocks.length || b?.k !== "heading") return null;
+    if (want?.k !== "heading" || b.level !== want.level) return null;
+    const n = new RegExp(`${tag}(\\d+)${tag}`).exec(plain(b.inline))?.[1];
+    return n === undefined ? null : Number(n);
+  };
   return new Map(
-    rendered.map((r, i) => [
-      r.index,
-      agree ? (written[i]?.n as number) : at([r.index]),
-    ]),
+    blocks.flatMap((b, index) =>
+      b.k === "heading" && b.level <= 3
+        ? [[index, lineOf(index) ?? at([index])] as const]
+        : [],
+    ),
   );
 }
 
@@ -206,7 +249,7 @@ export function readChangelog(file: string, text: string): Changelog {
   const located = new Map<string, number>();
   const at = (path: number[]): number => {
     const key = path.join(".");
-    const found = located.get(key) ?? locate(lines, path);
+    const found = located.get(key) ?? locate(lines, blocks, path);
     located.set(key, found);
     return found;
   };
@@ -231,25 +274,35 @@ export function readChangelog(file: string, text: string): Changelog {
 
 /** Put the top-level block at `index` where it belongs: a title, a section or group, or the text under one. */
 function place(changelog: Changelog, block: Block, index: number): void {
-  const section = changelog.sections.at(-1);
   if (block.k === "heading" && block.level <= 3) {
-    const line = changelog.lineOf(index);
-    const h = {
-      line,
-      title: titleOn(changelog.lines, line, block.inline),
-      inline: block.inline,
-      index,
-    };
-    if (block.level === 1) changelog.titles.push(h);
-    else if (block.level === 2)
-      changelog.sections.push({ ...h, lead: [], groups: [] });
-    else if (section) section.groups.push({ ...h, body: [] });
-    else changelog.preamble.push({ block, index });
+    placeHeading(changelog, block, index);
     return;
   }
+  const section = changelog.sections.at(-1);
   const part = { block, index };
   if (section) (section.groups.at(-1)?.body ?? section.lead).push(part);
   else if (index > 0) changelog.preamble.push(part);
+}
+
+/** Put a heading of level 1 to 3 where it belongs: a title, a section, or a group. */
+function placeHeading(
+  changelog: Changelog,
+  block: Block & { k: "heading" },
+  index: number,
+): void {
+  const section = changelog.sections.at(-1);
+  const line = changelog.lineOf(index);
+  const h = {
+    line,
+    title: titleOn(changelog.lines, line, block.inline),
+    inline: block.inline,
+    index,
+  };
+  if (block.level === 1) changelog.titles.push(h);
+  else if (block.level === 2)
+    changelog.sections.push({ ...h, lead: [], groups: [] });
+  else if (section) section.groups.push({ ...h, body: [] });
+  else changelog.preamble.push({ block, index });
 }
 
 /** Whether the changelog's first block is a level-1 heading. */

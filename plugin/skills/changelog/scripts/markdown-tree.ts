@@ -9,10 +9,14 @@
 
 /** What a stretch of inline Markdown renders as. */
 export type Inline =
-  | { k: "text"; v: string }
+  /** Text; `styled` when it renders emphasized, strong or struck through. */
+  | { k: "text"; v: string; styled?: true }
   | { k: "link"; href: string; inline: Inline[] }
-  /** A code span, raw inline HTML or an image: shown, but neither text nor a link. */
-  | { k: "other" };
+  /**
+   * A code span, an image or raw inline HTML: neither text nor a link. Code
+   * and images are shown; HTML (`html`), a comment above all, may show nothing.
+   */
+  | { k: "other"; html?: true };
 
 /** A block of the document. */
 export type Block =
@@ -73,6 +77,10 @@ function callbacks(table: Node[]) {
       return n ? [n] : [];
     });
   const inline = (c: string) => nodes(c).filter(isInline);
+  const styled = (c: string): string => {
+    for (const n of nodes(c)) if (n.k === "text") n.styled = true;
+    return c;
+  };
   return {
     nodes,
     callbacks: {
@@ -100,15 +108,17 @@ function callbacks(table: Node[]) {
       tr: () => "",
       th: () => "",
       td: () => "",
-      strong: (c: string) => c,
-      emphasis: (c: string) => c,
-      strikethrough: (c: string) => c,
+      strong: styled,
+      emphasis: styled,
+      strikethrough: styled,
       link: (c: string, m: { href: string }) =>
         node({ k: "link", href: m.href, inline: inline(c) }),
       image: () => node({ k: "other" }),
       codespan: () => node({ k: "other" }),
       text: (t: string) =>
-        node(HTML_SPAN.test(t) ? { k: "other" } : { k: "text", v: t }),
+        node(
+          HTML_SPAN.test(t) ? { k: "other", html: true } : { k: "text", v: t },
+        ),
     },
   };
 }

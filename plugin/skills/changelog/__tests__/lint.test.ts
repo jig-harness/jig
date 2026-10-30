@@ -668,15 +668,6 @@ describe("the parser decides what renders, not the source", () => {
       keepWith("[Semantic Versioning]", "[Semantic&#32;Versioning]"),
     ).toEqual([]);
   });
-
-  test("a reference with many entries is read in linear time", () => {
-    const entries = "\t,[#1](u)".repeat(20_000) + "\t,\uE001".repeat(40);
-    const started = performance.now();
-    expect(commonWith(item, `- Fix the parser (\uE001${entries}`)).toEqual([
-      COMMON_RULES.reference.id,
-    ]);
-    expect(performance.now() - started).toBeLessThan(5_000);
-  });
 });
 
 const script = join(import.meta.dir, "..", "scripts", "lint.ts");

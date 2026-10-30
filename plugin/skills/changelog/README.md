@@ -173,10 +173,10 @@ it states with "must".
 | `common-changelog/version-link` | A version written as a reference link has its link reference definition | [2.2. Release](https://common-changelog.org/#22-release) |
 | `common-changelog/release-content` | A release holds change groups, or a notice and then any number of them, and nothing else | [2.2. Release](https://common-changelog.org/#22-release) |
 | `common-changelog/notice` | At most one notice, a single paragraph, per release | [2.3. Notice](https://common-changelog.org/#23-notice) |
-| `common-changelog/category` | Every `###` heading is `Changed`, `Added`, `Removed` or `Fixed` | [2.4. Change group](https://common-changelog.org/#24-change-group) |
+| `common-changelog/category` | Every `###` heading is `Changed`, `Added`, `Removed` or `Fixed`, as plain text (no link, code or emphasis) | [2.4. Change group](https://common-changelog.org/#24-change-group) |
 | `common-changelog/category-order` | The groups in that order, each once | [2.4. Change group](https://common-changelog.org/#24-change-group) |
 | `common-changelog/change-list` | A group holds an unnumbered list and nothing else | [2.4. Change group](https://common-changelog.org/#24-change-group) |
-| `common-changelog/reference` | Each change, after its text, has a reference in parentheses whose links all render as links (inline, or a reference with its definition; none inside a code span) | [2.4.2. References](https://common-changelog.org/#242-references) |
+| `common-changelog/reference` | Each change, after its text, has a reference in parentheses whose links all render as links (inline, or a reference with its definition; none inside a code span), separated by commas and maybe followed by `; ` and the authors | [2.4.2. References](https://common-changelog.org/#242-references) |
 | `common-changelog/coverage` | The version the version files hold, and every version a tag in the checkout's history names, has a section, where it is a stable version | [2.1. File format](https://common-changelog.org/#21-file-format) |
 
 Allowed, or not checked: a version without a link (it "should" link), a

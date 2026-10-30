@@ -143,12 +143,16 @@ interface Release {
 
 const LINK: unique symbol = Symbol("link");
 const OTHER: unique symbol = Symbol("other");
-/** A paragraph as a reference reads it: each character of its text, a link that renders, or anything else shown. */
+/**
+ * A paragraph as a reference reads it: each character of its text, a link
+ * that renders, or a code span or image. Raw HTML is left out: a comment
+ * shows nothing, so it is neither a change's text nor part of a reference.
+ */
 type Sym = string | typeof LINK | typeof OTHER;
 
 const symbols = (inline: Inline[]): Sym[] =>
   inline.flatMap((i): Sym[] =>
-    i.k === "text" ? [...i.v] : [i.k === "link" ? LINK : OTHER],
+    i.k === "text" ? [...i.v] : i.k === "link" ? [LINK] : i.html ? [] : [OTHER],
   );
 
 const space = (s: Sym | undefined): boolean =>
@@ -177,25 +181,68 @@ function brackets(syms: Sym[], i: number): number | null {
 }
 
 /**
- * The reference that opens with the `(` at `i`: links, or text in brackets,
- * separated by commas, then `)`. Where it ends and whether every entry is a
- * link that renders, or null when no reference opens there.
+ * The authors that may close a reference after a `;` (2.4.3. Authors): text
+ * up to the `)`, with no link, code or image in it. The index of the `)`, or
+ * null.
  */
-function reference(
-  syms: Sym[],
-  i: number,
-): { end: number; linked: boolean } | null {
+function authors(syms: Sym[], i: number): number | null {
+  let j = i;
+  let named = false;
+  while (typeof syms[j] === "string" && syms[j] !== ")") {
+    named ||= !space(syms[j]);
+    j++;
+  }
+  return named && syms[j] === ")" ? j : null;
+}
+
+/**
+ * The reference that opens with the `(` at `i`: links, or text in brackets,
+ * separated by commas, then maybe `;` and its authors, then `)`. Where it
+ * ends and whether it is sound: every entry a link that renders, and the
+ * group well formed. A group that has read an entry and a separator is a
+ * reference, so one that then breaks off is a broken reference, not
+ * ordinary parentheses. Null when no reference opens there.
+ */
+function reference(syms: Sym[], i: number): Reference | null {
   let linked = true;
   let j = skip(syms, i + 1);
-  for (;;) {
+  for (let listed = false; ; listed = true) {
     const end = syms[j] === LINK ? j + 1 : brackets(syms, j);
-    if (end === null) return null;
+    if (end === null) return brokenOff(listed, j);
     linked &&= syms[j] === LINK;
-    j = skip(syms, end);
-    if (syms[j] === ")") return { end: j + 1, linked };
-    if (syms[j] !== ",") return null;
-    j = skip(syms, j + 1);
+    const next = afterEntry(syms, skip(syms, end), linked);
+    if (typeof next !== "number") return next ?? brokenOff(listed, end);
+    j = next;
   }
+}
+
+interface Reference {
+  end: number;
+  linked: boolean;
+}
+
+/** A group that breaks off at `at`: a broken reference once it has read a separator, else none. */
+const brokenOff = (listed: boolean, at: number): Reference | null =>
+  listed ? { end: at, linked: false } : null;
+
+/**
+ * What follows a reference's entry at `j`: the reference's end (at `)`, or
+ * after `;` and its authors), the index of the next entry after a `,`, or
+ * null where the reference breaks off.
+ */
+function afterEntry(
+  syms: Sym[],
+  j: number,
+  linked: boolean,
+): Reference | number | null {
+  if (syms[j] === ")") return { end: j + 1, linked };
+  if (syms[j] === ";") {
+    const close = authors(syms, j + 1);
+    return close === null
+      ? { end: j + 1, linked: false }
+      : { end: close + 1, linked };
+  }
+  return syms[j] === "," ? skip(syms, j + 1) : null;
 }
 
 /** The paragraphs of a list item, its nested lists' included: what a reference may sit in. */
@@ -436,7 +483,7 @@ function listFindings(changelog: Changelog, group: Group): Finding[] {
       ),
     );
   }
-  for (const part of at === -1 ? group.body : group.body.slice(0, at)) {
+  for (const part of group.body) {
     if (part.block.k !== "list") continue;
     part.block.items.forEach((item, i) => {
       if (!referenced(item))
@@ -458,14 +505,16 @@ function groupFindings(changelog: Changelog, section: Section): Finding[] {
   const findings: Finding[] = [];
   let rank = -1;
   for (const group of section.groups) {
-    const at = CATEGORIES.indexOf(plain(group.inline).trim());
+    // 2.4: the heading is text only, so a link, code or emphasis is no category.
+    const textOnly = group.inline.every((i) => i.k === "text" && !i.styled);
+    const at = textOnly ? CATEGORIES.indexOf(plain(group.inline).trim()) : -1;
     if (at === -1)
       findings.push(
         finding(
           COMMON_RULES.category,
           changelog,
           group.line,
-          `"### ${group.title}" is not a category`,
+          `"### ${group.title}" is not a category${textOnly ? "" : ": a category heading is plain text"}`,
           `use one of ${CATEGORIES.join(", ")} (a deprecation goes under Changed, a security fix under Fixed)`,
         ),
       );
