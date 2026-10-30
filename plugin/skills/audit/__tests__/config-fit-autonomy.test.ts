@@ -25,8 +25,7 @@ function refusal(config: string): Finding | undefined {
 
 test("a level above the ceiling is reported", () => {
   expect(
-    refusal("autonomy:\n  level: unattended\n  max_level: attended\n")
-      ?.message,
+    refusal("autonomy:\n  level: unattended\n  max_level: attended\n")?.message,
   ).toContain("above autonomy.max_level");
 });
 
