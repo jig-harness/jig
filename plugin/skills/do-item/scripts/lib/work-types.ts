@@ -94,7 +94,7 @@ export const DEPTH_FIELDS = [
   "pr_body_sections",
 ] as const satisfies ReadonlyArray<keyof DepthRow>;
 
-type DefaultType = (typeof DEFAULT_TYPES)[number];
+export type DefaultType = (typeof DEFAULT_TYPES)[number];
 
 /** The depth table's defaults. */
 export const DEFAULT_ROWS: Readonly<Record<DefaultType, Readonly<DepthRow>>> = {
@@ -160,7 +160,7 @@ export interface WorkTypes {
   rows: Record<string, DepthRow>;
 }
 
-const isDefaultType = (t: string): t is DefaultType =>
+export const isDefaultType = (t: string): t is DefaultType =>
   (DEFAULT_TYPES as readonly string[]).includes(t);
 
 function oneOf<T extends string>(

@@ -3,7 +3,7 @@
  * `.config/jig.yaml`; every field is optional:
  *
  *   github:
- *     repository: owner/name   # default: the `origin` remote's repository
+ *     repository: owner/name   # default: the git remote's repository
  *     states_from: labels      # or `project`, a board's Status field
  *     project: https://github.com/orgs/owner/projects/1
  *     status_field: Status
@@ -34,7 +34,7 @@ export interface GitHubProject {
 }
 
 export interface GitHubSettings {
-  /** `owner/name`; `null` = the repository the `origin` remote points to. */
+  /** `owner/name`; `null` = the repository the git remote (`repository.remote`, else `origin`) points to. */
   repository: string | null;
   statesFrom: GitHubStateSource;
   /** Required when `statesFrom` is `project`. */

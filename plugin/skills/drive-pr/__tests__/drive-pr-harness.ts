@@ -77,8 +77,10 @@ export const PREV = "7bd2ca906c111111111111111111111111111111";
 export const GIT_PUSH_FLAG_GUARD = `(
   [[ "$1" == push ]] || exit 2
   shift
-  # guarded-push.ts always calls \`git(['push', ...extra, 'origin', refspec])\`
-  # — the remote comes immediately before the refspec, never after it. Track
+  # guarded-push.ts always calls \`git(['push', ...extra, remote, refspec])\`
+  # — the remote comes immediately before the refspec, never after it. The
+  # remote is the one the repository.remote setting names: the environment
+  # layer's JIG__REPOSITORY__REMOTE when a probe sets it, else origin. Track
   # POSITION, not mere presence: checking "did 'origin' and a refspec token
   # occur somewhere" would still pass an accidentally swapped invocation
   # (\`git push <refspec> origin\`), which git itself rejects (the refspec is
@@ -97,8 +99,8 @@ export const GIT_PUSH_FLAG_GUARD = `(
     esac
     case "$stage" in
       remote)
-        [[ "$argument" == origin ]] || {
-          echo "git push: expected remote 'origin' first, got '$argument'" >&2; exit 2;
+        [[ "$argument" == "\${JIG__REPOSITORY__REMOTE:-origin}" ]] || {
+          echo "git push: expected remote '\${JIG__REPOSITORY__REMOTE:-origin}' first, got '$argument'" >&2; exit 2;
         }
         stage=refspec ;;
       refspec)
@@ -568,6 +570,7 @@ const SUITE_ENV_OVERRIDES = [
   "GH_CALL_TIMEOUT",
   "DRIVE_PR_HELPER_TIMEOUT",
   "DRIVE_PR_LOCK_RETRY_MS",
+  "DRIVE_PR_ATTACH",
   "DRIVE_PR_CLAUDE_PROJECTS_DIR",
   "DRIVE_PR_CODEX_SESSIONS_DIR",
   "JIG_OVERLAY",
@@ -993,13 +996,11 @@ export function useDrivePrSuite(): void {
     // retry interval is the handoff latency between contending claimants — at
     // the production default (1s) the concurrency probes spend almost all of
     // their wall-clock sleeping between polls, and under machine load that
-    // quantum amplified into per-test-budget blowups that present as failures
-    // (the stale-claim race probe: 49s idle, 423s at load ~9 against a 90s
-    // budget). 25ms keeps every probe's CONTENTION real — same processes, same
-    // syscalls, same interleavings — while removing only the sleeping. A test
-    // that needs the production pacing sets its own value in its spawn env
-    // (per-call env wins over this inherited default).
-    suitePacing = { DRIVE_PR_LOCK_RETRY_MS: "25" };
+    // quantum amplified into per-test-budget blowups. 25ms keeps every
+    // probe's contention real while removing only the sleeping; a test that
+    // needs the production pacing sets its own value in its spawn env.
+    // No attach: fixture PRs have no head to fetch (attach-pr.test.ts).
+    suitePacing = { DRIVE_PR_LOCK_RETRY_MS: "25", DRIVE_PR_ATTACH: "off" };
     Object.assign(process.env, suitePacing);
     // The consumer configuration every probe reads: the reviewer app the
     // fixtures post as, the base branch the scratch repositories carry, and
@@ -1915,6 +1916,8 @@ for a in "$@"; do
       st=$(jq -r '.state // "OPEN"' "$F/pr-view.json")
       printf '{"data":{"node":{"__typename":"PullRequestReviewThread","id":"%s","pullRequest":{"number":999,"state":"%s"}}}}' "$tid" "$st"
       exit 0 ;;
+    *"pullRequest { number repository"*) printf '%s' '{"data":{"node":{"pullRequest":{"number":999,"repository":{"owner":{"login":"example-org"},"name":"example-repo"}}}}}' | jq -r "\${filter:-.}"; exit 0 ;;
+    repos/*/code-scanning/alerts/[0-9]*) cat "$F/alert-\${a##*/}.json"; exit $? ;;
   esac
 done
 

@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ExitError } from "../../../shared/cli.ts";
-import {
-  type OrcaRunner,
-  orcaCommand,
-  parseArgs,
-  updateBoard,
-} from "../scripts/orca-board.ts";
+import type { OrcaRunner } from "../../../shared/orca.ts";
+import { parseArgs, updateBoard } from "../scripts/orca-board.ts";
 
 const ORCA = { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
 const ID = "repo-1::/ws/app/feat-x";
@@ -42,19 +38,6 @@ describe("outside Orca", () => {
       "orca-board: not in Orca; nothing to do",
     );
     expect(calls).toEqual([]);
-  });
-
-  test("Orca's command comes from its terminal's environment only", () => {
-    expect(orcaCommand({})).toBeNull();
-    expect(orcaCommand({ ORCA_CLI_BIN_DIR: "/opt/orca/bin" }, "darwin")).toBe(
-      "/opt/orca/bin/orca",
-    );
-    expect(orcaCommand({ ORCA_CLI_BIN_DIR: "/opt/orca/bin" }, "linux")).toBe(
-      "/opt/orca/bin/orca-ide",
-    );
-    expect(orcaCommand({ ...ORCA, ORCA_CLI_BIN_DIR: "/elsewhere" })).toBe(
-      "/opt/orca/bin/orca",
-    );
   });
 });
 

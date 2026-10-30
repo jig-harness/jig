@@ -29,11 +29,24 @@ import {
   GITHUB_STATE_SOURCES,
   PRIORITY_NAMES,
 } from "../../do-item/scripts/lib/tracker/github/settings.ts";
-import { DEFAULT_MAX_ROUNDS } from "../../drive-pr/scripts/lib/overlay.ts";
+import {
+  ARM_DRIVE_MODES,
+  DEFAULT_ARM_DRIVE,
+  DEFAULT_MAX_ROUNDS,
+  DEFAULT_PASS_DEADLINE_RETRIES,
+  DEFAULT_PASS_MODEL,
+  PASS_MODEL_PATTERN,
+} from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
+import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
 import { DEFAULT_SCANNER_APPS } from "../../resolve-review-comments/scripts/lib/scanner-annotations.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import { parseWorkTypes } from "../../do-item/scripts/lib/work-types.ts";
+import {
+  parseRouting,
+  RAISE_FIELDS,
+  ROUTING_FIELDS,
+} from "../../do-item/scripts/lib/routing.ts";
 import {
   CANONICAL_STATES,
   knownAdapters,
@@ -73,6 +86,16 @@ import {
   WORK_BATCH_FIELDS,
   parseWorkBatchSection,
 } from "../../work-batch/scripts/lib/policy.ts";
+import {
+  DEFAULT_STALE_AFTER_DAYS,
+  FIELDS as DOCS_FIELDS,
+} from "../../docs/scripts/lib/settings.ts";
+import {
+  DEFAULT_BODY_SECTION,
+  parseSpecsConfig,
+  SPECS_FIELDS,
+} from "../../../shared/spec/config.ts";
+import { ADAPTERS } from "../../../shared/spec/registry.ts";
 import { runScript } from "./helpers.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
@@ -169,8 +192,15 @@ describe("CONFIGURATION.md", () => {
     expect(() => parsePrPolicy(example)).not.toThrow();
     expect(() => parseTrackerConfig(example)).not.toThrow();
     expect(() => parseWorkTypes(example)).not.toThrow();
+    expect(() => parseRouting(example, parseWorkTypes(example))).not.toThrow();
     expect(() => parseReflection(example.reflection, repoRoot)).not.toThrow();
     expect(parseChangelogSection(example.changelog)).not.toBeNull();
+    expect(() =>
+      parseSpecsConfig(
+        example.specs,
+        ADAPTERS.map((a) => a.name),
+      ),
+    ).not.toThrow();
     const set = (path: string) =>
       path
         .split(".")
@@ -207,6 +237,8 @@ describe("the reading skills", () => {
       ...STACKING_MODES,
     ]);
     expect(field("pull_requests.open_as")?.values).toEqual([...OPEN_AS]);
+    expect(field("do_item.arm_drive")?.values).toEqual([...ARM_DRIVE_MODES]);
+    expect(field("drive.pass_model")?.pattern).toBe(PASS_MODEL_PATTERN.source);
     expect(field("pull_requests.issue_link")?.values).toEqual([...ISSUE_LINKS]);
     expect(field("pull_requests.title_format")?.values).toEqual([
       ...TITLE_FORMATS,
@@ -216,6 +248,21 @@ describe("the reading skills", () => {
     expect(field("reflection.store")?.values).toEqual([...STORE_KINDS]);
     expect(field("reflection.mode")?.values).toEqual([...MODES]);
     expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
+  });
+
+  test("accept the spec adapters the resolver has", () => {
+    expect(field("specs.adapters")?.items).toEqual({
+      type: "enum",
+      values: ADAPTERS.map((a) => a.name),
+    });
+  });
+
+  test("read the routing section's fields", () => {
+    expect(under("routing").sort()).toEqual(
+      ROUTING_FIELDS.flatMap((f) =>
+        f === "raise" ? RAISE_FIELDS.map((r) => `raise.${r}`) : [f],
+      ).sort(),
+    );
   });
 
   test("accept the GitHub adapter's value sets the schema lists", () => {
@@ -234,6 +281,10 @@ describe("the reading skills", () => {
       f.path.startsWith("code_stats."),
     ))
       expect([f.path, f.repository_only]).toEqual([f.path, true]);
+  });
+
+  test("read the docs section's fields", () => {
+    expect(under("docs").sort()).toEqual([...DOCS_FIELDS].sort());
   });
 
   test("read the changelog section's fields, all of them repository-only", () => {
@@ -263,6 +314,9 @@ describe("the reading skills", () => {
       "pull_requests.branch_name": policy.branchName,
       "pull_requests.issue_link": policy.issueLink,
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
+      "drive.pass_deadline_retries": DEFAULT_PASS_DEADLINE_RETRIES,
+      "drive.pass_model": DEFAULT_PASS_MODEL,
+      "do_item.arm_drive": DEFAULT_ARM_DRIVE,
       "issue_tracker.adapter": DEFAULT_ADAPTER,
       "issue_tracker.github.states_from": DEFAULT_STATES_FROM,
       "issue_tracker.github.status_field": DEFAULT_STATUS_FIELD,
@@ -274,12 +328,17 @@ describe("the reading skills", () => {
       "changelog.release.push": CHANGELOG_DEFAULTS.push,
       "changelog.release.branch": CHANGELOG_DEFAULTS.branch,
       "code_stats.default_area": CODE_STATS_DEFAULT_AREA,
+      "docs.stale_after_days": DEFAULT_STALE_AFTER_DAYS,
       "work_batch.point_budget": DEFAULT_POINT_BUDGET,
       "work_batch.max_items": DEFAULT_MAX_ITEMS,
       "work_batch.ranking.provenance": DEFAULT_RANKING.provenance,
       "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
       "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
+      "repository.remote": DEFAULT_REMOTE,
       "review.scanner_apps": DEFAULT_SCANNER_APPS,
+      "specs.body_section": DEFAULT_BODY_SECTION,
+      "routing.raise.reviews": parseRouting({}, parseWorkTypes({})).raise
+        .reviews,
       "verify.output_lines": DEFAULT_OUTPUT_LINES,
       "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
       "verify.retention_days": DEFAULT_RETENTION_DAYS,
@@ -295,6 +354,21 @@ describe("the reading skills", () => {
     expect(problems(2 ** 53)).toEqual([
       "drive.max_rounds must be a whole number ≥ 1",
     ]);
+  });
+
+  test("report as errors the nulls remoteName refuses, and other nulls as not set", () => {
+    const severities = (config: Record<string, unknown>) =>
+      checkConfig(config, schema).map((f) => [f.id, f.severity]);
+    expect(severities({ repository: null })).toEqual([
+      ["null:repository", "error"],
+    ]);
+    expect(severities({ repository: { remote: null } })).toEqual([
+      ["null:repository.remote", "error"],
+    ]);
+    expect(severities({ repository: { base_branch: null } })).toEqual([
+      ["null:repository.base_branch", "info"],
+    ]);
+    expect(severities({ drive: null })).toEqual([]);
   });
 
   test("bound an integer from above where its reader does", () => {
@@ -348,6 +422,7 @@ describe("the reading skills", () => {
     expect(under("issue_tracker.labels").sort()).toEqual(
       [...LABEL_ROLES].sort(),
     );
+    expect(under("specs").sort()).toEqual([...SPECS_FIELDS].sort());
     expect(under("work_batch.ranking").sort()).toEqual(
       [...RANKING_FIELDS].sort(),
     );
@@ -456,6 +531,23 @@ describe("the schema's own format", () => {
     );
     expect(checkConfig({ a: { b: ["1"] } }, nested)).toEqual([]);
     expect(checkConfig({ a: { b: ["2"] } }, nested).map((f) => f.id)).toEqual([
+      "type:a.b",
+    ]);
+  });
+  test("a nested enum lists its values, and only an enum does", () => {
+    expect(() =>
+      parseSchema(withField({ type: "list", items: { type: "enum" } })),
+    ).toThrow("a list needs items");
+    expect(() =>
+      parseSchema(
+        withField({ type: "list", items: { type: "string", values: ["a"] } }),
+      ),
+    ).toThrow("a list needs items");
+    const nested = parseSchema(
+      withField({ type: "list", items: { type: "enum", values: ["a"] } }),
+    );
+    expect(checkConfig({ a: { b: ["a"] } }, nested)).toEqual([]);
+    expect(checkConfig({ a: { b: ["z"] } }, nested).map((f) => f.id)).toEqual([
       "type:a.b",
     ]);
   });

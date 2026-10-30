@@ -421,6 +421,12 @@ function claimAlive(claim: Claim, dir: string): boolean {
   });
 }
 
+/** The diagnostics of the live driver holding the lock at `dir`, else `null`. */
+export function liveHolder(dir: string): { diag: ClaimDiag | null } | null {
+  const { claim } = inspect(dir);
+  return claim !== null && claimAlive(claim, dir) ? { diag: claim.diag } : null;
+}
+
 /**
  * Retire the instance that was OBSERVED, by removing exactly the entries that
  * observation listed.

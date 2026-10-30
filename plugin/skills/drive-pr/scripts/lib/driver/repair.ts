@@ -41,6 +41,9 @@ export function passEnv(task?: {
   // unanswered, which is the one failure this whole loop exists to prevent.
   delete env.DRIVE_PR_ROUND_TASK;
   delete env.DRIVE_PR_ROUND_TASK_DETAIL;
+  // The same for the notice of a recovered stop: only the driver that
+  // recovered it may say so, and only to the review pass it spawns next.
+  delete env.DRIVE_PR_PASS_NOTICE;
   if (task !== undefined) {
     env.DRIVE_PR_ROUND_TASK = task.task;
     env.DRIVE_PR_ROUND_TASK_DETAIL = task.detail;
@@ -99,7 +102,9 @@ export async function runRepairPass(
   // SAME closure keeps this function's own re-check indistinguishable from
   // every other call site's (see this function's own pre-spawn re-check
   // below for why one is needed here at all).
-  mailboxCheckpoint: () => Promise<"clear" | "resumed" | number>,
+  mailboxCheckpoint: (opts?: {
+    beforePass?: boolean;
+  }) => Promise<"clear" | "resumed" | number>,
 ): Promise<RepairDispatch> {
   const deadlineSec = passTimeoutSeconds();
   // One more refresh, immediately before THIS spawn — not only at the PRIOR
@@ -130,10 +135,12 @@ export async function runRepairPass(
   // a mailbox directive can land during, so the caller's own pre-dispatch
   // checkpoint does not cover the gap between it and this spawn — this call
   // is what makes THIS spawn's own checkpoint the LAST await before `run()`,
-  // matching the ordinary-pass site's invariant. Its outcome is tagged
-  // `dispatched: false` so a caller can never mistake it for the pass's OWN
-  // exit code below.
-  const mailboxBeforeSpawn = await mailboxCheckpoint();
+  // matching the ordinary-pass site's invariant, the ledger's claim check
+  // included: a takeover posted during the status wait or a pause before
+  // this repair must not leave a pass running beside the successor. Its
+  // outcome is tagged `dispatched: false` so a caller can never mistake it
+  // for the pass's OWN exit code below.
+  const mailboxBeforeSpawn = await mailboxCheckpoint({ beforePass: true });
   if (typeof mailboxBeforeSpawn === "number")
     return { dispatched: false, resumed: false, code: mailboxBeforeSpawn };
   if (mailboxBeforeSpawn === "resumed")
@@ -248,6 +255,7 @@ export async function recordQuotaPark(
   driveStatePath: string,
   pr: string,
   block: { vendor: string; window: string; resetAt: Date | null },
+  account: string | null,
 ): Promise<void> {
   const park = await run(
     tsArgv(driveStatePath, [
@@ -260,6 +268,8 @@ export async function recordQuotaPark(
       ...(block.resetAt !== null
         ? ["--reset-at", block.resetAt.toISOString()]
         : []),
+      // Whose wall it is: a re-arm from another account may pass it.
+      ...(account !== null ? ["--account", account] : []),
     ]),
     // Deadlined per `references/consistency.md` — on the exiting
     // path an undeadlined hang would hold the drive's locks open

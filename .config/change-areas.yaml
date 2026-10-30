@@ -73,6 +73,19 @@ areas:
         notes: >-
           The plugin installs only plugin/, so it carries byte copies of the
           root licence files; scripts/check-licences.ts compares them as well.
+      - outputs:
+          - "plugin/skills/docs/__tests__/fixtures/index/docs/INDEX.md"
+          - "plugin/skills/docs/__tests__/fixtures/index/docs/.orphans.md"
+        source:
+          - "plugin/skills/docs/scripts/index/generate-index.ts"
+          - "plugin/skills/docs/__tests__/fixtures/index/docs/**/*.md"
+        command: "bun exec \"DOCS_DIR=plugin/skills/docs/__tests__/fixtures/index/docs bun plugin/skills/docs/scripts/index/generate-index.ts\""
+        check: "bun exec \"DOCS_DIR=plugin/skills/docs/__tests__/fixtures/index/docs bun plugin/skills/docs/scripts/index/generate-index.ts --check\""
+        notes: >-
+          The docs skill's index generator over its test fixture. One
+          generator writes both (Bun's shell sets the variable on every
+          operating system); the orphan report's date is sticky, so it changes
+          only when the report's content does.
 
   plugin-shared:
     title: "The plugin's shared code: what more than one skill imports"
@@ -178,18 +191,6 @@ areas:
         command: "bun modules/M2-generated-artifact-freshness/reference/triad/generate-index.ts modules/M2-generated-artifact-freshness/reference/triad/fixture/docs"
         check: "bun modules/M2-generated-artifact-freshness/reference/triad/check-index-fresh.ts modules/M2-generated-artifact-freshness/reference/triad/fixture/docs"
         notes: "The triad's worked example: its fixture index is itself a derived file."
-      - outputs:
-          - "modules/M4-docs-governance/reference/index/fixtures/docs/INDEX.md"
-          - "modules/M4-docs-governance/reference/index/fixtures/docs/.orphans.md"
-        source:
-          - "modules/M4-docs-governance/reference/index/generate-index.ts"
-          - "modules/M4-docs-governance/reference/index/fixtures/docs/**/*.md"
-        command: "bun exec \"DOCS_DIR=modules/M4-docs-governance/reference/index/fixtures/docs bun modules/M4-docs-governance/reference/index/generate-index.ts\""
-        check: "bun exec \"DOCS_DIR=modules/M4-docs-governance/reference/index/fixtures/docs bun modules/M4-docs-governance/reference/index/generate-index.ts --check\""
-        notes: >-
-          One generator writes both (Bun's shell sets the variable on every
-          operating system); the orphan report's date is sticky, so it changes
-          only when the report's content does.
 
   module-templates:
     title: "Module templates"
@@ -217,6 +218,7 @@ areas:
       - ".gitignore"
       - ".github/**"
       - ".config/**"
+      - "label-taxonomy.yaml"
     workspace: []
     impliedBy: []
     deployTier: none

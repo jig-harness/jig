@@ -3,6 +3,8 @@ import { fail, isDigits } from "../cli.ts";
 interface DriverOptions {
   pr: string;
   maxRounds: string | undefined;
+  /** `--pass-model`: the model each pass runs on, for this run (`pass-model.ts`). */
+  passModel: string | undefined;
   dryRun: boolean;
   botsOnly: boolean;
   keepDraft: boolean;
@@ -10,6 +12,10 @@ interface DriverOptions {
   passTimeout: string;
   forward: string[];
   agent: string[];
+  /** `--take-over`: replace a WEDGED or dead holder (`takeover.ts`). */
+  takeOver: boolean;
+  /** `--window-reopened`: a person says a quota wall's window is open again. */
+  windowReopened: boolean;
 }
 
 function flagValue(argv: string[], index: number): string {
@@ -29,6 +35,9 @@ function parseFlag(
     case "--max-rounds":
       options.maxRounds = flagValue(argv, index);
       return index + 1;
+    case "--pass-model":
+      options.passModel = flagValue(argv, index);
+      return index + 1;
     case "--handoff-at":
       options.handoffAt = flagValue(argv, index);
       return index + 1;
@@ -40,6 +49,12 @@ function parseFlag(
       return index;
     case "--keep-draft":
       options.keepDraft = true;
+      return index;
+    case "--take-over":
+      options.takeOver = true;
+      return index;
+    case "--window-reopened":
+      options.windowReopened = true;
       return index;
     case "--bots-only":
       options.botsOnly = true;
@@ -63,6 +78,7 @@ export function parseDriverOptions(argv: string[]): DriverOptions {
   const options: DriverOptions = {
     pr: "",
     maxRounds: undefined,
+    passModel: undefined,
     dryRun: false,
     botsOnly: false,
     keepDraft: false,
@@ -70,6 +86,8 @@ export function parseDriverOptions(argv: string[]): DriverOptions {
     passTimeout: "",
     forward: [],
     agent: [],
+    takeOver: false,
+    windowReopened: false,
   };
   let sawDdash = false;
   for (let index = 0; index < argv.length; index++) {
@@ -78,6 +96,11 @@ export function parseDriverOptions(argv: string[]): DriverOptions {
     else if (arg === "--") sawDdash = true;
     else index = parseFlag(options, argv, index);
   }
+  if (options.takeOver && options.dryRun)
+    fail(
+      2,
+      "drive.ts: --take-over stops another driver; it cannot be a --dry-run",
+    );
   return options;
 }
 

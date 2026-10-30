@@ -92,7 +92,7 @@ test("change-note commands run from the plugin cache and read the repository's c
       env,
     });
   // Without the field in the repository's own file nothing is asked of it.
-  for (const command of ["check.ts", "release.ts", "status.ts"]) {
+  for (const command of ["check.ts", "lint.ts", "release.ts", "status.ts"]) {
     const off = run(command, []);
     expectSpawnExit({ ...off, exitCode: off.status }, 0);
     expect(off.stdout).toContain("not configured");
@@ -115,7 +115,7 @@ test("change-note commands run from the plugin cache and read the repository's c
   const status = run("status.ts", ["--json"]);
   expectSpawnExit({ ...status, exitCode: status.status }, 0);
   expect(JSON.parse(status.stdout).next).toBe("1.0.1");
-  for (const command of ["check.ts", "release.ts", "status.ts"]) {
+  for (const command of ["check.ts", "lint.ts", "release.ts", "status.ts"]) {
     const unknown = run(command, ["--unknown"]);
     expectSpawnExit({ ...unknown, exitCode: unknown.status }, 2);
   }

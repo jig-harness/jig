@@ -57,7 +57,7 @@ export function matchSeedAreas(files: string[], catalog: Catalog): Set<string> {
  */
 export function applyImpliedClosure(
   seed: Iterable<string>,
-  catalog: Catalog,
+  catalog: { areas: Readonly<Record<string, { impliedBy: string[] }>> },
 ): Set<string> {
   const included = new Set(seed);
   let grew = true;

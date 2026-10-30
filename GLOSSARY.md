@@ -558,18 +558,18 @@ make, use the entry's term instead.
   documents under a path prefix, for a subtree whose vocabulary differs from
   the rest (a runbook directory that must name its service, an archive that
   may hold only archived documents). It can narrow the tree's vocabulary,
-  never widen it ([frontmatter check](modules/M4-docs-governance/reference/frontmatter-check/README.md#path-scoped-rules)).
+  never widen it ([frontmatter check](plugin/skills/docs/scripts/frontmatter-check/README.md#path-scoped-rules)).
 - **Orphan document** — a document no other document lists under `related:`
   in its frontmatter. Ordinary Markdown links are not counted, so an orphan
   may still be linked from a page body; it is a candidate for a declared
   relation or for retiring, not proof that nothing leads to it. An *orphan
   report* lists them as a warning, never a failure
-  ([index generator](modules/M4-docs-governance/reference/index/README.md#orphan-report)).
+  ([index generator](plugin/skills/docs/scripts/index/README.md#orphan-report)).
 - **Sticky stamping** — how a generator dates the documents it writes: the
   `last_updated` date advances, in UTC, only when the output changed, and
   otherwise keeps the date the file already carries. It keeps generated
   documents honest without rewriting files whose only change is the date
-  ([stamp](modules/M4-docs-governance/reference/stamp/README.md)).
+  ([stamp](plugin/skills/docs/scripts/stamp/README.md)).
 - **Codemod** — a one-shot script that rewrites many files mechanically, such
   as bringing every document's frontmatter into line before a validator is
   tightened. Run as survey, plan, then apply, one commit per kind of change
@@ -580,10 +580,19 @@ make, use the entry's term instead.
   **deferral marker** is a configured phrase that makes a block of prose a
   deferral. The static gate checks that a deferral names an item; a scheduled
   check asks the tracker whether the item has closed since
-  ([M4](modules/M4-docs-governance/reference/deferral-references/README.md)).
+  ([M4's deferral check](plugin/skills/docs/scripts/deferral-references/README.md)).
 - **PRD (product requirements document)** — the document defining *what* a
   feature does for users and why — deliberately separate from *how* (the
   architecture doc).
+- **Spec resolver and spec adapter** — the read-only step that turns what a
+  work item says must be built (requirements, acceptance criteria and tasks,
+  written in its body or kept in a file it links) into one list with stable
+  ids, each qualified by where it came from; and one implementation of that
+  reading for one layout of such documents. The `body` adapter reads the
+  item's own `## Spec`, `## Requirements` and `## Acceptance criteria`
+  sections; an adapter per repository layout is planned. The resolver reads
+  only inside the repository, never a file Git ignores, and fetches no web
+  link ([design](design/spec-link.md)).
 - **PR (pull request)** — a proposed change to a repository, opened so it can
   be reviewed and checked before it is merged into the *integration branch*.
   Most of Jig's execution process runs around one.
@@ -1048,6 +1057,19 @@ make, use the entry's term instead.
 - **Tiered review** — a review that runs cheap pattern checks first, contract
   checks second, and an expensive semantic review last; each tier can block
   or warn, and a change only pays for the tiers its file types need.
+- **Red-team review** (adversarial review) — a review that reads a document
+  on purpose against it, looking for what is wrong, missing or unclear
+  rather than confirming what is there. The reviewer starts in **fresh
+  context**: a session or subagent that has not seen the document being
+  written, since one that helped write it tends to defend it. Each stage of
+  [M6](modules/M6-feature-delivery-pipeline/README.md)'s pipeline gets one
+  before the next stage consumes its artifact; Jig's `red-team` skill runs it
+  for requirements and architecture documents.
+- **Review persona** — one point of view a *red-team review* reads a
+  document from, written as a brief: who the reader stands for, what they
+  look for, and what a finding from them must carry (a security auditor, a
+  reader who knows no engineering terms, …). Not the user personas a PRD
+  describes, though some review personas speak for them.
 - **Scanner annotation** — a finding a static-analysis tool reports on a pull
   request as a note pinned to a changed line of its check run (a check-run
   annotation), as SonarQube Cloud does. It is neither a review thread, which
@@ -1105,6 +1127,14 @@ make, use the entry's term instead.
   and round state that survives between invocations. It stops in exactly one
   *terminal state* and never merges. Jig ships it as the `drive-pr`
   skill, and the `do-item` skill starts it when it opens a pull request.
+- **Attach (a pull request)** — putting a *worktree* on a pull request's head
+  before a *PR drive loop* drives it from there: its head branch checked out
+  when no other worktree of the clone holds that branch, otherwise its head
+  commit checked out on a **detached head** (git's name for a checkout of a
+  commit rather than of a branch, since git lets only one worktree hold a
+  branch). The drive pushes to the head branch by name either way, and
+  records which worktree it drives from so the steps that read a branch name
+  find it.
 - **Self-inflicted finding** — a review finding on a line one of the pull
   request's own commits last changed, usually a fix from an earlier round. The
   drive labels every finding this way: by the later rounds most findings are
@@ -1135,19 +1165,37 @@ make, use the entry's term instead.
   in (converged, pull request merged or closed, round limit reached, waiting
   on a human, …), each reported with a documented exit code, so a script or a
   person can tell from the exit alone what to do next.
+- **Re-arm and takeover (of a drive)** — how a *PR drive loop* that
+  stopped is picked up again. A **re-arm** starts the drive afresh from its
+  saved state once the reason it stopped is gone: a usage limit another
+  billing account is not behind, or every decision it parked answered by a
+  person. A **takeover** replaces a driver that still holds the drive's locks
+  but is stuck (alive with no progress) or dead with nothing left unpushed;
+  it is refused against a driver that is making progress
+  ([drive-pr](plugin/skills/drive-pr/README.md#picking-up-a-stopped-drive)).
+- **Drive ledger** — the resumable part of a *PR drive loop*'s saved state
+  (its round, what it parked for a person and why, what it replied to and
+  pushed, who drove it and when it last wrote), kept as one hidden-marker
+  comment on the pull request itself, so a drive started in another clone or
+  on another machine resumes where the last one stopped. Across clones it is
+  also how a stuck driver is taken over: the new driver posts a **takeover
+  claim** on the pull request, the earliest claim wins, and every driver
+  reads the claims each round and stops when a newer one is there
+  ([drive-pr](plugin/skills/drive-pr/README.md#where-its-state-lives)).
 - **CI hold** — an opt-in label on a pull request that the repository's
   continuous-integration workflows honour: while it is present they skip
-  their expensive jobs and a required check fails (the *held-head check*);
-  removing it runs every required check again on the same head, and only
-  results that started after the removal count. A *PR drive loop* applies it
-  between review rounds and removes it at convergence. The practice is
+  their expensive jobs and a required check fails or is cancelled (the
+  *held-head check*); removing it runs every required check again on the
+  same head, and only results that started after the removal count. A *PR
+  drive loop* applies it between review rounds and removes it at
+  convergence. The practice is
   [M13's](modules/M13-pipeline-economy/README.md#7-hold); drive-pr's
   `ci.hold_label` is its driver side.
-- **Held-head check** — the step of a required check that fails while a
-  pull request carries the *CI hold* label, so a held head is visibly not
-  mergeable from the moment the label lands until the release; its message
-  names the label to remove. M13's workflow-convention lint accepts it in
-  one shape only.
+- **Held-head check** — the step of a required check that fails, or cancels
+  its own run, while a pull request carries the *CI hold* label, so a held
+  head is visibly not mergeable from the moment the label lands until the
+  release; its message names the label to remove. M13's workflow-convention
+  lint accepts it in one shape only.
 - **Required checks** — the continuous-integration checks a repository's
   branch protection requires to pass before a pull request may merge. A drive
   derives them from the protection settings unless the repository lists them
@@ -1295,10 +1343,11 @@ make, use the entry's term instead.
   *Avoid*: model level (a *maturity level* is something else).
 - **Route** — the agent, *model tier* and reasoning effort chosen for the
   implementer of one piece of work at its pickup; derived from the item's
-  *work type*, size and labels and the *change-area catalog*'s flags and
-  mandatory reviews, by rules a repository declares, with the reason, the
-  source (the rules, or the person who chose instead) and whether it was
-  applied recorded on the pull request ([design](design/agent-routing.md)).
+  *work type*, size, *flag labels* and the *change-area catalog*'s flags and
+  mandatory reviews, by rules a repository keeps as data, with the rule behind
+  each part, the source (the rules, or the person who chose instead, whose
+  choice always wins) and whether it was applied recorded on the pull request
+  ([design](design/agent-routing.md)).
 - **Judgment tier** — the narrowest *model tier*: the top reasoning model,
   admitted only for a *decision layer* that is judgment-only, low-volume and
   high-leverage, and that a mechanical rule already tried and failed to
@@ -1773,6 +1822,14 @@ make, use the entry's term instead.
   generated, as documentation, or as written in a named language.
 - **Test fixture** — data a test reads (an input file, a recorded response, a
   snapshot of expected output), as opposed to the test's own code.
+- **Byte order mark** — a few invisible bytes at the very start of a text
+  file that say how its characters are encoded: `EF BB BF` for UTF-8, and
+  `FE FF` or `FF FE` for UTF-16 written with its high or its low byte first.
+  A reader consumes the mark; it is not part of the text.
+- **Internal subset** — the part of an XML document type declaration
+  written between square brackets inside the document itself
+  (`<!DOCTYPE project [ … ]>`), where the document can declare its own
+  entities and element rules instead of only pointing at an outside file.
 - **DDL (data definition language)** — the statements that define a
   database's structure (tables, columns, indexes), as opposed to the queries
   that read and change its data. Schema files and migrations hold it.

@@ -1,3 +1,4 @@
+import { shellQuote } from "../../../../shared/cli.ts";
 import { definedFields } from "../../../../shared/defined-fields.ts";
 /**
  * The consumer repository's drive-loop values, read from its Jig
@@ -12,13 +13,16 @@ import { definedFields } from "../../../../shared/defined-fields.ts";
  */
 import { isAbsolute, join } from "node:path";
 import { layersFingerprint } from "../../../../shared/config-layers.ts";
-import { isDistinctNameList } from "../../../../shared/guards.ts";
+import { DecodeError, isDistinctNameList } from "../../../../shared/guards.ts";
 import {
   configSource,
   consumerRoot,
   readConfig,
+  readRemoteName,
+  remoteName,
 } from "../../../../shared/consumer.ts";
-import { verifyOriginIsPrRepo } from "./base-drift.ts";
+import { verifyRemoteIsPrRepo } from "./base-drift.ts";
+import { attachedTree } from "./driven-branch.ts";
 import { ghCall, git, gitCallTimeoutSeconds } from "./proc.ts";
 
 let cache: { key: string; value: Record<string, unknown> } | undefined;
@@ -224,6 +228,69 @@ export function maxRoundsSetting(): number | undefined {
   return value as number;
 }
 
+/** How many passes killed at their deadline a drive restarts from before it stops. */
+export const DEFAULT_PASS_DEADLINE_RETRIES = 2;
+
+/** `drive.pass_deadline_retries`: whole number ≥ 0; `undefined` when not configured. */
+export function passDeadlineRetriesSetting(): number | undefined {
+  const value = section("drive").pass_deadline_retries;
+  if (value === undefined || value === null) return undefined;
+  if (!Number.isSafeInteger(value) || (value as number) < 0)
+    throw new DecodeError(
+      configSource("drive.pass_deadline_retries"),
+      "$.drive.pass_deadline_retries",
+      "must be a whole number of at least 0",
+    );
+  return value as number;
+}
+
+/** The model each pass runs on when neither `--pass-model` nor `drive.pass_model` names one: Claude Code's alias for the latest Sonnet. */
+export const DEFAULT_PASS_MODEL = "sonnet";
+
+/**
+ * A model as a pass command takes it: one word that does not start with a
+ * dash (a model id, a Claude Code alias such as `sonnet`, or a routing tier).
+ */
+export const PASS_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@[\]-]*$/;
+
+/** `drive.pass_model`: the model, alias or routing tier each pass runs on; `undefined` when not configured. */
+export function passModelSetting(): string | undefined {
+  const value = section("drive").pass_model;
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || !PASS_MODEL_PATTERN.test(value))
+    throw new DecodeError(
+      configSource("drive.pass_model"),
+      "$.drive.pass_model",
+      "must be one word naming a model, a Claude Code alias or a routing tier",
+    );
+  return value;
+}
+
+/** How a skill arms a drive: `do_item.arm_drive`'s values. */
+export const ARM_DRIVE_MODES = ["auto", "tab", "background", "print"] as const;
+export type ArmDriveMode = (typeof ARM_DRIVE_MODES)[number];
+
+/** How a drive is armed when `do_item.arm_drive` is not set. */
+export const DEFAULT_ARM_DRIVE: ArmDriveMode = "auto";
+
+/** Whether `value` is one of `do_item.arm_drive`'s values. */
+export function isArmDriveMode(value: unknown): value is ArmDriveMode {
+  return ARM_DRIVE_MODES.some((mode) => mode === value);
+}
+
+/** `do_item.arm_drive`: how do-item and drive-pr arm a drive; `undefined` when not configured. */
+export function armDriveSetting(): ArmDriveMode | undefined {
+  const value = section("do_item").arm_drive;
+  if (value === undefined || value === null) return undefined;
+  if (!isArmDriveMode(value))
+    throw new DecodeError(
+      configSource("do_item.arm_drive"),
+      "$.do_item.arm_drive",
+      `must be one of ${ARM_DRIVE_MODES.join(", ")}`,
+    );
+  return value;
+}
+
 /**
  * `ci.required_checks`: the exact check-run names that certify a head, or
  * `undefined` when not configured (the drive then derives them from the base
@@ -264,7 +331,8 @@ const baseBranchCache = new Map<string, string | null>();
 /**
  * The branch pull requests target and rounds diff against, without the
  * remote prefix: `DRIVE_PR_BASE_BRANCH`, else `repository.base_branch`, else
- * derived — the clone's `origin/HEAD` when it has one (no network), else
+ * derived — the clone's `<remote>/HEAD` when it has one (no network; the
+ * remote is `repository.remote`, else `origin`), else
  * `gh repo view --json defaultBranchRef`. A derived answer is cached per
  * process and repository.
  * `null` when none of them answers; callers fail closed on it.
@@ -280,6 +348,7 @@ export async function baseBranch(
   const cached = baseBranchCache.get(root);
   if (cached !== undefined) return cached;
   let derived: string | null = null;
+  const remote = remoteName(consumerRoot(root));
   const head = await git(
     [
       "-C",
@@ -287,13 +356,13 @@ export async function baseBranch(
       "symbolic-ref",
       "--quiet",
       "--short",
-      "refs/remotes/origin/HEAD",
+      `refs/remotes/${remote}/HEAD`,
     ],
     { stderr: "ignore", timeoutSec: gitTimeout(timeoutSec) },
   );
   const fromHead = head.stdout.trim();
-  if (head.code === 0 && fromHead.startsWith("origin/"))
-    derived = fromHead.slice("origin/".length);
+  if (head.code === 0 && fromHead.startsWith(`${remote}/`))
+    derived = fromHead.slice(`${remote}/`.length);
   if (derived === null) {
     const view = await ghCall(
       [
@@ -320,13 +389,15 @@ export async function baseBranch(
 }
 
 /** The sentence a caller prints when `baseBranch` returns `null`. */
-export const BASE_BRANCH_UNKNOWN =
-  "the base branch is unknown: set repository.base_branch in .config/jig.yaml (or DRIVE_PR_BASE_BRANCH), or give this clone an origin/HEAD (git remote set-head origin --auto)";
+export function baseBranchUnknown(remote: string): string {
+  return `the base branch is unknown: set repository.base_branch in .config/jig.yaml (or DRIVE_PR_BASE_BRANCH), or give this clone a ${remote}/HEAD (git remote set-head ${remote} --auto)`;
+}
 
 /**
  * The branch pull request `pr` targets, without the remote prefix, or `null`
  * when it cannot be read. `pr === ""` reads the pull request of the current
- * branch. For a stacked layer this is the layer below, not the integration
+ * branch, or the one a detached tree's attach recorded. For a stacked layer
+ * this is the layer below, not the integration
  * branch.
  */
 export async function pullRequestBaseBranch(
@@ -334,6 +405,7 @@ export async function pullRequestBaseBranch(
   pr: string,
   timeoutSec?: number,
 ): Promise<string | null> {
+  pr = await attachedPr(root, pr, timeoutSec);
   const selector = pr === "" ? [] : [pr];
   const view = await ghCall(
     ["pr", "view", ...selector, "--json", "baseRefName", "-q", ".baseRefName"],
@@ -345,6 +417,23 @@ export async function pullRequestBaseBranch(
   );
   const name = view.stdout.trim();
   return view.code === 0 && /^[^\s~^:?*[\\]+$/.test(name) ? name : null;
+}
+
+/**
+ * `pr`, or for `""` on a detached head the pull request the tree's attach
+ * recorded (`lib/driven-branch.ts`), since a detached head has no branch for
+ * `gh pr view` to read; `""` otherwise.
+ */
+async function attachedPr(
+  root: string,
+  pr: string,
+  timeoutSec?: number,
+): Promise<string> {
+  if (pr !== "") return pr;
+  const record = await attachedTree(boundedGit(timeoutSec), root, {
+    timeoutSec: gitTimeout(timeoutSec),
+  });
+  return record === null ? "" : String(record.pr);
 }
 
 /**
@@ -424,7 +513,8 @@ async function pullRequestBase(
 const prBaseRefCache = new Map<string, { ref: string } | { error: string }>();
 
 /**
- * `refs/remotes/origin/<branch>` for the branch pull request `pr` targets: the
+ * `refs/remotes/<remote>/<branch>` (the remote is `repository.remote`, else
+ * `origin`) for the branch pull request `pr` targets: the
  * base a round diffs against. A stacked layer's base is the layer below, so
  * its round sees only its own layer and never counts what a base sync brought
  * in from the layers beneath it. `pr === ""` reads the current branch's pull
@@ -433,7 +523,7 @@ const prBaseRefCache = new Map<string, { ref: string } | { error: string }>();
  *
  * Fails closed, with the reason, when the pull request's base cannot be
  * established: the pull request cannot be read (including on a detached
- * HEAD, where `pr` must be given), `origin` is not the repository the pull
+ * HEAD no attach recorded, where `pr` must be given), the remote is not the repository the pull
  * request lives in (compared by owner and name; `repo-url.ts` says why hosts
  * are not), or the base has no remote-tracking ref in this clone. No
  * other branch stands in for it: the integration branch can cover fewer files
@@ -447,16 +537,22 @@ export async function prBaseRef(
   pr: string,
   timeoutSec?: number,
 ): Promise<{ ref: string } | { error: string }> {
+  pr = await attachedPr(root, pr, timeoutSec);
   const key = `${root}\0${pr}`;
   const cached = prBaseRefCache.get(key);
   if (cached !== undefined) return cached;
-  const result = await resolvePrBaseRef(root, pr, timeoutSec);
+  const remote = readRemoteName(consumerRoot(root));
+  const result =
+    "error" in remote
+      ? remote
+      : await resolvePrBaseRef(root, remote.remote, pr, timeoutSec);
   prBaseRefCache.set(key, result);
   return result;
 }
 
 async function resolvePrBaseRef(
   root: string,
+  remote: string,
   pr: string,
   timeoutSec?: number,
 ): Promise<{ ref: string } | { error: string }> {
@@ -469,9 +565,10 @@ async function resolvePrBaseRef(
       (await currentBranchHasPullRequest(root, timeoutSec)) === false
     ) {
       const branch = await baseBranch(root, timeoutSec);
-      if (branch === null) return { error: BASE_BRANCH_UNKNOWN };
+      if (branch === null) return { error: baseBranchUnknown(remote) };
       const tracked = await trackingRef(
         root,
+        remote,
         branch,
         "the integration branch",
         timeoutSec,
@@ -486,37 +583,46 @@ async function resolvePrBaseRef(
       error: `cannot read the base branch of ${which}, which the round diffs against${pr === "" ? "; name the pull request explicitly" : ""}`,
     };
   }
-  const check = await verifyOriginIsPrRepo(
+  const check = await verifyRemoteIsPrRepo(
     boundedGit(timeoutSec),
     root,
     base.repo,
+    undefined,
+    remote,
   );
   if (!check.ok)
     return {
-      error: `cannot trust origin/${base.branch}, the base of ${which}: ${check.why}`,
+      error: `cannot trust ${remote}/${base.branch}, the base of ${which}: ${check.why}`,
     };
-  return trackingRef(root, base.branch, `the base of ${which}`, timeoutSec);
+  return trackingRef(
+    root,
+    remote,
+    base.branch,
+    `the base of ${which}`,
+    timeoutSec,
+  );
 }
 
 /**
- * `refs/remotes/origin/<branch>` once it is verified to name a commit in this
- * clone. Fully qualified: a local branch named `origin/<branch>` would make
- * the shorthand resolve to something other than the ref verified here.
+ * `refs/remotes/<remote>/<branch>` once it is verified to name a commit in
+ * this clone. Fully qualified: a local branch named `<remote>/<branch>` would
+ * make the shorthand resolve to something other than the ref verified here.
  */
 async function trackingRef(
   root: string,
+  remote: string,
   branch: string,
   role: string,
   timeoutSec?: number,
 ): Promise<{ ref: string } | { error: string }> {
-  const ref = `refs/remotes/origin/${branch}`;
+  const ref = `refs/remotes/${remote}/${branch}`;
   const tracking = await git(
     ["-C", root, "rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
     { stderr: "ignore", timeoutSec: gitTimeout(timeoutSec) },
   );
   if (tracking.code !== 0)
     return {
-      error: `origin/${branch}, ${role}, is not in this clone; run git fetch origin +refs/heads/${branch}:${ref}`,
+      error: `${remote}/${branch}, ${role}, is not in this clone; run git fetch ${shellQuote(remote)} ${shellQuote(`+refs/heads/${branch}:${ref}`)}`,
     };
   return { ref };
 }

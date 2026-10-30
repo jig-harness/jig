@@ -22,7 +22,7 @@ Contents: [the file](#the-file) ·
 [`gates`](#gates) · [`review`](#review) · [`repository`](#repository) ·
 [`pull_requests`](#pull_requests) · [`drive`](#drive) · [`ci`](#ci) ·
 [`issue_tracker`](#issue_tracker) · [`do_item`](#do_item) ·
-[`work_batch`](#work_batch) ·
+[`specs`](#specs) · [`work_batch`](#work_batch) · [`routing`](#routing) ·
 [`fleet_health`](#fleet_health) · [`verify`](#verify) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
 [`code_stats`](#code_stats) · [`gc`](#gc) ·
@@ -47,7 +47,7 @@ Contents: [the file](#the-file) ·
   was written to change, so it is an error. They are `pull_requests`,
   `issue_tracker.states` (keys are canonical states),
   `issue_tracker.labels` (keys are label roles), `resolve_conflicts`
-  (including each `generated` entry), `reflection`, `verify` and `code_stats`
+  (including each `generated` entry), `reflection`, `specs`, `verify` and `code_stats`
   (including each `areas` entry, and `kinds`, whose keys are kinds). In `review.taxonomy` every
   key other than `provenance_label` and `epic_label` is read as a list of
   distinct, nonempty strings, so an unrelated key there is an error too.
@@ -118,19 +118,23 @@ Command-line flags, where a script has them, override all three.
   all three layers.
 - **Fields only a repository sets.** `gates.command`,
   `repository.base_branch`, `issue_tracker.team`, `review.repo_slug`,
-  `review.repo_label`, `ci.required_checks`, every `changelog` field and
-  every `code_stats` field describe one repository. Set in the user file
+  `review.repo_label`, `ci.required_checks`, `docs.root`, `docs.schema`,
+  every `changelog`, `code_stats` and `specs` field describe one
+  repository. Set in the user file
   they would apply to every repository on the machine, so the user file
   refuses them with an error naming the field. An environment variable may still override them for one run,
   except the `changelog` fields, which the `changelog` skill reads from the
   repository's own file alone and refuses from any other layer
   ([`changelog`](#changelog)).
+- **Fields only a user file sets.** [`clones`](#clones-user-file-only)
+  describes one machine, so a repository's file refuses it; an environment
+  variable may still set it for one run.
 - **Adoption is the repository's file.** A user file alone does not make a
   repository look adopted: `resolve-review-comments` and the tracker scripts
   still refuse to run without `.config/jig.yaml`. The skills that run on
   their defaults read the user file and the environment either way.
 - **Paths** in any layer are relative to the repository root, as in the
-  repository's file.
+  repository's file, except the clone paths of `clones`, which are absolute.
 - **Errors** name the file or variable that set the field at fault, and
   `jig-config.ts` shows which layer set each field. It writes a key that
   holds a dot in quotes (`do_item.agents.title_keywords."node.js"`), and
@@ -152,13 +156,14 @@ field only to override the derivation:
 
 | Fact | Where it is read | Used for | Override |
 |------|------------------|----------|----------|
-| Integration branch (the branch pull requests land on) | The clone's `origin/HEAD`, else GitHub's default branch | Pull-request base, round diffs, CI policy | `repository.base_branch`, `DRIVE_PR_BASE_BRANCH` |
+| Integration branch (the branch pull requests land on) | The clone's `origin/HEAD` (drive-pr and do-item: the `HEAD` of `repository.remote`), else GitHub's default branch | Pull-request base, round diffs, CI policy | `repository.base_branch`, `DRIVE_PR_BASE_BRANCH` |
 | Pull-request template | `pull_request_template.md` (or `.txt`, any letter case) in the root, `.github/` or `docs/`, and the files of a `PULL_REQUEST_TEMPLATE/` folder there | The body an agent fills in | none: edit the template |
 | Title convention | A commitlint configuration (`commitlint.config.*`, `.commitlintrc*`, `commitlint` in `package.json`) that names the Conventional Commits rules, such as `@commitlint/config-conventional`; else at least 80% of the last 30 non-merge trunk commit subjects following [Conventional Commits](https://www.conventionalcommits.org/), and at least five such subjects to judge from | Whether titles take `type(scope): summary` | `pull_requests.title_format` |
 | Delete head branches on merge | GitHub repository settings | Warning for `branch` stacking: without it GitHub does not retarget the layer above a merged one | none: change the setting |
 | Code owners | `.github/CODEOWNERS`, `CODEOWNERS` or `docs/CODEOWNERS` | Reported only: GitHub requests those reviewers itself | none |
 | Required checks | The protection and rulesets of the branch the pull request (or its stack) lands on | Which checks certify a converged head | `ci.required_checks` |
 | Draft or Ready on opening | `drive.reviews_drafts: false` means Ready | How a pull request opens | `pull_requests.open_as` |
+| Agent runtime | The variables the runtime sets (`CLAUDECODE` for Claude Code, `CODEX_…` for Codex) | Which row of `routing.models` and `routing.efforts` a route is translated through | none |
 
 ## `gates`
 
@@ -217,7 +222,7 @@ an error.
 | `fail_open.inert_when_unknown` | list drawn from `severity`, `category`, `tier`, `self_inflicted`; may be empty | yes | Inputs whose `unknown` value turns the ladder off for that finding |
 | `bands` | non-empty list of `{id, from_round, through_round, minimal_diff, accept_if}` | yes | Round ranges, contiguous from round 1; the last one has `through_round: null`. A finding is kept when it meets any clause of its band's `accept_if` (`unconditional`, `min_severity`, `categories`, `max_tier`, `self_inflicted`) and declined otherwise. `minimal_diff: true` limits the fix of a kept finding to the smallest change |
 | `reply.marker`, `reply.wont_fix`, `reply.deferred` | text | yes | The reply posted on a declined thread. Each template ends with a `<!-- {marker} -->` line, which the loop-cost reports look for |
-| `severity_mapping` | map from each severity, and `unknown`, to `{linear_priority, acceptance}` | no | The tracker priority and acceptance tier each severity corresponds to; checked when present, not used by the ladder |
+| `severity_mapping` | map from each severity, and `unknown`, to `{priority, acceptance}` | no | The tracker priority (0 none, 1 urgent to 4 low) and acceptance tier each severity corresponds to; checked when present, not used by the ladder. `linear_priority` is accepted as an alias of `priority` |
 | `calibration` | any | no | Notes for people; not read |
 
 The [test fixture](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
@@ -228,7 +233,8 @@ is a complete example.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `repository.base_branch` | branch name, without `origin/` | Derived: the clone's `origin/HEAD`, else GitHub's default branch | drive-pr, do-item, review, descar, changelog | The integration branch: where pull requests land. A round diffs against its pull request's own base, so a stacked layer's round covers that layer alone; it diffs against this branch only on a branch with no pull request, and refuses when the pull request's base cannot be read or fetched, or `origin` is not the pull request's repository. The required checks come from the protection of the pull request's base and, for a stacked layer, of the branch the stack's bottom layer targets; a walk down the stack stops at this branch, and an unknown integration branch is an error. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it. changelog: the integration branch its release, tag plan, status and `release-access.ts` work on |
+| `repository.base_branch` | branch name, without the remote's prefix (`origin/`) | Derived: the clone's `origin/HEAD` (drive-pr, do-item and gc: the `HEAD` of `repository.remote`), else GitHub's default branch | drive-pr, do-item, review, descar, changelog, docs | The integration branch: where pull requests land. A round diffs against its pull request's own base, so a stacked layer's round covers that layer alone; it diffs against this branch only on a branch with no pull request, and refuses when the pull request's base cannot be read or fetched, or the remote (`repository.remote`) is not the pull request's repository. The required checks come from the protection of the pull request's base and, for a stacked layer, of the branch the stack's bottom layer targets; a walk down the stack stops at this branch, and an unknown integration branch is an error. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it. changelog: the integration branch its release, tag plan, status and `release-access.ts` work on. docs: the base its `last_updated` check compares a branch with, and against which it finds the documents a branch adds; a value that resolves neither as `origin/<branch>` nor as `<branch>` stops the pass (exit 2). Without the field docs does not ask GitHub for the default branch: it takes the first of `origin/HEAD`, `origin/main`, `main`, `origin/master` and `master` that resolves, and skips the `last_updated` check when none does, so set the field when the default branch is named otherwise and `origin/HEAD` is unset |
+| `repository.remote` | git remote name: ASCII letters, digits, `.`, `_`, `-` and `/`; no leading `-`, and none of the sequences a ref name refuses (`..`, `//`, a leading or trailing `/`, a trailing `.`, a component starting with `.` or ending in `.lock`) | `origin` | drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc | The git remote of the clone the skills push to and fetch from. drive-pr: it fetches the pull request's head branch from it to attach the pull request to a working tree (and to place one), fetches the pull request's base from it, diffs against `<remote>/<base>`, derives the integration branch from `<remote>/HEAD`, pushes the round's commits to it, and refuses to fetch or push when the remote's addresses do not name the pull request's repository; the conflict fix it prints names it. do-item: `pr-plan.ts open` measures the change against `<remote>/<base>` and prints the remote (`remote:`) the branch is pushed to. fix-ci: the default of `probe-base.ts --remote`. resolve-conflicts: `<remote>/HEAD` names the default branch, and its merge commands fetch from it. gc: the `worktrees` kind reads a worktree's pull requests and its integration branch (`<remote>/HEAD`) through it, and a detached tree a drive attached through the remote its record names. do-item, work-batch, file-issue, reflect: with GitHub Issues and no `issue_tracker.github.repository`, the remote's address names the repository. Set it when the clone names that remote otherwise (`upstream`, or a fork setup where `origin` is the fork). A person may set it in the user file for every clone; an unusable name, `null` included, is an error naming where it was set, and so is a `repository` section that is `null` or not a mapping |
 
 ## `pull_requests`
 
@@ -310,6 +316,8 @@ not resolve it either.
 | `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts | The repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (YAML with an `areas:` map). The [change-areas](skills/change-areas/README.md) skill validates the whole catalog against [its schema](skills/change-areas/README.md#the-catalog) and resolves a change against it. The plugin reads each area's `paths` and `generated[].source` globs, `labels`, `tracker.labels` and `tracker.flags` (`linear:` is the older spelling of the `tracker:` block) and `agent`, through one reader that refuses an area whose globs, labels or `tracker` block are malformed, with the field at fault; `agent` and the rest of the area are passed through unchecked. `resolve-conflicts` also reads each area's `generated[].outputs` and `command` (see `resolve_conflicts.generated`). `determine_agent.ts --catalog` overrides it for one run |
 | `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-item | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
 | `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops unconverged (exit `6`). The `--max-rounds` flag overrides it for one run. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
+| `drive.pass_deadline_retries` | whole number ≥ 0 | `2` | drive-pr | How many passes killed at their deadline one drive restarts from, counted in the drive state across re-arms and takeovers until the drive converges or the pull request closes: the driver reports what the killed pass left in the tree, leaves it there and starts the next round. Past this many it stops with exit `15` and says the budget is spent; `0` stops at the first. A value that is not a whole number of at least 0 stops the drive |
+| `drive.pass_model` | one word: a model id, a Claude Code alias, or a routing tier (`execution`, `strategic`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. A pass command that is not Claude Code's chooses its own model. A value that is not one word stops the drive |
 | `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
 
 ## `ci`
@@ -326,7 +334,7 @@ not resolve it either.
 | `issue_tracker.adapter` | adapter name | `github` | do-item, drive-pr, decide, work-batch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers: `github` or `linear`. `github` (GitHub Issues) uses the signed-in `gh` command-line client, which also reads `GH_TOKEN` or `GITHUB_TOKEN`; with `JIG_GITHUB_GRAPHQL_URL` set it sends requests to that GraphQL endpoint (a GitHub Enterprise Server) with the token from `GH_TOKEN` or `GITHUB_TOKEN`. `linear` reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client. A file that sets `issue_tracker.team` without `issue_tracker.adapter` (or with it empty) is refused, since the default adapter has no team: add `adapter: linear` |
 | `issue_tracker.team` | team key such as `ENG` | **Required by the Linear adapter**; refused unless `issue_tracker.adapter` is set too | do-item, drive-pr, review, work-batch | Linear only: the key issue identifiers carry (`ENG` for `ENG-123`). GitHub Issues keys are `#123`, of the repository `issue_tracker.github.repository` names |
 | `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate`. On GitHub Issues, `done`, `canceled` and `duplicate` are an issue closed as completed, not planned or duplicate, and each open state is the label (or, with `issue_tracker.github.states_from: project`, the board option) of that name; `todo` carries no label, so a new issue is in `todo` |
-| `issue_tracker.github.repository` | `owner/name` | The repository the `origin` remote points to on github.com | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the repository whose issues the skills work on |
+| `issue_tracker.github.repository` | `owner/name` | The repository the git remote (`repository.remote`, else `origin`) points to on github.com | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the repository whose issues the skills work on |
 | `issue_tracker.github.states_from` | `labels` or `project` | `labels` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: where an open issue's workflow state is kept. `labels`: a label per state, named by `issue_tracker.states`. `project`: the option of a Projects board's single-select field; an open issue with no option is in `todo`, and one whose option names no open state is refused; the token then needs the `project` scope (`gh auth refresh -s project`) |
 | `issue_tracker.github.project` | a board's web address, `https://github.com/orgs/<org>/projects/<n>` or `https://github.com/users/<user>/projects/<n>` | **Required when `states_from` is `project`** | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the board whose field holds the state. Moving an issue to an open state adds it to the board when it is not there |
 | `issue_tracker.github.status_field` | field name | `Status` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the board's single-select field that holds the state |
@@ -360,6 +368,7 @@ same), rather than running without the repository's routing and gates.
 | `do_item.scouts` | map from agent to a list of scouts | none | do-item | Scouts that run before each agent. The key is the **agent**, not a label |
 | `do_item.gates` | list of `{labels, paths, skill}` | none | do-item | Review skills that must approve a change before it is pushed, when the issue carries one of the `labels` or the change touches one of the `paths` |
 | `do_item.execution_plan_block` | name | `execution-plan-v1` | do-item | Name of the fenced block in an epic's description that holds its machine-readable execution plan |
+| `do_item.arm_drive` | `auto`, `tab`, `background`, `print` | `auto` | do-item, drive-pr | How `/jig:do-item`'s § Arm the drive and `/jig:drive-pr`'s § Arm start the drive (both through drive-pr's `arm-drive.ts`). `auto`: in a terminal tab of the pull request's workspace where the session can open one (in an [Orca](https://www.onorca.dev) workspace on a macOS or Linux host), and with the session's background execution elsewhere, falling back to the background, and saying why, when Orca refuses the tab or the tab's drive is not listed in time. `tab`: a terminal tab, or a reported failure. `background`: the session's background execution. `print`: the command only, for a person to run. The tab is a fresh login shell of the user's, so `bun`, `claude` and the Claude account or profile come from it, not from the session. A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the drive's command is quoted for a POSIX shell: `auto` arms in the background, and `tab` fails. A session that is not Claude Code's prints the command whatever the setting, and so does a human checkpoint the run has no clearance for |
 | `do_item.work_types` | map from a work type to fields of its row in the depth table below | The table's defaults | do-item | How much each delivery station does for an item of each type. An entry overrides single fields and keeps the rest of the row; a type outside the default list must set every field. Refused: an entry for a type outside `issue_tracker.types`, an entry for `unknown`, a field the table does not have, and a value outside a field's set. do-item prints the type and its row when it picks up an item |
 
 The routing order and the gates are explained in
@@ -395,6 +404,20 @@ skipped, the change note is required, it is not batchable, and its autonomy
 is `hitl`, since failing to derive a type does not show the item is not a
 spike. An override that lightens one type cannot lighten `unknown`.
 
+## `specs`
+
+Where a repository keeps the requirements and acceptance criteria its work
+items link, read by the spec resolver (`shared/spec/resolve.ts`), which
+`do-item` runs after it fetches an item. The resolver reads, never writes,
+through one adapter per layout; the `body` adapter, which reads the item's
+own body, is the one built so far. Every field is repository-only, and an
+unknown key is refused.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `specs.adapters` | list of adapter names, in order: `body` | Every adapter whose layout the repository holds, then `body` | do-item | Orders or restricts the adapters: only those listed run, in this order, and the first whose path patterns claim a referenced path reads it. Leaving `body` out stops the item's own sections from being read |
+| `specs.body_section` | heading text, without the `#` | `Spec` | do-item | The heading of the body section that names the item's spec, by link or path, and may carry its requirements, criteria and tasks inline. Matched at any heading level, ignoring case and a trailing colon. `Requirements` and `Acceptance criteria` sections are read beside it, so neither may be the spec section's heading. Headings and entries inside code (a fence, or an indented code block) are not read |
+
 ## `work_batch`
 
 How `work-batch` sizes and ranks a batch of small issues for one pull
@@ -418,6 +441,60 @@ context labels from `review`, the labels that name an area from
 An unknown field in `work_batch` or `work_batch.ranking` is refused. The
 [work-batch README](skills/work-batch/README.md) explains the budget, the
 ranking and the solo-only flags.
+
+## `routing`
+
+Which [model tier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+and which effort the agent that implements an item runs on: its
+[route](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), derived
+from the item's work type, its labels and the change-area catalog by rules
+kept here as data. Routing is opt-in: without a `routing` section, do-item
+derives and prints each route and applies none, so a repository sees what
+the rules would choose before it turns them on. `routing: {}` declares the
+section and accepts every default; a `routing` key left empty (YAML's null)
+reads as absent. In this version do-item prints the route and forwards
+nothing yet
+([design](https://github.com/jig-harness/jig/blob/main/design/agent-routing.md)).
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `routing.types` | map from a work type to `{tier, effort}` | The table below | do-item | Each type's base tier (`execution` or `strategic`) and effort (`low`, `medium`, `high`, `max`). An entry overrides single fields and keeps the rest of the row; a type outside the default list must set both. Refused: an entry for a type outside `issue_tracker.types`, an entry for `unknown`, and a value outside the lists. Only these two tiers can be routed to: an implementer writes, which the Scout tier may not, and the Judgment tier is admitted per decision layer, never for every item of a type |
+| `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare under `tracker.flags` | do-item | Flag labels that move the effort up one step |
+| `routing.raise.sizes` | list of labels | The known sizes (`work_batch.sizes`, else `issue_tracker.labels.batch_sizes`, with `review.taxonomy.sizes`) outside `issue_tracker.labels.batch_sizes`; `[large]` where that leaves none | do-item | Size labels that move the effort up one step. A batchable size never raises by default |
+| `routing.raise.reviews` | `true` or `false` | `true` | do-item | Whether an area with a mandatory review (`review.skills` naming a skill) among the areas the item's labels reach through `do_item.agents.codearea_areas`, and every area their `impliedBy` closure adds, moves the effort up one step |
+| `routing.models` | map from a runtime (`claude-code`, `codex`) to `{execution, strategic}`, each the runtime's [family alias](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) | `claude-code: {execution: sonnet, strategic: opus}` | do-item, drive-pr | Where a routing tier becomes a model: a route names a tier, never a model, and `drive.pass_model` set to a tier resolves here too (that field may also name a model directly). A declared runtime row names both tiers and replaces that runtime's default; a runtime with no row gets no model, and its routes are recorded and not applied |
+| `routing.efforts` | map from a runtime to a map from an effort to the runtime's name for it | Each effort as written | do-item | Where a runtime spells an effort differently |
+
+Refused besides: an unknown field in `routing` or `routing.raise`, a name
+that is more than one word (it would not read back from the route record),
+and, where the repository has a [label taxonomy](#issue_tracker) its label
+lint accepts, a declared raise list naming a label the taxonomy does not
+declare. A default list is
+never refused: a default label no item carries raises nothing. A refused
+`routing` section stops do-item and says why; it is never read as absent.
+
+### The routing table
+
+| Field | `bug` | `feature` | `improvement` | `task` | `spike` |
+|-------|-------|-----------|---------------|--------|---------|
+| `tier` | `execution` | `execution` | `execution` | `execution` | `strategic` |
+| `effort` | `medium` | `high` | `medium` | `low` | `high` |
+
+An item whose type is `unknown`, or whose type has no row while `routing`
+is undeclared, takes the highest tier and the highest effort any row names,
+each default type's default row included, so an override that lowers one
+type cannot lower it.
+
+The raises, each class moving the effort up one step at most once however
+many labels of the class the item carries, in this order: a flag label, a
+mandatory review, a size label, and the human-in-the-loop label
+(`issue_tracker.labels.hitl`) or one of its facets, counted once even where
+the catalog also lists it as a flag. A catalog that is declared and cannot
+be read is taken to flag the item where `routing.raise.flags` is `catalog`,
+and to hold a mandatory review where `routing.raise.reviews` is on. The
+effort stops at `max`, and a raise never moves the tier: an Execution type
+that keeps needing `max` is a row a person moves to `strategic`, with the
+route records showing it.
 
 ## `fleet_health`
 
@@ -573,7 +650,7 @@ changelog:
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
 | `changelog.file` | path of a file, relative to the root | **Required**: absent, the skill is off | changelog | The changelog. Setting it turns the skill on. It must exist; the root itself, a folder path (`docs/`) and a path with a `..` segment are refused |
-| `changelog.format` | `keep-a-changelog`, `common-changelog` | Detected from the file: an `## [Unreleased]` heading or a link to keepachangelog.com is Keep a Changelog, a link to common-changelog.org is Common Changelog; anything else, an empty file included, is refused with a request to set the field | changelog | The changelog's format: which change types a note lists, whether it has an Unreleased section, how an entry ends |
+| `changelog.format` | `keep-a-changelog`, `common-changelog` | Detected from the file: an `## [Unreleased]` heading or a link to keepachangelog.com is Keep a Changelog, a link to common-changelog.org is Common Changelog; anything else, an empty file included, is refused with a request to set the field. A Common Changelog file holds only its title and its releases, so it cannot name its format: set the field for it | changelog | The changelog's format: which change types a note lists, whether it has an Unreleased section, how an entry ends, and which format's rules `lint.ts` holds the whole file to |
 | `changelog.notes_dir` | folder, relative to the root | `changes` | changelog | The folder of change notes: the Markdown files directly in it, other than its `README.md`. The root itself (`.`, `./`) is refused |
 | `changelog.version` | `{ files: [{ path, key }] }` or `{ tags: true }` | Derived: `package.json` `version`, `pyproject.toml` `project.version` (else `tool.poetry.version`) and `Cargo.toml` `package.version`, each only where it sits at the root and holds a written version; none left is an error asking for the field | changelog | Where the released version lives. `files`: JSON, TOML or YAML files each with the dotted `key` that holds the version (a plain `VERSION` file takes no key); all must agree. `tags`: the version is the changelog's newest release heading, before the first release the highest `<tag_prefix>x.y.z` tag, else `0.0.0` |
 | `changelog.release_paths` | list of paths | `[]` | changelog | A change under one of these ships only in a release: its branch must carry a note that asks for one. A path ending in `/` is a folder; one without is that file or folder and what is under it, never another name that starts the same (`plugin` holds `plugin/x`, not `plugin-docs/x`). A file moved out of a path counts as a change to it |
@@ -597,8 +674,10 @@ job from the event that started it; elsewhere from `origin/HEAD`, then
 
 How the [code-stats](skills/code-stats/README.md) skill classifies the
 repository's files. Every field is optional: without the section the skill
-uses its built-in detection and the default areas, and the fields fix what
-detection gets wrong. Every field is repository-only. A value the skill
+uses its built-in detection, the test files its test runners' configuration
+names ([read before this section](skills/code-stats/README.md#test-runner-configuration):
+jest, vitest, pytest, Gradle and Maven), and the default areas, and the
+fields fix what those get wrong. Every field is repository-only. A value the skill
 cannot use (an unknown kind, a malformed glob, an empty or repeated area
 name, a value of the wrong type, an unknown key) is refused with a message
 naming the field.
@@ -622,7 +701,7 @@ code_stats:
 |-------|------|-------------|---------|--------------|
 | `code_stats.areas` | list of `{name, description?, paths: [globs], content?: true or false}`; globs are relative to the root (`**`, `*`, `?`, `{a,b}`, `[...]`) | The default areas below | code-stats | What each file is for, in order: the first rule whose glob matches names a file's area. The list replaces the default areas whole. `content: true` makes YAML, JSON and other configuration files in that area count as data. A name holds no `/` |
 | `code_stats.default_area` | area name | `production` | code-stats | The area of a file no rule matches; such a file counts as unclassified |
-| `code_stats.kinds` | map of kind (`code`, `test`, `docs`, `config`, `data`, `generated`, `fixture`, `asset`, `vendored`, `other`) to a list of globs | none: built-in detection alone | code-stats | Kinds checked before built-in detection, in the order written; the first glob that matches decides |
+| `code_stats.kinds` | map of kind (`code`, `test`, `docs`, `config`, `data`, `generated`, `fixture`, `asset`, `vendored`, `other`) to a list of globs | none: built-in detection and the test runners' configuration | code-stats | Kinds checked before built-in detection and the test runners' configuration, in the order written; the first glob that matches decides |
 | `code_stats.modules` | list of globs naming module folders | Detected from the [workspace manifests](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (pnpm, npm, Yarn or Bun workspaces, `go.work`, Cargo, Gradle, uv), else the top folders | code-stats | The module folders; a file belongs to the deepest one that holds it |
 | `code_stats.classify_command` | shell command | none | code-stats | The last layer, a [classify command](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): run once from the root with the tracked paths on standard input, one per line; prints JSON lines `{"path", "area"?, "kind"?, "language"?, "module"?}` whose values override every other layer. A non-zero exit, a line it cannot read, an untracked path, or an unknown area or kind fails the report ([contract](skills/code-stats/README.md#the-classify-command)) |
 
@@ -646,17 +725,23 @@ area's paths, the build tools and the database conventions.
 ## Procedure skills
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
-`promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
-`explain`, `resolve-conflicts`, `audit`) detect
+`docs`, `promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
+`explain`, `red-team`, `resolve-conflicts`, `audit`) detect
 what they need from the repository; set a field only when detection picks
-the wrong thing. `programmatic-execution` and `audit` read no field of their
-own; `audit` checks all the others.
+the wrong thing. `programmatic-execution`, `red-team` and `audit` read no
+field of their own; `audit` checks all the others. `red-team` reads a
+document's kind from its frontmatter `type:` or its headings (`--kind`
+overrides) and takes the agent command for its fresh runs on the command
+line.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `adr.directory` | folder, relative to the root | Detected: the first existing of `docs/adr`, `docs/adrs`, `doc/adr`, `docs/decisions`, `docs/architecture/decisions`, `doc/architecture/decisions`, `adr`, `decisions`; none means no records yet, and `decide` and `explain` then use `docs/adr` | adr, review, decide, explain | Where the decision records live. `decide` searches them for precedent, and `decide` and `explain` resolve a bare `ADR-NNNN` citation there when they check a sheet's freshness. `adr` and `review` require a configured folder to exist; `decide` and `explain` do not check, and find no records in a missing one |
+| `adr.directory` | folder, relative to the root | Detected: the first existing of `docs/adr`, `docs/adrs`, `doc/adr`, `docs/decisions`, `docs/architecture/decisions`, `doc/architecture/decisions`, `adr`, `decisions`; none means no records yet, and `decide` and `explain` then use `docs/adr` | adr, review, decide, explain, docs | Where the decision records live. `decide` searches them for precedent, and `decide` and `explain` resolve a bare `ADR-NNNN` citation there when they check a sheet's freshness; `docs` counts the folder as the project's decision records when it plans missing documents. `adr`, `review` and `docs` require a configured folder to exist; `decide` and `explain` do not check, and find no records in a missing one |
 | `adr.rules_file` | path, relative to the root | Detected: the one tracked `adr-rules.yaml`, `adr-rules.yml`, `.adr-rules.yaml` or `adr-rules/rules.yaml` (or `.yml`), outside test fixtures and templates; several matches are an error | adr, review | The machine-readable decision-rules catalog. A configured file must exist |
-| `descar.lint_command` | shell command taking document paths | Detected: the repository's copy of M4's scar lint; else the document is checked by hand | descar | Lint that finds review scars in documents |
+| `descar.lint_command` | shell command taking document paths | Detected: the repository's copy of M4's scar lint; else the scar lint the `docs` skill holds | descar | Lint that finds review scars in documents |
+| `docs.root` | folder, relative to the root | Detected: the first existing of `docs`, `doc`, `documentation`; none means the repository has no docs tree, and the checks that need one are skipped | docs | The governed docs tree. A configured path must name an existing folder, not a file. Configured or detected, it must lie inside the repository once symbolic links are followed. Repository-only |
+| `docs.schema` | path, relative to the repository root | Detected: the shallowest `frontmatter-schema.yaml` or `.frontmatter-schema.yaml` (or `.yml`) under the docs tree; none skips the frontmatter check | docs | The frontmatter schema the documents are checked against. A configured path must name an existing file, not a folder. Configured or detected, it must lie inside the repository once symbolic links are followed. Repository-only |
+| `docs.stale_after_days` | whole number, 1 or more | `180` | docs | A `status: draft` document whose `last_updated` is more than this many days old is reported as a stale draft (a warning) |
 | `promote_memory.lint_command` | shell command; `{dir}` and `{file}` stand for the memory folder and file | none: the check is done by hand | promote-memory | Checks one agent memory against the repository; exit 0 means clean |
 | `promote_memory.target_dir` | folder, relative to the root | `docs/retrospection` | promote-memory | Where promoted pages go, in `YYYY/MM/` below it |
 | `fix_ci.regenerate_commands` | list of shell commands | none: the agent finds the command | fix-ci | Commands that regenerate committed generated files a CI check compares |
@@ -698,6 +783,8 @@ These are set per machine or per run, not committed:
 | `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
+| `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees), and `attach-pr.ts --place` choose the tree without attaching; `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
+| `DRIVE_PR_LEDGER` | `off` makes `drive.ts` drive without the drive ledger on the pull request: no seeding from it, no check for another clone's driver, no writes; `on` or unset uses it ([where its state lives](skills/drive-pr/README.md#where-its-state-lives)) |
 | `DRIVE_PR_STATE_DIR` | State root; rounds, locks and leases live in its `<clone-key>/` subdirectory. An inherited resolved leaf is also accepted. Flat legacy state refuses until explicitly relocated. |
 | `JIG_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |
 | `DEV_DASHBOARD_DIR` | Overrides `fleet_health.snapshot_dir` |
@@ -718,6 +805,25 @@ These are set per machine or per run, not committed:
 | `DRIVE_PR_*` (others) | Round limits, timeouts and repair budgets; listed in the [drive-pr README](skills/drive-pr/README.md) |
 | Others | A few knobs of a single skill, such as `REFLECT_THRESHOLD` of `resolve-review-comments`, are described where that skill's `SKILL.md` uses them |
 
+## `clones` (user file only)
+
+Where this machine keeps a clone of another repository, so a session in one
+repository can arm the drive of a pull request in another
+(`/jig:drive-pr owner/name#N`, or the pull request's URL). Only the user file
+(`~/.jig/jig.yaml`) or an environment variable may set it: a repository's own
+file, shared by everyone who clones it, cannot know where this machine keeps
+anything, and refuses the field with an error naming it.
+
+```yaml
+clones:
+  example/api: ~/work/api
+  example/web: /srv/checkouts/web
+```
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `clones` | map of `owner/name` to a local clone path, absolute or starting with `~/` | No clone is known: arming another repository's pull request prints the command to run in a checkout of it | drive-pr | The drive is armed in that clone's primary checkout, as for a pull request with no working tree: in the tree that holds the pull request, else in a new one under that repository's `gc.worktree_roots`. The clone must be a checkout of the repository its key names. Keys compare without regard to case |
+
 ## `gc`
 
 The resource collector reads repository declarations separately from machine
@@ -727,7 +833,7 @@ command can be registered as a collection kind.
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
 | `gc.kinds` | distinct string list | Empty; supported repository kinds: `tool-state`, `scratch`, `worktrees` | audit, gc |
-| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute | audit, gc |
+| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute. `drive-pr` creates the working tree for a pull request that has none under the first root. A root that does not exist on the machine that runs the audit is not reported: a repository names the roots of every machine it is worked on | audit, gc, drive-pr |
 | `gc.scratch_prefixes` | distinct path list | Empty; path prefixes of scratch directory names, relative to the repository or absolute; a filesystem root is refused | audit, gc |
 
 A collecting run fetches `.config/jig.yaml` from the remote URL and base branch
@@ -808,6 +914,7 @@ review:
       severities: { Sev1: blocker, Sev2: high, Sev3: medium, Sev4: low }
 repository:
   base_branch: develop                   # default: the repository's default branch
+  remote: upstream                       # default: origin
 pull_requests:
   stacking: branch                       # none | native | branch
   max_stack_depth: 4
@@ -824,6 +931,8 @@ drive:
   change_areas_catalog: docs/change-areas.yaml
   reviews_drafts: true
   max_rounds: 10                         # default round budget of a drive; --max-rounds overrides
+  pass_deadline_retries: 2               # passes killed at their deadline a drive restarts from
+  pass_model: sonnet                     # a model id, an alias or a routing tier; --pass-model overrides
   escape_baseline_doc: docs/review-loop-baseline.md
 ci:
   required_checks: [build, test]
@@ -859,7 +968,7 @@ issue_tracker:
     task: [task, type:task, chore]
     spike: [spike, type:spike]
   github:                                # read by the github adapter only
-    repository: acme/app                 # default: the origin remote's
+    repository: acme/app                 # default: the git remote's
     states_from: project                 # default: labels
     project: https://github.com/orgs/acme/projects/1
     status_field: Status
@@ -881,6 +990,7 @@ do_item:
   gates:
     - { labels: [db-migration], paths: ["migrations/**"], skill: db-migration-review }
   execution_plan_block: execution-plan-v1
+  arm_drive: auto                        # auto | tab | background | print
   work_types:                            # fields of the depth table to override
     task: { review_skip_lines: 80 }
 work_batch:
@@ -893,6 +1003,17 @@ work_batch:
     sizes: { xs: 2, small: 1, medium: 0 }
     provenance: 3
     shared_area_label: 1
+routing:                                 # absent: routes derived and printed, none applied
+  types:
+    feature: { effort: max }
+  raise:
+    flags: catalog
+    sizes: [large, xl]
+    reviews: true
+  models:
+    claude-code: { execution: sonnet, strategic: opus }
+  efforts:
+    codex: { max: xhigh }
 fleet_health:
   config: .config/fleet-health.yaml
   snapshot_dir: ~/.local/state/jig/dashboard
@@ -909,6 +1030,10 @@ sheets:
     beta: ../beta
 descar:
   lint_command: "bun scripts/check-descarring-scars.ts"
+docs:
+  root: docs
+  schema: docs/.frontmatter-schema.yaml
+  stale_after_days: 180
 promote_memory:
   lint_command: "<your memory lint> --dir {dir} --file {file}"
   target_dir: docs/retrospection
@@ -990,4 +1115,7 @@ code_stats:
     test: ["scripts/smoke-*.sh"]
   modules: ["apps/*", "packages/*"]      # default: from the workspace manifests
   classify_command: "<your classify command>"   # paths on stdin, JSON lines on stdout
+specs:
+  adapters: [body]                       # default: every layout present, then body
+  body_section: Spec
 ```

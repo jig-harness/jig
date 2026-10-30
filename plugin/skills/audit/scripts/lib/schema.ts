@@ -35,6 +35,8 @@ export type TypeSpec =
       items?: Items;
       values_type?: TypeSpec;
       pattern?: string;
+      /** enum: the allowed values. */
+      values?: string[];
     };
 
 /** A list's entries: one type for all, or mappings with a type per key. */
@@ -53,7 +55,7 @@ export interface Field {
   nonempty?: boolean;
   keys?: string[];
   values_type?: TypeSpec;
-  exists?: "required" | "expected";
+  exists?: "required" | "expected" | "machine";
   read_by: string[];
   repository_only?: boolean;
   default?: unknown;
@@ -63,6 +65,8 @@ export interface Field {
 
 export interface Schema {
   strict: string[];
+  /** Sections and fields whose `null` the skills refuse rather than read as not set. */
+  null_refused: string[];
   refused: Record<string, string>;
   fields: Field[];
 }
@@ -109,15 +113,29 @@ function stringList(v: unknown): v is string[] {
 
 type Entry = Record<string, unknown>;
 
-const SPEC_KEYS = new Set(["type", "items", "values_type", "pattern"]);
+const SPEC_KEYS = new Set([
+  "type",
+  "items",
+  "values_type",
+  "pattern",
+  "values",
+]);
+
+/** Whether a nested spec's `items` and `values` fit its type: a list's items, an enum's values. */
+function validNested(spec: Record<string, unknown>): boolean {
+  const items =
+    spec.type === "list" ? validItems(spec.items) : spec.items === undefined;
+  const values =
+    spec.type === "enum" ? stringList(spec.values) : spec.values === undefined;
+  return items && values;
+}
 
 /** Whether `spec` is a type name, or a list or map spec with typed entries. */
 function validSpec(spec: unknown): boolean {
   if (isType(spec)) return true;
   if (!isRecord(spec) || !isType(spec.type)) return false;
   if (Object.keys(spec).some((k) => !SPEC_KEYS.has(k))) return false;
-  if (spec.type === "list" ? !validItems(spec.items) : spec.items !== undefined)
-    return false;
+  if (!validNested(spec)) return false;
   if (!validSpecPattern(spec.type, spec.pattern)) return false;
   return spec.values_type === undefined
     ? true
@@ -205,8 +223,11 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
   (e) =>
     e.type === "list" && !validItems(e.items) ? "a list needs items" : null,
   (e) =>
-    e.exists !== undefined && e.exists !== "required" && e.exists !== "expected"
-      ? "exists is required or expected"
+    e.exists !== undefined &&
+    e.exists !== "required" &&
+    e.exists !== "expected" &&
+    e.exists !== "machine"
+      ? "exists is required, expected or machine"
       : null,
   flag("repository_only"),
   (e) =>
@@ -255,13 +276,37 @@ export function parseSchema(raw: unknown): Schema {
     throw new Error("config schema: refused must map a section to a message");
   if (!isRecord(raw.fields))
     throw new Error("config schema: fields must be a mapping");
-  return {
+  const nullRefused = raw.null_refused ?? [];
+  if (!stringList(nullRefused))
+    throw new SchemaNullRefusedError(
+      "config schema: null_refused must be a list of section or field paths",
+    );
+  const schema: Schema = {
     strict: raw.strict,
+    null_refused: nullRefused,
     refused: raw.refused as Record<string, string>,
     fields: Object.entries(raw.fields).map(([path, entry]) =>
       parseField(path, entry),
     ),
   };
+  const index = indexSchema(schema);
+  for (const path of schema.null_refused) {
+    const field = index.byPath.get(path);
+    if (!field && !index.prefixes.has(path))
+      throw new SchemaNullRefusedError(
+        `config schema: null_refused names ${path}, which is not a section or field`,
+      );
+    if (field?.nullable)
+      throw new SchemaNullRefusedError(
+        `config schema: null_refused names ${path}, which is nullable`,
+      );
+  }
+  return schema;
+}
+
+/** A `null_refused` list that does not name the schema's own refusable paths. */
+class SchemaNullRefusedError extends Error {
+  override readonly name = "SchemaNullRefusedError";
 }
 
 export const SCHEMA_PATH = join(skillDir(), "config-schema.yaml");
@@ -469,15 +514,27 @@ function knownKeys(index: SchemaIndex, prefix: string): string[] {
     .map((p) => p.slice(prefix.length + 1).split(".")[0] ?? "");
 }
 
+/** The error for a `null` the skills refuse at `path`. */
+function refusedNullFinding(path: string): Finding {
+  return {
+    id: `null:${path}`,
+    severity: "error",
+    message: `${path} is null, which the skills refuse rather than read as not set; remove it or give it a value`,
+  };
+}
+
 /** A known field's value: null where it is not nullable, the wrong shape, an older name. */
 function knownFieldFindings(
+  index: SchemaIndex,
   path: string,
   value: unknown,
   field: Field,
 ): Finding[] {
   const findings: Finding[] = [];
   const problem = value === null ? null : typeProblem(value, field.type, field);
-  if (value === null && !field.nullable)
+  if (value === null && index.schema.null_refused.includes(path))
+    findings.push(refusedNullFinding(path));
+  else if (value === null && !field.nullable)
     findings.push({
       id: `null:${path}`,
       severity: "info",
@@ -516,13 +573,19 @@ function unknownKeyFinding(
   };
 }
 
-/** A section's findings: none when null, an error when not a mapping, else its keys'. */
+/**
+ * A section's findings: none when null (an error where the skills refuse a
+ * null section), an error when not a mapping, else its keys'.
+ */
 function sectionFindings(
   index: SchemaIndex,
   path: string,
   value: unknown,
 ): Finding[] {
-  if (value === null) return [];
+  if (value === null)
+    return index.schema.null_refused.includes(path)
+      ? [refusedNullFinding(path)]
+      : [];
   if (!isRecord(value))
     return [
       {
@@ -551,7 +614,7 @@ function keyFindings(
       },
     ];
   const field = index.byPath.get(path);
-  if (field) return knownFieldFindings(path, value, field);
+  if (field) return knownFieldFindings(index, path, value, field);
   if (index.prefixes.has(path)) return sectionFindings(index, path, value);
   return [unknownKeyFinding(index, prefix, key, path)];
 }

@@ -1,11 +1,17 @@
 /** Read the live round report and preview conflicts from positively measured dry-run evidence. */
 import type { DriveRoundContext } from "./round-context.ts";
 
-import { conflictRepairRounds } from "./settings.ts";
+import {
+  conflictFixCommands,
+  conflictRepairRounds,
+  fixRemote,
+} from "./settings.ts";
 
 import { run, tsArgv } from "./../proc.ts";
 
 import { driveStatus } from "./paths.ts";
+
+import { measureUnpushed } from "./unpushed.ts";
 
 async function previewConflictingRound(
   status: Record<string, unknown>,
@@ -46,7 +52,7 @@ async function previewConflictingRound(
       );
     } else if (conflictBudget > 0) {
       console.error(
-        `(dry-run) would run a conflict-resolution pass against origin/${base}`,
+        `(dry-run) would run a conflict-resolution pass against ${fixRemote()}/${base}`,
       );
     } else {
       console.error(
@@ -54,7 +60,7 @@ async function previewConflictingRound(
       );
       console.error(reasonLine);
       console.error(
-        `  Fix: bun "<skill-dir>/../../shared/command.ts" -- git fetch origin; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge origin/${base}, resolve, run the gates, push. (DRIVE_PR_CONFLICT_REPAIR_ROUNDS=0 disables the automated repair pass)`,
+        `  Fix: ${conflictFixCommands(base)}, resolve, run the gates, push. (DRIVE_PR_CONFLICT_REPAIR_ROUNDS=0 disables the automated repair pass)`,
       );
     }
     return 9;
@@ -72,8 +78,22 @@ export async function readRoundStatus(
   | "continue"
   | { code: number; status: Record<string, unknown>; reasonLine: string }
 > {
+  // Commits a pass left unpushed, or the drive was armed over, go to the gate
+  // as an inherited head rather than to a HEAD_LAG poll that cannot end.
+  const stranded = await measureUnpushed(context);
+  if (stranded !== null) return stranded;
+  const inherited =
+    context.inheritedHead === ""
+      ? []
+      : ["--inherited-head", context.inheritedHead];
   const statusRes = await run(
-    tsArgv(driveStatus, [context.pr, "--json", ...forward, ...probeFlags]),
+    tsArgv(driveStatus, [
+      context.pr,
+      "--json",
+      ...forward,
+      ...probeFlags,
+      ...inherited,
+    ]),
     { stderr: "inherit" },
   );
   const code = statusRes.code;
