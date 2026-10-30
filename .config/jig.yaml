@@ -45,7 +45,7 @@ issue_tracker:
     ops_pending: "state:ops-pending"
   file_command: /jig:file-issue
   # The work types do-item derives from an issue's type label: the taxonomy's
-  # five labels, the last three all being Task work.
+  # type labels, the docs, chore and infra ones all being Task work.
   types:
     bug: [bug]
     feature: [feature]
