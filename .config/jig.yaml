@@ -22,30 +22,28 @@ review:
   bots: ["docomply-review[bot]", "coderabbitai[bot]", "github-advanced-security[bot]"]
   # Naming the reviewer's app is what makes drive-pr wait for its review.
   reviewer_app: docomply-review
-  deferral_team: DOC
   repo_label: jig
   repo_slug: jig-harness/jig
+  # The labels a deferred review finding may carry, from label-taxonomy.yaml.
   taxonomy:
     types: [bug, feature, infra, docs, chore]
-    repos:
-      - docomply
-      - website
-      - forge
-      - ai-review
-      - engineering-standards
-      - harness-toolkit
-      - jig
-      - finops-engine
-      - sourcebook
+    repos: [jig]
     sizes: [xs, small]
-    context_prefixes: ["agent:", "domain:", "codearea:"]
-    ownership_prefixes: ["agent:", "domain:"]
+    context_prefixes: ["area:"]
+    ownership_prefixes: ["area:"]
     categories:
       [correctness, data-integrity, security, compliance, ux, performance, tests, docs, drift, style]
 issue_tracker:
-  adapter: linear
-  team: DOC
-  file_command: mcp__linear__save_issue
+  # Jig's work is the repository's own GitHub Issues: keys are `#<n>`, an
+  # open state is a `state:` label and a priority a `priority:` label.
+  adapter: github
+  states:
+    triage: "state:triage"
+    backlog: "state:backlog"
+    in_progress: "state:in-progress"
+    in_review: "state:in-review"
+    ops_pending: "state:ops-pending"
+  file_command: /jig:file-issue
   # Declared, not left to the default, so fleet health measures follow-ups.
   labels:
     followup: pr-followup

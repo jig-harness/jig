@@ -17,8 +17,11 @@
 // they allow.
 //
 // A pattern line, rejection or allow, may name a value the scanned
-// repository holds by placeholder: `{{team}}` is `issue_tracker.team` and
-// `{{owner}}` the owner part of `review.repo_slug` (`owner/name`), both in
+// repository holds by placeholder: `{{team}}` is `tracker_team` in
+// `<root>/.config/origin-references.yaml` (the key prefix of the tracker the
+// repository's work was kept in, which outlives the tracker setting once the
+// work moves elsewhere), else `issue_tracker.team` in `<root>/.config/jig.yaml`;
+// `{{owner}}` is the owner part of `review.repo_slug` (`owner/name`) in
 // `<root>/.config/jig.yaml`; `{{licensor}}` is the name on the copyright
 // line of `<root>/NOTICE`, the first line `Copyright <year> <name>`. Each is
 // replaced by its value with the regular-expression characters escaped, so a
@@ -74,8 +77,11 @@ class Unreadable extends Error {
   }
 }
 
-/** The configuration file `{{team}}` and `{{owner}}` are read from. */
+/** The configuration file `{{owner}}`, and `{{team}}` as a fallback, are read from. */
 const CONFIG = ".config/jig.yaml";
+
+/** The file `{{team}}` is read from when it exists: the tracker the work was kept in. */
+const ORIGIN = ".config/origin-references.yaml";
 
 /** The notice file `{{licensor}}` is read from: the name on its copyright line. */
 const NOTICE = "NOTICE";
@@ -85,6 +91,8 @@ const COPYRIGHT_LINE = /^Copyright [0-9]{4} (.+)$/;
 interface Sources {
   /** The parsed configuration. */
   config: () => unknown;
+  /** The parsed origin-references file, or undefined when there is none. */
+  origin: () => unknown;
   /** The lines of the notice. */
   notice: () => string[];
 }
@@ -131,7 +139,18 @@ const configured = (
 });
 
 const PLACEHOLDERS: Record<string, Placeholder> = {
-  team: configured("issue_tracker.team"),
+  team: {
+    read: (sources) => {
+      const origin = sources.origin();
+      if (origin === undefined)
+        return configured("issue_tracker.team").read(sources);
+      const raw = field(origin, ["tracker_team"]);
+      const text = typeof raw === "string" ? raw.trim() : "";
+      return text
+        ? { value: text }
+        : { needs: `tracker_team in ${ORIGIN} as non-empty text` };
+    },
+  },
   owner: configured(
     "review.repo_slug",
     (text) => /^([^/\s]+)\/[^/\s]+$/.exec(text)?.[1],
@@ -152,16 +171,33 @@ const PLACEHOLDERS: Record<string, Placeholder> = {
   },
 };
 
-/** A reader of the file at `path` as `parse` makes it, run once. */
-function source<T>(path: string, parse: (raw: string) => T): () => T {
+/**
+ * A reader of the file at `path` as `parse` makes it, run once. An
+ * `optional` file that does not exist reads as undefined instead of failing.
+ */
+function source<T>(path: string, parse: (raw: string) => T): () => T;
+function source<T>(
+  path: string,
+  parse: (raw: string) => T,
+  optional: true,
+): () => T | undefined;
+function source<T>(
+  path: string,
+  parse: (raw: string) => T,
+  optional = false,
+): () => T | undefined {
   let value: T | undefined;
   let read = false;
   return () => {
-    if (read) return value as T;
+    if (read) return value;
     let raw: string;
     try {
       raw = readFileSync(path, "utf8");
     } catch (error) {
+      if (optional && (error as NodeJS.ErrnoException).code === "ENOENT") {
+        read = true;
+        return undefined;
+      }
       throw new Unreadable(
         path,
         `cannot read it (${(error as NodeJS.ErrnoException).code ?? String(error)})`,
@@ -180,17 +216,20 @@ function source<T>(path: string, parse: (raw: string) => T): () => T {
 function placeholderFiller(root: string, patterns: string) {
   // Named with forward slashes on every platform, as the gate names its files.
   const config = join(root, CONFIG).replaceAll(sep, "/");
+  const origin = join(root, ORIGIN).replaceAll(sep, "/");
+  const yaml = (file: string) => (raw: string) => {
+    try {
+      return loadYaml(raw);
+    } catch (error) {
+      throw new Unreadable(
+        file,
+        `it does not parse as YAML (${error instanceof Error ? error.message.split("\n")[0] : String(error)})`,
+      );
+    }
+  };
   const sources: Sources = {
-    config: source(config, (raw) => {
-      try {
-        return loadYaml(raw);
-      } catch (error) {
-        throw new Unreadable(
-          config,
-          `it does not parse as YAML (${error instanceof Error ? error.message.split("\n")[0] : String(error)})`,
-        );
-      }
-    }),
+    config: source(config, yaml(config)),
+    origin: source(origin, yaml(origin), true),
     notice: source(join(root, NOTICE), (raw) => raw.split(/\r?\n/)),
   };
   return (text: string, line: number): string =>

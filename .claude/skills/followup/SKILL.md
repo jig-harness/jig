@@ -9,10 +9,6 @@ allowed-tools:
   - Edit
   - Write
   - Bash
-  - mcp__linear__get_issue
-  - mcp__linear__list_issues
-  - mcp__linear__save_issue
-  - mcp__linear__save_comment
 ---
 
 # Followup: what a merged Jig pull request still owes
@@ -51,8 +47,10 @@ gh pr view "$PR" --json number,title,state,mergedAt,mergeCommit,baseRefName,head
   nothing.
 - `SHA` is `mergeCommit.oid`. Jig squash-merges, so `SHA^1` is `main` just
   before the merge, and `git diff --name-only SHA^1 SHA` is the change.
-- The tracker item: `Closes <KEY>-<n>` in the body, else the key in the
-  branch name. Leave it empty when neither names one.
+- The tracker item: `Closes #<n>` in the body, else the issue number the
+  branch name carries (`<n>-<slug>`). Leave it empty when neither names one.
+  `Part of #<n>` names the epic a step belongs to, not the item the merge
+  closes.
 - Fetch first: `git fetch --no-tags origin main`. Leave this clone's tags
   alone: a fetch that updates them refuses a tag origin holds elsewhere
   ("would clobber existing tag"), and [B](#b-tagging-the-release) reads

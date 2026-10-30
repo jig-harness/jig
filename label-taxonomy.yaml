@@ -1,0 +1,144 @@
+# The labels an issue of this repository may carry, in families, with the
+# rules between them. `/jig:file-issue` checks every issue's labels against
+# this file before it writes, and `check-label-taxonomy.ts` keeps the file
+# honest (plugin/skills/file-issue/README.md). The open workflow states
+# (`state:` labels) and the priorities (`priority:` labels) are not here:
+# the GitHub Issues adapter reads and writes them itself, named in
+# `.config/jig.yaml` (`issue_tracker.states`) and by its defaults.
+version: 1
+
+# types — CLOSED. What kind of work this is. Exactly one per issue.
+types:
+  - id: bug
+    notes: a defect against documented or expected behaviour
+  - id: feature
+    notes: a new capability of a skill, a tool or a module
+  - id: docs
+    notes: documentation only, modules and skill documents included
+  - id: chore
+    notes: maintenance with no behaviour change
+  - id: infra
+    notes: CI, gates, release and test infrastructure
+
+# statuses — CLOSED. The canonical workflow states do-item moves an issue
+# through; `issue_tracker.states` names the label each open one is.
+statuses:
+  - id: triage
+    notes: filed, not yet accepted
+  - id: backlog
+    notes: accepted, not yet planned
+  - id: todo
+    notes: accepted and ready to start (no label on GitHub Issues)
+  - id: in-progress
+    notes: being worked
+  - id: in-review
+    notes: pull request open
+  - id: ops-pending
+    notes: merged, a step outside the code remains
+  - id: done
+    notes: terminal, closed as completed
+  - id: canceled
+    notes: terminal, closed as not planned
+  - id: duplicate
+    notes: terminal, closed as a duplicate
+
+# groups — CLOSED, single-select.
+groups:
+  - id: size
+    required: true
+    notes: effort estimate; split an item larger than xl, or make it an epic
+    labels:
+      - id: xs
+        notes: under an hour
+      - id: small
+        notes: a few hours
+      - id: medium
+        notes: a day or two
+      - id: large
+        notes: several days
+      - id: xl
+        notes: more than a week
+
+# categories — prefixed, multi-select.
+categories:
+  - id: area
+    prefix: "area:"
+    recommended: true
+    max: 3
+    notes: the skill or part of the repository the change lands in
+    labels:
+      - id: drive-pr
+      - id: do-item
+      - id: review
+      - id: resolve-review-comments
+      - id: work-batch
+      - id: file-issue
+      - id: audit
+      - id: reflect
+      - id: changelog
+      - id: code-stats
+      - id: decide
+      - id: explain
+      - id: gc
+      - id: tracker
+      - id: windows
+      - id: modules
+      - id: website
+      - id: gates
+      - id: shared
+      - id: plugin
+      - id: tools
+
+# flags — each fires a named process.
+flags:
+  - id: epic
+    scope: container
+    fires: [status-roll-up, acceptance-review]
+    apply_when:
+      - the issue is the unit progress is reported on, such as a roadmap item
+      - its outcome needs more than one pull request
+    do_not_apply_when:
+      - the issue is one deliverable split into parts for convenience
+    notes: >-
+      its status rolls up from its sub-issues; it closes when the plan item
+      it mirrors leaves design/plan.md, never on a count of open children
+
+  - id: roadmap
+    scope: container
+    fires: plan-mirror
+    requires: [epic]
+    apply_when:
+      - the issue mirrors an item of design/plan.md
+    notes: >-
+      design/plan.md is the source of truth for what the item builds and
+      when it is done; the issue holds the sub-issues and the discussion
+
+  - id: pr-followup
+    scope: shipping-item
+    fires: deferral-ledger
+    apply_when:
+      - the issue was filed from a review finding deferred on a pull request
+    notes: counted by fleet health as review debt until it closes
+
+  - id: hitl
+    scope: shipping-item
+    fires: revoke-autonomy
+    apply_when:
+      - a person must decide or act before the item's change can be made or merged
+    notes: >-
+      human-in-the-loop: a drive parks on it instead of deciding, and
+      do-item asks before starting
+
+  - id: security
+    scope: shipping-item
+    fires: security-review
+    apply_when:
+      - the change touches trust between the loop and the forge, a credential, or what a pull request may do without a person
+    notes: a security review of the change is mandatory before merge
+
+  - id: flaky-test
+    scope: shipping-item
+    fires: quarantine-review
+    apply_when:
+      - a test fails without a code change, on load or on one platform
+    notes: the suite's quarantine rule (M14) applies until the cause is fixed
