@@ -65,7 +65,9 @@ is.
 ### A. The tracker item and deferred findings
 
 1. **Status and closing comment**: `do-item`'s post-merge status rule decides
-   between done and ops-pending. The closing comment carries the pull
+   between done and ops-pending. An item that is itself a roadmap epic
+   (the `roadmap` flag), worked directly, stays open while its plan item is
+   still in `design/plan.md`, as in step 3. The closing comment carries the pull
    request's `## Out-of-tree follow-ups` section as unchecked boxes, and the
    merge commit.
 2. **Deferred findings**: every `**deferred**` reply was meant to become a
