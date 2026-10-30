@@ -43,6 +43,31 @@ describe("references", () => {
       expect(commonWith(item, broken)).toEqual([COMMON_RULES.reference.id]);
   });
 
+  test("an author's name may be a link", () => {
+    expect(
+      commonWith(
+        item,
+        "- Fix the parser ([#7](https://example.com/o/r/pull/7); [Alice](https://example.com/alice))",
+      ),
+    ).toEqual([]);
+  });
+
+  test("a label with code in it that links nowhere is a broken reference", () => {
+    expect(
+      commonWith(
+        item,
+        "- Fix the parser ([`abc1234`][missing]) ([#9](https://example.com/o/r/pull/9))",
+      ),
+    ).toEqual([COMMON_RULES.reference.id]);
+    // A code span around a whole reference shows code, not a reference.
+    expect(
+      commonWith(
+        item,
+        "- Fix the parser `([#7](https://example.com/o/r/pull/7))` ([#9](https://example.com/o/r/pull/9))",
+      ),
+    ).toEqual([]);
+  });
+
   test("a reference group that breaks off stays broken when a sound one follows", () => {
     expect(
       commonWith(
@@ -111,6 +136,30 @@ describe("the line a finding points at", () => {
     const title = Array.from({ length: 12 }, (_, i) => `line ${i}`).join("\n");
     const text = `# Changelog\n\n[meta]: /url "\n${title}\n"\n\n[1.0.0] - 2024-02-30\n---\n\n_First release._\n`;
     expect(dateLine(text)).toBe(18);
+  });
+
+  test("a definition that shows as a paragraph while unfinished does not stand in for a stray paragraph", () => {
+    const title = Array.from({ length: 12 }, (_, i) => `line ${i}`).join("\n");
+    const text = `# Changelog\n\n[meta]: /url "\n${title}\n"\n\nA stray paragraph.\n\n## 1.0.0 - 2024-01-01\n\n_First release._\n`;
+    const changelog = readChangelog("CHANGELOG.md", text);
+    const stray = changelog.preamble[0];
+    expect(stray && changelog.lineOf(stray.index)).toBe(18);
+  });
+
+  test("a heading whose text runs over many lines is found at its first without a parse per line", () => {
+    const title = Array.from({ length: 10_000 }, (_, i) => `word ${i}`).join(
+      "\n",
+    );
+    const text = `# Changelog\n\n${title}\n1.0.0 - 2024-02-30\n---\n\n_First release._\n`;
+    const started = performance.now();
+    expect(readChangelog("CHANGELOG.md", text).sections[0]?.line).toBe(3);
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
+  test("a heading line whose text holds the tag's delimiter is still located", () => {
+    const text =
+      "# Changelog\n\n## invalid \u{E000}999999\u{E000} - 2024-02-30\n\n_First._\n";
+    expect(readChangelog("CHANGELOG.md", text).sections[0]?.line).toBe(3);
   });
 
   test("a setext release is found at its text, and an ATX one at its line", () => {

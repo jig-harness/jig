@@ -6,13 +6,14 @@
 // each format (lint-keep-a-changelog.ts, lint-common-changelog.ts) and the
 // command (lint.ts).
 import { Defect } from "../../../shared/errors.ts";
-import { fenced, heading } from "./markdown-blocks.ts";
+import { heading } from "./markdown-blocks.ts";
 import {
   type Block,
   type Inline,
   parseBlocks,
   plain,
 } from "./markdown-tree.ts";
+import { headingLines, locate } from "./source-lines.ts";
 
 /** One rule a finding names: its id and where the format's specification states it. */
 export interface Rule {
@@ -144,99 +145,6 @@ export function isUnreleased(inline: Inline[], bare: boolean): boolean {
   );
 }
 
-/** What kind of block `b` is, as far as later lines cannot change it. */
-const shape = (b: Block | undefined): string =>
-  b === undefined
-    ? ""
-    : b.k === "heading"
-      ? `h${b.level}`
-      : b.k === "list"
-        ? `list ${b.ordered}`
-        : b.k === "other"
-          ? b.kind
-          : b.k;
-
-/**
- * Whether a prefix of the file, rendered as `blocks`, holds the block (or
- * list item) `path` names in the whole file's `target`: the blocks before it
- * are those of the whole file, kind for kind, and it is there, of its kind.
- * Kinds, not contents: a definition later in the file may turn bracketed
- * text into a link. Matching the blocks before it keeps a block that shows
- * only in a prefix (an unfinished definition reads as a paragraph) from
- * standing in for it.
- */
-function holds(blocks: Block[], target: Block[], path: number[]): boolean {
-  const [index, item] = path as [number, number?];
-  const block = blocks[index];
-  if (!block || shape(block) !== shape(target[index])) return false;
-  for (let i = 0; i < index; i++)
-    if (shape(blocks[i]) !== shape(target[i])) return false;
-  return (
-    item === undefined || (block.k === "list" && block.items.length > item)
-  );
-}
-
-/**
- * The first line whose prefix of the file renders the block `path` names: a
- * search over the file's prefixes, since the parser reports no positions. A
- * heading or table whose first lines render as a paragraph until its last
- * (a setext underline, a delimiter row) is found at that paragraph's start.
- */
-function locate(lines: string[], target: Block[], path: number[]): number {
-  const prefix = (n: number) => parseBlocks(lines.slice(0, n).join("\n"));
-  let [lo, hi] = [1, lines.length];
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (holds(prefix(mid), target, path)) hi = mid;
-    else lo = mid + 1;
-  }
-  const [index, item] = path as [number, number?];
-  if (item !== undefined || shape(target[index]) === "paragraph") return lo;
-  const paragraph = { k: "paragraph", inline: [] } as Block;
-  const swapped = target.map((b, i) => (i === index ? paragraph : b));
-  while (lo > 1 && holds(prefix(lo - 1), swapped, [index])) lo--;
-  return lo;
-}
-
-/**
- * The lines of the top-level headings of levels 1 to 3, by their index among
- * the blocks. A `#` heading line outside fenced code is its heading's line
- * when it renders as that heading: each such line is tagged with its number
- * and the tagged file parsed once, so a line inside an HTML comment, or one
- * that renders as something else, names no heading. A heading no line names
- * this way (a setext heading) is located.
- */
-function headingLines(
-  lines: string[],
-  blocks: Block[],
-  at: (path: number[]) => number,
-): Map<number, number> {
-  const written = fenced(lines.join("\n")).flatMap((l, i) => {
-    const h = l.inFence ? null : heading(l.line);
-    return h ? [i + 1] : [];
-  });
-  const tag = "";
-  const tagged = [...lines];
-  if (!lines.some((l) => l.includes(tag)))
-    for (const n of written) tagged[n - 1] += ` ${tag}${n}${tag}`;
-  const seen = parseBlocks(tagged.join("\n"));
-  const lineOf = (index: number): number | null => {
-    const b = seen[index];
-    const want = blocks[index];
-    if (seen.length !== blocks.length || b?.k !== "heading") return null;
-    if (want?.k !== "heading" || b.level !== want.level) return null;
-    const n = new RegExp(`${tag}(\\d+)${tag}`).exec(plain(b.inline))?.[1];
-    return n === undefined ? null : Number(n);
-  };
-  return new Map(
-    blocks.flatMap((b, index) =>
-      b.k === "heading" && b.level <= 3
-        ? [[index, lineOf(index) ?? at([index])] as const]
-        : [],
-    ),
-  );
-}
-
 /** A heading's title as written on its line, else as it renders. */
 function titleOn(lines: string[], line: number, inline: Inline[]): string {
   return heading(lines[line - 1] ?? "")?.title ?? plain(inline).trim();
@@ -246,14 +154,14 @@ function titleOn(lines: string[], line: number, inline: Inline[]): string {
 export function readChangelog(file: string, text: string): Changelog {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const blocks = parseBlocks(lines.join("\n"));
+  const headings = headingLines(lines, blocks);
   const located = new Map<string, number>();
   const at = (path: number[]): number => {
     const key = path.join(".");
-    const found = located.get(key) ?? locate(lines, blocks, path);
+    const found = located.get(key) ?? locate(lines, blocks, headings, path);
     located.set(key, found);
     return found;
   };
-  const headings = headingLines(lines, blocks, at);
   const firstLine = lines.findIndex((l) => l.trim() !== "");
   const changelog: Changelog = {
     file,

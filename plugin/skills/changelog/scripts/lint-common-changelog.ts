@@ -164,16 +164,20 @@ const skip = (syms: Sym[], i: number): number => {
   return j;
 };
 
+/** Whether `s` may sit inside a bracketed label: text other than brackets and parentheses, or a code span or image. */
+const labelled = (s: Sym | undefined): boolean =>
+  s === OTHER || (typeof s === "string" && !"[]()".includes(s));
+
 /**
  * Text in brackets at `i`, maybe followed by a second pair: how a reference
- * link whose label has no definition renders. The index after it, or null.
+ * link whose label has no definition renders, its label maybe holding code.
+ * The index after it, or null.
  */
 function brackets(syms: Sym[], i: number): number | null {
   const pair = (j: number): number | null => {
     if (syms[j] !== "[") return null;
     let k = j + 1;
-    while (typeof syms[k] === "string" && !"[]()".includes(syms[k] as string))
-      k++;
+    while (labelled(syms[k])) k++;
     return syms[k] === "]" ? k + 1 : null;
   };
   const first = pair(i);
@@ -182,13 +186,13 @@ function brackets(syms: Sym[], i: number): number | null {
 
 /**
  * The authors that may close a reference after a `;` (2.4.3. Authors): text
- * up to the `)`, with no link, code or image in it. The index of the `)`, or
- * null.
+ * or linked names up to the `)`, with no code or image in it. The index of
+ * the `)`, or null.
  */
 function authors(syms: Sym[], i: number): number | null {
   let j = i;
   let named = false;
-  while (typeof syms[j] === "string" && syms[j] !== ")") {
+  while (syms[j] === LINK || (typeof syms[j] === "string" && syms[j] !== ")")) {
     named ||= !space(syms[j]);
     j++;
   }
