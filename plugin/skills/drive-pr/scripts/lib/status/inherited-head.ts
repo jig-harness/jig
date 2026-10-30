@@ -7,8 +7,11 @@
  * its timeout, and the pass that would push them never runs. A head that was
  * pushed and that the API has not caught up with is still polled as lag: the
  * driver names it only over uncommitted edits, and the guard refuses a named
- * head the PR's head branch already carries on a remote ref.
+ * head the PR's head branch already carries on the drive's remote ref, or
+ * whose pushed state it cannot read.
  */
+import { consumerRoot, remoteName } from "../../../../../shared/consumer.ts";
+import { swallow } from "../../../../../shared/errors.ts";
 import { fail } from "../cli.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "../proc.ts";
 
@@ -35,11 +38,12 @@ export function takeInheritedHead(argv: string[]): string {
  * Whether `localHead` is the witnessed inherited head on top of `apiHead`:
  * it equals the sha the driver named, and the API head is a strict ancestor
  * of it, so the difference is commits GitHub does not have yet rather than
- * a lag behind a push or another branch. A head the PR's head branch already
- * carries on a remote ref (`headBranch`) was pushed, so the difference is
- * lag after all. Any other mismatch, or a probe that cannot answer, is
- * `false`, and the guard reports `HEAD_LAG` as before. Measured in the driven
- * tree (`$DRIVE_PR_WORKTREE`) when one is named, as the local head itself is.
+ * a lag behind a push or another branch. A head the PR's head branch
+ * (`headBranch`) already carries on the drive's remote ref was pushed, so the
+ * difference is lag after all. Any other mismatch, or a probe that cannot
+ * answer (no head branch named included), is `false`, and the guard reports
+ * `HEAD_LAG` as before. Measured in the driven tree (`$DRIVE_PR_WORKTREE`)
+ * when one is named, as the local head itself is.
  */
 export async function acceptsInheritedHead(
   apiHead: string,
@@ -50,7 +54,7 @@ export async function acceptsInheritedHead(
   if (inheritedHead === "" || localHead !== inheritedHead) return false;
   if (apiHead === "" || apiHead === localHead) return false;
   if (!(await isAncestor(apiHead, localHead))) return false;
-  return !(await pushedTo(localHead, headBranch));
+  return (await pushedTo(localHead, headBranch)) === false;
 }
 
 function treeOpts() {
@@ -74,23 +78,45 @@ async function isAncestor(older: string, newer: string): Promise<boolean> {
 }
 
 /**
- * Whether a remote-tracking ref of the PR's head branch contains `sha`: a
- * push to that branch updates it. `false` when no branch is named or the
- * probe cannot answer, so the inherited head is accepted as before.
+ * Whether the drive's remote ref of the PR's head branch
+ * (`refs/remotes/<remote>/<headBranch>`, the remote `repository.remote`, else
+ * `origin`) contains `sha`: the drive pushes only to that remote, and the push
+ * updates the ref. Another remote's ref of the same name says nothing about
+ * the PR. `false` when the ref is confirmed absent (nothing was pushed);
+ * `null` when no branch is named, the remote setting cannot be read or a
+ * probe cannot answer.
  */
-async function pushedTo(sha: string, headBranch: string): Promise<boolean> {
-  if (headBranch === "") return false;
-  const res = await git(
-    [
-      "for-each-ref",
-      "--count=1",
-      "--format=%(refname)",
-      `--contains=${sha}`,
-      `refs/remotes/*/${headBranch}`,
-    ],
+async function pushedTo(
+  sha: string,
+  headBranch: string,
+): Promise<boolean | null> {
+  if (headBranch === "") return null;
+  const remote = driveRemoteName();
+  if (remote === null) return null;
+  const ref = `refs/remotes/${remote}/${headBranch}`;
+  const exists = await git(
+    ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
     treeOpts(),
   );
-  return res.code === 0 && res.stdout.trim() !== "";
+  if (exists.code === 1) return false;
+  if (exists.code !== 0) return null;
+  // Exit 1 is git's "not an ancestor"; anything else is a probe that failed.
+  const contains = await git(
+    ["merge-base", "--is-ancestor", sha, ref],
+    treeOpts(),
+  );
+  return contains.code === 0 ? true : contains.code === 1 ? false : null;
+}
+
+/** The drive's remote for the driven tree; `null` when its setting cannot be used. */
+function driveRemoteName(): string | null {
+  const anchor = process.env.DRIVE_PR_WORKTREE;
+  try {
+    return remoteName(consumerRoot(anchor || undefined));
+  } catch (err) {
+    swallow(err, "the drive's remote could not be read");
+    return null;
+  }
 }
 
 /** What the head-sync guard reads: in step, an accepted inherited head, or lag. */

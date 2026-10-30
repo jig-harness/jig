@@ -40,6 +40,8 @@ const leftovers = (
   head: HEAD,
   commits: [],
   onRemote: true,
+  baseExists: true,
+  edits: uncommitted,
   ...more,
 });
 
@@ -75,12 +77,22 @@ describe("leftoverHeadOf", () => {
     expect(leftoverHeadOf(leftovers(" M a.ts", 0), " M a.ts")).toBe("");
   });
 
+  it("names the head when a pass changed an edit its status line still shows the same", () => {
+    const after = leftovers(" M a.ts", 0, { edits: " M a.ts\nafter" });
+    expect(leftoverHeadOf(after, " M a.ts\nbefore")).toBe(HEAD);
+    expect(leftoverHeadOf(after, " M a.ts\nafter")).toBe("");
+  });
+
   it("names nothing for a tree with nothing to hand on", () => {
     // A pushed head the API lags behind: local HEAD is the remote ref. A head
     // an earlier measurement named is dropped once it was pushed.
     expect(leftoverHeadOf(leftovers("", 0))).toBe("");
     // No remote ref to count against (no upstream, no attach).
-    expect(leftoverHeadOf(leftovers("", null, { onRemote: null }))).toBe("");
+    expect(
+      leftoverHeadOf(
+        leftovers("", null, { onRemote: null, baseExists: false }),
+      ),
+    ).toBe("");
   });
 
   it("names nothing over commits that do not build on the remote ref", () => {
@@ -91,6 +103,14 @@ describe("leftoverHeadOf", () => {
     expect(leftoverHeadOf(leftovers("", 1, { head: null }))).toBeNull();
     expect(leftoverHeadOf(leftovers(null, 0))).toBeNull();
     expect(leftoverHeadOf(leftovers("", null, { onRemote: true }))).toBeNull();
+    expect(leftoverHeadOf(leftovers(" M a.ts", 0, { edits: null }))).toBeNull();
+    // Both commit probes failed over a ref that may exist: not "no commits".
+    expect(
+      leftoverHeadOf(leftovers("", null, { onRemote: null, baseExists: null })),
+    ).toBeNull();
+    expect(
+      leftoverHeadOf(leftovers("", null, { onRemote: null, baseExists: true })),
+    ).toBeNull();
   });
 });
 
@@ -240,13 +260,19 @@ describe("a head that was pushed, in a real tree", () => {
     return r.stdout.toString().trim();
   };
   const module = (rel: string): string => JSON.stringify(join(SELF, rel));
-  const sync = (dir: string, a: string, h: string, branch: string): string =>
+  const sync = (
+    dir: string,
+    a: string,
+    h: string,
+    branch: string,
+    env: Record<string, string> = {},
+  ): string =>
     inTree(
       dir,
       `import { headSyncState } from ${module("../scripts/lib/status/inherited-head.ts")};
        const e = process.env;
        console.log(await headSyncState(true, e.API, e.LOCAL, e.LOCAL, e.BRANCH));`,
-      { API: a, LOCAL: h, BRANCH: branch },
+      { API: a, LOCAL: h, BRANCH: branch, ...env },
     );
   /** Measure `dir` as a gate does; `before` is the tree as a completed pass found it. */
   const measure = (
@@ -282,7 +308,29 @@ describe("a head that was pushed, in a real tree", () => {
       expect(sync(dir, a, h, "main")).toBe("lagging");
       // Another branch's remote ref says nothing about this PR's head.
       expect(sync(dir, a, h, "other")).toBe("inherited");
-      expect(sync(dir, a, h, "")).toBe("inherited");
+      // With no head branch named, whether H was pushed cannot be read.
+      expect(sync(dir, a, h, "")).toBe("lagging");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads only the drive's own remote for whether the head was pushed", () => {
+    const { dir, a, h } = tree();
+    try {
+      git(dir, "remote", "add", "upstream", dir);
+      git(dir, "update-ref", "refs/remotes/origin/main", h);
+      git(dir, "update-ref", "refs/remotes/upstream/main", a);
+      const upstream = { JIG__REPOSITORY__REMOTE: "upstream" };
+      // origin carries H, but the drive pushes to upstream, which does not.
+      expect(sync(dir, a, h, "main", upstream)).toBe("inherited");
+      git(dir, "update-ref", "refs/remotes/upstream/main", h);
+      expect(sync(dir, a, h, "main", upstream)).toBe("lagging");
+      // A remote setting that cannot be read cannot say H was not pushed.
+      git(dir, "update-ref", "refs/remotes/upstream/main", a);
+      expect(sync(dir, a, h, "main", { JIG__REPOSITORY__REMOTE: "-bad" })).toBe(
+        "lagging",
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -314,10 +362,35 @@ describe("a head that was pushed, in a real tree", () => {
       expect(String(context.unpushedNotice)).toStartWith("UNCOMMITTED EDITS");
       expect(String(context.unpushedNotice)).toContain("?? fix.ts");
       // A tree already dirty at arm hands nothing on.
-      expect(measure(dir, "")).toMatchObject({
-        inheritedHead: "",
-        uncommittedBeforePass: "?? fix.ts",
-      });
+      const atArm = measure(dir, "");
+      expect(atArm.inheritedHead).toBe("");
+      expect(String(atArm.uncommittedBeforePass)).toStartWith("?? fix.ts\n");
+      // A pass that changed the untracked file's content left work.
+      const before = String(atArm.uncommittedBeforePass);
+      writeFileSync(join(dir, "fix.ts"), "fixed further\n");
+      expect(measure(dir, "", before).inheritedHead).toBe(h);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("hands on a further edit to a file its status line already showed as modified", () => {
+    const { dir } = tree();
+    try {
+      writeFileSync(join(dir, "a.ts"), "one\n");
+      git(dir, "add", "a.ts");
+      git(dir, "commit", "-q", "-m", "a.ts");
+      const h = git(dir, "rev-parse", "HEAD");
+      git(dir, "update-ref", "refs/remotes/origin/main", h);
+      writeFileSync(join(dir, "a.ts"), "two\n");
+      const handed = measure(dir, "");
+      expect(handed.inheritedHead).toBe("");
+      const before = String(handed.uncommittedBeforePass);
+      // Left exactly as it was handed: nothing to hand on.
+      expect(measure(dir, "", before).inheritedHead).toBe("");
+      // Edited again: the status line is still ` M a.ts`, the content is not.
+      writeFileSync(join(dir, "a.ts"), "three\n");
+      expect(measure(dir, "", before).inheritedHead).toBe(h);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

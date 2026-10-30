@@ -21,10 +21,13 @@
  * or a killed pass left recorded: a pass that pushed the commits it inherited
  * and then stopped short of completing (a usage wall slept through) leaves
  * nothing to hand on, and the gate polls the push's lag as before. Only a
- * probe that fails keeps the earlier answer. Edits count only when they
- * differ from what the tree held before the last completed pass ran (at arm,
- * until one completes): a tree dirty before the drive, or edits a pass was
- * handed and left as they were, still stop the drive at convergence.
+ * probe that fails keeps the earlier answer, and a ref the commits are
+ * counted against is taken as absent only when git confirms it absent. Edits
+ * count only when their content differs from what the tree held before the
+ * last completed pass ran (at arm, until one completes), so a further edit to
+ * a file already shown as modified counts: a tree dirty before the drive, or
+ * edits a pass was handed and left as they were, still stop the drive at
+ * convergence.
  */
 import type { DriveRoundContext } from "./round-context.ts";
 
@@ -52,11 +55,13 @@ export function leftoverHeadOf(
   if (l.head === null) return null;
   if (l.unpushed !== null && l.unpushed > 0)
     return l.onRemote === false ? "" : l.head;
-  if (l.uncommitted === null) return null;
-  if (l.uncommitted !== "" && l.uncommitted !== editsBefore) return l.head;
-  // No ref to count against (no upstream and no attach) is a tree with no
-  // commits to hand on.
-  return l.unpushed === 0 || l.onRemote === null ? "" : null;
+  if (l.uncommitted === null || l.edits === null) return null;
+  if (l.uncommitted !== "" && l.edits !== editsBefore) return l.head;
+  // A ref git confirms absent (no upstream and no attach) is a tree with no
+  // commits to hand on; a count that failed over a ref that may exist is not.
+  return l.unpushed === 0 || (l.unpushed === null && l.baseExists === false)
+    ? ""
+    : null;
 }
 
 /**
@@ -102,8 +107,8 @@ export async function measureUnpushed(
     );
     return 1;
   }
-  context.uncommittedMeasured = l.uncommitted;
-  context.uncommittedBeforePass ??= l.uncommitted;
+  context.uncommittedMeasured = l.edits;
+  context.uncommittedBeforePass ??= l.edits;
   const head = leftoverHeadOf(l, context.uncommittedBeforePass);
   if (head === null) return null;
   context.unpushedNotice = head === "" ? "" : unpushedNotice(l, head);

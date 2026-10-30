@@ -377,9 +377,10 @@ handoff narrative. A short usage wall is slept through as before.
 pass can end without committing or pushing whatever it exits with, and a
 drive can be armed over local commits nobody pushed. So before every gate
 the driver measures the tree afresh: the commits local HEAD has on top of
-the head branch's remote ref, and the uncommitted edits that differ from
-what the tree held before the last completed pass ran (at arm, until one
-completes). When there are some, it hands that HEAD to the gate as an
+the head branch's remote ref, and the uncommitted edits whose content differs
+from what the tree held before the last completed pass ran (at arm, until one
+completes); a probe that cannot answer keeps the earlier answer. When there
+are some, it hands that HEAD to the gate as an
 inherited head, as after a deadline, and the round's pass is told to push
 them (`UNPUSHED COMMITS`, or `UNCOMMITTED EDITS` for edits alone, § Driver
 pass); when a later measurement finds neither, the gate is no longer handed
@@ -391,7 +392,9 @@ commits, and you reconcile the tree with the PR head before re-arming. A
 drive armed over such a tree meets the attach first, which refuses with
 exit `2` and names the same commits. A head that was pushed and that the API
 has not caught up with is still polled as `HEAD_LAG`: the gate refuses an
-inherited head the head branch's remote ref already contains. A pass that
+inherited head the head branch's ref on the drive's remote
+(`repository.remote`, else `origin`) already contains, or whose pushed state
+it cannot read. A pass that
 fails (any exit but `0` and `5` that is neither a deadline nor a usage wall)
 stops the drive, and the stop lists the paths it left uncommitted and the
 commits it left unpushed.

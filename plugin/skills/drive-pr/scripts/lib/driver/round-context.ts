@@ -71,10 +71,10 @@ export interface DriveRoundContext {
    */
   unpushedNotice: string;
   /**
-   * The tree's `git status --short` as the last gate measured it, and as it
-   * stood before the last completed review pass ran (the first gate's, until
-   * one completes): only edits that differ from the latter were left by a
-   * pass and owe a round. `null` when unread.
+   * The tree's edits by content (`PassLeftovers.edits`) as the last gate
+   * measured them, and as they stood before the last completed review pass
+   * ran (the first gate's, until one completes): only edits that differ from
+   * the latter were left by a pass and owe a round. `null` when unread.
    */
   uncommittedMeasured: string | null;
   uncommittedBeforePass: string | null;

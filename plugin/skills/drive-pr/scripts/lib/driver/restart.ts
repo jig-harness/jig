@@ -10,6 +10,7 @@
  * round with the stand-down diagnostics in the pass's notice; the stop that
  * follows names what the passes recorded deciding in the handoff narrative.
  */
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 
 import { shellQuote } from "./../cli.ts";
@@ -125,6 +126,18 @@ export interface PassLeftovers {
   commits: string[] | null;
   /** Whether HEAD contains the driven branch's remote ref. */
   onRemote: boolean | null;
+  /**
+   * Whether the ref the commits are counted against exists: `false` only when
+   * git confirms it absent (no upstream and no attach), never for a probe
+   * that failed.
+   */
+  baseExists: boolean | null;
+  /**
+   * The edits by content: the status lines and a digest of the staged diff,
+   * the unstaged diff and every untracked file's content, so an edit to a
+   * file already shown as modified changes it. `''` for a clean tree.
+   */
+  edits: string | null;
 }
 
 /** How many unpushed commits the leftovers name one by one. */
@@ -167,13 +180,20 @@ export async function passLeftovers(): Promise<PassLeftovers> {
     ["merge-base", "--is-ancestor", unpushedBase(), "HEAD"],
     opts,
   );
+  const base = await git(
+    ["rev-parse", "--verify", "--quiet", `${unpushedBase()}^{commit}`],
+    opts,
+  );
   const head = await git(["rev-parse", "HEAD"], opts);
   const op = await unconcludedGitOpMarker(gitCallTimeoutSeconds(), {
     ...(anchor ? { cwd: anchor } : {}),
     env: gitIdentityEnv(),
   });
+  const uncommitted = status.code === 0 ? status.stdout.trimEnd() : null;
   return {
-    uncommitted: status.code === 0 ? status.stdout.trimEnd() : null,
+    uncommitted,
+    edits: await editsOf(uncommitted, opts),
+    baseExists: base.code === 0 ? true : base.code === 1 ? false : null,
     unpushed: count.code === 0 && Number.isFinite(unpushed) ? unpushed : null,
     operation: op.ok ? op.marker : null,
     head:
@@ -182,6 +202,48 @@ export async function passLeftovers(): Promise<PassLeftovers> {
       log.code === 0 ? log.stdout.split("\n").filter((l) => l !== "") : null,
     onRemote: based.code === 0 ? true : based.code === 1 ? false : null,
   };
+}
+
+/**
+ * The edits in the tree by content (`PassLeftovers.edits`): `status` and a
+ * digest of the staged diff, the unstaged diff and the untracked files'
+ * contents. `null` when any probe fails, so a changed edit is never read as
+ * the same one.
+ */
+async function editsOf(
+  status: string | null,
+  opts: Parameters<typeof git>[1],
+): Promise<string | null> {
+  if (status === null || status === "") return status;
+  const diff = ["--binary", "--no-ext-diff", "--ignore-submodules=none"];
+  const staged = await git(["diff", "--cached", ...diff], opts);
+  const unstaged = await git(["diff", ...diff], opts);
+  const untracked = await git(
+    ["ls-files", "-z", "--others", "--exclude-standard"],
+    opts,
+  );
+  if (staged.code !== 0 || unstaged.code !== 0 || untracked.code !== 0)
+    return null;
+  const paths = untracked.stdout.split("\0").filter((p) => p !== "");
+  let blobs = "";
+  if (paths.length > 0) {
+    const hashed = await git(["hash-object", "--no-filters", "--stdin-paths"], {
+      ...opts,
+      stdin: `${paths.join("\n")}\n`,
+    });
+    if (hashed.code !== 0) return null;
+    blobs = hashed.stdout;
+  }
+  const digest = createHash("sha256")
+    .update(staged.stdout)
+    .update("\0")
+    .update(unstaged.stdout)
+    .update("\0")
+    .update(untracked.stdout)
+    .update("\0")
+    .update(blobs)
+    .digest("hex");
+  return `${status}\n${digest}`;
 }
 
 /**

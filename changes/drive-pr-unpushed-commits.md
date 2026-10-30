@@ -15,7 +15,8 @@ release: patch
   the drive converge and then stop with exit `12`. The driver now measures
   the tree afresh before every round's status check, the commits local HEAD
   has on top of the head branch's remote ref and the edits the last pass left
-  uncommitted (a tree dirty at arm still stops at convergence), hands
+  uncommitted, compared by content (a tree dirty at arm still stops at
+  convergence), hands
   the round out over that head as it already did after a pass killed at its
   deadline, and tells the round's pass to push them (a notice opening
   `UNPUSHED COMMITS`, or `UNCOMMITTED EDITS` for edits alone). Commits that

@@ -428,9 +428,11 @@ head branch's remote ref lacks and the edits the last pass left uncommitted,
 and hands the round out over that head, telling its pass to push them,
 rather than waiting for GitHub to report a push that never happened or
 converging over edits no pass committed. Once a measurement finds neither, a
-push GitHub has not caught up with is waited for as before. Edits the tree
-already held at arm, or that a pass was handed and left as they were, still
-stop a converged drive with exit `12`. When those commits do not build on
+push GitHub has not caught up with is waited for as before, and so is one
+whose pushed state cannot be read on the drive's remote. Edits are compared by
+content, so a pass that edits a file already shown as modified has left work.
+Edits the tree already held at arm, or that a pass was handed and left as
+they were, still stop a converged drive with exit `12`. When those commits do not build on
 the remote ref (history was rewritten), no round could push them, so the
 drive stops at once with exit `1` and names them; a drive armed over such a
 tree is refused by the [attach](#which-working-tree-drives-it) with exit

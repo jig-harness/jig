@@ -399,7 +399,9 @@ head branch's remote ref lacks. With some, it names that HEAD to the gate
 (`--inherited-head`), which accepts exactly it, ahead of an API head that is
 its ancestor, and hands the round out to push them; commits that do not
 contain the remote ref stop the drive with exit `1`. With none, local HEAD
-is the pushed head and the gate polls the lag as above.
+is the pushed head and the gate polls the lag as above. The gate also polls
+it when the head branch's ref on the drive's remote already contains the
+named head, or when that cannot be read.
 
 ### 4. A satisfied non-posting reviewer masks the posting reviewer's missing check-run
 
