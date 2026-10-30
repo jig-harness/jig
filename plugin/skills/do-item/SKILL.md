@@ -941,25 +941,51 @@ routing below remain **exact**.
    memory, and most of the loop's calendar time is lost in exactly that
    seam. Arming is part of opening the PR:
 
-   1. **exact** — **Always emit the exact unattended drive command** — in the
-      end-of-run status message **and** in the tracker comment that links the PR,
-      with the real PR number substituted. Prepare the comment now; post it
-      after step 3's arm check so it can report the observed outcome. Use the
-      portable `bun` form on **one line** (a `\` continuation is POSIX-shell
-      only and breaks on PowerShell and `cmd.exe`):
+   1. **exact** — **Decide how the drive starts** with drive-pr's arm script,
+      run in this tree, on **one line** with the real PR number substituted
+      (a `\` continuation is POSIX-shell only and breaks on PowerShell and
+      `cmd.exe`). Add `--mode print` when an uncleared `hitl` checkpoint
+      remains: the issue carries `hitl` **and** this run did not receive
+      explicit clearance.
 
       ```bash
-      bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
+      bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/arm-drive.ts" <PR>
       ```
 
-      The pass command (`claude -p "..."`) is Claude Code's, and today it is
-      the one documented pass command. Do not guess one for another agent
+      It reads `do_item.arm_drive` (default `auto`: a terminal tab of this
+      workspace where the session can open one, in Orca on a macOS or Linux
+      host; the session's background execution elsewhere, Windows hosts
+      included) and `drive.pass_model` (default `sonnet`), and prints one
+      JSON object: `command`, the drive's start command on one line
+      (`bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model
+      <model> -p "/jig:drive-pr --bots-only <PR>"`); `status`, what to do
+      next (step 2); `way`, `reason` and `fallback`, why; `model`; `tab`,
+      `tail` and `drive` for a tab; and `handles`. A tab is a fresh login
+      shell of the user's: `bun`, `claude` and the Claude account or profile
+      the drive uses come from that shell, not from this session. Every
+      failure prints the same JSON with `status: failed` and `reason`, with
+      `command` built where the tree is known (on the default model when
+      the configured one cannot be read). Exit `1`: the setting cannot be
+      honoured here (`tab` outside Orca, on a Windows host, or a tab Orca
+      refused) or a setting, the model or the working tree cannot be read;
+      exit `2`: a malformed command line. Report `reason` with `command`, and
+      spawn nothing. The pass command (`claude --model <model> -p "..."`) is
+      Claude Code's, today the one documented pass command; in another agent
+      tool the script answers `print`. Do not guess one for another agent
       tool.
 
+      **Always emit `command`**, the exact unattended drive command, in the
+      end-of-run status message **and** in the tracker comment that links the
+      PR, with the pass model (`model`). Prepare the comment now; post it
+      after step 3's arm check so it can report the observed outcome.
+
       Include the drive's **observability handles** in the same comment. Take
-      the candidate log path from `drive.ts: driver log → ...` in the arm
-      output (a `drive.ts: driver log unavailable: <reason>` line instead
-      means this driver keeps none: say so and include the reason), or, when the arm was refused, from the refusing driver's
+      the candidate log path from `drive.log` when the script found the drive
+      listed (`armed`, `already-live`); otherwise from
+      `drive.ts: driver log → ...` in the arm output, the spawned task's or
+      the tab's `tail` (a `drive.ts: driver log unavailable: <reason>` line
+      instead means this driver keeps none: say so and include the reason),
+      or, when the arm was refused, from the refusing driver's
       diagnostics or its row in
       `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts" --json`. A
       per-PR lock refusal always names this PR's own driver; a worktree lock
@@ -972,36 +998,49 @@ routing below remain **exact**.
       path before acquiring either lock and writes the log best effort, so
       neither the arm outcome nor the printed path proves the log exists.
       Never post a template such as `<state dir>` as a path. Include the
-      fleet commands too: `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts"` lists live drives, and
-      `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts" --stop <PR>` stops this one (the process probe uses `ps` on POSIX and
+      fleet commands too: `handles.list` lists live drives, and
+      `handles.stop` stops this one (the process probe uses `ps` on POSIX and
       PowerShell on Windows). These are what a human reaches for when the
-      background drive is an agent they have no window into.
+      drive runs where they have no window into it.
 
-   2. **exact** — **Spawn that command in the background** (the harness's
-      background execution; do not block the session on it) when **both**
-      hold: no uncleared `hitl` checkpoint remains (the issue carries `hitl`
-      **and** this run did not receive explicit clearance), **and** the harness
-      is Claude Code, whose `claude -p` is today the one documented pass
-      command. Spawning
-      is then mandatory: an emitted but unspawned command reintroduces the
-      human-memory delay this step removes, and a `hitl` issue cleared this
-      run is no reason to withhold it. Pass the Bash call's `timeout` of
-      `28800000` (8 hours) with `run_in_background`: in an unattended session
-      Claude Code stops a background command after 30 minutes without it (10
-      in a `claude -p` run whose prompt is passed as text), and
-      after 2 hours unless `BASH_MAX_TIMEOUT_MS` is raised (see
-      [drive-pr's README](../drive-pr/README.md#the-background-time-limit)).
-      Report the task handle. The drive
-      works the draft immediately (some review bots review drafts, others
-      skip them) and marks the PR Ready at the point
+   2. **exact** — **Act on the script's `status`:**
+      - `armed` → the drive runs in a terminal tab of its own (`tab.title`)
+        in the PR's workspace, and `drives.ts` lists it (`drive`). Report the
+        tab, the pass model and the handles. Spawn nothing: the session ends
+        without a background drive task, and step 3 has nothing to check.
+      - `already-live` → a drive already holds the PR (`drive`, with its
+        `doctor` verdict) and no tab was opened: report it as step 3 reports
+        a per-PR lock refusal.
+      - `unconfirmed` (only under `arm_drive: tab`) → the tab opened, but
+        `drives.ts` did not list the drive in time; `tail` is what the tab
+        printed. Read it once as step 3 reads a spawned task's output, and
+        report what it shows; do not open another tab or spawn the command
+        as well.
+      - `spawn` → **spawn `command` in the background** (the harness's
+        background execution; do not block the session on it). Spawning is
+        then mandatory: an emitted but unspawned command reintroduces the
+        human-memory delay this step removes, and a `hitl` issue cleared
+        this run is no reason to withhold it. Pass the Bash call's `timeout`
+        of `28800000` (8 hours) with `run_in_background`: in an unattended
+        session Claude Code stops a background command after 30 minutes
+        without it (10 in a `claude -p` run whose prompt is passed as text),
+        and after 2 hours unless `BASH_MAX_TIMEOUT_MS` is raised (see
+        [drive-pr's README](../drive-pr/README.md#the-background-time-limit)).
+        Report the task handle. When `fallback` is set, `auto` meant a tab
+        and the drive goes to the background instead: say why (Orca refused
+        the tab, a Windows host, or a tab whose drive `drives.ts` did not list
+        in time, whose `tail` to report too; a drive that tab did start holds
+        the PR's lock, so this spawn then meets step 3's exit `11`).
+      - `print` → emit the command only, with `reason`: for an uncleared
+        `hitl` checkpoint, starting review rounds would pre-empt the human
+        judgment; for another agent tool (Codex, for one), which has no
+        documented pass command today, a guessed command is worse than one
+        left for a human to run.
+
+      The drive works the draft immediately (some review bots review
+      drafts, others skip them) and marks the PR Ready at the point
       `pull_requests.mark_ready` declares (after the first completed round
-      by default), so
-      one human decision is left: the merge. For an uncleared `hitl`
-      checkpoint, or another agent tool (Codex, for one), which has no
-      documented pass command today, emit the
-      command only: starting review rounds would pre-empt the human
-      judgment, and a guessed command is worse than one left for a human to
-      run.
+      by default), so one human decision is left: the merge.
 
    3. **exact** — **Never start a second driver; the refusal is mechanical.**
       `drive.ts` holds two single-instance locks for the life of a drive — a
@@ -1011,9 +1050,9 @@ routing below remain **exact**.
       driving, its worktree and its log. Only a claim written by an older
       driver is pid/hostname-only (see
       `${CLAUDE_SKILL_DIR}/../drive-pr/references/terminal-states.md`
-      § The single-instance locks). Check the spawned task's output **once**,
-      a few seconds after issuing it — not immediately, and not in a poll
-      loop:
+      § The single-instance locks). Check the spawned task's output (or an
+      `unconfirmed` tab's `tail`) **once**, a few seconds after issuing it —
+      not immediately, and not in a poll loop:
       - Exit `11` on the **per-PR** lock → this PR is already being driven:
         report "a drive is already live on #<PR>" with the holder's details
         and the doctor verdict the refusal names; do not retry. Do not stop a

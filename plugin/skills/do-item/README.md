@@ -76,6 +76,23 @@ open its draft pull request, arm a drive, finish a pass and stop the drive —
 is still pending. Automated component coverage does not establish that
 interactive flow.
 
+## Arming the drive
+
+Once the pull request opens, the skill starts its
+[drive](../drive-pr/README.md), the unattended loop that works the review
+rounds, through drive-pr's `arm-drive.ts`, the same way `/jig:drive-pr`
+does. `do_item.arm_drive` in the
+[configuration](../../CONFIGURATION.md#do_item) says how: `auto`, the
+default, opens a terminal tab of the pull request's workspace where the
+session can (in Orca, below) and uses the session's background execution
+elsewhere; `tab`, `background` and `print` (the command only) choose one.
+Each round's agent runs on `drive.pass_model`
+([configuration](../../CONFIGURATION.md#drive)): `sonnet`, Claude Code's
+alias for the latest Sonnet, unless you name a model, an alias or a
+routing tier. The skill reports the command, the model, the driver log and
+the commands that list and stop the drive. An issue that waits on a person's
+decision gets the command only.
+
 ## Continuing work
 
 Invoke the same skill with the issue key again. It refreshes tracker state,
@@ -93,6 +110,17 @@ Orca Mobile show: to In progress when it starts the issue, and to In review,
 with the pull request linked, once the pull request opens. Nothing turns
 this on and nothing in another runtime changes: outside Orca it makes no
 call, and an Orca call that fails only warns.
+
+It also arms the drive in a terminal tab of its own in the workspace, titled
+`drive #<PR>`, so the drive outlives the session, a person can watch its
+rounds, and the session that implemented the item ends without a drive
+running beside it. The tab is a fresh login shell of yours, so `bun`,
+`claude` and the Claude account or profile the drive uses come from it, not
+from the session. If Orca cannot open the tab, or the tab's drive does not
+show up in time, the drive starts in the background as it does elsewhere,
+and the skill says why. On a Windows host the drive always starts in the
+background: Orca's tab there can run `cmd.exe` or PowerShell, and the
+command is written for a POSIX shell.
 
 Orca's own Linear skill (`orca-linear`) has a completion flow of its own.
 Inside this skill the ticket's comments and transitions stay with `do-item`,
