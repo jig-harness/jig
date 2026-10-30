@@ -9,6 +9,18 @@ human checkpoints, delegates the work, validates it, opens a draft pull
 request under the repository's policy and arms
 [`drive-pr`](../drive-pr/README.md). A person merges.
 
+## The item's spec
+
+Once it has the issue, it shows what the issue says must be built: the
+requirements, acceptance criteria and tasks in its `## Spec`,
+`## Requirements` and `## Acceptance criteria` sections, with the ids the
+text gives them (`FR-001`, `AC-1`, a numbered checkbox), and each reference
+it did not read, with the reason. It reads nothing outside the repository,
+nothing Git ignores, and no web link. The heading of the spec section is
+`specs.body_section` in the
+[configuration](../../CONFIGURATION.md#specs). The list is shown to you;
+the rest of the pickup does not depend on it.
+
 ## The item's work type
 
 On pickup the skill says what kind of work the item is, its
