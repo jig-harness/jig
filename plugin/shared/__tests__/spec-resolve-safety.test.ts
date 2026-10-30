@@ -582,6 +582,27 @@ test("a quote's content is read by the same rules as the text around it", async 
   expect(
     await ids(["## Spec", "- > Example only:", "AC-9 Example criterion"]),
   ).toEqual([]);
+  for (const fence of ["~~~", "```"]) {
+    expect(
+      await ids([
+        "## Spec",
+        `- > ${fence}`,
+        "  > example",
+        "> Outside paragraph",
+        "AC-9 Example",
+      ]),
+    ).toEqual([]);
+    expect(
+      await ids([
+        "## Spec",
+        `- > ${fence}`,
+        "  > AC-8 code",
+        `  > ${fence}`,
+        "",
+        "AC-1 Works",
+      ]),
+    ).toEqual(["AC-1"]);
+  }
 });
 
 test("quotes nested in list items past the nesting bound are read without running the scan deep", async () => {

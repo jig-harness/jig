@@ -26,7 +26,9 @@
  * one. A quote's content, its lines with their first `>` removed, is read by
  * these same rules, in a scan of its own that its lines carry on, so a fence,
  * a list or a quote nested inside a quote ends as it would outside one; a
- * quote after a list marker is read the same way. The scan knows when a
+ * quote after a list marker is read the same way. Only a quote line in the
+ * list item the quote opened in carries its scan on: a `>` outside that item
+ * starts a quote of its own. The scan knows when a
  * paragraph is open: a line that starts no block able to end it continues it
  * (an ordered item starting past 1 cannot, nor indented code, nor an empty
  * item; an item of an enclosing list can), and a setext underline (`===`,
@@ -162,12 +164,14 @@ interface ScanState {
 }
 
 /**
- * An open block quote: whether its lines are boundaries, and the scan of its
- * content, the lines with their `>` removed, read by the same rules as the
- * text around it.
+ * An open block quote: whether its lines are boundaries, the content column
+ * of the list item it sits in (0 outside one), and the scan of its content,
+ * the lines with their `>` removed, read by the same rules as the text around
+ * it.
  */
 interface Quote {
   boundary: boolean;
+  column: number;
   inner: ScanState;
 }
 
@@ -230,14 +234,22 @@ function underlines(line: string, strip: number, state: ScanState): boolean {
 }
 
 /**
- * Read a block quote line's content into the quote it continues, or a new
- * one: past `MAX_LIST_DEPTH` nested quotes, the content is the quote's text.
+ * Read a block quote line in the container whose content starts at `column`
+ * into the quote it continues, or a new one: the quote above continues only
+ * in the container it opened in, since a container that ends ends its quote.
+ * Past `MAX_LIST_DEPTH` nested quotes, the content is the quote's text.
  */
-function quoteLine(own: string, state: ScanState, quote: Quote | null): void {
-  const inner = quote?.inner ?? scanState(state.nesting + 1);
+function quoteLine(
+  own: string,
+  column: number,
+  state: ScanState,
+  quote: Quote | null,
+): void {
+  const inner =
+    quote?.column === column ? quote.inner : scanState(state.nesting + 1);
   if (inner.nesting > MAX_LIST_DEPTH) inner.paragraph = true;
   else classify(own.replace(QUOTE_MARKER, ""), inner);
-  state.quote = { boundary: state.boundary, inner };
+  state.quote = { boundary: state.boundary, column, inner };
   state.paragraph = inner.paragraph;
 }
 
@@ -282,7 +294,7 @@ function shallowLine(
   if (interrupt) {
     const inItem = strip > 0 && state.lists.at(-1) === strip;
     state.boundary = interrupt[1] !== undefined || !inItem;
-    if (interrupt[1] === undefined) quoteLine(own, state, quote);
+    if (interrupt[1] === undefined) quoteLine(own, strip, state, quote);
     closeItemsPast(state, strip);
     return "text";
   }
@@ -335,7 +347,7 @@ function itemLine(
     const opened = opensFence(own, column, state);
     if (opened !== null) return opened;
     const item = depth < MAX_LIST_DEPTH ? listContent(own) : null;
-    if (item === null) return itemText(own, state);
+    if (item === null) return itemText(own, column, state);
     column += item;
   }
 }
@@ -345,10 +357,14 @@ function itemLine(
  * into a quote of the item's own, other text but a heading or a thematic
  * break opens a paragraph.
  */
-function itemText(own: string, state: ScanState): MarkdownLine["kind"] {
+function itemText(
+  own: string,
+  column: number,
+  state: ScanState,
+): MarkdownLine["kind"] {
   const interrupt = INTERRUPTS.exec(own);
   if (interrupt !== null && interrupt[1] === undefined)
-    quoteLine(own, state, null);
+    quoteLine(own, column, state, null);
   else state.paragraph = interrupt === null && !HEADING.test(own);
   return "text";
 }
