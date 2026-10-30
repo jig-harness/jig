@@ -443,14 +443,14 @@ fields:
     nonempty: true
     read_by: [do-item]
     repository_only: true
-    since: next
+    since: 0.100.0
   specs.body_section:
     type: string
     pattern: "^[ \\t]*[^#\\s][^\\r\\n]*$"
     default: Spec
     read_by: [do-item]
     repository_only: true
-    since: next
+    since: 0.100.0
 
   work_batch.point_budget:
     type: integer
