@@ -2580,7 +2580,8 @@ comment, an issue filed with the filed-by line its body carries
 ([`file-issue`](../file-issue/SKILL.md)), a deferral as its entry in the pull
 request's `## Deferred` section. A thread's outcome reply is its whole
 record. Add each of the others to the drive's
-`## Decisions taken unattended`, one JSON object on stdin with its class
+`## Decisions taken unattended` when you take the decision, not when you
+report, one JSON object on stdin with its class
 (`file-issue`, `defer-without-tracker`, `decide-reversible` or
 `decide-underdetermined`), what was decided, the record's url and how to
 reverse it, in one line each:
@@ -3346,7 +3347,10 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   comment harmless: one the predicate cannot classify is a newer comment and
   is triaged. A guard that refuses a state you verified is a
   [`/jig:reflect`](../reflect/SKILL.md) finding about the guard, filed in the
-  same round, with the item parked (§ 4) under the class the guard protects.
+  same round. Park the item (§ 4) under the class the guard protects when
+  `park` accepts it; if `park` refuses a thread the arbiter ruled on, follow
+  the recorded ruling or record a new one with `rule`, and do not retry under
+  another class.
 - **Never keep the held batch in context alone.** `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold` at
   reply time, `held` to read it back. Releasing differs by kind: a `finding`
   needs an explicit `release-held --key K --token T` after
