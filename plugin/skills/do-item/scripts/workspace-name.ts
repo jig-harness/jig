@@ -4,7 +4,14 @@
  * the stage that work is at, when the repository configures a name template;
  * do nothing otherwise.
  *
- * Usage: bun workspace-name.ts <stage> --id <key> [--title <text>] [--pr <number>]
+ * Usage: bun workspace-name.ts <stage> [--id <key>] [--title <text> | --title-file <path>] [--pr <number>]
+ *
+ * A tracker title is untrusted text. A caller whose command runs through a
+ * shell passes it with `--title-file`, the path of a file holding only the
+ * title, never as `--title` inside the command line, where the shell would
+ * expand `$(…)` and backticks in it; it quotes the key. `--id` is optional:
+ * a pull request that serves no tracker item is named from the template's
+ * other variables.
  *
  * A person running several agents tells their workspaces apart by name. The
  * stage is one of `implementing`, `driving`, `ready` (ready to merge) and
@@ -20,6 +27,7 @@
  * failure only warns and the exit is 0; a malformed command line or a
  * template naming an unknown variable exits 2.
  */
+import { readFileSync } from "node:fs";
 import { fail, isDigits, runMain } from "../../../shared/cli.ts";
 import { readConfig } from "../../../shared/consumer.ts";
 import { run } from "../../../shared/proc.ts";
@@ -32,7 +40,7 @@ import {
 } from "./orca-board.ts";
 
 const USAGE =
-  "usage: workspace-name.ts <implementing|driving|ready|done> --id <key> [--title <text>] [--pr <number>]";
+  "usage: workspace-name.ts <implementing|driving|ready|done> [--id <key>] [--title <text> | --title-file <path>] [--pr <number>]";
 
 /** Seconds one Orca call may take. */
 const ORCA_CALL_TIMEOUT_SEC = 20;
@@ -72,17 +80,51 @@ export function parseArgs(args: string[]): NameRequest {
   const [stage, ...rest] = args;
   if (stage === undefined || !isStage(stage)) fail(2, USAGE);
   const request: NameRequest = { stage, id: "", title: "", pr: "" };
+  const titleFlags = rest.filter(
+    (arg, i) => i % 2 === 0 && (arg === "--title" || arg === "--title-file"),
+  );
+  if (titleFlags.length > 1) fail(2, USAGE);
   for (let i = 0; i < rest.length; i += 2) {
-    const flag = rest[i];
     const value = rest[i + 1];
     if (value === undefined) fail(2, USAGE);
-    if (flag === "--id") request.id = value;
-    else if (flag === "--title") request.title = value;
-    else if (flag === "--pr" && isDigits(value)) request.pr = value;
-    else fail(2, USAGE);
+    applyFlag(request, rest[i], value);
   }
-  if (request.id === "") fail(2, USAGE);
   return request;
+}
+
+function applyFlag(
+  request: NameRequest,
+  flag: string | undefined,
+  value: string,
+): void {
+  switch (flag) {
+    case "--id":
+      request.id = value;
+      return;
+    case "--title":
+      request.title = value;
+      return;
+    case "--title-file":
+      request.title = readTitleFile(value);
+      return;
+    case "--pr":
+      if (!isDigits(value)) fail(2, USAGE);
+      request.pr = value;
+      return;
+    default:
+      fail(2, USAGE);
+  }
+}
+
+function readTitleFile(path: string): string {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    return fail(
+      2,
+      `cannot read --title-file ${path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 /**

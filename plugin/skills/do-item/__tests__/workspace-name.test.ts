@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ExitError } from "../../../shared/cli.ts";
 import type { OrcaRunner } from "../scripts/orca-board.ts";
 import {
@@ -97,12 +100,44 @@ describe("parseArgs", () => {
     ).toEqual({ stage: "ready", id: "JIG-1", title: "T", pr: "7" });
   });
 
-  test("refuses a missing id, a bad stage and a non-numeric pr", () => {
-    expect(() => parseArgs(["ready"])).toThrow(ExitError);
+  test("takes no id for a pull request that serves no item", () => {
+    expect(parseArgs(["ready", "--pr", "7"])).toEqual({
+      stage: "ready",
+      id: "",
+      title: "",
+      pr: "7",
+    });
+  });
+
+  test("reads the title from a file as literal text", () => {
+    const dir = mkdtempSync(join(tmpdir(), "workspace-name-"));
+    try {
+      const path = join(dir, "title.md");
+      writeFileSync(path, 'Fix $(touch x) `id` "quoted"\n');
+      expect(
+        parseArgs(["driving", "--id", "#12", "--title-file", path]),
+      ).toEqual({
+        stage: "driving",
+        id: "#12",
+        title: 'Fix $(touch x) `id` "quoted"\n',
+        pr: "",
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses a bad stage, a non-numeric pr, two titles and an unreadable title file", () => {
     expect(() => parseArgs(["merged", "--id", "A"])).toThrow(ExitError);
     expect(() => parseArgs(["ready", "--id", "A", "--pr", "x"])).toThrow(
       ExitError,
     );
+    expect(() =>
+      parseArgs(["ready", "--title", "A", "--title-file", "/nonexistent"]),
+    ).toThrow(ExitError);
+    expect(() =>
+      parseArgs(["ready", "--title-file", "/nonexistent/title.md"]),
+    ).toThrow(ExitError);
   });
 });
 

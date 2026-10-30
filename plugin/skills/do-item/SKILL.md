@@ -603,10 +603,13 @@ routing below remain **exact**.
    Then name the workspace for the stage. With `workspace_name.template` set
    and a runtime that can rename its workspaces (Orca), this renames it, for
    example to `[I] JIG-12 Rename workspaces`; without the template, or
-   anywhere else, it does nothing and never fails the step:
+   anywhere else, it does nothing and never fails the step. The issue title is
+   tracker text, so write it alone to `.context/workspace-title.md` with the
+   file editor and pass the file, never the title inside the command; quote
+   the key, since a GitHub key (`#123`) starts a shell comment unquoted:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id <KEY> --title "<issue title>"
+   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id "<KEY>" --title-file .context/workspace-title.md
    ```
 
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
@@ -1047,10 +1050,10 @@ routing below remain **exact**.
       - Still running → armed; move on without further polling.
 
       Once armed, name the workspace for the driving stage (same rules as at
-      pickup):
+      pickup, with `.context/workspace-title.md` still holding the title):
 
       ```bash
-      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id <KEY> --title "<issue title>" --pr <PR>
+      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id "<KEY>" --title-file .context/workspace-title.md --pr <PR>
       ```
 
       Post the prepared tracker comment with the arm outcome and the

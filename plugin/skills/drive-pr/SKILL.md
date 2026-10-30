@@ -888,7 +888,19 @@ could forge or forget.
    - exit `0` inside the window → the drive already reached a terminal state;
      report its own reason.
    - still running → armed. Do not poll.
-6. **Report and stop.** State: armed, the PR, the tree it drives from, the verified driver-log path
+6. **Name the workspace, report and stop.** When step 5 found the drive armed
+   (not refused, failed or already finished), name the workspace for the
+   driving stage, in `<tree>`, with the item the PR serves as in
+   [§ Announcing merge-readiness](#announcing-merge-readiness) (a PR that
+   serves none or several leaves out `--id` and `--title-file`). It does
+   nothing without `workspace_name.template`, outside Orca, and never fails
+   the step:
+
+   ```bash
+   bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" driving --id "<item key>" --title-file .context/workspace-title.md --pr <PR>
+   ```
+
+   The title file is written in `<tree>` too. Then report. State: armed, the PR, the tree it drives from, the verified driver-log path
    (`drive.ts: driver log → …` in its output, or `drive.ts: driver log
    unavailable: <reason>` when it keeps none; confirm it is a regular file
    and can be opened for append with `bun "${CLAUDE_SKILL_DIR}/scripts/portable.ts" check-log <path>` before
@@ -2926,10 +2938,14 @@ bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file followups.md -- b
 
 **judgment** — After the announcement posts, name the workspace for the stage
 when the repository sets `workspace_name.template` (it does nothing without
-it, outside Orca, and never fails the step):
+it, outside Orca, and never fails the step). The item is the one tracker issue
+the PR serves ([Arm](#arm) step 3 reads it); write its title alone to
+`.context/workspace-title.md` with the file editor and pass the file, never
+the title inside the command, and quote the key. For a PR that serves no item,
+or more than one, leave out `--id` and `--title-file`:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" ready --id <item key> --title "<item title>" --pr <PR>
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" ready --id "<item key>" --title-file .context/workspace-title.md --pr <PR>
 ```
 
 It re-checks `drive-status.ts` itself and refuses unless the state is

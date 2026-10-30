@@ -456,6 +456,7 @@ fields:
 
   workspace_name.template:
     type: string
+    pattern: "^(?:[^{}]|\\{(?:id|status|title|pr)\\})*$"
     read_by: [do-item, drive-pr]
     since: next
   workspace_name.statuses:
