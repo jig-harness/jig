@@ -28,6 +28,8 @@ import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
 
 import { boundPassNotice } from "./../state/pass-handoff.ts";
 
+import { unpushedNoticeFor } from "./unpushed.ts";
+
 import { resolveStateDir } from "./../state/store.ts";
 
 import { fail } from "./../cli.ts";
@@ -142,16 +144,17 @@ export async function prepareReviewPass(context: DriveRoundContext): Promise<
   const preexistingSessions = preexistingSnapshot.files;
   const baseEnv = passEnv();
   // A stop the driver recovered from (a killed pass, a stall, a takeover, a
-  // re-arm with answers) is told to every review pass until one completes. One
-  // environment string has an OS limit, so a long notice reaches the pass
-  // through a file the variable names.
+  // re-arm with answers) is told to every review pass until one completes,
+  // and the commits the last gate found unpushed to every pass they remain
+  // for. One environment string has an OS limit, so a long notice reaches the
+  // pass through a file the variable names.
   const stateDir = await resolveStateDir();
   let notice: string;
   try {
     notice = boundPassNotice(
       stateDir,
       context.pr,
-      [context.passNotice, context.carriedNotice]
+      [context.passNotice, unpushedNoticeFor(context), context.carriedNotice]
         .filter((part) => part !== "")
         .join("\n\n"),
     );

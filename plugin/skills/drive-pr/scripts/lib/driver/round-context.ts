@@ -59,9 +59,23 @@ export interface DriveRoundContext {
    */
   carriedNotice: string;
   /**
-   * The local HEAD a pass killed at its deadline left ahead of the PR head,
-   * witnessed after the kill; `''` when it left nothing unpushed. Every gate
-   * is told it (`drive-status.ts --inherited-head`) until a pass completes.
+   * The local HEAD a pass left work on that the PR head lacks: witnessed after
+   * a pass killed at its deadline, and measured afresh before every gate
+   * (`unpushed.ts`); `''` when there is none. Every gate is told it
+   * (`drive-status.ts --inherited-head`).
    */
   inheritedHead: string;
+  /**
+   * What the next review pass is told about the work the last gate measured;
+   * `''` when there was none. Recomputed before every gate.
+   */
+  unpushedNotice: string;
+  /**
+   * The tree's edits by content (`PassLeftovers.edits`) as the last gate
+   * measured them, and as they stood before the last completed review pass
+   * ran (the first gate's, until one completes): only edits that differ from
+   * the latter were left by a pass and owe a round. `null` when unread.
+   */
+  uncommittedMeasured: string | null;
+  uncommittedBeforePass: string | null;
 }
