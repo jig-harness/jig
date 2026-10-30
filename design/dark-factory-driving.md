@@ -77,14 +77,18 @@ working tree it runs in:
   the pull request comes from a fork (the push path refuses those already).
 
 The record is written twice: `drivenBranch` in the drive state, and a
-small file in the tree's own git directory carrying the branch, the
-attached head commit and whether the drive created the tree, so that code
-outside the skill (the shared process helpers, resource collection,
-`resolve-conflicts`) can read it from the tree alone. The file is trusted
-only while the attached commit is an ancestor of the tree's head and the
-branch's remote ref exists, and it is removed when the tree is attached by
-name, so a later detached state of the tree (a person's checkout, a bisect,
-a rebase) does not answer with an old pull request. Every script that reads
+small file in the tree's own git directory carrying the branch and the
+commit the tree was last left at, so that code outside the skill (the shared
+process helpers, `resolve-conflicts`) can read it from the tree alone. The
+drive rewrites the commit after every commit and push it makes, and the file
+is trusted only while the tree's head is exactly that commit, so a person's
+`git checkout --detach`, a bisect or a rebase leaves a head the record does
+not name and the record stops answering; it is also removed when the tree is
+attached by name. A separate provenance file in the same directory carries
+the repository, the pull request number and whether the drive created the
+tree. Nothing removes it but resource collection, and it does not depend on
+the branch or its remote ref, so a merged and pruned pull request's tree is
+still identified as the drive's. Every script that reads
 the branch name or the upstream reads the record instead, and the step that
 builds this lists each site:
 `base-sync.ts` and `lib/base-drift.ts` (which refuse a detached head by
@@ -117,7 +121,9 @@ A pull request with no working tree at all (one an update bot opened, one a
 session in another repository opened with the forge's command line, one whose
 tree was deleted) is driven from the clone's primary checkout:
 `/jig:drive-pr <PR>` there creates a working tree with `git worktree add
---detach` under the roots `gc.worktree_roots` names (the
+--detach` under the first root `gc.worktree_roots` names (default empty:
+with no root the command refuses, naming the setting and the value to add,
+and creates nothing) (the
 [workspace tool](../tools/herdr/README.md)'s `open` wants a branch and runs
 outside the plugin, so the drive does not go through it), attaches the pull
 request in it and arms the drive there. The tree is the drive's, recorded by
@@ -169,19 +175,29 @@ decision:
 
 - after `QUOTA_PARKED`, by a session whose pass will bill a **different
   account** from the one the wall belongs to. The quota-park record gains
-  the account (hashed, as the claim records it), the caller's account is
-  resolved from the pass command it will spawn (`lib/identity.ts`), and the
-  re-arm is refused when either side is unknown. "Do not dispatch a
+  the account, kept in the clone's own state (the claim stores the identity
+  as `lib/identity.ts` resolves it, an address for a file-backed login, so
+  this record is hashed or kept local, never copied as the claim has it),
+  the caller's account is resolved from the pass command it will spawn, and
+  the re-arm is refused when either side is unknown. "Do not dispatch a
   successor" stays for a successor on the same account until the recorded
   reset has passed, or until a person says the window reopened with
   `--window-reopened`, a flag the skill forbids an agent to pass, as it
   forbids clearing a lease. The exit prints the re-arm command with the
-  account the wall belongs to;
+  account the wall belongs to. From **another clone** the account is not
+  known (the ledger never carries it), so that re-arm follows the same-account
+  rule: after the recorded reset, which the ledger carries, or with
+  `--window-reopened`;
 - after `HITL_PARKED`, once every parked item is **answered**: a comment by
   an author with the repository's owner, member or collaborator association
   (the rule the summary-finding guard already uses), on the thread or the
-  decision record, later than the park. The re-arm unparks those items and
-  passes the answers to the first round as human verdicts.
+  decision record, later than the park, that states a verdict on the parked
+  decision (an option named in the record, or an outcome word) and is not
+  one the driving agent posted through its own account. A question, a "still
+  investigating" or a comment by the driver's own login is not an answer. A
+  class that asks for an independent approver keeps that requirement. The
+  re-arm unparks those items and passes the answers to the first round as
+  human verdicts.
 
 Replacing a driver that still holds its locks is a **takeover**, and it is
 admitted only against a holder whose verdict is `WEDGED`, or whose process
@@ -197,9 +213,11 @@ bun "<skill-dir>/scripts/drive.ts" <PR> --take-over -- claude -p "/jig:drive-pr 
 
 In the same clone the takeover stops the holder with the identity check
 `drives.ts --stop` performs, writes a takeover record to the state and the
-ledger (from which actor and account, to which, the holder's verdict), runs
+ledger (from which actor, to which, the holder's verdict), runs
 `reconcile-replied-threads.ts` before its first triage, and resumes at the
-same round. Held items are carried over by their state: a hold whose fix is
+same round. The record names the actor and account only in the clone's own
+state; the copy mirrored to the ledger carries the actor, the verdict and
+the round, and never the account. Held items are carried over by their state: a hold whose fix is
 pushed is resolved as today; a hold whose promised fix never landed is
 reopened with a superseding reply that says so, and the successor either
 redoes the fix and re-holds the item under itself or triages it afresh, each
@@ -207,11 +225,18 @@ recorded.
 
 Across clones no process can be stopped and no lock is shared, so the
 takeover goes through the ledger: it is admitted only when the ledger's
-driver heartbeat is older than the lease window, it is claimed by an
-append-only comment on the pull request (the forge assigns increasing
-comment ids, so the earliest claim wins and a later claimant stands down
-after reading it), and every driver reads the ledger at each round boundary
-and exits if a newer claim than its own is there. The doubled replies a
+driver heartbeat is older than the lease window, which is the doctor's
+stall threshold: it exceeds a pass's deadline plus the gate poll, so the
+ledger writes at round boundaries keep a live driver fresh, and a write that
+fails is retried at the next boundary (a stale heartbeat only makes a
+takeover admissible, and the claim below arbitrates it). It is claimed by an
+append-only comment on the pull request naming the ledger generation it read
+(the forge assigns increasing comment ids). One winner is elected per
+generation: the claim with the lowest comment id among those naming that
+generation. A later claimant stands down after reading the elected claim, and
+a driver exits only for an elected claim from another clone that is newer
+than its own drive, never for a claim that lost its election; every driver
+reads the ledger at each round boundary. The doubled replies a
 second driver can produce are measured and not repairable, which is why
 "do not kill the other driver" holds today; the ledger claim is what lets
 the rule become "do not drive beside a driver whose claim is newer than
@@ -230,21 +255,36 @@ takeover claims; the decisions taken unattended
 ([below](#every-autonomous-decision-is-recorded)); and the driver's actor
 and last heartbeat. The account is never posted: a hash of an address can
 be checked against a guessed address, so the account stays in the clone's
-own state, where the same-clone re-arm reads it, and a re-arm from another
-clone simply tries, since the short-window sleep already handles a wall.
-The agent-authored narrative of the handoff file travels with it, cut to
-its last twenty lines, with address-shaped strings redacted from it and
-from the parked reasons; the comment is cut to the forge's body limit by
-dropping held items' outcomes first and the narrative second, never a
-parked decision.
+own state, where the same-clone re-arm reads it; the quota park travels
+with its reset time and window kind but not its account, which is why a
+re-arm from another clone follows the same-account rule above. The privacy
+filter runs over the whole outgoing payload, not over chosen fields: every
+free-text value (the narrative, parked reasons, framed decisions with their
+options and operational steps, held outcomes, the decisions taken
+unattended) has address-shaped strings replaced with `<redacted>` before it
+is written. The narrative of the handoff file travels with it, cut to its
+last twenty lines.
 
-It is written at round boundaries and at every park and takeover, by
-read-modify-write against the comment's `updatedAt`, so two writers cannot
-silently overwrite each other; two creations that race leave two comments,
-of which the lower id is canonical and the other is deleted by its author
-on its next write. A ledger is **trusted** only when its comment's author is
-the drive's own login or carries the owner, member or collaborator
-association; any other comment carrying the marker is ignored and reported.
+A parked decision record is bounded (a fixed length per record, longer
+input refused at the park with "shorten it"), so the comment can hold every
+parked decision. The comment is cut to the forge's body limit by dropping
+held items' outcomes first and the narrative second, never a parked
+decision; a park that still cannot fit stores its full record as its own
+comment under a second marker, and the ledger carries that comment's link.
+
+It is written at round boundaries and at every park and takeover. The forge
+offers no conditional update of a comment, so the write is read, compare the
+`updatedAt` and `generation`, write, then read back: a writer whose
+generation is not the one now stored re-reads, merges (the higher generation
+wins each field it changed) and writes again. Two creations that race leave
+two comments, of which the lower id is canonical and the other is deleted by
+its author on its next write. A ledger is **trusted** only when its
+comment's author is the drive's own login or carries the owner, member or
+collaborator association; any other comment carrying the marker is ignored
+and reported. Trust names who may write; the fields that gate an action
+(the Ready mark, verified heads, held outcomes) are re-read from the forge
+before the drive acts on them, so a trusted but wrong ledger seeds a drive
+and does not decide for it.
 
 A drive that starts in a clone with **no state** for the pull request seeds
 its state from the ledger; a drive whose local state is **older** than the
@@ -277,16 +317,26 @@ user layer and the environment layer may choose a level up to the ceiling
 and no higher, which is how a person's machine runs more autonomously than
 the team's default without any layer raising what the team allowed. The
 effective level is the chosen level, or the off-hours level inside a window,
-capped by `max_level`. A session with a person in it (an interactive run,
+capped by `max_level`. An explicit choice in the environment layer wins over
+the off-hours level, so `attended` set for one run stays `attended` inside a
+window; precedence between the other layers is the configuration's usual
+one, the higher layer overriding the lower.
+
+The ceiling `max_level` and `park_classes` are a control plane, so the
+reader takes them from the pull request's **base branch** snapshot, the
+boundary the review skill already draws for independent review, and ignores
+a `JIG_OVERLAY` redirect and the working tree's copy. A pull request that
+edits them takes effect after it merges. When the snapshot cannot be read the
+reader fails closed: ceiling `attended` and the default classes. A session with a person in it (an interactive run,
 not a driver pass) reads `attended` unless the person set otherwise. The
 pass prints the level and its source at the start of every round; the round
 report and the ledger say which level each decision was taken under.
 
 The default is `attended`, which is today's behaviour, so an upgrade changes
 nothing until a repository opts in. `wide` and `off_hours` are dark-by-default
-dials: they are built behind the opt-in and their documentation says
-"available" only once a working repository has run them and the measure
-below holds.
+dials, and Jig keeps those out until a working repository has validated them:
+this design specifies them, and build step 5 is not imported into Jig until a
+working repository has run them and the measure below holds.
 
 What each level permits, per decision class. The decision classes the HITL
 registry reserves are not on this table and no level changes them. Picking
@@ -298,16 +348,17 @@ mechanical states, at every level.
 | File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | Confirm first | File it; the body says which skill filed it, from which pull request, and why | Same |
 | Defer a finding where no adapter can file | Record it in the pull request's deferral section ([below](#deferral-without-a-tracker)) | Same | Same |
 | A technical choice `decide` rules reversible inside one pull request | Decide and record | Same | Same |
-| A technical choice `decide` would rule underdetermined | Escalate | Gather the missing evidence within the round's budget, then apply the ladder | Same |
-| A technical choice `decide`'s last row would escalate: no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence | Escalate | Escalate | Decide, marked provisional |
+| A technical choice `decide` would rule underdetermined | Park under `technical-escalation` | Gather the missing evidence within the round's budget, then apply the ladder; still undetermined: park under `technical-escalation` | Same |
+| A technical choice `decide`'s last row would escalate: no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence | Park under `technical-escalation` | Park under `technical-escalation` | Decide, marked provisional |
 | A bot-review thread the arbiter rules `escalate` with no registry class and no recorded human decision behind it | Park under the class `escalated` | Same | Reply with a provisional outcome and the rationale, resolve, list it in the morning report |
 | Re-arm after `HITL_PARKED` with parked items still unanswered | Never | Never | Once every unanswered item is provisionally decided, where the class allows it |
 
-**Provisional** is a new outcome token beside the triage vocabulary, for a
-reply outcome only (`rejected`, `wont-fix`, `deferred`): a provisional
+**Provisional** is a mark on a recorded decision, not an outcome token of its
+own: it qualifies a reply outcome (`rejected`, `wont-fix`, `deferred`) or a
+`decide` ruling recorded in the decision record format. A provisional
 decision never produces a fix, so it never grows the diff, and the size
-budget stays mechanical. It is marked as such in the thread reply and the
-ledger, listed first in the morning report, and skipped by
+budget stays mechanical. It is marked as such in the thread reply or the
+decision comment and in the ledger, listed first in the morning report, and skipped by
 `reconcile-replied-threads.ts` and by triage, so a person's reversal is not
 undone by the next round. The reversal is a comment on the thread or the
 decision record by an owner, member or collaborator: the next round reads it
@@ -342,7 +393,9 @@ today.
   `scope`, `human-thread`, `reviewer-posture`, `next-item`,
   `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`),
   plus `escalated` for a product or stakeholder call the arbiter or
-  `decide` escalates (the `hitl:<stakeholder>` categories) and
+  `decide` escalates (the `hitl:<stakeholder>` categories),
+  `technical-escalation` for a technical choice `decide` could not settle
+  (underdetermined after the evidence budget, or its last row) and
   `human-decision` for a value the pull request records as a person's
   decision or a rule inside a human-decided span, which the arbiter may only
   ever escalate. A repository whose registry has more rows adds their
@@ -370,9 +423,11 @@ the count.
 
 Two kinds of review-bot follow-up land after a held reply, and the guard
 against resolving over a newer comment must know both. The bot's
-**confirmation** after a push ("synchronized as addressed") is a review
-feature, carries the bot's confirmation marker, and the guard already
-accepts it. The bot's **chat auto-reply** to any comment on its thread
+**confirmation** ("synchronized as addressed"), which lands before or after
+the push, is a review feature and carries the bot's confirmation marker. The
+guard accepts it today only for CodeRabbit's login and marker, with no
+outcome token, and fails closed for every other bot; accepting another bot's
+confirmation is new work (`confirmation_marker` below). The bot's **chat auto-reply** to any comment on its thread
 ("acknowledged, nothing further requested, the unpushed fix remains
 unverified") is a chat feature, carries the bot's generated-reply marker
 instead, lands on every accepted thread every round, and is what the guard
@@ -410,8 +465,9 @@ step is bound to one tracker until
 [plan item 10](plan.md#10-values-the-skills-still-assume) moves it onto the
 interface) is recorded in a `## Deferred` section of the pull request body
 under a hidden marker, with the finding quoted, the reason and the thread
-link, written by read-modify-write against the body's `updatedAt` so a
-person's edits survive; the thread is resolved with the `**deferred**`
+link, written by the ledger's read, compare, write and read-back protocol
+(the forge offers no conditional update), re-reading and merging when a
+person's edit landed in between so that edit survives; the thread is resolved with the `**deferred**`
 token linking the section. A plugin script, `file-deferred.ts <PR>`, turns
 the section's entries into issues where an adapter can file and replaces
 each with its link; it runs from the consumer's own post-merge step or the
@@ -477,8 +533,8 @@ suite's consistency checks run on each.
    working around a park, the transparent acknowledgement with the
    per-bot markers, the ledger's decisions section, the registry row that
    reserves parking to its classes, and the audit criterion.
-   `park_classes` is read from the repository layer only: a layer an agent
-   controls must not widen what it may park on. `park --class` is a **Breaking** change for a
+   `park_classes` and `max_level` are read from the base branch's snapshot
+   only: a layer an agent controls must not widen what it may park on. `park --class` is a **Breaking** change for a
    consumer whose own procedures call `park`. Its ADR, numbered next,
    records that parking is reserved for the registry's classes and that
    every autonomous decision is recorded where a person can reverse it.
@@ -487,8 +543,8 @@ suite's consistency checks run on each.
    a park once every unanswered item is provisionally decided, the
    provisional entries in the ledger's decisions section, `drives.ts
    --report` and the loop-metrics counters.
-   Built behind the opt-in; documented as available after the validation
-   measure holds in a working repository.
+   Imported only after the validation measure holds in a working repository
+   that has run it.
 
 ## Left out
 
@@ -511,11 +567,5 @@ suite's consistency checks run on each.
 ## Review
 
 Reviewed on 2026-10-28 at commit `86abdc7` by a fresh-context reviewer
-session, as an adversary: seventeen findings, six of them blocking, on the
-contradiction between the park rule and the autonomy table, the liveness
-rebuilt where `lastProgressAt` and `WEDGED` already exist, a cross-clone
-takeover that could stop no holder, held items stranded by a successor, a
-provisional decision reconciliation would undo, and `wide` as a
-dark-by-default dial. Every finding is settled in the text above; the
-reviewer's verdict was approval for steps 1 to 4 after those changes, and
-for step 5 once a working repository has validated `wide`.
+session, as an adversary. Verdict: approved for steps 1 to 4; step 5 once a
+working repository has validated `wide`.

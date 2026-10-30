@@ -1449,6 +1449,11 @@ make, use the entry's term instead.
   the review drive's resumable state (round, parked and held items, takeovers,
   decisions taken unattended), so a drive in any clone, on any machine or
   account, resumes from it.
+- **Transparent comment** — a comment a listed review bot posts after a held
+  reply that does not invalidate it: it carries that bot's chat marker, no
+  outcome token and none of the bot's finding shape, so the guard against
+  resolving over a newer comment lets the held item resolve. Anything the
+  guard cannot classify is not transparent and is triaged.
 - **Takeover** — one session replacing a drive's registered driver, admitted
   only when that driver is dead or wedged; recorded in the drive state and
   the *drive ledger*. A drive that stopped holds no driver and is re-armed
