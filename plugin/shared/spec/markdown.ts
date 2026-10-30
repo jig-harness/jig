@@ -23,7 +23,12 @@
  * (`inItem`). Only a paragraph's text continues an item from before its
  * column. A thematic break, and a block quote outside the innermost open
  * item, is marked `boundary`: it ends the entry above it and is no part of
- * one. A fence opened inside an item ends with it: a line before the
+ * one, and so is a line that lazily continues that quote's paragraph (plain
+ * text right after it, with no `>`). Which list a line belongs to is decided
+ * here, once: a line that opens a list item is marked with the number of
+ * open items around it (`depth`), so a reader nests items by that and not by
+ * indentation, and an item after a block that ended the list above it starts
+ * a list of its own. A fence opened inside an item ends with it: a line before the
  * item's column closes the fence and those items, and is read as ordinary
  * Markdown in the item that remains. Past a nesting depth of 64 markers on
  * one line the rest is the item's text, so a line of markers cannot run the
@@ -60,13 +65,16 @@ export function trimEndOf(text: string, chars: string): string {
  * closes a fence. Tabs are four spaces. `inItem` marks a heading inside an
  * open list item: it belongs to the item, so it opens or closes no section.
  * `boundary` marks a `text` line that ends the entry above it and continues
- * none: a thematic break, or a block quote the open item does not contain.
+ * none: a thematic break, or a block quote the open item does not contain,
+ * and the lines that lazily continue it. `depth` marks a line that opens a
+ * list item: the number of open items it is nested in, 0 for a new list.
  */
 export interface MarkdownLine {
   line: string;
   kind: "text" | "heading" | "code" | "fence";
   inItem?: true;
   boundary?: true;
+  depth?: number;
 }
 
 /** A heading: its run of `#` and its title. */
@@ -75,6 +83,8 @@ const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const LIST_ITEM = /^( {0,3})([-*+]|\d{1,9}[.)])( *)(?=\S|$)/;
 /** A block quote or a thematic break: blocks that end a list item they are not inside. */
 const INTERRUPTS = /^ {0,3}(?:>|([-*_])(?: *\1){2,} *$)/;
+/** A block quote line with text, which opens or continues a paragraph in the quote. */
+const QUOTED_TEXT = /^ {0,3}>.*\S/;
 /** List markers past this many on one line are read as the item's text. */
 const MAX_LIST_DEPTH = 64;
 
@@ -133,6 +143,12 @@ interface ScanState {
   headingInItem: boolean;
   /** Whether the line just read is a boundary (see `MarkdownLine`). */
   boundary: boolean;
+  /** The line just read opens a list item nested in this many (see `MarkdownLine`). */
+  depth: number | null;
+  /** Whether the line just read is paragraph text, which a quote's paragraph takes in. */
+  paragraph: boolean;
+  /** An open block quote paragraph: whether its lines are boundaries, or `null`. */
+  quote: boolean | null;
 }
 
 /** The content column of the innermost open item `indent` reaches, or 0. */
@@ -175,15 +191,21 @@ function shallowLine(
   if (interrupt) {
     const inItem = strip > 0 && state.lists.at(-1) === strip;
     state.boundary = interrupt[1] !== undefined || !inItem;
+    if (interrupt[1] === undefined && QUOTED_TEXT.test(own))
+      state.quote = state.boundary;
     closeItemsPast(state, strip);
     return "text";
   }
   const item = listContent(own);
   if (item !== null) {
     closeItemsPast(state, strip);
+    state.depth = state.lists.length;
     return itemLine(line, strip + item, state);
   }
-  if (!HEADING.test(own)) return "text";
+  if (!HEADING.test(own)) {
+    state.paragraph = true;
+    return "text";
+  }
   closeItemsPast(state, strip);
   state.headingInItem = strip > 0;
   return "heading";
@@ -254,6 +276,8 @@ function classify(line: string, state: ScanState): MarkdownLine["kind"] {
     const fenced = fencedLine(line, state.fence, state);
     if (fenced !== null) return fenced;
   }
+  const quote = state.quote;
+  state.quote = null;
   if (line.trim() === "") {
     state.afterBlank = true;
     return "text";
@@ -265,9 +289,18 @@ function classify(line: string, state: ScanState): MarkdownLine["kind"] {
   if (indent - strip >= 4) {
     state.indentedCode ||= state.afterBlank;
     kind = state.indentedCode ? "code" : "text";
+    state.paragraph = kind === "text";
   } else kind = shallowLine(line, strip, state);
   state.afterBlank = false;
+  if (state.paragraph) continueQuote(state, quote);
   return kind;
+}
+
+/** A paragraph line right after a quote's text continues the quote, lazily. */
+function continueQuote(state: ScanState, quote: boolean | null): void {
+  if (quote === null) return;
+  state.quote = quote;
+  state.boundary = quote;
 }
 
 /** Each line of `text`, classified; see the header. */
@@ -279,14 +312,20 @@ export function* markdownLines(text: string): Generator<MarkdownLine> {
     afterBlank: true,
     headingInItem: false,
     boundary: false,
+    depth: null,
+    paragraph: false,
+    quote: null,
   };
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.replace(/\t/g, "    ");
     state.boundary = false;
+    state.depth = null;
+    state.paragraph = false;
     const kind = classify(line, state);
     const out: MarkdownLine = { line, kind };
     if (kind === "heading" && state.headingInItem) out.inItem = true;
     if (state.boundary) out.boundary = true;
+    if (state.depth !== null) out.depth = state.depth;
     yield out;
   }
 }

@@ -48,10 +48,14 @@ const LIST_ITEM = /^( *)(?:[-*+]|\d{1,9}[.)])\s(.*)$/;
 const CHECKBOX = /^\[([ xX])\]\s(.*)$/;
 const HEADING = /^ {0,3}#{1,6}\s/;
 
-/** One list item or id-led line, with the lines that continue it. */
+/**
+ * One list item or id-led line, with the lines that continue it. `depth` is
+ * the scanner's: how many open list items enclose the item, 0 for a new list.
+ */
 interface Block {
   indent: number;
   list: boolean;
+  depth: number;
   checkbox: boolean;
   done: boolean;
   id: string | null;
@@ -77,7 +81,8 @@ function leadingId(
   return { id: null, numeric: false, rest: text };
 }
 
-function block(indent: number, list: boolean, content: string): Block {
+function block(indent: number, depth: number | null, content: string): Block {
+  const list = depth !== null;
   const box = list ? CHECKBOX.exec(content) : null;
   const { id, numeric, rest } = leadingId(
     box ? (box[2] ?? "").trimStart() : content,
@@ -86,6 +91,7 @@ function block(indent: number, list: boolean, content: string): Block {
   return {
     indent,
     list,
+    depth: depth ?? 0,
     checkbox: box !== null,
     done: box !== null && box[1] !== " ",
     id,
@@ -98,25 +104,29 @@ function block(indent: number, list: boolean, content: string): Block {
  * The section's lines outside code, tabs as four spaces; `null` stands
  * where code opens, closes or continues, and at a boundary (a thematic
  * break, a block quote outside the item), since each ends the entry above
- * it. The classification is the resolver's, made over the whole body.
+ * it. The classification is the resolver's, made over the whole body, and
+ * so is which lines open a list item: only a line the scanner marked with a
+ * `depth` does.
  */
-function* unfenced(lines: readonly MarkdownLine[]): Generator<string | null> {
-  for (const { line, kind, boundary } of lines)
-    yield kind === "text" && !boundary ? line : null;
+function* unfenced(
+  lines: readonly MarkdownLine[],
+): Generator<MarkdownLine | null> {
+  for (const line of lines)
+    yield line.kind === "text" && !line.boundary ? line : null;
 }
 
 /** A new block the line opens, `"end"` when it ends the one above, or `"continue"`. */
 function opens(
-  line: string,
+  { line, depth }: MarkdownLine,
   current: Block | null,
   afterBlank: boolean,
 ): Block | "end" | "continue" {
   const indent = line.length - line.trimStart().length;
-  const item = LIST_ITEM.exec(line);
-  if (item) return block(indent, true, (item[2] ?? "").trimStart());
+  const item = depth === undefined ? null : LIST_ITEM.exec(line);
+  if (item) return block(indent, depth ?? 0, (item[2] ?? "").trimStart());
   if (HEADING.test(line)) return "end";
   if (indent < 4 && LEADING_ID.test(line.trim()))
-    return block(indent, false, line.trim());
+    return block(indent, null, line.trim());
   const continues = current && (!afterBlank || indent > current.indent);
   return continues ? "continue" : "end";
 }
@@ -126,29 +136,33 @@ function blocks(lines: readonly MarkdownLine[]): Block[] {
   const out: Block[] = [];
   let current: Block | null = null;
   let afterBlank = false;
-  for (const line of unfenced(lines)) {
-    if (line !== null && line.trim() === "") {
+  for (const marked of unfenced(lines)) {
+    if (marked !== null && marked.line.trim() === "") {
       afterBlank = true;
       continue;
     }
     const next: Block | "end" | "continue" =
-      line === null ? "end" : opens(line, current, afterBlank);
+      marked === null ? "end" : opens(marked, current, afterBlank);
     if (next === "end") current = null;
     else if (next !== "continue") {
       current = next;
       out.push(next);
-    } else if (current && line !== null) current.text += ` ${line.trim()}`;
+    } else if (current && marked !== null)
+      current.text += ` ${marked.line.trim()}`;
     afterBlank = false;
   }
   return out;
 }
 
-/** Nested items without an id or a checkbox belong to the item above them. */
+/**
+ * Nested items without an id or a checkbox belong to the item above them.
+ * Nesting is the scanner's `depth`, so an item after a block that ended the
+ * list is the first of a new list, however far it is indented.
+ */
 function entries(all: Block[]): Block[] {
-  const top = Math.min(...all.filter((b) => b.list).map((b) => b.indent));
   const out: Block[] = [];
   for (const b of all) {
-    const own = !b.list || b.indent <= top || b.checkbox || b.id !== null;
+    const own = !b.list || b.depth === 0 || b.checkbox || b.id !== null;
     const parent = out.at(-1);
     if (own || parent === undefined) out.push({ ...b });
     else parent.text += ` ${b.text}`;

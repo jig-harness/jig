@@ -415,6 +415,66 @@ test("a block quote inside a list item still continues it", async () => {
   expect(result.acceptance.map((c) => c.text)).toEqual(["Works > as quoted"]);
 });
 
+test("a list item after a block that ends the list is an entry of its own", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  const nested = await resolveSpec(
+    issue(["## Acceptance criteria", "- Works", "  - in detail"].join("\n")),
+    root,
+    { registry: [bodyAdapter], config: only("body") },
+  );
+  expect(nested.acceptance.map((c) => c.text)).toEqual(["Works in detail"]);
+  for (const block of [
+    ["---"],
+    ["* * *"],
+    ["```", "x", "```"],
+    ["### Notes"],
+  ]) {
+    const body = [
+      "## Acceptance criteria",
+      "- Works",
+      ...block,
+      "  - Separate criterion",
+    ].join("\n");
+    const result = await resolveSpec(issue(body), root, {
+      registry: [bodyAdapter],
+      config: only("body"),
+    });
+    expect(result.acceptance.map((c) => c.text)).toEqual([
+      "Works",
+      "Separate criterion",
+    ]);
+  }
+});
+
+test("a line that lazily continues a block quote's paragraph is quoted, not an entry", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  const read = async (lines: string[]) =>
+    resolveSpec(issue(lines.join("\n")), root, {
+      registry: [bodyAdapter],
+      config: only("body"),
+    });
+  const lazy = await read([
+    "## Spec",
+    "> Example only:",
+    "AC-9 Example criterion",
+  ]);
+  expect(lazy.acceptance).toEqual([]);
+  const joined = await read([
+    "## Acceptance criteria",
+    "- Works",
+    "> Example only:",
+    "an example line",
+  ]);
+  expect(joined.acceptance.map((c) => c.text)).toEqual(["Works"]);
+  const after = await read([
+    "## Spec",
+    "> Example only:",
+    "",
+    "AC-9 Real criterion",
+  ]);
+  expect(after.acceptance.map((c) => c.id)).toEqual(["AC-9"]);
+});
+
 test("a fence before a list item's column ends the item", async () => {
   const { root } = scratchRepo("spec-safety-");
   for (const gap of [[""], []]) {

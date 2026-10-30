@@ -74,31 +74,33 @@ export function bodySections(body: string, specHeading: string): BodySection[] {
     return found;
   };
   const stack: { level: number; section: BodySection | null }[] = [];
-  for (const { line, kind, boundary, heading } of headedLines(body)) {
+  for (const { heading, ...marked } of headedLines(body)) {
     if (heading) {
       while ((stack.at(-1)?.level ?? 0) >= heading.level) stack.pop();
       stack.push({ level: heading.level, section: section(heading.title) });
     }
     const owner = stack.findLast((s) => s.section !== null)?.section;
     if (!owner) continue;
-    owner.lines.push(boundary ? { line, kind, boundary } : { line, kind });
-    if (!heading) owner.text += `${line}\n`;
+    owner.lines.push(marked);
+    if (!heading) owner.text += `${marked.line}\n`;
   }
   return [...names.values()];
 }
 
-/** Each line of `body`, with its level and title when it is a heading. */
+/**
+ * Each line of `body` with the scanner's marks, and its level and title when
+ * it is a heading that opens or closes a section.
+ */
 function* headedLines(
   body: string,
 ): Generator<
   MarkdownLine & { heading: { level: number; title: string } | null }
 > {
-  for (const { line, kind, inItem, boundary } of markdownLines(body))
+  for (const { inItem, ...marked } of markdownLines(body))
     yield {
-      line,
-      kind,
-      ...(boundary ? { boundary } : {}),
-      heading: kind === "heading" && !inItem ? headingOf(line) : null,
+      ...marked,
+      heading:
+        marked.kind === "heading" && !inItem ? headingOf(marked.line) : null,
     };
 }
 
