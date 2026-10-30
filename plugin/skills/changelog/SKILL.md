@@ -1,7 +1,7 @@
 ---
 name: changelog
-description: "Keep a repository's changelog from change notes: write the note for a change, check a branch against the repository's changelog configuration, convert a branch that edited the changelog itself, see which release the waiting notes make and which tags are owed; set a repository up for it, CI included (setup). Applies only where .config/jig.yaml sets changelog.file, except setup."
-argument-hint: "[note | check | status | convert | setup]"
+description: "Keep a repository's changelog from change notes: write the note for a change, check a branch against the repository's changelog configuration or the whole changelog against its format, convert a branch that edited the changelog itself, see which release the waiting notes make and which tags are owed; set a repository up for it, CI included (setup). Applies only where .config/jig.yaml sets changelog.file, except setup."
+argument-hint: "[note | check | lint | status | convert | setup]"
 allowed-tools: "Read Write Edit Grep Glob Bash(bun *) Bash(git *)"
 ---
 
@@ -14,7 +14,8 @@ a small file of its own, and a release step on the integration branch writes
 the notes into the changelog, moves the version and deletes the notes after
 the merge. This skill is the agent's side of that: when a change needs a note,
 how to write one a reader of the changelog can use, the commands that check
-a branch and show what the next release will be, and the guided setup that
+a branch, check the whole changelog against its format and show what the next
+release will be, and the guided setup that
 turns it on in a repository, CI included. The practices are Jig's
 [M12](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md)
 (no two pull requests edit the same lines) and
@@ -183,6 +184,36 @@ A branch that already edited the changelog or the version itself must put those
 edits back to the integration branch's text and move the entries into a note:
 [convert it](#converting-a-branch), never by hand.
 
+## Checking the whole changelog
+
+`/jig:changelog lint` checks the whole changelog against the rules of the
+repository's format, and of no other: `changelog.format`, else the format
+the file names. Run it, from the repository root, when setting the skill up
+on an existing changelog, after correcting an earlier release, and when a
+person asks whether the changelog is well formed:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/lint.ts"
+```
+
+Each finding reads `<file>:<line>: [<rule>] <problem>` and then `fix:` with
+what to change and the specification's section that states the rule. Fix
+what a person asks you to; a correction to an earlier release's text is an
+ordinary change the branch check allows. A `coverage` finding (a version the
+version files or a tag name has no section) cannot be fixed by a branch the
+branch check passes, since adding a release section is the release step's:
+report it to the person rather than adding the section. The rules, by format
+(the README has what each requires):
+
+| Format | Rules |
+|--------|-------|
+| [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) | `keep-a-changelog/title`, `semver-statement`, `unreleased-first`, `release-heading`, `date`, `release-order`, `duplicate-release`, `change-type`, `grouped`, `version-link`, `unreleased-link`, `coverage` |
+| [Common Changelog](https://common-changelog.org/) | `common-changelog/file-name`, `title`, `content`, `no-unreleased`, `release-heading`, `date`, `release-order`, `version-link`, `release-content`, `notice`, `category`, `category-order`, `change-list`, `reference`, `coverage` |
+
+What a format allows is never a finding: Keep a Changelog's undated
+Unreleased section and `[YANKED]` releases, Common Changelog's notice-only
+release and unlinked version.
+
 ## Converting a branch
 
 When a branch edited the changelog's Unreleased or release sections or a version
@@ -240,12 +271,16 @@ the release's key could not be kept to the integration branch.
    integration branch, past its rules) or `pull-request` (the App opens a
    release pull request a person merges, and passes no rule). Write the
    `changelog:` section of `.config/jig.yaml` with only what differs from the
-   defaults ([configuration](#configuration)). When the changelog is missing,
-   create it from the format's template:
+   defaults ([configuration](#configuration)), and always `format:
+   common-changelog` for that format: its file holds only its title and its
+   releases, so it cannot say which format it is in. When the changelog is
+   missing, create it from the format's template:
    `${CLAUDE_SKILL_DIR}/templates/keep-a-changelog.md` or
    `${CLAUDE_SKILL_DIR}/templates/common-changelog.md`. Check: `status.ts`
    prints the format and the released version, not `not configured` or an
-   error.
+   error. Run `lint.ts` ([§ Checking the whole changelog](#checking-the-whole-changelog))
+   on an existing changelog and show the person its findings: they are the
+   person's to fix or leave, and none blocks the setup.
 
 2. **The App and its environment.** Both modes push as a GitHub App, since a
    push with the workflow's own token starts no other workflow. Fill in the
@@ -389,6 +424,7 @@ root, and prints the plugin version it ran as.
 | Command | What it does |
 |---------|--------------|
 | `bun "${CLAUDE_SKILL_DIR}/scripts/check.ts"` | Options: `--base <ref>` and `--head-ref <name>`. The branch check. Every note reads as the release step will read it; the branch leaves the version and the changelog's open and release sections to the release step; a branch touching a release path carries a note that asks for a release, and one touching a note path carries a note; in Common Changelog also the format's rules (breaking entries, one-line entries, entries that read the same with their reference appended, one notice, authors). The base is `--base`, else the base of the pull request in a CI job, else the hosting service's default branch. A **release pull request** (where the base's section sets `release.push: pull-request`, its head branch is the base's `release.branch`) passes instead when the release step, re-run on its merge base with the date of its one new release heading and without `after_version`, writes exactly its change; a file the release step does not own may differ only when the base sets `after_version`, and then only line for line by the old version becoming the new one (a whole version, not part of a longer one or of a name), and a file that is not valid UTF-8 text not at all; any other line, an added one naming the version included, is a finding. The head branch is `--head-ref`, else the pull request's in a CI job, else the checked-out branch. It needs the full history. Exit 0 clean or `not configured`, 1 findings (a base that cannot be found included), 2 a usage error. |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/lint.ts"` | Options: `--json`. The whole changelog against the rules of its format alone (`changelog.format`, else what the file names), each rule cited from the format's specification: structure, change types and their order where the format sets one, dates, link references, and a section for every version the version files or tags name ([§ Checking the whole changelog](#checking-the-whole-changelog)). Exit 0 clean or `not configured`, 1 findings, 2 a usage error, an invalid configuration, an unreadable changelog or one outside the repository root, a working directory that is not a git repository's top level, or version files that disagree with nothing else found. |
 | `bun "${CLAUDE_SKILL_DIR}/scripts/status.ts"` | Options: `--json`. The notes waiting, the version they would make, the notes that wait for a release, and on GitHub whether the last release run on the integration branch succeeded, a release run still going answering first (read through `gh`; without `gh`, or on another host, it says it could not read it). It also lists each released version still waiting for its tag, with its state (`tag.ts`'s plan); without `gh` or `origin` that part says `unknown`. Exit 1 when a note is unreadable, the version files disagree, the last release run failed (a push or manual run of the workflow named `release` or `changelog`; its tag and branch-check runs are not release runs) or a releasing commit failed its required checks. |
 | `bun "${CLAUDE_SKILL_DIR}/scripts/convert.ts" --dry-run` | Options: `--base <ref>`, `--dry-run` and `--json`. Turns a branch that edited the changelog or the version itself into one with a note ([§ Converting a branch](#converting-a-branch)). Exit 0 converted, nothing to convert or `not configured`; 1 a refusal; 2 a usage error. |
 | `bun "${CLAUDE_SKILL_DIR}/scripts/tag.ts"` | Options: `--json` and `--rerun`. The tag plan: each version owed a tag (a release heading, no tag on `origin`, and newer than the newest `<tag_prefix>x.y.z` tag there; with no such tag, only the newest heading), its **releasing commit** (the first commit on the integration branch's first-parent line whose changelog has its heading) and its state: `ready` (every required check on that commit passed, and no older owed version is `pending` or `rerun`: versions are tagged oldest first), `pending` (a check has not finished, or the version waits for an older one), `rerun` (a check was cancelled and its workflow run not yet run again), `failed` (left for a person, a re-run GitHub refused included; it holds no newer version back, and once a newer one is tagged it is no longer owed a tag nor listed) or `imported` (its heading came in one commit with others, so it is tagged by hand if at all). The required checks are `ci.required_checks` in the integration branch's own `.config/jig.yaml`, else the branch's rules. A neutral or skipped check run passes only when its workflow run succeeded (skipped in a cancelled run is cancelled), or when no workflow run reported it. It never makes a tag; `--rerun` re-runs the `rerun` entries' workflow runs once. Exit 0 a plan (nothing owed and `not configured` included), 1 a version failed, a refused re-run included (the plan, `ready` list included, is still printed), 2 a usage error, a shallow clone, no required checks known, or git or GitHub could not answer. |
@@ -442,7 +478,8 @@ Windows), so wait for any background job inside the command.
 set, the format is detected: a file with an `## [Unreleased]` heading or a link
 to keepachangelog.com is Keep a Changelog; one that links common-changelog.org
 is Common Changelog; anything else, an empty file included, is refused with a
-request to set the field.
+request to set the field. A Common Changelog file holds only its title and its
+releases, so it cannot say which format it is in: set the field for it.
 
 - **Keep a Changelog.** Release headings are `## [x.y.z] - YYYY-MM-DD`.
   With `unreleased: write` (the default) a note without `release` goes under
