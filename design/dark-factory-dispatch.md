@@ -101,9 +101,14 @@ guards keep one stage from starting twice:
   for that pull request (done or failed, and the launch record's id), which
   the receipts' retention never removes (see Receipts), so a launch record
   that expires after a successful follow-up does not turn it into a
-  failure. An outcome of done means the follow-up is done; a launch record
+  failure. An outcome counts only for the marker that carries its launch
+  record's id: each attempt posts a new marker with a new launch record, an
+  outcome naming another launch record (an earlier attempt's, whose marker
+  a person deleted) neither settles nor fails the current one, and the
+  current attempt's outcome replaces it when its launch record ends. An
+  outcome of done means the follow-up is done; a launch record
   still running holds it; a failed outcome, a launch record that died, or
-  a marker that names neither a launch record nor an outcome on this
+  a marker whose launch record and outcome are both absent on this
   machine is a failed follow-up, notified once and never relaunched by the
   tick. A person settles it by running the
   follow-up or by deleting the marker, which makes the follow-up wanted
@@ -389,9 +394,18 @@ default).
 account through the configuration directory of that account's Orca
 profile, set in the wrapper's environment (`CLAUDE_CONFIG_DIR` for Claude
 Code, `CODEX_HOME` for Codex), so the drive's identity resolver and quota
-adapters see the account the pass bills. An interactive session is bound
+adapters see the account the pass bills. The directory alone does not bind
+it: the resolver reads a credential in the environment
+(`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) before
+the directory, so a wrapper that selects one account's directory while
+inheriting another's token bills the other. The wrapper therefore starts
+the pass with those variables removed, and before the launch the tick resolves the
+identity the wrapper's environment yields, with the drive's own resolver,
+and compares it with the admitted account. A mismatch, or an identity that
+does not resolve, starts nothing and is reported. An interactive session is bound
 the same way, through the environment or account selection of its agent's
-launch, and a person switching the host's active account does not move it.
+launch, with the same isolation and the same check before it starts, and a
+person switching the host's active account does not move it.
 Switching Orca's active account before a launch is not used: it is
 host-wide and would move every other session's next pass too. Whether an
 Orca agent launch can bind its agent to an account is not verified (Orca's
