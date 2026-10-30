@@ -91,8 +91,11 @@ const COPYRIGHT_LINE = /^Copyright [0-9]{4} (.+)$/;
 interface Sources {
   /** The parsed configuration. */
   config: () => unknown;
-  /** The parsed origin-references file, or undefined when there is none. */
-  origin: () => unknown;
+  /**
+   * The origin-references file, or undefined when there is none. A file that
+   * exists but is empty or comments only is present, with `doc` undefined.
+   */
+  origin: () => { doc: unknown } | undefined;
   /** The lines of the notice. */
   notice: () => string[];
 }
@@ -144,7 +147,7 @@ const PLACEHOLDERS: Record<string, Placeholder> = {
       const origin = sources.origin();
       if (origin === undefined)
         return configured("issue_tracker.team").read(sources);
-      const raw = field(origin, ["tracker_team"]);
+      const raw = field(origin.doc, ["tracker_team"]);
       const text = typeof raw === "string" ? raw.trim() : "";
       return text
         ? { value: text }
@@ -229,7 +232,7 @@ function placeholderFiller(root: string, patterns: string) {
   };
   const sources: Sources = {
     config: source(config, yaml(config)),
-    origin: source(origin, yaml(origin), true),
+    origin: source(origin, (raw) => ({ doc: yaml(origin)(raw) }), true),
     notice: source(join(root, NOTICE), (raw) => raw.split(/\r?\n/)),
   };
   return (text: string, line: number): string =>

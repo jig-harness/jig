@@ -44,6 +44,12 @@ issue_tracker:
     in_review: "state:in-review"
     ops_pending: "state:ops-pending"
   file_command: /jig:file-issue
+  # The work types do-item derives from an issue's type label: the taxonomy's
+  # five labels, the last three all being Task work.
+  types:
+    bug: [bug]
+    feature: [feature]
+    task: [docs, chore, infra]
   # Declared, not left to the default, so fleet health measures follow-ups.
   labels:
     followup: pr-followup

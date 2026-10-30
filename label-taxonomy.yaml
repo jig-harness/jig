@@ -8,9 +8,11 @@
 version: 1
 
 # types — CLOSED. What kind of work this is. Exactly one per issue. The
-# label is the source the skills read; set GitHub's own issue type to match
-# as well (bug: Bug, feature: Feature, the rest: Task) until the tracker
-# scripts write it themselves (https://github.com/jig-harness/jig/issues/345).
+# label is the source the skills read: `issue_tracker.types` in
+# `.config/jig.yaml` maps bug and feature to themselves and docs, chore and
+# infra to the task work type. Set GitHub's own issue type to match as well
+# (bug: Bug, feature: Feature, the rest: Task) until the tracker scripts write
+# it themselves (https://github.com/jig-harness/jig/issues/345).
 types:
   - id: bug
     notes: a defect against documented or expected behaviour
@@ -138,6 +140,25 @@ flags:
     apply_when:
       - the change touches trust between the loop and the forge, a credential, or what a pull request may do without a person
     notes: a security review of the change is mandatory before merge
+
+  - id: regression
+    scope: shipping-item
+    fires: promotion-block
+    apply_when:
+      - a bug report says a released version broke something that worked before
+    notes: >-
+      set when the report is triaged, with the version it was found in; while
+      it is open, no promotion that would bring that version to stable runs
+      (CONTRIBUTING.md, Releasing the plugin)
+
+  - id: manual-ops
+    scope: shipping-item
+    fires: ops-pending-guard
+    apply_when:
+      - a step outside the code, such as a release or a setting, must follow the merge
+    notes: >-
+      the body carries an operator checklist; do-item moves the issue to
+      ops-pending after the merge instead of closing it
 
   - id: flaky-test
     scope: shipping-item
