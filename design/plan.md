@@ -29,7 +29,7 @@ the keyboard the line stops at the first stage boundary.
 works: `jig dispatch` in `plugin/dispatch/`, a stateless tick on a timer
 `jig dispatch install` writes, reads the items assigned to the repository's
 factory identity in a dispatch state (through a new tracker-interface read,
-`assignedIssues(identity, states)`, beside the unchanged pool query), the drive ledger on each
+`assignedIssues(identity, states)`, and `assignedBy(key)` for who made the assignment, beside the unchanged pool query), the drive ledger on each
 pull request and the session runtime's list of running sessions; it
 reports every stage it would start with its evidence, and with `--apply`
 starts each one through a session runtime interface whose first

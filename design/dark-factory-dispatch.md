@@ -126,11 +126,15 @@ states)`: the issues assigned to that user in those states, in the pool
 form whose fields (`assignee`, `state`) the interface already returns. Both
 adapters answer it natively. It is a new read rather than a change to
 `openIssues`, which keeps refusing an empty label list. The trigger needs no
-label in any repository's taxonomy.
+label in any repository's taxonomy. It gains a second read,
+`assignedBy(key)`: the user who made the issue's current assignment, from
+the tracker's history. Like every read of the interface it returns that
+user or throws with a reason, so a history it cannot read in full leaves
+the pickup out of the plan and names the failure.
 
 Only an assignment a person with write access made starts a pickup: for an
 item in a dispatch state, the tick reads who made its current assignment
-from the tracker's history and requires a member of the team (Linear) or an
+through `assignedBy` and requires a member of the team (Linear) or an
 owner, member or collaborator of the repository (GitHub), as the drive
 requires of a ledger or an answer. The check gates pickups only. A claimed
 item's current assignment is the claim's own, made by the factory
@@ -211,7 +215,7 @@ jig dispatch [--repo <path>]... [--json]          # report: what it would start,
 jig dispatch --apply [--repo <path>]...           # start what the machine file enables
 jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
-jig dispatch result <record> done|failed          # an interactive session's answer
+jig dispatch result <record> <token> done|failed  # an interactive session's answer
 ```
 
 A tick without `--apply` prints every action it would take, each with the
@@ -258,11 +262,19 @@ The wrapper is the command a headless pass runs. An interactive session
 (`do-item`, the follow-up) is started as the runtime's agent, which runs
 no wrapper, and an agent's state says that it finished, not whether its
 stage succeeded. Its launch record is therefore written by the tick at
-launch, and the prompt the tick composes ends by asking the session to
-record its result: `jig dispatch result <record> done|failed`, which writes
-the stage's answer into that launch record. A record that has a result
-ended with it. A record whose agent the runtime reports finished or gone
-with no result recorded ended as failed, since a session that stopped on a
+launch, with the agent's id from the launch's receipt and a random token
+minted for that launch, and the prompt the tick composes ends by asking the
+session to record its result: `jig dispatch result <record> <token>
+done|failed`, which writes the stage's answer into that launch record. The
+command refuses a token that is not the record's own and a record that
+already has a result, so a session settles its own launch and no other,
+once; the token binds a session to its record, and does not guard the
+state directory against a process of the same user, which can write it
+directly. A record that has a result ended with it. Otherwise the record's
+state is its agent's: the agent `sessions` reports under the record's
+agent id holds the stage while working or waiting, and a record whose
+agent the runtime reports finished or gone with no result recorded ended
+as failed, since a session that stopped on a
 question or a crash records none; a pickup's record is read beside the
 item's state, and a follow-up's result is what its outcome record keeps.
 
@@ -272,10 +284,10 @@ The tick reaches the runtime only through these methods:
 
 | Method | What it does |
 | --- | --- |
-| `sessions(repo)` | the workspaces and their agents, joined to items and pull requests, with each agent's state and each workspace's comment and unread mark |
+| `sessions(repo)` | the workspaces and their agents, joined to items and pull requests, with each agent's id and state and each workspace's comment and unread mark |
 | `activeAccount()` | the account the host's interactive sessions run on, or an unknown when it cannot be read |
 | `openWorkspace(...)` | a workspace for an item (a new branch) or a pull request (its head branch), reused when one exists |
-| `launch(workspace, stage, account)` | a session in the workspace that runs the stage, billed to the account |
+| `launch(workspace, stage, account)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id |
 | `notify(target, message)` | a message that reaches a person; its receipt carries the target's comment as written |
 
 Each returns the runtime's receipt. A launch whose answer is lost is
@@ -285,6 +297,10 @@ fresh one. Orca is the first implementation:
 - `sessions` from `orca worktree ps --json`; that it carries a workspace's
   comment and unread mark is checked when the notifications are built, and
   until it does, notifications are reported in the receipts and not sent;
+  that `orca agent launch`'s answer names the agent by the id `orca
+  worktree ps --json` reports it under is checked when the pickup stage is
+  built, and until it does, interactive sessions are not launched, since
+  their launch records could not be joined to their agents;
 - `activeAccount` from Orca's account roster (`orca account list`), the
   host's active account matched to an account the machine file lists by
   its configuration directory; that the roster's output names the active
@@ -505,8 +521,8 @@ One pull request each, in this order; each is usable on its own.
 1. **This design**, its plan item, ADR-0011 and the glossary terms.
 2. **The tick as a report.** `jig dispatch` reads the records and
    prints every action it would take with its evidence; `--apply` is
-   accepted and refused. `assignedIssues` in the tracker interface and both
-   adapters, with the assigner check; the ledger classification; the
+   accepted and refused. `assignedIssues` and `assignedBy` in the tracker
+   interface and both adapters, with the assigner check; the ledger classification; the
    session runtime interface with `sessions` from Orca and the join; the
    tick lock and the receipts; the `dispatch` configuration section. Tests
    run a tick over the adapters' fake tracker, the drive suite's fake forge
