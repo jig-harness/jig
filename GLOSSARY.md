@@ -1672,6 +1672,27 @@ make, use the entry's term instead.
   step, so adding one does not change the rest of the launcher; which exist
   and which are planned is in the
   [launcher's README](tools/launcher/README.md#providers).
+- **Dispatcher** — the program that starts the stages of the execution
+  line with nobody at the keyboard: a pickup for an item assigned to the
+  *factory identity*, a restart of a stopped review drive, the follow-up
+  after a merge. It runs as a *tick* on a timer, starts sessions through a
+  *session runtime*, and never merges or answers a parked question. Planned
+  ([ROADMAP.md](ROADMAP.md) item 33); it is Jig's first *control plane*.
+- **Tick** — one run of the *dispatcher*: read the tracker, the pull
+  requests' drive ledgers and the running sessions, work out which stages
+  are wanted and not running, report them, and start them only when told
+  to. It keeps no state of its own beyond a receipt, so stopping it loses
+  nothing and the next tick finds the same facts.
+- **Session runtime** — the interface the *dispatcher* starts agent
+  sessions through: list the sessions in a repository's workspaces, open a
+  workspace, launch a session on a subscription account, notify a person.
+  Orca is its first implementation
+  ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)); a
+  *workspace runtime* becomes another by implementing the same methods.
+- **Factory identity** — the tracker user a repository assigns an item to
+  when the *dispatcher* should pick it up. An item assigned to it and in
+  one of the repository's dispatch states is started; the pickup's move to
+  the in-progress state is the claim, so no item is picked up twice.
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of

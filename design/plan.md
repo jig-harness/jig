@@ -17,6 +17,42 @@ here have a design in this folder ([README.md](README.md)).
 
 ## Now
 
+### 33. The dispatcher: a tick that starts the execution line's stages
+
+Every stage of the execution line starts only when a person types it: an
+assigned item waits for someone to open a `do-item` session, a drive
+stopped by a usage limit or an answered park waits for someone to re-arm
+it, a merge waits for someone to run its follow-up. Nothing watches the
+tracker or the pull requests for the next thing to start, so with nobody at
+the keyboard the line stops at the first stage boundary.
+[design/dark-factory-dispatch.md](dark-factory-dispatch.md) has how it
+works: `jig dispatch` in `plugin/dispatch/`, a stateless tick on a timer
+`jig dispatch install` writes, reads the items assigned to the repository's
+factory identity in a dispatch state (through the tracker interface's pool
+query, which gains an assignee and state filter), the drive ledger on each
+pull request and the session runtime's list of running sessions; it
+reports every stage it would start with its evidence, and with `--apply`
+starts each one through a session runtime interface whose first
+implementation is Orca
+([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
+within a cap per account, round-robin among the accounts without a usage
+wall, binding a headless pass to its account through the Orca profile's
+configuration directory. It never merges, answers a park, stops a driver
+making progress or passes a flag reserved for a person, and writes a
+receipt per tick. Machine values in `~/.jig/dispatch.yaml`, a repository's
+in a `dispatch` section of `.config/jig.yaml`. Built in the design's order:
+the report, then re-arms within account caps with the timer, then pickups,
+then follow-ups and notifications; the re-arm step waits on the drive
+running in a session of its own, the notifications on item 32's framed
+park.
+
+Done when, on a host running Orca, an item assigned to the factory
+identity gets one workspace and one `do-item` session within one interval,
+a drive stopped on one account's usage limit is re-armed on another account
+by the next tick, a merged pull request gets one follow-up session, a park
+reaches a person's phone and its answer on the pull request re-arms the
+drive, and the receipts of all of it are in the morning report.
+
 ### 3. The kickoff family
 
 The greenfield kickoff becomes a living skill instead of a frozen seed, with
