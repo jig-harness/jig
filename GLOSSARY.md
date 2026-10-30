@@ -1208,7 +1208,7 @@ make, use the entry's term instead.
   confirmation marked with the bot's confirmation marker, or a chat
   acknowledgement from a bot `review.bots` lists whose severity format is
   known, with no outcome token and no line matching that format; a bot with
-  no known format never qualifies. It is never triaged or answered, and the held thread
+  no known format has no transparent chat acknowledgements. It is never triaged or answered, and the held thread
   resolves over it; anything else is a new comment
   ([configuration](plugin/CONFIGURATION.md#review)).
 - **CI hold** — an opt-in label on a pull request that the repository's
