@@ -435,7 +435,11 @@ function listEntryProblem(
     return problem ? `${label} ${problem}, or a mapping` : null;
   }
   if (!isRecord(entry)) return `${label} must be a mapping`;
-  return mappingEntryProblem(entry, items, label);
+  const problem = mappingEntryProblem(entry, items, label);
+  // A mapping the fields refuse may still satisfy the alternative.
+  if (problem !== null && items.or !== undefined)
+    return specProblem(entry, items.or) === null ? null : problem;
+  return problem;
 }
 
 /** What is wrong with a mapping entry of a list whose items have `fields`. */

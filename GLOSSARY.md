@@ -1195,18 +1195,20 @@ make, use the entry's term instead.
   slug (`merge`, `scope`, `human-thread`, …): a kind of decision that must
   stay a person's. A repository lists its classes in
   `autonomy.park_classes`, and a *PR drive loop* may park only under one of
-  them, the class the review arbiter ruled for the thread
+  them (for a review thread, the class the review arbiter ruled for it)
   ([configuration](plugin/CONFIGURATION.md#autonomy)).
 - **Autonomy level** — how far an agent may decide without asking a person,
-  set by a repository (`attended`, the default, or `unattended`) and capped
+  set by a repository (`attended`, the default, `unattended`, or `wide`, which
+  acts as `unattended`) and capped
   by its ceiling, `autonomy.max_level`; a person's own configuration may
   choose a level up to that ceiling. The level changes nothing the *HITL*
   registry reserves ([configuration](plugin/CONFIGURATION.md#autonomy)).
 - **Transparent follow-up** — a review bot's comment after a reply the drive
   is holding open until its fix is pushed, which carries no new finding: a
   confirmation marked with the bot's confirmation marker, or a chat
-  acknowledgement from a bot `review.bots` lists, with no outcome token and
-  no severity line. It is never triaged or answered, and the held thread
+  acknowledgement from a bot `review.bots` lists whose severity format is
+  known, with no outcome token and no line matching that format; a bot with
+  no known format never qualifies. It is never triaged or answered, and the held thread
   resolves over it; anything else is a new comment
   ([configuration](plugin/CONFIGURATION.md#review)).
 - **CI hold** — an opt-in label on a pull request that the repository's

@@ -2050,8 +2050,11 @@ falls in.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/park-record.md -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key PRRT_kwDO... --kind thread --class <class>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/park-record.md -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key <key> --kind <thread|finding> --class <class>
 ```
+
+`<key>` is the thread id (`PRRT_kwDO...`) for `--kind thread` and the
+summary finding's fingerprint for `--kind finding`.
 
 The script checks the sections mechanically and refuses, naming each missing
 or malformed part. Parked items stop counting as live work, and the drive
