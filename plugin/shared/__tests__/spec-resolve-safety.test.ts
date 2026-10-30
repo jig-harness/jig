@@ -559,6 +559,29 @@ test("a quote's content is read by the same rules as the text around it", async 
         "AC-9 Example",
       ]),
     ).toEqual([]);
+  for (const fence of ["~~~", "```"])
+    expect(
+      await ids([
+        "## Spec",
+        `> > ${fence}`,
+        "> Outside paragraph",
+        "AC-9 Example",
+      ]),
+    ).toEqual([]);
+  expect(
+    await ids(["## Spec", "> > ~~~", "> > AC-8 code", "AC-1 Works"]),
+  ).toEqual(["AC-1"]);
+  for (const marker of ["-", "*", "1."])
+    expect(
+      await ids([
+        "## Spec",
+        `> ${marker} > Example only:`,
+        "AC-9 Example criterion",
+      ]),
+    ).toEqual([]);
+  expect(
+    await ids(["## Spec", "- > Example only:", "AC-9 Example criterion"]),
+  ).toEqual([]);
 });
 
 test("quotes nested in list items past the nesting bound are read without running the scan deep", async () => {
