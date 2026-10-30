@@ -14,7 +14,9 @@ release: minor
   and the commands that list and stop the drive. It opens no tab while a
   drive already holds the pull request, and confirms that `drives.ts` lists
   the drive it started. The tab is a fresh login shell of the user's, so
-  `bun`, `claude` and the Claude account come from it. A Windows host opens
+  `bun`, `claude` and the Claude account come from it; the session's
+  configuration reaches it as the `JIG__` overrides and the layer
+  selectors `JIG_HOME`, `JIG_OVERLAY` and `JIG_USER_LAYER`. A Windows host opens
   no tab: Orca's tab there can run `cmd.exe` or PowerShell, and the command
   is quoted for a POSIX shell.
 - `do_item.arm_drive` says how a drive is armed: `auto` (the default: a tab

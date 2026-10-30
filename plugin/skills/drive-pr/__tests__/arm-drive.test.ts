@@ -9,7 +9,7 @@
 import { describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
@@ -27,6 +27,7 @@ import {
   type LiveDrive,
   liveDriveIn,
   quoteWord,
+  sessionOverrides,
   type TabDeps,
 } from "../scripts/lib/arm.ts";
 
@@ -69,7 +70,15 @@ describe("the command that starts the drive", () => {
       "100%",
       "",
     ];
-    expect(shellWords(words.map(quoteWord).join(" "))).toEqual(words);
+    expect(
+      shellWords(words.map((word) => quoteWord(word, "linux")).join(" ")),
+    ).toEqual(words);
+  });
+
+  it("quotes for PowerShell on a Windows host: single quotes, a quote doubled", () => {
+    expect(quoteWord("it's $HOME", "win32")).toBe("'it''s $HOME'");
+    expect(quoteWord('say "hi"', "win32")).toBe(`'say "hi"'`);
+    expect(quoteWord("two words", "win32")).toBe('"two words"');
   });
 
   it("keeps the documented double quotes on the pass prompt, so PowerShell and cmd.exe read it too", () => {
@@ -102,7 +111,33 @@ describe("the command that starts the drive", () => {
   it("reads back a tree whose path holds spaces and quotes as one word", () => {
     const tree = '/work/my trees/it\'s "here"';
     const argv = driveArgv({ ...REQUEST, tree }, "sonnet");
-    expect(readBack(commandLine(argv))).toEqual(argv.slice(1));
+    expect(readBack(commandLine(argv, "linux"))).toEqual(argv.slice(1));
+  });
+});
+
+describe("the configuration the tab reads", () => {
+  it("carries the field overrides and the layer selectors, a path selector made absolute", () => {
+    const env = {
+      JIG__DRIVE__PASS_MODEL: "opus",
+      JIG_OVERLAY: "scratch/jig.yaml",
+      JIG_HOME: "/home/me/.jig-alt",
+      JIG_USER_LAYER: "off",
+      JIG_OTHER: "ignored",
+      HOME: "/home/me",
+    };
+    expect(sessionOverrides(env, "/work/tree")).toEqual([
+      "env",
+      "JIG__DRIVE__PASS_MODEL=opus",
+      `JIG_OVERLAY=${resolve("/work/tree", "scratch/jig.yaml")}`,
+      `JIG_HOME=${resolve("/work/tree", "/home/me/.jig-alt")}`,
+      "JIG_USER_LAYER=off",
+    ]);
+  });
+
+  it("leaves out a blank selector and carries nothing when none is set", () => {
+    expect(sessionOverrides({ JIG_OVERLAY: " ", HOME: "/h" }, "/w")).toEqual(
+      [],
+    );
   });
 });
 
@@ -653,10 +688,22 @@ describe("arm-drive.ts", () => {
       PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
       DRIVE_PR_STATE_DIR: state,
       DRIVE_PR_ARM_CONFIRM_SEC: "0",
+      JIG__DO_ITEM__ARM_DRIVE: "auto",
+      JIG_USER_LAYER: "off",
     });
     expectSpawnExit(run, 0);
     const answer = report(run);
     expect(answer).toMatchObject({ way: "background", status: "spawn" });
+    const carried = [
+      "JIG__DO_ITEM__ARM_DRIVE=auto",
+      "JIG_USER_LAYER=off",
+      ...["JIG_HOME", "JIG_OVERLAY"].flatMap((key) => {
+        const value = process.env[key];
+        return value === undefined || value.trim() === ""
+          ? []
+          : [`${key}=${resolve(tree, value)}`];
+      }),
+    ];
     exceptOnWindows("a Windows host opens no Orca tab", () => {
       expect(answer).toMatchObject({
         tab: { title: "drive #42", terminal: "term_9" },
@@ -677,8 +724,12 @@ describe("arm-drive.ts", () => {
         "drive #42",
       ]);
       const typed = create[create.indexOf("--command") + 1] ?? "";
-      expect(typed).toBe(answer.command ?? "");
-      expect(readBack(typed)).toEqual(answer.argv.slice(1));
+      const command = answer.command ?? "";
+      expect(typed.endsWith(` ${command}`)).toBe(true);
+      const prefix = shellWords(typed.slice(0, -command.length - 1));
+      expect(prefix[0]).toBe("env");
+      expect(prefix.slice(1).sort()).toEqual(carried.sort());
+      expect(readBack(command)).toEqual(answer.argv.slice(1));
     });
   });
 });

@@ -28,7 +28,13 @@
  * background, saying why (a drive the tab did start refuses the second on
  * its lock); under `tab` that is the answer.
  */
+import { resolve } from "node:path";
 import { shellQuote } from "../../../../shared/cli.ts";
+import {
+  ENV_PREFIX,
+  LAYER_SELECTORS,
+  PATH_LAYER_SELECTORS,
+} from "../../../../shared/config-layers.ts";
 import { detectHarness } from "../../../../shared/harness.ts";
 import {
   type OrcaRunner,
@@ -63,33 +69,50 @@ export interface ArmRequest {
  * A word of a command line, quoted so that a POSIX shell, PowerShell and
  * `cmd.exe` all read it back unchanged where they can: bare when it holds
  * only characters no shell treats specially, in double quotes when it holds
- * none of the characters a shell expands there, and in POSIX single quotes
- * otherwise (which `cmd.exe` cannot read; the drive's shells are POSIX).
+ * none of the characters a shell expands there, and otherwise in the single
+ * quotes of the shell that reads it on `platform`: PowerShell's on Windows
+ * (a doubled `'` inside), POSIX's elsewhere. `cmd.exe` reads neither.
  */
-export function quoteWord(word: string): string {
+export function quoteWord(
+  word: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
   if (word !== "" && /^[A-Za-z0-9_\-./:=+@,]+$/.test(word)) return word;
   if (!/["$`\\!%\r\n]/.test(word)) return `"${word}"`;
-  if (process.platform === "win32") return `'${word.replaceAll("'", "''")}'`;
+  if (platform === "win32") return `'${word.replaceAll("'", "''")}'`;
   return shellQuote(word);
 }
 
-/** `argv` as one command line (`quoteWord` for each word). */
-export function commandLine(argv: readonly string[]): string {
-  return argv.map(quoteWord).join(" ");
+/** `argv` as one command line (`quoteWord` for each word, for `platform`'s shell). */
+export function commandLine(
+  argv: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return argv.map((word) => quoteWord(word, platform)).join(" ");
 }
 
 /**
- * The session's `JIG__` configuration overrides as an `env KEY=value` prefix,
- * so the fresh login shell of a tab reads the same configuration the arm
- * resolved the model and the options from; empty when there are none.
+ * The session's configuration as an `env KEY=value` prefix: its `JIG__`
+ * field overrides and the variables that choose the layers (`JIG_HOME`,
+ * `JIG_OVERLAY`, `JIG_USER_LAYER`), so the fresh login shell of a tab reads
+ * the same configuration the arm resolved the model and the options from.
+ * A path selector is made absolute against `cwd`, since the tab may start
+ * elsewhere; a blank one is left out, as the reader leaves it out. Empty when
+ * there are none.
  */
-export function sessionOverrides(env: Env): string[] {
-  const set = Object.entries(env)
-    .filter(
-      (e): e is [string, string] =>
-        e[0].startsWith("JIG__") && typeof e[1] === "string",
-    )
-    .map(([key, v]) => `${key}=${v}`);
+export function sessionOverrides(
+  env: Env,
+  cwd: string = process.cwd(),
+): string[] {
+  const set: string[] = [];
+  for (const [key, v] of Object.entries(env)) {
+    if (typeof v !== "string") continue;
+    if (key.startsWith(ENV_PREFIX)) set.push(`${key}=${v}`);
+    else if (LAYER_SELECTORS.includes(key) && v.trim() !== "")
+      set.push(
+        `${key}=${PATH_LAYER_SELECTORS.includes(key) ? resolve(cwd, v) : v}`,
+      );
+  }
   return set.length === 0 ? [] : ["env", ...set];
 }
 
