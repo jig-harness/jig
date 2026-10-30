@@ -110,13 +110,26 @@ guards keep one stage from starting twice:
   still running holds it; a failed outcome, a launch record that died, or
   a marker whose launch record and outcome are both absent on this
   machine is a failed follow-up, notified once and never relaunched by the
-  tick. A person settles it by running the
-  follow-up or by deleting the marker, which makes the follow-up wanted
-  again. The marker lives on the forge, so a lost launch record does not
-  start a second follow-up on this machine. It does not arbitrate between
-  machines (two ticks can each read no marker and each post one), so one
-  machine dispatches a repository: at most one machine file lists it (see
-  Left out, several Orca hosts).
+  tick. A person settles it by deleting the marker, which makes the
+  follow-up wanted again, then running the follow-up or leaving it to the
+  next tick. The marker lives on the forge, so a lost launch record does not
+  start a second follow-up on this machine.
+
+  The marker is also the claim a follow-up started by hand honours, since
+  a person can start one after the tick reads no marker and before it posts
+  its own. The follow-up stage (build step 5) therefore depends on the
+  repository's follow-up command claiming the same way: it posts a marker
+  of its own before it acts and refuses a pull request that already carries
+  a trusted marker from another run. Whoever posts a marker, the tick or a
+  manual run, reads the markers back after posting, and of two trusted
+  markers on one pull request the earlier comment wins, as the drive's
+  takeover claims do: the later poster deletes its marker and stands down
+  (the tick ends its launch record without starting a session; a manual run
+  stops before it acts). A read-back that fails starts nothing. The marker
+  settles who starts the follow-up, but the outcome record stays on the
+  machine that launched it, and another machine cannot tell its done from
+  its failed; so one machine dispatches a repository: at most one machine
+  file lists it (see Left out, several Orca hosts).
 
 ### The records it reads
 
@@ -560,7 +573,9 @@ One pull request each, in this order; each is usable on its own.
    assigning an item is the start button.
 5. **Follow-ups and notifications.** The follow-up marker, the follow-up's
    outcome record, and a follow-up session per merged pull request with the repository's follow-up
-   command; the notifications above through `notify`. The park's
+   command, which claims the pull request with the same marker when a
+   person runs it by hand (Jig's `/followup` first); the notifications above
+   through `notify`. The park's
    notification carries item 32's framed decision once that is built, and
    the receipts join its morning report then; a consumer repository's
    follow-up waits on its own post-merge command (item 17).
@@ -585,9 +600,10 @@ One pull request each, in this order; each is usable on its own.
   not read yet.
 - **Several Orca hosts.** One tick dispatches on the host it runs on, and
   takes over only drivers that host started. A repository is listed in one
-  machine's file only: nothing arbitrates two dispatchers on one
-  repository, the follow-up marker included, until a forge-side claim is
-  designed.
+  machine's file only: the follow-up marker settles which one starts a
+  follow-up, but nothing else arbitrates two dispatchers on one repository,
+  and a follow-up's outcome is read only on the machine that launched it,
+  until forge-side claims and outcomes are designed.
 - **Interactive sessions**, pickups and follow-ups, until an Orca agent
   launch that binds its agent to an account is shown to work; headless
   passes run meanwhile.
