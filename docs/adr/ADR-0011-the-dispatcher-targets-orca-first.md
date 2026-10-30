@@ -27,16 +27,19 @@ agent's workspace works in Herdr before any other runtime.
 The [dispatcher](../../GLOSSARY.md)
 ([design/dark-factory-dispatch.md](../../design/dark-factory-dispatch.md))
 is a new kind of tooling. It runs with nobody at the keyboard, on a timer,
-and starts the execution line's stages as agent sessions: pickups, drive
-re-arms and takeovers, follow-ups. To do that it needs these from the
-runtime it launches through, beyond a workspace:
+and starts the stages of the
+[execution line](../../FACTORY.md#execution-the-work-item-line) (the steps
+that carry one work item from pickup to a merged pull request) as agent
+sessions: pickups, [re-arms and takeovers](../../GLOSSARY.md) of a stopped
+or wedged pull-request drive, follow-ups. To do that it needs these from
+the runtime it launches through, beyond a workspace:
 
 - **an account roster**: the subscription accounts on the host, so a drive
   stopped by one account's usage limit is re-armed on another, and each
   account's sessions are capped;
-- **a headless server reachable from a phone**: the sessions run on a host
-  with no desktop open, and a person answers a parked question from
-  wherever they are;
+- **a headless server reachable from a phone**: a server process that runs
+  the sessions on a host with no desktop app open, which a person's phone
+  connects to, so they answer a parked question from wherever they are;
 - **a session registry**: which workspace holds a live session for which
   item or pull request, read by a program, so the dispatcher starts only
   what is not already running.
@@ -57,7 +60,9 @@ sessions in a repository's workspaces, opening a workspace, launching a
 session on an account, notifying a person), and Orca is that interface's
 first implementation, built and tested first.
 
-ADR-0005 is narrowed, not reversed: Herdr stays the first runtime for
+ADR-0005 is narrowed, not reversed, and records the narrowing in its
+[2026-10-30 amendment](ADR-0005-herdr-is-the-primary-workspace-runtime.md#2026-10-30--the-dispatcher-targets-orca-first-v11):
+Herdr stays the first runtime for
 workspace lifecycle, and the tools that open, attach to, steer, resume and
 remove a worktree with its agent keep Herdr as their first-supported
 backend. Only the dispatcher starts on Orca. Another runtime, Herdr among
@@ -91,8 +96,8 @@ interface, with nothing in the tick changed.
 - Orca's command line (`worktree ps`, `worktree create`, `agent launch`,
   `account list`) and its JSON become an interface Jig depends on, so an
   Orca release that changes them is work for Jig.
-- Two runtimes are first for different tooling: documents that name a
-  runtime say which one a given tool targets first.
+- Herdr and Orca are each first for different tooling: documents that name
+  a runtime say which one a given tool targets first.
 - Whether an Orca launch can name the account of an interactive session is
   unverified, so the dispatcher's first stage binds accounts for headless
   passes only.

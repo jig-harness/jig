@@ -1682,8 +1682,9 @@ make, use the entry's term instead.
   requests' drive ledgers and the running sessions, work out which stages
   are wanted and not running, report them, and start them only when told
   to. What is wanted comes from those records alone; the dispatcher keeps
-  only what it started and a receipt per tick, so stopping it loses
-  nothing and the next tick finds the same facts.
+  only what it did: what it started and how each ended, a receipt per
+  tick, and the account walls and repeat suppressions those imply, so
+  stopping it loses nothing and the next tick finds the same facts.
 - **Session runtime** — the interface the *dispatcher* starts agent
   sessions through: list the sessions in a repository's workspaces, open a
   workspace, launch a session on a subscription account, notify a person.

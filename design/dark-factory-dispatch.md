@@ -115,7 +115,7 @@ guards keep one stage from starting twice:
 | Record | Read through | What the tick takes from it |
 | --- | --- | --- |
 | The tracker | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear and GitHub Issues today | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
-| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on | the drives to re-arm, take over or report; the follow-ups wanted |
+| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers | the drives to re-arm, take over or report; the follow-ups wanted, running or failed |
 | The session runtime | in Orca, `orca worktree ps --json` | which workspace holds which item or pull request, and whether an agent in it is working or waiting |
 
 **The tracker.** The interface gains one read, `assignedIssues(identity,
@@ -171,9 +171,12 @@ refusal or a signal, so the tick cannot read a person's decision into it.
 | stopped `11` or `13` | refused | nothing; another driver holds it |
 | stopped on any other exit (`1`, `2`, `6`, `7`, `9`, `12`, `14`, `15`, or one this table does not know) | needs a person | notifies once per stop, with the exit and the drive's handoff |
 
-Merged pull requests are those merged after the date the follow-up stage
-was switched on for the repository (`followup_since` in the machine file,
-written when that stage is turned on), with no follow-up marker. A merge
+The tick reads every pull request merged after the date the follow-up
+stage was switched on for the repository (`followup_since` in the machine
+file, written when that stage is turned on), marked or not. One with no
+follow-up marker is a follow-up wanted; one with a marker is classified by
+it (see Guards against a second launch), so a marker whose launch record
+this machine no longer has is still found and reported. A merge
 the cap keeps from starting at once stays wanted until a later tick starts
 it; nothing about it depends on a time window between ticks.
 
@@ -200,6 +203,7 @@ jig dispatch [--repo <path>]... [--json]          # report: what it would start,
 jig dispatch --apply [--repo <path>]...           # start what the machine file enables
 jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
+jig dispatch result <record> done|failed          # an interactive session's answer
 ```
 
 A tick without `--apply` prints every action it would take, each with the
@@ -223,8 +227,8 @@ Each launch therefore goes through a small wrapper, `plugin/dispatch/run.ts`,
 which writes a launch record under `~/.local/state/jig/dispatch/launches/`
 before it starts the stage (the action, the item or pull request, the
 account, and its process identity: host, boot id, process id and the
-process's start time, as `drives.ts` captures a driver's to rule out a
-reused process id) and records the stage's exit when it ends. The next
+process's start time, the identity `drives.ts` captures for a driver so
+that a reused process id is never read as the same process) and records the stage's exit when it ends. The next
 tick reads the records: a record whose process is alive under that same
 identity holds its stage; one that ended carries the stage's answer; one
 whose identity cannot be checked (another boot, an unreadable process
@@ -244,9 +248,15 @@ died, reported with its last state.
 
 The wrapper is the command a headless pass runs. An interactive session
 (`do-item`, the follow-up) is started as the runtime's agent, which runs
-no wrapper; its launch record is written by the tick at launch, and its end
-is read from the runtime's report of the agent and, for a pickup, from the
-item's state.
+no wrapper, and an agent's state says that it finished, not whether its
+stage succeeded. Its launch record is therefore written by the tick at
+launch, and the prompt the tick composes ends by asking the session to
+record its result: `jig dispatch result <record> done|failed`, which writes
+the stage's answer into that launch record. A record that has a result
+ended with it. A record whose agent the runtime reports finished or gone
+with no result recorded ended as failed, since a session that stopped on a
+question or a crash records none; a pickup's record is read beside the
+item's state, and a follow-up's result is what its outcome record keeps.
 
 ### The session runtime interface
 
@@ -288,7 +298,8 @@ fresh one. Orca is the first implementation:
   route where the repository declares `routing`; a lost answer is retried
   with `--retry-launch`;
 - `notify` as a workspace marked unread with the message as its comment,
-  which Orca's phone app shows. A workspace's comment carries a kickoff
+  appended to the comment while the workspace is still unread (see
+  Notifications), which Orca's phone app shows. A workspace's comment carries a kickoff
   prompt until its agent starts, so the tick never writes one on a
   workspace that may yet start an agent with it. The target is the item's
   or pull request's workspace when its agent has started; otherwise
@@ -391,7 +402,16 @@ parked questions (item 32's framed decision once that is built); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
 stalled pickup or a double claim; a failed follow-up; a session waiting past
-`blocked_after`. The answer to a park stays where the drive reads it, a
+`blocked_after`.
+
+A workspace holds one comment, so a message never replaces one a person has
+not read. The tick joins every cause it notifies to one target in a tick
+into one message, and when the target is still marked unread from an
+earlier notification it appends the new causes to that comment rather than
+overwriting it. A cause counts as sent, and is suppressed from then on,
+only once the runtime's receipt shows the comment carrying its text.
+
+The answer to a park stays where the drive reads it, a
 comment on the pull request, so the next tick re-arms the drive with
 nothing from the phone but that comment.
 
@@ -401,8 +421,8 @@ Every tick writes one receipt under `~/.local/state/jig/dispatch/`, as
 `jig gc` does: the records it read and from where, each planned action with
 its reason, each launch with the runtime's answer, each notification. A
 tick removes receipts and ended launch records older than the machine
-file's retention, keeping the latest completed receipt. Two kinds of record
-are kept apart from them and do not expire. A follow-up's outcome record,
+file's retention, keeping the latest completed receipt. These records are
+kept apart from them and do not expire. A follow-up's outcome record,
 one per merged pull request, is what tells a done follow-up from a failed
 one after its launch record has gone. What suppresses a repeat is a small suppression
 record per cause (an unchanged refusal not to retry, a notification
@@ -482,7 +502,8 @@ One pull request each, in this order; each is usable on its own.
 4. **Pickups.** `do-item`'s claim refusal (above) first; then, with
    `--apply`, a workspace and a `do-item` session per item assigned to the
    factory identity in a dispatch state, admitted on the account
-   `activeAccount` reads (added to the runtime interface here); the fresh read at launch; stalled
+   `activeAccount` reads (added to the runtime interface here), its result
+   recorded through `jig dispatch result`; the fresh read at launch; stalled
    pickups, double claims and waiting sessions reported. Usable alone:
    assigning an item is the start button.
 5. **Follow-ups and notifications.** The follow-up marker, the follow-up's
