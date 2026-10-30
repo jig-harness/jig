@@ -347,16 +347,17 @@ before it drives, so the account never runs more than its cap of drivers
 that work. A takeover `drive.ts` refuses ends its own record, and the old
 record keeps its slot.
 
-An interactive session (a pickup, a follow-up) is admitted only on the
-host's active account, read through the runtime interface's
-`activeAccount` before the launch, since that is the account it runs on
-(below); when that account is full, walled, not one the machine file
-lists, or cannot be read, the session waits. The launch cannot name that
-account, so the tick reads `activeAccount` again as soon as the launch
-returns: when the answer differs or cannot be read, the account may have
-changed under the launch, and its launch record names no account. Such a
-record is reported and holds a slot on the account admitted and on the one
-read after, until it ends. With no account free, the
+An interactive session (a pickup, a follow-up) runs on the host's active
+account (below), which the launch cannot name and which can change under
+it at any moment: a person switching accounts, even away and back between
+two reads, leaves every read before and after the launch agreeing on an
+account the session may not bill. No read proves the account, so an
+interactive session's launch record names none and holds a slot on every
+account the machine file lists until it ends. It is admitted only when
+every listed account has a free slot and the host's active account, read
+through the runtime interface's `activeAccount` before the launch, is a
+listed account with no wall in effect; otherwise, or when the account
+cannot be read, the session waits. With no account free, the
 action waits for a later tick and the report names the full caps.
 
 **Walls.** The dispatcher keeps its own record of each account's
@@ -382,7 +383,10 @@ too. Whether an Orca launch can name the account of an *interactive*
 session is not verified (Orca's command line selects accounts only for some
 agents), so the first stages bind accounts for headless passes only:
 pickups and follow-ups run on the host's active account, which must be one
-the machine file lists, and count against its cap.
+the machine file lists, and hold a slot on every listed account's cap
+(above). A runtime that names an interactive session's account at launch,
+or reports it per session, lets its record name that account and hold one
+slot.
 
 **Sessions that wait.** Pickups and follow-ups are interactive skills, and
 with nobody to answer a question they stop and state it, as every Jig skill
@@ -522,8 +526,9 @@ One pull request each, in this order; each is usable on its own.
    or an answered park restart without a person.
 4. **Pickups.** `do-item`'s claim refusal (above) first; then, with
    `--apply`, a workspace and a `do-item` session per item assigned to the
-   factory identity in a dispatch state, admitted on the account
-   `activeAccount` reads (added to the runtime interface here), its result
+   factory identity in a dispatch state, admitted while the account
+   `activeAccount` reads (added to the runtime interface here) is listed
+   and every listed account has a free slot, holding a slot on each, its result
    recorded through `jig dispatch result`; the fresh read at launch; stalled
    pickups, double claims and waiting sessions reported. Usable alone:
    assigning an item is the start button.
@@ -539,10 +544,11 @@ One pull request each, in this order; each is usable on its own.
 - **A Herdr runtime.** Herdr stays the first runtime for workspace
   lifecycle ([ADR-0005](../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md));
   the dispatcher needs an account roster, a headless server reachable from
-  a phone and a session registry, which Orca has today
+  a phone and a session registry, which Orca has today; Herdr has no
+  account roster
   ([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)).
   A Herdr implementation of the session runtime interface comes when Herdr
-  can supply them.
+  can supply one.
 - **Webhooks.** The tick polls. An outbound wake-up channel (a relay that
   takes the tracker's and forge's events and that the host holds a
   connection to) can start ticks early later; the sources stay behind

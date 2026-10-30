@@ -48,9 +48,10 @@ Orca has each of them today: managed accounts per host (`orca account list`),
 a headless server (`orca serve`) that a paired desktop or phone app
 reaches, and a machine-readable summary of every workspace and its agents
 (`orca worktree ps --json`). Herdr keeps sessions alive on a remote host
-and has a socket API, but has no account roster and no phone client, so a
-dispatcher built on it first would have to manage accounts and reach a
-person outside the runtime.
+and has a socket API, but has no account roster, so a dispatcher built on
+it first would have to manage subscription accounts outside the runtime.
+Herdr's own clients, its mobile app among them, are not evaluated here as
+the dispatcher's way to reach a person: the missing roster decides.
 
 ## Decision
 
@@ -71,10 +72,10 @@ interface, with nothing in the tick changed.
 
 ## Alternatives considered
 
-- **Herdr first, per ADR-0005**: rejected for the dispatcher; accounts and
-  the way to reach a person would be built outside the runtime, as Jig's
-  own services, before the first stage could run unattended. A Herdr
-  implementation is added when Herdr can supply them.
+- **Herdr first, per ADR-0005**: rejected for the dispatcher; the account
+  roster would be built outside the runtime, as Jig's own service, before
+  the first stage could run unattended. A Herdr implementation is added
+  when Herdr can supply one.
 - **A resident daemon fed by webhooks**: rejected; it needs an inbound route
   to the host and a process to supervise, and still needs a periodic
   reconcile to catch the events it missed. A stateless tick on the
