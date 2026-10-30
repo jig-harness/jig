@@ -43,7 +43,8 @@ import {
   traceGhRunner,
 } from "../../../../shared/trace.ts";
 import { readdirSync, readFileSync } from "node:fs";
-import { hostname } from "node:os";
+import { hostname, tmpdir } from "node:os";
+import { resolve } from "node:path";
 import {
   ghCallTimeoutSeconds,
   gitIdentityEnv,
@@ -1005,18 +1006,9 @@ export function git(args: string[], opts: RunOptions = {}): Promise<RunResult> {
  * uses). The marker CHECK is where a synchronous `existsSync()` in THIS process
  * would have no deadline or cancellation of its own — on a stalled filesystem
  * it would hang indefinitely regardless of `GIT_CALL_TIMEOUT`, and the caller's
- * documented fail-closed refusal would never be reached. An earlier version
- * folded the whole probe (git-dir resolution AND marker check) into one `sh -c`
- * script to get both under `run()`'s timeout-and-kill machinery in a single
- * subprocess — but that reintroduces exactly the POSIX-shell dependency this
- * file's own header explains this port exists to avoid: on Windows with no `sh`
- * on PATH, every converged `drive.ts` run would exit 12 and every announcement
- * would refuse, even over a clean repository. The marker check instead runs as
- * a SEPARATE bounded subprocess — `process.execPath` (bun under bun, node under
- * node, same convention `tsArgv()` uses) with an inline `-e` script that does
- * nothing but `existsSync()` in a CHILD process, so `run()`'s existing
- * timeout-and-kill can bound it exactly like every other call here, without a
- * shell of any kind.
+ * documented fail-closed refusal would never be reached. So the check runs as
+ * an inline probe (`runInlineProbe`) bounded by `run()`'s deadline, with no
+ * shell, which Windows may not have.
  *
  * `ok: false` means either probe could not complete (an unresolvable
  * git-dir, a timeout, an unreadable filesystem) — fail-closed, the same
@@ -1029,13 +1021,9 @@ export function git(args: string[], opts: RunOptions = {}): Promise<RunResult> {
  * `GIT_DIR` overrides repository discovery regardless of cwd, so the
  * `--git-dir` read needs the same sanitized env every other call in that
  * caller gets) and needs THIS probe to answer for that same checkout rather
- * than the ambient one. `opts.cwd` is forwarded to the marker-probe
- * subprocess too, not just the `rev-parse` call: `--git-dir` can answer with
- * a path RELATIVE to the directory it was run in, and the probe subprocess
- * would otherwise resolve that relative path against ITS OWN default cwd —
- * this process's, not the caller's — silently checking the wrong directory
- * whenever the two differ. Every existing caller omits both and keeps
- * reading the ambient cwd/env exactly as before.
+ * than the ambient one. `--git-dir` can answer with a path relative to the
+ * directory it ran in, so it is made absolute against that directory before
+ * it reaches the probe. Without them the ambient cwd/env are read.
  */
 const UNCONCLUDED_GIT_OP_MARKERS = [
   "MERGE_HEAD",
@@ -1063,6 +1051,24 @@ for (const m of markers) {
 process.exit(0);
 `;
 
+/**
+ * Run `script` as an inline `-e` probe of this runtime, from the system
+ * temporary directory and without `.env` files: Bun reads `bunfig.toml` (a
+ * `preload` included) from its working directory, so a measured repository's
+ * runtime configuration could fail the probe or write into its output. Paths
+ * in `args` and `stdin` must be absolute.
+ */
+export function runInlineProbe(
+  script: string,
+  args: string[],
+  opts: Omit<RunOptions, "cwd">,
+): Promise<RunResult> {
+  return run([process.execPath, "--no-env-file", "-e", script, ...args], {
+    ...opts,
+    cwd: tmpdir(),
+  });
+}
+
 export async function unconcludedGitOpMarker(
   timeoutSec: number,
   opts?: { cwd?: string; env?: Record<string, string | undefined> },
@@ -1076,19 +1082,13 @@ export async function unconcludedGitOpMarker(
   const gitDir = dirRes.stdout.trim();
   if (gitDir === "") return { ok: false };
 
-  const probe = await run(
+  const probe = await runInlineProbe(
+    MARKER_PROBE_SCRIPT,
     [
-      process.execPath,
-      "-e",
-      MARKER_PROBE_SCRIPT,
-      gitDir,
+      resolve(opts?.cwd ?? process.cwd(), gitDir),
       ...UNCONCLUDED_GIT_OP_MARKERS,
     ],
-    {
-      stderr: "ignore",
-      timeoutSec,
-      ...(opts?.cwd === undefined ? {} : { cwd: opts.cwd }),
-    },
+    { stderr: "ignore", timeoutSec },
   );
   if (probe.code !== 0) return { ok: false };
   const marker = probe.stdout.trim();

@@ -256,9 +256,10 @@ describe("a head that was pushed, in a real tree", () => {
     dir: string,
     code: string,
     env: Record<string, string> = {},
+    from = dir,
   ): string => {
     const r = Bun.spawnSync(["bun", "-e", code], {
-      cwd: dir,
+      cwd: from,
       env: { ...cleanEnv(), DRIVE_PR_WORKTREE: dir, ...env },
       stdout: "pipe",
       stderr: "pipe",
@@ -281,11 +282,15 @@ describe("a head that was pushed, in a real tree", () => {
        console.log(await headSyncState(true, e.API, e.LOCAL, e.LOCAL, e.BRANCH));`,
       { API: a, LOCAL: h, BRANCH: branch, ...env },
     );
-  /** Measure `dir` as a gate does; `before` is the tree as a completed pass found it. */
+  /**
+   * Measure `dir` as a gate does; `before` is the tree as a completed pass
+   * found it, `from` the directory the measuring process starts in.
+   */
   const measure = (
     dir: string,
     inherited: string,
     before: string | null = null,
+    from = dir,
   ): Record<string, unknown> =>
     JSON.parse(
       inTree(
@@ -301,6 +306,7 @@ describe("a head that was pushed, in a real tree", () => {
          const code = await measureUnpushed(context);
          console.log(JSON.stringify({ code, ...context }));`,
         { INHERITED: inherited, BEFORE: JSON.stringify(before) },
+        from,
       ),
     ) as Record<string, unknown>;
 
@@ -444,6 +450,26 @@ describe("a head that was pushed, in a real tree", () => {
       expect(handed.uncommittedMeasured).not.toBeNull();
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("measures a tree whose own runtime configuration fails every script", () => {
+    const { dir, h } = tree();
+    const outside = mkdtempSync(join(tmpdir(), "jig-outside-"));
+    try {
+      git(dir, "update-ref", "refs/remotes/origin/main", h);
+      writeFileSync(join(dir, "bunfig.toml"), 'preload = ["./boom.ts"]\n');
+      writeFileSync(
+        join(dir, "boom.ts"),
+        'throw new Error("consumer preload");\n',
+      );
+      writeFileSync(join(dir, ".env"), "FOO=from-consumer\n");
+      const handed = measure(dir, "", "", outside);
+      expect(handed.uncommittedMeasured).not.toBeNull();
+      expect(handed.inheritedHead).toBe(h);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
     }
   });
 

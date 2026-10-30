@@ -30,3 +30,9 @@ release: patch
   re-armed; its stop now lists the paths it
   left uncommitted, untracked files and modified submodules included, and the
   commits it left unpushed.
+- `drive-pr`: the drive's filesystem probes (the tree measurement above, the
+  check for an unfinished merge or rebase, and the status check's comparison
+  of the driven tree with the tree it measures) run outside the repository
+  they measure and without its `.env` files, so a consumer repository's own
+  Bun configuration (a `bunfig.toml` preload, say) can no longer fail them or
+  write into their output.

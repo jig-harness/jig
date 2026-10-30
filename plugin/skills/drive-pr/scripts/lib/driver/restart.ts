@@ -22,6 +22,7 @@ import {
   gitIdentityEnv,
   helperTimeoutSeconds,
   run,
+  runInlineProbe,
   tsArgv,
   unconcludedGitOpMarker,
 } from "./../proc.ts";
@@ -266,16 +267,17 @@ async function digestTree(
     submodules === null
   )
     return false;
-  const blobs = await probeEntries("digest", untracked.stdout, dir);
+  const untrackedPaths = untracked.stdout.split("\0").filter((p) => p !== "");
+  const blobs = await probeEntries(
+    "digest",
+    untrackedPaths.map((p) => join(dir, p)).join("\0"),
+  );
   // Git lists an untracked nested repository as its directory, `path/`.
-  const dirs = untracked.stdout
-    .split("\0")
+  const dirs = untrackedPaths
     .filter((p) => p.endsWith("/"))
     .map((p) => join(dir, p));
   const listed =
-    dirs.length === 0
-      ? ""
-      : await probeEntries("checked-out", dirs.join("\0"), dir);
+    dirs.length === 0 ? "" : await probeEntries("checked-out", dirs.join("\0"));
   if (blobs === null || listed === null) return false;
   const nested = listed.split("\0").filter((p) => p !== "");
   for (const part of [
@@ -310,7 +312,7 @@ async function checkedOutSubmodules(
       paths.add(join(dir, entry.slice(tab + 1)));
   }
   if (paths.size === 0) return [];
-  const listed = await probeEntries("checked-out", [...paths].join("\0"), dir);
+  const listed = await probeEntries("checked-out", [...paths].join("\0"));
   return listed === null ? null : listed.split("\0").filter((p) => p !== "");
 }
 
@@ -369,15 +371,14 @@ for (const p of paths) {
 process.stdout.write(hash.digest('hex'));
 `;
 
+/** `paths` are absolute: the probe runs from a neutral directory. */
 async function probeEntries(
   mode: "digest" | "checked-out",
   paths: string,
-  cwd: string,
 ): Promise<string | null> {
-  const probe = await run([process.execPath, "-e", ENTRY_PROBE_SCRIPT, mode], {
+  const probe = await runInlineProbe(ENTRY_PROBE_SCRIPT, [mode], {
     stderr: "pipe",
     timeoutSec: helperTimeoutSeconds(),
-    cwd,
     stdin: paths,
   });
   return probe.code === 0 ? probe.stdout : null;
