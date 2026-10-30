@@ -164,6 +164,20 @@ describe("the line a finding points at", () => {
     }
   });
 
+  test("a long definition before a long stray paragraph is passed over in linear time", () => {
+    const n = 16_000;
+    const title = Array.from({ length: 2 * n }, (_, i) => `line ${i}`).join(
+      "\n",
+    );
+    const stray = Array.from({ length: n }, (_, i) => `word ${i}`).join("\n");
+    const text = `# Changelog\n\n[meta]: /url "\n${title}\n"\n\n${stray}\n\n## 1.0.0 - 2024-01-01\n\n_First release._\n`;
+    const started = performance.now();
+    const changelog = readChangelog("CHANGELOG.md", text);
+    const block = changelog.preamble[0];
+    expect(block && changelog.lineOf(block.index)).toBe(2 * n + 6);
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
+
   test("a heading whose text runs over many lines is found at its first without a parse per line", () => {
     const title = Array.from({ length: 10_000 }, (_, i) => `word ${i}`).join(
       "\n",

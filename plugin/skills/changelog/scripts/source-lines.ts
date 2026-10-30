@@ -143,13 +143,11 @@ function signature(inline: Inline[]): string {
 }
 
 /**
- * Whether line `n` (0-based) of the stretch, rendered alone, opens the block
- * (or list item) a split puts there: of a kind that starts it, and with text
- * the block's own opens with. A link definition renders no block, so a split
- * at one holds; its line alone shows other text, or none.
+ * The signature of the text the block (or list item) a split puts at `rel`
+ * opens with, or null when it opens with none. Computed once per block, so
+ * testing a line against it costs that line alone.
  */
-function opens(s: Stretch, n: number, rel: number, item?: number): boolean {
-  const alone = parseBlocks(s.lines[n] ?? "")[0];
+function wanted(s: Stretch, rel: number, item?: number): string | null {
   const target = s.blocks[rel];
   const block =
     item !== undefined && target?.k === "list"
@@ -160,9 +158,20 @@ function opens(s: Stretch, n: number, rel: number, item?: number): boolean {
         } as Block)
       : target;
   const want = opening(block);
+  return want === null ? null : signature(want);
+}
+
+/**
+ * Whether line `n` (0-based) of the stretch, rendered alone, opens the block
+ * whose opening signature is `want` (from `wanted`): of a kind that starts
+ * it, and with text the block's own opens with. A link definition renders no
+ * block, so a split at one holds; its line alone shows other text, or none.
+ */
+function opens(s: Stretch, n: number, want: string | null): boolean {
+  const alone = parseBlocks(s.lines[n] ?? "")[0];
   if (want === null) return alone !== undefined;
   const got = opening(alone);
-  return got !== null && signature(want).startsWith(signature(got));
+  return got !== null && want.startsWith(signature(got));
 }
 
 /**
@@ -201,12 +210,11 @@ export function locate(
   const s = stretchOf(lines, blocks, proven, index);
   const rel = index - s.first;
   const blank = (n: number) => (s.lines[n] ?? "").trim() === "";
+  const want = wanted(s, rel, item);
   const proof = (n: number): number | null => {
     let m = n;
     while (m < s.lines.length && blank(m)) m++;
-    return m < s.lines.length &&
-      opens(s, m, rel, item) &&
-      splits(s, m, rel, item)
+    return m < s.lines.length && opens(s, m, want) && splits(s, m, rel, item)
       ? s.from + m
       : null;
   };
@@ -232,7 +240,7 @@ export function locate(
   }
   let tried = 0;
   for (let n = 0; n <= end && tried < PROOF_LIMIT; n++) {
-    if (blank(n) || guesses.includes(n) || !opens(s, n, rel, item)) continue;
+    if (blank(n) || guesses.includes(n) || !opens(s, n, want)) continue;
     tried++;
     if (splits(s, n, rel, item)) return s.from + n;
   }
