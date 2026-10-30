@@ -164,16 +164,15 @@ describe("the configuration the tab reads", () => {
   });
 
   it("reads back, in a shell whose profile exports configuration, the session's and nothing else", () => {
+    const argv = [
+      ...sessionOverrides({ JIG__A: "kept", JIG_OVERLAY: "" }, "/w"),
+      "sh",
+      "-c",
+      'echo "$JIG__A|$JIG__B|[$JIG_OVERLAY]|[$JIG_HOME]"',
+    ];
+    expect(argv).toContain("JIG__A=kept");
     exceptOnWindows("the tab's shell is POSIX", () => {
-      const line = commandLine(
-        [
-          ...sessionOverrides({ JIG__A: "kept", JIG_OVERLAY: "" }, "/w"),
-          "sh",
-          "-c",
-          'echo "$JIG__A|$JIG__B|[$JIG_OVERLAY]|[$JIG_HOME]"',
-        ],
-        "linux",
-      );
+      const line = commandLine(argv, "linux");
       const done = Bun.spawnSync(["sh", "-c", line], {
         stdout: "pipe",
         stderr: "pipe",
