@@ -76,8 +76,14 @@ guards keep one stage from starting twice:
   assigned to anyone but the session's own identity, and it re-reads the
   item after its transition and stands down when another claim landed
   first. A tracker offers no conditional write, so a race inside that
-  re-read is narrowed, not closed; the stalled-pickup report below is what
-  shows a double claim to a person.
+  re-read is narrowed, not closed, and when both claims come from the
+  factory identity the item's state and assignee cannot tell them apart.
+  The tick therefore checks the sessions instead: an item that more than
+  one running session joins to (two workspaces, or a workspace beside a
+  still-running launch record for another one) is reported as a double
+  claim and notified once, and the tick starts nothing for it. A manual
+  pickup on another host is not in this host's runtime report, so it stays
+  invisible until it opens its pull request.
 - **A marker on the pull request for the follow-up**, which has no claim of
   its own: the tick posts a hidden-marker comment
   (`<!-- jig-dispatch-followup -->`) on the merged pull request before it
@@ -87,10 +93,16 @@ guards keep one stage from starting twice:
   else is ignored and reported, and an unreadable marker leaves the pull
   request unplaced (reported, nothing started). A trusted marker is a
   claim, not a completion: the tick classifies a marked pull request by the
-  launch record it names. A record still running holds the follow-up; one
-  that ended with the follow-up command's success is done; one that failed,
-  died, or is missing on this machine is a failed follow-up, notified once
-  and never relaunched by the tick. A person settles it by running the
+  launch record it names and by the follow-up's outcome record. When a
+  follow-up's launch record ends, the tick writes a compact outcome record
+  for that pull request (done or failed, and the launch record's id), which
+  the receipts' retention never removes (see Receipts), so a launch record
+  that expires after a successful follow-up does not turn it into a
+  failure. An outcome of done means the follow-up is done; a launch record
+  still running holds it; a failed outcome, a launch record that died, or
+  a marker that names neither a launch record nor an outcome on this
+  machine is a failed follow-up, notified once and never relaunched by the
+  tick. A person settles it by running the
   follow-up or by deleting the marker, which makes the follow-up wanted
   again. The marker lives on the forge, so a lost launch record does not
   start a second follow-up on this machine. It does not arbitrate between
@@ -127,7 +139,8 @@ then finds claimed items with the same read over the in-progress state: one
 with no running session and no launch record still running for longer than
 `dispatch.stalled_after` (30 minutes by default) is reported as stalled and
 notified, never relaunched, since a relaunch would start a second
-implementer on a claimed item. A repository with no factory identity
+implementer on a claimed item. One with more than one running session is
+a double claim (see Guards against a second launch). A repository with no factory identity
 configured has no pickups; its other stages still run.
 
 **The forge.** The tick lists the repository's open pull requests and reads
@@ -140,14 +153,17 @@ which the driver writes into its ledger as it stops, not the status
 reporter's: `drive.ts` maps convergence to `0`, where `drive-status.ts`
 reports `3`
 ([terminal states](../plugin/skills/drive-pr/references/terminal-states.md)).
-A stop `drives.ts --stop` records carries no exit.
+A stopped ledger with no exit has no known origin: `drives.ts --stop`
+records one, and so does the driver's own recovery after a crash, a thrown
+refusal or a signal, so the tick cannot read a person's decision into it.
 
 | Ledger says | Class | The tick |
 | --- | --- | --- |
 | running, heartbeat inside the lease window | driven | nothing |
 | running, heartbeat past the lease window | silent | takes it over only when this machine's launch record started that driver; otherwise reports it |
 | stopped `0` (converged), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
-| stopped `18` or `19` (a mailbox stop or pause), or stopped with no exit (`drives.ts --stop`) | stopped by a person | nothing: a person's stop is never re-armed |
+| stopped `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
+| stopped with no exit | stopped, origin unknown | never re-armed, since it may be a person's stop; notifies once per stop, with the drive's handoff |
 | stopped `16` (quota-parked) | re-armable | re-arms on an admitted account other than the one its launch record names, when one does, or after the wall's reset |
 | stopped `8` (parked), every parked item answered | re-armable | re-arms on any admitted account |
 | stopped `4` (not judgeable yet: a converged drive that left the Ready mark to another driver, or whose final CI witness did not arrive) | re-armable | re-arms on any admitted account, as `drive-pr` asks an unattended wrapper to |
@@ -217,7 +233,9 @@ until a person clears it. The one exception to "alive holds its stage" is
 a takeover: a drive whose ledger is `silent` and whose driver this
 machine's launch record started is planned for takeover although that
 record is alive, since a wedged driver stays alive by definition; whether
-the takeover is admitted stays `drive.ts --take-over`'s decision. A refusal (`drive.ts`
+the takeover is admitted stays `drive.ts --take-over`'s decision. The
+takeover runs in that record's slot rather than needing a free one (see
+Admission by account). A refusal (`drive.ts`
 exiting `11`, `13`, `16` or `20`; `do-item` finding the item already
 claimed) is recorded as the stage's own answer and never fought: an action
 whose facts have not changed since the refusal is reported, not launched
@@ -237,6 +255,7 @@ The tick reaches the runtime only through these methods:
 | Method | What it does |
 | --- | --- |
 | `sessions(repo)` | the workspaces and their agents, joined to items and pull requests, with each agent's state |
+| `activeAccount()` | the account the host's interactive sessions run on, or an unknown when it cannot be read |
 | `openWorkspace(...)` | a workspace for an item (a new branch) or a pull request (its head branch), reused when one exists |
 | `launch(workspace, stage, account)` | a session in the workspace that runs the stage, billed to the account |
 | `notify(target, message)` | a message that reaches a person |
@@ -246,12 +265,20 @@ retried only through the runtime's own retry for that launch, never as a
 fresh one. Orca is the first implementation:
 
 - `sessions` from `orca worktree ps --json`;
+- `activeAccount` from Orca's account roster (`orca account list`), the
+  host's active account matched to an account the machine file lists by
+  its configuration directory; that the roster's output names the active
+  account is checked when the pickup stage is built, and until it does the
+  answer is an unknown, so interactive sessions wait;
 - `openWorkspace` as `orca worktree create` with the pull request or issue
   linked, called by the adapter itself in `plugin/dispatch/`: the
   [Orca workspace tool](../tools/orca/README.md) runs from a checkout of
-  Jig, not from the plugin, so the installed dispatcher does not depend on
-  it, and reuses its rules (an existing checkout of the branch first) only
-  by moving what it needs into the plugin when the pickup stage is built;
+  Jig, not from the plugin, so the installed dispatcher cannot call it.
+  Its workspace rules (branch selection, an existing checkout of the
+  branch first, branch correction and setup, which a bare `orca worktree
+  create` does not do) move into the plugin in build step 3, the first
+  step that opens a workspace, and the tool then calls the moved code, so
+  the pickups in step 4 reuse it rather than a copy;
 - `launch` for a **headless pass** (a drive re-arm or takeover) as
   `orca terminal create --worktree <selector> --title <stage> --command
   <wrapper>`, the account's configuration directory set in the command's
@@ -284,10 +311,25 @@ runtime does not report their account, and a person who shares an account
 with the dispatcher lowers its cap. A headless pass is admitted on an
 account with a free slot and no wall in effect, the accounts taken in turn
 starting after the account of the most recent launch record, so the turn
-survives between ticks without state of its own. An interactive session
-(a pickup, a follow-up) is admitted only on the host's active account,
-read from the runtime before the launch, since that is the account it runs
-on (below); when that account is full, walled, not one the machine file
+survives between ticks without state of its own.
+
+A takeover is the exception to "a free slot": it replaces a driver whose
+launch record holds a slot, and a wedged driver never gives that slot
+back, so with every slot of the permitted accounts held by wedged drivers
+nothing could replace them. A takeover is therefore admitted into the slot
+of the launch record it replaces, on that record's account and only while
+that account has no wall in effect (a walled account's takeover waits for
+the reset, as any pass does). Its launch record names the record it
+replaces, and the two count as one slot until the old one ends:
+`drive.ts --take-over` stops the wedged holder through `drives.ts --stop`
+before it drives, so the account never runs more than its cap of drivers
+that work. A takeover `drive.ts` refuses ends its own record, and the old
+record keeps its slot.
+
+An interactive session (a pickup, a follow-up) is admitted only on the
+host's active account, read through the runtime interface's
+`activeAccount` before the launch, since that is the account it runs on
+(below); when that account is full, walled, not one the machine file
 lists, or cannot be read, the session waits. With no account free, the
 action waits for a later tick and the report names the full caps.
 
@@ -334,7 +376,8 @@ visible in every report rather than silent.
   only through `drive.ts --take-over`, which admits it against a wedged or
   dead driver alone. A driver another machine or a person started is
   reported, never taken over.
-- **Re-arm a drive a person stopped**, or relaunch a stalled pickup.
+- **Re-arm a drive a person may have stopped** (a mailbox stop or pause,
+  or a stop with no exit), or relaunch a stalled pickup.
 - **Pass the flags the skills reserve for a person**: `--window-reopened`
   and `clear-lease`.
 - **Write to the tracker.** The item's own state is the claim, and `do-item`
@@ -346,7 +389,8 @@ A notification goes out once per cause, its launch record or receipt
 naming what was sent: a drive parked with an item unanswered, carrying the
 parked questions (item 32's framed decision once that is built); a drive
 stopped on an exit only a person can settle, carrying the exit and the
-drive's handoff; a stalled pickup; a session waiting past
+drive's handoff; a drive stopped with no exit, carrying its handoff; a
+stalled pickup or a double claim; a failed follow-up; a session waiting past
 `blocked_after`. The answer to a park stays where the drive reads it, a
 comment on the pull request, so the next tick re-arms the drive with
 nothing from the phone but that comment.
@@ -357,8 +401,10 @@ Every tick writes one receipt under `~/.local/state/jig/dispatch/`, as
 `jig gc` does: the records it read and from where, each planned action with
 its reason, each launch with the runtime's answer, each notification. A
 tick removes receipts and ended launch records older than the machine
-file's retention, keeping the latest completed receipt. What suppresses a
-repeat is kept apart from them and does not expire: a small suppression
+file's retention, keeping the latest completed receipt. Two kinds of record
+are kept apart from them and do not expire. A follow-up's outcome record,
+one per merged pull request, is what tells a done follow-up from a failed
+one after its launch record has gone. What suppresses a repeat is a small suppression
 record per cause (an unchanged refusal not to retry, a notification
 already sent), keyed by the cause's own facts (the item and its state, the
 ledger's generation and exit, the park), and dropped only when those facts
@@ -428,17 +474,19 @@ One pull request each, in this order; each is usable on its own.
    re-arm, and each takeover of a driver this machine started, runs as
    `drive.ts <PR> [--take-over] -- <pass>` through the wrapper in a
    terminal of the pull request's workspace (created from the pull request
-   when none holds it), on an admitted account bound through its
+   when none holds it, through `openWorkspace` and the Orca workspace
+   tool's rules, moved into the plugin in this step), on an admitted account bound through its
    configuration directory; launch records, walls, the machine file,
    `jig dispatch install`. Usable alone: drives that stop on a usage limit
    or an answered park restart without a person.
 4. **Pickups.** `do-item`'s claim refusal (above) first; then, with
    `--apply`, a workspace and a `do-item` session per item assigned to the
-   factory identity in a dispatch state; the fresh read at launch; stalled
-   pickups and waiting sessions reported. Usable alone:
+   factory identity in a dispatch state, admitted on the account
+   `activeAccount` reads (added to the runtime interface here); the fresh read at launch; stalled
+   pickups, double claims and waiting sessions reported. Usable alone:
    assigning an item is the start button.
-5. **Follow-ups and notifications.** The follow-up marker and a follow-up
-   session per merged pull request with the repository's follow-up
+5. **Follow-ups and notifications.** The follow-up marker, the follow-up's
+   outcome record, and a follow-up session per merged pull request with the repository's follow-up
    command; the notifications above through `notify`. The park's
    notification carries item 32's framed decision once that is built, and
    the receipts join its morning report then; a consumer repository's
