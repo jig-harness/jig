@@ -293,6 +293,12 @@ fields:
     default: 2
     since: 0.98.0
     read_by: [drive-pr]
+  drive.pass_model:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._:/@[\\]-]*$"
+    default: sonnet
+    since: next
+    read_by: [drive-pr, do-item]
   drive.escape_baseline_doc:
     type: path
     exists: expected
@@ -435,6 +441,12 @@ fields:
     values_type: { type: map, values_type: any }
     read_by: [do-item]
     since: 0.89.0
+  do_item.arm_drive:
+    type: enum
+    values: [auto, tab, background, print]
+    default: auto
+    since: next
+    read_by: [do-item, drive-pr]
 
   specs.adapters:
     type: list
@@ -523,7 +535,7 @@ fields:
   routing.models:
     type: map
     values_type: { type: map, values_type: string }
-    read_by: [do-item]
+    read_by: [do-item, drive-pr]
     since: 0.92.0
   routing.efforts:
     type: map

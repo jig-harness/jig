@@ -125,10 +125,14 @@ describe("drive.ts loop control", () => {
     expect(gate).toBeGreaterThan(-1);
     expect(table).toBeLessThan(gate);
     expect(skill.slice(entry, table)).not.toContain("drive-status.ts");
-    // The arm command keeps the portable one-line `bun` form and --bots-only,
-    // started in the tree the place step chose.
+    // The arm goes through the arm script in the portable one-line `bun`
+    // form, started in the tree the place step chose, and the command it
+    // builds keeps --bots-only and names the pass model.
     expect(section).toContain(
-      'bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"',
+      'bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/scripts/arm-drive.ts" <PR>',
+    );
+    expect(section).toContain(
+      '`bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model <model> -p "/jig:drive-pr --bots-only <PR>"`',
     );
     expect(section).toContain('scripts/attach-pr.ts" <PR> --place');
   });
