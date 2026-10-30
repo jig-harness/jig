@@ -5,8 +5,9 @@
  * driver measured and names to the next gate (`--inherited-head`). Without
  * it, that gate reads the unpushed commits as replication lag and waits out
  * its timeout, and the pass that would push them never runs. A head that was
- * pushed and that the API has not caught up with is never named, so its lag
- * is still polled.
+ * pushed and that the API has not caught up with is still polled as lag: the
+ * driver names it only over uncommitted edits, and the guard refuses a named
+ * head the PR's head branch already carries on a remote ref.
  */
 import { fail } from "../cli.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "../proc.ts";
@@ -34,32 +35,62 @@ export function takeInheritedHead(argv: string[]): string {
  * Whether `localHead` is the witnessed inherited head on top of `apiHead`:
  * it equals the sha the driver named, and the API head is a strict ancestor
  * of it, so the difference is commits GitHub does not have yet rather than
- * a lag behind a push or another branch. Any other mismatch, or a probe
- * that cannot answer, is `false`, and the guard reports `HEAD_LAG` as
- * before. Measured in the driven tree (`$DRIVE_PR_WORKTREE`) when one is
- * named, as the local head itself is.
+ * a lag behind a push or another branch. A head the PR's head branch already
+ * carries on a remote ref (`headBranch`) was pushed, so the difference is
+ * lag after all. Any other mismatch, or a probe that cannot answer, is
+ * `false`, and the guard reports `HEAD_LAG` as before. Measured in the driven
+ * tree (`$DRIVE_PR_WORKTREE`) when one is named, as the local head itself is.
  */
 export async function acceptsInheritedHead(
   apiHead: string,
   localHead: string,
   inheritedHead: string,
+  headBranch = "",
 ): Promise<boolean> {
   if (inheritedHead === "" || localHead !== inheritedHead) return false;
   if (apiHead === "" || apiHead === localHead) return false;
-  return isAncestor(apiHead, localHead);
+  if (!(await isAncestor(apiHead, localHead))) return false;
+  return !(await pushedTo(localHead, headBranch));
+}
+
+function treeOpts() {
+  const anchor = process.env.DRIVE_PR_WORKTREE;
+  return {
+    stderr: "pipe" as const,
+    env: gitIdentityEnv(),
+    timeoutSec: gitCallTimeoutSeconds(),
+    ...(anchor ? { cwd: anchor } : {}),
+  };
 }
 
 /** Whether `older` is an ancestor of `newer` in the driven tree; `false` when the probe cannot answer. */
 async function isAncestor(older: string, newer: string): Promise<boolean> {
   if (older === "" || newer === "") return false;
-  const anchor = process.env.DRIVE_PR_WORKTREE;
-  const res = await git(["merge-base", "--is-ancestor", older, newer], {
-    stderr: "pipe",
-    env: gitIdentityEnv(),
-    timeoutSec: gitCallTimeoutSeconds(),
-    ...(anchor ? { cwd: anchor } : {}),
-  });
+  const res = await git(
+    ["merge-base", "--is-ancestor", older, newer],
+    treeOpts(),
+  );
   return res.code === 0;
+}
+
+/**
+ * Whether a remote-tracking ref of the PR's head branch contains `sha`: a
+ * push to that branch updates it. `false` when no branch is named or the
+ * probe cannot answer, so the inherited head is accepted as before.
+ */
+async function pushedTo(sha: string, headBranch: string): Promise<boolean> {
+  if (headBranch === "") return false;
+  const res = await git(
+    [
+      "for-each-ref",
+      "--count=1",
+      "--format=%(refname)",
+      `--contains=${sha}`,
+      `refs/remotes/*/${headBranch}`,
+    ],
+    treeOpts(),
+  );
+  return res.code === 0 && res.stdout.trim() !== "";
 }
 
 /** What the head-sync guard reads: in step, an accepted inherited head, or lag. */
@@ -71,6 +102,7 @@ export async function headSyncState(
   apiHead: string,
   localHead: string,
   inheritedHead: string,
+  headBranch = "",
 ): Promise<HeadSync> {
   // On the PR head itself, a killed pass left uncommitted edits only: the
   // round that settles them is still owed, whether or not the local head is
@@ -84,7 +116,12 @@ export async function headSyncState(
   if (!headSync && inheritedHead !== "" && inheritedHead !== apiHead)
     return (await isAncestor(inheritedHead, apiHead)) ? "in-sync" : "inherited";
   if (!headSync || apiHead === localHead) return "in-sync";
-  return (await acceptsInheritedHead(apiHead, localHead, inheritedHead))
+  return (await acceptsInheritedHead(
+    apiHead,
+    localHead,
+    inheritedHead,
+    headBranch,
+  ))
     ? "inherited"
     : "lagging";
 }

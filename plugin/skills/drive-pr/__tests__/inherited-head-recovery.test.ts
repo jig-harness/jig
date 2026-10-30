@@ -8,14 +8,19 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   describeLeftovers,
   inheritedHeadOf,
   type PassLeftovers,
 } from "../scripts/lib/driver/restart.ts";
 import {
+  leftoverHeadOf,
   strandedReason,
-  unpushedHeadOf,
+  unpushedNotice,
   unpushedNoticeFor,
 } from "../scripts/lib/driver/unpushed.ts";
 import {
@@ -50,26 +55,53 @@ describe("inheritedHeadOf", () => {
   });
 });
 
-describe("unpushedHeadOf", () => {
+describe("leftoverHeadOf", () => {
   it("names the head over commits on top of the remote ref", () => {
-    expect(unpushedHeadOf(leftovers("", 1))).toBe(HEAD);
-    expect(unpushedHeadOf(leftovers(" M a.ts", 3))).toBe(HEAD);
+    expect(leftoverHeadOf(leftovers("", 1))).toBe(HEAD);
+    expect(leftoverHeadOf(leftovers(" M a.ts", 3))).toBe(HEAD);
     // The gate checks the ancestry itself when the driver could not.
-    expect(unpushedHeadOf(leftovers("", 1, { onRemote: null }))).toBe(HEAD);
+    expect(leftoverHeadOf(leftovers("", 1, { onRemote: null }))).toBe(HEAD);
   });
 
-  it("names nothing when nothing is known to be unpushed", () => {
-    // A pushed head the API lags behind: local HEAD is the remote ref.
-    expect(unpushedHeadOf(leftovers("", 0))).toBe("");
-    // Uncommitted edits alone leave HEAD on the PR head: no head lag.
-    expect(unpushedHeadOf(leftovers(" M a.ts", 0))).toBe("");
+  it("names the head over uncommitted edits alone, so the round is owed", () => {
+    expect(leftoverHeadOf(leftovers(" M a.ts", 0))).toBe(HEAD);
+    expect(leftoverHeadOf(leftovers("?? fix.ts", null))).toBe(HEAD);
+    expect(leftoverHeadOf(leftovers(" M a.ts", 0), "?? other.ts")).toBe(HEAD);
+  });
+
+  it("names nothing over edits the tree held before the last pass ran", () => {
+    // Dirty at arm, or handed to a pass that left them as they were: the
+    // drive stops over them at convergence instead of looping.
+    expect(leftoverHeadOf(leftovers(" M a.ts", 0), " M a.ts")).toBe("");
+  });
+
+  it("names nothing for a tree with nothing to hand on", () => {
+    // A pushed head the API lags behind: local HEAD is the remote ref. A head
+    // an earlier measurement named is dropped once it was pushed.
+    expect(leftoverHeadOf(leftovers("", 0))).toBe("");
     // No remote ref to count against (no upstream, no attach).
-    expect(unpushedHeadOf(leftovers("", null, { onRemote: null }))).toBe("");
-    expect(unpushedHeadOf(leftovers("", 1, { head: null }))).toBe("");
+    expect(leftoverHeadOf(leftovers("", null, { onRemote: null }))).toBe("");
   });
 
   it("names nothing over commits that do not build on the remote ref", () => {
-    expect(unpushedHeadOf(leftovers("", 1, { onRemote: false }))).toBe("");
+    expect(leftoverHeadOf(leftovers("", 1, { onRemote: false }))).toBe("");
+  });
+
+  it("keeps the earlier answer when a probe failed", () => {
+    expect(leftoverHeadOf(leftovers("", 1, { head: null }))).toBeNull();
+    expect(leftoverHeadOf(leftovers(null, 0))).toBeNull();
+    expect(leftoverHeadOf(leftovers("", null, { onRemote: true }))).toBeNull();
+  });
+});
+
+describe("unpushedNotice", () => {
+  it("opens with what the tree holds", () => {
+    expect(unpushedNotice(leftovers("", 1), HEAD)).toStartWith(
+      "UNPUSHED COMMITS",
+    );
+    expect(unpushedNotice(leftovers(" M a.ts", 0), HEAD)).toStartWith(
+      "UNCOMMITTED EDITS",
+    );
   });
 });
 
@@ -151,5 +183,143 @@ describe("headSyncState on the PR head", () => {
       "in-sync",
     );
     expect(await headSyncState(false, HEAD, "", "")).toBe("in-sync");
+  });
+});
+
+describe("a head that was pushed, in a real tree", () => {
+  const SELF = import.meta.dir;
+  const cleanEnv = (): Record<string, string> => {
+    const env: Record<string, string> = {};
+    for (const [k, v] of Object.entries(process.env))
+      if (
+        v !== undefined &&
+        !k.startsWith("GIT_") &&
+        !k.startsWith("DRIVE_PR_")
+      )
+        env[k] = v;
+    return env;
+  };
+  const git = (cwd: string, ...args: string[]): string => {
+    const r = Bun.spawnSync(["git", ...args], {
+      cwd,
+      env: cleanEnv(),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(r, 0);
+    return r.stdout.toString().trim();
+  };
+  /** A tree on `main` at H, one commit past A, tracking `origin/main`. */
+  const tree = (): { dir: string; a: string; h: string } => {
+    const dir = mkdtempSync(join(tmpdir(), "inherited-head-"));
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "config", "user.email", "t@example.invalid");
+    git(dir, "config", "user.name", "t");
+    git(dir, "commit", "-q", "--allow-empty", "-m", "a");
+    const a = git(dir, "rev-parse", "HEAD");
+    git(dir, "commit", "-q", "--allow-empty", "-m", "h");
+    const h = git(dir, "rev-parse", "HEAD");
+    git(dir, "remote", "add", "origin", dir);
+    git(dir, "config", "branch.main.remote", "origin");
+    git(dir, "config", "branch.main.merge", "refs/heads/main");
+    return { dir, a, h };
+  };
+  /** Run `code` in a child whose driven tree is `dir`; its stdout, trimmed. */
+  const inTree = (
+    dir: string,
+    code: string,
+    env: Record<string, string> = {},
+  ): string => {
+    const r = Bun.spawnSync(["bun", "-e", code], {
+      cwd: dir,
+      env: { ...cleanEnv(), DRIVE_PR_WORKTREE: dir, ...env },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(r, 0);
+    return r.stdout.toString().trim();
+  };
+  const module = (rel: string): string => JSON.stringify(join(SELF, rel));
+  const sync = (dir: string, a: string, h: string, branch: string): string =>
+    inTree(
+      dir,
+      `import { headSyncState } from ${module("../scripts/lib/status/inherited-head.ts")};
+       const e = process.env;
+       console.log(await headSyncState(true, e.API, e.LOCAL, e.LOCAL, e.BRANCH));`,
+      { API: a, LOCAL: h, BRANCH: branch },
+    );
+  /** Measure `dir` as a gate does; `before` is the tree as a completed pass found it. */
+  const measure = (
+    dir: string,
+    inherited: string,
+    before: string | null = null,
+  ): Record<string, unknown> =>
+    JSON.parse(
+      inTree(
+        dir,
+        `import { measureUnpushed } from ${module("../scripts/lib/driver/unpushed.ts")};
+         const context = {
+           pr: "1",
+           inheritedHead: process.env.INHERITED,
+           unpushedNotice: "stale",
+           uncommittedMeasured: null,
+           uncommittedBeforePass: JSON.parse(process.env.BEFORE),
+         };
+         const code = await measureUnpushed(context);
+         console.log(JSON.stringify({ code, ...context }));`,
+        { INHERITED: inherited, BEFORE: JSON.stringify(before) },
+      ),
+    ) as Record<string, unknown>;
+
+  it("polls the lag of a named head the head branch's remote ref carries", () => {
+    const { dir, a, h } = tree();
+    try {
+      // Unpushed: the remote ref is behind H, so the named head passes.
+      git(dir, "update-ref", "refs/remotes/origin/main", a);
+      expect(sync(dir, a, h, "main")).toBe("inherited");
+      // Pushed: the remote ref carries H, so the API lags a push.
+      git(dir, "update-ref", "refs/remotes/origin/main", h);
+      expect(sync(dir, a, h, "main")).toBe("lagging");
+      // Another branch's remote ref says nothing about this PR's head.
+      expect(sync(dir, a, h, "other")).toBe("inherited");
+      expect(sync(dir, a, h, "")).toBe("inherited");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("drops an inherited head once the tree has nothing left to hand on", () => {
+    const { dir, h } = tree();
+    try {
+      git(dir, "update-ref", "refs/remotes/origin/main", h);
+      expect(measure(dir, h)).toMatchObject({
+        code: null,
+        inheritedHead: "",
+        unpushedNotice: "",
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("hands on uncommitted edits, untracked files included whatever git's configuration", () => {
+    const { dir, h } = tree();
+    try {
+      git(dir, "update-ref", "refs/remotes/origin/main", h);
+      git(dir, "config", "status.showUntrackedFiles", "no");
+      writeFileSync(join(dir, "fix.ts"), "fix\n");
+      // A pass that found the tree clean left the edit.
+      const context = measure(dir, "", "");
+      expect(context.inheritedHead).toBe(h);
+      expect(String(context.unpushedNotice)).toStartWith("UNCOMMITTED EDITS");
+      expect(String(context.unpushedNotice)).toContain("?? fix.ts");
+      // A tree already dirty at arm hands nothing on.
+      expect(measure(dir, "")).toMatchObject({
+        inheritedHead: "",
+        uncommittedBeforePass: "?? fix.ts",
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

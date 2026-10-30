@@ -209,6 +209,8 @@ export async function runDriverRounds({
     carriedNotice: firstPassNotice,
     inheritedHead: "",
     unpushedNotice: "",
+    uncommittedMeasured: null,
+    uncommittedBeforePass: null,
   };
   for (;;) {
     {

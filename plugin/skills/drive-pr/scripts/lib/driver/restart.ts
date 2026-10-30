@@ -138,7 +138,18 @@ export async function passLeftovers(): Promise<PassLeftovers> {
     env: gitIdentityEnv(),
     ...(anchor ? { cwd: anchor } : {}),
   };
-  const status = await git(["status", "--short"], opts);
+  // Explicit scope, as the convergence worktree check uses: a configured
+  // `status.showUntrackedFiles=no` or submodule `ignore` would otherwise hide
+  // an untracked fix or a modified submodule from the report.
+  const status = await git(
+    [
+      "status",
+      "--short",
+      "--untracked-files=normal",
+      "--ignore-submodules=none",
+    ],
+    opts,
+  );
   const count = await git(["rev-list", "--count", unpushedRange()], opts);
   const unpushed = Number.parseInt(count.stdout.trim(), 10);
   const log = await git(

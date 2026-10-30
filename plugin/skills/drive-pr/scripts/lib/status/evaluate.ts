@@ -912,10 +912,9 @@ async function evaluateFresh(
 
   // Draftness is MEASURED AND PUBLISHED here, and gates nothing: a drive on a
   // draft proceeds as on a Ready PR (the module header says why exit 10 is
-  // retired). It is still validated as a BOOLEAN and INDETERMINATE otherwise,
-  // because `mark-ready.ts` decides from it whether the draft→Ready
-  // transition is owed, and an absent or null value read as `false` would
-  // skip that transition on the one PR that needs it.
+  // retired). It is still validated as a BOOLEAN, because `mark-ready.ts`
+  // decides from it whether the draft→Ready transition is owed, and an absent
+  // or null value read as `false` would skip it on the one PR that needs it.
   const draft = prJson.isDraft;
   if (typeof draft !== "boolean") {
     return terminal(
@@ -932,6 +931,7 @@ async function evaluateFresh(
     report.apiHead,
     ctx.localHead,
     ctx.inheritedHead ?? "",
+    str(prJson, "headRefName"),
   );
   if (sync === "lagging") {
     return terminal(

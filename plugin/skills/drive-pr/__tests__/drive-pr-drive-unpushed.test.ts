@@ -86,6 +86,34 @@ describe("drive.ts hands unpushed commits to the next round", () => {
     expect(notice).toContain("finish-round");
   }, 120_000);
 
+  it("hands edits a pass left uncommitted to the next round", async () => {
+    const tree = trackedTree("uncommitted-exit0");
+    const reviewed = git(tree, "rev-parse", "HEAD");
+    const marker = join(tmpRoot, "uncommitted-exit0-first");
+    const noticeFile = join(tmpRoot, "uncommitted-exit0-notice");
+    const pass = [
+      "sh",
+      "-c",
+      [
+        ": pass for 999",
+        `if [ ! -e '${marker}' ]; then : > '${marker}'; echo fix > fix.txt; exit 0; fi`,
+        `printf '%s' "$DRIVE_PR_PASS_NOTICE" > '${noticeFile}'`,
+        "rm -f fix.txt",
+        "exit 0",
+      ].join("\n"),
+    ];
+    const r = await runDrive(
+      { ...work, head: reviewed },
+      [...GATE, "--max-rounds", "2", "--", ...pass],
+      tree,
+    );
+    expectSpawnExit({ ...r, stdout: null }, 6);
+    const notice = readFileSync(noticeFile, "utf8");
+    expect(notice).toStartWith("UNCOMMITTED EDITS");
+    expect(notice).toContain("?? fix.txt");
+    expect(notice).toContain(`--inherited-head ${reviewed}`);
+  }, 120_000);
+
   it("when the drive is armed over them, to the first round", async () => {
     const tree = trackedTree("unpushed-armed");
     const reviewed = git(tree, "rev-parse", "HEAD");

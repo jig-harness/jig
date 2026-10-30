@@ -60,15 +60,22 @@ export interface DriveRoundContext {
   carriedNotice: string;
   /**
    * The local HEAD a pass left work on that the PR head lacks: witnessed after
-   * a pass killed at its deadline, and measured before every gate when the
-   * tree holds commits on top of the head branch's remote ref (`unpushed.ts`);
-   * `''` when there is none. Every gate is told it
-   * (`drive-status.ts --inherited-head`) until a pass completes.
+   * a pass killed at its deadline, and measured afresh before every gate
+   * (`unpushed.ts`); `''` when there is none. Every gate is told it
+   * (`drive-status.ts --inherited-head`).
    */
   inheritedHead: string;
   /**
-   * What the next review pass is told about the unpushed commits the last
-   * gate measured; `''` when there were none. Recomputed before every gate.
+   * What the next review pass is told about the work the last gate measured;
+   * `''` when there was none. Recomputed before every gate.
    */
   unpushedNotice: string;
+  /**
+   * The tree's `git status --short` as the last gate measured it, and as it
+   * stood before the last completed review pass ran (the first gate's, until
+   * one completes): only edits that differ from the latter were left by a
+   * pass and owe a round. `null` when unread.
+   */
+  uncommittedMeasured: string | null;
+  uncommittedBeforePass: string | null;
 }

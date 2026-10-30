@@ -48,6 +48,8 @@ export async function runReviewPassPhase(
     context.carriedNotice = "";
     clearPendingVerdicts(await resolveStateDir(), context.pr);
     context.inheritedHead = "";
+    // Edits the tree held before this pass ran are not its to hand on.
+    context.uncommittedBeforePass = context.uncommittedMeasured;
   }
   // A directive sent WHILE this pass ran must still be honored before a
   // non-success terminal result for it is reported, PR_NOT_OPEN included.

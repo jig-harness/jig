@@ -373,20 +373,28 @@ round with the stand-down diagnostics in the pass's notice before it stops,
 and the stop prints what the passes recorded deciding at the end of the
 handoff narrative. A short usage wall is slept through as before.
 
-**Unpushed commits never become a `HEAD_LAG` wait.** A pass can end without
-pushing whatever it exits with, and a drive can be armed over local commits
-nobody pushed. So before every gate the driver counts the commits local HEAD
-has on top of the head branch's remote ref. When there are some, it hands
-that HEAD to the gate as an inherited head, as after a deadline, and the
-round's pass is told to push them (`UNPUSHED COMMITS`, § Driver pass). When
-local HEAD has commits of its own and does not contain that ref, no round
-can push it as a fast-forward: the drive stops at once with exit `1`, naming
-the commits, and you reconcile the tree with the PR head before re-arming. A
-head that was pushed and that the API has not caught up with leaves local
-HEAD on the remote ref, so the gate is told nothing and still polls its
-`HEAD_LAG`. A pass that fails (any exit but `0` and `5` that is neither a
-deadline nor a usage wall) stops the drive, and the stop lists the paths it
-left uncommitted and the commits it left unpushed.
+**Unpushed work never becomes a `HEAD_LAG` wait or a dirty convergence.** A
+pass can end without committing or pushing whatever it exits with, and a
+drive can be armed over local commits nobody pushed. So before every gate
+the driver measures the tree afresh: the commits local HEAD has on top of
+the head branch's remote ref, and the uncommitted edits that differ from
+what the tree held before the last completed pass ran (at arm, until one
+completes). When there are some, it hands that HEAD to the gate as an
+inherited head, as after a deadline, and the round's pass is told to push
+them (`UNPUSHED COMMITS`, or `UNCOMMITTED EDITS` for edits alone, § Driver
+pass); when a later measurement finds neither, the gate is no longer handed
+it. Edits that were already there, at arm or handed to a pass that left them
+as they were, still stop a converged drive with exit `12`. When local HEAD
+has commits of its own and does not contain that ref, no round can push it
+as a fast-forward: the drive stops at once with exit `1`, naming the
+commits, and you reconcile the tree with the PR head before re-arming. A
+drive armed over such a tree meets the attach first, which refuses with
+exit `2` and names the same commits. A head that was pushed and that the API
+has not caught up with is still polled as `HEAD_LAG`: the gate refuses an
+inherited head the head branch's remote ref already contains. A pass that
+fails (any exit but `0` and `5` that is neither a deadline nor a usage wall)
+stops the drive, and the stop lists the paths it left uncommitted and the
+commits it left unpushed.
 
 Normally you do not run this by hand: a `/jig:do-item` run **arms the
 drive itself** the moment the draft PR opens (its § Arm the drive step).
@@ -1004,6 +1012,7 @@ state directory holding all of it: read that file before acting.
 |---|---|---|
 | `RESTARTED AFTER A PASS DEADLINE` | The previous pass was killed at its deadline; its uncommitted edits and unpushed commits are listed and are still in the tree | Start from that state: finish, validate and push what is sound, discard what is not on purpose, then triage as usual. When it names an inherited head, add `--inherited-head <sha>` to § 1's gate (without it the gate reads unpushed commits as `HEAD_LAG`, and a tree with only uncommitted edits as converged) and push them through `finish-round.ts` with the round's own fixes |
 | `UNPUSHED COMMITS` | Local HEAD carries commits the PR's head lacks: a pass ended without pushing them, or the drive was armed over them. They are listed, with the uncommitted edits, and are still in the tree | Validate what is sound and push it through `finish-round.ts` with the round's own fixes; discard what is not on purpose. Add the `--inherited-head <sha>` it names to § 1's gate: without it the gate reads the unpushed commits as `HEAD_LAG` |
+| `UNCOMMITTED EDITS` | The tree holds edits no commit carries: a pass ended without committing them. They are listed and are still in the tree | Validate what is sound and push it through `finish-round.ts` with the round's own fixes; discard what is not on purpose. Add the `--inherited-head <sha>` it names to § 1's gate: without it the gate can read the PR as converged over the edits |
 | `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14` | Act on the open work; if you decide not to, end the handoff narrative with one paragraph saying what you decided and why — the stop prints it |
 | `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix is not verified as pushed are listed: each thread re-held unconfirmed on its reply, each finding released, and apart those that could not be reopened; a failed reconciliation is said here | For a re-held thread, read the anchored code, make the promised fix if it is missing, then confirm it with the hold command shown; or supersede the reply with a fresh outcome. Triage a released finding afresh. Check each item that could not be reopened against the held batch first |
 | `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; every item has a `[kind] key — url` entry, answer bodies may be cut, and the file named on its third line holds every answer in full | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
