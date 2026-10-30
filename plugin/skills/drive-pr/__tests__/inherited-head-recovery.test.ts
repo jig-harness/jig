@@ -410,6 +410,28 @@ describe("a head that was pushed, in a real tree", () => {
     }
   });
 
+  it("hands nothing on over edits from arm a pushed, unrelated commit left untouched", () => {
+    const { dir, h } = tree();
+    try {
+      git(dir, "update-ref", "refs/remotes/origin/main", h);
+      writeFileSync(join(dir, "scratch.txt"), "scratch\n");
+      const before = String(measure(dir, "").uncommittedBeforePass);
+      // The pass commits and pushes an unrelated fix; scratch.txt is as it was.
+      writeFileSync(join(dir, "fix.ts"), "fix\n");
+      git(dir, "add", "fix.ts");
+      git(dir, "commit", "-q", "-m", "fix");
+      git(
+        dir,
+        "update-ref",
+        "refs/remotes/origin/main",
+        git(dir, "rev-parse", "HEAD"),
+      );
+      expect(measure(dir, "", before).inheritedHead).toBe("");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it.skipIf(
     skipsOnWindows("file-system", "Windows refuses a newline in a file name"),
   )("hands on an untracked file whose name holds a newline", () => {

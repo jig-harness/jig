@@ -135,10 +135,11 @@ export interface PassLeftovers {
   baseExists: boolean | null;
   /**
    * The edits by content: the status lines and a digest of the staged diff,
-   * the unstaged diff and every untracked file's content, with the HEAD, of
-   * the tree, each checked-out submodule and each untracked nested
-   * repository, so an edit to a file already shown as modified, or a commit
-   * inside a nested repository, changes it. `''` for a clean tree.
+   * the unstaged diff and every untracked file's content of the tree, each
+   * checked-out submodule and each untracked nested repository, with the
+   * HEAD of each nested one, so an edit to a file already shown as modified,
+   * or a commit inside a nested repository, changes it; a commit on the
+   * tree's own head does not. `''` for a clean tree.
    */
   edits: string | null;
 }
@@ -222,22 +223,26 @@ async function editsOf(
   const root = top.stdout.trim();
   if (top.code !== 0 || root === "") return null;
   const hash = createHash("sha256");
-  if (!(await digestTree(root, opts, hash))) return null;
+  if (!(await digestTree(root, opts, hash, false))) return null;
   return `${status}\n${hash.digest("hex")}`;
 }
 
 /**
- * Feed one tree's HEAD and edits into `hash`, then each checked-out
- * submodule's and each untracked nested repository's. The superproject's diff
- * shows a dirty submodule only as its gitlink and a dirty mark, and lists an
- * untracked nested repository only by its directory, so a commit or a further
- * edit inside either is read from that repository itself.
+ * Feed one tree's edits into `hash`, then each checked-out submodule's and
+ * each untracked nested repository's, with that repository's HEAD. The
+ * superproject's diff shows a dirty submodule only as its gitlink and a dirty
+ * mark, and lists an untracked nested repository only by its directory, so a
+ * commit or a further edit inside either is read from that repository itself.
+ * The driven tree's own HEAD stays out (`withHead` false): its commits are
+ * counted as unpushed work, and a commit beside edits it leaves untouched
+ * does not change those edits.
  * Text conversion is off: a converter may leave out the bytes an edit changed.
  */
 async function digestTree(
   dir: string,
   opts: Parameters<typeof git>[1],
   hash: ReturnType<typeof createHash>,
+  withHead: boolean,
 ): Promise<boolean> {
   const at = { ...opts, cwd: dir };
   const diff = [
@@ -275,7 +280,7 @@ async function digestTree(
   const nested = listed.split("\0").filter((p) => p !== "");
   for (const part of [
     dir,
-    head.stdout.trim(),
+    withHead ? head.stdout.trim() : "",
     staged.stdout,
     unstaged.stdout,
     untracked.stdout,
@@ -283,7 +288,7 @@ async function digestTree(
     hash.update(part).update("\0");
   hash.update(blobs).update("\0");
   for (const sub of [...submodules, ...nested])
-    if (!(await digestTree(sub, opts, hash))) return false;
+    if (!(await digestTree(sub, opts, hash, true))) return false;
   return true;
 }
 
