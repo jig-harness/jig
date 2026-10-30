@@ -422,6 +422,28 @@ the stall's diagnostics in the pass's notice before the drive stops with exit
 `14`, and the stop prints what the passes recorded deciding. A short usage
 limit is slept through, as before.
 
+The same holds for work nobody pushed: a pass that ended its turn after
+committing or after editing and still exited `0`, or a drive armed over
+local commits. Before every round's status check the
+drive measures the tree afresh, counting the commits local HEAD has that the
+head branch's remote ref lacks and the edits the last pass left uncommitted,
+and hands the round out over that head, telling its pass to push them,
+rather than waiting for GitHub to report a push that never happened or
+converging over edits no pass committed. Once a measurement finds neither, a
+push GitHub has not caught up with is waited for as before, and so is one
+whose pushed state cannot be read on the drive's remote. Edits are compared by
+content, so a pass that edits a file already shown as modified has left work.
+Edits the tree already held at arm, or that a pass was handed and left as
+they were, still stop a converged drive with exit `12`. When those commits do not build on
+the remote ref (history was rewritten), no round could push them, so the
+drive stops at once with exit `1` and names them; a drive armed over such a
+tree is refused by the [attach](#which-working-tree-drives-it) with exit
+`2`, which names them too, or, with the attach skipped
+(`DRIVE_PR_ATTACH=off`, `--dry-run`), stopped with exit `1` at its first
+status check. A pass that fails stops the drive rather than handing its work
+to a round, and the stop lists what it left uncommitted and unpushed: keep or
+discard that work, then re-arm.
+
 ### Picking up a stopped drive
 
 A drive that stopped holds no lock, except one that stopped with exit `15`
@@ -519,7 +541,7 @@ ledger.
 | `18` | `MAILBOX_STOPPED` | A mailbox `stop` ended the drive after any active pass and its Ready transition finished. Send `resume --target stop` before re-arming. |
 | `19` | `MAILBOX_PAUSE_TIMEOUT` | A mailbox `pause` stayed active for `$DRIVE_PR_PAUSE_MAX_SEC` (default 30 minutes). Send `resume --target pause`, then re-arm. The driver releases its locks on this exit. |
 | `20` | `TAKEN_OVER` | Another clone took the drive over: its takeover claim on the pull request is newer than this driver's own, so this driver stopped at a round boundary, or during a usage-limit sleep or mailbox pause, without another pass, or this `--take-over` lost to an earlier claim. That clone drives now; nothing to do here, and do not re-arm beside it ([picking up](#picking-up-a-stopped-drive)). |
-| `1` / `2` | Pass failed / usage error / **CI still red** | Operational. Read stderr; `2` usually means the command line itself is wrong, or that the [attach](#which-working-tree-drives-it) refused this tree (it names what is in the way), but can also mean `UNSUPPORTED_CLI` — a `gh` too old to report a required PR field such as draft state or mergeability. For that case, upgrade `gh`; it is not a CI-repair matter. `1` is also the CI stop: the review converged but full CI on the converged head is red and the repair budget (`DRIVE_PR_CI_REPAIR_ROUNDS`, default 2) is exhausted or disabled (`0` skips repair entirely and stops on the first red), or the verdict was unreadable rather than a named failure. Repair CI by hand, then re-arm. |
+| `1` / `2` | Pass failed / usage error / **CI still red** | Operational. Read stderr; `2` usually means the command line itself is wrong, or that the [attach](#which-working-tree-drives-it) refused this tree (it names what is in the way), but can also mean `UNSUPPORTED_CLI` — a `gh` too old to report a required PR field such as draft state or mergeability. For that case, upgrade `gh`; it is not a CI-repair matter. `1` is also the CI stop: the review converged but full CI on the converged head is red and the repair budget (`DRIVE_PR_CI_REPAIR_ROUNDS`, default 2) is exhausted or disabled (`0` skips repair entirely and stops on the first red), or the verdict was unreadable rather than a named failure. Repair CI by hand, then re-arm. A failed pass's stop lists what it left uncommitted and unpushed: keep or discard that work, then re-arm. `1` is also the stop over local commits that do not build on the head branch's remote ref ([restarts](#a-stopped-drive-restarts-itself)): it names them; rebase them onto the PR head, or reset to it and keep what is sound, then re-arm. Armed over such a tree, the attach stops it first with `2`, naming the same commits, unless `DRIVE_PR_ATTACH=off` or `--dry-run` skips the attach. |
 
 One red-CI cause is worth ruling out before you repair anything in a repository with a [CI hold](#ci-hold): a drive that **died** mid-round leaves its hold label behind, and the repository's held-head check then fails or cancels a required check on a perfectly healthy PR. Check `bun "<skill-dir>/../../shared/command.ts" -- gh pr view <PR> --json labels` first. If it is there, push whatever the dead drive stranded, then `bun "<skill-dir>/../../shared/command.ts" -- gh pr edit <PR> --remove-label "<ci.hold_label>"` — the removal itself retriggers CI. Do **not** `gh run rerun` the old run: it replays the original event payload, which still carries the label, so it fails on the hold step again.
 

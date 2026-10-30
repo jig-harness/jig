@@ -225,7 +225,7 @@ is left:
 Done when the reference set's recorded results are checked by a test, and
 an audit sheet cites code-stats figures as evidence.
 
-### 21. `changelog` skill: several artifacts, and the whole file checked
+### 21. `changelog` skill: several artifacts
 
 The [`changelog` skill](../plugin/skills/changelog/README.md) is the
 runnable form of [M16](../modules/M16-releases-versions/README.md) for a
@@ -240,13 +240,6 @@ repository with one released artifact. What is left:
   choice (Unreleased, or none). Done when a monorepo with two packages
   releases them independently through the action, and the single-artifact
   configuration keeps working unchanged.
-- **A whole-changelog check**, against the rules of the detected format
-  rather than a union of both: structure, category names and order, dates
-  written year-month-day, link references, and release coverage. Each rule,
-  its conditions and its exemptions are taken from the format's own
-  specification, cited where the check enforces them. Of the whole file,
-  Jig's own `scripts/check-changelog.ts` checks only that the version files
-  agree and that the current version has a heading.
 - **Other CI providers' templates** beside GitHub's workflow template, when
   a repository needs one.
 
