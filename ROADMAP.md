@@ -15,11 +15,9 @@ A `kickoff` skill that starts a new repository from nothing: requirements,
 architecture, an adversarial review of both, the repository and its
 [scaffolding](GLOSSARY.md), implementation plans and the first tracker
 issues. It replaces the fixed starter kit the
-[greenfield guide](adoption/greenfield.md) uses today. With it come
-`red-team`, which reviews a requirements or architecture document from
-several hostile points of view in a fresh session; plan review inside
-`review`; and `upgrade-deps`, which makes grouped dependency upgrades an
-update bot cannot make alone and drives them to merge.
+[greenfield guide](adoption/greenfield.md) uses today. With it come plan
+review inside `review`; and `upgrade-deps`, which makes grouped dependency
+upgrades an update bot cannot make alone and drives them to merge.
 
 ### 7. The Notion store, verified against Notion
 

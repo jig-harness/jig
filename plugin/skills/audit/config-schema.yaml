@@ -12,7 +12,8 @@
 #             | list | map | any
 #               command: a shell command line; its program must resolve
 #               path:    relative to the repository root unless absolute
-#   values    enum: the allowed values; integer: words allowed besides a number
+#   values    enum: the allowed values, also in a nested type spec of an
+#             enum (a list's `items`); integer: words allowed besides a number
 #   min       integer: the least allowed number
 #   max       integer: the greatest allowed number
 #   pattern   string, command, path: a regular expression the value must
@@ -63,6 +64,7 @@ strict:
   - reflection
   - code_stats
   - docs
+  - specs
   - work_batch
   - work_batch.ranking
   - routing
@@ -459,6 +461,22 @@ fields:
     values_type: { type: map, values_type: any }
     read_by: [do-item]
     since: 0.89.0
+
+  specs.adapters:
+    type: list
+    items: { type: enum, values: [body] }
+    distinct: true
+    nonempty: true
+    read_by: [do-item]
+    repository_only: true
+    since: 0.100.0
+  specs.body_section:
+    type: string
+    pattern: "^[ \\t]*[^#\\s][^\\r\\n]*$"
+    default: Spec
+    read_by: [do-item]
+    repository_only: true
+    since: 0.100.0
 
   work_batch.point_budget:
     type: integer

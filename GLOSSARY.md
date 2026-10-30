@@ -584,6 +584,15 @@ make, use the entry's term instead.
 - **PRD (product requirements document)** — the document defining *what* a
   feature does for users and why — deliberately separate from *how* (the
   architecture doc).
+- **Spec resolver and spec adapter** — the read-only step that turns what a
+  work item says must be built (requirements, acceptance criteria and tasks,
+  written in its body or kept in a file it links) into one list with stable
+  ids, each qualified by where it came from; and one implementation of that
+  reading for one layout of such documents. The `body` adapter reads the
+  item's own `## Spec`, `## Requirements` and `## Acceptance criteria`
+  sections; an adapter per repository layout is planned. The resolver reads
+  only inside the repository, never a file Git ignores, and fetches no web
+  link ([design](design/spec-link.md)).
 - **PR (pull request)** — a proposed change to a repository, opened so it can
   be reviewed and checked before it is merged into the *integration branch*.
   Most of Jig's execution process runs around one.

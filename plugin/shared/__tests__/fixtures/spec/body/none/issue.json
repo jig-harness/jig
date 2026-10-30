@@ -1,0 +1,6 @@
+{
+  "found": true,
+  "identifier": "#43",
+  "title": "Fix the typo on the login page",
+  "description": "The login page says \"pasword\".\n\n- [ ] Fix it\n- AC-1 is mentioned here but no section names it\n"
+}

@@ -341,6 +341,25 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.100.0] - 2026-10-30
+
+### Added
+
+- `do-item` shows, after it fetches an item, the requirements, acceptance
+  criteria and tasks the item carries: its `## Spec`, `## Requirements` and
+  `## Acceptance criteria` sections, with the ids the text gives them
+  (`FR-001`, `AC-1`, a numbered checkbox) or, for an item with none, an id
+  derived from its text, and each reference it did not read with the reason.
+  The resolver behind it (`plugin/shared/spec/resolve.ts`) reads only inside
+  the repository: an absolute path, a `..` that leaves the root, a symbolic
+  link out of it, a file Git ignores, such as `.env`, and a pipe or device
+  are refused before anything reads them, each file in a referenced folder
+  is checked on its own and reported when refused, and no web link is
+  fetched. A reader that does not answer within 30 seconds is given up on.
+  Nothing else in the pickup changes. New fields, `specs.adapters` and
+  `specs.body_section`, set which readers run and the spec section's heading
+  ([configuration](plugin/CONFIGURATION.md#specs)).
+
 ## [0.99.0] - 2026-10-29
 
 A pull request's drive resumes from the pull request itself: a drive started in another clone or on another machine picks up where the last one stopped, and a stuck driver in another clone can be taken over.
@@ -4050,7 +4069,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.99.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.100.0...HEAD
+[0.100.0]: https://github.com/jig-harness/jig/compare/v0.99.0...v0.100.0
 [0.99.0]: https://github.com/jig-harness/jig/compare/v0.98.0...v0.99.0
 [0.98.0]: https://github.com/jig-harness/jig/compare/v0.97.2...v0.98.0
 [0.97.2]: https://github.com/jig-harness/jig/compare/v0.97.1...v0.97.2
