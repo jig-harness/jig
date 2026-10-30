@@ -413,6 +413,20 @@ test("a block quote inside a list item still continues it", async () => {
     config: only("body"),
   });
   expect(result.acceptance.map((c) => c.text)).toEqual(["Works > as quoted"]);
+  for (const lazy of ["  AC-9 Example", "AC-9 Example"]) {
+    const continued = await resolveSpec(
+      issue(
+        ["## Acceptance criteria", "- Works", "  > Example only:", lazy].join(
+          "\n",
+        ),
+      ),
+      root,
+      { registry: [bodyAdapter], config: only("body") },
+    );
+    expect(continued.acceptance.map((c) => c.text)).toEqual([
+      "Works > Example only: AC-9 Example",
+    ]);
+  }
 });
 
 test("a list item after a block that ends the list is an entry of its own", async () => {

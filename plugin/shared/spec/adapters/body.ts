@@ -106,7 +106,8 @@ function block(indent: number, depth: number | null, content: string): Block {
  * break, a block quote outside the item), since each ends the entry above
  * it. The classification is the resolver's, made over the whole body, and
  * so is which lines open a list item: only a line the scanner marked with a
- * `depth` does.
+ * `depth` does. A line it marked `quoted` opens no id-led entry: it is the
+ * quote's text.
  */
 function* unfenced(
   lines: readonly MarkdownLine[],
@@ -117,7 +118,7 @@ function* unfenced(
 
 /** A new block the line opens, `"end"` when it ends the one above, or `"continue"`. */
 function opens(
-  { line, depth }: MarkdownLine,
+  { line, depth, quoted }: MarkdownLine,
   current: Block | null,
   afterBlank: boolean,
 ): Block | "end" | "continue" {
@@ -125,7 +126,7 @@ function opens(
   const item = depth === undefined ? null : LIST_ITEM.exec(line);
   if (item) return block(indent, depth ?? 0, (item[2] ?? "").trimStart());
   if (HEADING.test(line)) return "end";
-  if (indent < 4 && LEADING_ID.test(line.trim()))
+  if (!quoted && indent < 4 && LEADING_ID.test(line.trim()))
     return block(indent, null, line.trim());
   const continues = current && (!afterBlank || indent > current.indent);
   return continues ? "continue" : "end";

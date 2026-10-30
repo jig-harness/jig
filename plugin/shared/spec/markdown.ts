@@ -70,6 +70,8 @@ export function trimEndOf(text: string, chars: string): string {
  * none: a thematic break, or a block quote the open item does not contain,
  * and the lines that lazily continue it. `depth` marks a line that opens a
  * list item: the number of open items it is nested in, 0 for a new list.
+ * `quoted` marks a line of a block quote, a lazy continuation included: its
+ * text is the quote's, never an entry of its own.
  */
 export interface MarkdownLine {
   line: string;
@@ -77,6 +79,7 @@ export interface MarkdownLine {
   inItem?: true;
   boundary?: true;
   depth?: number;
+  quoted?: true;
 }
 
 /** A heading: its run of `#` and its title. */
@@ -396,6 +399,7 @@ export function* markdownLines(text: string): Generator<MarkdownLine> {
     if (kind === "heading" && state.headingInItem) out.inItem = true;
     if (state.boundary) out.boundary = true;
     if (state.depth !== null) out.depth = state.depth;
+    if (state.quote !== null) out.quoted = true;
     yield out;
   }
 }
