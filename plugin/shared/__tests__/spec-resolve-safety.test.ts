@@ -383,6 +383,38 @@ test("a block quote or a thematic break before a list item's column ends the ite
   }
 });
 
+test("a block quote or a thematic break after an entry is no part of it and no entry", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  const plain = await resolveSpec(
+    issue(["## Acceptance criteria", "- Works"].join("\n")),
+    root,
+    { registry: [bodyAdapter], config: only("body") },
+  );
+  for (const block of ["* * *", "---", "___", "> Quote", "> FR-9 quoted"]) {
+    const body = ["## Acceptance criteria", "- Works", block].join("\n");
+    const result = await resolveSpec(issue(body), root, {
+      registry: [bodyAdapter],
+      config: only("body"),
+    });
+    expect(result.acceptance.map((c) => [c.id, c.text])).toEqual(
+      plain.acceptance.map((c) => [c.id, c.text]),
+    );
+    expect(result.acceptance.map((c) => c.text)).toEqual(["Works"]);
+  }
+});
+
+test("a block quote inside a list item still continues it", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  const body = ["## Acceptance criteria", "- Works", "  > as quoted"].join(
+    "\n",
+  );
+  const result = await resolveSpec(issue(body), root, {
+    registry: [bodyAdapter],
+    config: only("body"),
+  });
+  expect(result.acceptance.map((c) => c.text)).toEqual(["Works > as quoted"]);
+});
+
 test("a fence before a list item's column ends the item", async () => {
   const { root } = scratchRepo("spec-safety-");
   for (const gap of [[""], []]) {

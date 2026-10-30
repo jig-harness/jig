@@ -74,14 +74,14 @@ export function bodySections(body: string, specHeading: string): BodySection[] {
     return found;
   };
   const stack: { level: number; section: BodySection | null }[] = [];
-  for (const { line, kind, heading } of headedLines(body)) {
+  for (const { line, kind, boundary, heading } of headedLines(body)) {
     if (heading) {
       while ((stack.at(-1)?.level ?? 0) >= heading.level) stack.pop();
       stack.push({ level: heading.level, section: section(heading.title) });
     }
     const owner = stack.findLast((s) => s.section !== null)?.section;
     if (!owner) continue;
-    owner.lines.push({ line, kind });
+    owner.lines.push(boundary ? { line, kind, boundary } : { line, kind });
     if (!heading) owner.text += `${line}\n`;
   }
   return [...names.values()];
@@ -93,10 +93,11 @@ function* headedLines(
 ): Generator<
   MarkdownLine & { heading: { level: number; title: string } | null }
 > {
-  for (const { line, kind, inItem } of markdownLines(body))
+  for (const { line, kind, inItem, boundary } of markdownLines(body))
     yield {
       line,
       kind,
+      ...(boundary ? { boundary } : {}),
       heading: kind === "heading" && !inItem ? headingOf(line) : null,
     };
 }

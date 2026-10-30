@@ -96,11 +96,13 @@ function block(indent: number, list: boolean, content: string): Block {
 
 /**
  * The section's lines outside code, tabs as four spaces; `null` stands
- * where code opens, closes or continues, since it ends the entry above it.
- * The classification is the resolver's, made over the whole body.
+ * where code opens, closes or continues, and at a boundary (a thematic
+ * break, a block quote outside the item), since each ends the entry above
+ * it. The classification is the resolver's, made over the whole body.
  */
 function* unfenced(lines: readonly MarkdownLine[]): Generator<string | null> {
-  for (const { line, kind } of lines) yield kind === "text" ? line : null;
+  for (const { line, kind, boundary } of lines)
+    yield kind === "text" && !boundary ? line : null;
 }
 
 /** A new block the line opens, `"end"` when it ends the one above, or `"continue"`. */

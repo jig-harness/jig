@@ -21,7 +21,9 @@
  * enclosing items it does reach open: a heading at the margin closes every
  * item, one indented to an item's column is that item's, and marked so
  * (`inItem`). Only a paragraph's text continues an item from before its
- * column. A fence opened inside an item ends with it: a line before the
+ * column. A thematic break, and a block quote outside the innermost open
+ * item, is marked `boundary`: it ends the entry above it and is no part of
+ * one. A fence opened inside an item ends with it: a line before the
  * item's column closes the fence and those items, and is read as ordinary
  * Markdown in the item that remains. Past a nesting depth of 64 markers on
  * one line the rest is the item's text, so a line of markers cannot run the
@@ -57,11 +59,14 @@ export function trimEndOf(text: string, chars: string): string {
  * `code` is inside a fence or an indented code block, `fence` opens or
  * closes a fence. Tabs are four spaces. `inItem` marks a heading inside an
  * open list item: it belongs to the item, so it opens or closes no section.
+ * `boundary` marks a `text` line that ends the entry above it and continues
+ * none: a thematic break, or a block quote the open item does not contain.
  */
 export interface MarkdownLine {
   line: string;
   kind: "text" | "heading" | "code" | "fence";
   inItem?: true;
+  boundary?: true;
 }
 
 /** A heading: its run of `#` and its title. */
@@ -126,6 +131,8 @@ interface ScanState {
   afterBlank: boolean;
   /** Whether the last heading read sits inside an open list item. */
   headingInItem: boolean;
+  /** Whether the line just read is a boundary (see `MarkdownLine`). */
+  boundary: boolean;
 }
 
 /** The content column of the innermost open item `indent` reaches, or 0. */
@@ -164,7 +171,10 @@ function shallowLine(
     closeItemsPast(state, strip);
     return opened;
   }
-  if (INTERRUPTS.test(own)) {
+  const interrupt = INTERRUPTS.exec(own);
+  if (interrupt) {
+    const inItem = strip > 0 && state.lists.at(-1) === strip;
+    state.boundary = interrupt[1] !== undefined || !inItem;
     closeItemsPast(state, strip);
     return "text";
   }
@@ -268,12 +278,15 @@ export function* markdownLines(text: string): Generator<MarkdownLine> {
     lists: [],
     afterBlank: true,
     headingInItem: false,
+    boundary: false,
   };
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.replace(/\t/g, "    ");
+    state.boundary = false;
     const kind = classify(line, state);
-    yield kind === "heading" && state.headingInItem
-      ? { line, kind, inItem: true }
-      : { line, kind };
+    const out: MarkdownLine = { line, kind };
+    if (kind === "heading" && state.headingInItem) out.inItem = true;
+    if (state.boundary) out.boundary = true;
+    yield out;
   }
 }
