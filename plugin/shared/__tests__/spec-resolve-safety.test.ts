@@ -364,6 +364,25 @@ test("a heading inside a list item leaves the item and its section open", async 
   }
 });
 
+test("a block quote or a thematic break before a list item's column ends the item", async () => {
+  const { root } = scratchRepo("spec-safety-");
+  for (const block of ["> Quote", "---", "* * *", "___"]) {
+    const body = [
+      "## Spec",
+      "- [ ] 1. Real task",
+      block,
+      "  ### Notes",
+      "",
+      "    - [ ] 2. Example in indented code",
+    ].join("\n");
+    const result = await resolveSpec(issue(body), root, {
+      registry: [bodyAdapter],
+      config: only("body"),
+    });
+    expect(result.tasks.map((t) => t.id)).toEqual(["1"]);
+  }
+});
+
 test("a fence before a list item's column ends the item", async () => {
   const { root } = scratchRepo("spec-safety-");
   for (const gap of [[""], []]) {

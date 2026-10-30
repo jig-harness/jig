@@ -16,13 +16,16 @@
  * column, so `- ```md` opens a fence, `- - x` opens a nested item and
  * `-     x` is the item's indented code. A line at or past that column
  * belongs to the item and does not close the list. A heading, a fence, a
- * list marker, or any line after a blank line closes the items whose column
- * it does not reach, leaving the enclosing items it does reach open: a
- * heading at the margin closes every item, one indented to an item's column
- * is that item's, and marked so (`inItem`). A fence opened inside an item ends with it: a line before the
+ * list marker, a block quote, a thematic break (`---`), or any line after a
+ * blank line closes the items whose column it does not reach, leaving the
+ * enclosing items it does reach open: a heading at the margin closes every
+ * item, one indented to an item's column is that item's, and marked so
+ * (`inItem`). Only a paragraph's text continues an item from before its
+ * column. A fence opened inside an item ends with it: a line before the
  * item's column closes the fence and those items, and is read as ordinary
- * Markdown in the item that remains. Past a nesting depth of 64 markers on one line the
- * rest is the item's text, so a line of markers cannot run the scan deep.
+ * Markdown in the item that remains. Past a nesting depth of 64 markers on
+ * one line the rest is the item's text, so a line of markers cannot run the
+ * scan deep.
  */
 import type { BodySectionKind } from "./adapter.ts";
 
@@ -65,6 +68,8 @@ export interface MarkdownLine {
 export const HEADING = /^ {0,3}(#{1,6})(?:[ \t](.*))?$/;
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const LIST_ITEM = /^( {0,3})([-*+]|\d{1,9}[.)])( *)(?=\S|$)/;
+/** A block quote or a thematic break: blocks that end a list item they are not inside. */
+const INTERRUPTS = /^ {0,3}(?:>|([-*_])(?: *\1){2,} *$)/;
 /** List markers past this many on one line are read as the item's text. */
 const MAX_LIST_DEPTH = 64;
 
@@ -158,6 +163,10 @@ function shallowLine(
   if (opened !== null) {
     closeItemsPast(state, strip);
     return opened;
+  }
+  if (INTERRUPTS.test(own)) {
+    closeItemsPast(state, strip);
+    return "text";
   }
   const item = listContent(own);
   if (item !== null) {
