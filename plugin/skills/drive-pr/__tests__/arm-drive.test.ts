@@ -271,7 +271,43 @@ describe("arming in a tab", () => {
       "--json",
     ]);
     // One look before the tab, then one per poll until the deadline.
-    expect(d.looks()).toBe(1 + 6);
+    expect(d.looks()).toBe(1 + 5);
+  });
+
+  it("opens no tab when the listing before it cannot be read", async () => {
+    const orca = fakeOrca(OPENED);
+    const outcome = await armInTab(
+      "orca",
+      REQUEST,
+      "bun x",
+      deps(orca.runner, ["unreadable"]),
+    );
+    expect(outcome.status).toBe("failed");
+    expect(orca.calls).toEqual([]);
+  });
+
+  it("takes the root handle when the nested terminal has none", async () => {
+    const orca = fakeOrca({
+      code: 0,
+      stdout: JSON.stringify({
+        ok: true,
+        result: { terminal: {}, handle: "term_9" },
+      }),
+    });
+    const outcome = await armInTab(
+      "orca",
+      REQUEST,
+      "bun x",
+      deps(orca.runner, [null, drive(2_000_000)]),
+    );
+    expect(outcome).toMatchObject({ status: "armed", terminal: "term_9" });
+  });
+
+  it("makes no probe once the confirmation window is spent", async () => {
+    const orca = fakeOrca(OPENED);
+    const d = { ...deps(orca.runner, [null]), confirmMs: 0 };
+    await armInTab("orca", REQUEST, "bun x", d);
+    expect(d.looks()).toBe(1);
   });
 
   it("reports a tab Orca refused", async () => {

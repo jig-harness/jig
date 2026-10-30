@@ -69,12 +69,28 @@ export interface ArmRequest {
 export function quoteWord(word: string): string {
   if (word !== "" && /^[A-Za-z0-9_\-./:=+@,]+$/.test(word)) return word;
   if (!/["$`\\!%\r\n]/.test(word)) return `"${word}"`;
+  if (process.platform === "win32") return `'${word.replaceAll("'", "''")}'`;
   return shellQuote(word);
 }
 
 /** `argv` as one command line (`quoteWord` for each word). */
 export function commandLine(argv: readonly string[]): string {
   return argv.map(quoteWord).join(" ");
+}
+
+/**
+ * The session's `JIG__` configuration overrides as an `env KEY=value` prefix,
+ * so the fresh login shell of a tab reads the same configuration the arm
+ * resolved the model and the options from; empty when there are none.
+ */
+export function sessionOverrides(env: Env): string[] {
+  const set = Object.entries(env)
+    .filter(
+      (e): e is [string, string] =>
+        e[0].startsWith("JIG__") && typeof e[1] === "string",
+    )
+    .map(([key, v]) => `${key}=${v}`);
+  return set.length === 0 ? [] : ["env", ...set];
 }
 
 /** The argument list that starts the drive: `drive.ts` in the tree, its pass on `model`. */
@@ -196,7 +212,10 @@ export interface LiveDrive {
 export interface TabDeps {
   orca: OrcaRunner;
   /** The live drive on the PR, `null` for none, `"unreadable"` when the listing failed. */
-  liveDrive: (request: ArmRequest) => Promise<LiveDrive | null | "unreadable">;
+  liveDrive: (
+    request: ArmRequest,
+    timeoutSec?: number,
+  ) => Promise<LiveDrive | null | "unreadable">;
   now: () => number;
   sleep: (ms: number) => Promise<void>;
   /** How long to wait for the drive to be listed once the tab is open. */
@@ -216,10 +235,10 @@ const STARTED_SLACK_MS = 5_000;
 
 /** The terminal handle in a `terminal create` result. */
 function terminalHandle(result: Record<string, unknown>): string | null {
-  const terminal = isRecord(result.terminal) ? result.terminal : result;
-  return typeof terminal.handle === "string" && terminal.handle !== ""
-    ? terminal.handle
-    : null;
+  const nested = isRecord(result.terminal) ? result.terminal.handle : undefined;
+  for (const handle of [nested, result.handle])
+    if (typeof handle === "string" && handle !== "") return handle;
+  return null;
 }
 
 /** The last lines the tab printed, best effort. */
@@ -257,8 +276,12 @@ export async function armInTab(
   deps: TabDeps,
 ): Promise<TabOutcome> {
   const before = await deps.liveDrive(request);
-  if (before !== null && before !== "unreadable")
-    return { status: "already-live", drive: before };
+  if (before === "unreadable")
+    return {
+      status: "failed",
+      why: "drives.ts could not be read, so a drive already live on the PR cannot be ruled out; no tab opened",
+    };
+  if (before !== null) return { status: "already-live", drive: before };
   const opened = deps.now();
   const done = await deps.orca(orca, tabArgs(request, command));
   const result = orcaResult(done);
@@ -270,14 +293,16 @@ export async function armInTab(
   const terminal = terminalHandle(result);
   const deadline = opened + deps.confirmMs;
   for (;;) {
-    const drive = await deps.liveDrive(request);
+    const left = deadline - deps.now();
+    if (left <= 0) break;
+    const drive = await deps.liveDrive(request, Math.ceil(left / 1000));
     if (
       drive !== null &&
       drive !== "unreadable" &&
       Date.parse(drive.started ?? "") >= opened - STARTED_SLACK_MS
     )
       return { status: "armed", terminal, drive };
-    if (deps.now() >= deadline) break;
+    if (deadline - deps.now() <= 0) break;
     await deps.sleep(deps.pollMs);
   }
   const tail = terminal === null ? [] : await tabTail(orca, terminal, deps);
@@ -403,7 +428,7 @@ export async function arm(
   const outcome = await armInTab(
     choice.orca,
     request,
-    commandLine(base.argv),
+    commandLine([...sessionOverrides(env), ...base.argv]),
     deps,
   );
   return tabReport(chosen, outcome, setting.value === "auto");
@@ -439,7 +464,16 @@ function tabReport(
   switch (outcome.status) {
     case "already-live":
       return {
-        report: { ...chosen, status: outcome.status, drive: outcome.drive },
+        report: {
+          ...chosen,
+          status: outcome.status,
+          drive: outcome.drive,
+          model: outcome.drive.model ?? "unknown",
+          modelSource:
+            outcome.drive.model === null
+              ? "the live drive records no model"
+              : "the live drive's own record, not this request",
+        },
         exit: 0,
       };
     case "armed":

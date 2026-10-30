@@ -105,16 +105,20 @@ function modelOption(
  * the PR number out of the pass command does not read it out of a model id.
  */
 export function withoutModel(argv: readonly string[]): string[] {
-  const own = passVendor(argv) === "claude" ? modelOption(argv) : null;
-  if (own === null) return [...argv];
-  return [...argv.slice(0, own.index), ...argv.slice(own.index + own.width)];
+  if (passVendor(argv) !== "claude") return [...argv];
+  let rest = [...argv];
+  for (let own = modelOption(rest); own !== null; own = modelOption(rest))
+    rest = [...rest.slice(0, own.index), ...rest.slice(own.index + own.width)];
+  return rest;
 }
 
-/** `argv` with its `--model` set to `model`: replaced where it is, else added after `claude`. */
+/**
+ * `argv` with its `--model` set to `model`: every own `--model` removed and
+ * one put where the first was, else added after `claude`.
+ */
 function withModel(argv: readonly string[], model: string): string[] {
   const rest = withoutModel(argv);
-  const own = modelOption(argv);
-  const at = own?.index ?? 1;
+  const at = modelOption(argv)?.index ?? 1;
   return [...rest.slice(0, at), "--model", model, ...rest.slice(at)];
 }
 

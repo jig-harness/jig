@@ -220,11 +220,12 @@ function passModel(flag: string | undefined): PassModel {
 /** The live drive on the PR, read from `drives.ts --json` in the tree. */
 async function liveDrive(
   request: ArmRequest,
+  timeoutSec = 60,
 ): Promise<LiveDrive | null | "unreadable"> {
   const done = await run(tsArgv(drives, ["--json"]), {
     cwd: request.tree,
     stderr: "pipe",
-    timeoutSec: 60,
+    timeoutSec: Math.min(60, Math.max(1, timeoutSec)),
   });
   if (done.code !== 0) return "unreadable";
   try {
@@ -236,7 +237,8 @@ async function liveDrive(
 
 function confirmSeconds(): number {
   const raw = process.env.DRIVE_PR_ARM_CONFIRM_SEC ?? "";
-  return isDigits(raw) ? Number.parseInt(raw, 10) : 45;
+  const seconds = isDigits(raw) ? Number.parseInt(raw, 10) : 45;
+  return Number.isSafeInteger(seconds) ? Math.min(seconds, 3600) : 45;
 }
 
 /** Print the report on stdout and its one-line summary on stderr; return the exit. */

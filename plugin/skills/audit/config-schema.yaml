@@ -535,7 +535,7 @@ fields:
   routing.models:
     type: map
     values_type: { type: map, values_type: string }
-    read_by: [do-item]
+    read_by: [do-item, drive-pr]
     since: 0.92.0
   routing.efforts:
     type: map

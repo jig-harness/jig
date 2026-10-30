@@ -169,11 +169,25 @@ describe("withoutModel", () => {
     expect(
       withoutModel(["claude", "--model", "claude-sonnet-4-5", "-p", "x"]),
     ).toEqual(["claude", "-p", "x"]);
+    expect(
+      withoutModel(["claude", "--model", "a", "--model=b", "-p", "x"]),
+    ).toEqual(["claude", "-p", "x"]);
     expect(withoutModel(["codex", "--model", "4"])).toEqual([
       "codex",
       "--model",
       "4",
     ]);
+  });
+});
+
+describe("a pass command naming --model twice", () => {
+  it("ends with one --model, the flag's", () => {
+    const pass = effectivePass(
+      ["claude", "--model", "opus", "--model", "sonnet", "-p", "x"],
+      "haiku",
+      configured,
+    );
+    expect(pass.argv).toEqual(["claude", "--model", "haiku", "-p", "x"]);
   });
 });
 
