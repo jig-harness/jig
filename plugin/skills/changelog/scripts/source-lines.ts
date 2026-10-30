@@ -179,17 +179,17 @@ function firstHolding(lo: number, hi: number, holds: (n: number) => boolean) {
   return a;
 }
 
-/** How many lines the proof is tried at, past the searched guesses, before a block is placed at its stretch's start. */
-const SCAN_LIMIT = 200;
+/** How many lines past the searched guesses a split is tried at, each two parses of the stretch, before a block is placed at its stretch's start. */
+const PROOF_LIMIT = 200;
 
 /**
  * The line block `path` (an index, maybe a list item) starts on. Guesses come
  * from searching the prefixes for the first that shows the block, and, for a
  * heading or table whose lines render as a paragraph until its last, the
  * first that shows that paragraph; a guess counts only where the stretch
- * splits. Without a proven guess, the lines of the stretch are tried in
- * order, up to SCAN_LIMIT; a block still unplaced is reported at its
- * stretch's first line.
+ * splits. Without a proven guess, every line of the stretch that opens the
+ * block when rendered alone is tried in order, up to PROOF_LIMIT of them; a
+ * block still unplaced is reported at its stretch's first line.
  */
 export function locate(
   lines: string[],
@@ -230,10 +230,11 @@ export function locate(
     const found = proof(n);
     if (found !== null) return found;
   }
-  for (let n = 0; n <= Math.min(end, SCAN_LIMIT); n++) {
-    if (blank(n)) continue;
-    const found = proof(n);
-    if (found !== null) return found;
+  let tried = 0;
+  for (let n = 0; n <= end && tried < PROOF_LIMIT; n++) {
+    if (blank(n) || guesses.includes(n) || !opens(s, n, rel, item)) continue;
+    tried++;
+    if (splits(s, n, rel, item)) return s.from + n;
   }
   return s.from;
 }

@@ -158,27 +158,55 @@ const symbols = (inline: Inline[]): Sym[] =>
 const space = (s: Sym | undefined): boolean =>
   s === " " || s === "\t" || s === "\n";
 
-const skip = (syms: Sym[], i: number): number => {
-  let j = i;
-  while (space(syms[j])) j++;
-  return j;
-};
-
-/** Whether `s` may sit inside a bracketed label: text other than brackets and parentheses, or a code span or image. */
+/** Whether `s` may sit inside a bracketed label: text other than a bracket (CommonMark's link label), or a code span or image. */
 const labelled = (s: Sym | undefined): boolean =>
-  s === OTHER || (typeof s === "string" && !"[]()".includes(s));
+  s === OTHER || (typeof s === "string" && s !== "[" && s !== "]");
+
+/** Whether `s` may be part of a reference's authors: text other than `)`, or a link. */
+const authored = (s: Sym | undefined): boolean =>
+  s === LINK || (typeof s === "string" && s !== ")");
+
+/**
+ * A paragraph's symbols, with where each run a reference reads ends from
+ * every index: a group that breaks off is read again from each `(` after it,
+ * so a run found by scanning would be scanned again for each of them.
+ */
+interface Scan {
+  syms: Sym[];
+  /** The first index from each on that is not whitespace. */
+  solid: number[];
+  /** The first index from each on that a label cannot hold. */
+  label: number[];
+  /** The first index from each on that authors cannot hold. */
+  authors: number[];
+}
+
+function scanOf(syms: Sym[]): Scan {
+  const n = syms.length;
+  const [solid, label, authors] = [0, 1, 2].map(() =>
+    new Array<number>(n + 1).fill(n),
+  ) as [number[], number[], number[]];
+  for (let i = n - 1; i >= 0; i--) {
+    const s = syms[i];
+    solid[i] = space(s) ? (solid[i + 1] ?? n) : i;
+    label[i] = labelled(s) ? (label[i + 1] ?? n) : i;
+    authors[i] = authored(s) ? (authors[i + 1] ?? n) : i;
+  }
+  return { syms, solid, label, authors };
+}
+
+const skip = (scan: Scan, i: number): number => scan.solid[i] ?? i;
 
 /**
  * Text in brackets at `i`, maybe followed by a second pair: how a reference
  * link whose label has no definition renders, its label maybe holding code.
  * The index after it, or null.
  */
-function brackets(syms: Sym[], i: number): number | null {
+function brackets(scan: Scan, i: number): number | null {
   const pair = (j: number): number | null => {
-    if (syms[j] !== "[") return null;
-    let k = j + 1;
-    while (labelled(syms[k])) k++;
-    return syms[k] === "]" ? k + 1 : null;
+    if (scan.syms[j] !== "[") return null;
+    const k = scan.label[j + 1] ?? j + 1;
+    return scan.syms[k] === "]" ? k + 1 : null;
   };
   const first = pair(i);
   return first === null ? null : (pair(first) ?? first);
@@ -189,14 +217,9 @@ function brackets(syms: Sym[], i: number): number | null {
  * or linked names up to the `)`, with no code or image in it. The index of
  * the `)`, or null.
  */
-function authors(syms: Sym[], i: number): number | null {
-  let j = i;
-  let named = false;
-  while (syms[j] === LINK || (typeof syms[j] === "string" && syms[j] !== ")")) {
-    named ||= !space(syms[j]);
-    j++;
-  }
-  return named && syms[j] === ")" ? j : null;
+function authors(scan: Scan, i: number): number | null {
+  const j = scan.authors[i] ?? i;
+  return skip(scan, i) < j && scan.syms[j] === ")" ? j : null;
 }
 
 /**
@@ -207,14 +230,14 @@ function authors(syms: Sym[], i: number): number | null {
  * reference, so one that then breaks off is a broken reference, not
  * ordinary parentheses. Null when no reference opens there.
  */
-function reference(syms: Sym[], i: number): Reference | null {
+function reference(scan: Scan, i: number): Reference | null {
   let linked = true;
-  let j = skip(syms, i + 1);
+  let j = skip(scan, i + 1);
   for (let listed = false; ; listed = true) {
-    const end = syms[j] === LINK ? j + 1 : brackets(syms, j);
+    const end = scan.syms[j] === LINK ? j + 1 : brackets(scan, j);
     if (end === null) return brokenOff(listed, j);
-    linked &&= syms[j] === LINK;
-    const next = afterEntry(syms, skip(syms, end), linked);
+    linked &&= scan.syms[j] === LINK;
+    const next = afterEntry(scan, skip(scan, end), linked);
     if (typeof next !== "number") return next ?? brokenOff(listed, end);
     j = next;
   }
@@ -235,18 +258,19 @@ const brokenOff = (listed: boolean, at: number): Reference | null =>
  * null where the reference breaks off.
  */
 function afterEntry(
-  syms: Sym[],
+  scan: Scan,
   j: number,
   linked: boolean,
 ): Reference | number | null {
-  if (syms[j] === ")") return { end: j + 1, linked };
-  if (syms[j] === ";") {
-    const close = authors(syms, j + 1);
+  const s = scan.syms[j];
+  if (s === ")") return { end: j + 1, linked };
+  if (s === ";") {
+    const close = authors(scan, j + 1);
     return close === null
       ? { end: j + 1, linked: false }
       : { end: close + 1, linked };
   }
-  return syms[j] === "," ? skip(syms, j + 1) : null;
+  return s === "," ? skip(scan, j + 1) : null;
 }
 
 /** The paragraphs of a list item, its nested lists' included: what a reference may sit in. */
@@ -273,10 +297,11 @@ function referenced(item: Block[]): boolean {
   let after = false;
   let broken = false;
   for (const paragraph of paragraphsOf(item)) {
-    const syms = symbols(paragraph);
+    const scan = scanOf(symbols(paragraph));
+    const { syms } = scan;
     let i = 0;
     while (i < syms.length) {
-      const ref = syms[i] === "(" ? reference(syms, i) : null;
+      const ref = syms[i] === "(" ? reference(scan, i) : null;
       if (ref) {
         after ||= text;
         broken ||= !ref.linked;

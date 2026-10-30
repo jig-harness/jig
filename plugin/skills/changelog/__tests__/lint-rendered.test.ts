@@ -59,6 +59,13 @@ describe("references", () => {
         "- Fix the parser ([`abc1234`][missing]) ([#9](https://example.com/o/r/pull/9))",
       ),
     ).toEqual([COMMON_RULES.reference.id]);
+    // A label may hold parentheses.
+    expect(
+      commonWith(
+        item,
+        "- Fix the parser ([missing(label)][ref]) ([#9](https://example.com/o/r/pull/9))",
+      ),
+    ).toEqual([COMMON_RULES.reference.id]);
     // A code span around a whole reference shows code, not a reference.
     expect(
       commonWith(
@@ -101,6 +108,15 @@ describe("references", () => {
     ]);
     expect(performance.now() - started).toBeLessThan(5_000);
   });
+
+  test("author tails that never close are read in linear time", () => {
+    const groups = "([#1](u); ".repeat(80_000);
+    const started = performance.now();
+    expect(commonWith(item, `- Fix ${groups}`)).toEqual([
+      COMMON_RULES.reference.id,
+    ]);
+    expect(performance.now() - started).toBeLessThan(5_000);
+  });
 });
 
 describe("change groups", () => {
@@ -139,11 +155,13 @@ describe("the line a finding points at", () => {
   });
 
   test("a definition that shows as a paragraph while unfinished does not stand in for a stray paragraph", () => {
-    const title = Array.from({ length: 12 }, (_, i) => `line ${i}`).join("\n");
-    const text = `# Changelog\n\n[meta]: /url "\n${title}\n"\n\nA stray paragraph.\n\n## 1.0.0 - 2024-01-01\n\n_First release._\n`;
-    const changelog = readChangelog("CHANGELOG.md", text);
-    const stray = changelog.preamble[0];
-    expect(stray && changelog.lineOf(stray.index)).toBe(18);
+    for (const length of [12, 1_000]) {
+      const title = Array.from({ length }, (_, i) => `line ${i}`).join("\n");
+      const text = `# Changelog\n\n[meta]: /url "\n${title}\n"\n\nA stray paragraph.\n\n## 1.0.0 - 2024-01-01\n\n_First release._\n`;
+      const changelog = readChangelog("CHANGELOG.md", text);
+      const stray = changelog.preamble[0];
+      expect(stray && changelog.lineOf(stray.index)).toBe(length + 6);
+    }
   });
 
   test("a heading whose text runs over many lines is found at its first without a parse per line", () => {
