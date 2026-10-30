@@ -18,6 +18,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import {
   describeLeftovers,
   inheritedHeadOf,
@@ -409,7 +410,9 @@ describe("a head that was pushed, in a real tree", () => {
     }
   });
 
-  it("hands on an untracked file whose name holds a newline", () => {
+  it.skipIf(
+    skipsOnWindows("file-system", "Windows refuses a newline in a file name"),
+  )("hands on an untracked file whose name holds a newline", () => {
     const { dir, h } = tree();
     try {
       git(dir, "update-ref", "refs/remotes/origin/main", h);
@@ -422,7 +425,28 @@ describe("a head that was pushed, in a real tree", () => {
     }
   });
 
-  it("hands on an untracked symbolic link retargeted or left dangling", () => {
+  it("hands on an untracked nested repository", () => {
+    const { dir, h } = tree();
+    try {
+      git(dir, "update-ref", "refs/remotes/origin/main", h);
+      const nested = join(dir, "nested");
+      mkdirSync(nested);
+      git(nested, "init", "-q", "-b", "main");
+      writeFileSync(join(nested, "x.ts"), "x\n");
+      const handed = measure(dir, "", "");
+      expect(handed.uncommittedMeasured).not.toBeNull();
+      expect(handed.inheritedHead).toBe(h);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "creating a symbolic link needs a privilege the runner lacks",
+    ),
+  )("hands on an untracked symbolic link retargeted or left dangling", () => {
     const { dir, h } = tree();
     try {
       git(dir, "update-ref", "refs/remotes/origin/main", h);
