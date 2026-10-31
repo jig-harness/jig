@@ -68,6 +68,11 @@ drive:
   # drive-pr marks them Ready after the first round
   # (CONTRIBUTING.md § Pull-request lifecycle).
   reviews_drafts: true
+  # Jig's pull requests edit its own skills under .claude/skills/**, and a
+  # pass started without a terminal is denied every write there unless its
+  # permission prompts are off. guarded-push.ts and the bots-only rule still
+  # bound what a pass does.
+  pass_args: [--permission-mode, bypassPermissions]
 ci:
   # The check main's ruleset requires; the drive waits for it on the
   # converged head.

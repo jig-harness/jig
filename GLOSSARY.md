@@ -1173,6 +1173,16 @@ make, use the entry's term instead.
   but is stuck (alive with no progress) or dead with nothing left unpushed;
   it is refused against a driver that is making progress
   ([drive-pr](plugin/skills/drive-pr/README.md#picking-up-a-stopped-drive)).
+- **Permission mode (of a pass)** — the setting of an agent tool that
+  decides which of its actions ask a person first. Claude Code's
+  `default` mode asks before most edits and commands; a pass of a *PR
+  drive loop* runs with no person at a terminal to answer, so whatever
+  would ask is denied instead, writes under protected paths such as
+  `.claude/skills/**` among them. `bypassPermissions` asks nothing and
+  denies nothing, so it trades those prompts for the bounds the drive's own
+  scripts keep. A repository chooses it for its passes with
+  `drive.pass_args`
+  ([configuration](plugin/CONFIGURATION.md#drive)).
 - **Drive ledger** — the resumable part of a *PR drive loop*'s saved state
   (its round, what it parked for a person and why, what it replied to and
   pushed, who drove it and when it last wrote), kept as one hidden-marker

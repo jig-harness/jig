@@ -5,6 +5,8 @@ interface DriverOptions {
   maxRounds: string | undefined;
   /** `--pass-model`: the model each pass runs on, for this run (`pass-model.ts`). */
   passModel: string | undefined;
+  /** `--pass-args`: extra words for a `claude` pass, for this run (`pass-args.ts`). */
+  passArgs: string | undefined;
   dryRun: boolean;
   botsOnly: boolean;
   keepDraft: boolean;
@@ -37,6 +39,9 @@ function parseFlag(
       return index + 1;
     case "--pass-model":
       options.passModel = flagValue(argv, index);
+      return index + 1;
+    case "--pass-args":
+      options.passArgs = flagValue(argv, index);
       return index + 1;
     case "--handoff-at":
       options.handoffAt = flagValue(argv, index);
@@ -79,6 +84,7 @@ export function parseDriverOptions(argv: string[]): DriverOptions {
     pr: "",
     maxRounds: undefined,
     passModel: undefined,
+    passArgs: undefined,
     dryRun: false,
     botsOnly: false,
     keepDraft: false,

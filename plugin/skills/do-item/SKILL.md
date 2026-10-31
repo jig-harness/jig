@@ -969,10 +969,12 @@ routing below remain **exact**.
       It reads `do_item.arm_drive` (default `auto`: a terminal tab of this
       workspace where the session can open one, in Orca on a macOS or Linux
       host; the session's background execution elsewhere, Windows hosts
-      included) and `drive.pass_model` (default `sonnet`), and prints one
+      included), `drive.pass_model` (default `sonnet`) and
+      `drive.pass_args` (default none), and prints one
       JSON object: `command`, the drive's start command on one line
       (`bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model
-      <model> -p "/jig:drive-pr --bots-only <PR>"`); `status`, what to do
+      <model> -p "/jig:drive-pr --bots-only <PR>"`, the `drive.pass_args`
+      words before `-p` when it is set); `status`, what to do
       next (step 2); `way`, `reason` and `fallback`, why; `model`; `tab`,
       `tail` and `drive` for a tab; and `handles`. A tab is a fresh login
       shell of the user's: `bun`, `claude` and the Claude account or profile

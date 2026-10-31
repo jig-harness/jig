@@ -413,6 +413,7 @@ drive:
   max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
   pass_deadline_retries: 2    # passes killed at their deadline one drive restarts from, across re-arms; default 2
   pass_model: sonnet          # model each pass runs on: a model id, a Claude Code alias or a routing tier; default sonnet
+  pass_args: []               # extra words for a claude pass before -p; [--permission-mode, bypassPermissions] turns off its permission prompts; default none
 ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
   hold_label: ci:hold         # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)
