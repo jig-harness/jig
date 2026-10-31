@@ -167,28 +167,40 @@ function readJson(path: string): unknown {
   }
 }
 
+function isWorkspace(value: unknown): boolean {
+  return (
+    value === null ||
+    (isMapping(value) &&
+      typeof value.id === "string" &&
+      typeof value.path === "string")
+  );
+}
+
+function hasStrings(value: Record<string, unknown>, keys: string[]): boolean {
+  return keys.every((k) => typeof value[k] === "string");
+}
+
 function isLaunchRecord(value: unknown): value is LaunchRecord {
   return (
     isMapping(value) &&
     value.version === 1 &&
-    typeof value.id === "string" &&
-    typeof value.token === "string" &&
+    hasStrings(value, [
+      "id",
+      "token",
+      "account",
+      "repo",
+      "repoPath",
+      "configDir",
+      "facts",
+      "createdAt",
+    ]) &&
     (value.action === "rearm" || value.action === "takeover") &&
-    typeof value.pr === "number" &&
-    typeof value.account === "string" &&
-    typeof value.repo === "string" &&
-    typeof value.repoPath === "string" &&
     (value.vendor === "claude" || value.vendor === "codex") &&
-    typeof value.configDir === "string" &&
+    typeof value.pr === "number" &&
     typeof value.wallBackoffMs === "number" &&
     (value.replaces === null || typeof value.replaces === "string") &&
-    typeof value.facts === "string" &&
-    typeof value.createdAt === "string" &&
-    Number.isFinite(Date.parse(value.createdAt)) &&
-    (value.workspace === null ||
-      (isMapping(value.workspace) &&
-        typeof value.workspace.id === "string" &&
-        typeof value.workspace.path === "string")) &&
+    Number.isFinite(Date.parse(value.createdAt as string)) &&
+    isWorkspace(value.workspace) &&
     Array.isArray(value.attempts) &&
     value.attempts.every(isAttempt)
   );

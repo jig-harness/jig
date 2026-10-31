@@ -213,6 +213,15 @@ function lockTimeout(value: string): string {
     );
   return value;
 }
+/** What the job's own spec adds to its environment. */
+function specEnvironment(spec: JobSpec): Record<string, string> {
+  return {
+    ...(spec.deadlineSec === undefined
+      ? {}
+      : { JIG_LAUNCHER_DEADLINE_SEC: String(spec.deadlineSec) }),
+    ...spec.env,
+  };
+}
 /** The job to write; a removal names it only, so a bad value cannot block it. */
 function installedJob(spec: JobSpec, removing = false): Job {
   const root = homedir();
@@ -252,10 +261,7 @@ function installedJob(spec: JobSpec, removing = false): Job {
       ...(process.env.DRIVE_PR_STATE_DIR
         ? { DRIVE_PR_STATE_DIR: resolve(process.env.DRIVE_PR_STATE_DIR) }
         : {}),
-      ...(spec.deadlineSec === undefined
-        ? {}
-        : { JIG_LAUNCHER_DEADLINE_SEC: String(spec.deadlineSec) }),
-      ...spec.env,
+      ...specEnvironment(spec),
     },
     hour: "hour" in spec.schedule ? spec.schedule.hour : 0,
     spec,

@@ -118,6 +118,17 @@ async function writeAccountWall(record: LaunchRecord): Promise<void> {
   console.error(`jig dispatch run: ${record.account} is walled (${path})`);
 }
 
+/** Whether the account's wall was recorded; a failure is the exit's to carry, not a reason to lose the exit. */
+async function tryWriteWall(record: LaunchRecord): Promise<boolean> {
+  try {
+    await writeAccountWall(record);
+    return true;
+  } catch (error) {
+    swallow(error, `the wall of ${record.account} could not be recorded`);
+    return false;
+  }
+}
+
 async function wrap(id: string, token: string): Promise<number> {
   const record = readRecordFile(id);
   if (record === null || record.token !== token) {
@@ -151,14 +162,7 @@ async function wrap(id: string, token: string): Promise<number> {
   );
   // The wall first: once the exit is published the record no longer holds its
   // slot, and a tick in between would admit the walled account.
-  let wallUnrecorded = false;
-  if (code === QUOTA_PARKED)
-    try {
-      await writeAccountWall(record);
-    } catch (error) {
-      swallow(error, `the wall of ${record.account} could not be recorded`);
-      wallUnrecorded = true;
-    }
+  const wallUnrecorded = code === QUOTA_PARKED && !(await tryWriteWall(record));
   recordExit(id, {
     at: new Date().toISOString(),
     code,

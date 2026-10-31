@@ -307,6 +307,30 @@ async function admitAccount(
   }
 }
 
+/** Opening a workspace can outlast the wall or the login the account was admitted under. */
+async function changedWhileOpening(
+  state: ApplyState,
+  action: Action,
+  slots: Slots,
+): Promise<LaunchOutcome | null> {
+  refreshWalls(state.table, Date.now(), state.root);
+  const name = slots.account.name;
+  if (slots.wall !== null)
+    return waits(
+      action,
+      `${name} was walled until ${slots.wall.resetAt} while the workspace opened`,
+      name,
+    );
+  const after = await identityOf(state, slots);
+  return after.ok
+    ? null
+    : refused(
+        action,
+        `identity check after the workspace opened: ${after.reason}`,
+        name,
+      );
+}
+
 /** One planned re-arm or takeover, through its fresh read, admission, workspace and launch. */
 async function launchOne(
   state: ApplyState,
@@ -330,22 +354,8 @@ async function launchOne(
   );
   if (typeof workspace === "string")
     return refused(action, workspace, slots.account.name);
-  // Opening a workspace can take long enough for a wrapper to write a wall.
-  refreshWalls(state.table, Date.now(), state.root);
-  if (slots.wall !== null)
-    return waits(
-      action,
-      `${slots.account.name} was walled until ${slots.wall.resetAt} while the workspace opened`,
-      slots.account.name,
-    );
-  // Opening a workspace can also outlast the login the account was admitted under.
-  const after = await identityOf(state, slots);
-  if (!after.ok)
-    return refused(
-      action,
-      `identity check after the workspace opened: ${after.reason}`,
-      slots.account.name,
-    );
+  const stale = await changedWhileOpening(state, action, slots);
+  if (stale !== null) return stale;
   const record: LaunchRecord = {
     version: 1,
     id: newRecordId(new Date()),
