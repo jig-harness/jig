@@ -155,7 +155,10 @@ person. The driver therefore recovers from the stops that need no decision:
   edits, unpushed commits), leaves both in the tree for the next pass to
   find, and starts the next round, up to `drive.pass_deadline_retries`
   (default 2) in one drive. A deadline that recurs past the budget stops as
-  today, and the stop says the budget is spent.
+  today, and the stop says the budget is spent. A kill the platform witness
+  cannot confirm complete (on Windows, confirmed cleanup covers only the
+  observed and registered processes) is not restarted from: it stops with
+  exit 15 and keeps its locks, as today.
 - **Stalled (exit 14).** Two passes that changed nothing are, in the
   measured cases, a pass that stood down. The driver runs one more round
   with the stand-down diagnostics in the pass prompt before it stops, and
@@ -369,8 +372,10 @@ changes a draft the person will read, never what is released.
 
 The measure that validates `wide`: the share of provisional decisions a
 person reverses before the merge, over the first month a repository runs it.
-Below one in ten, the dial is documented as available; above, the arbiter's
-`escalate` was right and the dial stays dark.
+With at least ten provisional decisions in that month and fewer than one in
+ten reversed, the dial is documented as available; with fewer decisions, or
+more reversals, the arbiter's `escalate` was right or the sample is too thin,
+and the dial stays dark.
 
 ### Every autonomous decision is recorded
 
@@ -403,7 +408,9 @@ today.
   class is the arbiter's ruling, not the agent's claim. A park with no class
   is refused with "decide and record it", at every level: the classes are
   the whole list of what a person must decide, and a decision outside them
-  is the agent's to take;
+  is the agent's to take. A registry row the repository has recorded as
+  delegated (`ready`, under `pull_requests.mark_ready`) is not a park class
+  for that repository;
 - a **decision record** on stdin: the question in one sentence; each option
   with what it changes and what it costs; the recommended option and why;
   the class that keeps the agent from taking it; the operational steps a
@@ -484,7 +491,8 @@ drove (found through the forge's search for the ledger marker), since the
 time (default: the last report): its terminal state and what it means for
 the person; the provisional decisions, first; the takeovers and re-arms;
 the parked decisions in their framed form; the issues filed and the
-deferred entries not yet filed. It is the one thing a person reads after an
+deferred entries not yet filed, including those in a closed pull request's
+body, found through the deferral section's hidden marker. It is the one thing a person reads after an
 unattended night. Where a repository has a pre-merge follow-up step, that
 step's list includes the pull request's provisional decisions.
 

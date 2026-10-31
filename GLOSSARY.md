@@ -1506,8 +1506,9 @@ make, use the entry's term instead.
 - **Takeover** — one session replacing a drive's registered driver, admitted
   only when that driver is dead or wedged; recorded in the drive state and
   the *drive ledger*. A drive that stopped holds no driver and is re-armed
-  instead, by a session on another account after a usage limit or once its
-  parked questions are answered.
+  instead: after a usage limit by a session on another account (or the same
+  account once the limit has reset), and after a park at any autonomy level
+  once its parked questions are answered.
 - **Provisional decision** — a decision an agent took under a raised
   *autonomy level* because nobody was there to ask, marked as such where it
   was taken and listed first in the morning report, so a person can reverse

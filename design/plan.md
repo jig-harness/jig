@@ -33,14 +33,14 @@ where the adapter cannot file, a choice one pull request can undo).
 `attach-pr.ts` drives a pull request from any checkout, detached when the
 branch is held elsewhere, and from a tree it creates when there is none;
 the driver restarts itself from a pass deadline and a stall, a parked drive
-is re-armed by a session on another account or once its questions are
-answered, and `drive.ts --take-over` replaces a wedged or dead driver with
+is re-armed after a usage limit by a session on another account, and after a
+park once its questions are answered, and `drive.ts --take-over` replaces a wedged or dead driver with
 a recorded takeover; the drive ledger on the pull request seeds a drive in
 any clone and arbitrates between clones; an `autonomy` section
 (`attended` by default, `unattended`, `wide`, a repository ceiling, and
 `off_hours` windows that raise the level) says what an agent decides and
-records instead of asking; a park is refused without a decision class from
-the human-in-the-loop registry and carries a framed decision (question,
+records instead of asking; a park is refused without a configured human decision class (the
+human-in-the-loop registry's rows by default) and carries a framed decision (question,
 options with consequences, the recommended option, the operational steps,
 what was already done); a review bot's acknowledgement is transparent to
 the resolve guard; and `drives.ts --report` is the morning report. Built in
@@ -50,7 +50,7 @@ documented as available once a working repository has validated them.
 Done when a pull request opened in one working tree is driven to
 convergence from another clone on another account without a person
 clearing a lease or creating a branch, a wedged driver is taken over by the
-next session that meets it, the drive stops only on a registry class and
+next session that meets it, the drive stops for a person only on a configured human decision class and
 prints the framed decision, and a repository with `off_hours` on wakes to
 a morning report whose provisional decisions a person can reverse from
 the pull request.

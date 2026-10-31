@@ -12,12 +12,12 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 ### 32. Driving any pull request from anywhere, with autonomy that fits the hour
 
 Any session, in any checkout of the repository or none, on any machine and
-any subscription, can arm the review drive on a pull request, take over a
+any account that Claude Code's pass bills, can arm the review drive on a pull request, take over a
 driver that died or stopped making progress, and resume from the state the
 previous driver left on the pull request itself. The drive stops for a
-person only on a decision the
-[human-in-the-loop registry](modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md)
-names, and then hands over the question, the options and their
+person only on a configured human decision class (by default the
+[human-in-the-loop registry](modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md)'s
+rows plus two more), and then hands over the question, the options and their
 consequences, the recommended option and what a person must do. A
 repository sets how far an agent decides on its own, and may raise it
 during the hours nobody is there to ask; every decision taken without a
