@@ -1,22 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { ExitError } from "../../../shared/cli.ts";
-import type { OrcaRunner } from "../../../shared/orca.ts";
+import { orcaAnswering } from "../../../../lib/test-helpers/orca-answering.ts";
 import { linkWorkspacePr, parseArgs } from "../scripts/workspace-pr-link.ts";
 
 const ORCA = { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
 const ID = "repo-1::/ws/app/feat-x";
-
-function orcaAnswering(answers: Record<string, string>) {
-  const calls: string[] = [];
-  const runner: OrcaRunner = async (_command, args) => {
-    const key = args.join(" ");
-    calls.push(key);
-    const stdout = answers[key];
-    if (stdout === undefined) throw new Error(`unexpected call: ${key}`);
-    return { code: stdout.includes('"ok":true') ? 0 : 1, stdout, stderr: "" };
-  };
-  return { calls, runner };
-}
 
 const current = (linkedPR: number | null) =>
   JSON.stringify({ ok: true, result: { worktree: { id: ID, linkedPR } } });
