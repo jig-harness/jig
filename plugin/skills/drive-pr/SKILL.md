@@ -3082,7 +3082,8 @@ trains readers to skip the block where the non-empty case needs their eyes.
 The wording is "safe to merge from the driver's perspective". Marking a PR ready
 and merging it stay human steps.
 
-**judgment** — After the announcement posts, name the workspace for the stage
+**judgment** — After `announce-merge-ready.ts` exits `0`, whether it posted the
+announcement or found one already posted, name the workspace for the ready stage
 when the repository sets `workspace_name.template` (it does nothing without
 it, outside Orca, and never fails the step). The item is the one tracker issue
 the PR serves ([Arm](#arm) step 3 reads it); write its title alone to
