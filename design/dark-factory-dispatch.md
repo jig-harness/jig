@@ -344,7 +344,7 @@ The tick reaches the runtime only through these methods:
 | `openWorkspace(...)` | a workspace for an item (a new branch) or a pull request (its head branch), reused when one exists |
 | `launch(workspace, stage, account)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id |
 | `notify(target, message)` | a message that reaches a person; its receipt carries the target's comment as written |
-| `steer(session, nudge)` | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting |
+| `steer(session, nudge)` | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting, its screen and attachment re-read in the same call just before the send |
 
 Each returns the runtime's receipt, and each, a terminal-screen read for
 `steer` included, runs under a deadline and is cancelled past it: its
@@ -446,8 +446,10 @@ usage-limit wall, under `~/.local/state/jig/dispatch/walls/`, keyed by the
 account's name in the machine file. A launch record that ends with
 `drive.ts`'s exit `16` writes the wall for the account the record names,
 with the reset the drive printed, or, when the reset is unknown,
-`dispatch.wall_backoff` (one hour by default) from the stop. The wall is
-lifted at its reset; nothing else lifts it. The drive's own quota park
+`dispatch.wall_backoff` (one hour by default) from the stop. Several
+sessions can write the same account's wall; a write never moves the
+reset earlier, so the record keeps the latest reset any write has
+recorded, and the wall is lifted at that reset; nothing else lifts it. The drive's own quota park
 stays where `drive-pr` keeps it and still decides whether `drive.ts` admits
 the re-arm. A wall an interactive session meets is not recorded before the
 control step (see Control): that session shows as waiting, holds its slot, and is
@@ -709,8 +711,16 @@ mechanically, so it rests on a wall record for interactive sessions:
   record is still that wall; and the terminal, read through the runtime
   just before sending, shows the agent's input prompt with an empty input
   line and no menu or question on screen, and no person attached where the
-  runtime reports attachment. The text is sent with Enter. Any check that
-  fails or cannot be read sends nothing and is reported. Before sending,
+  runtime reports attachment. The screen read and the send are one
+  `steer` call, the adapter re-reading the screen and the attachment
+  immediately before it types, so the checks are as fresh as the runtime
+  allows. Neither Orca nor a terminal offers a send that fails when the
+  screen changed, so a window remains between that last read and the
+  keystrokes: a person who attaches inside it, or a prompt that changes
+  inside it, receives the one **continue** line, the text a person would
+  have typed, and the suppression record keeps it from being sent again.
+  The text is sent with Enter. Any check that fails or cannot be read
+  sends nothing and is reported. Before sending,
   the tick writes the nudge's suppression record, keyed by the session and
   its waiting episode and marked pending, so a send whose answer is lost,
   or a tick that stops after sending, never leads to a second one. The
