@@ -93,4 +93,17 @@ describe("linkWorkspacePr", () => {
       "⚠ could not ask Orca which worktree this is",
     );
   });
+
+  test("warns, without setting, when the link is not a pull request number", async () => {
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": JSON.stringify({
+        ok: true,
+        result: { worktree: { id: ID, linkedPR: { toString: null } } },
+      }),
+    });
+    expect(await linkWorkspacePr("42", ORCA, runner)).toBe(
+      "workspace-pr-link: ⚠ Orca answered a link that is not a pull request number",
+    );
+    expect(calls).toEqual(["worktree current --json"]);
+  });
 });

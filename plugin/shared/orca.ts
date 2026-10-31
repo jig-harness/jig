@@ -108,3 +108,41 @@ export function orcaFailure(done: {
 }): string {
   return `(exit ${done.code}): ${(done.stdout || done.stderr).trim().slice(0, 300)}`;
 }
+
+/** The error code Orca answers with when no worktree contains the directory. */
+const NOT_A_WORKTREE = "selector_not_found";
+
+/**
+ * The Orca worktree id of the working directory, with the pull request it is
+ * linked to (null when none): `none` when Orca answers that no worktree
+ * contains it, a warning (without the caller's name) when the lookup itself
+ * failed (a timeout, an answer that is not Orca's, a link that is not a pull
+ * request number).
+ */
+export async function currentWorktree(
+  command: string,
+  runner: OrcaRunner,
+): Promise<
+  | { id: string; linkedPR: string | number | null }
+  | "none"
+  | { warning: string }
+> {
+  const done = await runner(command, ["worktree", "current", "--json"]);
+  const result = orcaResult(done);
+  const worktree = result?.worktree as
+    | { id?: unknown; linkedPR?: unknown }
+    | undefined;
+  if (typeof worktree?.id === "string" && worktree.id !== "") {
+    const link = worktree.linkedPR ?? null;
+    if (link === null || typeof link === "string" || typeof link === "number")
+      return { id: worktree.id, linkedPR: link };
+    return {
+      warning: "⚠ Orca answered a link that is not a pull request number",
+    };
+  }
+  const envelope = orcaEnvelope(done.stdout);
+  if (envelope?.ok === false && envelope.code === NOT_A_WORKTREE) return "none";
+  return {
+    warning: `⚠ could not ask Orca which worktree this is ${orcaFailure(done)}`,
+  };
+}

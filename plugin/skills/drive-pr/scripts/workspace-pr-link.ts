@@ -20,13 +20,13 @@
  */
 import { fail, isDigits, runMain } from "../../../shared/cli.ts";
 import {
+  currentWorktree,
   type OrcaRunner,
   orcaCommand,
   orcaFailure,
   orcaResult,
   runOrca,
 } from "../../../shared/orca.ts";
-import { currentWorktree } from "../../do-item/scripts/orca-board.ts";
 
 const USAGE = "usage: workspace-pr-link.ts <PR>";
 
@@ -47,9 +47,8 @@ export async function linkWorkspacePr(
   const worktree = await currentWorktree(command, runner);
   if (worktree === "none")
     return "workspace-pr-link: Orca does not list this directory as a worktree; nothing to do";
-  if ("warning" in worktree)
-    return worktree.warning.replace(/^orca-board/, "workspace-pr-link");
-  if (String(worktree.linkedPR) === pr)
+  if ("warning" in worktree) return `workspace-pr-link: ${worktree.warning}`;
+  if (`${worktree.linkedPR}` === pr)
     return `workspace-pr-link: already linked to PR #${pr}`;
   const done = await runner(command, [
     "worktree",
@@ -63,9 +62,7 @@ export async function linkWorkspacePr(
   if (orcaResult(done) === null)
     return `workspace-pr-link: ⚠ could not link the workspace to PR #${pr} ${orcaFailure(done)}`;
   const was =
-    worktree.linkedPR === null || worktree.linkedPR === undefined
-      ? "no link"
-      : `PR #${String(worktree.linkedPR)}`;
+    worktree.linkedPR === null ? "no link" : `PR #${worktree.linkedPR}`;
   return `workspace-pr-link: linked to PR #${pr} (was ${was})`;
 }
 

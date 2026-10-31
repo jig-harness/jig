@@ -22,7 +22,7 @@ import { fail, isDigits, runMain } from "../../../shared/cli.ts";
 import {
   type OrcaRunner,
   orcaCommand,
-  orcaEnvelope,
+  currentWorktree,
   orcaFailure,
   orcaResult,
   runOrca,
@@ -48,32 +48,6 @@ export function parseArgs(args: string[]): BoardUpdate {
   return { status, pr };
 }
 
-/** The error code Orca answers with when no worktree contains the directory. */
-const NOT_A_WORKTREE = "selector_not_found";
-
-/**
- * The Orca worktree id of the working directory, with the pull request it is
- * linked to (null or absent when none): `none` when Orca answers
- * that no worktree contains it, a warning when the lookup itself failed (no command, a timeout, an answer that is not Orca's).
- */
-export async function currentWorktree(
-  command: string,
-  runner: OrcaRunner,
-): Promise<{ id: string; linkedPR: unknown } | "none" | { warning: string }> {
-  const done = await runner(command, ["worktree", "current", "--json"]);
-  const result = orcaResult(done);
-  const worktree = result?.worktree as
-    | { id?: unknown; linkedPR?: unknown }
-    | undefined;
-  if (typeof worktree?.id === "string" && worktree.id !== "")
-    return { id: worktree.id, linkedPR: worktree.linkedPR };
-  const envelope = orcaEnvelope(done.stdout);
-  if (envelope?.ok === false && envelope.code === NOT_A_WORKTREE) return "none";
-  return {
-    warning: `orca-board: ⚠ could not ask Orca which worktree this is ${orcaFailure(done)}`,
-  };
-}
-
 /**
  * Set the working directory's card to `update.status`, linking `update.pr`.
  * Returns the line to report: what was set, or why nothing was.
@@ -88,7 +62,7 @@ export async function updateBoard(
   const current = await currentWorktree(command, runner);
   if (current === "none")
     return "orca-board: Orca does not list this directory as a worktree; nothing to do";
-  if ("warning" in current) return current.warning;
+  if ("warning" in current) return `orca-board: ${current.warning}`;
   const id = current.id;
   const done = await runner(command, [
     "worktree",
