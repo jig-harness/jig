@@ -81,6 +81,15 @@ describe("issue_tracker.jira", () => {
     expect(fieldOf(() => parseJiraSettings([]))).toBe("issue_tracker.jira");
   });
 
+  it("stores mapped names trimmed, so a read and a write mean the same", () => {
+    const s = parseJiraSettings({
+      priorities: { urgent: " Highest " },
+      link_types: { blocks: " Blocks\t" },
+    });
+    expect(s.priorities.urgent).toBe("Highest");
+    expect(s.linkTypes.blocks).toBe("Blocks");
+  });
+
   it("lets the closed states share a status under Jira only", () => {
     const states = { done: "Done", canceled: "Done", duplicate: "Done" };
     expect(

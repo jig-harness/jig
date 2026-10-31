@@ -130,9 +130,9 @@ function namesOf<K extends string>(
         at,
         `${at} is not one of ${keys.join(", ")}`,
       );
-    out[key as K] = nonEmpty(value, at);
+    out[key as K] = nonEmpty(value, at).trim();
   }
-  const values = keys.map((k) => out[k].trim());
+  const values = keys.map((k) => out[k]);
   const twice = values.find(
     (n, i) =>
       values.findIndex((m) => m.toLowerCase() === n.toLowerCase()) !== i,
