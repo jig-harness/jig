@@ -210,8 +210,15 @@ const after = (at: string, since: number) => Date.parse(at) >= since;
 
 /** `text` on one line, cut to `max` characters. */
 function oneLine(text: string, max: number): string {
-  const line = text
-    .replace(/<!--[\s\S]*?-->/g, "")
+  // Remove until stable, then any comment delimiter left over, so a nested
+  // `<!<!---->--` cannot reassemble one.
+  let stripped = text;
+  for (let prev = ""; prev !== stripped; ) {
+    prev = stripped;
+    stripped = stripped.replace(/<!--[\s\S]*?-->/g, "");
+  }
+  const line = stripped
+    .replace(/<!--|-->/g, "")
     .replace(/\s+/g, " ")
     .trim();
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;

@@ -328,7 +328,9 @@ async function answersTo(
   item: ParkedItem,
   conversation: CommentLike[] | null,
 ): Promise<{ answers: PendingAnswer[]; complete: boolean } | null> {
-  if (item.at === undefined) return { answers: [], complete: true };
+  // No park time means no baseline to measure an answer against: nothing was
+  // read, so the item is waiting on evidence, not on a person.
+  if (item.at === undefined) return { answers: [], complete: false };
   const after = Date.parse(item.at);
   const thread = item.kind === "thread" ? await threadComments(item.key) : [];
   if (thread === null && conversation === null) return null;
@@ -484,23 +486,37 @@ export async function admitAnsweredParks(
     ]),
     { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
   );
-  if (res.code !== 0) {
-    // A deadline can end the call after its write landed.
-    const gone = unparkedAfterFailure(await readDriveState(pr), fresh);
-    if (gone === null)
-      return fail(
-        1,
-        `re-arm: drive-state.ts unpark exited ${res.code}, and the drive state cannot be read to tell whether the answered items were unparked; stopping with the answers kept in ${file}. Re-arm once the state reads.`,
-      );
-    console.error(
-      gone.length > 0
-        ? `re-arm: drive-state.ts unpark exited ${res.code}, but the answered items are unparked; handing their answers on.`
-        : `re-arm: could not unpark the answered items (drive-state.ts exited ${res.code}); every one stays parked, and the next arm reads their answers again.`,
-    );
-    return rearmNotice([...carried, ...gone], file);
-  }
+  if (res.code !== 0)
+    return recoverFailedUnpark(pr, res.code, carried, fresh, file);
   await announceUnparked(pr, fresh, file);
   return rearmNotice([...carried, ...fresh], file);
+}
+
+/**
+ * After an `unpark` that exited non-zero: a deadline can end the call after
+ * its write landed, so read the state to tell, hand on the answers of items
+ * that are unparked, and record that re-arm.
+ */
+async function recoverFailedUnpark(
+  pr: string,
+  code: number | null,
+  carried: readonly PendingVerdict[],
+  fresh: readonly PendingVerdict[],
+  file: string,
+) {
+  const gone = unparkedAfterFailure(await readDriveState(pr), fresh);
+  if (gone === null)
+    return fail(
+      1,
+      `re-arm: drive-state.ts unpark exited ${code}, and the drive state cannot be read to tell whether the answered items were unparked; stopping with the answers kept in ${file}. Re-arm once the state reads.`,
+    );
+  console.error(
+    gone.length > 0
+      ? `re-arm: drive-state.ts unpark exited ${code}, but the answered items are unparked; handing their answers on.`
+      : `re-arm: could not unpark the answered items (drive-state.ts exited ${code}); every one stays parked, and the next arm reads their answers again.`,
+  );
+  if (gone.length > 0) await announceUnparked(pr, gone, file);
+  return rearmNotice([...carried, ...gone], file);
 }
 
 /** Say what the re-arm unparked, and record it (`events.ts`). */

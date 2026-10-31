@@ -330,8 +330,16 @@ reverse before the merge. List them from the morning report
 (`bun plugin/skills/drive-pr/scripts/drives.ts --report --since <when the
 pull request opened> --json`, its `provisional` entries for this pull
 request), each with its thread or record and whether it stands or was
-reversed, so the person merging reads them before they merge. The
-post-merge pass then checks a list instead of rebuilding it.
+reversed, so the person merging reads them before they merge. The report
+lists only the pull requests the signed-in account authored or wrote a drive
+ledger on, so a pull request someone else opened and drives from another
+clone may be missing: when its entry is absent, read that pull request's
+drive ledger comment (`<!-- drive-pr-ledger -->`) and its provisional replies
+directly rather than listing none. A provisional entry whose status is
+`unread`, or a report that exits 0 with errors in its top-level `unread`
+field, is not a complete inventory: say which part is unread and retry before
+the merge, never present the list as complete. The post-merge pass then
+checks a list instead of rebuilding it.
 
 Building the head for `site-diff.ts` runs the pull request's code (its
 install and the site's build scripts) with your credentials. Run it only on a

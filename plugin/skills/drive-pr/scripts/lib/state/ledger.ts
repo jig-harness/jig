@@ -31,6 +31,7 @@ import {
   type HeldItem,
   type ParkedItem,
   type QuotaParkRecord,
+  isParkedItem,
   isUsableState,
 } from "./schema.ts";
 import { type TakeoverRecord, isTakeoverRecord } from "./takeover.ts";
@@ -377,6 +378,10 @@ function isClaimRef(v: unknown): v is LedgerClaimRef {
 }
 
 /** The fields of a version-1 ledger, each checked; `''` when all hold. */
+function isParkedList(v: unknown): boolean {
+  return Array.isArray(v) && v.every(isParkedItem);
+}
+
 function ledgerFault(v: Record<string, unknown>): string {
   const checks: Array<[string, boolean]> = [
     ["generation", isCount(v.generation) && v.generation > 0],
@@ -389,7 +394,7 @@ function ledgerFault(v: Record<string, unknown>): string {
     ["lastCountedHead", isText(v.lastCountedHead)],
     ["verifiedSha", isText(v.verifiedSha)],
     ["readyMarkedRound", isCount(v.readyMarkedRound)],
-    ["parked", Array.isArray(v.parked)],
+    ["parked", isParkedList(v.parked)],
     ["held", Array.isArray(v.held) && v.held.every(isLedgerHeld)],
     ["quotaPark", v.quotaPark === null || isRecord(v.quotaPark)],
     [

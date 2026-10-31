@@ -136,6 +136,7 @@ describe("the per-pull-request counters and the measure", () => {
       reversedShare: 0.5,
       incompleteThreads: 0,
       uncheckedRulings: 0,
+      unreadLedger: false,
       transparentAcknowledgements: 1,
       restarts: { "pass-deadline": 2, stall: 1 },
       rearms: { provisional: 1 },
@@ -147,6 +148,26 @@ describe("the per-pull-request counters and the measure", () => {
     );
     expect(lines).toContain("self-restarts: pass-deadline 2 · stall 1");
     expect(lines).toContain("re-arms: provisional 1");
+  });
+
+  it("withholds the share while the drive ledger could not be established", () => {
+    const m = autonomyMetrics([], null, {
+      decisions: [
+        {
+          class: "decide-provisional",
+          key: "k1",
+          at: "2026-01-01T00:00:00.000Z",
+        } as never,
+      ],
+      events: [],
+      takeovers: 0,
+      unreadLedger: true,
+    });
+    expect(m.unreadLedger).toBe(true);
+    expect(m.reversedShare).toBeNull();
+    expect(renderAutonomyMetrics(m).join("\n")).toContain(
+      "drive ledger could not be established",
+    );
   });
 
   it("counts every reversal so far on an open pull request, and says when the clone holds no state", () => {

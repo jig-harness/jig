@@ -67,15 +67,30 @@ async function state(forge: Forge) {
   return JSON.parse(got.stdout);
 }
 
-/** Run a module's export in the forge's tree: `call` is the expression after `m.`. */
-async function inModule(forge: Forge, module: string, call: string) {
+/**
+ * Run a module's export in the forge's tree: `call` is the expression after
+ * `m.`, fixed test source. The module path and any data it needs reach the
+ * script through the environment (`d` in `call`), never spliced into its code.
+ */
+async function inModule(
+  forge: Forge,
+  module: string,
+  call: string,
+  data: unknown = null,
+) {
   return runIn(
     forge,
     "-e",
     [
-      `import(${JSON.stringify(join(SCRIPTS, ...module.split("/")))}).then(async (m) => console.log(JSON.stringify(await m.${call})))`,
+      `const d = JSON.parse(process.env.JIG_TEST_DATA ?? "null"); import(process.env.JIG_TEST_MODULE).then(async (m) => console.log(JSON.stringify(await m.${call})))`,
     ],
-    { env: DRIVER },
+    {
+      env: {
+        ...DRIVER,
+        JIG_TEST_MODULE: join(SCRIPTS, ...module.split("/")),
+        JIG_TEST_DATA: JSON.stringify(data),
+      },
+    },
   );
 }
 
@@ -266,7 +281,8 @@ describe("the recoveries the drive records", () => {
     const r = await inModule(
       forge,
       "lib/driver/round-budget.ts",
-      `checkRoundStall(${JSON.stringify(status)}, globalThis.c ??= ${JSON.stringify(context)}, 1).then(() => m.checkRoundStall(${JSON.stringify(status)}, globalThis.c, 1))`,
+      "checkRoundStall(d.status, globalThis.c ??= d.context, 1).then(() => m.checkRoundStall(d.status, globalThis.c, 1))",
+      { status, context },
     );
     expectSpawnExit(r, 0);
     expect(await causes(forge)).toEqual(["restart:stall"]);
@@ -298,9 +314,8 @@ describe("the recoveries the drive records", () => {
     const r = await inModule(
       forge,
       "lib/driver/takeover-complete.ts",
-      'pickUpDrive("12", null, await import(' +
-        JSON.stringify(join(SCRIPTS, "lib", "driver", "rearm.ts")) +
-        ').then((r) => r.readDriveState("12")), { agent: [], botsOnly: true, dryRun: false, windowReopened: false })',
+      'pickUpDrive("12", null, await import(d.rearm).then((r) => r.readDriveState("12")), { agent: [], botsOnly: true, dryRun: false, windowReopened: false })',
+      { rearm: join(SCRIPTS, "lib", "driver", "rearm.ts") },
     );
     expectSpawnExit(r, 0);
     expect(await causes(forge)).toEqual(["rearm:quota-reset"]);

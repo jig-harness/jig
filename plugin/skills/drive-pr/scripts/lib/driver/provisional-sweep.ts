@@ -140,7 +140,12 @@ async function reverse(
  */
 export async function sweepProvisional(pr: string): Promise<number | null> {
   const state = await readDriveState(pr);
-  if (state === null) return null;
+  if (state === null) {
+    console.error(
+      `provisional: cannot read PR #${pr}'s drive state, so whether a person reversed a provisional decision is unknown.`,
+    );
+    return 1;
+  }
   const standing = standingProvisional(state.decisions ?? []);
   if (standing.length === 0) return null;
   let failed = 0;

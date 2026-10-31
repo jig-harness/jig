@@ -603,10 +603,11 @@ that spawned it, so its console is not where you look:
   round, phase, last counted and verified heads, the Ready mark, every parked
   item with its decision, every held item by key, outcome and pushed commit,
   the quota park (without its account), the takeover records (without
-  theirs) and the claims in force, the decisions taken unattended (an empty
-  list, which no drive writes to), the driver's tree, clone and heartbeat, and the handoff narrative's
-  last twenty lines. No account hash is posted, and email-shaped text in the
-  narrative and the parked reasons is replaced with `<redacted>`; seeding
+  theirs) and the claims in force, the decisions taken unattended (§ 8),
+  the driver's tree, clone and heartbeat, and the handoff narrative's
+  last twenty lines. No account hash is posted, and email-shaped text and
+  account identifiers (`acct-…`, `token:…`, `api-key:…`) in the narrative,
+  the parked reasons and the held answers are replaced with `<redacted>`; seeding
   keeps this clone's own quota park, so a re-arm from another clone simply
   meets the wall again if it is still there. A driver writes
   it on the path that regenerates the handoff file — `drive-state.ts`'s `handoff`

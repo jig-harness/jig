@@ -509,7 +509,7 @@ function isCount(v: unknown): boolean {
 }
 
 /** A parked item every reader can match and render (`ParkedItem`). */
-function isParkedItem(p: unknown): boolean {
+export function isParkedItem(p: unknown): boolean {
   if (typeof p !== "object" || p === null) return false;
   const e = p as Record<string, unknown>;
   return (

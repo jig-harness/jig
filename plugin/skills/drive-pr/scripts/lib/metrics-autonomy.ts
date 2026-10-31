@@ -113,6 +113,12 @@ export interface DurableAutonomy {
    * pull request's conversation was unreadable); absent reads as none.
    */
   uncheckedRulings?: number;
+  /**
+   * The pull request's drive ledger exists or may exist but could not be
+   * established (unreadable, unsupported version, malformed), so decisions
+   * recorded only there are not counted; absent reads as established.
+   */
+  unreadLedger?: boolean;
 }
 
 export interface AutonomyMetrics {
@@ -129,6 +135,8 @@ export interface AutonomyMetrics {
   incompleteThreads: number;
   /** Provisional rulings whose reversal could not be read, so may be undercounted. */
   uncheckedRulings: number;
+  /** The authoritative drive ledger could not be established. */
+  unreadLedger: boolean;
   transparentAcknowledgements: number;
   /** `null` when this clone holds no drive state for the pull request. */
   restarts: Record<string, number> | null;
@@ -157,15 +165,20 @@ export function autonomyMetrics(
     ).length + rulings.filter((d) => before(d.reversed?.at, mergedAt)).length;
   const incompleteThreads = threads.filter((t) => t.autonomy.incomplete).length;
   const uncheckedRulings = durable?.uncheckedRulings ?? 0;
+  const unreadLedger = durable?.unreadLedger === true;
   return {
     provisional,
     reversedBeforeMerge,
     reversedShare:
-      provisional === 0 || incompleteThreads > 0 || uncheckedRulings > 0
+      provisional === 0 ||
+      incompleteThreads > 0 ||
+      uncheckedRulings > 0 ||
+      unreadLedger
         ? null
         : reversedBeforeMerge / provisional,
     incompleteThreads,
     uncheckedRulings,
+    unreadLedger,
     transparentAcknowledgements: threads.reduce(
       (n, t) => n + t.autonomy.chatAcknowledgements,
       0,
@@ -192,7 +205,8 @@ export function renderAutonomyMetrics(a: AutonomyMetrics): string[] {
     restarts === 0 &&
     rearms === 0 &&
     (a.takeovers ?? 0) === 0 &&
-    a.incompleteThreads === 0
+    a.incompleteThreads === 0 &&
+    !a.unreadLedger
   )
     return [];
   const withheld = [
@@ -204,6 +218,11 @@ export function renderAutonomyMetrics(a: AutonomyMetrics): string[] {
     ...(a.uncheckedRulings > 0
       ? [
           `${a.uncheckedRulings} provisional ruling(s) whose reversal could not be read from the conversation`,
+        ]
+      : []),
+    ...(a.unreadLedger
+      ? [
+          "the pull request's drive ledger could not be established, so decisions recorded only there are not counted",
         ]
       : []),
   ];

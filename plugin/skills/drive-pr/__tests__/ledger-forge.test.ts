@@ -685,7 +685,12 @@ describe("the population for the morning report", () => {
   });
 
   it("is null when the search answers a page it cannot read, never an empty population", async () => {
-    for (const page of [null, {}, { items: "none" }]) {
+    for (const page of [
+      null,
+      {},
+      { items: "none" },
+      { items: [], incomplete_results: true },
+    ]) {
       const forge = fakeForge([]);
       writeFileSync(join(forge.dir, "search.json"), JSON.stringify(page));
       expect(await population(forge)).toBeNull();

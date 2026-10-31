@@ -83,6 +83,7 @@ import {
 import { prComments } from "./lib/driver/rearm.ts";
 import { reversalInConversation } from "./lib/provisional.ts";
 import { readLedgerSnapshot, resolveLogin } from "./lib/state/ledger-forge.ts";
+import type { Ledger } from "./lib/state/ledger.ts";
 import { isUsableState } from "./lib/state/schema.ts";
 import { type PrSample, resolveRepo, samplePr } from "./lib/sample.ts";
 
@@ -245,24 +246,52 @@ async function localAutonomy(
  * and the pull request's drive ledger, by the rule the morning report picks
  * its record with (a ledger whose generation is past the one this clone last
  * wrote is another clone's later drive), so a drive run or taken over from
- * another clone counts toward the validation measure too. An unreadable
- * ledger leaves this clone's state. `null` when neither holds one, soft like
- * `durableRounds`.
+ * another clone counts toward the validation measure too. A ledger that
+ * could not be established (unreadable, an unsupported version, malformed)
+ * leaves this clone's state, marked `unreadLedger` so the validation share is
+ * withheld. `null` when neither holds a record and the ledger is absent, soft
+ * like `durableRounds`.
  */
 export async function durableAutonomy(
   pr: string,
 ): Promise<DurableAutonomy | null> {
   const local = await localAutonomy(pr);
-  const snapshot = await readLedgerSnapshot(pr, await resolveLogin());
-  const parsed =
-    typeof snapshot === "string" ? undefined : snapshot.canonical?.parsed;
-  const ledger = parsed?.kind === "ledger" ? parsed.ledger : null;
+  const { ledger, unread } = ledgerRecord(
+    await readLedgerSnapshot(pr, await resolveLogin()),
+  );
   if (
     ledger !== null &&
     (local === null || ledger.generation > local.generation)
   )
     return withConversationReversals(pr, autonomyOf(ledger));
-  return local === null ? null : withConversationReversals(pr, local.rec);
+  if (!unread)
+    return local === null ? null : withConversationReversals(pr, local.rec);
+  console.error(
+    `loop-metrics: #${pr}'s drive ledger could not be established, so decisions recorded only there are not counted and the reversal share is withheld.`,
+  );
+  return withConversationReversals(pr, {
+    ...(local === null ? autonomyOf({}) : local.rec),
+    unreadLedger: true,
+  });
+}
+
+/**
+ * The canonical ledger in a snapshot, and whether one that may exist could
+ * not be established (an unreadable listing, an unsupported version, a
+ * malformed body); an absent ledger is neither.
+ */
+function ledgerRecord(
+  snapshot: Awaited<ReturnType<typeof readLedgerSnapshot>>,
+): {
+  ledger: Ledger | null;
+  unread: boolean;
+} {
+  if (typeof snapshot === "string") return { ledger: null, unread: true };
+  const parsed = snapshot.canonical?.parsed;
+  if (parsed === undefined) return { ledger: null, unread: false };
+  return parsed.kind === "ledger"
+    ? { ledger: parsed.ledger, unread: false }
+    : { ledger: null, unread: true };
 }
 
 /**

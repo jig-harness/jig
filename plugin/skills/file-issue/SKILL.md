@@ -356,7 +356,10 @@ It prints `confirm: <level>` or `skip: <level>`, then the filed-by line.
   allows it): put the printed filed-by line at the end of each issue's body,
   and go on to step 10. Under a drive, record the filing afterwards
   (drive-pr § 8), so a person finds and can close it. With no pull request
-  behind the run, there is no `skip`: confirm.
+  behind the run, there is no `skip`: run the script with no options (it
+  prints `confirm`) and confirm. On exit `2` (an empty or invalid option) fix
+  the option and run it again; on exit `1` (an invalid autonomy
+  configuration) treat the run as `confirm`, never as `skip`.
 
 ### 10. Write
 

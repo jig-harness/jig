@@ -10,7 +10,7 @@
  * against the fake forge in `provisional-fixtures.ts`.
  */
 import { describe, expect, it } from "bun:test";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { PROVISIONAL_MARKER } from "../scripts/lib/outcome.ts";
@@ -440,6 +440,18 @@ describe("a person reverses a provisional decision by commenting, never by an un
         ] as never,
       ),
     ).toEqual(["budget"]);
+  });
+
+  it("an unreadable drive state ends the sweep with exit 1, never the round going on", async () => {
+    const forge = fakeForge(WIDE);
+    await recordProvisional(forge);
+    const file = join(forge.stateDir, "drive-pr-12.json");
+    expect(existsSync(file)).toBe(true);
+    writeFileSync(file, "not json");
+    const r = await sweep(forge);
+    expectSpawnExit(r, 0);
+    expect(r.stdout.trim()).toBe("1");
+    expect(r.stderr).toContain("cannot read PR #12's drive state");
   });
 
   it("an unresolve alone, or a bot's comment, changes nothing", async () => {

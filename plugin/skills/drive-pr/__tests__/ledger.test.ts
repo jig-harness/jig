@@ -120,6 +120,13 @@ describe("render and parse", () => {
     expect(parseLedger(`${LEDGER_MARKER}\nno data`)?.kind).toBe("malformed");
   });
 
+  it("reads a ledger with an ill-formed parked entry as damage, never as a ledger", () => {
+    const rendered = renderLedger(ledger());
+    if ("error" in rendered) throw new Error(rendered.error);
+    const bad = rendered.body.replace(/"reason":"[^"]*"/, '"reason":""');
+    expect(parseLedger(bad)?.kind).toBe("malformed");
+  });
+
   it("reads a data block without a version number as damage, never a future ledger", () => {
     for (const data of ["{}", '{"ledgerVersion":"2"}', '{"ledgerVersion":0}'])
       expect(

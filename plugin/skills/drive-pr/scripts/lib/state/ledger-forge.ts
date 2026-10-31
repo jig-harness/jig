@@ -451,7 +451,12 @@ function searchResults(pages: unknown): SearchHit[] | null {
   if (
     !Array.isArray(pages) ||
     pages.length === 0 ||
-    !pages.every((page) => isRecord(page) && Array.isArray(page.items))
+    !pages.every(
+      (page) =>
+        isRecord(page) &&
+        Array.isArray(page.items) &&
+        page.incomplete_results !== true,
+    )
   )
     return null;
   const items = pages.flatMap((page) => (page as { items: unknown[] }).items);
