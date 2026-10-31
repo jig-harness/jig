@@ -88,6 +88,16 @@ describe("nameConfig", () => {
     ).toBe("#348 [I] Rename it");
   });
 
+  test("the default template ends with the pull request once there is one", () => {
+    expect(
+      renderName(
+        DEFAULT_TEMPLATE,
+        { stage: "driving", id: "#348", title: "Rename it", pr: "359" },
+        DEFAULT_STATUSES,
+      ),
+    ).toBe("#348 [D] Rename it #359");
+  });
+
   test("a status entry overrides one stage and keeps the rest", () => {
     const read = nameConfig({
       workspace_name: { template: "{id}", statuses: { ready: "READY" } },

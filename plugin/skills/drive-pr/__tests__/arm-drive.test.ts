@@ -111,6 +111,22 @@ describe("the command that starts the drive", () => {
     ]);
   });
 
+  it("puts the extra pass arguments before the pass's -p", () => {
+    const argv = driveArgv(REQUEST, "sonnet", [
+      "--permission-mode",
+      "bypassPermissions",
+    ]);
+    expect(argv.slice(argv.indexOf("--") + 1)).toEqual([
+      "claude",
+      "--model",
+      "sonnet",
+      "--permission-mode",
+      "bypassPermissions",
+      "-p",
+      "/jig:drive-pr --bots-only 42",
+    ]);
+  });
+
   it("reads back a tree whose path holds spaces and quotes as one word", () => {
     const tree = '/work/my trees/it\'s "here"';
     const argv = driveArgv({ ...REQUEST, tree }, "sonnet");
@@ -299,6 +315,7 @@ function drive(startedMs: number): LiveDrive {
     started: new Date(startedMs).toISOString(),
     log: "/state/drive-pr-42.log",
     model: "sonnet",
+    permissionMode: "inherited",
     doctor: null,
   };
 }
@@ -419,6 +436,7 @@ function inputs(
     request: REQUEST,
     setting: { value, source: "do_item.arm_drive" },
     model: { model: "sonnet", source: "the default" },
+    passArgs: { words: [], source: "the default" },
     env,
     platform,
   };
@@ -524,13 +542,19 @@ describe("liveDriveIn", () => {
       key: "42",
       state: "live",
       pid: 3,
-      diag: { started: "s", log: "l", model: "opus" },
+      diag: {
+        started: "s",
+        log: "l",
+        model: "opus",
+        permissionMode: "bypassPermissions",
+      },
     } as never);
     expect(liveDriveIn(listing, "42")).toEqual({
       pid: 3,
       started: "s",
       log: "l",
       model: "opus",
+      permissionMode: "bypassPermissions",
       doctor: null,
     });
   });
@@ -697,6 +721,144 @@ describe("arm-drive.ts", () => {
     expectSpawnExit(flag, 2);
     expect(report(flag).reason).toContain("--pass-model");
     expect(report(flag).argv).not.toContain("--pass-model");
+  });
+
+  /** The pass command after the separator in an arm's argv. */
+  const passOf = (argv: string[]) => argv.slice(argv.indexOf("--") + 1);
+  const BYPASS = ["--permission-mode", "bypassPermissions"];
+
+  it("prints the command it always printed when drive.pass_args is not set", async () => {
+    const tree = scratchTree();
+    const run = await runArm(tree, ["42", "--mode", "print"], CLAUDE);
+    expectSpawnExit(run, 0);
+    const answer = report(run);
+    expect(answer.argv.slice(4)).toEqual([
+      "42",
+      "--bots-only",
+      "--",
+      "claude",
+      "--model",
+      "sonnet",
+      "-p",
+      "/jig:drive-pr --bots-only 42",
+    ]);
+    expect(answer.command).toBe(commandLine(answer.argv));
+    expect(answer.command).toEndWith(
+      ' 42 --bots-only -- claude --model sonnet -p "/jig:drive-pr --bots-only 42"',
+    );
+    expect(answer).toMatchObject({
+      passArgs: [],
+      passArgsSource: "the default; drive.pass_args is not set",
+      permissionMode: "inherited",
+    });
+  });
+
+  it("writes drive.pass_args into the printed command before the prompt, and names the permission mode", async () => {
+    const tree = scratchTree();
+    const run = await runArm(tree, ["42", "--mode", "print"], {
+      ...CLAUDE,
+      JIG__DRIVE__PASS_ARGS: "[--permission-mode, bypassPermissions]",
+    });
+    expectSpawnExit(run, 0);
+    const answer = report(run);
+    expect(passOf(answer.argv)).toEqual([
+      "claude",
+      "--model",
+      "sonnet",
+      ...BYPASS,
+      "-p",
+      "/jig:drive-pr --bots-only 42",
+    ]);
+    expect(answer.command).toContain(
+      'claude --model sonnet --permission-mode bypassPermissions -p "/jig:drive-pr --bots-only 42"',
+    );
+    expect(answer.argv).not.toContain("--pass-args");
+    expect(answer).toMatchObject({
+      passArgsSource: "drive.pass_args",
+      permissionMode: "bypassPermissions",
+    });
+    expect(run.stderr).toContain("permission mode bypassPermissions");
+  });
+
+  it("takes --pass-args over drive.pass_args for one drive, forwarding it to drive.ts, and an empty one as none", async () => {
+    const tree = scratchTree();
+    const env = {
+      ...CLAUDE,
+      JIG__DRIVE__PASS_ARGS: "[--permission-mode, acceptEdits]",
+    };
+    const flag = await runArm(
+      tree,
+      ["42", "--mode", "print", "--pass-args", BYPASS.join(" ")],
+      env,
+    );
+    expectSpawnExit(flag, 0);
+    const { argv } = report(flag);
+    expect(argv.slice(5, argv.indexOf("--"))).toEqual([
+      "--bots-only",
+      "--pass-args",
+      "--permission-mode bypassPermissions",
+    ]);
+    expect(passOf(argv).slice(3, 5)).toEqual(BYPASS);
+    expect(report(flag).passArgsSource).toBe("--pass-args");
+    const none = await runArm(
+      tree,
+      ["42", "--mode", "print", "--pass-args", ""],
+      env,
+    );
+    expectSpawnExit(none, 0);
+    expect(passOf(report(none).argv)).toEqual([
+      "claude",
+      "--model",
+      "sonnet",
+      "-p",
+      "/jig:drive-pr --bots-only 42",
+    ]);
+  });
+
+  it("stops on a drive.pass_args that is not a list of words, naming the field", async () => {
+    const tree = scratchTree();
+    for (const value of [
+      "--permission-mode bypassPermissions",
+      "[--permission-mode bypassPermissions]",
+      "[--model, opus]",
+    ]) {
+      const bad = await runArm(tree, ["42", "--mode", "print"], {
+        ...CLAUDE,
+        JIG__DRIVE__PASS_ARGS: value,
+      });
+      expectSpawnExit(bad, 1);
+      expect(report(bad)).toMatchObject({ status: "failed", passArgs: [] });
+      expect(report(bad).reason).toContain("drive.pass_args");
+      expect(report(bad).command).toContain("claude --model sonnet -p");
+    }
+    const flag = await runArm(
+      tree,
+      ["42", "--mode", "print", "--pass-args", "--model opus"],
+      CLAUDE,
+    );
+    expectSpawnExit(flag, 2);
+    expect(report(flag).reason).toContain("--pass-args cannot hold --model");
+    expect(report(flag).argv).not.toContain("--pass-args");
+    const end = await runArm(
+      tree,
+      ["42", "--mode", "print", "--pass-args", "-- x"],
+      CLAUDE,
+    );
+    expectSpawnExit(end, 2);
+    expect(report(end).reason).toContain("--pass-args cannot hold --:");
+  });
+
+  it("does not take the next flag of its own command line for the value of --pass-args", async () => {
+    const tree = scratchTree();
+    for (const next of ["--keep-draft", "--mode", "--max-rounds 3", "--"]) {
+      const run = await runArm(
+        tree,
+        ["42", "--pass-args", ...next.split(" ")],
+        CLAUDE,
+      );
+      expectSpawnExit(run, 2);
+      expect(run.stderr).toContain("--pass-args requires a value");
+    }
   });
 
   it("answers a directory that is no git working tree with a failed report and no command", async () => {

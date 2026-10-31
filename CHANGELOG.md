@@ -172,6 +172,7 @@ changes are marked **Breaking** and say what a consumer changes.
   which starts the execution line's stages with nobody at the keyboard:
   dispatcher, tick, session runtime and factory identity, and the terms
   of its control function: outcome log, stage drift and nudge.
+- [M12](modules/M12-parallel-agent-ergonomics/mappings.md#worktree-managers--agent-runners--where-the-hooks-wire)'s mappings say where Worktrunk runs a repository's worktree create and remove hooks: its blocking `pre-start` and `pre-remove` hooks in `.config/wt.toml`, each inside the worktree, so a failed remove hook keeps the worktree and its unsent reflection findings. Worktrunk skips project hooks when their approval is declined, so the hook must be approved before a removal for that guarantee to hold.
 
 ### Changed
 
@@ -347,6 +348,31 @@ changes are marked **Breaking** and say what a consumer changes.
 - A link to a section of the getting-started, plugin, features or
   principles page no longer stops well below the header: it lands just
   under it.
+
+## [0.109.0] - 2026-10-31
+
+### Added
+
+- `drive.pass_args`, a list of words, gives a drive's Claude Code pass
+  command extra arguments, written before `-p` in the command `arm-drive.ts`
+  builds for `/jig:drive-pr` and `/jig:do-item`; `--pass-args "<words>"`
+  on `arm-drive.ts` and `drive.ts` overrides it for one drive. Set it to
+  `[--permission-mode, bypassPermissions]` to let unattended passes write
+  under protected paths such as `.claude/skills/**`, which a pass without a
+  terminal is otherwise denied in a prompting mode, at the cost of skipping
+  its permission prompts;
+  the default is empty
+  ([configuration](plugin/CONFIGURATION.md#drive)). The driver log and
+  `drives.ts` name the permission mode each pass runs in, re-arm and
+  takeover commands carry the arguments, a pass command that is not Claude
+  Code's ignores the field and says so, and a value that is not a list of
+  words stops the drive.
+
+## [0.108.0] - 2026-10-31
+
+### Changed
+
+- The default `workspace_name.template` now ends with the pull request: `{id} {status} {title} {pr}` (for example `<item-id> [D] Rename workspaces #<number>`). The suffix appears once the work has a pull request, so the name at pickup is unchanged. [`workspace_name.template`](plugin/CONFIGURATION.md#workspace_name) sets another name, and `""` turns the renaming off.
 
 ## [0.107.0] - 2026-10-31
 
@@ -4260,7 +4286,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.107.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.109.0...HEAD
+[0.109.0]: https://github.com/jig-harness/jig/compare/v0.108.0...v0.109.0
+[0.108.0]: https://github.com/jig-harness/jig/compare/v0.107.0...v0.108.0
 [0.107.0]: https://github.com/jig-harness/jig/compare/v0.106.0...v0.107.0
 [0.106.0]: https://github.com/jig-harness/jig/compare/v0.105.0...v0.106.0
 [0.105.0]: https://github.com/jig-harness/jig/compare/v0.104.1...v0.105.0

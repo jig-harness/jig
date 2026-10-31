@@ -9,6 +9,20 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ## Now
 
+### 32. Driving any pull request from anywhere, with autonomy that fits the hour
+
+The review drive already runs from any checkout, restarts itself, is taken
+over through a ledger on the pull request when its driver dies or stops
+making progress, and stops for a person only on a configured human decision
+class, with the decision framed
+([drive-pr](plugin/skills/drive-pr/README.md)). What is left: a repository
+may raise how far an agent decides on its own during the hours nobody is
+there to ask; every decision taken that way is recorded on the pull request
+where a person can reverse it, and a morning report lists them. It ships
+once a working repository has validated it. Before that, the policy that
+bounds what an agent may decide is read from the pull request's base branch,
+so a pull request cannot widen what its own drive may decide.
+
 ### 33. The dispatcher: a tick that starts the execution line's stages
 
 A small program on the machine that runs the agent sessions starts each

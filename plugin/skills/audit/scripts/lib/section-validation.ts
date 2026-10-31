@@ -26,6 +26,7 @@ import { parseRouting } from "../../../do-item/scripts/lib/routing.ts";
 import { parseTrackerConfig } from "../../../do-item/scripts/lib/tracker/config.ts";
 import { parseWorkTypes } from "../../../do-item/scripts/lib/work-types.ts";
 import { parsePrPolicy } from "../../../drive-pr/scripts/lib/pr-policy.ts";
+import { refusedPassArgs } from "../../../drive-pr/scripts/lib/overlay.ts";
 import { parseSeverityFormats } from "../../../drive-pr/scripts/lib/severity-formats.ts";
 import { journalPath } from "../../../reflect/scripts/lib/context.ts";
 import { parseReflection } from "../../../reflect/scripts/lib/settings.ts";
@@ -134,6 +135,17 @@ export function skillValidation(
     const review = config.review;
     if (typeof review === "object" && review !== null && !Array.isArray(review))
       parseSeverityFormats((review as Config).severity_formats);
+  });
+  attempt("drive-pr (pass arguments)", () => {
+    const drive = config.drive;
+    if (typeof drive !== "object" || drive === null || Array.isArray(drive))
+      return;
+    const words = (drive as Config).pass_args;
+    if (!Array.isArray(words) || !words.every((w) => typeof w === "string"))
+      return; // the schema reports a value that is not a list of words
+    const refused = refusedPassArgs(words);
+    if (refused !== undefined)
+      throw new ExitError(2, `drive.pass_args ${refused}`);
   });
   attempt("autonomy (level, ceiling, park classes)", () => {
     const layered = {

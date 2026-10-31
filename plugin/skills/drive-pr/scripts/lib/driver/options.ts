@@ -5,6 +5,8 @@ interface DriverOptions {
   maxRounds: string | undefined;
   /** `--pass-model`: the model each pass runs on, for this run (`pass-model.ts`). */
   passModel: string | undefined;
+  /** `--pass-args`: extra words for a `claude` pass, for this run (`pass-args.ts`). */
+  passArgs: string | undefined;
   dryRun: boolean;
   botsOnly: boolean;
   keepDraft: boolean;
@@ -24,6 +26,32 @@ function flagValue(argv: string[], index: number): string {
   return value;
 }
 
+/** The driver's own flags, which a `--pass-args` value may not be mistaken for. */
+const DRIVER_FLAGS = new Set([
+  "--max-rounds",
+  "--pass-model",
+  "--pass-args",
+  "--handoff-at",
+  "--pass-timeout",
+  "--dry-run",
+  "--keep-draft",
+  "--take-over",
+  "--window-reopened",
+  "--bots-only",
+  "--no-head-sync",
+  "--timeout",
+  "--interval",
+  "--",
+]);
+
+/** `--pass-args`'s value: a pass command's own words, which may start with `--`, but not a driver flag. */
+function passArgsValue(argv: string[], index: number): string {
+  const value = flagValue(argv, index);
+  if (DRIVER_FLAGS.has(value.split(/\s/)[0] as string))
+    fail(2, `${argv[index]} requires a value`);
+  return value;
+}
+
 /** Consume a driver option; the returned index includes any value it used. */
 function parseFlag(
   options: DriverOptions,
@@ -37,6 +65,9 @@ function parseFlag(
       return index + 1;
     case "--pass-model":
       options.passModel = flagValue(argv, index);
+      return index + 1;
+    case "--pass-args":
+      options.passArgs = passArgsValue(argv, index);
       return index + 1;
     case "--handoff-at":
       options.handoffAt = flagValue(argv, index);
@@ -79,6 +110,7 @@ export function parseDriverOptions(argv: string[]): DriverOptions {
     pr: "",
     maxRounds: undefined,
     passModel: undefined,
+    passArgs: undefined,
     dryRun: false,
     botsOnly: false,
     keepDraft: false,
