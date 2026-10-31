@@ -137,6 +137,20 @@ test("collect ignores a widened checkout, environment and overlay file", () => {
   const days = readdirSync(join(f.user, ".local", "state", "jig", "gc"));
   expect(days).toHaveLength(1);
 });
+test.each([
+  ["on the collect day collects, rerun under the heavy-run lock", 0, true],
+  ["on another day only reports", 1, false],
+])("the installed job's scheduled run %s", (_case, days, collects) => {
+  const f = setup();
+  // The run reads the weekday in its own time zone, so it is given one.
+  f.env.TZ = "UTC";
+  const collect_day = (new Date().getUTCDay() + days) % 7;
+  writeFileSync(f.homeFile, dump({ gc: { ...f.machine, collect_day } }));
+  const result = run(f, ["--scheduled", "--repo", f.repo, "--json"]);
+  expectSpawnExit(result, 0);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.collect).toBe(collects);
+});
 test("uninstalled repositories refuse collection and persist the refusal", () => {
   const f = setup();
   writeFileSync(f.homeFile, "{}\n");

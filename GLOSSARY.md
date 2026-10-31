@@ -1519,6 +1519,12 @@ make, use the entry's term instead.
 - **Command-line boundary** — the one wrapper around a script's entry point
   that turns its result or failure into an exit code and a message, so every
   script reports failures the same way.
+- **Component (of the `jig` command)** — one of the machine-level tools the
+  plugin's `jig` command joins into one command line: resource collection
+  (`jig gc`) and the *dispatcher* (`jig dispatch`). Each defines its command
+  beside its code, and `jig` combines them, so help and shell completion
+  cover every component the same way. A program, unlike Jig's practice
+  modules, which are documented practices.
 - **Type guard** — a function that checks at run time that a value has a
   given shape, and tells the type checker so when it does. Data read from
   outside the program (JSON, a configuration file) is checked by one before

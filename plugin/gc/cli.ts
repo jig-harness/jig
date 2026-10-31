@@ -1,8 +1,9 @@
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { statfsSync } from "node:fs";
 import { consumerRoot } from "../shared/consumer.ts";
 import { GcError } from "../shared/gc-error.ts";
 import { ExitError } from "../shared/cli.ts";
+import { pathValue, USAGE_EXIT } from "../shared/command-line.ts";
 import { main as withResourceLock } from "../shared/resource-lock.ts";
 import { gcConfiguration } from "./config.ts";
 import { install } from "./install.ts";
@@ -10,74 +11,165 @@ import { collectionPlan } from "./plan.ts";
 import { readReceipt, receiptPaths } from "./receipts.ts";
 import { formatReceipt, runCollection } from "./runner.ts";
 import type { KindName } from "./types.ts";
+import {
+  argument,
+  choice,
+  command,
+  constant,
+  flag,
+  formatMessage,
+  type InferValue,
+  map,
+  message,
+  object,
+  option,
+  optional,
+  or,
+  parse,
+  type ValueParser,
+  withDefault,
+} from "../shared/vendor/optique.mjs";
 
-const USAGE =
-  "jig gc [--collect | --scheduled] [--repo <path>] [--kind worktrees|tool-state|scratch|receipts] [--json]\njig gc receipts [<date>|<run-id>]\njig gc install [--repo <path>] [--yes] [--uninstall [--machine]]";
+const KINDS = [
+  "worktrees",
+  "tool-state",
+  "scratch",
+  "receipts",
+] as const satisfies readonly KindName[];
+
+/** A day's receipts (`2026-10-31`) or one run's id, as `receiptPaths` names them. */
+const RECEIPT_QUERY = /^(?:\d{4}-\d{2}-\d{2}|[\dTZ.-]+-\d+-[a-f\d-]+)$/;
+const receiptQuery: ValueParser<"sync", string> = {
+  mode: "sync",
+  metavar: "DATE|RUN-ID",
+  placeholder: "",
+  parse: (input) =>
+    RECEIPT_QUERY.test(input)
+      ? { success: true, value: input }
+      : {
+          success: false,
+          error: message`Expected a date (YYYY-MM-DD) or a run id, but got ${input}.`,
+        },
+  format: (value) => value,
+};
+
+const collection = object({
+  action: constant("collect"),
+  mode: optional(
+    or(
+      map(
+        flag("--collect", {
+          description: message`Remove what the evidence shows is finished, within the bounds confirmed at install. Without it, the run only reports.`,
+        }),
+        () => "collect" as const,
+      ),
+      map(
+        flag("--scheduled", {
+          description: message`Run as the installed daily job does: collect on the configured weekday or under disk pressure, report otherwise.`,
+        }),
+        () => "scheduled" as const,
+      ),
+    ),
+  ),
+  repository: optional(
+    option("--repo", pathValue, {
+      description: message`Only this repository. Without it, every repository the machine file registers.`,
+    }),
+  ),
+  kind: optional(
+    option("--kind", choice(KINDS, { metavar: "KIND" }), {
+      description: message`Only this kind of resource.`,
+    }),
+  ),
+  json: option("--json", {
+    description: message`Print the receipt as JSON.`,
+  }),
+});
+
+const installation = command(
+  "install",
+  object({
+    action: constant("install"),
+    repository: optional(
+      option("--repo", pathValue, {
+        description: message`The repository to register. Without it, the current checkout.`,
+      }),
+    ),
+    confirm: option("--yes", {
+      description: message`Write what the preview shows.`,
+    }),
+    uninstall: optional(
+      object({
+        uninstall: flag("--uninstall", {
+          description: message`Remove the repository's entry instead. The job stays while any entry remains.`,
+        }),
+        machine: option("--machine", {
+          description: message`With --uninstall, remove every entry and the job.`,
+        }),
+      }),
+    ),
+  }),
+  {
+    brief: message`Register a repository and install the daily job.`,
+    description: message`Previews the repository's bounds and the daily scheduler job; --yes writes them.`,
+  },
+);
+
+const receipts = command(
+  "receipts",
+  object({
+    action: constant("receipts"),
+    query: optional(
+      argument(receiptQuery, {
+        description: message`List that day's receipts, or print the run with that id. Without it, list every receipt.`,
+      }),
+    ),
+  }),
+  { brief: message`List the receipts of earlier runs, or print one.` },
+);
+
+/** `jig gc`: a report by default, `install` and `receipts` as its subcommands. */
+export const gcCommand = command(
+  "gc",
+  withDefault(or(installation, receipts, collection), {
+    action: "collect",
+    mode: undefined,
+    repository: undefined,
+    kind: undefined,
+    json: false,
+  } as const),
+  {
+    brief: message`Report and collect what agent sessions leave on this machine.`,
+    description: message`Reports the scratch directories, tool state, worktrees and old receipts the repository declares, with the evidence that their owners have finished, and writes a receipt for the run. Nothing is removed without --collect.`,
+  },
+);
+
+export type GcArguments = InferValue<typeof gcCommand>;
+type Collection = Extract<GcArguments, { action: "collect" }>;
+
+/** `jig gc`'s arguments (those after `gc`), or a usage error (exit 2). */
+export function argumentsFor(argv: string[]): GcArguments {
+  const result = parse(gcCommand, ["gc", ...argv]);
+  if (!result.success)
+    throw new ExitError(USAGE_EXIT, formatMessage(result.error));
+  return result.value;
+}
+
 interface Options {
   collect: boolean;
   scheduled: boolean;
   json: boolean;
-  confirm: boolean;
-  uninstall: boolean;
-  machine: boolean;
   repository?: string;
   kind?: KindName;
 }
-function applyArgument(
-  options: Options,
-  flag: string,
-  value: string | undefined,
-): void {
-  if (flag === "--repo" || flag === "--kind") {
-    if (!value || value.startsWith("--"))
-      throw new ExitError(2, `Missing value for ${flag}`);
-    if (flag === "--repo") {
-      options.repository = resolve(value);
-      return;
-    }
-    if (!["worktrees", "tool-state", "scratch", "receipts"].includes(value))
-      throw new ExitError(2, `Unknown collection kind: ${value}`);
-    options.kind = value as KindName;
-    return;
-  }
-  const flags: Record<
-    string,
-    "collect" | "scheduled" | "json" | "confirm" | "uninstall" | "machine"
-  > = {
-    "--collect": "collect",
-    "--scheduled": "scheduled",
-    "--json": "json",
-    "--yes": "confirm",
-    "--uninstall": "uninstall",
-    "--machine": "machine",
+function runOptions(args: Collection): Options {
+  return {
+    collect: args.mode === "collect",
+    scheduled: args.mode === "scheduled",
+    json: args.json,
+    ...(args.repository === undefined ? {} : { repository: args.repository }),
+    ...(args.kind === undefined ? {} : { kind: args.kind }),
   };
-  const field = flags[flag];
-  if (!field) throw new ExitError(2, `Unknown argument: ${flag}`);
-  options[field] = true;
-}
-export function argumentsFor(argv: string[]): Options {
-  const options: Options = {
-    collect: false,
-    scheduled: false,
-    json: false,
-    confirm: false,
-    uninstall: false,
-    machine: false,
-  };
-  const seen = new Set<string>();
-  for (let i = 0; i < argv.length; i++) {
-    const flag = argv[i] as string;
-    if (seen.has(flag)) throw new ExitError(2, `Duplicate argument: ${flag}`);
-    seen.add(flag);
-    const needsValue = flag === "--repo" || flag === "--kind";
-    const value = needsValue ? argv[++i] : undefined;
-    applyArgument(options, flag, value);
-  }
-  if (options.collect && options.scheduled)
-    throw new ExitError(2, "--scheduled and --collect are mutually exclusive");
-  if (options.machine && !options.uninstall)
-    throw new ExitError(2, "--machine requires --uninstall");
-  return options;
 }
 export function scheduledCollection(
   machine: { collect_day: number; min_free_bytes: number },
@@ -101,17 +193,8 @@ async function executeRun(options: Options): Promise<number> {
   );
   return receipt.exitStatus;
 }
-function validQuery(argv: string[]): string | undefined {
-  if (argv.length > 2)
-    throw new ExitError(2, "receipts accepts a date or run id");
-  const query = argv[1];
-  if (query && !/^(?:\d{4}-\d{2}-\d{2}|[\dTZ.-]+-\d+-[a-f\d-]+)$/.test(query))
-    throw new ExitError(2, "Invalid receipt date or run id");
-  return query;
-}
-function showReceipts(argv: string[]): number {
-  const query = validQuery(argv),
-    paths = receiptPaths();
+function showReceipts(query: string | undefined): number {
+  const paths = receiptPaths();
   if (!query || /^\d{4}-\d{2}-\d{2}$/.test(query)) {
     console.log(
       paths
@@ -125,23 +208,6 @@ function showReceipts(argv: string[]): number {
   console.log(JSON.stringify(readReceipt(path), null, 2));
   return 0;
 }
-function validateMode(installing: boolean, options: Options): void {
-  if (
-    installing &&
-    [options.collect, options.scheduled, options.kind, options.json].some(
-      Boolean,
-    )
-  )
-    throw new ExitError(
-      2,
-      "install accepts --repo, --yes, --uninstall and --machine",
-    );
-  if (
-    !installing &&
-    [options.confirm, options.uninstall, options.machine].some(Boolean)
-  )
-    throw new ExitError(2, "--yes, --uninstall and --machine require install");
-}
 function applySchedule(options: Options): void {
   if (!options.scheduled) return;
   const { machine } = gcConfiguration(process.cwd(), null);
@@ -152,9 +218,18 @@ function applySchedule(options: Options): void {
     stat.bavail * stat.bsize,
   );
 }
+/** The collecting run the heavy-run lock wraps: this one's selection, collecting. */
+function collectingArguments(options: Options): string[] {
+  return [
+    "gc",
+    "--collect",
+    ...(options.repository === undefined ? [] : ["--repo", options.repository]),
+    ...(options.kind === undefined ? [] : ["--kind", options.kind]),
+    ...(options.json ? ["--json"] : []),
+  ];
+}
 async function runUnderHeavyLock(
   options: Options,
-  argv: string[],
   script: string,
 ): Promise<number> {
   const status = await withResourceLock(
@@ -163,9 +238,7 @@ async function runUnderHeavyLock(
       "--no-env-file",
       `--config=${join(dirname(script), "gc", "bunfig.toml")}`,
       script,
-      "gc",
-      ...argv.filter((arg) => arg !== "--scheduled"),
-      ...(argv.includes("--collect") ? [] : ["--collect"]),
+      ...collectingArguments(options),
     ],
     {
       ...process.env,
@@ -199,25 +272,22 @@ async function runUnderHeavyLock(
   );
   return 1;
 }
-export async function gcMain(argv: string[], script: string): Promise<number> {
-  if (argv[0] === "--help" && argv.length === 1) {
-    console.log(USAGE);
-    return 0;
-  }
-  if (argv[0] === "receipts") return showReceipts(argv);
-  const installing = argv[0] === "install";
-  const options = argumentsFor(installing ? argv.slice(1) : argv);
-  validateMode(installing, options);
-  if (installing)
+export async function gcMain(
+  args: GcArguments,
+  script: string,
+): Promise<number> {
+  if (args.action === "receipts") return showReceipts(args.query);
+  if (args.action === "install")
     return install({
-      repository: options.repository ?? consumerRoot(),
+      repository: args.repository ?? consumerRoot(),
       script,
-      confirm: options.confirm,
-      uninstall: options.uninstall,
-      machine: options.machine,
+      confirm: args.confirm,
+      uninstall: args.uninstall !== undefined,
+      machine: args.uninstall?.machine ?? false,
     });
+  const options = runOptions(args);
   applySchedule(options);
   if (options.collect && process.env.JIG_GC_HEAVY_LOCK !== "held")
-    return runUnderHeavyLock(options, argv, script);
+    return runUnderHeavyLock(options, script);
   return executeRun(options);
 }

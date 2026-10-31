@@ -400,8 +400,10 @@ bun modules/M2-generated-artifact-freshness/reference/inventory/run-generated-ch
 ```
 
 The example indexes open with a "generated" header naming their generator.
-The lockfiles and the vendored parsers cannot carry one, since each must stay
-byte for byte what its generator writes, so their entry is their marker.
+The lockfiles and the vendored js-yaml builds cannot carry one, since each
+must stay byte for byte what its generator writes, so their entry is their
+marker; the bundle `tools/plugin/vendor-optique.ts` builds opens with a line
+naming that command.
 
 A new derived file gets its entry in the pull request that adds it; the
 runner refuses an entry without a check.
@@ -542,9 +544,17 @@ work as part of the plugin:
   missing, and accept older files. Never bake a repository's values into
   `SKILL.md`.
 - **Dependencies:** the plugin cache has no `node_modules`. Use Bun's
-  built-ins (its own APIs and the `node:` modules it provides), or vendor a dependency's own single-file build beside the script
-  with its licence and a test that keeps it identical to the pinned package
-  (as `plugin/shared/vendor/js-yaml.mjs` is).
+  built-ins (its own APIs and the `node:` modules it provides), or vendor a
+  library beside the code that uses it, with its licence, its line in
+  `NOTICE` and a test that keeps it identical to the pinned package
+  ([ADR-0001](docs/adr/ADR-0001-bun-typescript-toolchain.md)). A library that
+  ships a single-file build is vendored as that file
+  (`plugin/shared/vendor/js-yaml.mjs`). One that ships none is vendored as an
+  unminified bundle Jig builds from the pinned package, which the test
+  rebuilds and compares byte for byte: `plugin/shared/vendor/optique.mjs` is
+  Optique, the command-line parser, built by `bun tools/plugin/vendor-optique.ts`
+  from the names `tools/plugin/optique-entry.ts` lists, so a script that
+  needs another of its functions adds the name there and runs that command.
 - **Windows cancellation:** follow the scope and reconsideration conditions
   in [ADR-0008](docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md)
   when changing process launch, cancellation or the evidence that a

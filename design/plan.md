@@ -109,6 +109,61 @@ yesterday's rows, a drive whose open threads rise across rounds is
 reported as drifting and notified once, and a session waiting after its
 account's wall reopened gets exactly one "continue" nudge.
 
+### 35. One jig command line
+
+The plugin's machine-level tools are separate commands with no shared
+shape: `jig gc` and `jig dispatch` each install, remove and report on their
+own job in their own words, and installing, updating and checking the
+plugin itself is a script in this repository (`tools/plugin/setup.ts`), not
+a command the plugin ships. This item makes `jig` one command line, parsed
+with [Optique](https://optique.dev) (vendored as a bundle Jig builds,
+[ADR-0001](../docs/adr/ADR-0001-bun-typescript-toolchain.md)), with
+resource collection and the dispatcher as its components: each component
+defines its command beside its code (`plugin/gc/cli.ts`,
+`plugin/dispatch/cli.ts`) and `plugin/jig.ts` combines them, so `--help`,
+`jig help <command>` and `jig completion <shell>` come from the
+definitions that parse. Across the components come the lifecycle verbs
+`install`, `uninstall`, `upgrade`, `doctor`, `status`, `receipts` and `run`
+(`jig install dispatch`, `jig status`), through one component interface a
+third component joins without touching the verbs, while each component's
+own work stays under its name (`jig gc --collect`, `jig dispatch --apply`).
+`jig` reaches `PATH` through the launcher the installed jobs already run,
+which finds the installed plugin copy at each run, so a plugin update
+reaches it without a new install. The audit stays a skill; `jig doctor`
+runs its configuration-fit check beside its own.
+
+What must keep working through every step, because jobs already installed
+on machines run it: each timer's launcher, copied under the gc state
+directory, calls `<plugin copy>/jig.ts` with
+`--config=<plugin copy>/gc/bunfig.toml` and `gc --scheduled` or
+`dispatch --apply`. So `plugin/jig.ts` stays where it is,
+`plugin/gc/bunfig.toml` and `plugin/dispatch/bunfig.toml` stay (the
+dispatcher's pass wrapper and launches use the second), those two command
+lines keep their meaning, the heavy-run lock's re-run of
+`jig.ts gc … --collect` keeps working, and `jig dispatch run` stays the
+pass wrapper's passthrough.
+
+Built in this order:
+
+1. **Optique, behaviour unchanged**: one parser with a `gc` and a
+   `dispatch` command replaces the hand-written ones, every current form
+   keeping its meaning and exit code, with generated help and completion.
+2. **Lifecycle verbs over one component interface, `jig` on `PATH`**: the
+   verbs above for both components, each component's `install` and
+   `receipts` reached through them with the old forms still working, and
+   the launcher installing a `jig` command that runs the installed copy.
+3. **`doctor` and `upgrade`**: `tools/plugin/setup.ts`'s install, update
+   and check move into the plugin as `jig upgrade` and `jig doctor`, moved
+   and not copied: `tools/plugin/setup.ts` keeps only a call into the
+   plugin's code, so a first install from a checkout still works. `doctor`
+   also runs the audit's configuration-fit check.
+
+Done when `jig` on `PATH` installs, upgrades, checks and removes both
+components through the same verbs, `jig doctor` reports the plugin's
+installation and the repository's configuration fit, `tools/plugin/setup.ts`
+holds no logic of its own, and a job installed before the first step still
+runs on a machine that took every release since.
+
 ### 3. The kickoff family
 
 The greenfield kickoff becomes a living skill instead of a frozen seed, with
