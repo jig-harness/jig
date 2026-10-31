@@ -1,18 +1,28 @@
 /**
  * Orca's command-line tool, as the workspace tool calls it: where the command
- * is, how a paired server is named, and how its JSON answers are read.
- *
- * Every command is run with `--json` and answers one envelope,
- * `{ ok: true, result }` or `{ ok: false, error: { code, message } }`, on
- * standard output, with exit 1 on an error. An answer that is neither is a
- * failure of the call, never read as a result.
+ * is, how a paired server is named, and how one call is made. Every command
+ * is run with `--json`, and its answer is read as the envelope the shared
+ * reader (plugin/shared/orca-workspace/envelope.ts) describes.
  */
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
-import { isRecord } from "../../lib/record.ts";
-import { swallow } from "../../plugin/shared/errors.ts";
+import {
+  type OrcaEnvelope,
+  OrcaError,
+  orcaErrorText,
+  parseOrcaEnvelope,
+} from "../../plugin/shared/orca-workspace/envelope.ts";
+import type { OpenPort } from "../../plugin/shared/orca-workspace/port.ts";
 import { type Context, output } from "../herdr/runner.ts";
-import { OrcaError, type OrcaTarget, type Workspace } from "./runner.ts";
+import type { OrcaTarget, Workspace } from "./runner.ts";
+
+export {
+  type OrcaEnvelope,
+  orcaErrorText,
+  parseOrcaEnvelope,
+  recordOf,
+  textOf,
+} from "../../plugin/shared/orca-workspace/envelope.ts";
 
 /** Where the macOS app keeps its command when nothing on `PATH` names it. */
 export const MACOS_APP_COMMAND =
@@ -65,42 +75,6 @@ export function orcaArgv(target: OrcaTarget, args: string[]): string[] {
 }
 
 /**
- * What a command answers: a result, or an error. Anything else that comes
- * back, `{ ok: false }` with no error or a result with no `ok`, is not an
- * answer this tool acts on, so a malformed response never passes as a
- * success or as a named failure.
- */
-export type OrcaEnvelope<T> =
-  | { ok: true; result: T | undefined }
-  | { ok: false; error: { code?: string; message?: string } };
-
-/** The well-formed envelope in a command's output, or null when it holds none. */
-export function parseOrcaEnvelope<T>(text: string): OrcaEnvelope<T> | null {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{")) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch (error) {
-    swallow(error, "orca output that starts like JSON but is not: no envelope");
-    return null;
-  }
-  if (!isRecord(parsed)) return null;
-  if (parsed.ok === true) return { ok: true, result: parsed.result as T };
-  if (parsed.ok === false && isRecord(parsed.error)) {
-    const { code, message } = parsed.error;
-    return {
-      ok: false,
-      error: {
-        ...(typeof code === "string" ? { code } : {}),
-        ...(typeof message === "string" ? { message } : {}),
-      },
-    };
-  }
-  return null;
-}
-
-/**
  * The envelope a command answered with, error included; throws only when
  * there is none. `what` names the call in messages.
  */
@@ -125,17 +99,6 @@ export function orcaCall<T>(
   return envelope;
 }
 
-/** Orca's message for an error, with its code when the message is only the code. */
-export function orcaErrorText(error: {
-  code?: string;
-  message?: string;
-}): string {
-  const code = error.code ?? "";
-  const message = error.message ?? "";
-  if (message === "" || message === code) return code || "unknown error";
-  return code === "" ? message : `${message} (${code})`;
-}
-
 /** The result of a command that must succeed. */
 export function orcaJson<T>(
   ws: Workspace,
@@ -156,25 +119,18 @@ export function onServer(target: OrcaTarget): string {
   return target.environment === undefined ? "" : ` on ${target.environment}`;
 }
 
-/** Narrow a value read from Orca to a record, or throw naming the call. */
-export function recordOf(
-  value: unknown,
-  what: string,
-): Record<string, unknown> {
-  if (!isRecord(value)) throw new OrcaError(`${what}: unexpected answer`);
-  return value;
-}
-
-/** A string field of a record read from Orca, or throw naming the call. */
-export function textOf(
-  record: Record<string, unknown>,
-  key: string,
-  what: string,
-): string {
-  const value = record[key];
-  if (typeof value !== "string" || value === "")
-    throw new OrcaError(`${what}: no ${key} in the answer`);
-  return value;
+/**
+ * The port the shared open rules (plugin/shared/orca-workspace/) run through:
+ * git and the hooks on the workspace's host, Orca's calls through its
+ * command on this machine.
+ */
+export function portOf(ws: Workspace): OpenPort {
+  return {
+    host: ws.host,
+    runHook: ws.runHook,
+    orcaCall: <T>(args: string[], what: string) => orcaCall<T>(ws, args, what),
+    where: onServer(ws.target),
+  };
 }
 
 export type { Context };

@@ -20,6 +20,7 @@
  * credentials hidden.
  */
 import { posix } from "node:path";
+import { CLONE_TIMEOUT_MS } from "../../plugin/shared/orca-workspace/limits.ts";
 import { budget, output, withLimit } from "../herdr/runner.ts";
 import { onServer, orcaCall, orcaErrorText } from "./cli.ts";
 import { failureReason, inspectPath, releaseClaim } from "./hooks.ts";
@@ -33,8 +34,7 @@ export interface CloneSource {
   root: string;
 }
 
-/** The time a clone may take: a large repository over a slow link. */
-export const CLONE_TIMEOUT_MS = 10 * 60_000;
+export { CLONE_TIMEOUT_MS };
 
 /** The claim's name beside the clone: hidden, so a listing of the root shows clones only. */
 export const cloneClaimName = (name: string): string =>

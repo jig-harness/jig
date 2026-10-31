@@ -53,11 +53,13 @@ import {
   processAlive,
   processStart,
 } from "./owner.ts";
+import {
+  HOOK_TIMEOUT_MS,
+  HOOKS_DIR,
+} from "../../plugin/shared/orca-workspace/limits.ts";
 import { budget, type Context, HerdrError, output } from "./runner.ts";
 
-export const HOOKS_DIR = ".config/worktree-hooks";
-/** The longest a create or remove hook may run; a dependency install is slow. */
-export const HOOK_TIMEOUT_MS = 15 * 60_000;
+export { HOOK_TIMEOUT_MS, HOOKS_DIR };
 /** How long the tool waits for the plugin event to take the claim before running the hook itself. */
 export const PLUGIN_GRACE_MS = 5_000;
 /** The longest parking a worktree's reflection findings may take: a few git calls. */
