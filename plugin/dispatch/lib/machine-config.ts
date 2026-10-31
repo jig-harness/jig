@@ -282,12 +282,16 @@ function parseValues(values: unknown, where: string): MachineConfig {
     ),
     accounts: distinct(
       distinct(
-        list(top.accounts, "accounts").map(account),
-        (a) => a.name,
-        "an account",
+        distinct(
+          list(top.accounts, "accounts").map(account),
+          (a) => a.name,
+          "an account",
+        ),
+        (a) => `${a.vendor}:${a.identity.toLowerCase()}`,
+        "an account identity",
       ),
-      (a) => `${a.vendor}:${a.identity.toLowerCase()}`,
-      "an account identity",
+      (a) => `${a.vendor}:${a.configDir}`,
+      "an account configuration directory",
     ),
     intervalMs: optionalDuration(top.interval, "interval", DEFAULTS.intervalMs),
     wallBackoffMs: optionalDuration(

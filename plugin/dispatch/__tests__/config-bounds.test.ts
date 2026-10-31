@@ -47,6 +47,15 @@ describe("the machine file's bounds", () => {
   });
 });
 
+describe("the machine file's account directories", () => {
+  it("refuses two accounts for one vendor and configuration directory", () => {
+    const read = config(
+      `accounts:\n${account("a", "me@example.com")}${account("b", "you@example.com", "a")}`,
+    );
+    expect(read).toThrow("an account configuration directory listed twice");
+  });
+});
+
 describe("the timer's cadence", () => {
   const job = { command: ["x"], env: {}, hour: 3 };
   const cron = (minutes: number) =>

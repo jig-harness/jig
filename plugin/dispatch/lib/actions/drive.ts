@@ -191,6 +191,11 @@ async function retryBlocked(
   const slots = slotsOf(state.table, record);
   if (slots === undefined)
     return `${record.account} is no longer in the machine file`;
+  if (
+    slots.account.vendor !== record.vendor ||
+    slots.account.configDir !== record.configDir
+  )
+    return `${slots.account.name} no longer has the vendor and directory the launch was recorded with`;
   if (slots.wallUnrecorded)
     return `${slots.account.name} ended on a wall that was not recorded`;
   if (slots.wall !== null)
@@ -313,6 +318,12 @@ async function changedWhileOpening(
 ): Promise<LaunchOutcome | null> {
   refreshWalls(state.table, state.records, Date.now(), state.root);
   const name = slots.account.name;
+  if (slots.wallUnrecorded)
+    return waits(
+      action,
+      `${name} ended on a wall that was not recorded while the workspace opened`,
+      name,
+    );
   if (slots.wall !== null)
     return waits(
       action,
