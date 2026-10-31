@@ -61,7 +61,9 @@ decide, before anyone has approved the change.
 The reader takes both from the pull request's **base branch** snapshot
 instead: the boundary the review skill already draws for independent review.
 It ignores a `JIG_OVERLAY` redirect and the working tree's copy for these two
-fields. A pull request that edits them takes effect after it merges. When the
+fields, and for every input the ceiling falls back on: when the base omits
+`max_level`, the ceiling is the base's own `level`, else `attended`, never the
+working tree's `level`. A pull request that edits them takes effect after it merges. When the
 snapshot cannot be read the reader fails closed. The ceiling becomes
 `attended`, and no decision is taken unattended until the policy reads,
 since a default class list could be weaker than the repository's own:
@@ -132,8 +134,11 @@ what is released.
 
 The measure that validates `wide`: the share of provisional decisions a
 person reverses before the merge, over the first month a repository runs it.
-With at least ten provisional decisions in that month and fewer than one in
-ten reversed, the dial is documented as available. With fewer decisions, or
+Only a decision whose pull request has merged or closed counts, since only
+then has a person had the chance to reverse it; a decision on a pull request
+still open is left out of both the count and the share until it does. With at
+least ten counted provisional decisions and fewer than one in ten reversed,
+the dial is documented as available. With fewer decisions, or
 more reversals, the arbiter's `escalate` was right or the sample is too thin,
 and the dial stays dark.
 
@@ -163,8 +168,8 @@ reader failing closed, with the fake forge the drive suite already uses.
 
 ## Build order
 
-Steps 1 to 4 are built, save the base-branch policy step 4 named. Two
-pull requests are left, serial since both change the shared autonomy reader.
+Steps 1 to 4 are built, save the base-branch policy step 4 named. The
+pull requests left are serial, since each changes the shared autonomy reader.
 
 1. **The policy from the base branch.** `max_level` and `park_classes` read
    from the pull request's base-branch snapshot at every decision point a
