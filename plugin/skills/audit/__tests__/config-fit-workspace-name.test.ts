@@ -38,3 +38,14 @@ test("a template over the variables the skill fills is not", () => {
     ),
   ).toEqual([]);
 });
+
+test("a blank template is a finding", () => {
+  expect(aboutTemplate("workspace_name:\n  template: '   '\n")).toHaveLength(1);
+});
+
+test("a blank status text is a finding", () => {
+  const found = findings(
+    "workspace_name:\n  statuses:\n    ready: ''\n",
+  ).filter((f) => f.message.includes("workspace_name.statuses"));
+  expect(found).toHaveLength(1);
+});

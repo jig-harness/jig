@@ -3216,7 +3216,7 @@ announcement or found one already posted, name the workspace for the ready stage
 when the repository sets `workspace_name.template` (it does nothing without
 it or outside Orca, and a failed Orca rename only warns and exits `0`, while a
 malformed argument, an invalid `workspace_name` field or an unreadable title file exits `2`, and a configuration file that cannot be parsed exits `1`). The item is the one tracker issue
-the PR serves ([Arm](#arm) step 3 reads it); write its title alone to
+the PR serves (run [Arm](#arm) step 3's `get_issue.ts` lookup in this pass, since a driver pass is headless and one-shot); write its title alone to
 `workspace-title.md` in the worktree's git directory (the output of
 `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --absolute-git-dir`, outside the worktree, so the clean-tree
 check above is not tripped) with the file editor and pass the file, never
