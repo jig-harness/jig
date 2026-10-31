@@ -172,6 +172,7 @@ changes are marked **Breaking** and say what a consumer changes.
   which starts the execution line's stages with nobody at the keyboard:
   dispatcher, tick, session runtime and factory identity, and the terms
   of its control function: outcome log, stage drift and nudge.
+- [M12](modules/M12-parallel-agent-ergonomics/mappings.md#worktree-managers--agent-runners--where-the-hooks-wire)'s mappings say where Worktrunk runs a repository's worktree create and remove hooks: its blocking `pre-start` and `pre-remove` hooks in `.config/wt.toml`, each inside the worktree, so a failed remove hook keeps the worktree and its unsent reflection findings. Worktrunk skips project hooks when their approval is declined, so the hook must be approved before a removal for that guarantee to hold.
 
 ### Changed
 
@@ -347,6 +348,43 @@ changes are marked **Breaking** and say what a consumer changes.
 - A link to a section of the getting-started, plugin, features or
   principles page no longer stops well below the header: it lands just
   under it.
+
+## [0.110.0] - 2026-10-31
+
+### Added
+
+- `jig dispatch --apply` restarts stopped drives without a person: each
+  re-arm of a drive stopped on a usage limit or an answered park, and each
+  takeover of a wedged driver the machine started, runs in a terminal tab
+  of the pull request's Orca workspace (opened from the pull request when
+  none holds it), billed to an account the new machine file
+  (`~/.jig/dispatch.yaml`) lists, within that account's cap and outside
+  any usage-limit wall it recorded. A launch record written before each
+  launch keeps a lost answer from starting a second pass, and a refusal
+  `drive.ts` gives is not fought. See the plugin README's "The dispatcher"
+  and CONFIGURATION.md's "The machine's dispatch file".
+- `jig dispatch install [--interval 5m] [--yes] [--uninstall]` previews and
+  writes the timer that runs `jig dispatch --apply`, on the same scheduler
+  code as `jig gc install`.
+
+## [0.109.0] - 2026-10-31
+
+### Added
+
+- `drive.pass_args`, a list of words, gives a drive's Claude Code pass
+  command extra arguments, written before `-p` in the command `arm-drive.ts`
+  builds for `/jig:drive-pr` and `/jig:do-item`; `--pass-args "<words>"`
+  on `arm-drive.ts` and `drive.ts` overrides it for one drive. Set it to
+  `[--permission-mode, bypassPermissions]` to let unattended passes write
+  under protected paths such as `.claude/skills/**`, which a pass without a
+  terminal is otherwise denied in a prompting mode, at the cost of skipping
+  its permission prompts;
+  the default is empty
+  ([configuration](plugin/CONFIGURATION.md#drive)). The driver log and
+  `drives.ts` name the permission mode each pass runs in, re-arm and
+  takeover commands carry the arguments, a pass command that is not Claude
+  Code's ignores the field and says so, and a value that is not a list of
+  words stops the drive.
 
 ## [0.108.0] - 2026-10-31
 
@@ -4266,7 +4304,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.108.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.110.0...HEAD
+[0.110.0]: https://github.com/jig-harness/jig/compare/v0.109.0...v0.110.0
+[0.109.0]: https://github.com/jig-harness/jig/compare/v0.108.0...v0.109.0
 [0.108.0]: https://github.com/jig-harness/jig/compare/v0.107.0...v0.108.0
 [0.107.0]: https://github.com/jig-harness/jig/compare/v0.106.0...v0.107.0
 [0.106.0]: https://github.com/jig-harness/jig/compare/v0.105.0...v0.106.0

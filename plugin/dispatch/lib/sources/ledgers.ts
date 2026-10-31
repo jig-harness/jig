@@ -119,6 +119,7 @@ function ledgerEvidence(ledger: Ledger, nowMs: number): Evidence {
     driver: ledger.driver.state,
     exit: ledger.driver.exit ?? null,
     heartbeat: ledger.driver.heartbeat,
+    started: ledger.driver.started ?? null,
     heartbeatAgeMinutes: Number.isFinite(beat)
       ? minutesBetween(beat, nowMs)
       : null,

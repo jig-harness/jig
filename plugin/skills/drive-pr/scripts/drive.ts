@@ -20,6 +20,13 @@
  *                    own `--model`, else `drive.pass_model`, else `sonnet`.
  *                    Applies to a `claude` pass only (`lib/pass-model.ts`);
  *                    the driver log and `drives.ts` name the model.
+ *   --pass-args "W"  extra arguments for a `claude` pass, for this run: one
+ *                    value split on whitespace, put before `-p` unless the
+ *                    pass command already carries them; empty for none.
+ *                    Default: `drive.pass_args`, added only to a pass
+ *                    command without arguments of its own
+ *                    (`lib/pass-args.ts`); the driver log and `drives.ts`
+ *                    name the permission mode the pass runs in.
  *   --handoff-at V   the context-economy dial: hand off at V% of the pass's
  *                    context rather than degrading. V is a whole percent, or
  *                    `never` for a continuous drive through compaction.

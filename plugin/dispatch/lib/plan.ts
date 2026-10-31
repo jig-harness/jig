@@ -5,6 +5,8 @@
  * it could not read, a runtime answer it cannot trust, a workspace whose
  * terminals the runtime cannot read) is reported and never planned.
  */
+import { driveHold, factsOf } from "./actions/drive-hold.ts";
+import type { ReadRecord } from "./launches.ts";
 import {
   RUNNING_STATES,
   type SessionsReport,
@@ -19,7 +21,6 @@ import type {
   RepoReport,
   Running,
   Stage,
-  Unplaced,
   WantedItem,
 } from "./types.ts";
 
@@ -29,6 +30,8 @@ export interface PlanInput {
   drives: DrivenPr[];
   merged: MergedPr[];
   sessions: SessionsReport;
+  /** This machine's launch records for the repository. */
+  launches: ReadRecord[];
 }
 
 type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet">;
@@ -173,32 +176,8 @@ export function planTick(input: PlanInput): Plan {
   // A pull request in both populations merged between the two reads: the
   // merged state wins, so it gets its follow-up and no re-arm.
   const mergedNumbers = new Set(input.merged.map((m) => m.number));
-  for (const pr of input.drives.filter((d) => !mergedNumbers.has(d.number))) {
-    const target = `PR #${pr.number}`;
-    if (QUIET.has(pr.class)) {
-      plan.quiet.push({ target, class: pr.class, why: pr.why });
-      continue;
-    }
-    if (pr.class === "unplaced") {
-      plan.unplaced.push({
-        target,
-        record: "forge",
-        reason: pr.why,
-      } satisfies Unplaced);
-      continue;
-    }
-    const stage: Stage = NOTIFY.has(pr.class) ? "notify" : "rearm";
-    want(
-      {
-        stage,
-        target,
-        record: "forge",
-        reason: `drive ledger ${pr.class}: ${pr.why}`,
-        evidence: { url: pr.url, head: pr.head, ...pr.evidence },
-      },
-      (w) => w.prs.includes(pr.number),
-    );
-  }
+  for (const pr of input.drives.filter((d) => !mergedNumbers.has(d.number)))
+    planDrive(pr, input.launches, plan, want);
 
   if (input.section.followupCommand !== null)
     for (const pr of input.merged)
@@ -213,4 +192,55 @@ export function planTick(input: PlanInput): Plan {
         (w) => w.prs.includes(pr.number),
       );
   return plan;
+}
+
+type Want = (action: Action, joined: (w: Workspace) => boolean) => void;
+
+/** One driven pull request: quiet, unplaced, held by a launch record, or wanted. */
+function planDrive(
+  pr: DrivenPr,
+  launches: ReadRecord[],
+  plan: Plan,
+  want: Want,
+): void {
+  const target = `PR #${pr.number}`;
+  const hold = driveHold(pr, launches);
+  if (hold.kind === "held") {
+    plan.running.push({
+      target,
+      stage: "rearm",
+      reason: hold.why,
+      evidence: { record: hold.record.record.id },
+    });
+    return;
+  }
+  if (hold.kind === "refused") {
+    plan.quiet.push({ target, class: "refused", why: hold.why });
+    return;
+  }
+  const takeover = hold.kind === "takeover" ? hold.record.record.id : null;
+  if (QUIET.has(pr.class) && takeover === null) {
+    plan.quiet.push({ target, class: pr.class, why: pr.why });
+    return;
+  }
+  if (pr.class === "unplaced") {
+    plan.unplaced.push({ target, record: "forge", reason: pr.why });
+    return;
+  }
+  const stage: Stage = NOTIFY.has(pr.class) ? "notify" : "rearm";
+  want(
+    {
+      stage,
+      target,
+      record: "forge",
+      reason:
+        takeover === null
+          ? `drive ledger ${pr.class}: ${pr.why}`
+          : `drive ledger silent, and this machine's launch record ${takeover} started its driver: take it over (drive.ts --take-over decides)`,
+      evidence: { url: pr.url, head: pr.head, ...pr.evidence },
+      ...(stage === "rearm" ? { facts: factsOf(pr) } : {}),
+      ...(takeover === null ? {} : { takeover }),
+    },
+    (w) => w.prs.includes(pr.number),
+  );
 }

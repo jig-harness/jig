@@ -1173,6 +1173,20 @@ make, use the entry's term instead.
   but is stuck (alive with no progress) or dead with nothing left unpushed;
   it is refused against a driver that is making progress
   ([drive-pr](plugin/skills/drive-pr/README.md#picking-up-a-stopped-drive)).
+- **Permission mode (of a pass)** — the setting of an agent tool that
+  decides which of its actions ask a person first. Claude Code's
+  `default` mode asks before most edits and commands; a pass of a *PR
+  drive loop* runs with no person at a terminal to answer, so whatever
+  would ask is denied instead, writes under protected paths such as
+  `.claude/skills/**` among them (the `auto` mode lets a classifier approve
+  some of these instead). `bypassPermissions` skips those prompts, though
+  explicit ask rules, tools that need a person, and Claude Code's checks
+  before removing critical paths still apply, so an unattended call can
+  still be denied. It trades the prompts for the instructions the drive
+  gives the pass (its push script, its bots-only rule), which steer it but
+  do not stop it; only Claude Code's deny rules and hooks still do. A repository chooses it for its passes with
+  `drive.pass_args`
+  ([configuration](plugin/CONFIGURATION.md#drive)).
 - **Drive ledger** — the resumable part of a *PR drive loop*'s saved state
   (its round, what it parked for a person and why, what it replied to and
   pushed, who drove it and when it last wrote), kept as one hidden-marker
@@ -1725,8 +1739,9 @@ make, use the entry's term instead.
   line with nobody at the keyboard: a pickup for an item assigned to the
   *factory identity*, a restart of a stopped review drive, the follow-up
   after a merge. It runs as a *tick* on a timer, starts sessions through a
-  *session runtime*, and never merges or answers a parked question. Planned
-  ([ROADMAP.md](ROADMAP.md) item 33); it is Jig's first *control plane*.
+  *session runtime*, and never merges or answers a parked question. It
+  reports every stage and restarts stopped drives today; the rest is
+  [ROADMAP.md](ROADMAP.md) item 33. It is Jig's first *control plane*.
 - **Tick** — one run of the *dispatcher*: read the tracker, the pull
   requests' drive ledgers and the running sessions, work out which stages
   are wanted and not running, report them, and start them only when told
@@ -1734,6 +1749,19 @@ make, use the entry's term instead.
   only what it did: what it started and how each ended, a receipt per
   tick, and the account walls and repeat suppressions those imply, so
   stopping it loses nothing and the next tick finds the same facts.
+- **Launch record** — the *dispatcher*'s record of one session it started,
+  written before the launch: what it starts, on which pull request or item,
+  on which subscription account, and a random token. The wrapper that runs
+  the session adds the process it runs as and, when it ends, the stage's
+  exit. A launch whose answer is lost still has its record, so it holds its
+  stage and its account's *slot*, and is never followed by a second launch.
+- **Slot** — one session the *dispatcher* may hold on a subscription
+  account at once. Each account has a cap of slots (two by default); a
+  *launch record* that is pending, running or unknown holds one.
+- **Wall** — a subscription account's usage limit, as the *dispatcher*
+  records it once a session it started stops on it: the account is left
+  out of every launch until the wall's reset. A later write never moves the
+  reset earlier.
 - **Session runtime** — the interface the *dispatcher* starts agent
   sessions through: list the sessions in a repository's workspaces, open a
   workspace, launch a session on a subscription account, notify a person.

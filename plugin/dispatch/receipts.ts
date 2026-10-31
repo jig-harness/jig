@@ -29,7 +29,7 @@ import { isMapping } from "../shared/config-layers.ts";
 import { swallow } from "../shared/errors.ts";
 import type { RepoReport } from "./lib/types.ts";
 
-/** Days a receipt is kept; the machine file sets it once there is one. */
+/** Days a receipt is kept unless the machine file's `receipts_days` says otherwise. */
 const RETENTION_DAYS = 30;
 
 export interface TickReceipt {
@@ -38,12 +38,15 @@ export interface TickReceipt {
   startedAt: string;
   finishedAt: string;
   completed: boolean;
-  apply: false;
+  /** Whether the tick launched what the machine file enables. */
+  apply: boolean;
   exitStatus: number;
+  /** Launch record files that do not read, left out of every count. */
+  unreadableLaunches?: string[];
   repos: RepoReport[];
 }
 
-function stateRoot(): string {
+export function stateRoot(): string {
   return join(homedir(), ".local", "state", "jig", "dispatch");
 }
 
@@ -196,13 +199,14 @@ const LOCK_GRACE_MS = 10_000;
 const FINISHED = "finished";
 
 /**
- * The lock file is published whole: the pid is written to a private file that
- * is then linked to the lock path, so the lock never exists empty and only
- * one contender can create it.
+ * Publish `text` at `path` whole and only when nothing is there: it is
+ * written to a private file that is then linked to the path, so the file
+ * never exists empty and only one writer can create it. False when
+ * something already is there.
  */
-function publishLock(path: string): boolean {
+export function publishOnce(path: string, text: string): boolean {
   const temporary = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  writeFileSync(temporary, String(process.pid), { mode: 0o600 });
+  writeFileSync(temporary, text, { mode: 0o600 });
   try {
     linkSync(temporary, path);
     return true;
@@ -212,6 +216,11 @@ function publishLock(path: string): boolean {
   } finally {
     rmSync(temporary, { force: true });
   }
+}
+
+/** The lock file, holding this process's pid, published by `publishOnce`. */
+function publishLock(path: string): boolean {
+  return publishOnce(path, String(process.pid));
 }
 
 /** The pid a lock file names; `null` while it is empty or unreadable. */

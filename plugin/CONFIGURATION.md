@@ -323,6 +323,7 @@ not resolve it either.
 | `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops unconverged (exit `6`). The `--max-rounds` flag overrides it for one run. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
 | `drive.pass_deadline_retries` | whole number ≥ 0 | `2` | drive-pr | How many passes killed at their deadline one drive restarts from, counted in the drive state across re-arms and takeovers until the drive converges or the pull request closes: the driver reports what the killed pass left in the tree, leaves it there and starts the next round. Past this many it stops with exit `15` and says the budget is spent; `0` stops at the first. A value that is not a whole number of at least 0 stops the drive |
 | `drive.pass_model` | one word: a model id, a Claude Code alias, or a routing tier (`execution`, `strategic`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. A pass command that is not Claude Code's chooses its own model. A value that is not one word stops the drive |
+| `drive.pass_args` | list of words, each a string without spaces, such as `[--permission-mode, bypassPermissions]` | `[]`: the pass command carries no extra arguments | drive-pr, do-item | Extra arguments for a Claude Code pass command: the arm command both skills build carries them before `-p` (`claude --model <model> <words> -p …`), and `drive.ts` adds them before `-p` to a pass command that carries no arguments of its own. A command that carries its own (the arm command, or a re-arm or takeover command a stopped drive printed) is kept as written. The `--pass-args "<words>"` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive: one value, split on spaces, and empty for none. The driver log and the `drives.ts` listing name the [permission mode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) each pass runs in (`inherited` when the command sets none: Claude Code's own settings decide). **What setting it risks:** `--permission-mode bypassPermissions` skips the permission prompts of the unattended passes (explicit ask rules, tools that need a person and checks before removing critical paths still apply), so a pass can then write nearly anywhere, including protected paths such as `.claude/skills/**` that a pass without a terminal is otherwise denied in a prompting mode; what then limits it is the instructions the drive gives it (`guarded-push.ts` pushes to the pull request's branch only, and the bots-only rule keeps it to bot threads), which a pass follows but nothing stops it from ignoring; a repository that needs a mechanical limit adds Claude Code `permissions.deny` rules or hooks. Jig sets nothing here for a repository that did not ask. It cannot hold `--model` (set `drive.pass_model`) or `-p`/`--print` (the drive writes the prompt). A pass command that is not Claude Code's ignores the field and the driver log says so. A value that is not a list of words stops the drive with a message naming the field |
 | `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
 
 ## `autonomy`
@@ -938,7 +939,9 @@ sessions, and reports each stage that should be running and is not. It
 reads this section from the repository's default branch as the forge holds
 it, fresh at every run, never from a checkout: a change to it takes effect
 once it merges, and a section that cannot be read plans nothing for the
-repository. The command reports only; see [the plugin's README](README.md#the-dispatcher).
+repository. What a run may start is the machine's to say, in
+[the machine's dispatch file](#the-machines-dispatch-file); see
+[the plugin's README](README.md#the-dispatcher).
 
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
@@ -959,7 +962,58 @@ since the follow-up stage's start wants `followup_command`. That start
 (`followup_since`) is the machine's, not the repository's:
 `jig dispatch --followup-since <date>` sets it, and otherwise each run keeps
 the start the previous run's receipt recorded (the first run starts it at
-its own time).
+its own time), unless the machine file's entry for the repository names
+one.
+
+### The machine's dispatch file
+
+What this machine dispatches, and on whose accounts, lives only in
+`$JIG_HOME/dispatch.yaml` (default `~/.jig/dispatch.yaml`); a repository
+cannot set it, and environment variables cannot override settings inside it.
+`JIG_HOME` selects the directory that contains it. `jig dispatch --apply`, and the
+timer `jig dispatch install` writes, start only what this file enables; a
+run without `--apply` reads it for the repositories to report on, and
+works without it. An unknown key anywhere in the file is refused.
+
+```yaml
+repositories:
+  - path: /home/me/dev/web          # absolute; ~/ is expanded
+    stages: [rearm]                  # rearm, pickup, followup, notify, steer
+    followup_since: 2026-10-30T00:00:00Z
+accounts:
+  - name: work
+    vendor: claude
+    config_dir: /home/me/.claude-work
+    identity: me@example.com
+    max_per_account: 2
+interval: 5m
+wall_backoff: 1h
+runtime_timeout: 1m
+receipts_days: 30
+```
+
+| Setting | Default / meaning |
+|---------|-------------------|
+| `repositories[].path` | Required; the repository's local checkout. List a repository in one machine's file only |
+| `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` (re-arms and takeovers of drives) is the one that starts anything in this version; the others are accepted and their actions reported |
+| `repositories[].followup_since` | None; when the follow-up stage started for it. Without it, the previous run's receipt keeps the start |
+| `accounts[].name` | Required; the account's name here, which launch records and walls are kept under |
+| `accounts[].vendor` | Required; `claude` or `codex`. A headless drive pass runs on `claude` accounts only in this version |
+| `accounts[].config_dir` | Required; the configuration directory of the account's profile, set as `CLAUDE_CONFIG_DIR` (or `CODEX_HOME`) for each pass it bills. The pass starts with `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` removed, so only this directory decides the account |
+| `accounts[].identity` | Required; the email address or account id the drive's identity resolver reads from that directory. A launch whose directory resolves to anything else, or to nothing, starts nothing and is reported |
+| `accounts[].max_per_account` | 2; the sessions the dispatcher may hold on the account at once (its slots). Sessions a person starts on the same account are not counted, so lower it when you share the account |
+| `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
+| `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on its usage limit (exit `16`) when the drive recorded no reset |
+| `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
+| `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's workspace. Twice this plus eight times `runtime_timeout` is one tick's budget, and a file whose budget passes 24 days is refused |
+| `receipts_days` | 30; days receipts and ended launch records are kept |
+
+Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
+under `~/.local/state/jig/dispatch/`: `receipts/`, `launches/` (one record
+per launch, written before it) and `walls/` (each account's usage-limit
+wall, which lifts at its latest recorded reset). A launch record a run
+cannot check (claimed on another host or before a reboot) holds its
+account's slot until a person removes its files from `launches/`.
 
 ## Complete example
 
@@ -1027,6 +1081,7 @@ drive:
   max_rounds: 10                         # default round budget of a drive; --max-rounds overrides
   pass_deadline_retries: 2               # passes killed at their deadline a drive restarts from
   pass_model: sonnet                     # a model id, an alias or a routing tier; --pass-model overrides
+  pass_args: []                          # extra words for a claude pass, before -p, e.g. [--permission-mode, bypassPermissions]; --pass-args overrides
   escape_baseline_doc: docs/review-loop-baseline.md
 autonomy:
   level: attended                        # attended | unattended | wide

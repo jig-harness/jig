@@ -16,7 +16,10 @@ place as opening it once.
 
 It is machine tooling, like the [launcher](../launcher/README.md), which
 uses it as its `herdr` provider: it runs from a checkout of this repository,
-not from the plugin.
+not from the plugin. Its command runner and its git rules for choosing and
+checking out a branch live in the plugin
+([plugin/shared/orca-workspace/](../../plugin/shared/orca-workspace/git.ts)),
+where the Orca rules that open a workspace use them too.
 
 ## What it does
 

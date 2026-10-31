@@ -16,7 +16,7 @@ function reportError(error: unknown): never {
 export async function main(argv: string[]): Promise<number> {
   if (argv[0] === "dispatch")
     try {
-      return await dispatch(argv.slice(1));
+      return await dispatch(argv.slice(1), fileURLToPath(import.meta.url));
     } catch (error) {
       reportError(error);
     }

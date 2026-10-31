@@ -115,28 +115,60 @@ both configuration layers.
 
 `jig dispatch` is the start of the [dispatcher](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): a program
 on the machine that runs the agent sessions, which looks at the tracker,
-the pull requests and the running sessions and says which stage of the
-delivery loop should be running and is not. It reports and starts nothing:
+the pull requests and the running sessions, says which stage of the
+delivery loop should be running and is not, and, when told to, restarts
+the drives that stopped on something a machine can settle:
 
 ```sh
-bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch [--repo <path>]... [--json]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch [--apply] [--repo <path>]... [--json]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch install [--interval 5m] [--yes] [--uninstall]
 ```
 
-For each repository (`--repo`, the current one by default) it prints every
-action it would take, each with the record that wants it and the evidence:
-a pickup for an item assigned to the repository's factory identity, a
-re-arm for a drive its ledger shows stopped on a mechanical state (a usage
-limit, an answered park), a follow-up for a merge, a notification for a
-drive only a person can settle. A stage a running session already holds is
-listed as running; a record it cannot read, or a target it cannot place,
-is reported and never planned. Each run writes a receipt under
+For each repository (`--repo`, else the machine file's, else the current
+one) it prints every action it would take, each with the record that wants
+it and the evidence: a pickup for an item assigned to the repository's
+factory identity, a re-arm for a drive its ledger shows stopped on a
+mechanical state (a usage limit, an answered park), a follow-up for a
+merge, a notification for a drive only a person can settle. A stage a
+running session or a launch record already holds is listed as running; a
+record it cannot read, or a target it cannot place, is reported and never
+planned. Each run writes a receipt under
 `~/.local/state/jig/dispatch/receipts/`, which `jig dispatch receipts`
-lists. `--apply`, which starts what the report lists, is refused in this
-version. The session runtime it reads is [Orca](https://www.onorca.dev)
-(`orca` on `PATH`, or `ORCA_CLI_COMMAND`), behind an interface a second
-runtime can be added to. The repository's values are its
-[`dispatch` section](CONFIGURATION.md#dispatch), read from its default
-branch on the forge.
+lists.
+
+**`--apply`** starts what the machine file
+([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))
+enables for each repository. Today that is the `rearm` stage: each re-arm
+of a stopped drive, and each takeover of a wedged driver this machine
+started, runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
+of the pull request's workspace, opened from the pull request when none
+holds it, through a small wrapper (`dispatch/run.ts`). The wrapper bills
+the pass to an account the machine file lists, through that account's
+configuration directory, and only while the account has a free slot and no
+recorded usage-limit wall; before the launch the dispatcher checks that the
+directory resolves to the account's identity, and starts nothing when it
+does not. Every launch begins with a launch record under
+`~/.local/state/jig/dispatch/launches/`, so a launch whose answer is lost
+holds its slot and is retried only under its own record. A refusal
+`drive.ts` gives (another driver holds the pull request) is the stage's
+answer and is not launched again on the same ledger facts. A record whose
+process cannot be checked (another host or boot) holds its slot until a
+person removes its files. Pickups, follow-ups and notifications are still
+reported, not started.
+
+**`jig dispatch install`** previews the timer that runs `--apply` every
+interval (the machine file's `interval`, five minutes by default), and
+writes it with `--yes`, from the installed plugin copy, on the scheduler
+code [resource collection](gc/README.md) uses: a systemd user timer, a
+launchd job or a crontab line. Install it on the host that runs the
+sessions (with Orca, the Orca server's host). `--uninstall --yes` removes
+it.
+
+The session runtime it reads and launches in is
+[Orca](https://www.onorca.dev) (`orca` on `PATH`, or `ORCA_CLI_COMMAND`),
+behind an interface a second runtime can be added to. The repository's
+values are its [`dispatch` section](CONFIGURATION.md#dispatch), read from
+its default branch on the forge.
 
 ## Set up from an agent session
 
@@ -441,6 +473,7 @@ drive:
   max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
   pass_deadline_retries: 2    # passes killed at their deadline one drive restarts from, across re-arms; default 2
   pass_model: sonnet          # model each pass runs on: a model id, a Claude Code alias or a routing tier; default sonnet
+  pass_args: []               # extra words for a claude pass before -p; [--permission-mode, bypassPermissions] skips its permission prompts; default none
 ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
   hold_label: ci:hold         # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)
