@@ -2592,7 +2592,10 @@ reverse it, in one line each:
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/decision.json -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" record-decision [PR]
 ```
 
-The level is recorded with it. A decision with no record is a defect: count
+The level is recorded with it: the level in force when the command runs, or
+the one the object's optional `level` names, which is the level the round's
+opening line reported, so a configuration change between the action and the
+command cannot rewrite what authorized it. A decision with no record is a defect: count
 it in this report, as the handoff does. Then refresh the handoff:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.

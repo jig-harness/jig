@@ -123,7 +123,8 @@ export function decisionsSection(
 
 /**
  * `record-decision [PR]`: append one decision, read as JSON on stdin
- * (`{ "class", "what", "reverse", "record"? }`), at the level in force now.
+ * (`{ "class", "what", "reverse", "record"?, "level"? }`), at the `level` the
+ * caller captured, else the level in force now.
  */
 export async function recordDecision(
   store: StateStore,
@@ -139,7 +140,9 @@ export async function recordDecision(
     );
   }
   if (!isRecord(input)) fail(2, "record-decision: stdin is not a JSON object");
-  const level = currentAutonomy().level;
+  // The level the action was authorized under, when the caller captured it:
+  // the configuration can change between the action and this command.
+  const level = input.level ?? currentAutonomy().level;
   await store.update((s) => {
     const entry = {
       at: new Date().toISOString(),
@@ -153,7 +156,7 @@ export async function recordDecision(
     if (!isUnattendedDecision(entry))
       fail(
         2,
-        `record-decision: class must be one of ${DECISION_CLASSES.join(", ")}; what and reverse one nonempty line each; record an http(s) url without user information, or absent`,
+        `record-decision: class must be one of ${DECISION_CLASSES.join(", ")}; level, when given, one of ${AUTONOMY_LEVELS.join(", ")}; what and reverse one nonempty line each; record an http(s) url without user information, or absent`,
       );
     return { ...s, decisions: [...(s.decisions ?? []), entry] };
   });

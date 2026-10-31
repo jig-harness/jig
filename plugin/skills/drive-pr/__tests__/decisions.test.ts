@@ -57,6 +57,48 @@ describe("record-decision", () => {
     expect(handoff).not.toContain("a defect");
   });
 
+  it("records the level the caller captured, not the one in force now", async () => {
+    const d = stateDirFor("decision-captured-level");
+    const env = {
+      DRIVE_PR_HANDOFF_DIR: join(d, "handoff"),
+      DRIVE_PR_TARGET: "999",
+      JIG_OVERLAY: unattendedOverlay(),
+    };
+    const r = await state(
+      d,
+      ["record-decision", "999"],
+      env,
+      JSON.stringify({
+        class: "file-issue",
+        what: "filed the follow-up for the unvalidated retry budget",
+        record: "https://example.invalid/issues/7",
+        reverse: "close the issue",
+        level: "wide",
+      }),
+    );
+    expectSpawnExit(r, 0);
+    await state(d, ["handoff", "999"], env);
+    const handoff = readFileSync(join(d, "handoff", "pr-drive-999.md"), "utf8");
+    expect(handoff).toContain("- **file-issue** at `wide`, round 0");
+    expect(handoff).not.toContain("at `unattended`");
+  });
+
+  it("refuses a captured level that is not an autonomy level", async () => {
+    const d = stateDirFor("decision-bad-level");
+    const r = await state(
+      d,
+      ["record-decision", "999"],
+      { DRIVE_PR_TARGET: "999", JIG_OVERLAY: unattendedOverlay() },
+      JSON.stringify({
+        class: "file-issue",
+        what: "filed it",
+        reverse: "close the issue",
+        level: "reckless",
+      }),
+    );
+    expectSpawnExit(r, 2);
+  });
+
   it("counts a decision with no record as a defect", async () => {
     const d = stateDirFor("decision-unrecorded");
     const env = { DRIVE_PR_HANDOFF_DIR: join(d, "handoff") };
