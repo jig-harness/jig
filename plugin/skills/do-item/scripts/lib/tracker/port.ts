@@ -205,6 +205,18 @@ export interface PoolIssue {
   truncated: string[];
 }
 
+/**
+ * Who made an issue's current assignment, as `assignedBy` reads it from the
+ * tracker's history. `trusted` is set when that user may start work on the
+ * team's issues: a non-guest member of the team (Linear), or someone with
+ * write access to the repository (GitHub).
+ */
+export interface Assigner {
+  id: string;
+  name: string;
+  trusted: boolean;
+}
+
 /** Which open issues a pool holds, by label. */
 export interface PoolQuery {
   /** Each list must match: the issue carries at least one label of each. */
@@ -371,6 +383,22 @@ export interface Tracker {
   openChildren(key: string): Promise<PoolIssue[]>;
   /** One issue in pool form, whatever its state; `null` when it does not exist. */
   poolIssue(key: string): Promise<PoolIssue | null>;
+  /**
+   * This team's issues assigned to `identity` (a GitHub login; a Linear
+   * user's email or display name) in one of `states`. An empty `states`
+   * throws, since it would read no state the caller meant.
+   */
+  assignedIssues(
+    identity: string,
+    states: ReadonlyArray<CanonicalState>,
+  ): Promise<PoolIssue[]>;
+  /**
+   * Who made the assignment of `assignee` (default: the issue's current
+   * assignee) to the issue, from the tracker's history. Throws with the
+   * reason when the history cannot be read in full or holds no such
+   * assignment, so an unknown assigner is never read as a trusted one.
+   */
+  assignedBy(key: string, assignee?: string): Promise<Assigner>;
 
   // ── Filing and planning ──
   /**

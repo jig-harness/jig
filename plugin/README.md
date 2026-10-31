@@ -80,6 +80,7 @@ that a skill hands a narrow job to):
 
 Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
 [machine resource collection](#machine-resource-collection) ·
+[the dispatcher](#the-dispatcher) ·
 [requirements](#requirements) ·
 [install](#install-the-plugin) · [use](#use-a-skill) ·
 [configure a repository](#configure-a-repository) ·
@@ -109,6 +110,33 @@ Collecting runs use the install-recorded base declaration and stay within
 the confirmed bounds. See [resource collection](gc/README.md) for supported
 kinds and collection limits, and [configuration](CONFIGURATION.md#gc) for
 both configuration layers.
+
+## The dispatcher
+
+`jig dispatch` is the start of the [dispatcher](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): a program
+on the machine that runs the agent sessions, which looks at the tracker,
+the pull requests and the running sessions and says which stage of the
+delivery loop should be running and is not. It reports and starts nothing:
+
+```sh
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch [--repo <path>]... [--json]
+```
+
+For each repository (`--repo`, the current one by default) it prints every
+action it would take, each with the record that wants it and the evidence:
+a pickup for an item assigned to the repository's factory identity, a
+re-arm for a drive its ledger shows stopped on a mechanical state (a usage
+limit, an answered park), a follow-up for a merge, a notification for a
+drive only a person can settle. A stage a running session already holds is
+listed as running; a record it cannot read, or a target it cannot place,
+is reported and never planned. Each run writes a receipt under
+`~/.local/state/jig/dispatch/receipts/`, which `jig dispatch receipts`
+lists. `--apply`, which starts what the report lists, is refused in this
+version. The session runtime it reads is [Orca](https://www.onorca.dev)
+(`orca` on `PATH`, or `ORCA_CLI_COMMAND`), behind an interface a second
+runtime can be added to. The repository's values are its
+[`dispatch` section](CONFIGURATION.md#dispatch), read from its default
+branch on the forge.
 
 ## Set up from an agent session
 

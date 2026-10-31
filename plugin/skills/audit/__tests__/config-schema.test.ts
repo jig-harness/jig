@@ -466,7 +466,7 @@ describe("the reading skills", () => {
           f.path,
           skill,
           existsSync(
-            skill === "gc"
+            skill === "gc" || skill === "dispatch"
               ? join(plugin, "jig.ts")
               : skill === "evidence"
                 ? join(plugin, "shared", "evidence.ts")

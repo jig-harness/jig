@@ -55,6 +55,7 @@ type ReportOps = Pick<
   | "openIssues"
   | "openChildren"
   | "poolIssue"
+  | "assignedIssues"
 >;
 
 /** What the reports borrow from the pickup operations. */
@@ -76,6 +77,13 @@ const ANCESTORS = ancestorFields(PARENT_DEPTH + 1);
 
 /** Whether each sub-issue is open, for `hasOpenChildren`. */
 const OPEN_CHILDREN = `subIssues(first: ${PAGE}) { pageInfo { hasNextPage } nodes { state } }`;
+
+/** The canonical states that only a closed issue is in. */
+const CLOSED_STATES: ReadonlySet<string> = new Set([
+  "done",
+  "canceled",
+  "duplicate",
+]);
 
 const LABELED_EVENTS = `timelineItems(itemTypes: [LABELED_EVENT], last: ${PAGE}) {
   nodes { ... on LabeledEvent { createdAt label { name } } }
@@ -422,6 +430,36 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
     async poolIssue(key) {
       const found = await client.issue(client.ref(key), OPEN_CHILDREN);
       return found === null ? null : pool(found.issue, found.raw);
+    },
+
+    async assignedIssues(identity, states) {
+      if (states.length === 0)
+        throw new TrackerRequestError(
+          "invalid",
+          "an assigned-issues query needs at least one state",
+        );
+      // The state is a label or a board column, so it is applied locally;
+      // the listing is open-only unless a closed state is asked for.
+      const closed = states.some((s) => CLOSED_STATES.has(s));
+      const open = states.some((s) => !CLOSED_STATES.has(s));
+      return (
+        await client.list(
+          {
+            states: [
+              ...(open ? ["OPEN" as const] : []),
+              ...(closed ? ["CLOSED" as const] : []),
+            ],
+            assignee: identity,
+          },
+          OPEN_CHILDREN,
+        )
+      )
+        .filter(({ issue }) =>
+          states.includes(
+            model.stateOf({ ...issue, labels: wholeLabels(issue) }),
+          ),
+        )
+        .map(({ issue, raw }) => pool(issue, raw));
     },
   };
 }

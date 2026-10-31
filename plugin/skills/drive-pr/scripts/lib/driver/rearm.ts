@@ -277,13 +277,16 @@ async function threadComments(key: string): Promise<CommentLike[] | null> {
   }));
 }
 
-async function prComments(pr: string): Promise<CommentLike[] | null> {
+async function prComments(
+  pr: string,
+  repo = "{owner}/{repo}",
+): Promise<CommentLike[] | null> {
   const res = await ghCall(
     [
       "api",
       "--paginate",
       "--slurp",
-      `repos/{owner}/{repo}/issues/${pr}/comments?per_page=100`,
+      `repos/${repo}/issues/${pr}/comments?per_page=100`,
     ],
     { stderr: "pipe", env: ghRepoEnv() },
   );
@@ -321,23 +324,24 @@ async function answersTo(
 }
 
 /**
- * Every parked item with its answers once all of them are answered; `null`
- * when one is unanswered or a read failed (each logged).
+ * The answers to each parked item of pull request `pr`, and the items still
+ * waiting; `unreadable` names the item whose comments could not be read.
+ * `repo` (`owner/name`) names the repository; without it, the current
+ * directory's.
  */
-async function answeredParks(
-  state: DriveState,
-): Promise<PendingVerdict[] | null> {
-  const conversation = await prComments(String(state.pr));
+export async function parkAnswers(
+  pr: number,
+  parked: readonly ParkedItem[],
+  repo?: string,
+): Promise<
+  { answered: PendingVerdict[]; waiting: string[] } | { unreadable: string }
+> {
+  const conversation = await prComments(String(pr), repo);
   const answered: PendingVerdict[] = [];
   const waiting: string[] = [];
-  for (const item of state.parked) {
+  for (const item of parked) {
     const answers = await answersTo(item, conversation);
-    if (answers === null) {
-      console.error(
-        `re-arm: could not read the comments that would answer parked ${item.kind} ${item.key}; leaving every item parked.`,
-      );
-      return null;
-    }
+    if (answers === null) return { unreadable: `${item.kind} ${item.key}` };
     if (answers.length === 0) waiting.push(`${item.kind} ${item.key}`);
     else
       answered.push({
@@ -347,6 +351,24 @@ async function answeredParks(
         answers,
       });
   }
+  return { answered, waiting };
+}
+
+/**
+ * Every parked item with its answers once all of them are answered; `null`
+ * when one is unanswered or a read failed (each logged).
+ */
+async function answeredParks(
+  state: DriveState,
+): Promise<PendingVerdict[] | null> {
+  const found = await parkAnswers(state.pr, state.parked);
+  if ("unreadable" in found) {
+    console.error(
+      `re-arm: could not read the comments that would answer parked ${found.unreadable}; leaving every item parked.`,
+    );
+    return null;
+  }
+  const { answered, waiting } = found;
   if (waiting.length === 0) return answered;
   console.error(
     `re-arm: ${answered.length} of ${state.parked.length} parked item(s) answered; still waiting on ${waiting.join(", ")}. Nothing is unparked until every one is.`,
