@@ -80,6 +80,18 @@ function holding(
   };
 }
 
+function runningCount(held: Holding): number {
+  return held.kind === "running" ? liveAgentCount(held.workspaces) : 0;
+}
+
+/** The running agents across workspaces. */
+function liveAgentCount(workspaces: Workspace[]): number {
+  return workspaces.reduce(
+    (n, w) => n + w.agents.filter((a) => RUNNING_STATES.has(a.state)).length,
+    0,
+  );
+}
+
 function liveAgents(workspaces: Workspace[]): string {
   return workspaces
     .map(
@@ -129,12 +141,13 @@ export function planTick(input: PlanInput): Plan {
   for (const item of input.pickups) {
     const joined = (w: Workspace) => w.items.includes(item.key);
     const held = holding(sessions, joined);
-    if (held.kind === "running" && held.workspaces.length > 1) {
+    const liveCount = runningCount(held);
+    if (held.kind === "running" && liveCount > 1) {
       plan.actions.push({
         stage: "notify",
         target: item.key,
         record: "runtime",
-        reason: `double claim: ${held.workspaces.length} running sessions join to it, so nothing starts for it`,
+        reason: `double claim: ${liveCount} running sessions join to it, so nothing starts for it`,
         evidence: { workspaces: liveAgents(held.workspaces) },
       });
       continue;
@@ -157,7 +170,10 @@ export function planTick(input: PlanInput): Plan {
     );
   }
 
-  for (const pr of input.drives) {
+  // A pull request in both populations merged between the two reads: the
+  // merged state wins, so it gets its follow-up and no re-arm.
+  const mergedNumbers = new Set(input.merged.map((m) => m.number));
+  for (const pr of input.drives.filter((d) => !mergedNumbers.has(d.number))) {
     const target = `PR #${pr.number}`;
     if (QUIET.has(pr.class)) {
       plan.quiet.push({ target, class: pr.class, why: pr.why });

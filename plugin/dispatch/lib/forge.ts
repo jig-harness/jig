@@ -154,11 +154,13 @@ export async function mergedSince(
 ): Promise<MergedPr[]> {
   const day = since.slice(0, 10);
   const listed = await listPrs(slug, ["merged", "--search", `merged:>=${day}`]);
+  for (const p of listed)
+    if (p.mergedAt === undefined || !Number.isFinite(Date.parse(p.mergedAt)))
+      throw new ForgeReadError(
+        `merged pull request #${p.number} has no valid merge time`,
+      );
   return listed
-    .filter(
-      (p) =>
-        p.mergedAt !== undefined && Date.parse(p.mergedAt) >= Date.parse(since),
-    )
+    .filter((p) => Date.parse(p.mergedAt as string) >= Date.parse(since))
     .map((p) => ({
       number: p.number,
       url: p.url,

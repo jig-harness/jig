@@ -10,6 +10,7 @@ import { CANONICAL_STATES } from "../../skills/do-item/scripts/lib/tracker/port.
 import type { DispatchSection } from "./types.ts";
 
 const DEFAULT_STATES = ["todo"];
+const KEYS = ["identity", "states", "followup_command"];
 
 class SectionError extends Error {}
 
@@ -43,6 +44,11 @@ export function dispatchSection(
   if (raw !== undefined && raw !== null && !isRecord(raw))
     throw new SectionError("dispatch must be a mapping");
   const section = (raw ?? {}) as Record<string, unknown>;
+  const unknown = Object.keys(section).filter((k) => !KEYS.includes(k));
+  if (unknown.length > 0)
+    throw new SectionError(
+      `dispatch has unknown key(s): ${unknown.join(", ")} (known: ${KEYS.join(", ")})`,
+    );
   return {
     identity: text(section.identity, "identity"),
     states: states(section.states),

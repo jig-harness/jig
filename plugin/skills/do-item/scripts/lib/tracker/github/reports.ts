@@ -78,6 +78,13 @@ const ANCESTORS = ancestorFields(PARENT_DEPTH + 1);
 /** Whether each sub-issue is open, for `hasOpenChildren`. */
 const OPEN_CHILDREN = `subIssues(first: ${PAGE}) { pageInfo { hasNextPage } nodes { state } }`;
 
+/** The canonical states that only a closed issue is in. */
+const CLOSED_STATES: ReadonlySet<string> = new Set([
+  "done",
+  "canceled",
+  "duplicate",
+]);
+
 const LABELED_EVENTS = `timelineItems(itemTypes: [LABELED_EVENT], last: ${PAGE}) {
   nodes { ... on LabeledEvent { createdAt label { name } } }
 }`;
@@ -431,10 +438,19 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
           "invalid",
           "an assigned-issues query needs at least one state",
         );
-      // The state is a label or a board column, so it is applied locally.
+      // The state is a label or a board column, so it is applied locally;
+      // the listing is open-only unless a closed state is asked for.
+      const closed = states.some((s) => CLOSED_STATES.has(s));
+      const open = states.some((s) => !CLOSED_STATES.has(s));
       return (
         await client.list(
-          { states: ["OPEN"], assignee: identity },
+          {
+            states: [
+              ...(open ? ["OPEN" as const] : []),
+              ...(closed ? ["CLOSED" as const] : []),
+            ],
+            assignee: identity,
+          },
           OPEN_CHILDREN,
         )
       )

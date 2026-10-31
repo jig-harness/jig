@@ -6,17 +6,21 @@
  * stays where it began however often the tick runs.
  *
  * A tick removes receipts older than the retention, keeping the latest
- * completed one whatever its age.
+ * completed one whatever its age, and the latest completed one naming each
+ * repository, since that receipt is the only record of the repository's
+ * follow-up window.
  */
 import {
   closeSync,
   fsyncSync,
+  linkSync,
   mkdirSync,
   openSync,
   readdirSync,
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -94,6 +98,19 @@ export function receiptPaths(root = stateRoot()): string[] {
     );
 }
 
+function isRepoEntry(value: unknown): boolean {
+  return (
+    isMapping(value) &&
+    typeof value.path === "string" &&
+    Array.isArray(value.actions) &&
+    Array.isArray(value.records) &&
+    (value.followupSince === null ||
+      value.followupSince === undefined ||
+      (typeof value.followupSince === "string" &&
+        Number.isFinite(Date.parse(value.followupSince))))
+  );
+}
+
 /** A receipt, or `null` when the file does not hold one. */
 export function readReceipt(path: string): TickReceipt | null {
   try {
@@ -102,7 +119,9 @@ export function readReceipt(path: string): TickReceipt | null {
       value.version === 1 &&
       typeof value.runId === "string" &&
       typeof value.startedAt === "string" &&
-      Array.isArray(value.repos)
+      typeof value.completed === "boolean" &&
+      Array.isArray(value.repos) &&
+      value.repos.every(isRepoEntry)
       ? (value as unknown as TickReceipt)
       : null;
   } catch (err) {
@@ -128,20 +147,37 @@ export function previousFollowupSince(
   return null;
 }
 
-/** Remove receipts past the retention, keeping the latest completed one. */
+/** The receipts to keep whatever their age: the latest completed one naming each repository, and the latest overall. */
+function newestPerRepository(paths: string[]): Set<string> {
+  const keep = new Set<string>();
+  const seen = new Set<string>();
+  let latest = true;
+  for (const path of [...paths].reverse()) {
+    const receipt = readReceipt(path);
+    if (receipt === null || !receipt.completed) continue;
+    if (latest) keep.add(path);
+    latest = false;
+    for (const repo of receipt.repos)
+      if (!seen.has(repo.path)) {
+        seen.add(repo.path);
+        keep.add(path);
+      }
+  }
+  return keep;
+}
+
+/** Remove receipts past the retention, except those `newestPerRepository` keeps. */
 export function pruneReceipts(
   nowMs: number,
   root = stateRoot(),
   days = RETENTION_DAYS,
 ): string[] {
   const paths = receiptPaths(root);
-  const keep = [...paths]
-    .reverse()
-    .find((p) => readReceipt(p)?.completed === true);
+  const keep = newestPerRepository(paths);
   const cutoff = nowMs - days * 86_400_000;
   const removed: string[] = [];
   for (const path of paths) {
-    if (path === keep) continue;
+    if (keep.has(path)) continue;
     const day = Date.parse(`${basename(dirname(path))}T00:00:00Z`);
     if (!Number.isFinite(day) || day + 86_400_000 > cutoff) continue;
     rmSync(path, { force: true });
@@ -150,29 +186,95 @@ export function pruneReceipts(
   return removed;
 }
 
+/** Seconds an unreadable or empty lock is given before it counts as abandoned. */
+const LOCK_GRACE_MS = 10_000;
+
+/**
+ * The lock file is published whole: the pid is written to a private file that
+ * is then linked to the lock path, so the lock never exists empty and only
+ * one contender can create it.
+ */
+function publishLock(path: string): boolean {
+  const temporary = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  writeFileSync(temporary, String(process.pid), { mode: 0o600 });
+  try {
+    linkSync(temporary, path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
+/** The pid a lock file names; `null` while it is empty or unreadable. */
+function lockHolder(path: string): number | null {
+  try {
+    const holder = Number(readFileSync(path, "utf8").trim());
+    return Number.isSafeInteger(holder) && holder > 0 ? holder : null;
+  } catch (err) {
+    swallow(err, `${path} cannot be read`);
+    return null;
+  }
+}
+
+function olderThan(path: string, ms: number): boolean {
+  try {
+    return Date.now() - statSync(path).mtimeMs > ms;
+  } catch (err) {
+    swallow(err, `${path} is gone`);
+    return false;
+  }
+}
+
+/**
+ * Replace a lock the caller saw to be abandoned. Contenders serialize on a
+ * guard file and re-read the lock under it, so a lock another tick took in
+ * the meantime is left alone.
+ */
+function reclaim(path: string, seen: number | null): boolean {
+  const guard = `${path}.reclaim`;
+  if (!publishLock(guard)) {
+    // A guard whose owner is gone is cleared for the next attempt.
+    const owner = lockHolder(guard);
+    if (
+      (owner === null && olderThan(guard, LOCK_GRACE_MS)) ||
+      (owner !== null && !alive(owner))
+    )
+      rmSync(guard, { force: true });
+    return false;
+  }
+  try {
+    const now = lockHolder(path);
+    const abandoned =
+      now === null ? olderThan(path, LOCK_GRACE_MS) : !alive(now);
+    if (!abandoned || now !== seen) return false;
+    rmSync(path, { force: true });
+    return publishLock(path);
+  } finally {
+    rmSync(guard, { force: true });
+  }
+}
+
 /** The tick lock: one tick per machine. Returns its release, or the holder. */
 export function takeTickLock(
   root = stateRoot(),
 ): { release: () => void } | { heldBy: string } {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const path = join(root, "tick.lock");
+  const release = () => {
+    // Only the owner removes the lock: a replaced one belongs to another tick.
+    if (lockHolder(path) === process.pid) rmSync(path, { force: true });
+  };
   for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const fd = openSync(path, "wx", 0o600);
-      writeFileSync(fd, String(process.pid));
-      closeSync(fd);
-      return { release: () => rmSync(path, { force: true }) };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const text = readFileSync(path, "utf8").trim();
-      // An empty lock is one another tick is still writing.
-      if (text === "") return { heldBy: path };
-      const holder = Number(text);
-      if (!Number.isSafeInteger(holder) || holder <= 0 || alive(holder))
-        return { heldBy: `process ${holder} (${path})` };
-      // The holder is gone: the lock is stale, and taken once more.
-      rmSync(path, { force: true });
-    }
+    if (publishLock(path)) return { release };
+    const holder = lockHolder(path);
+    const abandoned =
+      holder === null ? olderThan(path, LOCK_GRACE_MS) : !alive(holder);
+    if (!abandoned)
+      return { heldBy: `process ${holder ?? "unknown"} (${path})` };
+    if (reclaim(path, holder)) return { release };
   }
   return { heldBy: path };
 }

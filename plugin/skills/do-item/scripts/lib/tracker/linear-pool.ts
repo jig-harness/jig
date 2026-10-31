@@ -172,6 +172,10 @@ export function assignedOperations(
       const who = assignee ?? (isRecord(current) ? current.id : undefined);
       if (typeof who !== "string")
         throw new AssignmentError(`issue ${key} is assigned to nobody`);
+      if (!names(current, who))
+        throw new AssignmentError(
+          `issue ${key} is no longer assigned to ${who}`,
+        );
       const latest = nodes
         .map((n, i) => field(n, `history of ${key}[${i}]`))
         .filter((n) => names(n.toAssignee, who))

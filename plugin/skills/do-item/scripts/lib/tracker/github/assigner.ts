@@ -18,7 +18,7 @@ const ASSIGNMENTS = `
 query TrackerAssignedBy($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     issue(number: $number) {
-      assignees(first: 1) { nodes { login } }
+      assignees(first: 10) { nodes { login } }
       timelineItems(itemTypes: [ASSIGNED_EVENT], last: ${EVENTS}) {
         pageInfo { hasPreviousPage }
         nodes {
@@ -78,6 +78,24 @@ function assignments(nodes: unknown[], key: string): Assignment[] {
   });
 }
 
+function refuseForeign(
+  client: Client,
+  ref: { owner: string; name: string },
+  key: string,
+): void {
+  const { home } = client;
+  if (same(ref.owner, home.owner) && same(ref.name, home.name)) return;
+  throw new GitHubApiError(
+    `issue ${key} is in ${ref.owner}/${ref.name}, not ${home.owner}/${home.name}: who may write there is not read for it`,
+  );
+}
+
+function loginsOf(nodes: unknown, key: string): string[] {
+  return (Array.isArray(nodes) ? nodes : []).map((n, i) =>
+    str(record(n, `issue ${key} assignee ${i}`).login, "assignee.login"),
+  );
+}
+
 export function assignerOperations(
   client: Client,
 ): Pick<Tracker, "assignedBy"> {
@@ -110,6 +128,7 @@ export function assignerOperations(
   return {
     async assignedBy(key, assignee) {
       const ref = client.ref(key);
+      refuseForeign(client, ref, key);
       const data = record(
         await client.transport(ASSIGNMENTS, {
           owner: ref.owner,
@@ -123,13 +142,14 @@ export function assignerOperations(
         `issue ${key}`,
       );
       const current = record(issue.assignees, `issue ${key}.assignees`).nodes;
-      const who =
-        assignee ??
-        (Array.isArray(current) && current[0] !== undefined
-          ? str(record(current[0], "assignee").login, "assignee.login")
-          : undefined);
+      const logins = loginsOf(current, key);
+      const who = assignee ?? logins[0];
       if (who === undefined)
         throw new GitHubApiError(`issue ${key} is assigned to nobody`);
+      if (!logins.some((l) => same(l, who)))
+        throw new GitHubApiError(
+          `issue ${key} is no longer assigned to ${who}`,
+        );
       const timeline = record(
         issue.timelineItems,
         `issue ${key}.timelineItems`,

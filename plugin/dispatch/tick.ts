@@ -17,7 +17,11 @@ import {
 } from "./lib/forge.ts";
 import { planTick } from "./lib/plan.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
-import type { SessionRuntime } from "./lib/runtime/port.ts";
+import type {
+  JoinTargets,
+  SessionRuntime,
+  SessionsReport,
+} from "./lib/runtime/port.ts";
 import { readSection } from "./lib/section.ts";
 import { readDrives } from "./lib/sources/ledgers.ts";
 import { readPickups } from "./lib/sources/tracker.ts";
@@ -165,10 +169,13 @@ async function gatherRepo(
   }
 
   // The runtime: which of them a session holds.
-  const sessions = await runtime.sessions(repo, {
+  const sessions = await readSessions(runtime, repo, {
     keys,
     branchPattern: branchPattern(values),
-    pullRequests: open.map((p) => ({ number: p.number, head: p.headRefName })),
+    pullRequests: [
+      ...open.map((p) => ({ number: p.number, head: p.headRefName })),
+      ...merged.map((p) => ({ number: p.number, head: p.head })),
+    ],
   });
   report.records.push({
     record: "runtime",
@@ -185,6 +192,23 @@ async function gatherRepo(
   report.unplaced.push(...plan.unplaced);
   report.quiet.push(...plan.quiet);
   return report;
+}
+
+/** The runtime's answer; a rejected read is a failed report, never an escape. */
+async function readSessions(
+  runtime: SessionRuntime,
+  repo: RepoTarget,
+  join: JoinTargets,
+): Promise<SessionsReport> {
+  try {
+    return await runtime.sessions(repo, join);
+  } catch (error) {
+    return {
+      ok: false,
+      source: runtime.name,
+      reason: `the runtime could not be read: ${failureText(error)}`,
+    };
+  }
 }
 
 export type TickResult =

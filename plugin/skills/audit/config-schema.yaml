@@ -64,6 +64,7 @@ strict:
   - reflection
   - code_stats
   - docs
+  - dispatch
   - specs
   - work_batch
   - work_batch.ranking

@@ -135,27 +135,79 @@ function joins(
   };
 }
 
-function agents(row: Record<string, unknown>): AgentSession[] {
-  return (Array.isArray(row.agents) ? row.agents : [])
-    .filter(isRecord)
-    .map((a) => ({
-      id: typeof a.paneKey === "string" ? a.paneKey : "",
-      state: typeof a.state === "string" ? a.state : "unknown",
-      agentType: typeof a.agentType === "string" ? a.agentType : null,
-    }));
+/** The agents of a row; `null` when the row does not carry a readable list. */
+function agents(row: Record<string, unknown>): AgentSession[] | null {
+  if (!Array.isArray(row.agents) || !row.agents.every(isRecord)) return null;
+  return row.agents.map((a) => ({
+    id: typeof a.paneKey === "string" ? a.paneKey : "",
+    state: typeof a.state === "string" ? a.state : "unknown",
+    agentType: typeof a.agentType === "string" ? a.agentType : null,
+  }));
+}
+
+/** Why the listing's coverage metadata is unusable; `null` when it is whole. */
+function hostGap(ps: Record<string, unknown>): string | null {
+  const scope = ps.hostScope;
+  if (!isRecord(scope) || !Array.isArray(scope.omittedHostIds))
+    return "orca worktree ps does not say which hosts it covers";
+  return scope.omittedHostIds.length > 0
+    ? `orca worktree ps does not cover host(s) ${scope.omittedHostIds.join(", ")}`
+    : null;
 }
 
 /** Why a listing cannot be read as whole; `null` when it can. */
 function partial(ps: Record<string, unknown>): string | null {
-  if (ps.truncated === true)
+  if (!Array.isArray(ps.worktrees))
+    return "orca worktree ps did not return a worktrees list";
+  if (typeof ps.truncated !== "boolean")
+    return "orca worktree ps does not say whether it cut its page short";
+  if (ps.truncated)
     return `orca worktree ps cut its page short (${String(ps.totalCount)} rows)`;
-  const scope = isRecord(ps.hostScope) ? ps.hostScope : {};
-  const omitted = Array.isArray(scope.omittedHostIds)
-    ? scope.omittedHostIds
-    : [];
-  return omitted.length > 0
-    ? `orca worktree ps does not cover host(s) ${omitted.join(", ")}`
-    : null;
+  return hostGap(ps);
+}
+
+/** Terminals the runtime cannot report; an unreadable row counts as one. */
+function unverifiable(
+  row: Record<string, unknown>,
+  listed: AgentSession[] | null,
+): number {
+  const count = terminalCount(row);
+  return listed === null || count === null ? 1 + (count ?? 0) : count;
+}
+
+function text(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function branchOf(row: Record<string, unknown>): string {
+  return typeof row.branch === "string"
+    ? row.branch.replace(/^refs\/heads\//, "")
+    : "";
+}
+
+/** The terminals whose agents Orca cannot report; `null` when the row does not say. */
+function terminalCount(row: Record<string, unknown>): number | null {
+  const n = row.unverifiableTerminalCount;
+  return typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** One `worktree ps` row as a workspace; a row it cannot read whole is an unknown. */
+function workspaceOf(
+  row: Record<string, unknown>,
+  join: JoinTargets,
+): Workspace {
+  const branch = branchOf(row);
+  const listed = agents(row);
+  return {
+    id: String(row.worktreeId ?? row.path ?? ""),
+    path: text(row.path),
+    branch,
+    ...joins(row, branch, join),
+    agents: listed ?? [],
+    unverifiableTerminals: unverifiable(row, listed),
+    comment: text(row.comment),
+    unread: row.unread === true,
+  };
 }
 
 export function orcaRuntime(): SessionRuntime {
@@ -177,28 +229,10 @@ export function orcaRuntime(): SessionRuntime {
       if (typeof ps === "string") return { ok: false, source, reason: ps };
       const cut = partial(ps);
       if (cut !== null) return { ok: false, source, reason: cut };
-      const rows = (Array.isArray(ps.worktrees) ? ps.worktrees : [])
+      const rows = (ps.worktrees as unknown[])
         .filter(isRecord)
         .filter((w) => ids.includes(String(w.repoId)) && w.isArchived !== true);
-      const workspaces: Workspace[] = rows.map((row) => {
-        const branch =
-          typeof row.branch === "string"
-            ? row.branch.replace(/^refs\/heads\//, "")
-            : "";
-        return {
-          id: String(row.worktreeId ?? row.path ?? ""),
-          path: typeof row.path === "string" ? row.path : "",
-          branch,
-          ...joins(row, branch, join),
-          agents: agents(row),
-          unverifiableTerminals:
-            typeof row.unverifiableTerminalCount === "number"
-              ? row.unverifiableTerminalCount
-              : 0,
-          comment: typeof row.comment === "string" ? row.comment : "",
-          unread: row.unread === true,
-        };
-      });
+      const workspaces = rows.map((row) => workspaceOf(row, join));
       return { ok: true, source, workspaces };
     },
     openWorkspace: () => notYet("openWorkspace", "build step 3"),
