@@ -449,12 +449,13 @@ unknown key is refused.
 ## `workspace_name`
 
 Names the workspace a skill runs in after the work it holds and the stage the
-work is at, in a runtime that can rename its workspaces (Orca today). Absent,
-nothing is renamed. A failed rename only warns.
+work is at, in a runtime that can rename its workspaces (Orca today), for
+example `#12 [D] Rename workspaces`. On by default; `template: ""` turns it
+off. A failed rename only warns.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `workspace_name.template` | text with `{id}`, `{status}`, `{title}` and `{pr}` | none: workspaces keep their names | do-item, drive-pr | The name. `{id}` is the item key, `{status}` the stage's text from `workspace_name.statuses`, `{title}` the item title, `{pr}` `#<number>` once there is a pull request. A variable with no value renders empty. Any other `{name}` is refused |
+| `workspace_name.template` | text with `{id}`, `{status}`, `{title}` and `{pr}` | `{id} {status} {title}` | do-item, drive-pr | The name. An empty string turns the renaming off; a blank one is refused. `{id}` is the item key, `{status}` the stage's text from `workspace_name.statuses`, `{title}` the item title, `{pr}` `#<number>` once there is a pull request. A variable with no value renders empty. Any other `{name}` is refused |
 | `workspace_name.statuses` | map from a stage to text | `{implementing: "[I]", driving: "[D]", ready: "[R]", done: "✅"}` | do-item, drive-pr | What `{status}` stands for at each stage: do-item sets `implementing` at pickup and `driving` when it arms the drive, drive-pr sets `ready` after the merge-ready announcement posts. `done` is for a follow-up step. An entry overrides one stage and keeps the rest; a stage outside this set is refused |
 
 From the repository root, `bun "<do-item-skill-dir>/scripts/workspace-name.ts" <stage> [--id "<key>"] [--title-file <path>] [--pr <number>]`
