@@ -28,7 +28,9 @@ describe("armCommand", () => {
         "-p",
         "/jig:drive-pr 7",
       ]),
-    ).toBe("bun /s/drive.ts 7 --take-over -- claude -p '/jig:drive-pr 7'");
+    ).toBe(
+      "bun /s/drive.ts 7 --take-over --pass-args '' -- claude -p '/jig:drive-pr 7'",
+    );
   });
 
   it("falls back to the Claude Code pass when no pass command is known", () => {

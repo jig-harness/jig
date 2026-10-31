@@ -106,19 +106,15 @@ function hasOwnArgs(argv: readonly string[]): boolean {
 
 /**
  * Whether a printed re-arm or takeover command must carry `--pass-args ''`:
- * a Claude Code pass command with no arguments of its own, run where
- * `drive.pass_args` names some, got there only by an empty override, and a
- * command that did not say so would pick the configured words up again.
+ * a Claude Code pass command with no arguments of its own. Whether the empty
+ * list came from an override or from an unset `drive.pass_args` is not
+ * recoverable from the command, and the configuration may change before the
+ * command runs (or be malformed now), so the command says it itself rather
+ * than leaving the choice to a later reading of the configuration.
  */
-export function pinsEmptyPassArgs(
-  argv: readonly string[],
-  configured: () => PassArgs = configuredPassArgs,
-): boolean {
+export function pinsEmptyPassArgs(argv: readonly string[]): boolean {
   return (
-    argv[0] !== undefined &&
-    passVendor(argv) === "claude" &&
-    !hasOwnArgs(argv) &&
-    configured().words.length > 0
+    argv[0] !== undefined && passVendor(argv) === "claude" && !hasOwnArgs(argv)
   );
 }
 

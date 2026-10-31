@@ -110,6 +110,15 @@ describe("effectivePassArgs", () => {
       );
   });
 
+  it("pins an empty choice into a printed command without reading the configuration", () => {
+    const { argv } = effectivePassArgs(PASS, "", configured);
+    expect(argv).toEqual(PASS);
+    for (const extra of ["", " --take-over"])
+      expect(armCommand("drive.ts", "7", false, extra, argv)).toBe(
+        `bun drive.ts 7${extra} --pass-args '' -- claude --model sonnet -p '/jig:drive-pr 7'`,
+      );
+  });
+
   it("keeps a pass command's own arguments as written, saying the setting was not added", () => {
     const own = ["claude", "--permission-mode", "plan", "-p", "x 7"];
     const pass = effectivePassArgs(own, undefined, configured);
