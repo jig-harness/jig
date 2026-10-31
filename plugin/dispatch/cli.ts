@@ -28,25 +28,40 @@ interface Options {
   followupSince?: string;
 }
 
+/** Take a flag's value into `options`. */
+function takeValue(
+  options: Options,
+  flag: string,
+  value: string | undefined,
+): void {
+  if (value === undefined || value.startsWith("--"))
+    throw new ExitError(2, `Missing value for ${flag}`);
+  if (flag === "--repo") {
+    options.repos.push(resolve(value));
+    return;
+  }
+  if (!Number.isFinite(Date.parse(value)))
+    throw new ExitError(2, `--followup-since is not a date: ${value}`);
+  options.followupSince = new Date(value).toISOString();
+}
+
+const SWITCHES: Record<string, "json" | "apply"> = {
+  "--json": "json",
+  "--apply": "apply",
+};
+
 function parseArguments(argv: string[]): Options {
   const options: Options = { repos: [], json: false, apply: false };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i] as string;
     if (flag === "--repo" || flag === "--followup-since") {
-      const value = argv[++i];
-      if (value === undefined || value.startsWith("--"))
-        throw new ExitError(2, `Missing value for ${flag}`);
-      if (flag === "--repo") options.repos.push(resolve(value));
-      else {
-        if (!Number.isFinite(Date.parse(value)))
-          throw new ExitError(2, `--followup-since is not a date: ${value}`);
-        options.followupSince = new Date(value).toISOString();
-      }
+      takeValue(options, flag, argv[++i]);
       continue;
     }
-    if (flag === "--json") options.json = true;
-    else if (flag === "--apply") options.apply = true;
-    else throw new ExitError(2, `Unknown argument: ${flag}\n${USAGE}`);
+    const field = SWITCHES[flag];
+    if (field === undefined)
+      throw new ExitError(2, `Unknown argument: ${flag}\n${USAGE}`);
+    options[field] = true;
   }
   return options;
 }

@@ -85,40 +85,54 @@ function itemKey(value: string | number, join: JoinTargets): string | null {
   return join.keys?.normalize(raw) ?? null;
 }
 
+/** What Orca's links on a workspace name: its pull request and its issues. */
+function linked(row: Record<string, unknown>, join: JoinTargets) {
+  const prs: number[] = [];
+  const items: string[] = [];
+  const add = (type: unknown, value: string | number | null) => {
+    if (value === null) return;
+    if (type === "pr") {
+      if (typeof value === "number") prs.push(value);
+      return;
+    }
+    const key = itemKey(value, join);
+    if (key !== null) items.push(key);
+  };
+  add("pr", linkValue(row.linkedPR));
+  add("issue", linkValue(row.linkedIssue));
+  add("issue", linkValue(row.linkedLinearIssue));
+  for (const item of Array.isArray(row.linkedItems) ? row.linkedItems : [])
+    if (isRecord(item) && (item.type === "pr" || item.type === "issue"))
+      add(item.type, linkValue(item));
+  return { prs, items };
+}
+
+/** What a branch names: the pull request whose head it is, the item whose key it carries. */
+function byBranch(branch: string, join: JoinTargets) {
+  if (branch === "") return { prs: [], items: [] };
+  const key =
+    join.keys === null
+      ? null
+      : keyFromBranch(branch, join.keys, join.branchPattern);
+  return {
+    prs: join.pullRequests
+      .filter((pr) => pr.head === branch)
+      .map((pr) => pr.number),
+    items: key === null ? [] : [key],
+  };
+}
+
 function joins(
   row: Record<string, unknown>,
   branch: string,
   join: JoinTargets,
 ) {
-  const prs = new Set<number>();
-  const items = new Set<string>();
-  const linkedPr = linkValue(row.linkedPR);
-  if (typeof linkedPr === "number") prs.add(linkedPr);
-  for (const link of [row.linkedIssue, row.linkedLinearIssue]) {
-    const value = linkValue(link);
-    const key = value === null ? null : itemKey(value, join);
-    if (key !== null) items.add(key);
-  }
-  for (const item of Array.isArray(row.linkedItems) ? row.linkedItems : []) {
-    if (!isRecord(item)) continue;
-    const value = linkValue(item);
-    if (value === null) continue;
-    if (item.type === "pr" && typeof value === "number") prs.add(value);
-    if (item.type === "issue") {
-      const key = itemKey(value, join);
-      if (key !== null) items.add(key);
-    }
-  }
-  if (branch !== "") {
-    for (const pr of join.pullRequests)
-      if (pr.head === branch) prs.add(pr.number);
-    const key =
-      join.keys === null
-        ? null
-        : keyFromBranch(branch, join.keys, join.branchPattern);
-    if (key !== null) items.add(key);
-  }
-  return { prs: [...prs].sort((a, b) => a - b), items: [...items].sort() };
+  const links = linked(row, join);
+  const named = byBranch(branch, join);
+  return {
+    prs: [...new Set([...links.prs, ...named.prs])].sort((a, b) => a - b),
+    items: [...new Set([...links.items, ...named.items])].sort(),
+  };
 }
 
 function agents(row: Record<string, unknown>): AgentSession[] {
