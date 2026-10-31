@@ -334,7 +334,7 @@ fields:
       type: string
       pattern: "^(?!(?:--|-p|--print|--model)$)(?!--model=)\\S+$"
     default: []
-    since: next
+    since: 0.109.0
     read_by: [drive-pr, do-item]
   drive.escape_baseline_doc:
     type: path
