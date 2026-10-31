@@ -957,7 +957,8 @@ one.
 
 What this machine dispatches, and on whose accounts, lives only in
 `$JIG_HOME/dispatch.yaml` (default `~/.jig/dispatch.yaml`); a repository
-or an environment override cannot set it. `jig dispatch --apply`, and the
+cannot set it, and environment variables cannot override settings inside it.
+`JIG_HOME` selects the directory that contains it. `jig dispatch --apply`, and the
 timer `jig dispatch install` writes, start only what this file enables; a
 run without `--apply` reads it for the repositories to report on, and
 works without it. An unknown key anywhere in the file is refused.
@@ -992,7 +993,7 @@ receipts_days: 30
 | `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
 | `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on its usage limit (exit `16`) when the drive recorded no reset |
 | `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
-| `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's workspace |
+| `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's workspace. Twice this plus eight times `runtime_timeout` is one tick's budget, and a file whose budget passes 24 days is refused |
 | `receipts_days` | 30; days receipts and ended launch records are kept |
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
