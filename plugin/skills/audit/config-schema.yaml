@@ -20,6 +20,8 @@
 #             match; also allowed in a nested type spec of one of those types
 #             (a list's `items`), applying to each entry; refused on any other
 #             type
+#   allow_empty  string: true when the empty string is a value the skill reads
+#             (an off-switch), not a missing one
 #   nullable  true when `null` is accepted and means "not set"
 #   items     list: the type of each entry: a type name; `fields:` for a
 #             list of mappings, each field typed, with `optional:` naming the
@@ -495,6 +497,7 @@ fields:
   workspace_name.template:
     type: string
     pattern: "^(?:[^{}]|\\{(?:id|status|title|pr)\\})*$"
+    allow_empty: true
     read_by: [do-item, drive-pr]
     since: 0.104.0
   workspace_name.statuses:

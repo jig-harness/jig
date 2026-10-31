@@ -56,6 +56,7 @@ export interface Field {
   max?: number;
   pattern?: string;
   nullable?: boolean;
+  allow_empty?: boolean;
   items?: Items;
   distinct?: boolean;
   nonempty?: boolean;
@@ -96,6 +97,7 @@ const FIELD_KEYS = new Set([
   "max",
   "pattern",
   "nullable",
+  "allow_empty",
   "items",
   "distinct",
   "nonempty",
@@ -246,6 +248,7 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
       ? "default must be a value the field accepts"
       : null,
   flag("nullable"),
+  flag("allow_empty"),
   flag("distinct"),
   flag("nonempty"),
   (e) =>
@@ -370,6 +373,7 @@ const isText = (v: unknown): v is string =>
   typeof v === "string" && v.trim() !== "";
 
 function textProblem(value: unknown, field?: Field): string | null {
+  if (field?.allow_empty && value === "") return null;
   if (!isText(value)) return "must be a nonempty string";
   if (field?.pattern && !new RegExp(field.pattern).test(value))
     return `must match ${field.pattern}`;

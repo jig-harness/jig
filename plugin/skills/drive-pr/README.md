@@ -572,12 +572,11 @@ Where the repository turned on the [`changelog`](../changelog/README.md) skill
 changes what the pull request's change note says updates the note in the same
 round. A repository that did not is never asked for one.
 
-Where the repository sets
-[`workspace_name.template`](../../CONFIGURATION.md#workspace_name) and the
-agent runs in Orca, the workspace is renamed at the following points: when a session
+Where the agent runs in Orca, the workspace is renamed at the following points: when a session
 arms the drive (the driving stage, `[D]` by default) and after the
-merge-ready announcement (the ready stage, `[R]`). Without the template, or
-outside Orca, nothing is renamed, and a rename that fails only warns.
+merge-ready announcement (the ready stage, `[R]`). With
+[`workspace_name.template`](../../CONFIGURATION.md#workspace_name) set to
+`""`, or outside Orca, nothing is renamed, and a rename that fails only warns.
 
 ## What it will never do
 

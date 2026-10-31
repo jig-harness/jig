@@ -39,6 +39,10 @@ test("a template over the variables the skill fills is not", () => {
   ).toEqual([]);
 });
 
+test("an empty template, which turns the renaming off, is not", () => {
+  expect(aboutTemplate("workspace_name:\n  template: ''\n")).toEqual([]);
+});
+
 test("a blank template is a finding", () => {
   expect(aboutTemplate("workspace_name:\n  template: '   '\n")).toHaveLength(1);
 });
