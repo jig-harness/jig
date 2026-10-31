@@ -6,6 +6,7 @@ import { ExitError } from "../../../shared/cli.ts";
 import type { OrcaRunner } from "../../../shared/orca.ts";
 import {
   DEFAULT_STATUSES,
+  DEFAULT_TEMPLATE,
   type NameRequest,
   nameConfig,
   parseArgs,
@@ -74,8 +75,28 @@ describe("renderName", () => {
 });
 
 describe("nameConfig", () => {
-  test("absent means off, with the default statuses", () => {
-    expect(nameConfig({})).toEqual(config(null));
+  test("absent means the default template, with the default statuses", () => {
+    expect(nameConfig({})).toEqual(config(DEFAULT_TEMPLATE));
+    expect(nameConfig({ workspace_name: {} }).template).toBe(DEFAULT_TEMPLATE);
+  });
+
+  test("an empty template turns it off; a blank one is refused", () => {
+    expect(
+      nameConfig({ workspace_name: { template: "" } }).template,
+    ).toBeNull();
+    expect(() => nameConfig({ workspace_name: { template: "  " } })).toThrow(
+      ExitError,
+    );
+  });
+
+  test("the default template names item, status and title", () => {
+    expect(
+      renderName(
+        DEFAULT_TEMPLATE,
+        { stage: "implementing", id: "#348", title: "Rename it", pr: "" },
+        DEFAULT_STATUSES,
+      ),
+    ).toBe("#348 [I] Rename it");
   });
 
   test("a status entry overrides one stage and keeps the rest", () => {
@@ -90,6 +111,13 @@ describe("nameConfig", () => {
     expect(() =>
       nameConfig({ workspace_name: { statuses: { merged: "M" } } }),
     ).toThrow(ExitError);
+  });
+
+  test("an empty or whitespace-only status is refused", () => {
+    for (const text of ["", "   "])
+      expect(() =>
+        nameConfig({ workspace_name: { statuses: { ready: text } } }),
+      ).toThrow(ExitError);
   });
 
   test("a key the section does not declare is refused", () => {
@@ -158,7 +186,7 @@ describe("parseArgs", () => {
 });
 
 describe("renameWorkspace", () => {
-  test("makes no call without a template", async () => {
+  test("makes no call with the template turned off", async () => {
     const { calls, runner } = orcaAnswering({});
     expect(
       await renameWorkspace(request, config(null), ORCA, runner),
