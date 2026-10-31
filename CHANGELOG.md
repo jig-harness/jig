@@ -349,6 +349,24 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.110.0] - 2026-10-31
+
+### Added
+
+- `jig dispatch --apply` restarts stopped drives without a person: each
+  re-arm of a drive stopped on a usage limit or an answered park, and each
+  takeover of a wedged driver the machine started, runs in a terminal tab
+  of the pull request's Orca workspace (opened from the pull request when
+  none holds it), billed to an account the new machine file
+  (`~/.jig/dispatch.yaml`) lists, within that account's cap and outside
+  any usage-limit wall it recorded. A launch record written before each
+  launch keeps a lost answer from starting a second pass, and a refusal
+  `drive.ts` gives is not fought. See the plugin README's "The dispatcher"
+  and CONFIGURATION.md's "The machine's dispatch file".
+- `jig dispatch install [--interval 5m] [--yes] [--uninstall]` previews and
+  writes the timer that runs `jig dispatch --apply`, on the same scheduler
+  code as `jig gc install`.
+
 ## [0.109.0] - 2026-10-31
 
 ### Added
@@ -4286,7 +4304,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.109.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.110.0...HEAD
+[0.110.0]: https://github.com/jig-harness/jig/compare/v0.109.0...v0.110.0
 [0.109.0]: https://github.com/jig-harness/jig/compare/v0.108.0...v0.109.0
 [0.108.0]: https://github.com/jig-harness/jig/compare/v0.107.0...v0.108.0
 [0.107.0]: https://github.com/jig-harness/jig/compare/v0.106.0...v0.107.0
