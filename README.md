@@ -38,7 +38,7 @@ maturity levels for projects of any size, templates and tested reference
 gates; the audit measures how far a repository has come. It fits the way an
 organization already works: its values belong in configuration, not code, and
 tool bindings go behind interfaces where Jig has built them (the issue
-tracker has adapters for Linear and GitHub Issues; another tracker is a new
+tracker has adapters for Linear, GitHub Issues and Jira; another tracker is a new
 adapter); the exceptions still open are listed in [ROADMAP.md](ROADMAP.md)
 item 10. On top of the
 scaffolding, the plugin's skills run the factory's stations at two levels:

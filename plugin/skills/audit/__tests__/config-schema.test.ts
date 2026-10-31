@@ -25,6 +25,11 @@ import {
   parseTrackerConfig,
 } from "../../do-item/scripts/lib/tracker/config.ts";
 import {
+  DEFAULT_ISSUE_TYPE,
+  LINKED_RELATIONS,
+  RESOLVED_STATES,
+} from "../../do-item/scripts/lib/tracker/jira/settings.ts";
+import {
   DEFAULT_STATES_FROM,
   DEFAULT_STATUS_FIELD,
   GITHUB_STATE_SOURCES,
@@ -276,6 +281,18 @@ describe("the reading skills", () => {
     ]);
   });
 
+  test("accept the Jira adapter's value sets the schema lists", () => {
+    expect(field("issue_tracker.jira.priorities")?.keys).toEqual([
+      ...PRIORITY_NAMES,
+    ]);
+    expect(field("issue_tracker.jira.resolutions")?.keys).toEqual([
+      ...RESOLVED_STATES,
+    ]);
+    expect(field("issue_tracker.jira.link_types")?.keys).toEqual([
+      ...LINKED_RELATIONS,
+    ]);
+  });
+
   test("read the code_stats section's fields, all of them repository-only", () => {
     expect(under("code_stats").sort()).toEqual([...CODE_STATS_FIELDS].sort());
     expect(field("code_stats.kinds")?.keys).toEqual([...CODE_STATS_KINDS]);
@@ -322,6 +339,7 @@ describe("the reading skills", () => {
       "issue_tracker.adapter": DEFAULT_ADAPTER,
       "issue_tracker.github.states_from": DEFAULT_STATES_FROM,
       "issue_tracker.github.status_field": DEFAULT_STATUS_FIELD,
+      "issue_tracker.jira.issue_type": DEFAULT_ISSUE_TYPE,
       "issue_tracker.taxonomy": DEFAULT_TAXONOMY,
       "do_item.execution_plan_block": DEFAULT_BLOCK,
       "changelog.notes_dir": CHANGELOG_DEFAULTS.notesDir,

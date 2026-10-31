@@ -59,13 +59,13 @@ configuration from the working directory.
 
 ### Consumer configuration
 
-Every field is optional except `issue_tracker.team` on the Linear adapter (`issue_tracker.adapter: linear`).
+Every field is optional except `issue_tracker.team` on the Linear and Jira adapters (`issue_tracker.adapter: linear` or `jira`) and `issue_tracker.jira.site` on Jira.
 The skill reads them at run time from `.config/jig.yaml`:
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
-| `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) or `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client). Jira and a plan file kept in the repository are planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
-| `issue_tracker.team` | Linear only: the team the repository files into, as the prefix its issue keys carry (`ENG` for `ENG-123`) | Required on Linear: the tracker scripts stop with a message naming this field. Not used on GitHub Issues. A file that sets it without naming `issue_tracker.adapter` is refused, since the default adapter has no team: add `adapter: linear` |
+| `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client), or `jira` for Jira Cloud (credentials from `JIRA_EMAIL` and `JIRA_API_TOKEN`; its settings are under `issue_tracker.jira`, `site` required). A plan file kept in the repository is planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
+| `issue_tracker.team` | Linear and Jira: the team (Linear) or project (Jira) the repository files into, as the prefix its issue keys carry (`ENG` for `ENG-123`) | Required on Linear and Jira: the tracker scripts stop with a message naming this field. Not used on GitHub Issues. A file that sets it without naming `issue_tracker.adapter` is refused, since the default adapter has no team: add `adapter: linear` or `adapter: jira` |
 | `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress" |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
 | `issue_tracker.labels` | The repository's label for each role the skill acts on (see the table below) | The default names below |
@@ -176,13 +176,14 @@ deleted (GitHub then does not retarget the layer above).
 
 The scripts reach the tracker through the tracker port in
 `${CLAUDE_SKILL_DIR}/scripts/lib/tracker/`, whose adapter the overlay's
-`issue_tracker.adapter` selects (`linear` or `github`). Use the script
+`issue_tracker.adapter` selects (`linear`, `github` or `jira`). Use the script
 forms: they work on every adapter and map the workflow states for you. A
 harness with a native integration for the same tracker may use it instead;
 the native forms are given per adapter: Linear's Model Context Protocol
 ([MCP](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) tools, and
-the `gh` command line for GitHub Issues. Where a later step names only a
-Linear tool, the GitHub form is the row of this table it belongs to.
+the `gh` command line for GitHub Issues. Jira has no native form here: use
+the script forms. Where a later step names only a Linear tool, the GitHub
+form is the row of this table it belongs to, and on Jira its script form.
 
 | Operation | Script form | Native: Linear (MCP) | Native: GitHub Issues (`gh`) |
 |-----------|-------------|----------------------|------------------------------|
@@ -193,8 +194,8 @@ Linear tool, the GitHub form is the row of this table it belongs to.
 | Post comment | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment "<KEY>" --body-file body.md` | `mcp__linear__save_comment` | `gh issue comment` with the body from a file |
 | File a new issue | The consumer's `issue_tracker.file_command` | — | — |
 
-An issue key is `ENG-123` on Linear, where `issue_tracker.team` names the
-prefix, and `#123` on GitHub Issues, an issue of the configured repository;
+An issue key is `ENG-123` on Linear and Jira, where `issue_tracker.team`
+names the prefix, and `#123` on GitHub Issues, an issue of the configured repository;
 a person may also give a GitHub issue as `123` or as its web address, which
 the scripts read as `#123`. This document writes a key as `<KEY>`. Quote it
 on a command line (`"<KEY>"`): an unquoted `#` starts a shell comment. A file

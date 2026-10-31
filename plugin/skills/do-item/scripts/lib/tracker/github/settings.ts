@@ -12,6 +12,7 @@
 
 import { isRecord } from "../../../../../../shared/guards.ts";
 import { TrackerConfigError } from "../config-error.ts";
+import { nonEmpty, settingsSection } from "../settings-fields.ts";
 
 /** Where the GitHub adapter keeps an open issue's workflow state. */
 export const GITHUB_STATE_SOURCES = ["labels", "project"] as const;
@@ -63,26 +64,8 @@ export function defaultPriorityLabel(name: PriorityName): string {
   return `priority: ${name}`;
 }
 
-function nonEmpty(v: unknown, at: string): string {
-  if (typeof v !== "string" || v.trim() === "")
-    throw new TrackerConfigError(at, `${at} must be a nonempty string`);
-  return v;
-}
-
 function sectionOf(raw: unknown): Record<string, unknown> {
-  if (raw !== undefined && raw !== null && !isRecord(raw))
-    throw new TrackerConfigError(
-      "issue_tracker.github",
-      "issue_tracker.github must be a mapping",
-    );
-  const section = (raw ?? {}) as Record<string, unknown>;
-  const unknown = Object.keys(section).find((k) => !FIELDS.includes(k));
-  if (unknown !== undefined)
-    throw new TrackerConfigError(
-      field(unknown),
-      `${field(unknown)} is not a field (${FIELDS.join(", ")})`,
-    );
-  return section;
+  return settingsSection(raw, "github", FIELDS);
 }
 
 function repositoryOf(v: unknown): string | null {

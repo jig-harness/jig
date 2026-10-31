@@ -26,6 +26,8 @@ import {
   checkPatch,
   checkPriority,
   checkRelation,
+  checkSearchText,
+  refuseSameIssue,
   requireTitle,
 } from "../requests.ts";
 import type { Client } from "./client.ts";
@@ -668,11 +670,7 @@ export function gitHubTracker(client: Client): Tracker {
     },
 
     async searchIssues(text, opts = {}) {
-      if (text.trim() === "")
-        throw new TrackerRequestError(
-          "invalid",
-          "a search needs non-empty text; empty text would read every issue",
-        );
+      checkSearchText(text);
       // GitHub's search matches words, not substrings; a phrase keeps the
       // words together. Quotes inside the text would end the phrase.
       const phrase = `"${text.replace(/"/g, " ").trim()}"`;
@@ -705,11 +703,7 @@ export function gitHubTracker(client: Client): Tracker {
       const a = await client.mustIssue(key);
       const b = await client.mustIssue(target);
       // `#1`, `1`, the qualified key and the address all name one issue.
-      if (a.id === b.id)
-        throw new TrackerRequestError(
-          "invalid",
-          `an issue cannot be related to itself: ${key} and ${target} are ${a.key}`,
-        );
+      refuseSameIssue([a.id, b.id], key, target, a.key);
       if (type === "blocks") {
         await client.mutate(M.addBlockedBy, {
           issueId: b.id,

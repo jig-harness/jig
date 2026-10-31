@@ -54,7 +54,7 @@ reader; to read one value yourself, run
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
 | `issue_tracker.taxonomy` | The label taxonomy, relative to the repository root | `label-taxonomy.yaml`; without one the skill stops before writing |
-| `issue_tracker.team` | Linear only: the team the issues are filed in, the prefix of their keys (`ENG` in `ENG-123`) | Required on Linear: the tracker scripts stop with a message naming it. Not used on GitHub Issues |
+| `issue_tracker.team` | Linear and Jira: the team (Linear) or project (Jira) the issues are filed in, the prefix of their keys (`ENG` in `ENG-123`) | Required on Linear and Jira: the tracker scripts stop with a message naming it. Not used on GitHub Issues |
 | `issue_tracker.adapter` | Which tracker adapter the tracker scripts use | The default adapter |
 | `issue_tracker.labels` | The label each role names (`hitl`, `manual_ops`, `epic`, `followup`, `bug`, `pattern_prefix`); the `labels` operation of `tracker.ts` prints them | The defaults in the [configuration reference](../../CONFIGURATION.md#issue_tracker) |
 | `drive.change_areas_catalog` | The change-area catalog labels are derived from when a diff exists | No catalog: labels come from the description |
@@ -82,7 +82,7 @@ tracker by another route.
 | Change an issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update "<KEY>" --input patch.json` |
 | Relate two issues | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" relate "<KEY>" <blocks\|related\|duplicate> "<TARGET>"` |
 
-An issue key is `ENG-123` on Linear and `#123` on GitHub Issues, an issue
+An issue key is `ENG-123` on Linear and Jira and `#123` on GitHub Issues, an issue
 of the configured repository; this document writes it as `<KEY>` (or
 `<TARGET>` for the other issue of a relation). Quote a key on a command line:
 an unquoted `#` starts a shell comment.

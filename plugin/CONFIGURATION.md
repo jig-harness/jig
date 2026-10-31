@@ -119,7 +119,7 @@ Command-line flags, where a script has them, override all three.
   [environment variables](#environment-variables)) still work and override
   all three layers.
 - **Fields only a repository sets.** `gates.command`,
-  `repository.base_branch`, `issue_tracker.team`, `review.repo_slug`,
+  `repository.base_branch`, `issue_tracker.team`, `issue_tracker.jira.site`, `review.repo_slug`,
   `review.repo_label`, `ci.required_checks`, `docs.root`, `docs.schema`,
   `autonomy.max_level`, `autonomy.park_classes`, every `changelog`,
   `code_stats` and `specs` field describe one repository. Set in the user file
@@ -359,14 +359,20 @@ in their own file or the environment.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `issue_tracker.adapter` | adapter name | `github` | do-item, drive-pr, decide, work-batch, dispatch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers: `github` or `linear`. `github` (GitHub Issues) uses the signed-in `gh` command-line client, which also reads `GH_TOKEN` or `GITHUB_TOKEN`; with `JIG_GITHUB_GRAPHQL_URL` set it sends requests to that GraphQL endpoint (a GitHub Enterprise Server) with the token from `GH_TOKEN` or `GITHUB_TOKEN`. `linear` reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client. A file that sets `issue_tracker.team` without `issue_tracker.adapter` (or with it empty) is refused, since the default adapter has no team: add `adapter: linear` |
-| `issue_tracker.team` | team key such as `ENG` | **Required by the Linear adapter**; refused unless `issue_tracker.adapter` is set too | do-item, drive-pr, review, work-batch, dispatch | Linear only: the key issue identifiers carry (`ENG` for `ENG-123`). GitHub Issues keys are `#123`, of the repository `issue_tracker.github.repository` names |
-| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch, dispatch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate`. On GitHub Issues, `done`, `canceled` and `duplicate` are an issue closed as completed, not planned or duplicate, and each open state is the label (or, with `issue_tracker.github.states_from: project`, the board option) of that name; `todo` carries no label, so a new issue is in `todo` |
+| `issue_tracker.adapter` | adapter name | `github` | do-item, drive-pr, decide, work-batch, dispatch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers: `github`, `linear` or `jira`. `github` (GitHub Issues) uses the signed-in `gh` command-line client, which also reads `GH_TOKEN` or `GITHUB_TOKEN`; with `JIG_GITHUB_GRAPHQL_URL` set it sends requests to that GraphQL endpoint (a GitHub Enterprise Server) with the token from `GH_TOKEN` or `GITHUB_TOKEN`. `linear` reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client. `jira` (Jira Cloud, through its REST API version 3) reads `JIRA_EMAIL` and `JIRA_API_TOKEN`, an Atlassian account's email address and an API token made for it, and signs every request with them (HTTP Basic authentication); its settings are under `issue_tracker.jira`. A file that sets `issue_tracker.team` without `issue_tracker.adapter` (or with it empty) is refused, since the default adapter has no team: add `adapter: linear` or `adapter: jira` |
+| `issue_tracker.team` | team key such as `ENG` | **Required by the Linear and Jira adapters**; refused unless `issue_tracker.adapter` is set too | do-item, drive-pr, review, work-batch, dispatch | The key issue identifiers carry (`ENG` for `ENG-123`): the Linear team's key, or the Jira project's key. A Jira project key with `_` in it cannot be used, since a key is a capital letter followed by capital letters and digits. GitHub Issues keys are `#123`, of the repository `issue_tracker.github.repository` names |
+| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch, dispatch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate`. On GitHub Issues, `done`, `canceled` and `duplicate` are an issue closed as completed, not planned or duplicate, and each open state is the label (or, with `issue_tracker.github.states_from: project`, the board option) of that name; `todo` carries no label, so a new issue is in `todo`. On Jira, each name is matched to a status name ignoring case, and a status no name matches is read by its status category (To Do: not started, In Progress: started, Done: completed); `done`, `canceled` and `duplicate` may share one status when `issue_tracker.jira.resolutions` gives each its own resolution. A move takes one transition: the one out of the issue's current status into a status of the state's name, refused (naming the transitions there are) when none or several match. A Jira workflow suits this with a status per state the repository uses, transitions into In Progress, In Review and Done that any status can take, and a resolution field on the Done transition's screen |
 | `issue_tracker.github.repository` | `owner/name` | The repository the git remote (`repository.remote`, else `origin`) points to on github.com | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: the repository whose issues the skills work on |
 | `issue_tracker.github.states_from` | `labels` or `project` | `labels` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: where an open issue's workflow state is kept. `labels`: a label per state, named by `issue_tracker.states`. `project`: the option of a Projects board's single-select field; an open issue with no option is in `todo`, and one whose option names no open state is refused; the token then needs the `project` scope (`gh auth refresh -s project`) |
 | `issue_tracker.github.project` | a board's web address, `https://github.com/orgs/<org>/projects/<n>` or `https://github.com/users/<user>/projects/<n>` | **Required when `states_from` is `project`** | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: the board whose field holds the state. Moving an issue to an open state adds it to the board when it is not there |
 | `issue_tracker.github.status_field` | field name | `Status` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: the board's single-select field that holds the state |
 | `issue_tracker.github.priority_labels` | map from `urgent`, `high`, `medium`, `low` to a label | `priority: urgent`, `priority: high`, `priority: medium`, `priority: low` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: the label that carries each priority (1 to 4); an issue with none has no priority. Each priority needs its own label, which with `states_from: labels` is also no state's label |
+| `issue_tracker.jira.site` | the site's address, starting with `https://`, such as `https://example.atlassian.net` | **Required by the Jira adapter** | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the Jira Cloud site whose project `issue_tracker.team` names. Every field of `issue_tracker.jira` is checked whatever the adapter, and a field the section does not have is refused |
+| `issue_tracker.jira.issue_type` | issue type name | `Task` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the issue type a new issue gets, and an issue created under an Epic (or another parent above the standard level) |
+| `issue_tracker.jira.subtask_type` | issue type name | The project's one sub-task issue type; refused when it has none or several | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the type of an issue created under a standard issue. Creating an issue under a sub-task is refused |
+| `issue_tracker.jira.priorities` | map from `urgent`, `high`, `medium`, `low` to a Jira priority name | `Highest`, `High`, `Medium`, `Low` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the priority that carries each of Jig's priorities (1 to 4). An issue with another priority has none (0). A Jira issue always has a priority, so moving one to no priority is refused, and a new issue with none is created with the project's default |
+| `issue_tracker.jira.resolutions` | map from `done`, `canceled`, `duplicate` to a resolution name | `Done`, `Won't Do`, `Duplicate` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the resolution set when an issue moves into one of these states, where the transition's screen has a resolution field, and read back to tell the three apart when they share one status |
+| `issue_tracker.jira.link_types` | map from `blocks`, `related`, `duplicate` to an issue link type name | `Blocks`, `Relates`, `Duplicate` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the issue link type that carries each relation between issues; links of any other type are ignored |
 | `issue_tracker.labels.epic` | label | `review.taxonomy.epic_label`, else `epic` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch | Marks an issue whose sub-issues are worked one at a time |
 | `issue_tracker.labels.hitl` | label | `hitl` | do-item, decide, work-batch | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
 | `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item, work-batch | A step a person performs outside the code; caps an epic at `ops_pending` |
@@ -829,6 +835,7 @@ These are set per machine or per run, not committed:
 | `JIG_AFTER_VERSION_TIMEOUT_SEC` | Seconds `changelog.after_version` may run before it is stopped and the release fails; 1800 by default |
 | `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
+| `JIRA_EMAIL`, `JIRA_API_TOKEN` | Credentials for the Jira adapter: an Atlassian account's email address and an API token made for it |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
 | `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees), and `attach-pr.ts --place` choose the tree without attaching; `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
 | `DRIVE_PR_LEDGER` | `off` makes `drive.ts` drive without the drive ledger on the pull request: no seeding from it, no check for another clone's driver, no writes; `on` or unset uses it ([where its state lives](skills/drive-pr/README.md#where-its-state-lives)) |
@@ -935,15 +942,19 @@ repository. The command reports only; see [the plugin's README](README.md#the-di
 
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
-| `dispatch.identity` | string: a GitHub login, or a Linear user's email or display name | None: the repository has no pickups | dispatch |
+| `dispatch.identity` | string: a GitHub login; a Linear user's email or display name; or, on Jira, an Atlassian account id, or an email or display name that matches exactly one user (more or fewer matches are refused) | None: the repository has no pickups | dispatch |
 | `dispatch.states` | nonempty list of [canonical states](#issue_tracker) | `[todo]` | dispatch |
 | `dispatch.followup_command` | string | None: no follow-ups. Jig's own is `/followup`; a consumer repository names its own post-merge command | dispatch |
 
 An item is a pickup when it is assigned to `identity` and in one of
 `states`, and the person who made that assignment can write to the
 repository (GitHub: the one `issue_tracker.github.repository` names, which is
-the dispatched repository unless that field says otherwise) or is a non-guest member of the team (Linear); an item
-assigned by anyone else is reported and never planned. A pull request merged
+the dispatched repository unless that field says otherwise), is a non-guest member of the team (Linear), or is a person's Atlassian account, not a guest, that can be assigned issues in the project (Jira); an item
+assigned by anyone else is reported and never planned. On Jira an app's
+account, Jira Automation's own included, is never trusted, so a Jira
+Automation rule that assigns an item starts a pickup only when it runs as a
+person. The sessions dispatched for a Jira repository run with the
+`JIRA_EMAIL` and `JIRA_API_TOKEN` of the account `identity` names. A pull request merged
 since the follow-up stage's start wants `followup_command`. That start
 (`followup_since`) is the machine's, not the repository's:
 `jig dispatch --followup-since <date>` sets it, and otherwise each run keeps
@@ -1025,8 +1036,8 @@ ci:
   required_checks: [build, test]
   hold_label: ci:hold
 issue_tracker:
-  adapter: linear                        # or github, the default
-  team: ENG                              # Linear only: required by the Linear adapter
+  adapter: linear                        # or jira, or github, the default
+  team: ENG                              # required by the Linear and Jira adapters
   file_command: /jig:file-issue
   taxonomy: docs/label-taxonomy.yaml
   states:
@@ -1064,6 +1075,13 @@ issue_tracker:
       high: "priority: high"
       medium: "priority: medium"
       low: "priority: low"
+  jira:                                  # read by the jira adapter only
+    site: https://example.atlassian.net  # required by the jira adapter
+    issue_type: Task
+    subtask_type: Sub-task               # default: the project's one sub-task type
+    priorities: { urgent: Highest, high: High, medium: Medium, low: Low }
+    resolutions: { done: Done, canceled: "Won't Do", duplicate: Duplicate }
+    link_types: { blocks: Blocks, related: Relates, duplicate: Duplicate }
 do_item:
   agents:
     default: general-purpose
