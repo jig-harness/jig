@@ -343,7 +343,7 @@ The tick reaches the runtime only through these methods:
 | --- | --- |
 | `sessions(repo)` | the workspaces and their agents, joined to items and pull requests, with each agent's id and state and each workspace's comment and unread mark |
 | `openWorkspace(...)` | a workspace for an item (a new branch) or a pull request (its head branch), reused when one exists |
-| `launch(workspace, stage, account, key)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id. `key` is the launch record's token: a second call with a key already launched starts no second session |
+| `launch(workspace, stage, account, key, sessionId?)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id. `key` is the launch record's token: a second call with a key already launched starts no second session. `sessionId`, given for an interactive session, is the vendor session id the tick minted and keeps on the launch record (see Control), distinct from the agent's id and the key; a launch that cannot carry it records no wall and gets no nudge |
 | `notify(target, message)` | a message that reaches a person; its receipt carries the target's comment as written |
 | `steer(session, nudge)` | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting, its screen and attachment re-read in the same call just before the send |
 
@@ -392,7 +392,9 @@ implementation:
   follow-up) as `orca agent launch --agent <id> --worktree <selector>
   --prompt "<skill> <key>"`, with the model and effort from the item's
   route where the repository declares `routing`, bound to the account as a
-  headless pass is (below); that `orca agent launch` can bind its agent to
+  headless pass is (below), and with `sessionId` passed to the agent where
+  `orca agent launch` can carry it, which is checked when the control step
+  is built; that `orca agent launch` can bind its agent to
   an account so is checked when the pickup stage is built, and until it
   does, interactive sessions are not launched. The key is kept by the
   record itself for a headless pass: the wrapper claims the record
