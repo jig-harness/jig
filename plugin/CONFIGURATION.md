@@ -346,7 +346,7 @@ in their own file or the environment.
 `off_hours` widens the level during the hours nobody is there to ask: inside
 one of its schedule's windows, a drive's pass runs at `off_hours.level`
 instead, capped by `max_level` like any other choice, and the printed line
-reads `autonomy: wide (off_hours) (…)`; outside every window the base level
+names the effective level and records the off-hours choice and the cap; outside every window the base level
 stands. A person's session never runs at the off-hours level.
 
 ```yaml
@@ -380,8 +380,8 @@ then parks it under `human-thread`. An unresolve alone reverses nothing.
 
 **`wide` and `off_hours` are not yet validated.** They ship opt-in as a
 recorded exception to Jig's rule against shipping unvalidated dials, to be
-revisited once a working repository has run them for a month with fewer than
-one in ten provisional decisions reversed before the merge (`loop-metrics.ts`
+revisited once a working repository has run them for a month with at least ten counted
+provisional decisions and fewer than one in ten of them reversed before the merge (`loop-metrics.ts`
 reports the share per pull request). Until then, opt in only to take part in
 that measurement.
 

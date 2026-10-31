@@ -104,7 +104,7 @@ has run them for a month against the measure below.
 
 What `wide` adds, per decision. The decision classes the human-in-the-loop
 (HITL) registry reserves are not on this table, and no level changes them.
-The `attended` and `unattended` columns are what is built, as
+All three columns are built, as
 [CONFIGURATION.md § `autonomy`](../plugin/CONFIGURATION.md#autonomy) states.
 
 | Decision | `attended` | `unattended` | `wide` |

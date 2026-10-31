@@ -499,6 +499,24 @@ describe("drives.ts --report", () => {
     });
   });
 
+  it("a stop followed by a re-arm is not how the drive ended", async () => {
+    const forge = setUp();
+    writeState(forge, {
+      ...freshState(20),
+      ledgerGeneration: 3,
+      events: [
+        { at: ago(10), round: 1, kind: "stop", cause: "0" },
+        { at: ago(5), round: 2, kind: "rearm", cause: "answered" },
+      ],
+    } as DriveState);
+    const r = await report(forge, ["--json"]);
+    expectSpawnExit(r, 0);
+    const twenty = JSON.parse(r.stdout).pullRequests.find(
+      (p: { number: number }) => p.number === 20,
+    );
+    expect(twenty.terminal.name).toBe("stopped");
+  });
+
   it("a span too long for a date is refused as usage", async () => {
     const forge = setUp();
     const r = await report(forge, ["--since", "999999999999999999999h"]);

@@ -178,6 +178,15 @@ function terminalOf(
   };
 }
 
+/**
+ * The last stop's exit, only while no event follows it: a later restart or
+ * re-arm began a run that has recorded no stop of its own.
+ */
+function settledExit(events: readonly DriveEvent[]): number | null {
+  const at = events.findLastIndex((e) => e.kind === "stop");
+  return at < 0 || at < events.length - 1 ? null : lastStop(events);
+}
+
 function fromState(s: DriveState): DriveRecord {
   return {
     source: "state",
@@ -186,7 +195,7 @@ function fromState(s: DriveState): DriveRecord {
     takeovers: s.takeovers ?? [],
     parked: s.parked,
     quotaParked: s.quotaPark !== null,
-    exit: lastStop(s.events ?? []),
+    exit: settledExit(s.events ?? []),
     runningElsewhere: false,
   };
 }
@@ -201,8 +210,8 @@ function fromLedger(l: Ledger, nowMs: number): DriveRecord {
     quotaParked: l.quotaPark !== null,
     exit:
       l.driver.state === "stopped"
-        ? (l.driver.exit ?? lastStop(l.events ?? []))
-        : null,
+        ? (l.driver.exit ?? settledExit(l.events ?? []))
+        : settledExit(l.events ?? []),
     // A driver that stopped after its last ledger write still reads
     // "running"; past the lease window its heartbeat no longer says it is.
     runningElsewhere:
