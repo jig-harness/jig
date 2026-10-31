@@ -85,6 +85,16 @@ export function slotTable(
   }));
 }
 
+/** Read every account's wall again, as a wrapper may have written one since the table was built. */
+export function refreshWalls(
+  table: Slots[],
+  nowMs: number,
+  root?: string,
+): void {
+  for (const slots of table)
+    slots.wall = wallOf(slots.account.name, nowMs, root);
+}
+
 /** Every account's slots, in one line for a report. */
 function describeSlots(table: Slots[]): string {
   if (table.length === 0) return "the machine file lists no accounts";
@@ -107,11 +117,16 @@ function closed(slots: Slots): string | null {
 export type Admission = { admitted: Slots } | { waits: string };
 
 /** The account a re-arm runs on, taken in turn after `last`. */
-export function admitRearm(table: Slots[], last: string | null): Admission {
+export function admitRearm(
+  table: Slots[],
+  last: string | null,
+  excluded: ReadonlySet<string> = new Set(),
+): Admission {
   const start = table.findIndex((s) => s.account.name === last) + 1;
   for (let i = 0; i < table.length; i++) {
     const slots = table[(start + i) % table.length] as Slots;
-    if (closed(slots) === null) return { admitted: slots };
+    if (!excluded.has(slots.account.name) && closed(slots) === null)
+      return { admitted: slots };
   }
   return { waits: `no account has a free slot: ${describeSlots(table)}` };
 }
@@ -122,6 +137,10 @@ export function admitTakeover(table: Slots[], replaced: ReadRecord): Admission {
   if (slots === undefined)
     return {
       waits: `the record it replaces bills ${replaced.record.account}, which the machine file no longer lists`,
+    };
+  if (slots.account.vendor !== "claude" || replaced.record.vendor !== "claude")
+    return {
+      waits: `${slots.account.name}: no headless drive pass is documented for its vendor`,
     };
   if (slots.wall !== null)
     return {

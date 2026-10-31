@@ -80,7 +80,12 @@ export async function installDispatch(
       `jig dispatch install needs the machine file ${machineConfigPath()} first: the timer runs --apply, and that file says what it may start`,
     );
   const ms = options.intervalMs ?? machine?.intervalMs ?? 5 * 60_000;
-  const minutes = Math.max(1, Math.round(ms / 60_000));
+  if (ms % 60_000 !== 0)
+    throw new ExitError(
+      2,
+      `the interval must be whole minutes; ${options.intervalMs === null ? "the machine file's interval" : "--interval"} is ${ms / 1000}s`,
+    );
+  const minutes = ms / 60_000;
   const spec = dispatchJobSpec(minutes);
   console.log(jobPreview(spec, options.uninstall));
   if (!options.confirm) {

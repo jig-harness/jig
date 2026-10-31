@@ -356,6 +356,9 @@ export async function readLaunches(root = stateRoot()): Promise<{
   return { records, unreadable };
 }
 
+/** `drive.ts`'s refusals of a second driver, which end a record without a wall. */
+export const DRIVER_REFUSALS: ReadonlySet<number> = new Set([11, 13, 20]);
+
 /** The states that hold their stage and their account's slot. */
 export function holds(state: LaunchState): boolean {
   return (
@@ -374,7 +377,26 @@ export function pruneLaunches(
 ): string[] {
   const cutoff = nowMs - days * 86_400_000;
   const removed: string[] = [];
+  const kept = new Set<string>();
+  // The latest record of a pull request that ended on a refusal of a second
+  // driver is the stage's answer for as long as the ledger facts hold.
+  const latest = new Map<number, ReadRecord>();
+  for (const r of records) {
+    const seen = latest.get(r.record.pr);
+    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
+      latest.set(r.record.pr, r);
+  }
+  for (const entry of latest.values()) {
+    const { state } = entry;
+    if (
+      state.kind === "ended" &&
+      state.exit.code !== null &&
+      DRIVER_REFUSALS.has(state.exit.code)
+    )
+      kept.add(entry.record.id);
+  }
   for (const { record, state } of records) {
+    if (kept.has(record.id)) continue;
     if (state.kind !== "ended" && state.kind !== "died") continue;
     const at =
       state.kind === "ended"

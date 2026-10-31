@@ -24,7 +24,7 @@ import { readReceipt, receiptPaths } from "./receipts.ts";
 import { runTick } from "./tick.ts";
 
 const USAGE = `jig dispatch [--apply] [--repo <path>]... [--followup-since <date>] [--json]
-jig dispatch install [--interval <5m>] [--yes] [--remove]
+jig dispatch install [--interval <5m>] [--yes] [--uninstall]
 jig dispatch receipts [<run-id>]`;
 
 /** Exit when another tick holds the lock. */

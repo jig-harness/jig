@@ -9,7 +9,7 @@
 import { OrcaError } from "./envelope.ts";
 import { HOOK_TIMEOUT_MS, HOOKS_DIR, WAIT_POLL_MS } from "./limits.ts";
 import type { OpenPort } from "./port.ts";
-import { budget, output, shellQuote } from "./runner.ts";
+import { budget, cleanupContext, output, shellQuote } from "./runner.ts";
 
 /** Reads and commands on the clone's host. */
 export type OnHost = Pick<OpenPort, "host">;
@@ -143,7 +143,12 @@ export function releaseClaim(port: OnHost, claim: string, what: string): void {
 
 /** Give the create hook's claim back. */
 function releaseHookClaim(port: OnHost, claim: string): void {
-  releaseClaim(port, claim, "the create hook's");
+  // Outside the run's limit: it may have just passed, and the claim must still go.
+  releaseClaim(
+    { ...port, host: cleanupContext(port.host) },
+    claim,
+    "the create hook's",
+  );
 }
 
 /**
@@ -226,12 +231,17 @@ function runClaimedHook(
       `${error instanceof Error ? error.message : String(error)}; fix the hook and open the workspace again, which runs it again`,
     );
   }
-  const written = port.host.run([
-    "sh",
-    "-c",
-    `printf ok > ${shellQuote(mark)}`,
-  ]);
-  releaseHookClaim(port, claim);
+  let written: ReturnType<typeof port.host.run>;
+  try {
+    // Outside the run's limit, as the hook may have used all of it.
+    written = cleanupContext(port.host).run([
+      "sh",
+      "-c",
+      `printf ok > ${shellQuote(mark)}`,
+    ]);
+  } finally {
+    releaseHookClaim(port, claim);
+  }
   if (written.status !== 0)
     throw new OrcaError(
       `could not record that the create hook ran (${mark}): ${output(written)}`,

@@ -62,9 +62,17 @@ function systemdSchedule(schedule: JobSpec["schedule"]): string {
     : `OnActiveSec=1min\nOnUnitActiveSec=${schedule.everyMinutes}min`;
 }
 function cronSchedule(schedule: JobSpec["schedule"]): string {
-  return "hour" in schedule
-    ? `0 ${schedule.hour} * * *`
-    : `*/${schedule.everyMinutes} * * * *`;
+  if ("hour" in schedule) return `0 ${schedule.hour} * * *`;
+  // A cron step restarts each hour (or day), so only an interval that divides
+  // one evenly keeps its cadence.
+  const minutes = schedule.everyMinutes;
+  if (minutes < 60 && 60 % minutes === 0) return `*/${minutes} * * * *`;
+  const hours = minutes / 60;
+  if (Number.isInteger(hours) && hours < 24 && 24 % hours === 0)
+    return `0 */${hours} * * *`;
+  throw new GcError(
+    `A crontab line cannot run every ${minutes} minutes; use an interval that divides an hour or a day evenly`,
+  );
 }
 export function jobFiles(
   scheduler: Scheduler,

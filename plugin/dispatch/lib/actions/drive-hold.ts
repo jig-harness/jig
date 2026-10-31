@@ -10,16 +10,17 @@
  *   refusal `16` is the account's wall instead (see walls.ts), which keeps
  *   that account out of admission until its reset;
  * - a `silent` ledger whose driver this machine's record started (the
- *   record was claimed before the ledger's last heartbeat, and did not end
- *   on a refusal) is a takeover of that record, even while the record is
- *   alive: a wedged driver stays alive by definition, and
- *   `drive.ts --take-over` decides whether it is admitted.
+ *   driver's run began while the record's wrapper was running, and the record
+ *   did not end on a refusal) is a takeover of that record, even while the
+ *   record is alive: a wedged driver stays alive by definition, and
+ *   `drive.ts --take-over` decides whether it is admitted. A record that
+ *   holds its stage and has not yet produced a driver (pending, unknown, or
+ *   acting on the ledger facts as they still are) holds the pull request
+ *   first, so a lost launch stays visible and a takeover in flight is not
+ *   stacked on.
  */
-import { holds, type ReadRecord } from "../launches.ts";
+import { DRIVER_REFUSALS, holds, type ReadRecord } from "../launches.ts";
 import type { DrivenPr } from "../types.ts";
-
-/** `drive.ts`'s refusals of a second driver, which end a record without a wall. */
-const DRIVER_REFUSALS: ReadonlySet<number> = new Set([11, 13, 20]);
 
 export type DriveHold =
   | { kind: "none" }
@@ -51,15 +52,26 @@ function refusalOf(r: ReadRecord): number | null {
   return code !== null && DRIVER_REFUSALS.has(code) ? code : null;
 }
 
-/** Whether the record started the driver whose heartbeat the ledger shows. */
-function startedDriver(r: ReadRecord, heartbeat: string): boolean {
+/**
+ * Whether the record started the driver whose run the ledger shows: that run
+ * began after the wrapper was claimed, and before it ended when it has.
+ */
+function startedDriver(r: ReadRecord, started: string | null): boolean {
   const s = r.state;
-  if (s.kind !== "alive" && s.kind !== "died" && s.kind !== "ended")
+  // A wrapper that died without an exit has no end to bound its driver's start by.
+  if (s.kind !== "alive" && s.kind !== "ended") return false;
+  if (s.process === null || refusalOf(r) !== null || started === null)
     return false;
-  if (s.process === null || refusalOf(r) !== null) return false;
   const claimed = Date.parse(s.process.claimedAt);
-  const beat = Date.parse(heartbeat);
-  return Number.isFinite(claimed) && Number.isFinite(beat) && claimed <= beat;
+  const run = Date.parse(started);
+  const end = s.kind === "ended" ? Date.parse(s.exit.at) : Infinity;
+  return (
+    Number.isFinite(claimed) &&
+    Number.isFinite(run) &&
+    !Number.isNaN(end) &&
+    claimed <= run &&
+    run <= end
+  );
 }
 
 export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
@@ -67,16 +79,19 @@ export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
     .filter((r) => r.record.pr === pr.number)
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt));
   if (pr.class === "silent") {
-    const takingOver = mine.find(
-      (r) => r.record.action === "takeover" && holds(r.state),
+    const inFlight = mine.find(
+      (r) =>
+        holds(r.state) &&
+        (r.state.kind !== "alive" || r.record.facts === factsOf(pr)),
     );
-    if (takingOver !== undefined)
-      return { kind: "held", record: takingOver, why: describe(takingOver) };
-    const latest = mine.at(-1);
-    return latest !== undefined &&
-      startedDriver(latest, String(pr.evidence.heartbeat))
-      ? { kind: "takeover", record: latest }
-      : { kind: "none" };
+    if (inFlight !== undefined)
+      return { kind: "held", record: inFlight, why: describe(inFlight) };
+    const started =
+      typeof pr.evidence.started === "string" ? pr.evidence.started : null;
+    const owner = mine.findLast((r) => startedDriver(r, started));
+    return owner === undefined
+      ? { kind: "none" }
+      : { kind: "takeover", record: owner };
   }
   const holding = mine.find((r) => holds(r.state));
   if (holding !== undefined)

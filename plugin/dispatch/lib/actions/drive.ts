@@ -22,6 +22,7 @@ import {
   admitRearm,
   admitTakeover,
   checkIdentity,
+  refreshWalls,
   type Slots,
 } from "../accounts.ts";
 import {
@@ -101,6 +102,15 @@ function sharesSlot(state: ApplyState, record: LaunchRecord): boolean {
   return replaced !== undefined && holds(replaced.state);
 }
 
+/**
+ * Whether every launch before the latest one is a known failure. An earlier
+ * attempt whose answer was lost may still have started the wrapper, so a
+ * record carrying one is kept until its claim or exit settles it.
+ */
+function releasable(record: LaunchRecord): boolean {
+  return record.attempts.slice(0, -1).every((a) => a.outcome === "failed");
+}
+
 /** Release the slot of a record the runtime answered it started nothing for. */
 function release(state: ApplyState, record: LaunchRecord): void {
   removeRecord(record.id, state.root);
@@ -134,6 +144,7 @@ async function retryPending(
   state: ApplyState,
   repo: RepoTarget,
   report: RepoReport,
+  fresh: (pr: number) => Promise<DrivenPr | null>,
 ): Promise<void> {
   for (const { record, state: s } of [...state.records]) {
     if (record.repo !== repo.slug || s.kind !== "pending") continue;
@@ -141,10 +152,54 @@ async function retryPending(
     if (last?.outcome === "sent" || record.attempts.length >= MAX_ATTEMPTS)
       continue;
     if (record.workspace === null) continue;
+    const reason = await retryBlocked(state, record, fresh);
+    if (reason !== null) {
+      report.launches.push(
+        waits(
+          { target: `PR #${record.pr}`, stage: "rearm" } as Action,
+          `the pending launch of ${record.id} is not replayed: ${reason}`,
+          record.account,
+        ),
+      );
+      continue;
+    }
     const attempt = await callLaunch(state, record);
-    if (attempt.outcome === "failed") release(state, record);
+    if (attempt.outcome === "failed" && releasable(record))
+      release(state, record);
     report.launches.push(outcome(record, attempt, true));
   }
+}
+
+/** Why a pending record's launch must not be replayed now; `null` when it may. */
+async function retryBlocked(
+  state: ApplyState,
+  record: LaunchRecord,
+  fresh: (pr: number) => Promise<DrivenPr | null>,
+): Promise<string | null> {
+  let read: DrivenPr | null;
+  try {
+    read = await fresh(record.pr);
+  } catch (error) {
+    return `its ledger cannot be read again: ${failureText(error)}`;
+  }
+  if (read === null) return "its ledger cannot be read again";
+  if (record.facts !== factsOf(read))
+    return `its ledger changed since the launch (now ${factsOf(read)})`;
+  const want = record.action === "rearm" ? "re-armable" : "silent";
+  if (read.class !== want) return `its ledger now reads ${read.class}`;
+  refreshWalls(state.table, Date.now(), state.root);
+  const slots = state.table.find((s) => s.account.name === record.account);
+  if (slots === undefined)
+    return `${record.account} is no longer in the machine file`;
+  if (
+    slots.account.vendor !== record.vendor ||
+    slots.account.configDir !== record.configDir
+  )
+    return `${record.account} no longer names the account the record bills`;
+  if (slots.wall !== null)
+    return `${record.account} is walled until ${slots.wall.resetAt}`;
+  const identity = await identityOf(state, slots);
+  return identity.ok ? null : `identity check: ${identity.reason}`;
 }
 
 function waits(
@@ -216,8 +271,13 @@ async function workspaceFor(
   return `the workspace could not be opened${opened.lost ? " in time" : ""}: ${opened.detail}`;
 }
 
-function admission(state: ApplyState, action: Action) {
-  if (action.takeover === undefined) return admitRearm(state.table, state.last);
+function admission(
+  state: ApplyState,
+  action: Action,
+  excluded: ReadonlySet<string>,
+) {
+  if (action.takeover === undefined)
+    return admitRearm(state.table, state.last, excluded);
   const replaced = state.records.find((r) => r.record.id === action.takeover);
   return replaced === undefined
     ? { waits: `the launch record ${action.takeover} it replaces is gone` }
@@ -234,16 +294,25 @@ async function launchOne(
 ): Promise<LaunchOutcome> {
   const changed = stillWanted(action, fresh);
   if (changed !== null) return waits(action, changed);
-  const admitted = admission(state, action);
-  if ("waits" in admitted) return waits(action, admitted.waits);
-  const slots = admitted.admitted;
-  const identity = await identityOf(state, slots);
-  if (!identity.ok)
-    return refused(
-      action,
-      `identity check: ${identity.reason}`,
-      slots.account.name,
-    );
+  refreshWalls(state.table, Date.now(), state.root);
+  // A re-arm tries the next account when one fails its identity check, so a
+  // stale login cannot starve the others; a takeover has only its own account.
+  const failed = new Set<string>();
+  let refusal: LaunchOutcome | null = null;
+  let slots: Slots | null = null;
+  while (slots === null) {
+    const admitted = admission(state, action, failed);
+    if ("waits" in admitted) return refusal ?? waits(action, admitted.waits);
+    const identity = await identityOf(state, admitted.admitted);
+    if (identity.ok) {
+      slots = admitted.admitted;
+      break;
+    }
+    const name = admitted.admitted.account.name;
+    refusal ??= refused(action, `identity check: ${identity.reason}`, name);
+    if (action.takeover !== undefined) return refusal;
+    failed.add(name);
+  }
   const pr = fresh as DrivenPr;
   const workspace = await workspaceFor(
     state,
@@ -254,6 +323,14 @@ async function launchOne(
   );
   if (typeof workspace === "string")
     return refused(action, workspace, slots.account.name);
+  // Opening a workspace can take long enough for a wrapper to write a wall.
+  refreshWalls(state.table, Date.now(), state.root);
+  if (slots.wall !== null)
+    return waits(
+      action,
+      `${slots.account.name} was walled until ${slots.wall.resetAt} while the workspace opened`,
+      slots.account.name,
+    );
   const record: LaunchRecord = {
     version: 1,
     id: newRecordId(new Date()),
@@ -277,7 +354,8 @@ async function launchOne(
   state.records.push({ record, state: { kind: "pending" } });
   state.last = slots.account.name;
   const attempt = await callLaunch(state, record);
-  if (attempt.outcome === "failed") release(state, record);
+  if (attempt.outcome === "failed" && releasable(record))
+    release(state, record);
   return outcome(record, attempt, false);
 }
 
@@ -289,7 +367,7 @@ export async function applyDrives(
   sessions: SessionsReport,
   fresh: (pr: number) => Promise<DrivenPr | null>,
 ): Promise<void> {
-  await retryPending(state, repo, report);
+  await retryPending(state, repo, report, fresh);
   for (const action of report.actions) {
     if (action.stage !== "rearm") continue;
     const pr = Number(action.target.replace(/^PR #/, ""));

@@ -162,6 +162,7 @@ describe("jig dispatch --apply launches re-arms within account caps", () => {
         driver: {
           ...ledger.driver,
           state: "running",
+          started: "2026-10-30T21:30:00.000Z",
           heartbeat: "2026-10-30T22:00:00.000Z",
         },
       }),
@@ -189,6 +190,35 @@ describe("jig dispatch --apply launches re-arms within account caps", () => {
     await waitFor("the drive", () => driveRuns(w).length === 1);
     expect(driveRuns(w)[0]?.argv).toEqual(["7", "--take-over", ...PASS]);
     await waitFor("the exit", () => exitWritten(w, launched?.record ?? ""));
+  });
+
+  it("does not take over a driver this machine's record did not start", async () => {
+    const { w } = fixture();
+    const ledger = stoppedLedger(7, undefined);
+    w.setComments(7, [
+      ledgerComment(701, {
+        ...ledger,
+        driver: {
+          ...ledger.driver,
+          state: "running",
+          // Started long after the record's wrapper was claimed and ended.
+          started: "2026-10-30T23:30:00.000Z",
+          heartbeat: "2026-10-30T23:31:00.000Z",
+        },
+      }),
+    ]);
+    machineFile(w, [{ ...account(w, "a", "a@example.com"), max: 1 }]);
+    earlierRecord(w, { id: "20261030T210000Z-bbbbbbbb", account: "a" });
+    claimed(w, "20261030T210000Z-bbbbbbbb", {
+      host: hostname(),
+      bootId: bootId(),
+      pid: 2 ** 22 + 1,
+      start: "gone",
+      claimedAt: "2026-10-30T21:00:00.000Z",
+    });
+    writeFileSync(join(w.dir, "drive-exit"), "0");
+    expect(launches(await tick(w))).toEqual([]);
+    expect(terminalCreates(w)).toHaveLength(0);
   });
 
   it("launches nothing while a record is pending", async () => {

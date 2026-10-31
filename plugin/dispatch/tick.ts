@@ -254,8 +254,7 @@ async function readSessions(
 }
 
 export type TickResult =
-  | { held: string }
-  | { receipt: TickReceipt; path: string };
+  { held: string } | { receipt: TickReceipt; path: string };
 
 function applyState(
   options: TickOptions,
@@ -294,7 +293,12 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     const read = await readLaunches();
     const days = machine?.receiptsDays;
     pruneLaunches(read.records, now.getTime(), days ?? 30);
-    const apply = applyState(options, runtime, read.records, now.getTime());
+    // A record that cannot be read may belong to a live wrapper, so its slot
+    // and pull request cannot be told apart from a free one: launch nothing.
+    const unsafe = read.unreadable.length > 0;
+    const apply = unsafe
+      ? null
+      : applyState(options, runtime, read.records, now.getTime());
     const receipt: TickReceipt = {
       version: 1,
       runId: newRunId(now),
@@ -318,7 +322,8 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     const failed = receipt.repos.some(
       (r) => r.refused !== null || r.records.some((x) => !x.ok),
     );
-    receipt.exitStatus = failed ? 1 : 0;
+    receipt.exitStatus =
+      failed || (unsafe && options.apply === true && machine !== null) ? 1 : 0;
     receipt.completed = true;
     receipt.finishedAt = new Date().toISOString();
     const path = writeReceipt(receipt);

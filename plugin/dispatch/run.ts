@@ -24,6 +24,7 @@
  * 3 the record was already claimed, so nothing started.
  */
 import { spawn } from "node:child_process";
+import { resolve } from "node:path";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
 import { readDriveState } from "../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import { driveTs } from "../skills/drive-pr/scripts/lib/driver/paths.ts";
@@ -42,11 +43,15 @@ const QUOTA_PARKED = 16;
 const CLAIMED = 3;
 const FORWARDED = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
-/** The drive command a record starts. */
+const BUNFIG = resolve(import.meta.dir, "bunfig.toml");
+
+/** The drive command a record starts, under the same trusted startup as this wrapper. */
 function driveCommand(record: LaunchRecord, script: string): string[] {
   const pr = String(record.pr);
   return [
     process.execPath,
+    "--no-env-file",
+    `--config=${BUNFIG}`,
     script,
     pr,
     ...(record.action === "takeover" ? ["--take-over"] : []),
@@ -143,8 +148,13 @@ async function wrap(id: string, token: string): Promise<number> {
     record.workspace.path,
     passEnvironment(process.env, record),
   );
-  recordExit(id, { at: new Date().toISOString(), code, signal });
-  if (code === QUOTA_PARKED) await writeAccountWall(record);
+  // The wall first: once the exit is published the record no longer holds its
+  // slot, and a tick in between would admit the walled account.
+  try {
+    if (code === QUOTA_PARKED) await writeAccountWall(record);
+  } finally {
+    recordExit(id, { at: new Date().toISOString(), code, signal });
+  }
   return code ?? 1;
 }
 

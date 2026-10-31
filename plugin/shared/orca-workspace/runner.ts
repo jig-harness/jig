@@ -84,6 +84,28 @@ export interface Context {
    * (`withLimit`); throws once nothing is left. Unlimited when absent.
    */
   budget?: (ms: number) => number;
+  /** The context this one was limited from (`withLimit`), which cleanup runs in once the limit has passed. */
+  outer?: Context;
+}
+
+/**
+ * The context for steps that must run even after the run's limit passed
+ * (giving a claim back): the unlimited one, each call held to the ordinary
+ * command timeout.
+ */
+export function cleanupContext(ctx: Context): Context {
+  const outer = ctx.outer ?? ctx;
+  return {
+    ...outer,
+    run: (argv, options) =>
+      outer.run(argv, {
+        ...options,
+        timeoutMs: Math.min(
+          options?.timeoutMs ?? COMMAND_TIMEOUT_MS,
+          COMMAND_TIMEOUT_MS,
+        ),
+      }),
+  };
 }
 
 /** The time a step of this run may take, at most `ms` (`Context.budget`). */
@@ -113,6 +135,7 @@ export function withLimit(
   };
   return {
     ...ctx,
+    outer: ctx.outer ?? ctx,
     budget: left,
     run: (argv, options) =>
       ctx.run(argv, {
