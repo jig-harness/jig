@@ -342,6 +342,14 @@ function claimState(
     : { kind: "died", process: identity };
 }
 
+/** The ids among `ids` whose exit says the account's wall could not be recorded. */
+export function unrecordedWalls(ids: string[], root = stateRoot()): string[] {
+  return ids.filter((id) => {
+    const exit = readJson(file(id, "exit", root));
+    return isExit(exit) && exit.wallUnrecorded === true;
+  });
+}
+
 /** One record's state, read from its files and `rows` (one process-table read per tick). */
 function stateOf(
   record: LaunchRecord,

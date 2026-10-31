@@ -136,6 +136,8 @@ async function writeAccountWall(record: LaunchRecord): Promise<void> {
   const reset = await recordedReset(record.pr, now);
   const path = writeWall({
     account: record.account,
+    vendor: record.vendor,
+    configDir: record.configDir,
     resetAt: reset ?? new Date(now + record.wallBackoffMs).toISOString(),
     source:
       reset === null

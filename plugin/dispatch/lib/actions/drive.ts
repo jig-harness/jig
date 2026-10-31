@@ -21,6 +21,7 @@ import {
   type IdentityCheck,
   admitRearm,
   admitTakeover,
+  slotsOf,
   checkIdentity,
   refreshWalls,
   type Slots,
@@ -114,7 +115,7 @@ function releasable(record: LaunchRecord): boolean {
 function release(state: ApplyState, record: LaunchRecord): void {
   removeRecord(record.id, state.root);
   state.records = state.records.filter((r) => r.record.id !== record.id);
-  const slots = state.table.find((s) => s.account.name === record.account);
+  const slots = slotsOf(state.table, record);
   if (slots !== undefined && !sharesSlot(state, record)) slots.held -= 1;
 }
 
@@ -186,17 +187,14 @@ async function retryBlocked(
     return `its ledger changed since the launch (now ${factsOf(read)})`;
   const want = record.action === "rearm" ? "re-armable" : "silent";
   if (read.class !== want) return `its ledger now reads ${read.class}`;
-  refreshWalls(state.table, Date.now(), state.root);
-  const slots = state.table.find((s) => s.account.name === record.account);
+  refreshWalls(state.table, state.records, Date.now(), state.root);
+  const slots = slotsOf(state.table, record);
   if (slots === undefined)
     return `${record.account} is no longer in the machine file`;
-  if (
-    slots.account.vendor !== record.vendor ||
-    slots.account.configDir !== record.configDir
-  )
-    return `${record.account} no longer names the account the record bills`;
+  if (slots.wallUnrecorded)
+    return `${slots.account.name} ended on a wall that was not recorded`;
   if (slots.wall !== null)
-    return `${record.account} is walled until ${slots.wall.resetAt}`;
+    return `${slots.account.name} is walled until ${slots.wall.resetAt}`;
   const identity = await identityOf(state, slots);
   return identity.ok ? null : `identity check: ${identity.reason}`;
 }
@@ -290,7 +288,7 @@ async function admitAccount(
   state: ApplyState,
   action: Action,
 ): Promise<{ slots: Slots } | { outcome: LaunchOutcome }> {
-  refreshWalls(state.table, Date.now(), state.root);
+  refreshWalls(state.table, state.records, Date.now(), state.root);
   const failed = new Set<string>();
   let refusal: LaunchOutcome | null = null;
   for (;;) {
@@ -313,7 +311,7 @@ async function changedWhileOpening(
   action: Action,
   slots: Slots,
 ): Promise<LaunchOutcome | null> {
-  refreshWalls(state.table, Date.now(), state.root);
+  refreshWalls(state.table, state.records, Date.now(), state.root);
   const name = slots.account.name;
   if (slots.wall !== null)
     return waits(

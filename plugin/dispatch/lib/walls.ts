@@ -28,6 +28,13 @@ export interface Wall {
   resetAt: string;
   /** Where the reset came from: the drive's record, or the backoff. */
   source: string;
+  /**
+   * The account's vendor and configuration directory when the wall was
+   * written: its stable identity, which a rename of the account keeps. A wall
+   * without them is read by the name of its directory.
+   */
+  vendor?: string;
+  configDir?: string;
 }
 
 function wallsDir(account: string, root: string): string {
@@ -61,6 +68,37 @@ function readWallFile(path: string): Wall | null {
   }
 }
 
+/** The walls of one directory still ahead of `nowMs`; the ones whose reset has passed are removed. */
+function liveWalls(dir: string, nowMs: number): Wall[] {
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((n) => n.endsWith(".json"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const live: Wall[] = [];
+  for (const name of names) {
+    const wall = readWallFile(join(dir, name));
+    if (wall === null) continue;
+    if (Date.parse(wall.resetAt) <= nowMs)
+      rmSync(join(dir, name), { force: true });
+    else live.push(wall);
+  }
+  return live;
+}
+
+function latestOf(walls: Wall[]): Wall | null {
+  let latest: Wall | null = null;
+  for (const wall of walls)
+    if (
+      latest === null ||
+      Date.parse(wall.resetAt) > Date.parse(latest.resetAt)
+    )
+      latest = wall;
+  return latest;
+}
+
 /**
  * The wall in effect on `account` at `nowMs`: the latest reset any write
  * recorded, while it is still ahead; `null` when none is. Files whose reset
@@ -71,27 +109,38 @@ export function wallOf(
   nowMs: number,
   root = stateRoot(),
 ): Wall | null {
-  const dir = wallsDir(account, root);
-  let names: string[];
+  return latestOf(liveWalls(wallsDir(account, root), nowMs));
+}
+
+/**
+ * The wall in effect on a listed account: a wall written with the account's
+ * vendor and configuration directory belongs to it under whatever name it was
+ * written, and one written without them to the account of that name.
+ */
+export function accountWall(
+  account: { name: string; vendor: string; configDir: string },
+  nowMs: number,
+  root = stateRoot(),
+): Wall | null {
+  let dirs: string[];
   try {
-    names = readdirSync(dir).filter((n) => n.endsWith(".json"));
+    dirs = readdirSync(join(root, "walls"));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
-  let latest: Wall | null = null;
-  for (const name of names) {
-    const wall = readWallFile(join(dir, name));
-    if (wall === null) continue;
-    if (Date.parse(wall.resetAt) <= nowMs) {
-      rmSync(join(dir, name), { force: true });
-      continue;
+  const mine: Wall[] = [];
+  for (const dir of dirs)
+    for (const wall of liveWalls(join(root, "walls", dir), nowMs)) {
+      const stamped =
+        typeof wall.vendor === "string" && typeof wall.configDir === "string";
+      if (
+        stamped
+          ? wall.vendor === account.vendor &&
+            wall.configDir === account.configDir
+          : dir === account.name
+      )
+        mine.push(wall);
     }
-    if (
-      latest === null ||
-      Date.parse(wall.resetAt) > Date.parse(latest.resetAt)
-    )
-      latest = wall;
-  }
-  return latest;
+  return latestOf(mine);
 }

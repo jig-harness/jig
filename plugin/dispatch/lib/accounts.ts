@@ -20,9 +20,9 @@
 import { resolve } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
 import { run } from "../../shared/proc.ts";
-import { holds, type ReadRecord } from "./launches.ts";
+import { holds, type ReadRecord, unrecordedWalls } from "./launches.ts";
 import type { MachineAccount } from "./machine-config.ts";
-import { type Wall, wallOf } from "./walls.ts";
+import { accountWall, type Wall } from "./walls.ts";
 
 /** The credential variables the drive's resolver reads before a configuration directory. */
 const CREDENTIAL_VARIABLES = [
@@ -56,27 +56,38 @@ export interface Slots {
   account: MachineAccount;
   held: number;
   wall: Wall | null;
-  /** The names walls for this account were recorded under: its own and those of records written before a rename. */
-  wallNames: string[];
   /** A launch ended on this account's wall and the wall was never recorded: no launch is admitted until a person clears that record. */
   wallUnrecorded: boolean;
 }
 
 /**
- * The listed account a record bills: the one of its name, else the one with
- * its vendor and configuration directory, so an account renamed between ticks
- * keeps the slots and walls recorded under its old name.
+ * The listed account a record bills. An account is its vendor and
+ * configuration directory; its name is a label a person may change. So the
+ * account at the record's vendor and directory is the one, whatever it is
+ * called now, and the name decides only when no listed account has them.
  */
 function accountOf(
   accounts: MachineAccount[],
   record: { account: string; vendor: string; configDir: string },
 ): string | null {
-  const named = accounts.find((a) => a.name === record.account);
-  if (named !== undefined) return named.name;
   const same = accounts.filter(
     (a) => a.vendor === record.vendor && a.configDir === record.configDir,
   );
-  return same.length === 1 ? (same[0] as MachineAccount).name : null;
+  if (same.length === 1) return (same[0] as MachineAccount).name;
+  if (same.length > 1) return null;
+  return accounts.find((a) => a.name === record.account)?.name ?? null;
+}
+
+/** The slots of the account a record bills; `undefined` when the machine file lists none. */
+export function slotsOf(
+  table: Slots[],
+  record: { account: string; vendor: string; configDir: string },
+): Slots | undefined {
+  const name = accountOf(
+    table.map((s) => s.account),
+    record,
+  );
+  return table.find((s) => s.account.name === name);
 }
 
 /** The slots a set of records holds, per listed account name. */
@@ -97,6 +108,29 @@ function heldByAccount(
   return held;
 }
 
+/** The accounts whose launches ended on a wall that was never recorded. */
+function unrecordedAccounts(
+  accounts: MachineAccount[],
+  records: ReadRecord[],
+  root?: string,
+): Set<string | null> {
+  const ended = new Set(
+    unrecordedWalls(
+      records.map((r) => r.record.id),
+      root,
+    ),
+  );
+  return new Set(
+    records
+      .filter(
+        (r) =>
+          ended.has(r.record.id) ||
+          (r.state.kind === "unknown" && r.state.wallUnrecorded === true),
+      )
+      .map((r) => accountOf(accounts, r.record)),
+  );
+}
+
 export function slotTable(
   accounts: MachineAccount[],
   records: ReadRecord[],
@@ -104,59 +138,35 @@ export function slotTable(
   root?: string,
 ): Slots[] {
   const held = heldByAccount(accounts, records);
-  const unrecorded = new Set(
-    records
-      .filter(
-        (r) => r.state.kind === "unknown" && r.state.wallUnrecorded === true,
-      )
-      .map((r) => accountOf(accounts, r.record)),
-  );
-  // The names a record once billed the account under hold its walls too.
-  const names = new Map<string, Set<string>>(
-    accounts.map((a) => [a.name, new Set([a.name])]),
-  );
-  for (const { record } of records) {
-    const name = accountOf(accounts, record);
-    if (name !== null) names.get(name)?.add(record.account);
-  }
-  return accounts.map((account) => {
-    const wallNames = [...(names.get(account.name) ?? [account.name])];
-    return {
-      account,
-      held: held.get(account.name) ?? 0,
-      wall: latestWall(wallNames, nowMs, root),
-      wallNames,
-      wallUnrecorded: unrecorded.has(account.name),
-    };
-  });
+  const unrecorded = unrecordedAccounts(accounts, records, root);
+  return accounts.map((account) => ({
+    account,
+    held: held.get(account.name) ?? 0,
+    wall: accountWall(account, nowMs, root),
+    wallUnrecorded: unrecorded.has(account.name),
+  }));
 }
 
-/** The wall furthest ahead among the walls recorded under `names`. */
-function latestWall(
-  names: string[],
-  nowMs: number,
-  root?: string,
-): Wall | null {
-  let latest: Wall | null = null;
-  for (const name of names) {
-    const wall = wallOf(name, nowMs, root);
-    if (
-      wall !== null &&
-      (latest === null || Date.parse(wall.resetAt) > Date.parse(latest.resetAt))
-    )
-      latest = wall;
-  }
-  return latest;
-}
-
-/** Read every account's wall again, as a wrapper may have written one since the table was built. */
+/**
+ * Read every account's wall again, and the exits that ended on a wall that
+ * was not recorded, as a wrapper may have written either since the table was
+ * built. A closure once seen stays.
+ */
 export function refreshWalls(
   table: Slots[],
+  records: ReadRecord[],
   nowMs: number,
   root?: string,
 ): void {
-  for (const slots of table)
-    slots.wall = latestWall(slots.wallNames, nowMs, root);
+  const unrecorded = unrecordedAccounts(
+    table.map((s) => s.account),
+    records,
+    root,
+  );
+  for (const slots of table) {
+    slots.wall = accountWall(slots.account, nowMs, root);
+    if (unrecorded.has(slots.account.name)) slots.wallUnrecorded = true;
+  }
 }
 
 /** Every account's slots, in one line for a report. */
@@ -199,7 +209,7 @@ export function admitRearm(
 
 /** The slot a takeover runs in: the replaced record's, on its account. */
 export function admitTakeover(table: Slots[], replaced: ReadRecord): Admission {
-  const slots = table.find((s) => s.account.name === replaced.record.account);
+  const slots = slotsOf(table, replaced.record);
   if (slots === undefined)
     return {
       waits: `the record it replaces bills ${replaced.record.account}, which the machine file no longer lists`,
