@@ -15,6 +15,8 @@ import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
 import { keyFromBranch } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { RepoTarget } from "../types.ts";
+import { orcaLaunch } from "./orca-launch.ts";
+import { openPullRequestWorkspace } from "./orca-open.ts";
 import {
   type AgentSession,
   type JoinTargets,
@@ -24,19 +26,19 @@ import {
   type Workspace,
 } from "./port.ts";
 
-/** Seconds one Orca call may take. */
+/** Seconds one Orca call may take: `runtime_timeout`'s default. */
 const ORCA_TIMEOUT_SEC = 60;
 
 /** The most rows one listing asks for; a cut page is an unknown. */
 const ROW_LIMIT = 2000;
 
-async function orca(args: string[]): Promise<Record<string, unknown> | string> {
+async function orca(
+  args: string[],
+  timeoutSec = ORCA_TIMEOUT_SEC,
+): Promise<Record<string, unknown> | string> {
   const done = await run(
     [orcaCommand(process.env) ?? "orca", ...args, "--json"],
-    {
-      timeoutSec: ORCA_TIMEOUT_SEC,
-      stderr: "pipe",
-    },
+    { timeoutSec, stderr: "pipe" },
   );
   return (
     orcaResult(done) ?? `orca ${args.join(" ")} failed ${orcaFailure(done)}`
@@ -229,12 +231,43 @@ function workspaceOf(
   };
 }
 
-export function orcaRuntime(): SessionRuntime {
+/** The deadlines of the runtime's calls (`runtime_timeout`, `workspace_timeout`). */
+export interface OrcaDeadlines {
+  runtimeTimeoutMs: number;
+  workspaceTimeoutMs: number;
+}
+
+/** The Orca repository that is this checkout: its id and its clone's path. */
+async function orcaRepo(
+  repo: RepoTarget,
+  timeoutSec: number,
+): Promise<{ id: string; path: string } | string> {
+  const listing = await orca(["repo", "list"], timeoutSec);
+  if (typeof listing === "string") return listing;
+  const ids = repoIds(listing, repo);
+  if (ids === null || ids.length !== 1)
+    return `orca repo list names ${ids === null ? "a matching repository without an id" : `${ids.length} repositories`} for ${repo.slug}`;
+  const row = (listing.repos as unknown[])
+    .filter(isRecord)
+    .find((r) => r.id === ids[0]);
+  return typeof row?.path === "string"
+    ? { id: ids[0] as string, path: row.path }
+    : `orca repo list gives ${repo.slug} no clone path`;
+}
+
+export function orcaRuntime(
+  deadlines: OrcaDeadlines = {
+    runtimeTimeoutMs: ORCA_TIMEOUT_SEC * 1000,
+    workspaceTimeoutMs: ORCA_TIMEOUT_SEC * 1000,
+  },
+): SessionRuntime {
+  const timeoutSec = Math.max(1, Math.ceil(deadlines.runtimeTimeoutMs / 1000));
+  const orcaCall = (args: string[]) => orca(args, timeoutSec);
   return {
     name: "orca",
     async sessions(repo, join): Promise<SessionsReport> {
       const source = "orca worktree ps";
-      const listing = await orca(["repo", "list"]);
+      const listing = await orcaCall(["repo", "list"]);
       if (typeof listing === "string")
         return { ok: false, source, reason: listing };
       const ids = repoIds(listing, repo);
@@ -251,7 +284,12 @@ export function orcaRuntime(): SessionRuntime {
           source,
           reason: `no Orca repository is ${repo.path} or ${repo.slug}`,
         };
-      const ps = await orca(["worktree", "ps", "--limit", String(ROW_LIMIT)]);
+      const ps = await orcaCall([
+        "worktree",
+        "ps",
+        "--limit",
+        String(ROW_LIMIT),
+      ]);
       if (typeof ps === "string") return { ok: false, source, reason: ps };
       const cut = partial(ps);
       if (cut !== null) return { ok: false, source, reason: cut };
@@ -270,8 +308,19 @@ export function orcaRuntime(): SessionRuntime {
       const workspaces = rows.map((row) => workspaceOf(row, join));
       return { ok: true, source, workspaces };
     },
-    openWorkspace: () => notYet("openWorkspace", "build step 3"),
-    launch: () => notYet("launch", "build step 3"),
+    async openWorkspace(repo, target) {
+      if (!("pr" in target))
+        return notYet("openWorkspace for an item", "build step 4");
+      const found = await orcaRepo(repo, timeoutSec);
+      if (typeof found === "string") return { ok: false, detail: found };
+      return openPullRequestWorkspace(
+        found,
+        target,
+        deadlines.workspaceTimeoutMs,
+      );
+    },
+    launch: (workspace, stage, _account, key) =>
+      orcaLaunch(workspace, stage, key, deadlines.runtimeTimeoutMs),
     notify: () => notYet("notify", "build step 5"),
     steer: () => notYet("steer", "build step 6"),
   };
