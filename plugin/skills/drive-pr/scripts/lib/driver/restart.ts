@@ -27,7 +27,11 @@ import {
   unconcludedGitOpMarker,
 } from "./../proc.ts";
 
-import { unpushedBase, unpushedRange } from "./../driven-branch.ts";
+import {
+  unpushedBase,
+  unpushedCountAdvice,
+  unpushedRange,
+} from "./../driven-branch.ts";
 
 import { readPrState } from "./../pr-state.ts";
 
@@ -148,7 +152,16 @@ export interface PassLeftovers {
 /** How many unpushed commits the leftovers name one by one. */
 const LISTED_COMMITS = 20;
 
-export async function passLeftovers(): Promise<PassLeftovers> {
+/**
+ * What the pass left in the tree. `fingerprint: false` skips the content
+ * digest of the edits (`edits` is then `null`), for a report that only lists
+ * them: the digest reads every untracked file and nested repository.
+ */
+export async function passLeftovers({
+  fingerprint = true,
+}: {
+  fingerprint?: boolean;
+} = {}): Promise<PassLeftovers> {
   const anchor = process.env.DRIVE_PR_WORKTREE;
   const opts = {
     stderr: "ignore" as const,
@@ -197,7 +210,7 @@ export async function passLeftovers(): Promise<PassLeftovers> {
   const uncommitted = status.code === 0 ? status.stdout.trimEnd() : null;
   return {
     uncommitted,
-    edits: await editsOf(uncommitted, opts),
+    edits: fingerprint ? await editsOf(uncommitted, opts) : null,
     baseExists: base.code === 0 ? true : base.code === 1 ? false : null,
     unpushed: count.code === 0 && Number.isFinite(unpushed) ? unpushed : null,
     operation: op.ok ? op.marker : null,
@@ -431,8 +444,16 @@ export function describeLeftovers(l: PassLeftovers): string[] {
  */
 export async function reportPassLeftovers(heading: string): Promise<void> {
   console.error(`  ${heading}`);
-  for (const line of describeLeftovers(await passLeftovers()))
-    console.error(`  ${line}`);
+  const leftovers = await passLeftovers({ fingerprint: false });
+  for (const line of describeLeftovers(leftovers)) console.error(`  ${line}`);
+  // A detached tree under `DRIVE_PR_ATTACH=off` has no `@{u}` to count over:
+  // name the range or the check that works there.
+  if (leftovers.unpushed === null)
+    console.error(
+      `  Count them with ${await unpushedCountAdvice(git, process.cwd(), {
+        timeoutSec: gitCallTimeoutSeconds(),
+      })}.`,
+    );
 }
 
 /** The notice the pass after a killed one reads in `$DRIVE_PR_PASS_NOTICE`. */

@@ -158,4 +158,24 @@ describe("drive.ts names what the pass left when it stops", () => {
       expect(r.stderr).not.toContain("git status --short");
     }, 120_000);
   }
+
+  it("names the check to make by hand when a detached tree has no range to count", async () => {
+    const tree = trackedTree("stop-detached");
+    const { dir, stateDir } = writeFixture(work, tree);
+    const r = await runDriveIn(
+      dir,
+      stateDir,
+      [
+        "--no-head-sync",
+        "--",
+        "sh",
+        "-c",
+        `: pass for 999; git checkout -q --detach; ${LEAVE_WORK}; exit 5`,
+      ],
+      tree,
+      { env: { DRIVE_PR_ATTACH: "off" } },
+    );
+    expectSpawnExit({ ...r, stdout: null }, 5);
+    expect(r.stderr).toContain("git log HEAD --branches --not --remotes");
+  }, 120_000);
 });
