@@ -496,12 +496,12 @@ fields:
     type: string
     pattern: "^(?:[^{}]|\\{(?:id|status|title|pr)\\})*$"
     read_by: [do-item, drive-pr]
-    since: next
+    since: 0.104.0
   workspace_name.statuses:
     type: map
     keys: [implementing, driving, ready, done]
     read_by: [do-item, drive-pr]
-    since: next
+    since: 0.104.0
 
   work_batch.point_budget:
     type: integer

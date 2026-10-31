@@ -348,6 +348,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.104.0] - 2026-10-31
+
+### Added
+
+- `do-item` and `drive-pr` can rename the workspace they run in after the work and its stage, in Orca, when the repository sets [`workspace_name.template`](plugin/CONFIGURATION.md#workspace_name). The name can use `{id}`, `{status}`, `{title}` and `{pr}`; the status text is `[I]`, `[D]`, `[R]` and `✅` by default, and `workspace_name.statuses` overrides each. Nothing is renamed without the template.
+
 ## [0.103.0] - 2026-10-31
 
 A drive stops for a person only on a decision the repository's human-in-the-loop registry reserves, and hands it over framed; every other decision it takes is recorded where a person can reverse it, and a repository can let it decide more while nobody is there.
@@ -4208,7 +4214,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.103.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.104.0...HEAD
+[0.104.0]: https://github.com/jig-harness/jig/compare/v0.103.0...v0.104.0
 [0.103.0]: https://github.com/jig-harness/jig/compare/v0.102.0...v0.103.0
 [0.102.0]: https://github.com/jig-harness/jig/compare/v0.101.1...v0.102.0
 [0.101.1]: https://github.com/jig-harness/jig/compare/v0.101.0...v0.101.1
