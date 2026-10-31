@@ -3,6 +3,7 @@
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
+import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
 
 import {
@@ -233,16 +234,12 @@ describe("drive-state.ts durability", () => {
   it("a malformed state file blocks a WRITE too, so nothing is built on it", async () => {
     const d = stateDirFor("malformed-write");
     writeFileSync(join(d, "drive-pr-999.json"), "not json at all");
-    const r = await state(d, [
-      "park",
-      "999",
-      "--key",
-      "PRRT_x",
-      "--kind",
-      "thread",
-      "--reason",
-      "a decision",
-    ]);
+    const r = await state(
+      d,
+      parkArgs("PRRT_x", "thread"),
+      {},
+      parkRecord("Is it a decision"),
+    );
     expect(r.exitCode).not.toBe(0);
     expect(readFileSync(join(d, "drive-pr-999.json"), "utf8")).toBe(
       "not json at all",
@@ -276,11 +273,7 @@ describe("drive-state.ts durability", () => {
     const hd = join(d, "handoff");
     const env = { DRIVE_PR_HANDOFF_DIR: hd };
     const path = join(hd, "pr-drive-999.md");
-    await state(
-      d,
-      ["park", "999", "--key", "PRRT_a", "--kind", "thread", "--reason", "r"],
-      env,
-    );
+    await state(d, parkArgs("PRRT_a", "thread"), env, parkRecord("Is it r"));
     expect(existsSync(path)).toBe(true);
     await state(d, ["reset", "999"], env);
     expect(existsSync(path)).toBe(false);
@@ -361,16 +354,12 @@ describe("drive-state.ts durability", () => {
     const d = stateDirFor("concurrent");
     await Promise.all(
       Array.from({ length: 6 }, (_, i) =>
-        state(d, [
-          "park",
-          "999",
-          "--key",
-          `PRRT_${i}`,
-          "--kind",
-          "thread",
-          "--reason",
-          `decision ${i}`,
-        ]),
+        state(
+          d,
+          parkArgs(`PRRT_${i}`, "thread"),
+          {},
+          parkRecord(`Is it decision ${i}`),
+        ),
       ),
     );
     const keys = (await state(d, ["parked-keys", "999"])).stdout
@@ -392,8 +381,9 @@ describe("drive-state.ts durability", () => {
     // -1 makes every lock older than "minus one minute", i.e. always stale.
     const r = await state(
       d,
-      ["park", "999", "--key", "K", "--kind", "thread", "--reason", "r"],
+      parkArgs("K", "thread"),
       { DRIVE_PR_LOCK_STALE_MIN: "-1" },
+      parkRecord("Is it r"),
     );
     expect(r.exitCode).toBe(0);
     expect(r.stderr).toContain("broke a stale lock");
@@ -422,11 +412,12 @@ describe("drive-state.ts durability", () => {
     const signal = join(d, "updater-is-holding");
     const parkPromise = state(
       d,
-      ["park", "999", "--key", "K", "--kind", "thread", "--reason", "r"],
+      parkArgs("K", "thread"),
       {
         DRIVE_PR_UPDATE_TEST_SIGNAL: signal,
         DRIVE_PR_UPDATE_TEST_DELAY: "2",
       },
+      parkRecord("Is it r"),
     );
     const deadline = Date.now() + 5000;
     while (!existsSync(signal)) {
@@ -450,8 +441,9 @@ describe("drive-state.ts durability", () => {
     mkdirSync(join(d, "drive-pr-999.json.lock"), { recursive: true });
     const r = await state(
       d,
-      ["park", "999", "--key", "K", "--kind", "thread", "--reason", "r"],
+      parkArgs("K", "thread"),
       { DRIVE_PR_LOCK_TIMEOUT: "1" },
+      parkRecord("Is it r"),
     );
     expect(r.exitCode).not.toBe(0);
     expect(r.stderr).toContain("could not acquire");

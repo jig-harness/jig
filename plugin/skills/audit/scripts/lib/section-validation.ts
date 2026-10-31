@@ -1,4 +1,5 @@
 import { parseDeclaration } from "../../../../gc/config.ts";
+import { parkClasses, resolveAutonomy } from "../../../../shared/autonomy.ts";
 import { ExitError } from "../../../../shared/cli.ts";
 import { isMapping as isRecord } from "../../../../shared/config-layers.ts";
 import { parseReviewConfig } from "../../../../shared/consumer.ts";
@@ -132,6 +133,16 @@ export function skillValidation(
     const review = config.review;
     if (typeof review === "object" && review !== null && !Array.isArray(review))
       parseSeverityFormats((review as Config).severity_formats);
+  });
+  attempt("autonomy (level, ceiling, park classes)", () => {
+    const layered = {
+      values: config,
+      layers: [{ name: "repository" as const, source: path, values: config }],
+      repositoryPath: path,
+      hasRepository: true,
+    };
+    resolveAutonomy(layered, {});
+    parkClasses(layered);
   });
   attempt("adr", () => adrConfig(path));
   attempt("decide, explain (sheets)", () => sheetRepositories(config, root));

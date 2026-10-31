@@ -17,6 +17,59 @@ here have a design in this folder ([README.md](README.md)).
 
 ## Now
 
+### 33. The dispatcher: a tick that starts the execution line's stages
+
+Every stage of the execution line starts only when a person types it: an
+assigned item waits for someone to open a `do-item` session, a drive
+stopped by a usage limit or an answered park waits for someone to re-arm
+it, a merge waits for someone to run its follow-up. Nothing watches the
+tracker or the pull requests for the next thing to start, so with nobody at
+the keyboard the line stops at the first stage boundary.
+[design/dark-factory-dispatch.md](dark-factory-dispatch.md) has how it
+works: `jig dispatch` in `plugin/dispatch/`, a stateless tick on a timer
+`jig dispatch install` writes, reads the items assigned to the repository's
+factory identity in a dispatch state (through a new tracker-interface read,
+`assignedIssues(identity, states)`, and `assignedBy(key)` for who made the assignment, beside the unchanged pool query), the drive ledger on each
+pull request and the session runtime's list of running sessions; it
+reports every stage it would start with its evidence, and with `--apply`
+starts each one through a session runtime interface whose first
+implementation is Orca
+([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
+within a cap per account, round-robin among the accounts without a usage
+wall, binding a headless pass to its account through the Orca profile's
+configuration directory. Each launch leaves a launch record that brings the
+stage's answer back to the next tick, and a merged pull request's
+follow-up is guarded by a marker comment on it. A stop only a person can
+settle (a park, a drive stopped on a failure, a stalled pickup) is notified
+once. It never merges, answers a park, re-arms a drive a person stopped,
+takes over a driver another machine started or passes a flag reserved for
+a person, and writes a receipt per tick. Machine values in `~/.jig/dispatch.yaml`, a repository's
+in a `dispatch` section of `.config/jig.yaml`. Built in the design's order:
+the report, then re-arms within account caps with the timer, then pickups,
+then follow-ups and notifications, then control: a permanent outcome
+log, one row per ended launch with an outcome class from a
+closed list, a dashboard that filters it (`jig dispatch dashboard`, no
+report files), drift from each stage's expectation reported and notified
+but never acted on, recurring classes routed to `reflect`, and one
+mechanical nudge (`steer`, "continue" after a usage limit resets) with no
+open-ended prompt; the re-arm step waits on the drive
+running in a session of its own, and the pickups on `do-item` refusing an
+item already claimed. Notifications do not wait on item 32's framed park:
+a park's notification carries the parked questions as they are and gains
+the framed decision once that is built.
+
+Done when, on a host running Orca, an item assigned to the factory
+identity gets one workspace and one `do-item` session within one interval,
+a drive stopped on one account's usage limit is re-armed on another account
+by the next tick, a merged pull request gets one follow-up session, a park
+reaches a person's phone and its answer on the pull request re-arms the
+drive, every launch, refusal and notification is in the tick's
+receipts, every ended launch has a row with its outcome class in the
+outcome log, `jig dispatch dashboard` filtered to yesterday shows only
+yesterday's rows, a drive whose open threads rise across rounds is
+reported as drifting and notified once, and a session waiting after its
+account's wall reopened gets exactly one "continue" nudge.
+
 ### 3. The kickoff family
 
 The greenfield kickoff becomes a living skill instead of a frozen seed, with

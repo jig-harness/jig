@@ -1182,6 +1182,35 @@ make, use the entry's term instead.
   claim** on the pull request, the earliest claim wins, and every driver
   reads the claims each round and stops when a newer one is there
   ([drive-pr](plugin/skills/drive-pr/README.md#where-its-state-lives)).
+- **Park and framed decision (of a drive)** — a *PR drive loop* **parks** an
+  item when its decision is a person's: it records it and stops counting it
+  as live work. A park is reserved for the decision classes of the *HITL*
+  registry, and carries a **framed decision**: the question in one sentence,
+  each option with what it changes and costs, the recommended option, the
+  class, the steps a person must take and what the agent already did. Any
+  other decision the agent takes itself and records where a person can
+  reverse it
+  ([ADR-0010](docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)).
+- **Decision class** — one row of the *HITL* registry, named by a short
+  slug (`merge`, `scope`, `human-thread`, …): a kind of decision that must
+  stay a person's. A repository lists its classes in
+  `autonomy.park_classes`, and a *PR drive loop* may park only under one of
+  them (for a review thread, the class the review arbiter ruled for it)
+  ([configuration](plugin/CONFIGURATION.md#autonomy)).
+- **Autonomy level** — how far an agent may decide without asking a person,
+  set by a repository (`attended`, the default, `unattended`, or `wide`, which
+  acts as `unattended`) and capped
+  by its ceiling, `autonomy.max_level`; a person's own configuration may
+  choose a level up to that ceiling. The level changes nothing the *HITL*
+  registry reserves ([configuration](plugin/CONFIGURATION.md#autonomy)).
+- **Transparent follow-up** — a review bot's comment after a reply the drive
+  is holding open until its fix is pushed, which carries no new finding: a
+  confirmation marked with the bot's confirmation marker, or a chat
+  acknowledgement from a bot `review.bots` lists whose severity format is
+  known, with no outcome token and no line matching that format; a bot with
+  no known format has no transparent chat acknowledgements. It is never triaged or answered, and the held thread
+  resolves over it; anything else is a new comment
+  ([configuration](plugin/CONFIGURATION.md#review)).
 - **CI hold** — an opt-in label on a pull request that the repository's
   continuous-integration workflows honour: while it is present they skip
   their expensive jobs and a required check fails or is cancelled (the
@@ -1672,6 +1701,45 @@ make, use the entry's term instead.
   step, so adding one does not change the rest of the launcher; which exist
   and which are planned is in the
   [launcher's README](tools/launcher/README.md#providers).
+- **Dispatcher** — the program that starts the stages of the execution
+  line with nobody at the keyboard: a pickup for an item assigned to the
+  *factory identity*, a restart of a stopped review drive, the follow-up
+  after a merge. It runs as a *tick* on a timer, starts sessions through a
+  *session runtime*, and never merges or answers a parked question. Planned
+  ([ROADMAP.md](ROADMAP.md) item 33); it is Jig's first *control plane*.
+- **Tick** — one run of the *dispatcher*: read the tracker, the pull
+  requests' drive ledgers and the running sessions, work out which stages
+  are wanted and not running, report them, and start them only when told
+  to. What is wanted comes from those records alone; the dispatcher keeps
+  only what it did: what it started and how each ended, a receipt per
+  tick, and the account walls and repeat suppressions those imply, so
+  stopping it loses nothing and the next tick finds the same facts.
+- **Session runtime** — the interface the *dispatcher* starts agent
+  sessions through: list the sessions in a repository's workspaces, open a
+  workspace, launch a session on a subscription account, notify a person.
+  Orca is its first implementation
+  ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)); a
+  *workspace runtime* becomes another by implementing the same methods.
+- **Factory identity** — the tracker user a repository assigns an item to
+  when the *dispatcher* should pick it up. An item assigned to it and in
+  one of the repository's dispatch states is started, when a person with
+  write access made the assignment; the pickup's move to the in-progress
+  state is the claim, so no item is picked up twice.
+- **Outcome log** — the *dispatcher*'s permanent record of how each session
+  it started ended: one row per session with its stage, repository,
+  account, duration and an outcome class from the closed list the
+  dispatcher's design defines, among them converged, quota wall, parked
+  for a person, stalled and died; a stop no class in that list fits is
+  logged as `unknown` with its last state, never dropped. One dashboard filters it; it is
+  never rendered into a report file.
+- **Stage drift** — a running stage falling short of what it is expected to
+  achieve: a review drive whose open threads do not fall across rounds, a
+  pickup that has not opened a pull request in time. The *dispatcher*
+  reports drift and tells a person once; it never acts on it.
+- **Nudge** — a fixed prompt the *dispatcher* may send by itself, from a
+  closed set with one entry: "continue" to a session it started that is
+  waiting at its prompt after a usage limit that has since reset. Anything else a stuck
+  session needs goes to a person.
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of

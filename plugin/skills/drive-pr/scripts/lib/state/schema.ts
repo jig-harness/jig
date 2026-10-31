@@ -42,6 +42,9 @@ import { type DrivenBranch, isOptionalDrivenBranch } from "./driven-branch.ts";
 import { isAccountHash } from "../identity.ts";
 import { type TakeoverRecord, isOptionalTakeovers } from "./takeover.ts";
 import { isOptionalRetryCount } from "./deadline-retries.ts";
+import { isOptionalFrame } from "./park-frame.ts";
+import { type UnattendedDecision, isOptionalDecisions } from "./decisions.ts";
+import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
 
 /**
  * The persisted shape of a recorded quota park — what
@@ -76,10 +79,14 @@ export interface QuotaParkRecord {
 export interface ParkedItem {
   key: string;
   kind: "thread" | "finding";
+  /** The decision's question; a park from before framing holds its reason. */
   reason: string;
   round: number;
   /** When it was parked; an answer must be later. Absent on an older park. */
   at?: string;
+  /** The decision class and the decision record (`framed-park.ts`). */
+  class?: string;
+  record?: string;
 }
 
 /**
@@ -395,6 +402,10 @@ export interface DriveState {
   ledgerGeneration?: number;
   /** Passes killed at their deadline this drive restarted from (`deadline-retries.ts`). */
   deadlineRetries?: number;
+  /** Decisions the agent took and recorded, oldest first (`decisions.ts`). */
+  decisions?: UnattendedDecision[];
+  /** The review arbiter's ruling per thread (`rulings.ts`). */
+  rulings?: ArbiterRuling[];
   [extra: string]: unknown;
 }
 
@@ -505,6 +516,7 @@ function isParkedItem(p: unknown): boolean {
     (e.kind === "thread" || e.kind === "finding") &&
     typeof e.reason === "string" &&
     e.reason.length > 0 &&
+    isOptionalFrame(e) &&
     isCount(e.round) &&
     (e.at === undefined ||
       (typeof e.at === "string" && Number.isFinite(Date.parse(e.at))))
@@ -540,6 +552,8 @@ function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
     isOptionalDrivenBranch(s.drivenBranch),
     isOptionalTakeovers(s.takeovers),
     isOptionalRetryCount(s.deadlineRetries),
+    isOptionalDecisions(s.decisions),
+    isOptionalRulings(s.rulings),
     s.ledgerGeneration === undefined || isCount(s.ledgerGeneration),
   ].every(Boolean);
 }
