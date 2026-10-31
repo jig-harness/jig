@@ -307,7 +307,20 @@ record that last set it, and the fold skips (and reports) it when the item
 now carries a later revision: A's delayed removal of a parked question K,
 prepared after reading its answer, cannot delete the new unanswered question
 B put under the same key, as an unpark checks the park's timestamp against the
-answer. Records on different keys never conflict, so the staleness check
+answer. An addition is conditional too: a record that adds an item names the
+revision it expects the key to carry, the comment id of the record that last
+set or removed it, or *absent* when the writer saw no record for the key ever.
+A removal leaves a tombstone, so the fold keeps the key's last revision after
+the item is gone, and it skips (and reports) an addition whose expected revision
+is not the key's current one: A's delayed add of a question under K, prepared
+while K was absent, cannot replace the unanswered question B added under K
+meanwhile, nor resurrect one removed since; the writer re-reads and decides
+again. The outcomes follow from one rule, that a record applies only against
+the revision it names: a change or removal based on revision R finds the
+tombstone's later revision once the item is removed and is skipped, so a change
+never recreates deleted state, and an addition is the only record that may
+create a key, and only against *absent* or the tombstone it read. An unpark
+that finds its key missing is refused without changing state. Records on different keys never conflict, so the staleness check
 costs no concurrency. No record is ever
 edited, so no change is lost; the single ledger comment is a snapshot of
 the fold that any writer may regenerate, and a reader that finds it behind
