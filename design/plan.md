@@ -47,8 +47,9 @@ design still holds:
   deferred findings not yet filed; with the loop-metrics counters.
 
 The policy from the base branch ships first and on its own. `wide` and
-`off_hours` are dark-by-default dials: they come into Jig once a working
-repository has run them and the design's validation measure holds.
+`off_hours` ship opt-in and documented as not yet validated, a maintainer's
+recorded exception to the dark-by-default rule, revisited once a working
+repository has run them for a month against the design's validation measure.
 
 Done when a drive reads its ceiling and park classes from the base branch;
 a `wide` run records a provisional decision where a person can reverse it

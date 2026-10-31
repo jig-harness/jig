@@ -96,10 +96,11 @@ inside a window. Precedence between the other layers is the configuration's
 usual one, the higher layer overriding the lower. The line the drive prints
 at the start of every round says when a window raised the level.
 
-`wide` and `off_hours` are dark-by-default dials. Jig keeps such dials out
-until a working repository has validated them: this design specifies them,
-and step 5 comes into Jig once a working repository has run them and the
-measure below holds. Until then `wide` is accepted and acts as `unattended`.
+`wide` and `off_hours` are dials no working repository has validated yet.
+Jig's rule keeps such dials out until one has; a maintainer decided to ship
+these two now, opt-in and documented as not yet validated, as a recorded
+exception to that rule. The exception is revisited once a working repository
+has run them for a month against the measure below.
 
 What `wide` adds, per decision. The decision classes the human-in-the-loop
 (HITL) registry reserves are not on this table, and no level changes them.

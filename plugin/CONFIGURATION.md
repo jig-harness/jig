@@ -378,11 +378,12 @@ provisional decision by commenting on its thread (or on the pull request
 with a line `answer <key>: …`) as an owner, member or collaborator; the drive
 then parks it under `human-thread`. An unresolve alone reverses nothing.
 
-**`wide` and `off_hours` are not yet validated.** They are built behind the
-opt-in, and this page will document them as available only once a working
-repository has run them for a month with fewer than one in ten provisional
-decisions reversed before the merge (`loop-metrics.ts` reports the share per
-pull request). Until then, opt in only to take part in that measurement.
+**`wide` and `off_hours` are not yet validated.** They ship opt-in as a
+recorded exception to Jig's rule against shipping unvalidated dials, to be
+revisited once a working repository has run them for a month with fewer than
+one in ten provisional decisions reversed before the merge (`loop-metrics.ts`
+reports the share per pull request). Until then, opt in only to take part in
+that measurement.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
