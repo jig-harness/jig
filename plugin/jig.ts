@@ -14,7 +14,12 @@ function reportError(error: unknown): never {
   throw error;
 }
 export async function main(argv: string[]): Promise<number> {
-  if (argv[0] === "dispatch") return dispatch(argv.slice(1));
+  if (argv[0] === "dispatch")
+    try {
+      return await dispatch(argv.slice(1));
+    } catch (error) {
+      reportError(error);
+    }
   if (argv[0] !== "gc")
     throw new ExitError(2, "Usage: jig gc|dispatch [--help]");
   try {
