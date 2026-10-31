@@ -499,11 +499,20 @@ edit to it cannot be overwritten because nothing writes it. A deferral is
 filed, changed or withdrawn by a later record naming the same item key; the
 thread is resolved with the `**deferred**` token linking the record. A plugin script, `file-deferred.ts <PR>`, turns
 the unfiled records into issues where an adapter can file and appends a
-record linking each; an issue is filed from a stable marker derived from the
-pull request and the item key, which is written into its body, and before it
-files, the script looks the marker up in the tracker, so a crash between the
-creation and the link, or a second invocation running at the same time,
-finds the issue and links it instead of creating another; it runs from the consumer's own post-merge step or the
+record linking each. A tracker offers no atomic create-if-absent, so a lookup
+before creating cannot keep two invocations apart, and the script does not
+rely on one. It serializes through the same append-only record stream: before
+creating, it appends a **filing claim** naming the item key, reads the stream
+back, and only the earliest unexpired claim for that key may create; a later
+claimant stands down and re-reads on its next run. A claim expires after a
+fixed time, so a crash between claim and creation delays the filing and never
+loses it. The issue body carries a stable marker derived from the pull request
+and the item key, and the script looks the marker up in the tracker before it
+creates, which recovers a crash between the creation and the link. Where two
+issues still carry one marker (a claim that expired while its holder was
+still creating), the script links the lowest-numbered one, comments on the
+others naming it and closes them as duplicates, so the race ends in
+reconciliation rather than in two live issues. It runs from the consumer's own post-merge step or the
 morning report, and on a pull request closed without merging. With no
 tracker at all the records stay in the merged pull request's comments and the
 morning report lists them until a person files them. A deferral is
