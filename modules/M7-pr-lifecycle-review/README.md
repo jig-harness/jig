@@ -163,7 +163,14 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    are
    listed once in [`HITL-REGISTRY.md`](templates/HITL-REGISTRY.md)
    rather than scattered across skills and habits, so autonomous runs know
-   exactly where to stop.
+   exactly where to stop. The registry reserves parking to its classes: an
+   autonomous run stops for a person only on a decision one of its rows
+   names, with the decision framed (the question, the options with what each
+   changes and costs, the recommendation, what the person must do), and
+   decides everything else, recording each decision where a person can
+   reverse it ([ADR-0010](../../docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)).
+   Jig's review drive enforces it: its park refuses any other class
+   ([drive-pr](../../plugin/skills/drive-pr/README.md)).
 11. **Declared pull-request shape** — whether a PR may be based on another
    open PR's branch ([stacked](../../GLOSSARY.md)), how deep a stack may grow,
    how branches are named, how a PR links its issue, and how large it may be

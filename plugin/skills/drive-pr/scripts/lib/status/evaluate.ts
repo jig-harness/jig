@@ -49,6 +49,7 @@
 // set, so this reader and that one cannot disagree about who counts as
 // trusted.
 import { TRUSTED_ASSOCIATIONS } from "../../summary-findings.ts";
+import { isTransparentFollowUp } from "../bot-confirmation.ts";
 import {
   hasLeaveOpenMarker,
   hasNoOutcomeMarker,
@@ -442,33 +443,32 @@ export function isLeftOpenThread(t: UnresolvedThread): boolean {
 }
 
 /**
- * The comment url of this thread's MOST RECENT comment, from anyone — not
- * merely the most recent QUALIFYING reply. This is what a thread hold's own
- * `commentUrl` is compared against in the caller below: the reviewer's own
- * example of the bug this closes is itself unqualified — "the reviewer posts
- * a NEW FINDING in the same unresolved thread" is a bot comment with no
- * outcome token, so a comparison scoped to qualifying replies would still
- * read the thread's last comment as the earlier, now-superseded held reply
- * and keep excluding the path. Comparing
- * against the literal last comment catches that: any comment posted after
- * the held one — qualifying or not, from any author — moves the thread's
- * last-comment url off the held value, so the hold no longer describes what
- * is currently on GitHub.
+ * The url of this thread's most recent comment that is not a transparent
+ * follow-up (`lib/bot-confirmation.ts`: a listed bot's confirmation or
+ * finding-free chat acknowledgement), from anyone: what a thread hold's own
+ * `commentUrl` is compared against below. A reviewer's new finding in the
+ * same thread carries no outcome token, so comparing against the last
+ * qualifying reply would miss it; any other comment after the held one moves
+ * this url off the held value, so the hold no longer describes the thread.
  *
- * `null` on a truncated thread, an empty or unreadable comment array — every
- * one of those is NOT MEASURED, and the caller's own doc states which
- * direction that degrades: never toward silently excluding a thread whose
- * current state could not be checked.
+ * `null` on a truncated thread or an empty or unreadable comment array: NOT
+ * MEASURED, which the caller never reads as a thread it may exclude.
  */
 function latestCommentUrl(t: UnresolvedThread): string | null {
   if ((t as { commentsTruncated?: unknown }).commentsTruncated === true)
     return null;
   const comments = (t as { comments?: unknown }).comments;
   if (!Array.isArray(comments) || comments.length === 0) return null;
-  const last = asCommentRecord(comments[comments.length - 1]);
-  if (last === null) return null;
-  const url = last.url;
-  return typeof url === "string" && url !== "" ? url : null;
+  for (const raw of [...comments].reverse()) {
+    const c = asCommentRecord(raw);
+    if (c === null) return null;
+    const author = typeof c.author === "string" ? c.author : null;
+    const body = typeof c.body === "string" ? c.body : null;
+    if (isTransparentFollowUp({ authorLogin: author, body }, qualifyingOutcome))
+      continue;
+    return typeof c.url === "string" && c.url !== "" ? c.url : null;
+  }
+  return null;
 }
 
 /**

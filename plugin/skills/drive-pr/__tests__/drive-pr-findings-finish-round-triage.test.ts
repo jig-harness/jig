@@ -3,6 +3,7 @@
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
+import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -166,16 +167,13 @@ describe("finish-round.ts", () => {
           ],
         },
         seedState: async ({ stateDir, fixtureDir, cwd }) => {
-          await seed(stateDir, fixtureDir, cwd, [
-            "park",
-            "999",
-            "--key",
-            "PRRT_parked",
-            "--kind",
-            "thread",
-            "--reason",
-            "commentsTruncated — triage-thread.ts itself refuses this one; see SKILL.md § 4",
-          ]);
+          await seed(
+            stateDir,
+            fixtureDir,
+            cwd,
+            parkArgs("PRRT_parked", "thread"),
+            parkRecord("Who answers a thread triage-thread.ts refuses"),
+          );
         },
       });
       expect(r.exitCode).toBe(0);

@@ -103,10 +103,13 @@ export function runsDirectly(
 /**
  * The text entries of a list field. A field of the wrong type is a finding
  * of its own where a skill judges the configuration; a reader takes only the
- * entries that could work.
+ * entries that could work. With `key`, an entry that is a mapping is read
+ * by that key.
  */
-export function texts(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((v): v is string => typeof v === "string" && v !== "")
-    : [];
+export function texts(value: unknown, key?: string): string[] {
+  if (!Array.isArray(value)) return [];
+  const named = value.map((v) =>
+    key !== undefined && isMapping(v) ? v[key] : v,
+  );
+  return named.filter((v): v is string => typeof v === "string" && v !== "");
 }

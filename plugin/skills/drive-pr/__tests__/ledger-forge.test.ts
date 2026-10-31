@@ -5,6 +5,7 @@
  * markers, a newer claim stopping the write, `seed-ledger`, and the search
  * that finds the pull requests carrying a ledger.
  */
+import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
@@ -93,22 +94,14 @@ describe("the ledger written from the drive state", () => {
     const r = await runScript(
       forge,
       "drive-state.ts",
-      [
-        "park",
-        "999",
-        "--key",
-        "PRRT_x",
-        "--kind",
-        "thread",
-        "--reason",
-        "Pick the schema",
-      ],
+      parkArgs("PRRT_x", "thread"),
       { DRIVE_PR_LEDGER_DRIVER: driverEnv(CLONE) },
+      parkRecord("Which schema does the store keep?"),
     );
     expectSpawnExit(r, 0);
     const [l] = [...ledgersOn(forge).values()];
     expect(l?.parked.map((p) => [p.key, p.reason])).toEqual([
-      ["PRRT_x", "Pick the schema"],
+      ["PRRT_x", "Which schema does the store keep?"],
     ]);
   });
 
@@ -236,17 +229,8 @@ describe("the ledger written from the drive state", () => {
     const hash = "acct-0123456789abcdef";
     const steps: Array<[string[], string | undefined]> = [
       [
-        [
-          "park",
-          "999",
-          "--key",
-          "PRRT_x",
-          "--kind",
-          "thread",
-          "--reason",
-          "Ask dev.person@example.com which schema",
-        ],
-        undefined,
+        parkArgs("PRRT_x", "thread"),
+        parkRecord("Ask dev.person@example.com which schema"),
       ],
       [
         [
@@ -293,7 +277,8 @@ describe("the ledger written from the drive state", () => {
     expect(body).not.toContain(hash);
     expect(body).not.toMatch(/"(?:from|to)?[aA]ccount"/);
     const [posted] = [...ledgersOn(forge).values()];
-    expect(posted?.parked[0]?.reason).toBe("Ask <redacted> which schema");
+    expect(posted?.parked[0]?.reason).toBe("Ask <redacted> which schema?");
+    expect(posted?.parked[0]?.record).toContain("Ask <redacted> which schema?");
     expect(posted?.narrative).toContain("Asked <redacted> about it.");
     // The local state keeps the account its own re-arm reads.
     const got = await runScript(forge, "drive-state.ts", ["get", "999"]);

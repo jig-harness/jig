@@ -46,7 +46,10 @@
  *   drive-state.ts set-verified [PR] --sha SHA       # record final full-CI proof
  *   drive-state.ts reflected    [PR]                 # round a /reflect was last recorded at
  *   drive-state.ts set-reflected [PR]                # record a completed /reflect at the current round
- *   drive-state.ts park         [PR] --key K --kind thread|finding --reason R
+ *   drive-state.ts park         [PR] --key K --kind thread|finding --class C  < record.md
+ *   drive-state.ts record-decision [PR]  < {"class","what","reverse","record"?}
+ *   drive-state.ts rule         [PR]  < {"key","verdict","class"?,"humanDecision"?}
+ *                                     # the review arbiter's ruling on a thread
  *   drive-state.ts unpark       [PR] --key K [--key K …]   # all, or none
  *   drive-state.ts parked-keys  [PR]                 # newline-delimited keys
  *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome accepted|moot
@@ -224,6 +227,9 @@ import {
   seedLedgerCommand,
 } from "./lib/state/ledger-mirror.ts";
 import { quotaPark } from "./lib/state/quota-park.ts";
+import { framedPark } from "./lib/state/framed-park.ts";
+import { recordDecision } from "./lib/state/decisions.ts";
+import { recordRuling } from "./lib/state/rulings.ts";
 import { deadlineRetries } from "./lib/state/deadline-retries.ts";
 import { unpark } from "./lib/state/unpark.ts";
 import { clearPendingVerdicts } from "./lib/state/pass-handoff.ts";
@@ -339,7 +345,9 @@ function usage(): void {
                                     claim back instead of re-deriving it
 . Omitting it clears any prior
                                     claim rather than preserving it.
-  park         [PR] --key K --kind thread|finding --reason R
+  park         [PR] --key K --kind thread|finding --class C  (decision record on stdin)
+  record-decision [PR]              a decision the agent took, JSON on stdin
+  rule         [PR]                 the arbiter's ruling on a thread, JSON on stdin
   unpark       [PR] --key K [--key K …]  every key, or none when one is not parked
   parked-keys  [PR]                 newline-delimited keys
   hold         [PR] --key K --kind thread|finding --outcome accepted|moot
@@ -459,6 +467,8 @@ interface Args {
   resetAt: string;
   /** `quota-park --account HASH`: whose wall it is; `''` when unknown. */
   account: string;
+  /** `park --class C`: the decision class (`lib/state/framed-park.ts`). */
+  parkClass: string;
 }
 
 /** The `Args` fields a flag sets to its one value. */
@@ -492,44 +502,51 @@ const VALUE_FLAGS: Readonly<Record<string, ValueField>> = {
   "--window": "window",
   "--reset-at": "resetAt",
   "--account": "account",
+  "--class": "parkClass",
+};
+
+/** Every flag's value before the command line sets it. */
+const ARG_DEFAULTS: Omit<Args, "cmd" | "paths" | "keys" | "parkedAts"> = {
+  pr: "",
+  key: "",
+  every: false,
+  kind: "",
+  reason: "",
+  sha: "",
+  phaseName: "",
+  outcome: "",
+  unconfirmed: false,
+  commentUrl: "",
+  all: false,
+  pushedSha: "",
+  restoreRound: "",
+  ifPresent: false,
+  token: "",
+  ifCommentUrl: "",
+  actor: "",
+  verifiedSha: "",
+  eventId: "",
+  actorName: "",
+  createdAt: "",
+  checkRunWatermark: "",
+  stdin: false,
+  invariant: "",
+  phaseArg: "",
+  vendor: "",
+  window: "",
+  resetAt: "",
+  account: "",
+  parkClass: "",
 };
 
 function parseArgs(argv: string[]): Args {
   const cmd = argv.shift() ?? "";
   const a: Args = {
+    ...ARG_DEFAULTS,
     cmd,
-    pr: "",
-    key: "",
     keys: [],
     parkedAts: [],
-    every: false,
-    kind: "",
-    reason: "",
-    sha: "",
-    phaseName: "",
-    outcome: "",
-    unconfirmed: false,
-    commentUrl: "",
-    all: false,
-    pushedSha: "",
-    restoreRound: "",
-    ifPresent: false,
-    token: "",
-    ifCommentUrl: "",
-    actor: "",
-    verifiedSha: "",
-    eventId: "",
-    actorName: "",
-    createdAt: "",
-    checkRunWatermark: "",
     paths: [],
-    stdin: false,
-    invariant: "",
-    phaseArg: "",
-    vendor: "",
-    window: "",
-    resetAt: "",
-    account: "",
   };
   const take = (flag: string, i: number): string => {
     const value = argv[i + 1];
@@ -586,49 +603,6 @@ function parseArgs(argv: string[]): Args {
     }
   }
   return a;
-}
-
-/** `park`: record an item whose decision is a person's, and when it was parked. */
-async function park(store: StateStore, a: Args): Promise<number> {
-  if (a.key === "")
-    fail(2, "park requires --key (a thread node id or finding fingerprint)");
-  // A key carrying CR or LF is not one key. `parked-keys` emits keys
-  // newline-delimited and drive-status splits that output on LF, so
-  // `PRRT_x<LF>PRRT_unrelated` parks ONE item and yields TWO match tokens
-  // — the second suppressing live work nobody parked, which is the
-  // opposite of what parking is for and is invisible in the state file's
-  // own shape. The channel is line-delimited, so the constraint belongs on
-  // what may enter it.
-  if (/[\n\r]/.test(a.key)) {
-    fail(
-      2,
-      "park: --key may not contain a newline or carriage return.",
-      "parked-keys is a line-delimited channel, so such a key becomes TWO",
-      "match tokens and the extra one suppresses work nobody parked.",
-    );
-  }
-  if (a.kind !== "thread" && a.kind !== "finding")
-    fail(2, `park requires --kind thread|finding (got '${a.kind}')`);
-  if (a.reason === "")
-    fail(
-      2,
-      "park requires --reason — a parked item with no framed decision is not a checkpoint, it is a dropped finding",
-    );
-  const kind = a.kind;
-  await store.update((s) => ({
-    ...s,
-    parked: [
-      ...s.parked.filter((p) => p.key !== a.key),
-      {
-        key: a.key,
-        kind,
-        reason: a.reason,
-        round: s.rounds,
-        at: new Date().toISOString(),
-      },
-    ],
-  }));
-  return 0;
 }
 
 /**
@@ -739,6 +713,8 @@ const STDIN_COMMANDS = new Map<
     async (store, raw) => recordTakeover(store, raw, await resolveActor()),
   ],
   ["seed-ledger", seedLedgerCommand],
+  ["record-decision", recordDecision],
+  ["rule", recordRuling],
 ]);
 
 async function main(): Promise<number> {
@@ -807,6 +783,8 @@ async function main(): Promise<number> {
     "set-escalated",
     "park",
     "unpark",
+    "record-decision",
+    "rule",
     "hold",
     "claim-held",
     "unclaim-held",
@@ -2170,7 +2148,7 @@ async function main(): Promise<number> {
     }
 
     case "park": {
-      const parked = await park(store, a);
+      const parked = await framedPark(store, a);
       await mirrorLedger(pr, store);
       return parked;
     }
@@ -2240,14 +2218,10 @@ async function main(): Promise<number> {
       // exists to survive) would leave a successor an outcome with nothing to
       // explain it.
       //
-      // Read from STDIN, not a `--reason` argument like `park` uses: this text
-      // is the verbatim reply body headed for `answer-summary-finding.ts`'s
-      // own stdin, i.e. the same class of arbitrary reviewer-adjacent prose
-      // (quotes, backticks, `$(...)`) that hardened that script's
-      // body handling against — a shell argument would let a caller's OWN
-      // quoting evaluate those before this script ever saw them. `park`'s
-      // reason is short, agent-authored decision framing, not reply prose; the
-      // two are not the same risk class.
+      // Read from STDIN, as `park`'s decision record is: this text is the
+      // verbatim reply body headed for `answer-summary-finding.ts`'s own
+      // stdin, arbitrary reviewer-adjacent prose (quotes, backticks, `$(...)`)
+      // that a shell argument would let a caller's own quoting evaluate.
       let heldReason: string | undefined;
       if (a.kind === "finding") {
         const body = await readStdinAll();
