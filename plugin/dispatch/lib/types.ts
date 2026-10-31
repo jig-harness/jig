@@ -91,6 +91,28 @@ export interface Action {
   record: RecordName;
   reason: string;
   evidence: Evidence;
+  /** For a drive: the ledger facts it acts on (generation, exit, heartbeat). */
+  facts?: string;
+  /** For a takeover: the launch record whose driver it replaces. */
+  takeover?: string;
+}
+
+/** What `--apply` did with one planned launch. */
+export interface LaunchOutcome {
+  target: string;
+  action: "rearm" | "takeover";
+  /**
+   * `launched`: the runtime started the wrapper; `retried`: a pending
+   * record's launch was called again under its own key; `lost`: no answer
+   * in time, so the record holds its slot; `failed`: the runtime answered
+   * that it started nothing; `waits`: no account admits it, or the fresh
+   * read changed; `refused`: the identity check, the workspace or a record
+   * stopped it before any launch.
+   */
+  outcome: "launched" | "retried" | "lost" | "failed" | "waits" | "refused";
+  account: string | null;
+  record: string | null;
+  detail: string;
 }
 
 /** A wanted stage the runtime reports already running. */
@@ -121,6 +143,8 @@ export interface RepoReport {
   actions: Action[];
   running: Running[];
   unplaced: Unplaced[];
+  /** What `--apply` launched, retried or held back; empty without it. */
+  launches: LaunchOutcome[];
   /** Pull requests whose ledger needs nothing from the tick, by class. */
   quiet: Array<{ target: string; class: LedgerClass; why: string }>;
 }

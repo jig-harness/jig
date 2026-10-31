@@ -53,13 +53,37 @@ process.exit(r.exitCode ?? 1);
 
 const FAKE_ORCA = `#!/usr/bin/env bun
 const fs = require("node:fs");
+const { spawn } = require("node:child_process");
 const F = process.env.DISPATCH_FAKE_DIR;
 const args = process.argv.slice(2);
-fs.appendFileSync(F + "/orca-calls.log", args.join(" ") + "\\n");
+fs.appendFileSync(F + "/orca-calls.log", JSON.stringify(args) + "\\n");
+const answer = (result) => { process.stdout.write(JSON.stringify({ id: "x", ok: true, result })); process.exit(0); };
+if (args[0] === "terminal" && args[1] === "create") {
+  // A hang past the runtime's deadline, an answer that starts nothing, or a terminal running the command.
+  if (fs.existsSync(F + "/orca-terminal-hang")) { Bun.sleepSync(30000); process.exit(0); }
+  if (!fs.existsSync(F + "/orca-terminal-noop")) {
+    const command = args[args.indexOf("--command") + 1];
+    const log = fs.openSync(F + "/terminal.log", "a");
+    spawn("sh", ["-c", command], { detached: true, stdio: ["ignore", log, log], env: process.env }).unref();
+  }
+  answer({ terminal: { handle: "term-1" } });
+}
 const file = args[0] === "repo" && args[1] === "list" ? "orca-repos.json"
   : args[0] === "worktree" && args[1] === "ps" ? "orca-ps.json" : null;
 if (file === null) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "unhandled" } })); process.exit(1); }
-process.stdout.write(JSON.stringify({ id: "x", ok: true, result: JSON.parse(fs.readFileSync(F + "/" + file, "utf8")) }));
+answer(JSON.parse(fs.readFileSync(F + "/" + file, "utf8")));
+`;
+
+/** The drive the wrapper starts in tests: it records how it was started and exits with `drive-exit`'s code. */
+const FAKE_DRIVE = `const fs = require("node:fs");
+const F = process.env.DISPATCH_FAKE_DIR;
+fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
+  argv: process.argv.slice(2),
+  cwd: process.cwd(),
+  configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
+  token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
+}) + "\\n");
+process.exit(fs.existsSync(F + "/drive-exit") ? Number(fs.readFileSync(F + "/drive-exit", "utf8")) : 0);
 `;
 
 export interface OrcaAgent {
@@ -69,6 +93,8 @@ export interface OrcaAgent {
 
 export interface OrcaRow {
   branch: string;
+  /** A real directory, for a workspace a launch runs in; `/ws/<i>` when absent. */
+  path?: string;
   linkedPR?: number;
   agents?: OrcaAgent[];
   unverifiableTerminalCount?: number;
@@ -148,6 +174,7 @@ export function world(): World {
   mkdirSync(bin, { recursive: true });
   writeFakeProgram(join(bin, "gh"), WRAPPER(join(dir, "..", "bin", "gh")));
   writeFakeProgram(join(bin, "orca"), FAKE_ORCA);
+  writeFileSync(join(root, "fake-drive.js"), FAKE_DRIVE);
   const write = (name: string, value: unknown) =>
     writeFileSync(
       join(dir, name),
@@ -254,6 +281,7 @@ export function world(): World {
     JIG_HOME: join(home, ".jig"),
     JIG_USER_LAYER: "off",
     DISPATCH_FAKE_DIR: dir,
+    JIG_DISPATCH_DRIVE_SCRIPT: join(root, "fake-drive.js"),
     JIG_GITHUB_GRAPHQL_URL: `http://127.0.0.1:${server.port}/graphql`,
     GH_TOKEN: "test-token",
   };
@@ -280,7 +308,7 @@ export function world(): World {
         worktrees: rows.map((r, i) => ({
           worktreeId: `repo-1::/ws/${i}`,
           repoId: "repo-1",
-          path: `/ws/${i}`,
+          path: r.path ?? `/ws/${i}`,
           branch: `refs/heads/${r.branch}`,
           isArchived: false,
           linkedPR:

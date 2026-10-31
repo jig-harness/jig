@@ -4,7 +4,7 @@ import {
   COMMAND_TIMEOUT_MS,
   localRunner,
   withLimit,
-} from "../runner.ts";
+} from "../orca-workspace/runner.ts";
 
 test("commands run with untranslated messages", () => {
   const ran = localRunner([

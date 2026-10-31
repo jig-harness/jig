@@ -932,7 +932,9 @@ sessions, and reports each stage that should be running and is not. It
 reads this section from the repository's default branch as the forge holds
 it, fresh at every run, never from a checkout: a change to it takes effect
 once it merges, and a section that cannot be read plans nothing for the
-repository. The command reports only; see [the plugin's README](README.md#the-dispatcher).
+repository. What a run may start is the machine's to say, in
+[the machine's dispatch file](#the-machines-dispatch-file); see
+[the plugin's README](README.md#the-dispatcher).
 
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
@@ -949,7 +951,58 @@ since the follow-up stage's start wants `followup_command`. That start
 (`followup_since`) is the machine's, not the repository's:
 `jig dispatch --followup-since <date>` sets it, and otherwise each run keeps
 the start the previous run's receipt recorded (the first run starts it at
-its own time).
+its own time), unless the machine file's entry for the repository names
+one.
+
+### The machine's dispatch file
+
+What this machine dispatches, and on whose accounts, lives only in
+`$JIG_HOME/dispatch.yaml` (default `~/.jig/dispatch.yaml`); a repository
+cannot set it, and environment variables cannot override settings inside it.
+`JIG_HOME` selects the directory that contains it. `jig dispatch --apply`, and the
+timer `jig dispatch install` writes, start only what this file enables; a
+run without `--apply` reads it for the repositories to report on, and
+works without it. An unknown key anywhere in the file is refused.
+
+```yaml
+repositories:
+  - path: /home/me/dev/web          # absolute; ~/ is expanded
+    stages: [rearm]                  # rearm, pickup, followup, notify, steer
+    followup_since: 2026-10-30T00:00:00Z
+accounts:
+  - name: work
+    vendor: claude
+    config_dir: /home/me/.claude-work
+    identity: me@example.com
+    max_per_account: 2
+interval: 5m
+wall_backoff: 1h
+runtime_timeout: 1m
+receipts_days: 30
+```
+
+| Setting | Default / meaning |
+|---------|-------------------|
+| `repositories[].path` | Required; the repository's local checkout. List a repository in one machine's file only |
+| `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` (re-arms and takeovers of drives) is the one that starts anything in this version; the others are accepted and their actions reported |
+| `repositories[].followup_since` | None; when the follow-up stage started for it. Without it, the previous run's receipt keeps the start |
+| `accounts[].name` | Required; the account's name here, which launch records and walls are kept under |
+| `accounts[].vendor` | Required; `claude` or `codex`. A headless drive pass runs on `claude` accounts only in this version |
+| `accounts[].config_dir` | Required; the configuration directory of the account's profile, set as `CLAUDE_CONFIG_DIR` (or `CODEX_HOME`) for each pass it bills. The pass starts with `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` removed, so only this directory decides the account |
+| `accounts[].identity` | Required; the email address or account id the drive's identity resolver reads from that directory. A launch whose directory resolves to anything else, or to nothing, starts nothing and is reported |
+| `accounts[].max_per_account` | 2; the sessions the dispatcher may hold on the account at once (its slots). Sessions a person starts on the same account are not counted, so lower it when you share the account |
+| `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
+| `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on its usage limit (exit `16`) when the drive recorded no reset |
+| `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
+| `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's workspace. Twice this plus eight times `runtime_timeout` is one tick's budget, and a file whose budget passes 24 days is refused |
+| `receipts_days` | 30; days receipts and ended launch records are kept |
+
+Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
+under `~/.local/state/jig/dispatch/`: `receipts/`, `launches/` (one record
+per launch, written before it) and `walls/` (each account's usage-limit
+wall, which lifts at its latest recorded reset). A launch record a run
+cannot check (claimed on another host or before a reboot) holds its
+account's slot until a person removes its files from `launches/`.
 
 ## Complete example
 
