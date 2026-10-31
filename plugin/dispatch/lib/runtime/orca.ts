@@ -6,10 +6,11 @@
  * request's head, and to an item by the issue Orca links to it or by its
  * branch carrying the item's key in the repository's branch form.
  *
- * Orca's command is `ORCA_CLI_COMMAND` when set, else `orca` on `PATH`.
+ * Orca's command is the shared resolver's (`ORCA_CLI_COMMAND`, else the
+ * command in `ORCA_CLI_BIN_DIR`), else `orca` on `PATH`.
  */
 import { realpathSync } from "node:fs";
-import { orcaResult, orcaFailure } from "../../../shared/orca.ts";
+import { orcaCommand, orcaFailure, orcaResult } from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
 import { keyFromBranch } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
@@ -29,15 +30,14 @@ const ORCA_TIMEOUT_SEC = 60;
 /** The most rows one listing asks for; a cut page is an unknown. */
 const ROW_LIMIT = 2000;
 
-function orcaCommand(): string {
-  return process.env.ORCA_CLI_COMMAND?.trim() || "orca";
-}
-
 async function orca(args: string[]): Promise<Record<string, unknown> | string> {
-  const done = await run([orcaCommand(), ...args, "--json"], {
-    timeoutSec: ORCA_TIMEOUT_SEC,
-    stderr: "pipe",
-  });
+  const done = await run(
+    [orcaCommand(process.env) ?? "orca", ...args, "--json"],
+    {
+      timeoutSec: ORCA_TIMEOUT_SEC,
+      stderr: "pipe",
+    },
+  );
   return (
     orcaResult(done) ?? `orca ${args.join(" ")} failed ${orcaFailure(done)}`
   );
@@ -51,22 +51,32 @@ function real(path: string): string {
   }
 }
 
-/** The Orca repository ids that are this checkout, by path or by remote. */
-function repoIds(listing: Record<string, unknown>, repo: RepoTarget): string[] {
+/**
+ * The Orca repository ids that are this checkout, by path or by remote; null
+ * when a matching repository has no string id, which leaves its workspaces
+ * unattributable.
+ */
+function repoIds(
+  listing: Record<string, unknown>,
+  repo: RepoTarget,
+): string[] | null {
   const repos = Array.isArray(listing.repos) ? listing.repos : [];
   const path = real(repo.path);
   const remote = `github.com/${repo.slug}`.toLowerCase();
-  return repos
-    .filter(isRecord)
-    .filter((r) => {
-      const identity = isRecord(r.gitRemoteIdentity) ? r.gitRemoteIdentity : {};
-      return (
-        (typeof r.path === "string" && real(r.path) === path) ||
-        (typeof identity.canonicalKey === "string" &&
-          identity.canonicalKey.toLowerCase() === remote)
-      );
-    })
-    .map((r) => String(r.id));
+  const matched = repos.filter(isRecord).filter((r) => {
+    const identity = isRecord(r.gitRemoteIdentity) ? r.gitRemoteIdentity : {};
+    return (
+      (typeof r.path === "string" && real(r.path) === path) ||
+      (typeof identity.canonicalKey === "string" &&
+        identity.canonicalKey.toLowerCase() === remote)
+    );
+  });
+  const ids: string[] = [];
+  for (const r of matched) {
+    if (typeof r.id !== "string") return null;
+    ids.push(r.id);
+  }
+  return ids;
 }
 
 /** A number or issue key out of one of Orca's link shapes. */
@@ -228,6 +238,13 @@ export function orcaRuntime(): SessionRuntime {
       if (typeof listing === "string")
         return { ok: false, source, reason: listing };
       const ids = repoIds(listing, repo);
+      if (ids === null)
+        return {
+          ok: false,
+          source,
+          reason:
+            "orca repo list returned a matched repository without a string id",
+        };
       if (ids.length === 0)
         return {
           ok: false,
@@ -238,9 +255,18 @@ export function orcaRuntime(): SessionRuntime {
       if (typeof ps === "string") return { ok: false, source, reason: ps };
       const cut = partial(ps);
       if (cut !== null) return { ok: false, source, reason: cut };
-      const rows = (ps.worktrees as unknown[])
+      const all = ps.worktrees as unknown[];
+      if (!all.every((w) => isRecord(w) && typeof w.repoId === "string"))
+        return {
+          ok: false,
+          source,
+          reason: "orca worktree ps returned a row with no readable repoId",
+        };
+      const rows = all
         .filter(isRecord)
-        .filter((w) => ids.includes(String(w.repoId)) && w.isArchived !== true);
+        .filter(
+          (w) => ids.includes(w.repoId as string) && w.isArchived !== true,
+        );
       const workspaces = rows.map((row) => workspaceOf(row, join));
       return { ok: true, source, workspaces };
     },

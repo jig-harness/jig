@@ -940,7 +940,8 @@ repository. The command reports only; see [the plugin's README](README.md#the-di
 
 An item is a pickup when it is assigned to `identity` and in one of
 `states`, and the person who made that assignment can write to the
-repository (GitHub) or is a non-guest member of the team (Linear); an item
+repository (GitHub: the one `issue_tracker.github.repository` names, which is
+the dispatched repository unless that field says otherwise) or is a non-guest member of the team (Linear); an item
 assigned by anyone else is reported and never planned. A pull request merged
 since the follow-up stage's start wants `followup_command`. That start
 (`followup_since`) is the machine's, not the repository's:
