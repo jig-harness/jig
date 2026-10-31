@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { isRecord } from "../../lib/record.ts";
 import { swallow } from "../../plugin/shared/errors.ts";
+import { orcaErrorText } from "../../plugin/shared/orca.ts";
 import { type Context, output } from "../herdr/runner.ts";
 import { OrcaError, type OrcaTarget, type Workspace } from "./runner.ts";
 
@@ -125,16 +126,7 @@ export function orcaCall<T>(
   return envelope;
 }
 
-/** Orca's message for an error, with its code when the message is only the code. */
-export function orcaErrorText(error: {
-  code?: string;
-  message?: string;
-}): string {
-  const code = error.code ?? "";
-  const message = error.message ?? "";
-  if (message === "" || message === code) return code || "unknown error";
-  return code === "" ? message : `${message} (${code})`;
-}
+export { orcaErrorText };
 
 /** The result of a command that must succeed. */
 export function orcaJson<T>(

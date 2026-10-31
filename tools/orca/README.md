@@ -111,7 +111,10 @@ existed, `--comment` replaces its comment, which carries the prompt to paste.
 **`remove`** runs the repository's remove hook inside the worktree, parks the
 worktree's unsent [reflection](../../plugin/skills/reflect/README.md)
 findings, and only then removes the worktree through `orca worktree rm`.
-When either step fails the worktree stays. `--force` removes a worktree with
+When either step fails the worktree stays. The steps are the plugin's
+([`plugin/gc/worktree-removal.ts`](../../plugin/gc/worktree-removal.ts)),
+which `jig gc` runs too when it collects a worktree Orca manages
+([plugin/gc/README.md](../../plugin/gc/README.md#worktrees-orca-manages)). `--force` removes a worktree with
 uncommitted changes, which Orca refuses otherwise. Orca also deletes the
 worktree's local branch when it can tell the branch is merged, and keeps it
 otherwise. Parking runs the reflection journal in this process, so it

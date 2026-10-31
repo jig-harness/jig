@@ -15,6 +15,12 @@ export interface WorktreeEvidence {
   aheadOfBase: number | null;
   held: boolean | null;
   idleMs: number | null;
+  /**
+   * A workspace runtime manages the worktree and its registry showed no agent
+   * in it (`orcaLiveness`), so collection runs through the runtime rather
+   * than waiting for the opener to share session admission.
+   */
+  coordinated?: boolean;
 }
 const unknown = (reason: string): Proof => ({ state: "unverified", reason });
 const live = (reason: string): Proof => ({ state: "live", reason });
@@ -36,6 +42,7 @@ export function localWorktreeVeto(
   return null;
 }
 function lifecycle(facts: WorktreeEvidence): Proof {
+  const coordinated = facts.coordinated === true;
   if (facts.localOnlyCommits === null)
     return unknown("remote commit coverage could not be verified");
   if (!facts.requests?.length) return withoutRequest(facts.aheadOfBase);
@@ -43,11 +50,12 @@ function lifecycle(facts: WorktreeEvidence): Proof {
   if (!merged && facts.localOnlyCommits)
     return live("closed pull request has commits on no remote branch");
   if (merged && facts.localOnlyCommits)
-    return mergedCoverage(facts.mergedHeadCovers);
+    return mergedCoverage(facts.mergedHeadCovers, coordinated);
   return candidate(
     merged
       ? "pull request merged; commits are retained on remote branches"
       : "pull request closed; every commit is retained on a remote branch",
+    coordinated,
   );
 }
 function withoutRequest(aheadOfBase: number | null): Proof {
@@ -60,14 +68,22 @@ function withoutRequest(aheadOfBase: number | null): Proof {
     reason: "worktree without a pull request has no registered session owner",
   };
 }
-function mergedCoverage(covered: boolean | null): Proof {
+function mergedCoverage(covered: boolean | null, coordinated: boolean): Proof {
   if (covered === null)
     return unknown("merged pull request head ancestry could not be verified");
   return covered
-    ? candidate("merged pull request head covers the worktree's commits")
+    ? candidate(
+        "merged pull request head covers the worktree's commits",
+        coordinated,
+      )
     : live("commits are outside remote branches and merged pull request heads");
 }
-function candidate(reason: string): Proof {
+function candidate(reason: string, coordinated: boolean): Proof {
+  if (coordinated)
+    return {
+      state: "dead",
+      reason: `${reason}; the runtime's registry shows no agent at work in it`,
+    };
   return {
     state: "dead",
     reason,
