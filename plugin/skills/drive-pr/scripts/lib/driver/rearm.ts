@@ -82,8 +82,9 @@ export const NOTICE_MAX = 15_000;
 
 /**
  * The arm command, in the drive's own mode, for a person to copy: with the
- * drive's own pass command when `agent` holds it, else the documented
- * Claude Code one.
+ * drive's own pass command when `agent` holds it (the driver passes the
+ * command it runs, whose `--model` names the pass model), else the documented
+ * Claude Code one, to which `drive.ts` adds the configured model.
  */
 export function armCommand(
   driveTs: string,

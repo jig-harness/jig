@@ -14,6 +14,12 @@
  *   --max-rounds N   stop after N rounds (default `drive.max_rounds`, else
  *                    10). A finding the agent cannot fix would otherwise
  *                    re-push forever.
+ *   --pass-model M   the model each pass runs on, for this run: a model id,
+ *                    a Claude Code alias (`sonnet`) or a routing tier
+ *                    (`execution`, `strategic`). Default: the pass command's
+ *                    own `--model`, else `drive.pass_model`, else `sonnet`.
+ *                    Applies to a `claude` pass only (`lib/pass-model.ts`);
+ *                    the driver log and `drives.ts` name the model.
  *   --handoff-at V   the context-economy dial: hand off at V% of the pass's
  *                    context rather than degrading. V is a whole percent, or
  *                    `never` for a continuous drive through compaction.
@@ -73,7 +79,7 @@
  * test (resolve-review-comments' converge.ts takes the same interface for the
  * same reason).
  *
- *   bun drive.ts 123 --bots-only -- claude -p "/jig:drive-pr --bots-only 123"
+ *   bun drive.ts 123 --bots-only -- claude --model sonnet -p "/jig:drive-pr --bots-only 123"
  *
  * Exit codes mirror drive-status.ts, plus 6:
  *   0  converged (SHA-verified)

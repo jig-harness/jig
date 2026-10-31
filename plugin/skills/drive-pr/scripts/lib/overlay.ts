@@ -262,6 +262,53 @@ export function passDeadlineRetriesSetting(): number | undefined {
   return value as number;
 }
 
+/** The model each pass runs on when neither `--pass-model` nor `drive.pass_model` names one: Claude Code's alias for the latest Sonnet. */
+export const DEFAULT_PASS_MODEL = "sonnet";
+
+/**
+ * A model as a pass command takes it: one word that does not start with a
+ * dash (a model id, a Claude Code alias such as `sonnet`, or a routing tier).
+ */
+export const PASS_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@[\]-]*$/;
+
+/** `drive.pass_model`: the model, alias or routing tier each pass runs on; `undefined` when not configured. */
+export function passModelSetting(): string | undefined {
+  const value = section("drive").pass_model;
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || !PASS_MODEL_PATTERN.test(value))
+    throw new DecodeError(
+      configSource("drive.pass_model"),
+      "$.drive.pass_model",
+      "must be one word naming a model, a Claude Code alias or a routing tier",
+    );
+  return value;
+}
+
+/** How a skill arms a drive: `do_item.arm_drive`'s values. */
+export const ARM_DRIVE_MODES = ["auto", "tab", "background", "print"] as const;
+export type ArmDriveMode = (typeof ARM_DRIVE_MODES)[number];
+
+/** How a drive is armed when `do_item.arm_drive` is not set. */
+export const DEFAULT_ARM_DRIVE: ArmDriveMode = "auto";
+
+/** Whether `value` is one of `do_item.arm_drive`'s values. */
+export function isArmDriveMode(value: unknown): value is ArmDriveMode {
+  return ARM_DRIVE_MODES.some((mode) => mode === value);
+}
+
+/** `do_item.arm_drive`: how do-item and drive-pr arm a drive; `undefined` when not configured. */
+export function armDriveSetting(): ArmDriveMode | undefined {
+  const value = section("do_item").arm_drive;
+  if (value === undefined || value === null) return undefined;
+  if (!isArmDriveMode(value))
+    throw new DecodeError(
+      configSource("do_item.arm_drive"),
+      "$.do_item.arm_drive",
+      `must be one of ${ARM_DRIVE_MODES.join(", ")}`,
+    );
+  return value;
+}
+
 /**
  * `ci.required_checks`: the exact check-run names that certify a head, or
  * `undefined` when not configured (the drive then derives them from the base

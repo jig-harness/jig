@@ -412,6 +412,7 @@ drive:
   reviews_drafts: true        # does the AI reviewer review draft pull requests
   max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
   pass_deadline_retries: 2    # passes killed at their deadline one drive restarts from, across re-arms; default 2
+  pass_model: sonnet          # model each pass runs on: a model id, a Claude Code alias or a routing tier; default sonnet
 ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
   hold_label: ci:hold         # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)
@@ -442,6 +443,7 @@ do_item:
   gates:                      # extra review skills a pickup must run first
     - { labels: [db-migration], paths: ["migrations/**"], skill: db-migration-review }
   execution_plan_block: execution-plan-v1   # fenced block name read from an epic's description
+  arm_drive: auto             # how do-item and drive-pr start a drive: auto (a terminal tab in Orca, else the background), tab, background or print; default auto
 work_batch:                   # how work-batch sizes a batch
   point_budget: 16            # default 16
   max_items: 6                # default 6

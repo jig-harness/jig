@@ -31,8 +31,12 @@ import {
   PRIORITY_NAMES,
 } from "../../do-item/scripts/lib/tracker/github/settings.ts";
 import {
+  ARM_DRIVE_MODES,
+  DEFAULT_ARM_DRIVE,
   DEFAULT_MAX_ROUNDS,
   DEFAULT_PASS_DEADLINE_RETRIES,
+  DEFAULT_PASS_MODEL,
+  PASS_MODEL_PATTERN,
 } from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
@@ -234,6 +238,8 @@ describe("the reading skills", () => {
       ...STACKING_MODES,
     ]);
     expect(field("pull_requests.open_as")?.values).toEqual([...OPEN_AS]);
+    expect(field("do_item.arm_drive")?.values).toEqual([...ARM_DRIVE_MODES]);
+    expect(field("drive.pass_model")?.pattern).toBe(PASS_MODEL_PATTERN.source);
     expect(field("pull_requests.issue_link")?.values).toEqual([...ISSUE_LINKS]);
     expect(field("pull_requests.title_format")?.values).toEqual([
       ...TITLE_FORMATS,
@@ -310,6 +316,8 @@ describe("the reading skills", () => {
       "pull_requests.issue_link": policy.issueLink,
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
       "drive.pass_deadline_retries": DEFAULT_PASS_DEADLINE_RETRIES,
+      "drive.pass_model": DEFAULT_PASS_MODEL,
+      "do_item.arm_drive": DEFAULT_ARM_DRIVE,
       "issue_tracker.adapter": DEFAULT_ADAPTER,
       "issue_tracker.github.states_from": DEFAULT_STATES_FROM,
       "issue_tracker.github.status_field": DEFAULT_STATUS_FIELD,
