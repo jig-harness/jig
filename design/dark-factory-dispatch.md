@@ -378,8 +378,9 @@ fresh one. Orca is the first implementation:
   notification workspace the dispatcher keeps per repository, on the
   default branch, into which it never launches an agent, its comment
   naming the item or pull request the message is about;
-- `steer` as the nudge's text sent to the session's terminal; that Orca
-  can send text to a running agent's terminal by the id `orca worktree ps
+- `steer` as the nudge's text sent to the session's terminal, after the
+  terminal's screen is read for the checks in Control; that Orca can read
+  a running agent's terminal and send it text by the id `orca worktree ps
   --json` reports is checked when the control step is built, and until it
   does, the nudge is reported and not sent.
 
@@ -428,8 +429,8 @@ with the reset the drive printed, or, when the reset is unknown,
 `dispatch.wall_backoff` (one hour by default) from the stop. The wall is
 lifted at its reset; nothing else lifts it. The drive's own quota park
 stays where `drive-pr` keeps it and still decides whether `drive.ts` admits
-the re-arm. A wall an interactive session meets is not recorded in the
-first stages: that session shows as waiting, holds its slot, and is
+the re-arm. A wall an interactive session meets is not recorded before the
+control step (see Control): that session shows as waiting, holds its slot, and is
 reported once it has waited past `dispatch.blocked_after` (30 minutes by
 default).
 
@@ -491,8 +492,8 @@ parked questions (item 32's framed decision once that is built); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
 stalled pickup or a double claim; a failed follow-up; a session waiting past
-`blocked_after`; a running stage drifting from its expectation (see
-Control).
+`blocked_after`; a running stage drifting from its expectation, and a
+session still waiting on a wall after its one nudge (see Control).
 
 A workspace holds one comment, so a message never replaces one a person has
 not read. The tick joins every cause it notifies to one target in a tick
@@ -518,7 +519,8 @@ Every tick writes one receipt under `~/.local/state/jig/dispatch/`, as
 its reason, each launch with the runtime's answer, each notification. A
 tick removes receipts and ended launch records older than the machine
 file's retention, keeping the latest completed receipt. These records are
-kept apart from them and do not expire. A follow-up's outcome record,
+kept apart from them and do not expire: the outcome log (see Control) and
+the two below. A follow-up's outcome record,
 one per merged pull request, is what tells a done follow-up from a failed
 one after its launch record has gone. What suppresses a repeat is a small suppression
 record per cause (an unchanged refusal not to retry, a notification
@@ -532,90 +534,151 @@ drives' own.
 ### Control: observe, record, report, steer
 
 The dispatcher starts stages; it also has to show how they went, so that
-a person can see where the line loses work and change what causes it. It
-does that in five parts: an outcome log, an expectation per stage, one
-dashboard, the reflection loop, and one mechanical nudge.
+a person can see where the dispatched part of the line loses work and
+change what causes it. It does that in five parts: an outcome log, an
+expectation per stage, one dashboard, the reflection loop, and one
+mechanical nudge.
 
 **The outcome log.** Receipts and launch records are working records and
 expire with the machine file's retention; what the factory learns from
-must not. When a launch record ends, the tick appends one row to
-`~/.local/state/jig/dispatch/log.jsonl`, which nothing removes: the stage,
-the repository, the item or pull request, the account, the model, the
-duration, the rounds (for a drive), and an outcome class with its reason.
-The classes are a closed list:
+must not. The tick appends rows to an outcome log under
+`~/.local/state/jig/dispatch/`, one file per month (`log-<year>-<month>.jsonl`),
+which nothing removes. It holds two kinds of row:
 
-| Class | The launch ended with |
+- **An ended row**, one per launch record, when the record ends: the
+  stage, the repository, the item or pull request, the account, the model
+  the tick launched it with (none when the tick named none), the
+  duration, the drive's rounds (its ledger's round at the end less the
+  round at launch), an outcome class, and a reason that always carries the
+  stage's own answer verbatim: the exit code, the recorded result, or the
+  last state.
+- **An event row**, once per cause, for what the tick observed rather than
+  what ended: a stalled pickup, a double claim, a stage drifting from its
+  expectation, a session waiting past `blocked_after` with what the tick
+  read as its cause, a stop the tick notified on a stage it did not launch
+  (a park on a drive a person armed, say), and each nudge sent. An event
+  row is written when its suppression record is, and keyed by the same
+  facts.
+
+The log therefore covers the stages this machine launched, and the stops
+on other stages only as far as the tick notifies them.
+
+An ended row's class comes from a closed list, with every stage's answer
+placed:
+
+| Class | Stage answers placed in it |
 | --- | --- |
-| converged | the drive at its convergence (exit `0` from `drive.ts`) |
-| merged | the pull request merged while the stage ran |
-| quota wall | a usage limit (`drive.ts` exit `16`, or a wall read from an interactive session's record) |
-| parked for a person | a park (`drive.ts` exit `8`) |
-| stalled | the drive's stall (`drive.ts` exit `14`) or a stalled pickup |
-| died | a process gone without an exit, or a session that ended with no result |
-| refused | the stage's own refusal (`drive.ts` exit `11`, `13`, `20`; an item already claimed) |
-| gates failed | a pass that could not get the gates or CI green (`drive.ts` exit `1`, `7`, `9`, `12`, `15`) |
-| double claim | two sessions claiming one item |
-| unknown | anything else |
+| converged | a drive's convergence (`drive.ts` exit `0`); a pickup's or follow-up's recorded result `done` |
+| merged | a drive or pickup whose pull request merged while it ran (exit `5`, merged); never a follow-up, which starts after the merge |
+| quota wall | a usage limit: `drive.ts` exit `16`, or an interactive session's wall record (below) |
+| parked for a person | a park (exit `8`) |
+| stalled | the drive's stall (exit `14`) or its round limit (exit `6`); a driver replaced by a takeover, logged with reason `taken over` |
+| died | a process gone without an exit; an interactive session that ended with no result |
+| refused | a stage's own refusal or a stop it was given: exits `2`, `4`, `11`, `13`, `18`, `19`, `20`; exit `5` on a closed pull request; an item already claimed; a person's `drives.ts --stop` |
+| gates failed | a stage that ran to its end without achieving it: exits `1`, `7`, `9`, `12`, `15`; a recorded result `failed` |
+| double claim | used by event rows only |
+| unknown | anything not placed above, with its last state |
 
-A stop the classifier cannot place is logged as `unknown` with its last
-state (the exit, the ledger's class, the agent's state), never dropped, so
-the list grows from evidence: a reason that recurs among the `unknown`
-rows becomes a class in a later change. Each row is written once per
-launch record, keyed by that record, so a tick that stops between writing
-the row and removing the record writes no second row. The follow-up's
-outcome record (see Receipts) stays what it is: it settles whether a
-merged pull request still wants a follow-up, and is read by the tick; the
-log row for the same launch is the analysis record, read only by people
-and the dashboard, and the tick never plans from it.
+The reason column is what tells a conflict from a pass deadline within
+"gates failed", or a person's stop from a refusal within "refused", and
+the dashboard filters on it as on the class. A stop the classifier cannot
+place is logged as `unknown`, never dropped, so the list grows from
+evidence: a reason that recurs among the `unknown` rows becomes a class in
+a later change.
 
-**Expectations and drift.** Each stage carries an expectation of how a
-running stage progresses:
+Each launch record gains a `logged` mark, set once its ended row is
+appended. A tick that stopped between the append and the mark finds the
+record's key among the last rows of the current month's file, which are
+in append order, before it appends; an event row is checked the same way
+against its suppression record. A row is one line written in one append;
+a reader skips a last line with no newline, and the next append writes the
+missing newline first. The follow-up's outcome record (see Receipts) stays
+what it is: it settles whether a merged pull request still wants a
+follow-up, and the tick reads it; the ended row for the same launch is the
+analysis record, read only by people and the dashboard, and the tick never
+plans from the log.
 
-- a drive's open threads fall across its rounds;
-- a pickup opens a pull request within `dispatch.pickup_within` of its
-  launch;
-- a follow-up ends within `dispatch.followup_within` of its launch.
+**Expectations and stage drift.** Each launched stage carries an
+expectation of how it progresses while it runs:
 
-A running stage outside its expectation is reported as **drifting**, with
-the evidence (the thread counts per round from the ledger, the time since
-launch, the item's state), and notified once per cause (see
-Notifications), keyed by the launch record and the expectation it broke.
-Drift is never acted on: the stage keeps running, its slot stays held, and
-whether to stop it is a person's call. A drive's thread count is read from
-its ledger at each round boundary; a count that has not been read for two
-rounds is not a fall, and is not drift either.
+- a drive's unresolved threads fall: each tick records, on the drive's
+  launch record, the unresolved-thread count at the ledger's current round
+  the first time it sees that round; the drive drifts when the count at
+  the latest recorded round is not below the count `drive_rounds_flat`
+  recorded rounds earlier (3 by default). Rounds the tick never saw are
+  gaps, not samples: the window counts recorded rounds only. This is
+  earlier and softer than the drive's own stops: `drive.ts` ends a drive
+  whose passes change nothing (exit `14`) or that reaches its round limit
+  (exit `6`), while drift reports a drive that is still changing things
+  and not converging;
+- a pickup opens a pull request within `pickup_within` of its launch (two
+  hours by default);
+- a follow-up ends within `followup_within` of its launch (one hour by
+  default).
 
-**The dashboard.** `jig dispatch dashboard [--port <n>]` serves one page
-that reads the log when it is opened and filters it by time, repository,
-stage, account and class. A question about yesterday is a filter, not a
-report: no report file is ever generated, and nothing is written to disk
-but the log itself. The page listens on the host's private-network
-address, as the Orca server does, so a phone on that network reaches it;
-no route into the host is opened beyond that network. It reads one
-machine's log (see Left out).
+A running stage outside its expectation is **drifting**: it is reported
+with the evidence (the recorded counts per round, the time since launch,
+the item's state), written as an event row, and notified once per cause
+(see Notifications), keyed by the launch record and the expectation it
+broke. A session already notified as waiting past `blocked_after` is not
+notified again for drift while that notification stands. Stage drift is
+never acted on: the stage keeps running and keeps its slot, and whether to
+stop it is a person's call. Stages the dispatcher did not launch carry no
+expectation.
+
+**The dashboard.** `jig dispatch dashboard` serves one page that reads the
+log when it is opened and filters it by time, repository, stage, account,
+class and reason, and shows the count of each class over the filtered
+window. A question about yesterday is a filter, not a report: no report
+file is ever generated, and nothing is written to disk but the log itself.
+The server runs while the command runs, started and stopped by a person
+(from a terminal on the host, which Orca's phone app reaches); nothing
+installs or keeps it running, so the dispatcher stays without a resident
+process. It listens on the address the machine file names
+(`dashboard.listen`, no default), and refuses an address outside the
+private and loopback ranges, so no route into the host is opened beyond
+the network the host already trusts. The URL it prints carries a token
+minted at start, and a request without it is refused: the log names
+repositories, items and accounts.
 
 **Self-correction through the reflection loop.** A class that recurs is a
-finding about the scaffolding, not something the tick should adjust on its
-own. The dashboard names the classes that recur over a window, and they
-reach [`reflect`](../plugin/skills/reflect/README.md) and
-[`review-reflections`](../plugin/skills/review-reflections/README.md),
+finding about the scaffolding, not something the tick adjusts on its own.
+A person reads the recurring classes on the dashboard and records the
+finding through [`reflect`](../plugin/skills/reflect/README.md), and
+[`review-reflections`](../plugin/skills/review-reflections/README.md) is
 where a person approves the change: a cap, an expectation, a skill's step.
-The tick tunes none of its own dials.
+No route carries a class to the reflection store by itself in this
+design. The tick tunes none of its own dials.
 
 **Steering.** The session runtime gains `steer(session, nudge)`, which
 sends a fixed text to a running session. The set of nudges is closed and
-has one entry in this design:
+has one entry in this design, **continue**, the prompt people type by hand
+today ("Your usage limit has reset. Continue"). Its target must be known
+mechanically, so it rests on a wall record for interactive sessions:
 
-- **continue**: sent to a session the runtime reports waiting, on an
-  account whose wall has reopened, when the session's own record shows it
-  stopped on that wall. Its text is the prompt people type by hand today
-  ("Your usage limit has reset. Continue"). It is sent once per cause,
-  keyed by the account, the wall record and the session, through a
-  suppression record as a notification is, and logged in the receipt and,
-  when the launch ends, in its log row. That the session stopped on the
-  wall is read from its vendor's own record through `drive-pr`'s quota
-  adapters, against the account's configuration directory; a session whose
-  record cannot be read gets no nudge.
+- **Recording an interactive session's wall.** The tick mints the vendor
+  session id at launch and passes it with the launch where the vendor
+  accepts one (Claude Code's `--session-id`), as the drive's quota
+  adapters do for a pass (`prepareQuotaSpawn` in
+  `plugin/skills/drive-pr/scripts/lib/quota/`), and keeps it on the launch
+  record. While the session runs, the tick reads that session's own record
+  through the same adapters (`detectQuotaBlock`), against the account's
+  configuration directory, and a wall it finds is written to the account's
+  wall record with the session id. A launch that cannot carry the session
+  id records no wall and gets no nudge; that an Orca agent launch can pass
+  it through is checked when the control step is built.
+- **Sending the nudge.** The tick sends **continue** to a session only when
+  all of these hold: the runtime reports it waiting; its account's wall,
+  recorded from this session, has reached its reset; the session's last
+  record is still that wall; and the terminal, read through the runtime
+  just before sending, shows the agent's input prompt with an empty input
+  line and no menu or question on screen, and no person attached where the
+  runtime reports attachment. The text is sent with Enter. Any check that
+  fails or cannot be read sends nothing and is reported. A nudge counts as
+  sent once the runtime's receipt acknowledges it, keyed by the account,
+  the wall record and the session through a suppression record, and is
+  written as an event row; a session still waiting on that wall at the
+  next tick is notified, never nudged again.
 
 There is no open-ended "keep going" nudge. Every other stuck state (a
 waiting session with no wall, a drifting stage, a session that asked a
@@ -632,14 +695,15 @@ session runs. Its values are split as configuration always is:
 - **The machine's**, in `~/.jig/dispatch.yaml`: the repositories it
   dispatches for and the stages enabled for each, with `followup_since`;
   the accounts it may bill, each with its configuration directory and cap;
-  the interval, `wall_backoff` and the receipts' retention.
+  the interval, `wall_backoff`, the receipts' retention and the
+  dashboard's `dashboard.listen` address.
 - **A repository's**, in a `dispatch` section of its `.config/jig.yaml`,
   documented in [CONFIGURATION.md](../plugin/CONFIGURATION.md): the factory
   identity per tracker (`identity`), the states that mean "ready to pick
   up" (`states`), the follow-up command (`followup_command`, `/followup` in
   Jig; a consumer repository names its own post-merge command),
-  `stalled_after`, `blocked_after`, and the expectations `pickup_within`
-  and `followup_within`.
+  `stalled_after`, `blocked_after`, and the expectations
+  `drive_rounds_flat`, `pickup_within` and `followup_within`.
 
 A repository's `dispatch` section is read from its default branch as the
 forge holds it, fetched afresh at every tick, never from a workspace's
@@ -707,10 +771,15 @@ One pull request each, in this order; each is usable on its own.
    the receipts join its morning report then; a consumer repository's
    follow-up waits on its own post-merge command (item 17).
 6. **Control.** The outcome log and its classifier, the expectations and
-   drift reporting, `jig dispatch dashboard`, and `steer` with its one
-   nudge. Usable alone: every stop has a recorded reason, and one view
-   shows all of them. Waits on step 3, so there are launches to log; the
-   nudge reaches interactive sessions once step 4 starts them.
+   stage drift, `jig dispatch dashboard`, the interactive wall record, and
+   `steer` with its one nudge. Usable alone: every stage the dispatcher
+   launched or notified has a recorded reason, and one view shows all of
+   them. Its parts wait on different steps: the log and a drive's drift on
+   step 3, so there are launches to log; sending drift notifications on
+   step 5's `notify` (until then they are reported in the receipts); the
+   pickup and follow-up expectations on steps 4 and 5; the nudge on
+   interactive launches (step 4, itself waiting on an agent launch that
+   binds its account) and on a launch that carries the vendor session id.
 
 ## Left out
 
@@ -735,17 +804,22 @@ One pull request each, in this order; each is usable on its own.
   machine's file only: the follow-up marker settles which one starts a
   follow-up, but nothing else arbitrates two dispatchers on one repository,
   and a follow-up's outcome is read only on the machine that launched it,
-  until forge-side claims and outcomes are designed.
+  until forge-side claims and outcomes are designed. The dashboard reads
+  one machine's outcome log until then too.
 - **Interactive sessions**, pickups and follow-ups, until an Orca agent
   launch that binds its agent to an account is shown to work; headless
   passes run meanwhile.
-- **Further nudges.** A nudge joins the closed set only when a class in the
-  outcome log shows a mechanical cause that recurs; the dashboard reads one
-  machine's log until the several-hosts question is designed.
+- **Further nudges.** A nudge joins the closed set only when the outcome
+  log's waiting-episode rows show a mechanical cause that recurs, with a
+  target the tick can identify and a screen state it can check, as
+  **continue** has.
 - **The merge**, which stays a person's
   ([ADR-0003](../docs/adr/ADR-0003-a-person-merges.md)); delegated merge is
   item 9, decided on its own.
 
 ## Review
 
-Reviewed 2026-10-30 at commit `c2c8083e` by a fresh-context subagent.
+Critiqued in two rounds by reviewers with fresh context (subagents that
+did not write it): the whole design on 2026-10-30 against commit
+`c2c8083e`, and the Control section, written after that round, on
+2026-10-31 against commit `de08d1ce`.

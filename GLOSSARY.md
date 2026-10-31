@@ -1702,7 +1702,7 @@ make, use the entry's term instead.
   quota wall, parked for a person, stalled, died, and so on), or `unknown`
   with its last state when no class fits. One dashboard filters it; it is
   never rendered into a report file.
-- **Drift** — a running stage falling short of what it is expected to
+- **Stage drift** — a running stage falling short of what it is expected to
   achieve: a review drive whose open threads do not fall across rounds, a
   pickup that has not opened a pull request in time. The *dispatcher*
   reports drift and tells a person once; it never acts on it.
