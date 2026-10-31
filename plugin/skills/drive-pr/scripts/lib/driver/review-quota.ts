@@ -7,9 +7,7 @@ import { driverRuntime } from "./runtime.ts";
 
 import { sleep } from "./../cli.ts";
 
-import { unpushedCountAdvice } from "./../driven-branch.ts";
-
-import { git, gitCallTimeoutSeconds } from "./../proc.ts";
+import { reportPassLeftovers } from "./restart.ts";
 
 import {
   MAILBOX_POLL_SECONDS,
@@ -124,14 +122,7 @@ async function handleSleepableQuota(
     console.error(
       `  pass on round ${round} hit a quota wall and no further attempt remains`,
     );
-    console.error(
-      "  Check for work the killed pass left behind first — `git status --short` and",
-    );
-    console.error(
-      `  ${await unpushedCountAdvice(git, process.cwd(), {
-        timeoutSec: gitCallTimeoutSeconds(),
-      })}.`,
-    );
+    await reportPassLeftovers("What the killed pass left in the tree:");
     // Recorded even though nothing will sleep or resume: this exit is
     // NORMAL (not a crash), so `process.on('exit')` releases and
     // `rmdir`s the lock slot on the way out, same as the standalone
@@ -221,14 +212,7 @@ export async function handleQuotaBlock(
     "  wait out. Re-arm the drive once the window reopens; nothing about the PR, the",
   );
   console.error("  tree or the pass needs fixing first.");
-  console.error(
-    "  Check for work the killed pass left behind first — `git status --short` and",
-  );
-  console.error(
-    `  ${await unpushedCountAdvice(git, process.cwd(), {
-      timeoutSec: gitCallTimeoutSeconds(),
-    })}.`,
-  );
+  await reportPassLeftovers("What the killed pass left in the tree:");
   const identity = wallIdentity(context);
   const account = accountHash(identity);
   console.error(

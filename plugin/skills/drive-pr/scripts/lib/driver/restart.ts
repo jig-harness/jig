@@ -27,7 +27,11 @@ import {
   unconcludedGitOpMarker,
 } from "./../proc.ts";
 
-import { unpushedBase, unpushedRange } from "./../driven-branch.ts";
+import {
+  unpushedBase,
+  unpushedCountAdvice,
+  unpushedRange,
+} from "./../driven-branch.ts";
 
 import { readPrState } from "./../pr-state.ts";
 
@@ -148,7 +152,16 @@ export interface PassLeftovers {
 /** How many unpushed commits the leftovers name one by one. */
 const LISTED_COMMITS = 20;
 
-export async function passLeftovers(): Promise<PassLeftovers> {
+/**
+ * What the pass left in the tree. `fingerprint: false` skips the content
+ * digest of the edits (`edits` is then `null`), for a report that only lists
+ * them: the digest reads every untracked file and nested repository.
+ */
+export async function passLeftovers({
+  fingerprint = true,
+}: {
+  fingerprint?: boolean;
+} = {}): Promise<PassLeftovers> {
   const anchor = process.env.DRIVE_PR_WORKTREE;
   const opts = {
     stderr: "ignore" as const,
@@ -169,7 +182,6 @@ export async function passLeftovers(): Promise<PassLeftovers> {
     opts,
   );
   const count = await git(["rev-list", "--count", unpushedRange()], opts);
-  const unpushed = Number.parseInt(count.stdout.trim(), 10);
   const log = await git(
     [
       "log",
@@ -195,17 +207,47 @@ export async function passLeftovers(): Promise<PassLeftovers> {
     env: gitIdentityEnv(),
   });
   const uncommitted = status.code === 0 ? status.stdout.trimEnd() : null;
-  return {
+  return leftoversOf({
     uncommitted,
-    edits: await editsOf(uncommitted, opts),
-    baseExists: base.code === 0 ? true : base.code === 1 ? false : null,
-    unpushed: count.code === 0 && Number.isFinite(unpushed) ? unpushed : null,
-    operation: op.ok ? op.marker : null,
+    edits: fingerprint ? await editsOf(uncommitted, opts) : null,
+    count,
+    log,
+    based,
+    base,
+    head,
+    op,
+  });
+}
+
+/** The probes' answers as a `PassLeftovers`; a probe that failed reads `null`. */
+function leftoversOf(p: {
+  uncommitted: string | null;
+  edits: string | null;
+  count: Awaited<ReturnType<typeof git>>;
+  log: Awaited<ReturnType<typeof git>>;
+  based: Awaited<ReturnType<typeof git>>;
+  base: Awaited<ReturnType<typeof git>>;
+  head: Awaited<ReturnType<typeof git>>;
+  op: Awaited<ReturnType<typeof unconcludedGitOpMarker>>;
+}): PassLeftovers {
+  const unpushed = Number.parseInt(p.count.stdout.trim(), 10);
+  const tri = (r: Awaited<ReturnType<typeof git>>) =>
+    r.code === 0 ? true : r.code === 1 ? false : null;
+  return {
+    uncommitted: p.uncommitted,
+    edits: p.edits,
+    baseExists: tri(p.base),
+    unpushed: p.count.code === 0 && Number.isFinite(unpushed) ? unpushed : null,
+    operation: p.op.ok ? p.op.marker : null,
     head:
-      head.code === 0 && head.stdout.trim() !== "" ? head.stdout.trim() : null,
+      p.head.code === 0 && p.head.stdout.trim() !== ""
+        ? p.head.stdout.trim()
+        : null,
     commits:
-      log.code === 0 ? log.stdout.split("\n").filter((l) => l !== "") : null,
-    onRemote: based.code === 0 ? true : based.code === 1 ? false : null,
+      p.log.code === 0
+        ? p.log.stdout.split("\n").filter((l) => l !== "")
+        : null,
+    onRemote: tri(p.based),
   };
 }
 
@@ -422,6 +464,25 @@ export function describeLeftovers(l: PassLeftovers): string[] {
   if (l.operation !== null)
     lines.push(`An unconcluded git operation is open: ${l.operation}.`);
   return lines;
+}
+
+/**
+ * Print what the pass left in the tree to the driver's stderr under
+ * `heading`: the stop line of a drive that ends without restarting, so the
+ * reader learns whether work was stranded without running git themselves.
+ */
+export async function reportPassLeftovers(heading: string): Promise<void> {
+  console.error(`  ${heading}`);
+  const leftovers = await passLeftovers({ fingerprint: false });
+  for (const line of describeLeftovers(leftovers)) console.error(`  ${line}`);
+  // A detached tree under `DRIVE_PR_ATTACH=off` has no `@{u}` to count over:
+  // name the range or the check that works there.
+  if (leftovers.unpushed === null)
+    console.error(
+      `  Count them with ${await unpushedCountAdvice(git, process.cwd(), {
+        timeoutSec: gitCallTimeoutSeconds(),
+      })}.`,
+    );
 }
 
 /** The notice the pass after a killed one reads in `$DRIVE_PR_PASS_NOTICE`. */
