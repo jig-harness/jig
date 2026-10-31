@@ -988,13 +988,16 @@ could forge or forget.
    file exits `2`, and a configuration file that cannot be parsed exits `1`:
 
    ```bash
-   bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" driving --id "<item key>" --title-file .context/workspace-title.md --pr <PR>
+   bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" driving --id "<item key>" --title-file "<tree git dir>/workspace-title.md" --pr <PR>
    ```
 
    A drive armed on an existing PR has no title file yet, so before the
    command read the served item's title with step 3's `get_issue.ts` and
-   write it alone to `<tree>/.context/workspace-title.md` with the file
-   editor; the command exits `2` on a missing file. Then report. State: armed, the
+   write it alone to `workspace-title.md` in `<tree git dir>`, the output of
+   `bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --absolute-git-dir`, with the file editor; the
+   file lives outside the worktree so it cannot leave untracked state in a
+   repository that does not ignore `.context/`. The command exits `2` on a
+   missing file. Then report. State: armed, the
    PR, the tree it drives from, where it runs (the tab's title, or the
    background task's handle), the pass model (`model`), the verified
    driver-log path (`drive.log` when the script found the drive listed, else
@@ -3214,12 +3217,14 @@ when the repository sets `workspace_name.template` (it does nothing without
 it or outside Orca, and a failed Orca rename only warns and exits `0`, while a
 malformed argument, an invalid `workspace_name` field or an unreadable title file exits `2`, and a configuration file that cannot be parsed exits `1`). The item is the one tracker issue
 the PR serves ([Arm](#arm) step 3 reads it); write its title alone to
-`.context/workspace-title.md` with the file editor and pass the file, never
+`workspace-title.md` in the worktree's git directory (the output of
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --absolute-git-dir`, outside the worktree, so the clean-tree
+check above is not tripped) with the file editor and pass the file, never
 the title inside the command, and quote the key. For a PR that serves no item,
 or more than one, leave out `--id` and `--title-file`:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" ready --id "<item key>" --title-file .context/workspace-title.md --pr <PR>
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" ready --id "<item key>" --title-file "<git dir>/workspace-title.md" --pr <PR>
 ```
 
 ## Deadlines
