@@ -182,7 +182,6 @@ export async function passLeftovers({
     opts,
   );
   const count = await git(["rev-list", "--count", unpushedRange()], opts);
-  const unpushed = Number.parseInt(count.stdout.trim(), 10);
   const log = await git(
     [
       "log",
@@ -208,17 +207,47 @@ export async function passLeftovers({
     env: gitIdentityEnv(),
   });
   const uncommitted = status.code === 0 ? status.stdout.trimEnd() : null;
-  return {
+  return leftoversOf({
     uncommitted,
     edits: fingerprint ? await editsOf(uncommitted, opts) : null,
-    baseExists: base.code === 0 ? true : base.code === 1 ? false : null,
-    unpushed: count.code === 0 && Number.isFinite(unpushed) ? unpushed : null,
-    operation: op.ok ? op.marker : null,
+    count,
+    log,
+    based,
+    base,
+    head,
+    op,
+  });
+}
+
+/** The probes' answers as a `PassLeftovers`; a probe that failed reads `null`. */
+function leftoversOf(p: {
+  uncommitted: string | null;
+  edits: string | null;
+  count: Awaited<ReturnType<typeof git>>;
+  log: Awaited<ReturnType<typeof git>>;
+  based: Awaited<ReturnType<typeof git>>;
+  base: Awaited<ReturnType<typeof git>>;
+  head: Awaited<ReturnType<typeof git>>;
+  op: Awaited<ReturnType<typeof unconcludedGitOpMarker>>;
+}): PassLeftovers {
+  const unpushed = Number.parseInt(p.count.stdout.trim(), 10);
+  const tri = (r: Awaited<ReturnType<typeof git>>) =>
+    r.code === 0 ? true : r.code === 1 ? false : null;
+  return {
+    uncommitted: p.uncommitted,
+    edits: p.edits,
+    baseExists: tri(p.base),
+    unpushed: p.count.code === 0 && Number.isFinite(unpushed) ? unpushed : null,
+    operation: p.op.ok ? p.op.marker : null,
     head:
-      head.code === 0 && head.stdout.trim() !== "" ? head.stdout.trim() : null,
+      p.head.code === 0 && p.head.stdout.trim() !== ""
+        ? p.head.stdout.trim()
+        : null,
     commits:
-      log.code === 0 ? log.stdout.split("\n").filter((l) => l !== "") : null,
-    onRemote: based.code === 0 ? true : based.code === 1 ? false : null,
+      p.log.code === 0
+        ? p.log.stdout.split("\n").filter((l) => l !== "")
+        : null,
+    onRemote: tri(p.based),
   };
 }
 
