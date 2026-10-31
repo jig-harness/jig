@@ -113,7 +113,7 @@ call, and an Orca call that fails only warns.
 
 The workspace is also renamed as the work moves, from a template over the item key, title, pull request and a short status (`[I]`
 implementing, `[D]` driving, `[R]` ready to merge; `✅` done is reserved for
-a follow-up step and nothing sets it yet), `{id} {status} {title}` by
+a follow-up step and nothing sets it yet), `{id} {status} {title} {pr}` by
 default: [`workspace_name`](../../CONFIGURATION.md#workspace_name) changes the
 template, and `template: ""` turns the renaming off.
 
