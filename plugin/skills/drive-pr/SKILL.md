@@ -975,10 +975,32 @@ could forge or forget.
    - exit `0` inside the window → the drive already reached a terminal state;
      report its own reason.
    - still running → armed. Do not poll.
-6. **Report and stop.** State: armed, the PR, the tree it drives from, where
-   it runs (the tab's title, or the background task's handle), the pass
-   model (`model`), the verified driver-log path
-   (`drive.log` when the script found the drive listed, else
+6. **Name the workspace, report and stop.** When step 4 found the drive
+   `armed`, or step 5 found it still running (not refused, failed or already
+   finished), name the workspace for the driving stage, in `<tree>`, with the
+   item the PR serves as in
+   [§ Announcing merge-readiness](#announcing-merge-readiness) (a PR that
+   serves none or several leaves out `--id` and `--title-file`). Run it
+   without the variables step 2's `env.unset` names, as the arm command is,
+   so it reads the destination repository's template. It does
+   nothing without `workspace_name.template` or outside Orca, and a failed
+   Orca rename only warns and exits `0`; a malformed argument, an invalid `workspace_name` field or an unreadable title
+   file exits `2`, and a configuration file that cannot be parsed exits `1`:
+
+   ```bash
+   bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" driving --id "<item key>" --title-file "<tree git dir>/workspace-title.md" --pr <PR>
+   ```
+
+   A drive armed on an existing PR has no title file yet, so before the
+   command read the served item's title with step 3's `get_issue.ts` and
+   write it alone to `workspace-title.md` in `<tree git dir>`, the output of
+   `bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --absolute-git-dir`, with the file editor; the
+   file lives outside the worktree so it cannot leave untracked state in a
+   repository that does not ignore `.context/`. The command exits `2` on a
+   missing file. Then report. State: armed, the
+   PR, the tree it drives from, where it runs (the tab's title, or the
+   background task's handle), the pass model (`model`), the verified
+   driver-log path (`drive.log` when the script found the drive listed, else
    `drive.ts: driver log → …` in its output, or `drive.ts: driver log
    unavailable: <reason>` when it keeps none; confirm it is a regular file
    and can be opened for append with `bun "${CLAUDE_SKILL_DIR}/scripts/portable.ts" check-log <path>` before
@@ -3188,6 +3210,22 @@ trains readers to skip the block where the non-empty case needs their eyes.
 
 The wording is "safe to merge from the driver's perspective". Marking a PR ready
 and merging it stay human steps.
+
+**judgment** — After `announce-merge-ready.ts` exits `0`, whether it posted the
+announcement or found one already posted, name the workspace for the ready stage
+when the repository sets `workspace_name.template` (it does nothing without
+it or outside Orca, and a failed Orca rename only warns and exits `0`, while a
+malformed argument, an invalid `workspace_name` field or an unreadable title file exits `2`, and a configuration file that cannot be parsed exits `1`). The item is the one tracker issue
+the PR serves (run [Arm](#arm) step 3's `get_issue.ts` lookup in this pass, since a driver pass is headless and one-shot); write its title alone to
+`workspace-title.md` in the worktree's git directory (the output of
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --absolute-git-dir`, outside the worktree, so the clean-tree
+check above is not tripped) with the file editor and pass the file, never
+the title inside the command, and quote the key. For a PR that serves no item,
+or more than one, leave out `--id` and `--title-file`:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" ready --id "<item key>" --title-file "<git dir>/workspace-title.md" --pr <PR>
+```
 
 ## Deadlines
 

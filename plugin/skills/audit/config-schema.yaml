@@ -67,6 +67,8 @@ strict:
   - specs
   - work_batch
   - work_batch.ranking
+  - workspace_name
+  - workspace_name.statuses
   - routing
   - routing.raise
   - verify
@@ -489,6 +491,17 @@ fields:
     read_by: [do-item]
     repository_only: true
     since: 0.100.0
+
+  workspace_name.template:
+    type: string
+    pattern: "^(?:[^{}]|\\{(?:id|status|title|pr)\\})*$"
+    read_by: [do-item, drive-pr]
+    since: next
+  workspace_name.statuses:
+    type: map
+    keys: [implementing, driving, ready, done]
+    read_by: [do-item, drive-pr]
+    since: next
 
   work_batch.point_budget:
     type: integer

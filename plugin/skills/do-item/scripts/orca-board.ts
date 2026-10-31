@@ -55,7 +55,7 @@ const NOT_A_WORKTREE = "selector_not_found";
  * The Orca worktree id of the working directory: `none` when Orca answers
  * that no worktree contains it, a warning when the lookup itself failed (no command, a timeout, an answer that is not Orca's).
  */
-async function currentWorktree(
+export async function currentWorktree(
   command: string,
   runner: OrcaRunner,
 ): Promise<{ id: string } | "none" | { warning: string }> {
