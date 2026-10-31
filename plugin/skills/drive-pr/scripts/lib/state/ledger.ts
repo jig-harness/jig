@@ -366,7 +366,8 @@ function isLedgerDriver(v: unknown): v is LedgerDriver {
     Number.isFinite(Date.parse(v.heartbeat)) &&
     (v.state === "running" || v.state === "stopped") &&
     (v.exit === undefined || isCount(v.exit)) &&
-    (v.started === undefined || isText(v.started)) &&
+    (v.started === undefined ||
+      (isText(v.started) && Number.isFinite(Date.parse(v.started)))) &&
     (v.position === undefined || isCount(v.position))
   );
 }

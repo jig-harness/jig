@@ -136,6 +136,20 @@ describe("render and parse", () => {
       ).toBe("malformed");
   });
 
+  it("reads a driver run start that is not a date as damage, never a ledger", () => {
+    const l = ledger();
+    l.driver = { ...l.driver, started: "2026-10-01T09:00:00.000Z" };
+    const rendered = renderLedger(l);
+    if ("error" in rendered) throw new Error(rendered.error);
+    expect(parseLedger(rendered.body)?.kind).toBe("ledger");
+    const bad = rendered.body.replace(
+      '"started":"2026-10-01T09:00:00.000Z"',
+      '"started":"not-a-date"',
+    );
+    expect(bad).not.toBe(rendered.body);
+    expect(parseLedger(bad)?.kind).toBe("malformed");
+  });
+
   it("round-trips an unconfirmed hold's round", () => {
     const l = ledger();
     l.held = l.held.map((h) => ({ ...h, round: -1 }));

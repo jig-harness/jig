@@ -210,9 +210,12 @@ function exitOfRunningLedger(l: Ledger): number | null {
   const started = l.driver.started;
   if (exit === null || started === undefined) return exit;
   const stop = (l.events ?? []).findLast((e) => e.kind === "stop");
-  return stop !== undefined && Date.parse(stop.at) < Date.parse(started)
-    ? null
-    : exit;
+  if (stop === undefined) return exit;
+  const [stoppedAt, startedAt] = [Date.parse(stop.at), Date.parse(started)];
+  // A run start or stop time that does not read proves nothing about which
+  // run the stop ended, so the stop does not settle the run.
+  if (!Number.isFinite(stoppedAt) || !Number.isFinite(startedAt)) return null;
+  return stoppedAt < startedAt ? null : exit;
 }
 
 function fromLedger(l: Ledger, nowMs: number): DriveRecord {
