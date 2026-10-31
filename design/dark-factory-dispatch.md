@@ -353,8 +353,14 @@ releases its lock, so a runtime that hangs costs one action, not every
 later tick. The deadline is `dispatch.runtime_timeout` (one minute by
 default) for every method but `openWorkspace`, whose setup runs the
 repository's create hook, a dependency install among it, and which runs
-under `dispatch.workspace_timeout` (15 minutes by default, the allowance
-the Orca workspace tool gives its own open). A launch whose answer is lost
+under `dispatch.workspace_timeout`. Its default is the limit the Orca
+workspace tool puts on its own open (`OPEN_LIMIT_MS` in
+`tools/orca/workspace.ts`: a clone, the create hook, the wait for another
+open's start of its agent, and the calls around them), read from that
+constant rather than restated, so the two cannot drift apart; a shorter
+setting can cut off an open the tool itself would let finish. A tick
+opening a workspace holds the tick lock for as long as the open runs, and
+the ticks that find it held meanwhile exit at once. A launch whose answer is lost
 is retried only through the runtime's own retry for that launch, never as
 a fresh one, and its launch record, written before the call, holds its
 stage and slot meanwhile (see Launch records). Orca is the first
