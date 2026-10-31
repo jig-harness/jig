@@ -46,7 +46,13 @@ takes over a driver another machine started or passes a flag reserved for
 a person, and writes a receipt per tick. Machine values in `~/.jig/dispatch.yaml`, a repository's
 in a `dispatch` section of `.config/jig.yaml`. Built in the design's order:
 the report, then re-arms within account caps with the timer, then pickups,
-then follow-ups and notifications; the re-arm step waits on the drive
+then follow-ups and notifications, then control: an outcome log no
+retention removes, one row per ended launch with an outcome class from a
+closed list, a dashboard that filters it (`jig dispatch dashboard`, no
+report files), drift from each stage's expectation reported and notified
+but never acted on, recurring classes routed to `reflect`, and one
+mechanical nudge (`steer`, "continue" after a usage limit resets) with no
+open-ended prompt; the re-arm step waits on the drive
 running in a session of its own, and the pickups on `do-item` refusing an
 item already claimed. Notifications do not wait on item 32's framed park:
 a park's notification carries the parked questions as they are and gains
@@ -57,8 +63,12 @@ identity gets one workspace and one `do-item` session within one interval,
 a drive stopped on one account's usage limit is re-armed on another account
 by the next tick, a merged pull request gets one follow-up session, a park
 reaches a person's phone and its answer on the pull request re-arms the
-drive, and every launch, refusal and notification is in the tick's
-receipts.
+drive, every launch, refusal and notification is in the tick's
+receipts, every ended launch has a row with its outcome class in the
+outcome log, `jig dispatch dashboard` filtered to yesterday shows only
+yesterday's rows, a drive whose open threads rise across rounds is
+reported as drifting and notified once, and a session waiting after its
+account's wall reopened gets exactly one "continue" nudge.
 
 ### 3. The kickoff family
 

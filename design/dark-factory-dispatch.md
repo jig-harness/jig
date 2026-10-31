@@ -334,6 +334,7 @@ The tick reaches the runtime only through these methods:
 | `openWorkspace(...)` | a workspace for an item (a new branch) or a pull request (its head branch), reused when one exists |
 | `launch(workspace, stage, account)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id |
 | `notify(target, message)` | a message that reaches a person; its receipt carries the target's comment as written |
+| `steer(session, nudge)` | one of the closed set of nudges (see Control) sent to a running session |
 
 Each returns the runtime's receipt. A launch whose answer is lost is
 retried only through the runtime's own retry for that launch, never as a
@@ -376,7 +377,11 @@ fresh one. Orca is the first implementation:
   local workspace, a pickup whose agent never started) it is a
   notification workspace the dispatcher keeps per repository, on the
   default branch, into which it never launches an agent, its comment
-  naming the item or pull request the message is about.
+  naming the item or pull request the message is about;
+- `steer` as the nudge's text sent to the session's terminal; that Orca
+  can send text to a running agent's terminal by the id `orca worktree ps
+  --json` reports is checked when the control step is built, and until it
+  does, the nudge is reported and not sent.
 
 A second runtime is a second implementation of the same methods, with
 nothing in the tick changed.
@@ -475,6 +480,8 @@ visible in every report rather than silent.
   and `clear-lease`.
 - **Write to the tracker.** The item's own state is the claim, and `do-item`
   sets it. The one thing it writes to the forge is the follow-up marker.
+- **Compose a prompt for a stuck session.** It sends only the fixed nudges
+  of Control's closed set; anything else a session needs goes to a person.
 
 ### Notifications
 
@@ -484,7 +491,8 @@ parked questions (item 32's framed decision once that is built); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
 stalled pickup or a double claim; a failed follow-up; a session waiting past
-`blocked_after`.
+`blocked_after`; a running stage drifting from its expectation (see
+Control).
 
 A workspace holds one comment, so a message never replaces one a person has
 not read. The tick joins every cause it notifies to one target in a tick
@@ -521,6 +529,98 @@ receipts` lists them; once item 32's morning report is built, it lists the
 launches, refusals and notifications since the last report beside the
 drives' own.
 
+### Control: observe, record, report, steer
+
+The dispatcher starts stages; it also has to show how they went, so that
+a person can see where the line loses work and change what causes it. It
+does that in five parts: an outcome log, an expectation per stage, one
+dashboard, the reflection loop, and one mechanical nudge.
+
+**The outcome log.** Receipts and launch records are working records and
+expire with the machine file's retention; what the factory learns from
+must not. When a launch record ends, the tick appends one row to
+`~/.local/state/jig/dispatch/log.jsonl`, which nothing removes: the stage,
+the repository, the item or pull request, the account, the model, the
+duration, the rounds (for a drive), and an outcome class with its reason.
+The classes are a closed list:
+
+| Class | The launch ended with |
+| --- | --- |
+| converged | the drive at its convergence (exit `0` from `drive.ts`) |
+| merged | the pull request merged while the stage ran |
+| quota wall | a usage limit (`drive.ts` exit `16`, or a wall read from an interactive session's record) |
+| parked for a person | a park (`drive.ts` exit `8`) |
+| stalled | the drive's stall (`drive.ts` exit `14`) or a stalled pickup |
+| died | a process gone without an exit, or a session that ended with no result |
+| refused | the stage's own refusal (`drive.ts` exit `11`, `13`, `20`; an item already claimed) |
+| gates failed | a pass that could not get the gates or CI green (`drive.ts` exit `1`, `7`, `9`, `12`, `15`) |
+| double claim | two sessions claiming one item |
+| unknown | anything else |
+
+A stop the classifier cannot place is logged as `unknown` with its last
+state (the exit, the ledger's class, the agent's state), never dropped, so
+the list grows from evidence: a reason that recurs among the `unknown`
+rows becomes a class in a later change. Each row is written once per
+launch record, keyed by that record, so a tick that stops between writing
+the row and removing the record writes no second row. The follow-up's
+outcome record (see Receipts) stays what it is: it settles whether a
+merged pull request still wants a follow-up, and is read by the tick; the
+log row for the same launch is the analysis record, read only by people
+and the dashboard, and the tick never plans from it.
+
+**Expectations and drift.** Each stage carries an expectation of how a
+running stage progresses:
+
+- a drive's open threads fall across its rounds;
+- a pickup opens a pull request within `dispatch.pickup_within` of its
+  launch;
+- a follow-up ends within `dispatch.followup_within` of its launch.
+
+A running stage outside its expectation is reported as **drifting**, with
+the evidence (the thread counts per round from the ledger, the time since
+launch, the item's state), and notified once per cause (see
+Notifications), keyed by the launch record and the expectation it broke.
+Drift is never acted on: the stage keeps running, its slot stays held, and
+whether to stop it is a person's call. A drive's thread count is read from
+its ledger at each round boundary; a count that has not been read for two
+rounds is not a fall, and is not drift either.
+
+**The dashboard.** `jig dispatch dashboard [--port <n>]` serves one page
+that reads the log when it is opened and filters it by time, repository,
+stage, account and class. A question about yesterday is a filter, not a
+report: no report file is ever generated, and nothing is written to disk
+but the log itself. The page listens on the host's private-network
+address, as the Orca server does, so a phone on that network reaches it;
+no route into the host is opened beyond that network. It reads one
+machine's log (see Left out).
+
+**Self-correction through the reflection loop.** A class that recurs is a
+finding about the scaffolding, not something the tick should adjust on its
+own. The dashboard names the classes that recur over a window, and they
+reach [`reflect`](../plugin/skills/reflect/README.md) and
+[`review-reflections`](../plugin/skills/review-reflections/README.md),
+where a person approves the change: a cap, an expectation, a skill's step.
+The tick tunes none of its own dials.
+
+**Steering.** The session runtime gains `steer(session, nudge)`, which
+sends a fixed text to a running session. The set of nudges is closed and
+has one entry in this design:
+
+- **continue**: sent to a session the runtime reports waiting, on an
+  account whose wall has reopened, when the session's own record shows it
+  stopped on that wall. Its text is the prompt people type by hand today
+  ("Your usage limit has reset. Continue"). It is sent once per cause,
+  keyed by the account, the wall record and the session, through a
+  suppression record as a notification is, and logged in the receipt and,
+  when the launch ends, in its log row. That the session stopped on the
+  wall is read from its vendor's own record through `drive-pr`'s quota
+  adapters, against the account's configuration directory; a session whose
+  record cannot be read gets no nudge.
+
+There is no open-ended "keep going" nudge. Every other stuck state (a
+waiting session with no wall, a drifting stage, a session that asked a
+question) is a notification to a person.
+
 ### Where it lives
 
 The dispatcher is machine tooling in the plugin, beside
@@ -538,7 +638,8 @@ session runs. Its values are split as configuration always is:
   identity per tracker (`identity`), the states that mean "ready to pick
   up" (`states`), the follow-up command (`followup_command`, `/followup` in
   Jig; a consumer repository names its own post-merge command),
-  `stalled_after` and `blocked_after`.
+  `stalled_after`, `blocked_after`, and the expectations `pickup_within`
+  and `followup_within`.
 
 A repository's `dispatch` section is read from its default branch as the
 forge holds it, fetched afresh at every tick, never from a workspace's
@@ -605,6 +706,11 @@ One pull request each, in this order; each is usable on its own.
    notification carries item 32's framed decision once that is built, and
    the receipts join its morning report then; a consumer repository's
    follow-up waits on its own post-merge command (item 17).
+6. **Control.** The outcome log and its classifier, the expectations and
+   drift reporting, `jig dispatch dashboard`, and `steer` with its one
+   nudge. Usable alone: every stop has a recorded reason, and one view
+   shows all of them. Waits on step 3, so there are launches to log; the
+   nudge reaches interactive sessions once step 4 starts them.
 
 ## Left out
 
@@ -633,6 +739,9 @@ One pull request each, in this order; each is usable on its own.
 - **Interactive sessions**, pickups and follow-ups, until an Orca agent
   launch that binds its agent to an account is shown to work; headless
   passes run meanwhile.
+- **Further nudges.** A nudge joins the closed set only when a class in the
+  outcome log shows a mechanical cause that recurs; the dashboard reads one
+  machine's log until the several-hosts question is designed.
 - **The merge**, which stays a person's
   ([ADR-0003](../docs/adr/ADR-0003-a-person-merges.md)); delegated merge is
   item 9, decided on its own.
