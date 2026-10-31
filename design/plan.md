@@ -19,45 +19,34 @@ here have a design in this folder ([README.md](README.md)).
 
 ### 32. Driving any pull request from anywhere, with autonomy that fits the hour
 
-The drive assumes the working tree that opened the pull request: the branch
-checked out there, the state in that clone, the lock naming a process on
-that machine. A pull request driven from anywhere else does not get driven:
-a second working tree for it cannot check out the branch and makes a
-suffixed one; a session that meets a registered driver stands down though
-that driver's pass stopped producing output long ago; a drive stopped by a
-usage limit or a parked decision never restarts, and a session on another
-subscription or machine has no sanctioned way to take it over; and drives
-stop for decisions an agent could take (filing a follow-up issue, deferring
-where the adapter cannot file, a choice one pull request can undo).
-[design/dark-factory-driving.md](dark-factory-driving.md) has how it works:
-`attach-pr.ts` drives a pull request from any checkout, detached when the
-branch is held elsewhere, and from a tree it creates when there is none;
-the driver restarts itself from a pass deadline and a stall, a parked drive
-is re-armed after a usage limit by a session on another account (from another
-clone the account is not known, so that re-arm waits for the recorded reset
-unless a person says the window reopened), and after a
-park once its questions are answered, and `drive.ts --take-over` replaces a wedged or dead driver with
-a recorded takeover; the drive ledger on the pull request seeds a drive in
-any clone and arbitrates between clones; an `autonomy` section
-(`attended` by default, `unattended`, `wide`, a repository ceiling, and
-`off_hours` windows that raise the level) says what an agent decides and
-records instead of asking; a park is refused without a configured human decision class (the
-human-in-the-loop registry's rows by default) and carries a framed decision (question,
-options with consequences, the recommended option, the operational steps,
-what was already done); a review bot's acknowledgement is transparent to
-the resolve guard; and `drives.ts --report`, run by a person or a scheduler the repository sets up,
-is the morning report of the pull requests this clone knows and the account
-authored or drove. Built in
-the design's order, one pull request per step; `wide` and `off_hours` are
-documented as available once a working repository has validated them.
+Steps 1 to 4 of [the design](dark-factory-driving.md)'s build order are in
+[`drive-pr`](../plugin/skills/drive-pr/README.md) and
+[CONFIGURATION.md § `autonomy`](../plugin/CONFIGURATION.md#autonomy): a pull
+request is driven from any checkout, a stopped drive restarts itself or is
+re-armed, a wedged or dead driver is taken over through the drive ledger on
+the pull request, the `attended` and `unattended` levels say what an agent
+decides and records instead of asking, and a park is reserved for the
+configured human decision classes and carries a framed decision. What the
+design still holds is step 5:
 
-Done when a pull request opened in one working tree is driven to
-convergence from another clone on another account without a person
-clearing a lease or creating a branch, a wedged driver is taken over by the
-next session that meets it, the drive stops for a person only on a configured human decision class and
-prints the framed decision, and a repository with `off_hours` on wakes to
-a morning report, run on request, whose provisional decisions a person can
-reverse from the pull request.
+- **`wide` and off-hours windows**: `autonomy.off_hours` raising the level on
+  a schedule, unless the environment chose a level for the run, and `wide`'s
+  own column, where a decision outside the registry's classes is taken
+  provisionally and recorded as such, and a parked drive re-arms once every
+  unanswered item is provisionally decided where its class allows it.
+  `wide` is accepted today and acts as `unattended`.
+- **The morning report**: `drives.ts --report`, run by a person or a
+  scheduler the repository sets up, listing for each pull request this clone
+  knows or the account drove its terminal state, the provisional decisions
+  first, the takeovers and re-arms, the parked decisions in their framed form
+  and the deferred findings not yet filed; with the loop-metrics counters.
+
+Both are dark-by-default dials: they come into Jig once a working repository
+has run them and the design's validation measure holds.
+
+Done when a repository with `off_hours` on wakes to a morning report, run on
+request, whose provisional decisions a person can reverse from the pull
+request.
 
 ### 33. The dispatcher: a tick that starts the execution line's stages
 
@@ -96,9 +85,8 @@ but never acted on, recurring classes routed to `reflect`, and one
 mechanical nudge (`steer`, "continue" after a usage limit resets) with no
 open-ended prompt; the re-arm step waits on the drive
 running in a session of its own, and the pickups on `do-item` refusing an
-item already claimed. Notifications do not wait on item 32's framed park:
-a park's notification carries the parked questions as they are and gains
-the framed decision once that is built.
+item already claimed. A park's notification carries the park's framed
+decision.
 
 Done when, on a host running Orca, an item assigned to the factory
 identity gets one workspace and one `do-item` session within one interval,

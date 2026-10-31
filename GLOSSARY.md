@@ -581,11 +581,6 @@ make, use the entry's term instead.
   deferral. The static gate checks that a deferral names an item; a scheduled
   check asks the tracker whether the item has closed since
   ([M4's deferral check](plugin/skills/docs/scripts/deferral-references/README.md)).
-- **Deferral record** — a comment the review drive appends to a pull request
-  to defer a finding where no tracker adapter can file it: the finding, the
-  reason, the thread link and an item key. It is never edited, a later record
-  with the same key changes or withdraws the deferral, and it is turned into
-  an issue later. Not the same as a *deferral*, a sentence in a document.
 - **PRD (product requirements document)** — the document defining *what* a
   feature does for users and why — deliberately separate from *how* (the
   architecture doc).
@@ -1208,6 +1203,10 @@ make, use the entry's term instead.
   by its ceiling, `autonomy.max_level`; a person's own configuration may
   choose a level up to that ceiling. The level changes nothing the *HITL*
   registry reserves ([configuration](plugin/CONFIGURATION.md#autonomy)).
+  Planned: off-hours windows that raise the level while nobody is there to
+  ask, unless the environment chose a level for the run, and `wide`'s own
+  column of *provisional decisions*
+  ([design](design/dark-factory-driving.md#autonomy-is-a-policy)).
 - **Transparent follow-up** — a review bot's comment after a reply the drive
   is holding open until its fix is pushed, which carries no new finding: a
   confirmation marked with the bot's confirmation marker, or a chat
@@ -1216,11 +1215,6 @@ make, use the entry's term instead.
   no known format has no transparent chat acknowledgements. It is never triaged or answered, and the held thread
   resolves over it; anything else is a new comment
   ([configuration](plugin/CONFIGURATION.md#review)).
-- **Tombstone** — what a removal leaves behind in the *drive ledger* instead of
-  erasing the key: a record of the key's last revision, marked removed. Without
-  it a removed key looks the same as one that never existed, so a delayed
-  write prepared before the removal could add the item back; with it, that
-  write names a revision the key no longer carries and is skipped.
 - **CI hold** — an opt-in label on a pull request that the repository's
   continuous-integration workflows honour: while it is present they skip
   their expensive jobs and a required check fails or is cancelled (the
@@ -1529,29 +1523,13 @@ make, use the entry's term instead.
   picked up, implemented, reviewed and driven to its merge decision by agents,
   and a person is involved only at the decisions the *HITL* registry reserves.
   Jig is built toward one; the merge stays a person's.
-- **Autonomy level** — how far an agent may decide without asking, declared
-  by a repository (`attended`, `unattended`, `wide`) and raised during
-  configured *off-hours* windows. The level changes nothing the *HITL*
-  registry reserves; it decides who answers the questions outside it.
-- **Drive ledger** — the hidden-marker comment on a pull request that mirrors
-  the review drive's resumable state (round, parked and held items, takeovers,
-  decisions taken unattended), so a drive in any clone, on any machine or
-  account, resumes from it.
-- **Transparent comment** — a comment a listed review bot posts after a held
-  reply that does not invalidate it: it carries that bot's chat marker, no
-  outcome token and none of the bot's finding shape, so the guard against
-  resolving over a newer comment lets the held item resolve. Anything the
-  guard cannot classify is not transparent and is triaged.
-- **Takeover** — one session replacing a drive's registered driver, admitted
-  only when that driver is dead or wedged; recorded in the drive state and
-  the *drive ledger*. A drive that stopped holds no driver and is re-armed
-  instead: after a usage limit by a session on another account (or the same
-  account once the limit has reset, or once a person says the window reopened), and after a park at any autonomy level
-  once its parked questions are answered.
-- **Provisional decision** — a decision an agent took under a raised
-  *autonomy level* because nobody was there to ask, marked as such where it
-  was taken and listed first in the morning report, so a person can reverse
-  it before the merge.
+- **Provisional decision** — a decision an agent takes under the `wide`
+  *autonomy level* because nobody is there to ask, marked as such where it
+  is taken and listed first in the morning report, so a person can reverse
+  it before the merge. Under `wide`, a drive that parked re-arms once every
+  unanswered item is provisionally decided, where the item's class allows
+  it. Planned, with `wide`'s column and the morning report
+  ([design](design/dark-factory-driving.md#every-autonomous-decision-is-recorded)).
 - **Consumer overlay** — a repository's own values for a shared procedure,
   such as its gate command and reviewer names, kept in
   `.config/jig.yaml` and read by the procedure when it runs.

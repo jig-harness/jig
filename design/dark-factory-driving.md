@@ -39,6 +39,18 @@ are [`decide`](../plugin/skills/decide/SKILL.md)'s and the
 [review arbiter](../plugin/agents/review-arbiter.md)'s; the skill that asks
 before filing is [`file-issue`](../plugin/skills/file-issue/SKILL.md).
 
+Steps 1 to 4 of the [build order](#build-order) are built, and
+[`drive-pr`'s README](../plugin/skills/drive-pr/README.md) and
+[CONFIGURATION.md § `autonomy`](../plugin/CONFIGURATION.md#autonomy) document
+what is. The drive ledger was built in a simpler form than
+[its section](#the-ledger-on-the-pull-request) describes, and the README is
+the current truth for it: one comment the driver regenerates, beside the
+append-only takeover claims, not a fold of per-item records, so it keeps no
+revisions or tombstones.
+What is not built is step 5: `wide`'s column, the off-hours windows and the
+morning report. When it is, this design leaves the folder
+([README.md](README.md)).
+
 ## What goes wrong today, by mechanism
 
 Each failure below is a consequence of one assumption the tooling makes. The
@@ -405,7 +417,7 @@ mechanical states, at every level.
 | Decision | `attended` | `unattended` | `wide` |
 |---|---|---|---|
 | File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | Confirm first | File it; the body says which skill filed it, from which pull request, and why | Same |
-| Defer a finding where no adapter can file | Append a deferral record to the pull request ([below](#deferral-without-a-tracker)) | Same | Same |
+| Defer a finding where no adapter can file | Record it in the pull request's `## Deferred` section ([below](#deferral-without-a-tracker)) | Same | Same |
 | A technical choice `decide` rules reversible inside one pull request | Decide and record | Same | Same |
 | A technical choice `decide` would rule underdetermined | Park under `technical-escalation` | Gather the missing evidence within the round's budget, then apply the ladder; still undetermined: park under `technical-escalation` | Same |
 | A technical choice `decide`'s last row would escalate: no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence | Park under `technical-escalation` | Park under `technical-escalation` | Decide, marked provisional |
@@ -526,32 +538,17 @@ The deferral protocol's rule that nothing is deferred without a tracked
 issue gains one alternative. A deferral whose adapter cannot file (the batch
 step is bound to one tracker until
 [plan item 10](plan.md#10-values-the-skills-still-assume) moves it onto the
-interface) is recorded as a **deferral record**: a comment the drive owns on the pull
-request, under its own hidden marker, with the finding quoted, the reason, the
-thread link and an item key. Records are only ever appended, so a concurrent
-writer loses none, and the pull request body is never rewritten: a person's
-edit to it cannot be overwritten because nothing writes it. A deferral is
-filed, changed or withdrawn by a later record naming the same item key; the
-thread is resolved with the `**deferred**` token linking the record. A plugin script, `file-deferred.ts <PR>`, turns
-the unfiled records into issues where an adapter can file and appends a
-record linking each. A tracker offers no atomic create-if-absent, so a lookup
-before creating cannot keep two invocations apart, and the script does not
-rely on one. It serializes through the same append-only record stream: before
-creating, it appends a **filing claim** naming the item key, reads the stream
-back, and only the earliest unexpired claim for that key may create; a later
-claimant stands down and re-reads on its next run. A claim expires after a
-fixed time, so a crash between claim and creation delays the filing and never
-loses it. The issue body carries a stable marker derived from the pull request
-and the item key, and the script looks the marker up in the tracker before it
-creates, which recovers a crash between the creation and the link. Where two
-issues still carry one marker (a claim that expired while its holder was
-still creating), the script links the lowest-numbered one, comments on the
-others naming it and closes them as duplicates, so the race ends in
-reconciliation rather than in two live issues. It runs from the consumer's own post-merge step or the
-morning report, and on a pull request closed without merging. With no
-tracker at all the records stay in the merged pull request's comments and the
-morning report lists them until a person files them. A deferral is
-therefore never a park.
+interface) is recorded in the pull request's own `## Deferred` section: the
+finding quoted, the reason and the source's link, between hidden markers,
+written by read-modify-write against the body's last update so a person's
+edits to the body survive, and never added twice. The thread is resolved with
+the `**deferred**` token linking the section. A plugin script,
+`file-deferred.ts <PR>`, files each entry where an adapter can and replaces it
+with its issue's link; it runs from the consumer's own post-merge step, or on
+a pull request closed without merging. With no tracker at all the entries
+stay in the merged pull request's body until a person files them. The
+[deferral protocol](../plugin/skills/resolve-review-comments/references/deferral-protocol.md#deferral-without-a-tracker)
+has the procedure. A deferral is therefore never a park.
 
 ### The morning report
 
@@ -562,7 +559,7 @@ time (default: the last report): its terminal state and what it means for
 the person; the provisional decisions, first; the takeovers and re-arms;
 the parked decisions in their framed form; the issues filed and the
 deferred entries not yet filed, including those in a closed pull request,
-found through the deferral record's hidden marker. It is the one thing a person reads after an
+found through the `## Deferred` section's hidden markers. It is the one thing a person reads after an
 unattended night. Where a repository has a pre-merge follow-up step, that
 step's list includes the pull request's provisional decisions.
 
@@ -605,7 +602,7 @@ suite's consistency checks run on each.
 4. **The autonomy section and the framed park.** `autonomy.level`,
    `max_level`, the shared resolver and its source line, the `unattended`
    column (issues filed without confirmation, deferral without a tracker
-   with `file-deferred.ts`, `decide`'s underdetermined row gathering
+   in the `## Deferred` section and `file-deferred.ts`, `decide`'s underdetermined row gathering
    evidence), `park --class` with the decision record on stdin and the
    classes from configuration, the arbiter's `class:` field, the drive
    working around a park, the transparent acknowledgement with the

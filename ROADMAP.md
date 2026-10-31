@@ -11,20 +11,15 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ### 32. Driving any pull request from anywhere, with autonomy that fits the hour
 
-Any session, in any checkout of the repository or none, on any machine and
-any account that Claude Code's pass bills, can arm the review drive on a
-supported pull request (not one from a fork, and not into a working tree with
-uncommitted changes or an unfinished git operation), take over a
-driver that died or stopped making progress, and resume from the state the
-previous driver left on the pull request itself. The drive stops for a
-person only on a configured human decision class (by default the
-[human-in-the-loop registry](modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md)'s
-rows plus the classes a repository adds), and then hands over the question, the options and their
-consequences, the recommended option and what a person must do. A
-repository sets how far an agent decides on its own, and may raise it
-during the hours nobody is there to ask; every decision taken without a
-person is recorded on the pull request where a person can reverse it, and a
-morning report lists them.
+The review drive already runs from any checkout, restarts itself, is taken
+over through a ledger on the pull request when its driver dies or stops
+making progress, and stops for a person only on a configured human decision
+class, with the decision framed
+([drive-pr](plugin/skills/drive-pr/README.md)). What is left: a repository
+may raise how far an agent decides on its own during the hours nobody is
+there to ask; every decision taken that way is recorded on the pull request
+where a person can reverse it, and a morning report lists them. It ships
+once a working repository has validated it.
 
 ### 33. The dispatcher: a tick that starts the execution line's stages
 
