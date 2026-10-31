@@ -25,7 +25,7 @@ const account = (name: string, identity: string, dir = name) =>
 describe("the machine file's bounds", () => {
   it("refuses a duration past the supported range, however large", () => {
     expect(config("wall_backoff: 999999999999999999999999h\n")).toThrow(
-      "at most 30d",
+      "at most 24d",
     );
     expect(config("runtime_timeout: 31d\n")).toThrow();
   });

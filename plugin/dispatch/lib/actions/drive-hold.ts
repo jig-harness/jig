@@ -74,6 +74,23 @@ function startedDriver(r: ReadRecord, started: string | null): boolean {
   );
 }
 
+/** The pull request's latest record, when it ended on a second driver's refusal on the ledger facts as they are now. */
+function standingRefusal(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
+  const latest = mine.at(-1);
+  const refused = latest === undefined ? null : refusalOf(latest);
+  if (
+    latest === undefined ||
+    refused === null ||
+    latest.record.facts !== factsOf(pr)
+  )
+    return null;
+  return {
+    kind: "refused",
+    record: latest,
+    why: `launch record ${latest.record.id} ended ${refused}, drive.ts's refusal, on these same ledger facts; it is not launched again until they change`,
+  };
+}
+
 export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
   const mine = records
     .filter((r) => r.record.pr === pr.number)
@@ -86,6 +103,9 @@ export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
     );
     if (inFlight !== undefined)
       return { kind: "held", record: inFlight, why: describe(inFlight) };
+    // An older owner must not be taken over again behind a later refusal.
+    const standing = standingRefusal(pr, mine);
+    if (standing !== null) return standing;
     const started =
       typeof pr.evidence.started === "string" ? pr.evidence.started : null;
     const owner = mine.findLast((r) => startedDriver(r, started));
@@ -96,17 +116,5 @@ export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
   const holding = mine.find((r) => holds(r.state));
   if (holding !== undefined)
     return { kind: "held", record: holding, why: describe(holding) };
-  const latest = mine.at(-1);
-  const refused = latest === undefined ? null : refusalOf(latest);
-  if (
-    latest !== undefined &&
-    refused !== null &&
-    latest.record.facts === factsOf(pr)
-  )
-    return {
-      kind: "refused",
-      record: latest,
-      why: `launch record ${latest.record.id} ended ${refused}, drive.ts's refusal, on these same ledger facts; it is not launched again until they change`,
-    };
-  return { kind: "none" };
+  return standingRefusal(pr, mine) ?? { kind: "none" };
 }

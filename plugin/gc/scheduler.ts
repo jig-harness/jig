@@ -252,6 +252,10 @@ function installedJob(spec: JobSpec, removing = false): Job {
       ...(process.env.DRIVE_PR_STATE_DIR
         ? { DRIVE_PR_STATE_DIR: resolve(process.env.DRIVE_PR_STATE_DIR) }
         : {}),
+      ...(spec.deadlineSec === undefined
+        ? {}
+        : { JIG_LAUNCHER_DEADLINE_SEC: String(spec.deadlineSec) }),
+      ...spec.env,
     },
     hour: "hour" in spec.schedule ? spec.schedule.hour : 0,
     spec,
@@ -340,7 +344,9 @@ export async function updateJob(
   remove = false,
 ): Promise<string> {
   const scheduler = detectScheduler();
-  const files = jobFiles(scheduler, installedJob(spec, remove));
+  // A removal names the job only: the cadence it would have is not rendered.
+  const named = remove ? { ...spec, schedule: { hour: 0 } } : spec;
+  const files = jobFiles(scheduler, installedJob(named, remove));
   mkdirSync(spec.stateRoot, { recursive: true, mode: 0o700 });
   // In place before the job that runs it, and gone only after that job is.
   if (!remove) installLauncher(spec);

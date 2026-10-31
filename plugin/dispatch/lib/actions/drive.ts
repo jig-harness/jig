@@ -59,7 +59,6 @@ export interface ApplyState {
   table: Slots[];
   /** The account of the most recent launch record, where the turn resumes. */
   last: string | null;
-  identities: Map<string, IdentityCheck>;
   root?: string;
 }
 
@@ -240,14 +239,11 @@ async function identityOf(
   state: ApplyState,
   slots: Slots,
 ): Promise<IdentityCheck> {
-  const cached = state.identities.get(slots.account.name);
-  if (cached !== undefined) return cached;
-  const check = await checkIdentity(
+  // Read afresh each time: a login file can change between two launches.
+  return checkIdentity(
     slots.account,
     Math.ceil(state.machine.runtimeTimeoutMs / 1000),
   );
-  state.identities.set(slots.account.name, check);
-  return check;
 }
 
 async function workspaceFor(
@@ -340,6 +336,14 @@ async function launchOne(
     return waits(
       action,
       `${slots.account.name} was walled until ${slots.wall.resetAt} while the workspace opened`,
+      slots.account.name,
+    );
+  // Opening a workspace can also outlast the login the account was admitted under.
+  const after = await identityOf(state, slots);
+  if (!after.ok)
+    return refused(
+      action,
+      `identity check after the workspace opened: ${after.reason}`,
       slots.account.name,
     );
   const record: LaunchRecord = {

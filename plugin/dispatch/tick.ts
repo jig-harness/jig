@@ -275,7 +275,6 @@ function applyState(
     records,
     table: slotTable(machine.accounts, records, nowMs),
     last: lastAccount(records),
-    identities: new Map(),
   };
 }
 

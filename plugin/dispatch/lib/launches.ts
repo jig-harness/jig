@@ -97,6 +97,8 @@ export interface LaunchExit {
   /** The stage's exit code; `null` when it ended on a signal. */
   code: number | null;
   signal: string | null;
+  /** Set when the stage ended on the account's wall and the wrapper could not record that wall. */
+  wallUnrecorded?: true;
 }
 
 export type LaunchState =
@@ -175,8 +177,31 @@ function isLaunchRecord(value: unknown): value is LaunchRecord {
     typeof value.pr === "number" &&
     typeof value.account === "string" &&
     typeof value.repo === "string" &&
+    typeof value.repoPath === "string" &&
+    (value.vendor === "claude" || value.vendor === "codex") &&
+    typeof value.configDir === "string" &&
+    typeof value.wallBackoffMs === "number" &&
+    (value.replaces === null || typeof value.replaces === "string") &&
     typeof value.facts === "string" &&
-    Array.isArray(value.attempts)
+    typeof value.createdAt === "string" &&
+    Number.isFinite(Date.parse(value.createdAt)) &&
+    (value.workspace === null ||
+      (isMapping(value.workspace) &&
+        typeof value.workspace.id === "string" &&
+        typeof value.workspace.path === "string")) &&
+    Array.isArray(value.attempts) &&
+    value.attempts.every(isAttempt)
+  );
+}
+
+function isAttempt(value: unknown): value is LaunchAttempt {
+  return (
+    isMapping(value) &&
+    typeof value.at === "string" &&
+    (value.outcome === "sent" ||
+      value.outcome === "failed" ||
+      value.outcome === "lost") &&
+    typeof value.detail === "string"
   );
 }
 
@@ -204,7 +229,8 @@ export function readRecordFile(
   root = stateRoot(),
 ): LaunchRecord | null {
   const value = readJson(file(id, "json", root));
-  return isLaunchRecord(value) ? value : null;
+  // A record whose embedded id names another file would read that file's claim and exit.
+  return isLaunchRecord(value) && value.id === id ? value : null;
 }
 
 /** The claim a wrapper published for a record: `undefined` when none, `null` when it does not read. */
@@ -307,6 +333,19 @@ function stateOf(
 ): LaunchState {
   const exit = readJson(file(record.id, "exit", root));
   const claim = readClaim(record.id, root);
+  if (isExit(exit) && exit.wallUnrecorded === true)
+    // The wall was never written: the account stays held until a person removes the files.
+    return {
+      kind: "unknown",
+      reason: "it ended on its account's wall, which could not be recorded",
+      process: claim ?? {
+        host: "",
+        bootId: "",
+        pid: 0,
+        start: "",
+        claimedAt: "",
+      },
+    };
   if (isExit(exit))
     return {
       kind: "ended",
@@ -373,11 +412,13 @@ export function holds(state: LaunchState): boolean {
  * a second driver: the stage's answer for as long as the ledger facts hold.
  */
 function latestRefusals(records: ReadRecord[]): Set<string> {
-  const latest = new Map<number, ReadRecord>();
+  // Pull request numbers repeat across repositories: key by both.
+  const latest = new Map<string, ReadRecord>();
   for (const r of records) {
-    const seen = latest.get(r.record.pr);
+    const key = `${r.record.repo}#${String(r.record.pr)}`;
+    const seen = latest.get(key);
     if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
-      latest.set(r.record.pr, r);
+      latest.set(key, r);
   }
   const ids = new Set<string>();
   for (const { record, state } of latest.values())

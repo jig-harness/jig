@@ -25,6 +25,7 @@
  */
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import { swallow } from "../shared/errors.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
 import { readDriveState } from "../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import { driveTs } from "../skills/drive-pr/scripts/lib/driver/paths.ts";
@@ -150,11 +151,20 @@ async function wrap(id: string, token: string): Promise<number> {
   );
   // The wall first: once the exit is published the record no longer holds its
   // slot, and a tick in between would admit the walled account.
-  try {
-    if (code === QUOTA_PARKED) await writeAccountWall(record);
-  } finally {
-    recordExit(id, { at: new Date().toISOString(), code, signal });
-  }
+  let wallUnrecorded = false;
+  if (code === QUOTA_PARKED)
+    try {
+      await writeAccountWall(record);
+    } catch (error) {
+      swallow(error, `the wall of ${record.account} could not be recorded`);
+      wallUnrecorded = true;
+    }
+  recordExit(id, {
+    at: new Date().toISOString(),
+    code,
+    signal,
+    ...(wallUnrecorded ? { wallUnrecorded: true as const } : {}),
+  });
   return code ?? 1;
 }
 

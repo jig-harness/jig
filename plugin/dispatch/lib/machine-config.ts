@@ -140,8 +140,8 @@ function path(value: unknown, where: string): string {
 }
 
 const UNITS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000 };
-/** The longest duration any setting takes: far inside timer and Date ranges. */
-const MAX_DURATION_MS = 30 * 86_400_000;
+/** The longest duration any setting takes: inside the 2,147,483,647 ms a timer holds, which the deadlines of child processes are armed with. */
+const MAX_DURATION_MS = 24 * 86_400_000;
 
 /** A duration such as `90s`, `5m` or `1h`, in milliseconds. */
 export function duration(value: unknown, where: string): number {
@@ -150,7 +150,7 @@ export function duration(value: unknown, where: string): number {
   const ms = match ? Number(match[1]) * (UNITS[match[2] as string] ?? 0) : 0;
   if (!match || ms <= 0 || ms > MAX_DURATION_MS)
     throw new MachineConfigError(
-      `${where} must be a positive duration such as 90s, 5m or 1h, at most 30d`,
+      `${where} must be a positive duration such as 90s, 5m or 1h, at most 24d`,
     );
   return ms;
 }

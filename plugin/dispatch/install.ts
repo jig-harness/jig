@@ -7,6 +7,7 @@
  * plugin update reaches it without a new install. What the tick starts is
  * the machine file's to say, so the job is written only when there is one.
  */
+import { resolve } from "node:path";
 import { ExitError } from "../shared/cli.ts";
 import { GcError } from "../shared/gc-error.ts";
 import { exclusiveGcLock } from "../shared/gc-lock.ts";
@@ -55,8 +56,39 @@ function parse(argv: string[]): InstallOptions {
   return options;
 }
 
-/** The tick's job, every `minutes`. */
-export function dispatchJobSpec(minutes: number): JobSpec {
+/** The least a tick may run before the launcher stops it: several repositories' workspace opens and launches. */
+const MIN_TICK_BUDGET_SEC = 6 * 3600;
+
+/**
+ * The Orca command configuration the tick resolves at run time, kept in the
+ * installed job: a timer's environment holds none of a login shell's.
+ */
+function orcaEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
+  const command = env.ORCA_CLI_COMMAND?.trim();
+  const dir = env.ORCA_CLI_BIN_DIR?.trim();
+  return {
+    ...(command ? { ORCA_CLI_COMMAND: command } : {}),
+    ...(dir ? { ORCA_CLI_BIN_DIR: resolve(dir) } : {}),
+  };
+}
+
+/**
+ * The tick's job, every `minutes`. Its overall budget covers two workspace
+ * opens and the runtime calls around them at the machine file's limits, and
+ * never less than `MIN_TICK_BUDGET_SEC`.
+ */
+export function dispatchJobSpec(
+  minutes: number,
+  machine: MachineConfig | null = null,
+  env: NodeJS.ProcessEnv = process.env,
+): JobSpec {
+  const needed =
+    machine === null
+      ? 0
+      : Math.ceil(
+          (2 * machine.workspaceTimeoutMs + 8 * machine.runtimeTimeoutMs) /
+            1000,
+        );
   return {
     name: "jig-dispatch",
     label: "dev.jig.dispatch",
@@ -65,6 +97,8 @@ export function dispatchJobSpec(minutes: number): JobSpec {
     stateRoot: stateRoot(),
     args: ["dispatch", "--apply"],
     schedule: { everyMinutes: minutes },
+    deadlineSec: Math.max(MIN_TICK_BUDGET_SEC, needed),
+    env: orcaEnvironment(env),
   };
 }
 
@@ -86,7 +120,7 @@ export async function installDispatch(
       `the interval must be whole minutes; ${options.intervalMs === null ? "the machine file's interval" : "--interval"} is ${ms / 1000}s`,
     );
   const minutes = ms / 60_000;
-  const spec = dispatchJobSpec(minutes);
+  const spec = dispatchJobSpec(minutes, machine);
   console.log(jobPreview(spec, options.uninstall));
   if (!options.confirm) {
     console.log("Preview only. Repeat with --yes to write the job.");
