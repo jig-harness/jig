@@ -499,6 +499,68 @@ describe("drives.ts --report", () => {
     });
   });
 
+  it("a ledger's own earlier stop does not end the run it names, with or without local state", async () => {
+    const run = async (
+      startedHoursAgo: number,
+      localGeneration: number | null,
+    ) => {
+      const forge = setUp();
+      if (localGeneration !== null)
+        writeState(forge, {
+          ...freshState(20),
+          ledgerGeneration: localGeneration,
+        } as DriveState);
+      const ledger = renderLedger(
+        ledgerFromState(
+          {
+            ...freshState(20),
+            rounds: 4,
+            phase: "converged",
+            events: [{ at: ago(10), round: 1, kind: "stop", cause: "0" }],
+          } as DriveState,
+          {
+            generation: 3,
+            driver: {
+              actor: "wt-cccccccccccccccc",
+              clone: "clone-b",
+              heartbeat: ago(24 * 30),
+              state: "running",
+              started: ago(startedHoursAgo),
+            },
+            narrative: [],
+            claims: [],
+          },
+        ),
+      );
+      if ("error" in ledger) throw new Error(ledger.error);
+      forge.write("comments-20.json", [
+        {
+          id: 200,
+          body: ledger.body,
+          user: { login: "drive-bot" },
+          author_association: "NONE",
+          updated_at: ago(1),
+          created_at: ago(1),
+          html_url: "https://example.invalid/comment-200",
+        },
+      ]);
+      const r = await report(forge, ["--json"]);
+      expectSpawnExit(r, 0);
+      return JSON.parse(r.stdout).pullRequests.find(
+        (p: { number: number }) => p.number === 20,
+      );
+    };
+    for (const local of [null, 1]) {
+      // The run began after the stop: it has recorded none of its own.
+      expect((await run(5, local)).terminal.name).toBe("stopped");
+      // The run began before it: the stop is that run's end.
+      expect((await run(20, local)).terminal).toMatchObject({
+        name: "CONVERGED",
+        exit: 0,
+      });
+    }
+  });
+
   it("a stop followed by a re-arm is not how the drive ended", async () => {
     const forge = setUp();
     writeState(forge, {

@@ -200,6 +200,21 @@ function fromState(s: DriveState): DriveRecord {
   };
 }
 
+/**
+ * A running ledger's last stop, only when it came at or after the start of
+ * the run the ledger names: an earlier stop ended an earlier run, and the
+ * run since has recorded none, whether or not its heartbeat has lapsed.
+ */
+function exitOfRunningLedger(l: Ledger): number | null {
+  const exit = settledExit(l.events ?? []);
+  const started = l.driver.started;
+  if (exit === null || started === undefined) return exit;
+  const stop = (l.events ?? []).findLast((e) => e.kind === "stop");
+  return stop !== undefined && Date.parse(stop.at) < Date.parse(started)
+    ? null
+    : exit;
+}
+
 function fromLedger(l: Ledger, nowMs: number): DriveRecord {
   return {
     source: "ledger",
@@ -211,7 +226,7 @@ function fromLedger(l: Ledger, nowMs: number): DriveRecord {
     exit:
       l.driver.state === "stopped"
         ? (l.driver.exit ?? settledExit(l.events ?? []))
-        : settledExit(l.events ?? []),
+        : exitOfRunningLedger(l),
     // A driver that stopped after its last ledger write still reads
     // "running"; past the lease window its heartbeat no longer says it is.
     runningElsewhere:
