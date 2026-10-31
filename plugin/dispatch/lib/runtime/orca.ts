@@ -131,7 +131,9 @@ function joins(
   const named = byBranch(branch, join);
   return {
     prs: [...new Set([...links.prs, ...named.prs])].sort((a, b) => a - b),
-    items: [...new Set([...links.items, ...named.items])].sort(),
+    items: [...new Set([...links.items, ...named.items])].sort((a, b) =>
+      a.localeCompare(b),
+    ),
   };
 }
 

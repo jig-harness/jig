@@ -86,7 +86,7 @@ export function receiptPaths(root = stateRoot()): string[] {
   }
   return days
     .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day))
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
     .flatMap((day) =>
       readdirSync(join(receiptsRoot(root), day))
         .filter(
