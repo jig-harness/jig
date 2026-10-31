@@ -558,18 +558,18 @@ make, use the entry's term instead.
   documents under a path prefix, for a subtree whose vocabulary differs from
   the rest (a runbook directory that must name its service, an archive that
   may hold only archived documents). It can narrow the tree's vocabulary,
-  never widen it ([frontmatter check](modules/M4-docs-governance/reference/frontmatter-check/README.md#path-scoped-rules)).
+  never widen it ([frontmatter check](plugin/skills/docs/scripts/frontmatter-check/README.md#path-scoped-rules)).
 - **Orphan document** — a document no other document lists under `related:`
   in its frontmatter. Ordinary Markdown links are not counted, so an orphan
   may still be linked from a page body; it is a candidate for a declared
   relation or for retiring, not proof that nothing leads to it. An *orphan
   report* lists them as a warning, never a failure
-  ([index generator](modules/M4-docs-governance/reference/index/README.md#orphan-report)).
+  ([index generator](plugin/skills/docs/scripts/index/README.md#orphan-report)).
 - **Sticky stamping** — how a generator dates the documents it writes: the
   `last_updated` date advances, in UTC, only when the output changed, and
   otherwise keeps the date the file already carries. It keeps generated
   documents honest without rewriting files whose only change is the date
-  ([stamp](modules/M4-docs-governance/reference/stamp/README.md)).
+  ([stamp](plugin/skills/docs/scripts/stamp/README.md)).
 - **Codemod** — a one-shot script that rewrites many files mechanically, such
   as bringing every document's frontmatter into line before a validator is
   tightened. Run as survey, plan, then apply, one commit per kind of change
@@ -580,10 +580,19 @@ make, use the entry's term instead.
   **deferral marker** is a configured phrase that makes a block of prose a
   deferral. The static gate checks that a deferral names an item; a scheduled
   check asks the tracker whether the item has closed since
-  ([M4](modules/M4-docs-governance/reference/deferral-references/README.md)).
+  ([M4's deferral check](plugin/skills/docs/scripts/deferral-references/README.md)).
 - **PRD (product requirements document)** — the document defining *what* a
   feature does for users and why — deliberately separate from *how* (the
   architecture doc).
+- **Spec resolver and spec adapter** — the read-only step that turns what a
+  work item says must be built (requirements, acceptance criteria and tasks,
+  written in its body or kept in a file it links) into one list with stable
+  ids, each qualified by where it came from; and one implementation of that
+  reading for one layout of such documents. The `body` adapter reads the
+  item's own `## Spec`, `## Requirements` and `## Acceptance criteria`
+  sections; an adapter per repository layout is planned. The resolver reads
+  only inside the repository, never a file Git ignores, and fetches no web
+  link ([design](design/spec-link.md)).
 - **PR (pull request)** — a proposed change to a repository, opened so it can
   be reviewed and checked before it is merged into the *integration branch*.
   Most of Jig's execution process runs around one.
@@ -1048,6 +1057,19 @@ make, use the entry's term instead.
 - **Tiered review** — a review that runs cheap pattern checks first, contract
   checks second, and an expensive semantic review last; each tier can block
   or warn, and a change only pays for the tiers its file types need.
+- **Red-team review** (adversarial review) — a review that reads a document
+  on purpose against it, looking for what is wrong, missing or unclear
+  rather than confirming what is there. The reviewer starts in **fresh
+  context**: a session or subagent that has not seen the document being
+  written, since one that helped write it tends to defend it. Each stage of
+  [M6](modules/M6-feature-delivery-pipeline/README.md)'s pipeline gets one
+  before the next stage consumes its artifact; Jig's `red-team` skill runs it
+  for requirements and architecture documents.
+- **Review persona** — one point of view a *red-team review* reads a
+  document from, written as a brief: who the reader stands for, what they
+  look for, and what a finding from them must carry (a security auditor, a
+  reader who knows no engineering terms, …). Not the user personas a PRD
+  describes, though some review personas speak for them.
 - **Scanner annotation** — a finding a static-analysis tool reports on a pull
   request as a note pinned to a changed line of its check run (a check-run
   annotation), as SonarQube Cloud does. It is neither a review thread, which
@@ -1173,7 +1195,7 @@ make, use the entry's term instead.
   slug (`merge`, `scope`, `human-thread`, …): a kind of decision that must
   stay a person's. A repository lists its classes in
   `autonomy.park_classes`, and a *PR drive loop* may park only under one of
-  them, the class the review arbiter ruled for the thread
+  them (for a review thread, the class the review arbiter ruled for it)
   ([configuration](plugin/CONFIGURATION.md#autonomy)).
 - **Autonomy level** — how far an agent may decide without asking a person:
   `attended`, the default, `unattended`, or `wide`, which also takes
@@ -1204,8 +1226,9 @@ make, use the entry's term instead.
 - **Transparent follow-up** — a review bot's comment after a reply the drive
   is holding open until its fix is pushed, which carries no new finding: a
   confirmation marked with the bot's confirmation marker, or a chat
-  acknowledgement from a bot `review.bots` lists, with no outcome token and
-  no severity line. It is never triaged or answered, and the held thread
+  acknowledgement from a bot `review.bots` lists whose severity format is
+  known, with no outcome token and no line matching that format; a bot with
+  no known format has no transparent chat acknowledgements. It is never triaged or answered, and the held thread
   resolves over it; anything else is a new comment
   ([configuration](plugin/CONFIGURATION.md#review)).
 - **CI hold** — an opt-in label on a pull request that the repository's
@@ -1369,10 +1392,11 @@ make, use the entry's term instead.
   *Avoid*: model level (a *maturity level* is something else).
 - **Route** — the agent, *model tier* and reasoning effort chosen for the
   implementer of one piece of work at its pickup; derived from the item's
-  *work type*, size and labels and the *change-area catalog*'s flags and
-  mandatory reviews, by rules a repository declares, with the reason, the
-  source (the rules, or the person who chose instead) and whether it was
-  applied recorded on the pull request ([design](design/agent-routing.md)).
+  *work type*, size, *flag labels* and the *change-area catalog*'s flags and
+  mandatory reviews, by rules a repository keeps as data, with the rule behind
+  each part, the source (the rules, or the person who chose instead, whose
+  choice always wins) and whether it was applied recorded on the pull request
+  ([design](design/agent-routing.md)).
 - **Judgment tier** — the narrowest *model tier*: the top reasoning model,
   admitted only for a *decision layer* that is judgment-only, low-volume and
   high-leverage, and that a mechanical rule already tried and failed to
@@ -1381,11 +1405,6 @@ make, use the entry's term instead.
   out so that it alone runs on an expensive *model tier* while the evidence
   gathering and ranking around it run on cheaper ones. The unit the *Judgment
   tier* is assigned to, rather than a whole skill or agent.
-- **Route** — the agent, the *model tier* and the effort an item's
-  implementer runs on, derived from the item's *work type*, its *flag
-  labels* and size and the change areas it touches, by rules a repository
-  keeps as data, with the rule behind each part recorded; a person's choice
-  always wins ([design](design/agent-routing.md)).
 - **Family alias** — a model name that selects a model family rather than
   one release (`opus`, `sonnet`). A pin written with it ordinarily resolves to
   the family's current release, though not always: a session already on an
@@ -1702,6 +1721,45 @@ make, use the entry's term instead.
   step, so adding one does not change the rest of the launcher; which exist
   and which are planned is in the
   [launcher's README](tools/launcher/README.md#providers).
+- **Dispatcher** — the program that starts the stages of the execution
+  line with nobody at the keyboard: a pickup for an item assigned to the
+  *factory identity*, a restart of a stopped review drive, the follow-up
+  after a merge. It runs as a *tick* on a timer, starts sessions through a
+  *session runtime*, and never merges or answers a parked question. Planned
+  ([ROADMAP.md](ROADMAP.md) item 33); it is Jig's first *control plane*.
+- **Tick** — one run of the *dispatcher*: read the tracker, the pull
+  requests' drive ledgers and the running sessions, work out which stages
+  are wanted and not running, report them, and start them only when told
+  to. What is wanted comes from those records alone; the dispatcher keeps
+  only what it did: what it started and how each ended, a receipt per
+  tick, and the account walls and repeat suppressions those imply, so
+  stopping it loses nothing and the next tick finds the same facts.
+- **Session runtime** — the interface the *dispatcher* starts agent
+  sessions through: list the sessions in a repository's workspaces, open a
+  workspace, launch a session on a subscription account, notify a person.
+  Orca is its first implementation
+  ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)); a
+  *workspace runtime* becomes another by implementing the same methods.
+- **Factory identity** — the tracker user a repository assigns an item to
+  when the *dispatcher* should pick it up. An item assigned to it and in
+  one of the repository's dispatch states is started, when a person with
+  write access made the assignment; the pickup's move to the in-progress
+  state is the claim, so no item is picked up twice.
+- **Outcome log** — the *dispatcher*'s permanent record of how each session
+  it started ended: one row per session with its stage, repository,
+  account, duration and an outcome class from the closed list the
+  dispatcher's design defines, among them converged, quota wall, parked
+  for a person, stalled and died; a stop no class in that list fits is
+  logged as `unknown` with its last state, never dropped. One dashboard filters it; it is
+  never rendered into a report file.
+- **Stage drift** — a running stage falling short of what it is expected to
+  achieve: a review drive whose open threads do not fall across rounds, a
+  pickup that has not opened a pull request in time. The *dispatcher*
+  reports drift and tells a person once; it never acts on it.
+- **Nudge** — a fixed prompt the *dispatcher* may send by itself, from a
+  closed set with one entry: "continue" to a session it started that is
+  waiting at its prompt after a usage limit that has since reset. Anything else a stuck
+  session needs goes to a person.
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of
@@ -1826,6 +1884,14 @@ make, use the entry's term instead.
   generated, as documentation, or as written in a named language.
 - **Test fixture** — data a test reads (an input file, a recorded response, a
   snapshot of expected output), as opposed to the test's own code.
+- **Byte order mark** — a few invisible bytes at the very start of a text
+  file that say how its characters are encoded: `EF BB BF` for UTF-8, and
+  `FE FF` or `FF FE` for UTF-16 written with its high or its low byte first.
+  A reader consumes the mark; it is not part of the text.
+- **Internal subset** — the part of an XML document type declaration
+  written between square brackets inside the document itself
+  (`<!DOCTYPE project [ … ]>`), where the document can declare its own
+  entities and element rules instead of only pointing at an outside file.
 - **DDL (data definition language)** — the statements that define a
   database's structure (tables, columns, indexes), as opposed to the queries
   that read and change its data. Schema files and migrations hold it.

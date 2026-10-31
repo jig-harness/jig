@@ -5,6 +5,11 @@
  * comment the guard refuses and the round triages.
  */
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { parseReviewConfig } from "../../../shared/consumer.ts";
 import {
   botMarkers,
@@ -13,7 +18,12 @@ import {
   isTransparentFollowUp,
 } from "../scripts/lib/bot-confirmation.ts";
 import { qualifyingOutcome } from "../scripts/lib/outcome.ts";
-import { BUILTIN_FORMATS } from "../scripts/lib/severity-formats.ts";
+import {
+  BUILTIN_FORMATS,
+  jigFormats,
+} from "../scripts/lib/severity-formats.ts";
+
+const SCRIPTS = join(import.meta.dir, "../scripts");
 
 const listed = botMarkers(["coderabbitai[bot]", "example-review[bot]"]);
 
@@ -28,6 +38,69 @@ function transparent(
     bots,
     BUILTIN_FORMATS,
   );
+}
+
+/**
+ * `example-review`'s chat replies read through the default configuration
+ * resolver, in a subprocess given an overlay that lists the bot with a chat
+ * marker, `reviewerApp` as `review.reviewer_app`, and with `declared` a
+ * `review.severity_formats` entry giving the bot Jig's format.
+ * The replies: a finding in a shape no format of the bot's reads, one in
+ * Jig's shape, and a plain acknowledgement.
+ */
+function readsThroughConfig(
+  reviewerApp: string | null,
+  declared = false,
+): boolean[] {
+  const dir = mkdtempSync(join(tmpdir(), "bot-transparency-"));
+  try {
+    const overlay = join(dir, "overlay.yaml");
+    writeFileSync(
+      overlay,
+      [
+        "review:",
+        ...(reviewerApp === null ? [] : [`  reviewer_app: "${reviewerApp}"`]),
+        "  bots:",
+        '    - login: "example-review[bot]"',
+        '      chat_marker: "<!-- example-chat -->"',
+        ...(declared
+          ? [
+              "  severity_formats:",
+              '    - login: "example-review[bot]"',
+              "      shape: bold-token",
+              "      severities: { blocker: blocker, high: high, medium: medium, low: low }",
+            ]
+          : []),
+      ].join("\n"),
+    );
+    const script = [
+      `import { isTransparentFollowUp } from ${JSON.stringify(join(SCRIPTS, "lib/bot-confirmation.ts"))};`,
+      `import { qualifyingOutcome } from ${JSON.stringify(join(SCRIPTS, "lib/outcome.ts"))};`,
+      "const reads = [",
+      '  "<!-- example-chat -->\\n[P1] The authorization guard is still missing",',
+      '  "<!-- example-chat -->\\n🟠 **high** · 🏷️ category: correctness",',
+      '  "<!-- example-chat -->\\nNoted.",',
+      '].map((body) => isTransparentFollowUp({ authorLogin: "example-review", body }, qualifyingOutcome));',
+      "console.log(JSON.stringify(reads));",
+    ].join("\n");
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([k]) => !k.startsWith("DRIVE_PR_") && !k.startsWith("JIG__"),
+      ),
+    );
+    const result = spawnSync("bun", ["-e", script], {
+      cwd: dir,
+      env: { ...env, JIG_OVERLAY: overlay },
+      encoding: "utf8",
+    });
+    expectSpawnExit(
+      { exitCode: result.status, stdout: result.stdout, stderr: result.stderr },
+      0,
+    );
+    return JSON.parse(result.stdout.trim()) as boolean[];
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 const ACKNOWLEDGEMENT = [
@@ -55,12 +128,20 @@ describe("a transparent follow-up", () => {
     ).toBe(true);
   });
 
-  test("a bot's own markers from its review.bots entry", () => {
+  test("a bot's own markers from its review.bots entry, with a severity format for it", () => {
     const bots = botMarkers([
       { login: "example-review[bot]", chat_marker: "<!-- example-chat -->" },
     ]);
     expect(
-      transparent("example-review", "<!-- example-chat -->\nNoted.", bots),
+      isTransparentFollowUp(
+        {
+          authorLogin: "example-review",
+          body: "<!-- example-chat -->\nNoted.",
+        },
+        qualifyingOutcome,
+        bots,
+        [...BUILTIN_FORMATS, ...jigFormats(["example-review[bot]"])],
+      ),
     ).toBe(true);
   });
 
@@ -95,6 +176,36 @@ describe("a newer comment, never transparent", () => {
   test("a finding in the icon-fields shape inside an acknowledgement", () => {
     const body = `${CODERABBIT_CHAT_MARKER}\nNoted.\n\n**<picture><img alt="Major" src="x"></picture> Major** · **Correctness**\n\nStill wrong.`;
     expect(transparent("coderabbitai", body)).toBe(false);
+  });
+
+  test("a chat reply from a listed bot no severity format reads", () => {
+    const bots = botMarkers([
+      { login: "example-review[bot]", chat_marker: "<!-- example-chat -->" },
+    ]);
+    for (const body of [
+      "<!-- example-chat -->\n🟠 **high** — the guard still permits unauthorized requests",
+      "<!-- example-chat -->\nNoted.",
+    ]) {
+      expect(transparent("example-review", body, bots)).toBe(false);
+    }
+  });
+
+  test("a chat reply from a listed bot whose only format is Jig's, assumed", () => {
+    expect(readsThroughConfig(null)).toEqual([false, false, false]);
+    // Naming the bot as review.reviewer_app does not make the format its own.
+    expect(readsThroughConfig("example-review[bot]")).toEqual([
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  test("a declared format makes the bot's chat acknowledgement transparent", () => {
+    expect(readsThroughConfig("example-review[bot]", true)).toEqual([
+      true,
+      false,
+      true,
+    ]);
   });
 
   test("an acknowledgement from an author review.bots does not list", () => {

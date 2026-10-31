@@ -140,3 +140,34 @@ describe("drive-status.ts --inherited-head", () => {
     expectSpawnExit(r, 2);
   });
 });
+
+describe("drive-status.ts --inherited-head with --no-head-sync", () => {
+  it("owes the round over unpushed commits, the local head unread", async () => {
+    const repo = makeScratchRepo("inherited-no-head-sync");
+    const inherited = commit(repo.dir, "wip.txt");
+    const fixture = { threads: [], reviewedSha: repo.head, head: repo.head };
+    const r = await gate(repo.dir, fixture, [
+      "--no-head-sync",
+      "--inherited-head",
+      inherited,
+    ]);
+    expectSpawnExit(r, 0);
+    expect(r.state).toBe("ROUND_READY");
+    expect(r.reason).toContain(`local HEAD ${inherited}`);
+  });
+
+  it("owes nothing more once the PR head contains the inherited commits", async () => {
+    const repo = makeScratchRepo("inherited-no-head-sync-pushed");
+    const inherited = repo.head;
+    const apiHead = commit(repo.dir, "pushed.txt");
+    const fixture = { threads: [], reviewedSha: apiHead, head: apiHead };
+    const r = await gate(repo.dir, fixture, [
+      "--no-head-sync",
+      "--inherited-head",
+      inherited,
+    ]);
+    expectSpawnExit(r, 3);
+    expect(r.state).toBe("CONVERGED");
+    expect(r.reason).not.toContain("left unpushed");
+  });
+});

@@ -3,6 +3,8 @@ import { fail, isDigits } from "../cli.ts";
 interface DriverOptions {
   pr: string;
   maxRounds: string | undefined;
+  /** `--pass-model`: the model each pass runs on, for this run (`pass-model.ts`). */
+  passModel: string | undefined;
   dryRun: boolean;
   botsOnly: boolean;
   keepDraft: boolean;
@@ -32,6 +34,9 @@ function parseFlag(
   switch (flag) {
     case "--max-rounds":
       options.maxRounds = flagValue(argv, index);
+      return index + 1;
+    case "--pass-model":
+      options.passModel = flagValue(argv, index);
       return index + 1;
     case "--handoff-at":
       options.handoffAt = flagValue(argv, index);
@@ -73,6 +78,7 @@ export function parseDriverOptions(argv: string[]): DriverOptions {
   const options: DriverOptions = {
     pr: "",
     maxRounds: undefined,
+    passModel: undefined,
     dryRun: false,
     botsOnly: false,
     keepDraft: false,

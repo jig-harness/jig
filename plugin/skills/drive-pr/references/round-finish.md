@@ -62,8 +62,8 @@ The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
 - **(b) at least one unresolved review thread is anchored to a file this
   round's own local non-merge commits touch.** "This round's own non-merge
   commits" means since the last verified SHA (`bun "<skill-dir>/scripts/drive-state.ts" verified`) when
-  one validates, else the cumulative merge-base against `origin/<base>` (the
-  configured base branch) — `roundBase()` in `scripts/lib/round-delta.ts`, the
+  one validates, else the cumulative merge-base against `<remote>/<base>` (the
+  configured base branch, through `repository.remote`) — `roundBase()` in `scripts/lib/round-delta.ts`, the
   *same* fail-closed base resolution `round-plan.ts` shares (though
   `round-plan.ts`'s own validation file list uses its separately computed
   cumulative/delta base — `roundBase()`'s `rb.base` return goes unused there;
@@ -335,7 +335,8 @@ thread's live comments and refuses (restoring the hold) when anything landed
 after the held reply — except a thread already resolved on GitHub, which
 drains without a mutation, and a transparent follow-up (a bot's
 confirmation marker, or the chat marker of a bot `review.bots` lists with no
-finding shape, and no outcome token), which is compatible with the hold. Calling `release-held --key` on a thread
+finding shape a severity format known to be the bot's reads, and no outcome
+token), which is compatible with the hold. Calling `release-held --key` on a thread
 afterward finds nothing there and refuses loudly, by the same "no silent
 no-op on an already-released key" design `release-held` uses everywhere else.
 A refusal — round mismatch, `verifiedSha` mismatch, or racing another claim —

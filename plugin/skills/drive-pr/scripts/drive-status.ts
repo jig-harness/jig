@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { consumerRoot, readRemoteName } from "../../../shared/consumer.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Decide, mechanically, which state a PR-review drive is in — and in particular
@@ -48,8 +49,8 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                        when you know the local tree is not the PR branch).
  *   --inherited-head SHA let the guard pass a local HEAD that is exactly SHA
  *                        and descends from the API head: the commits a pass
- *                        killed at its deadline left unpushed (the driver's
- *                        restart notice names it). Any other mismatch lags.
+ *                        left unpushed, or the drive was armed over (the
+ *                        driver's notice names it). Any other mismatch lags.
  *   --no-count           do not count this evaluation as a worked round. Also
  *                        suppresses the replied-thread reconciliation sweep
  *                        below — a mid-round re-read is not a pass entry.
@@ -204,12 +205,10 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *  14  —  [drive.ts only, no report] the loop stalled — see
  *         `references/terminal-states.md` row 14
  *  15  PASS_DEADLINE    [drive.ts only, no report] `$DRIVE_PR_PASS_TIMEOUT`
- *                       expired mid-round. Named (`PASS_DEADLINE_EXIT`), but
- *                       never reaches this script's `--json` report — see
+ *                       expired mid-round (`PASS_DEADLINE_EXIT`) — see
  *                       `references/terminal-states.md` row 15
  *  16  QUOTA_PARKED     [drive.ts only, no report] the pass died on a
- *                       subscription usage wall. Named (`QUOTA_PARKED_EXIT`),
- *                       never reaches this script's `--json` report — see
+ *                       subscription usage wall (`QUOTA_PARKED_EXIT`) — see
  *                       `references/terminal-states.md` row 16
  *  18  MAILBOX_STOPPED [drive.ts only, no report] a stop directive ended the
  *                       drive at a safe round boundary
@@ -225,7 +224,7 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  * `<skill-dir>/scripts/lib/status/terminal-states.ts`.
  */
 
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type BaseDrift,
@@ -233,7 +232,7 @@ import {
   fetchTimeoutSeconds,
   probeBaseDrift,
   verifyCheckoutIsPrHead,
-  verifyOriginIsPrRepo,
+  verifyRemoteIsPrRepo,
 } from "./lib/base-drift.ts";
 import { fail, isDigits, runMain, sleep, testPacing } from "./lib/cli.ts";
 import {
@@ -252,6 +251,7 @@ import {
   gitIdentityEnv,
   readTimeoutEnv,
   run,
+  runInlineProbe,
   tsArgv,
 } from "./lib/proc.ts";
 import { reviewerApp } from "./lib/overlay.ts";
@@ -296,12 +296,9 @@ const MAX_QUERY_ERRORS = 3;
 
 /**
  * `realpathSync`, bounded — a stalled FUSE/NFS mount can block this SYNCHRONOUS
- * call indefinitely in THIS process, and `GIT_CALL_TIMEOUT` bounding the
- * local-HEAD measurement's `git()` subprocess calls (further down this file)
- * does nothing for it. Runs as a separate bounded subprocess — same convention
- * `unconcludedGitOpMarker`'s marker probe in `lib/proc.ts` uses — so `run()`'s
- * existing timeout-and-kill can bound it exactly like every other call here,
- * without a shell of any kind.
+ * call indefinitely in THIS process, which `GIT_CALL_TIMEOUT` does nothing
+ * for. So it runs as a bounded inline probe (`runInlineProbe`, from a neutral
+ * directory: the path is made absolute against this process's cwd first).
  */
 const REALPATH_PROBE_SCRIPT = `
 const { realpathSync } = require('node:fs');
@@ -321,7 +318,7 @@ async function boundedRealpath(
   // string as "nothing to resolve", never as "resolve my cwd", so this must
   // refuse before ever reaching the probe subprocess.
   if (p === "") return null;
-  const probe = await run([process.execPath, "-e", REALPATH_PROBE_SCRIPT, p], {
+  const probe = await runInlineProbe(REALPATH_PROBE_SCRIPT, [resolve(p)], {
     stderr: "ignore",
     ...definedFields({ timeoutSec }),
   });
@@ -811,20 +808,22 @@ async function main(): Promise<number> {
     if (rootRes.code !== 0 || rootRes.stdout.trim() === "") return driftMemo;
     const root = rootRes.stdout.trim();
     // Same precondition base-sync.ts fails closed on before its own fetch:
-    // `probeBaseDrift` always fetches through `origin`, which is wrong
-    // whenever `origin` is not the PR's own repository (a fork clone, or a
-    // `gh`/git disagreement). This read is best-effort like the rest of
-    // `baseDrift()`, so a mismatch just degrades to `null` rather than
-    // failing the gate — but it must not silently measure drift off the
-    // wrong repository's history.
-    const originCheck = await verifyOriginIsPrRepo(
+    // `probeBaseDrift` always fetches through the drive's remote
+    // (`repository.remote`), which is wrong whenever it is not the PR's own
+    // repository (a fork clone, or a `gh`/git disagreement). This read is
+    // best-effort like the rest of `baseDrift()`, so a mismatch, or an
+    // unreadable setting, degrades to `null` rather than failing the gate.
+    const remote = readRemoteName(consumerRoot(root));
+    if ("error" in remote) return driftMemo;
+    const remoteCheck = await verifyRemoteIsPrRepo(
       git,
       root,
       `${owner}/${repo}`,
       identityEnv,
+      remote.remote,
     );
-    if (!originCheck.ok) return driftMemo;
-    // `origin` being the right REPOSITORY does not prove this WORKTREE is
+    if (!remoteCheck.ok) return driftMemo;
+    // The remote being the right REPOSITORY does not prove this WORKTREE is
     // checked out on THIS PR's branch — invoked with an explicit PR from an
     // unrelated branch or worktree (`DRIVE_PR_WORKTREE` unset or pointed
     // elsewhere), this call would otherwise happily measure and publish
@@ -854,6 +853,7 @@ async function main(): Promise<number> {
       baseBranch,
       seconds.seconds,
       identityEnv,
+      remote.remote,
     );
     if (probe.ok) driftMemo = probe.drift;
     return driftMemo;

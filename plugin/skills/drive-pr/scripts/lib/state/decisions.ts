@@ -254,10 +254,11 @@ function parseInput(raw: string, usage: string): Record<string, unknown> {
 
 /**
  * `record-decision [PR]`: append one decision, read as JSON on stdin
- * (`{ "class", "what", "reverse", "record"?, "key"?, "outcome"?, "posted"? }`),
- * at the level in force now. A provisional class is refused unless that
- * level is `wide`; `posted: true` records a provisional reply already
- * posted, at `wide`, whatever the level now.
+ * (`{ "class", "what", "reverse", "record"?, "level"?, "key"?, "outcome"?,
+ * "posted"? }`), at the `level` the caller captured, else the level in force
+ * now. A provisional class is refused unless that level is `wide`;
+ * `posted: true` records a provisional reply already posted, at `wide`,
+ * whatever the level now.
  */
 export async function recordDecision(
   store: StateStore,
@@ -265,7 +266,7 @@ export async function recordDecision(
 ): Promise<number> {
   const input = parseInput(
     raw,
-    'record-decision reads one JSON object on stdin: {"class", "what", "reverse", "record"?, "key"?, "outcome"?}',
+    'record-decision reads one JSON object on stdin: {"class", "what", "reverse", "record"?, "level"?, "key"?, "outcome"?}',
   );
   // `posted: true` completes a provisional reply already on its thread,
   // posted at `wide` (its text says so): recording it whatever the level is
@@ -273,11 +274,14 @@ export async function recordDecision(
   // off-hours window closes between the post and the record.
   const completing =
     input.posted === true && input.class === "provisional-reply";
-  const level = completing ? "wide" : currentAutonomy().level;
+  // Otherwise the level the action was authorized under, when the caller
+  // captured it: the configuration can change between the action and this
+  // command.
+  const level = completing ? "wide" : (input.level ?? currentAutonomy().level);
   if (PROVISIONAL_CLASSES.has(input.class as DecisionClass) && level !== "wide")
     fail(
       3,
-      `record-decision: a ${String(input.class)} decision is taken only at the wide autonomy level, and this one runs at ${level}; escalate or park it instead.`,
+      `record-decision: a ${String(input.class)} decision is taken only at the wide autonomy level, and this one runs at ${String(level)}; escalate or park it instead.`,
     );
   await store.update((s) => {
     const entry = {
@@ -294,7 +298,7 @@ export async function recordDecision(
     if (!isUnattendedDecision(entry))
       fail(
         2,
-        `record-decision: class must be one of ${DECISION_CLASSES.join(", ")}; what and reverse one nonempty line each; record an http(s) url without user information, or absent; a provisional class needs a key, and provisional-reply an outcome of rejected, wont-fix or deferred`,
+        `record-decision: class must be one of ${DECISION_CLASSES.join(", ")}; level, when given, one of ${AUTONOMY_LEVELS.join(", ")}; what and reverse one nonempty line each; record an http(s) url without user information, or absent; a provisional class needs a key, and provisional-reply an outcome of rejected, wont-fix or deferred`,
       );
     return { ...s, decisions: [...(s.decisions ?? []), entry] };
   });

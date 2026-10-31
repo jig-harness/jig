@@ -445,3 +445,138 @@ console.log("EVENTS " + JSON.stringify(JSON.parse(got.stdout.toString()).events)
     expect(lastStop(events)).toBe(8);
   });
 });
+
+describe("renewing the heartbeat through a wait", () => {
+  it("writes as the wait starts and not again inside the renewal interval", async () => {
+    const forge = fakeForge(
+      [
+        forgeComment(
+          40,
+          ledgerBody(
+            ledgerFromState(freshState(999), {
+              generation: 2,
+              driver: {
+                actor: "wt-bbbbbbbbbbbbbbbb",
+                clone: "clone-b",
+                heartbeat: "2026-10-01T11:00:00.000Z",
+                state: "running",
+              },
+              narrative: [],
+              claims: [],
+            }),
+          ),
+        ),
+      ],
+      { login: "drive-bot" },
+    );
+    const r = await probe(
+      forge,
+      `const renew = d.ledgerRenewal("999");
+await renew();
+await renew();
+console.log("RENEW_MS " + d.LEDGER_RENEW_MS);`,
+      // A longer local stall threshold must not stretch the renewal: other
+      // clones apply their own, as short as the default.
+      {
+        DRIVE_PR_LEDGER_DRIVER: driverEnv("clone-b"),
+        DRIVE_PR_STALL_MIN: "1440",
+      },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain(`RENEW_MS ${60 * 60_000}`);
+    expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(1);
+    const parsed = parseLedger(forge.comments()[0]?.body ?? "");
+    const heartbeat =
+      parsed?.kind === "ledger"
+        ? Date.parse(parsed.ledger.driver.heartbeat)
+        : 0;
+    expect(Date.now() - heartbeat).toBeLessThan(10 * 60_000);
+  });
+
+  it("reports a write that did not land and does not count it as renewed", async () => {
+    const forge = fakeForge([], { login: "drive-bot" });
+    writeFileSync(join(forge.dir, "fail-list-after"), "0");
+    const r = await probe(
+      forge,
+      `console.log("RENEWED " + (await d.ledgerRenewal("999")()));`,
+      { DRIVE_PR_LEDGER_DRIVER: driverEnv("clone-b") },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("RENEWED null");
+    expect(r.stderr).toContain("heartbeat write did not land");
+  });
+
+  it("stands down when another clone's newer claim refuses the write", async () => {
+    const forge = fakeForge(
+      [
+        forgeComment(
+          40,
+          ledgerBody(
+            ledgerFromState(freshState(999), {
+              generation: 2,
+              driver: {
+                actor: "wt-bbbbbbbbbbbbbbbb",
+                clone: "clone-b",
+                heartbeat: "2026-10-01T11:00:00.000Z",
+                state: "running",
+                position: 40,
+              },
+              narrative: [],
+              claims: [],
+            }),
+          ),
+        ),
+        forgeComment(50, claim("clone-c", 2)),
+      ],
+      { login: "drive-bot" },
+    );
+    const r = await probe(
+      forge,
+      `console.log("RENEWED " + (await d.ledgerRenewal("999")()));`,
+      { DRIVE_PR_LEDGER_DRIVER: driverEnv("clone-b", 40) },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("RENEWED 20");
+    expect(r.stderr).toContain("taken over");
+    expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(0);
+  });
+
+  it("stands down on a newer claim even when its own write did not land", async () => {
+    const forge = fakeForge(
+      [
+        forgeComment(
+          40,
+          ledgerBody(
+            ledgerFromState(freshState(999), {
+              generation: 2,
+              driver: {
+                actor: "wt-bbbbbbbbbbbbbbbb",
+                clone: "clone-b",
+                heartbeat: "2026-10-01T11:00:00.000Z",
+                state: "running",
+                position: 40,
+              },
+              narrative: [],
+              claims: [],
+            }),
+          ),
+        ),
+      ],
+      { login: "drive-bot" },
+    );
+    writeFileSync(
+      join(forge.dir, "fail-patch"),
+      JSON.stringify(forgeComment(50, claim("clone-c", 2))),
+    );
+    const r = await probe(
+      forge,
+      `console.log("RENEWED " + (await d.ledgerRenewal("999")()));`,
+      { DRIVE_PR_LEDGER_DRIVER: driverEnv("clone-b", 40) },
+    );
+    expectSpawnExit(r, 0);
+    expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(1);
+    expect(r.stderr).toContain("heartbeat write did not land");
+    expect(r.stdout).toContain("RENEWED 20");
+    expect(r.stderr).toContain("taken over");
+  });
+});

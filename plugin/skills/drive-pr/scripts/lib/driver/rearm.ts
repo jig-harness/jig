@@ -82,15 +82,25 @@ const REASON_MAX = 300;
 /** The length the answer bodies are cut to fit, beside every item's entry. */
 export const NOTICE_MAX = 15_000;
 
-/** The canonical arm command, in the drive's own mode, for a person to copy. */
+/**
+ * The arm command, in the drive's own mode, for a person to copy: with the
+ * drive's own pass command when `agent` holds it (the driver passes the
+ * command it runs, whose `--model` names the pass model), else the documented
+ * Claude Code one, to which `drive.ts` adds the configured model.
+ */
 export function armCommand(
   driveTs: string,
   pr: string,
   botsOnly: boolean,
   extra = "",
+  agent: readonly string[] = [],
 ): string {
   const mode = botsOnly ? " --bots-only" : "";
-  return `bun ${shellQuote(driveTs)} ${pr}${extra}${mode} -- claude -p "/jig:drive-pr${mode} ${pr}"`;
+  const pass =
+    agent.length > 0
+      ? agent.map(shellQuote).join(" ")
+      : `claude -p "/jig:drive-pr${mode} ${pr}"`;
+  return `bun ${shellQuote(driveTs)} ${pr}${extra}${mode} -- ${pass}`;
 }
 
 /** Whether a pass command is scoped to bot threads, as `drive.ts` checks it. */
@@ -180,7 +190,7 @@ export function admitQuotaRearm(
     "whose pass bills another account, or after the reset. --window-reopened only if a person",
     "knows the window has reopened: an agent never passes it.",
     `The wall belongs to account ${wall ?? "unrecorded"}. From a session whose pass bills another account:`,
-    `  ${armCommand(driveTs, pr, passBotsOnly(agent))}`,
+    `  ${armCommand(driveTs, pr, passBotsOnly(agent), "", agent)}`,
   ])
     console.error(line);
   return QUOTA_PARKED_EXIT;
@@ -281,13 +291,16 @@ export async function threadComments(
   }));
 }
 
-export async function prComments(pr: string): Promise<CommentLike[] | null> {
+export async function prComments(
+  pr: string,
+  repo = "{owner}/{repo}",
+): Promise<CommentLike[] | null> {
   const res = await ghCall(
     [
       "api",
       "--paginate",
       "--slurp",
-      `repos/{owner}/{repo}/issues/${pr}/comments?per_page=100`,
+      `repos/${repo}/issues/${pr}/comments?per_page=100`,
     ],
     { stderr: "pipe", env: ghRepoEnv() },
   );
@@ -332,24 +345,27 @@ async function answersTo(
 }
 
 /**
- * Every parked item with its answers once all of them are answered; `null`
- * when one is unanswered or a read failed (each logged).
+ * The answers to each parked item of pull request `pr`, the items still
+ * waiting, and of those the ones not every place an answer could be was read
+ * for (`unread`); `unreadable` names the item none of whose comments could be
+ * read. `repo` (`owner/name`) names the repository; without it, the current
+ * directory's.
  */
-async function answeredParks(
-  state: DriveState,
-): Promise<PendingVerdict[] | null> {
-  const conversation = await prComments(String(state.pr));
+export async function parkAnswers(
+  pr: number,
+  parked: readonly ParkedItem[],
+  repo?: string,
+): Promise<
+  | { answered: PendingVerdict[]; waiting: ParkedItem[]; unread: ParkedItem[] }
+  | { unreadable: string }
+> {
+  const conversation = await prComments(String(pr), repo);
   const answered: PendingVerdict[] = [];
   const waiting: ParkedItem[] = [];
   const unread: ParkedItem[] = [];
-  for (const item of state.parked) {
+  for (const item of parked) {
     const read = await answersTo(item, conversation);
-    if (read === null) {
-      console.error(
-        `re-arm: could not read the comments that would answer parked ${item.kind} ${item.key}; leaving every item parked.`,
-      );
-      return null;
-    }
+    if (read === null) return { unreadable: `${item.kind} ${item.key}` };
     if (read.answers.length > 0)
       answered.push({
         kind: item.kind,
@@ -362,6 +378,24 @@ async function answeredParks(
       if (!read.complete) unread.push(item);
     }
   }
+  return { answered, waiting, unread };
+}
+
+/**
+ * Every parked item with its answers once all of them are answered; `null`
+ * when one is unanswered or a read failed (each logged).
+ */
+async function answeredParks(
+  state: DriveState,
+): Promise<PendingVerdict[] | null> {
+  const found = await parkAnswers(state.pr, state.parked);
+  if ("unreadable" in found) {
+    console.error(
+      `re-arm: could not read the comments that would answer parked ${found.unreadable}; leaving every item parked.`,
+    );
+    return null;
+  }
+  const { answered, waiting, unread } = found;
   if (waiting.length === 0) return answered;
   // At the wide level, the unanswered items a provisional decision may take:
   // only once every place a person's answer could be was read, since an
@@ -451,13 +485,13 @@ export async function admitAnsweredParks(
     { stderr: "inherit", timeoutSec: helperTimeoutSeconds() },
   );
   if (res.code !== 0) {
-    // A deadline can end the call after its write landed: hand on whatever
-    // the state no longer parks (all of them or none).
-    const now = await readDriveState(pr);
-    const gone =
-      now === null
-        ? []
-        : fresh.filter((v) => !now.parked.some((p) => p.key === v.key));
+    // A deadline can end the call after its write landed.
+    const gone = unparkedAfterFailure(await readDriveState(pr), fresh);
+    if (gone === null)
+      return fail(
+        1,
+        `re-arm: drive-state.ts unpark exited ${res.code}, and the drive state cannot be read to tell whether the answered items were unparked; stopping with the answers kept in ${file}. Re-arm once the state reads.`,
+      );
     console.error(
       gone.length > 0
         ? `re-arm: drive-state.ts unpark exited ${res.code}, but the answered items are unparked; handing their answers on.`
@@ -537,6 +571,21 @@ function rearmNotice(
   ]
     .filter((part) => part !== "")
     .join("\n\n");
+}
+
+/**
+ * After an `unpark` that exited non-zero, the answered items the state
+ * `now` no longer parks (all of them or none), to hand on. `null` when the
+ * state could not be read: whether they were unparked is then unknown, and
+ * driving on could let a completed pass remove the only copy of answers
+ * whose parks are gone, so the arm stops.
+ */
+export function unparkedAfterFailure(
+  now: DriveState | null,
+  fresh: readonly PendingVerdict[],
+): PendingVerdict[] | null {
+  if (now === null) return null;
+  return fresh.filter((v) => !now.parked.some((p) => p.key === v.key));
 }
 
 function clip(text: string, max: number, why: string): string {

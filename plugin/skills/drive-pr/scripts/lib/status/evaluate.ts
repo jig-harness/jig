@@ -206,7 +206,7 @@ export interface EvaluateContext {
   botsOnly: boolean;
   headSync: boolean;
   localHead: string;
-  /** The witnessed head a killed pass left unpushed (`inherited-head.ts`). */
+  /** The witnessed head a pass left work on, unpushed (`inherited-head.ts`). */
   inheritedHead?: string;
   /** Absolute paths to the sibling scripts this decision spawns. */
   driveStateScript: string;
@@ -917,10 +917,9 @@ async function evaluateFresh(
 
   // Draftness is MEASURED AND PUBLISHED here, and gates nothing: a drive on a
   // draft proceeds as on a Ready PR (the module header says why exit 10 is
-  // retired). It is still validated as a BOOLEAN and INDETERMINATE otherwise,
-  // because `mark-ready.ts` decides from it whether the draft→Ready
-  // transition is owed, and an absent or null value read as `false` would
-  // skip that transition on the one PR that needs it.
+  // retired). It is still validated as a BOOLEAN, because `mark-ready.ts`
+  // decides from it whether the draft→Ready transition is owed, and an absent
+  // or null value read as `false` would skip it on the one PR that needs it.
   const draft = prJson.isDraft;
   if (typeof draft !== "boolean") {
     return terminal(
@@ -937,6 +936,7 @@ async function evaluateFresh(
     report.apiHead,
     ctx.localHead,
     ctx.inheritedHead ?? "",
+    str(prJson, "headRefName"),
   );
   if (sync === "lagging") {
     return terminal(
@@ -1654,7 +1654,7 @@ async function evaluateFresh(
   let roundReadyReason = `${liveThreads} unresolved thread(s) and ${liveSummary} unaddressed summary finding(s) on ${report.apiHead}`;
   if (stalledCheckRunNote !== "")
     roundReadyReason += ` — ${stalledCheckRunNote}`;
-  roundReadyReason += inheritedReason(sync, ctx.localHead);
+  roundReadyReason += inheritedReason(sync, ctx.localHead, ctx.inheritedHead);
   if (conflicting) {
     roundReadyReason += ` — NOTE: PR #${ctx.pr} conflicts with its base, so no pull_request CI will run on what this round pushes; merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} in as part of the round`;
     // Say, in the reason itself, how current these findings are. The reviewer

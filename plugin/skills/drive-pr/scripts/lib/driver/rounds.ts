@@ -11,6 +11,7 @@ import {
   MAILBOX_STOPPED_EXIT,
   MAILBOX_PAUSE_TIMEOUT_EXIT,
   SINGLE_INSTANCE_LOCK_EXIT,
+  TAKEN_OVER_EXIT,
 } from "./settings.ts";
 
 import { FinalCiWait } from "./../final-ci-wait.ts";
@@ -23,9 +24,9 @@ import type { DriveRoundContext } from "./round-context.ts";
 
 import { runRoundIteration } from "./round-step.ts";
 
-import { clearDeadlineRetries } from "./restart.ts";
+import { clearDeadlineRetries, prReadsClosed } from "./restart.ts";
 
-import { standDownOnNewerClaim } from "./ledger.ts";
+import { ledgerRenewal, standDownOnNewerClaim } from "./ledger.ts";
 
 interface DriverRoundOptions {
   pr: string;
@@ -143,7 +144,12 @@ export async function runDriverRounds({
       ? Number(pauseMaxRaw)
       : 1800;
   const mailboxOnly = async (): Promise<"clear" | "resumed" | number> => {
-    const outcome = await waitAtMailboxCheckpoint(mailboxDir, pr, pauseMaxSec);
+    const outcome = await waitAtMailboxCheckpoint(
+      mailboxDir,
+      pr,
+      pauseMaxSec,
+      ledgerRenewal(pr),
+    );
     switch (outcome) {
       case "clear":
       case "resumed":
@@ -159,6 +165,8 @@ export async function runDriverRounds({
         return SINGLE_INSTANCE_LOCK_EXIT;
       case "unreadable":
         return 1;
+      case "taken-over":
+        return TAKEN_OVER_EXIT;
     }
   };
   // The claim check only before a pass, not on every checkpoint: a quota
@@ -200,6 +208,9 @@ export async function runDriverRounds({
     passNotice: "",
     carriedNotice: firstPassNotice,
     inheritedHead: "",
+    unpushedNotice: "",
+    uncommittedMeasured: null,
+    uncommittedBeforePass: null,
   };
   for (;;) {
     {
@@ -212,11 +223,20 @@ export async function runDriverRounds({
       );
       if (stage === "continue") continue;
       if (stage === null) continue;
-      // The drive is over once it converged or the PR closed: its
-      // pass-deadline restarts stop counting against a later drive.
-      if (!dryRun && (stage === 0 || stage === 5))
-        await clearDeadlineRetries(pr);
-      return stage;
+      return dryRun ? stage : await endDrive(pr, stage);
     }
   }
+}
+
+/**
+ * The drive is over once it converged or the PR closed: its pass-deadline
+ * restarts stop counting against a later drive. A stop 5 clears the count only
+ * when a read confirms the closure, since a pass can exit 5 on its own. A count
+ * that could not be cleared ends the drive as a failure, so it is not reported
+ * over as an ordinary end.
+ */
+async function endDrive(pr: string, stage: number): Promise<number> {
+  if (stage !== 0 && stage !== 5) return stage;
+  if (stage === 5 && !(await prReadsClosed(pr))) return stage;
+  return (await clearDeadlineRetries(pr)) ? stage : 1;
 }

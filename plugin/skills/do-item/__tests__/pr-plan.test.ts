@@ -302,6 +302,7 @@ describe("pr-plan.ts open", () => {
     const r = plan("open", "--issue", "ENG-1", "--json");
     expect(r.code).toBe(0);
     const p = JSON.parse(r.stdout);
+    expect(p.remote).toBe("origin");
     expect(p.base).toBe("main");
     expect(p.createArgs).toEqual(["--base", "main", "--draft"]);
     expect(p.stack).toEqual({
@@ -313,6 +314,25 @@ describe("pr-plan.ts open", () => {
     expect(p.body.issueLink).toBe("Closes ENG-1");
     expect(p.size.changedLines).toBe(5);
     expect(p.afterCreate).toEqual([]);
+  });
+
+  it("measures against, and names, the remote repository.remote names", () => {
+    writeFileSync(
+      overlayFile,
+      "repository:\n  base_branch: main\n  remote: upstream\nissue_tracker:\n  adapter: linear\n",
+    );
+    commitLines("a.txt", 3);
+    // Only `upstream` knows the trunk: a plan read through `origin` would
+    // find no base to measure against.
+    git("update-ref", "refs/remotes/upstream/main", "HEAD~1");
+    git("update-ref", "-d", "refs/remotes/origin/main");
+    const r = plan("open", "--issue", "ENG-1");
+    expectSpawnExit(
+      { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+      0,
+    );
+    expect(r.stdout).toContain("remote:      upstream");
+    expect(r.stdout).toContain("size:        3 changed lines");
   });
 
   it("links a GitHub issue as #<n>", () => {

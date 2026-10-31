@@ -7,7 +7,9 @@
  *
  * Across clones no process can be stopped and no lock is shared, so the
  * ledger arbitrates. Its driver heartbeat is the time of its last write
- * (every round boundary, park and takeover); a heartbeat older than the lease
+ * (every round boundary, park and takeover, and through a quota sleep or a
+ * mailbox pause at entry and every quarter of the shortest lease window,
+ * `ledgerRenewal`); a heartbeat older than the lease
  * window, the doctor's stall threshold (`stallThresholdMs`), is what admits
  * a takeover from another clone. A driver that does not continue its own
  * clone's ledger (a takeover, a pull request with no ledger yet, another
@@ -19,7 +21,8 @@
  * its next check when a lagging read hid it. A claim whose owner never wrote
  * the ledger past its generation lapses after the lease window, and a retry
  * from the same clone drives by that clone's earlier claim. Every driver
- * reads the claims at each round boundary and before each pass, and exits
+ * reads the claims at each round boundary, before each pass and after each
+ * heartbeat renewal through a wait, and exits
  * `TAKEN_OVER` when one in force from another clone is newer than its own
  * position. The arbitration holds only once every driver of a pull request
  * runs a version that reads the ledger: an older driver neither reads a
@@ -37,7 +40,7 @@ import { hostname } from "node:os";
 import { ExitError, fail } from "./../cli.ts";
 import { removeDriverRecord, writeDriverRecord } from "./../ledger-stop.ts";
 import { resolveStateDir } from "./../state/store.ts";
-import { stallThresholdMs } from "./../doctor.ts";
+import { STALL_THRESHOLD_MIN_DEFAULT, stallThresholdMs } from "./../doctor.ts";
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 import { resolveActor } from "./../state/actor.ts";
 import {
@@ -443,14 +446,55 @@ export async function standDownOnNewerClaim(
   return TAKEN_OVER_EXIT;
 }
 
-/** Write the ledger now (after a takeover), through the handoff command. */
-export async function mirrorNow(pr: string): Promise<void> {
-  if (ledgerDriverFromEnv() === null) return;
-  await run(tsArgv(driveState, ["handoff", pr]), {
+/**
+ * Write the ledger now (after a takeover, through a wait), through the
+ * handoff command: its exit, `0` with no driver to write for.
+ */
+export async function mirrorNow(pr: string): Promise<number> {
+  if (ledgerDriverFromEnv() === null) return 0;
+  const res = await run(tsArgv(driveState, ["handoff", pr]), {
     stdout: "ignore",
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
   });
+  return res.code;
+}
+
+/** How soon a renewal whose write did not land is tried again. */
+const LEDGER_RETRY_MS = 5 * 60_000;
+
+/**
+ * The longest a waiting driver goes between ledger writes: a quarter of the
+ * shortest lease window any clone applies. Each clone reads its own
+ * `DRIVE_PR_STALL_MIN`, floored at `STALL_THRESHOLD_MIN_DEFAULT`, so only
+ * that floor bounds every reader, whatever this clone's own setting.
+ */
+export const LEDGER_RENEW_MS = (STALL_THRESHOLD_MIN_DEFAULT * 60_000) / 4;
+
+/**
+ * The heartbeat renewal for one wait (a quota sleep, a mailbox pause): its
+ * first call writes the ledger, since the wait may begin with a heartbeat
+ * already aged by a long pass, and later calls write once `LEDGER_RENEW_MS`
+ * has passed since the last, or `LEDGER_RETRY_MS` after a write that did not
+ * land. `handoff` exits `0` on a write its guards refused too, so each write,
+ * landed or not, is followed by the claims: `TAKEN_OVER_EXIT` when another
+ * clone's newer claim beats this driver, which the wait returns; otherwise
+ * `null`.
+ */
+export function ledgerRenewal(pr: string): () => Promise<number | null> {
+  let dueAt = Number.NEGATIVE_INFINITY;
+  return async () => {
+    if (performance.now() < dueAt) return null;
+    const code = await mirrorNow(pr);
+    const landed = code === 0;
+    dueAt = performance.now() + (landed ? LEDGER_RENEW_MS : LEDGER_RETRY_MS);
+    if (!landed) {
+      console.error(
+        `ledger: PR #${pr}'s heartbeat write did not land (drive-state.ts handoff exited ${code}); trying again in ${minutes(LEDGER_RETRY_MS)} minute(s).`,
+      );
+    }
+    return await standDownOnNewerClaim(pr);
+  };
 }
 
 /**
@@ -461,12 +505,13 @@ export async function mirrorNow(pr: string): Promise<void> {
  * A stop by signal or by `drives.ts --stop` cannot write it here: once
  * shutdown begins the process starts no new command (`shared/cleanup.ts`).
  * `drives.ts` writes it from outside instead (`lib/ledger-stop.ts`), from
- * the driver record written at arm, which this removes once the stopped
- * ledger is written. Nor is it written while the drive retains its locks
- * (`held` emptied: a pass whose termination was not witnessed may still
- * act): the ledger keeps naming this driver running, its heartbeat ages
- * toward the lease window, and the record stays for that recovery. The
- * same holds when the stop cannot be recorded in the drive state first.
+ * the driver record written at arm and marked released as the PR's lock is
+ * released, which this removes once the stopped ledger is written. Nor is
+ * it written while the drive retains its locks (`held` emptied: a pass
+ * whose termination was not witnessed may still act): the ledger keeps
+ * naming this driver running, its heartbeat ages toward the lease window,
+ * and the record stays unmarked, so no recovery marks it stopped either.
+ * The same holds when the stop cannot be recorded in the drive state first.
  */
 export function ledgerSettlement(
   pr: string,

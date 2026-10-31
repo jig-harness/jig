@@ -57,6 +57,7 @@
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { remoteName } from "../../../shared/consumer.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { fail, isDigits, runMain } from "./lib/cli.ts";
 import {
@@ -143,10 +144,11 @@ async function siblingCommitsOf(
  * commits to this branch's own authored churn. Open PRs have no merge commit
  * yet, so `origin/<base>`'s current tip is the only available referent — and is
  * not yet wrong, since there is no "as of merge" snapshot to fall short of.
+ * The remote is `repository.remote`, else `origin`.
  */
-function baseSnapshotOf(sample: PrSample): string {
+function baseSnapshotOf(sample: PrSample, remote: string): string {
   if (sample.mergeCommitOid !== "") return `${sample.mergeCommitOid}^1`;
-  return sample.baseRefName === "" ? "" : `origin/${sample.baseRefName}`;
+  return sample.baseRefName === "" ? "" : `${remote}/${sample.baseRefName}`;
 }
 
 /**
@@ -156,8 +158,9 @@ function baseSnapshotOf(sample: PrSample): string {
  */
 async function resolveSiblingCommitOids(
   sample: PrSample,
+  remote: string,
 ): Promise<ReadonlySet<string>> {
-  const base = baseSnapshotOf(sample);
+  const base = baseSnapshotOf(sample, remote);
   const ancestry = new Map<string, boolean | null>();
   const siblings = new Map<string, ReadonlySet<string>>();
   for (const c of sample.commits) {
@@ -342,7 +345,8 @@ const defaultDeps: ReportDeps = {
   samplePr,
   durableRounds,
   durableAutonomy,
-  resolveSiblingCommitOids,
+  resolveSiblingCommitOids: (sample) =>
+    resolveSiblingCommitOids(sample, remoteName()),
   resolveEscapeBaseline,
   write: (s: string) => {
     process.stdout.write(s);

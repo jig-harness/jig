@@ -14,8 +14,13 @@ each criterion met with evidence, deferred to a filed item, or not
 applicable. The delivery loop writes no spec and dictates no format.
 
 This is the design of [plan.md](plan.md) item 29, following the
-[spec ecosystems research note](spec-ecosystems-research.md). Nothing of it
-is built. The stance it keeps is M6's: the item is the unit of work, and
+[spec ecosystems research note](spec-ecosystems-research.md). The resolver
+with the `body` adapter, the conformance test every adapter passes and the
+`## Acceptance` section's renderer (step 1 of the build order) are built:
+[`plugin/shared/spec/`](../plugin/shared/spec/resolve.ts), configured by
+`specs.adapters` and `specs.body_section`, and `do-item` prints the result
+after it fetches an item. The repository adapters, `do-item`'s use of the
+result, the required check and the rest remain open. The stance it keeps is M6's: the item is the unit of work, and
 what the item links is the repository's own.
 
 ## The rule
@@ -46,7 +51,7 @@ returns and the repository root, and prints one result:
   "requirements": [{"id": "export-csv", "key": "openspec/changes/add-export/#export-csv", "text": "…", "source": 0}],
   "acceptance": [{"id": "AC-1", "key": "openspec/changes/add-export/#AC-1", "text": "…", "requirement": "openspec/changes/add-export/#export-csv", "source": 0}],
   "tasks": [{"id": "1.2", "key": "openspec/changes/add-export/#1.2", "text": "…", "done": false, "source": 0}],
-  "unresolved": ["https://…/design-doc (no adapter)"]
+  "unresolved": ["https://…/design-doc (web link, not fetched)"]
 }
 ```
 
@@ -113,10 +118,14 @@ Each adapter reads the tool's own machine-readable surface where it has one
 GSD's and Compound Engineering's frontmatter, BMAD's index, Tessl's
 frontmatter) and falls back to the text's own id conventions (`FR-001`,
 `_Requirements: 1.1_`, `### Requirement:` headings, numbered task
-checkboxes). An adapter is a read-only function from a reference to the
-three lists; the family lives in `plugin/shared/spec/adapters/`, one file
-each, with a fixture folder per layout and a conformance test every adapter
-passes. The `body` adapter is the one every repository has.
+checkboxes). An item with no id gets one derived from its text: its kind
+(`req`, `ac`, `task`) and the first eight hexadecimal digits of the SHA-256
+of the text, lowercased with white space collapsed, so it stays the same
+while the text does, whatever is added or moved around it. An adapter is
+a read-only function from a reference to the three lists; the family
+lives in `plugin/shared/spec/adapters/`, one file each, with a fixture
+folder per layout and a conformance test every adapter passes. The
+`body` adapter is the one every repository has.
 
 ### Where the result is used
 

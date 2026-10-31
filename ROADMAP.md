@@ -9,17 +9,34 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ## Now
 
+### 33. The dispatcher: a tick that starts the execution line's stages
+
+A small program on the machine that runs the agent sessions starts each
+stage of the execution line that should be running and is not: a session
+that picks up an item assigned to the team's
+[factory identity](GLOSSARY.md), a restart of a review drive stopped by a
+usage limit (on another account) or by a question a person has answered,
+and the follow-up after a merge. It runs every few minutes, reports what it
+would start and why before it is allowed to start anything, caps the
+sessions per subscription account, and reaches a person on their phone for
+the decisions that are theirs. It never merges. Every finished session
+leaves a row in an [outcome log](GLOSSARY.md) that one dashboard filters
+by time, repository, stage, account and outcome; a session that falls
+behind what its stage should achieve is reported as
+[drifting](GLOSSARY.md), never corrected on its own; and the one prompt
+it sends a session by itself is "continue", once a usage limit has reset.
+Orca is its first session runtime
+([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
+with others through the same interface.
+
 ### 3. The kickoff family
 
 A `kickoff` skill that starts a new repository from nothing: requirements,
 architecture, an adversarial review of both, the repository and its
 [scaffolding](GLOSSARY.md), implementation plans and the first tracker
 issues. It replaces the fixed starter kit the
-[greenfield guide](adoption/greenfield.md) uses today. With it come
-`red-team`, which reviews a requirements or architecture document from
-several hostile points of view in a fresh session; plan review inside
-`review`; a `docs` skill that runs [M4](modules/M4-docs-governance/README.md)'s
-documentation checks; and `upgrade-deps`, which makes grouped dependency
+[greenfield guide](adoption/greenfield.md) uses today. With it come plan
+review inside `review`; and `upgrade-deps`, which makes grouped dependency
 upgrades an update bot cannot make alone and drives them to merge.
 
 ### 7. The Notion store, verified against Notion
@@ -61,9 +78,11 @@ keeps a person merging ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
 A few values are still fixed in the skills rather than read from
 [configuration](plugin/CONFIGURATION.md): the review skill's follow-up step
 calls Linear directly with fixed label groups, so a repository on GitHub
-Issues, the default tracker, cannot yet defer a review finding, and the drive assumes a git remote
-named `origin`. They move into configuration, and the follow-up step onto
-the tracker interface, so it files on every tracker Jig supports.
+Issues, the default tracker, cannot yet defer a review finding, and some
+skills outside the delivery loop still assume a git remote named `origin`
+where the rest read [`repository.remote`](plugin/CONFIGURATION.md#repository). They move
+into configuration, and the follow-up step onto the tracker interface, so it
+files on every tracker Jig supports.
 
 ### 12. More tracker adapters
 
@@ -79,24 +98,21 @@ watchdogs for what is deployed (M10, M11), an acceptance stage (M6), a skill
 that runs M7's post-merge stage in any repository, and a generator for the
 model roster (M0).
 
-### 20. `code-stats`: test-runner configuration and audit evidence
+### 20. `code-stats`: a reference set and audit evidence
 
-The [code-stats skill](plugin/skills/code-stats/README.md) learns which
-files are tests from the test runner's own configuration (jest, vitest,
-pytest, Gradle, Maven), is checked against a recorded set of public
-repositories in several languages, and gives
+The [code-stats skill](plugin/skills/code-stats/README.md) is checked
+against a recorded set of public repositories in several languages, and gives
 [`jig:audit`](plugin/skills/audit/README.md) measured evidence: the test to
 code ratio, the generated share and the size of the agent scaffolding.
 
-### 21. `changelog` skill: several artifacts, and the whole file checked
+### 21. `changelog` skill: several artifacts
 
 A repository that releases several things at their own versions, such as a
 monorepo's packages, keeps a changelog and a version for each with the
 [`changelog` skill](plugin/skills/changelog/README.md), as
 [M16](modules/M16-releases-versions/README.md) asks; today the skill keeps
-one per repository. The skill also checks the whole changelog against the
-rules of its format, and gets workflow templates for CI providers other than
-GitHub.
+one per repository. The skill also gets workflow templates for CI providers
+other than GitHub.
 
 ### 23. Seed review lenses
 

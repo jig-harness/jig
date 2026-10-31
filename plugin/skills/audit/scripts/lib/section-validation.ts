@@ -1,8 +1,12 @@
 import { parseDeclaration } from "../../../../gc/config.ts";
+import { dispatchSection } from "../../../../dispatch/lib/section.ts";
+import { parkClasses, resolveAutonomy } from "../../../../shared/autonomy.ts";
 import { ExitError } from "../../../../shared/cli.ts";
 import { isMapping as isRecord } from "../../../../shared/config-layers.ts";
 import { parseReviewConfig } from "../../../../shared/consumer.ts";
 import { swallow } from "../../../../shared/errors.ts";
+import { parseSpecsConfig } from "../../../../shared/spec/config.ts";
+import { ADAPTERS } from "../../../../shared/spec/registry.ts";
 import { parseTrackerLabels } from "../../../../shared/tracker-labels.ts";
 import { adrConfig } from "../../../adr/scripts/locate.ts";
 import {
@@ -17,6 +21,7 @@ import {
   settingsRequirement,
   validSettings,
 } from "../../../design-brief-builder/scripts/contracts.ts";
+import { parseDocsSettings } from "../../../docs/scripts/lib/settings.ts";
 import { parseRouting } from "../../../do-item/scripts/lib/routing.ts";
 import { parseTrackerConfig } from "../../../do-item/scripts/lib/tracker/config.ts";
 import { parseWorkTypes } from "../../../do-item/scripts/lib/work-types.ts";
@@ -118,11 +123,27 @@ export function skillValidation(
   attempt("do-item (routing)", () =>
     parseRouting(config, parseWorkTypes(config)),
   );
+  attempt("do-item (spec resolver)", () =>
+    parseSpecsConfig(
+      config.specs,
+      ADAPTERS.map((a) => a.name),
+    ),
+  );
   attempt("resolve-review-comments", () => parseReviewConfig(config.review));
   attempt("drive-pr (severity formats)", () => {
     const review = config.review;
     if (typeof review === "object" && review !== null && !Array.isArray(review))
       parseSeverityFormats((review as Config).severity_formats);
+  });
+  attempt("autonomy (level, ceiling, park classes)", () => {
+    const layered = {
+      values: config,
+      layers: [{ name: "repository" as const, source: path, values: config }],
+      repositoryPath: path,
+      hasRepository: true,
+    };
+    resolveAutonomy(layered, {});
+    parkClasses(layered);
   });
   attempt("adr", () => adrConfig(path));
   attempt("decide, explain (sheets)", () => sheetRepositories(config, root));
@@ -132,6 +153,8 @@ export function skillValidation(
   );
   attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));
   attempt("gc", () => parseDeclaration(config.gc, root));
+  attempt("dispatch", () => dispatchSection(config));
+  attempt("docs", () => parseDocsSettings(config.docs, root));
   attempt("design-brief-builder (handback)", () => {
     const handback = at(config, "design_brief.handback");
     if (handback !== undefined && !validSettings(handback))

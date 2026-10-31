@@ -24,7 +24,7 @@ import { resolveStateDir, worktreeLockName } from "./../state/store.ts";
 
 import { resolveMailboxDir } from "./../state/mailbox.ts";
 
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { startDriverLog } from "./log.ts";
 
@@ -33,6 +33,7 @@ import { resolveAccountIdentity } from "./../identity.ts";
 import type { ClaimDiag } from "./../claim.ts";
 
 import { type DriveLock, acquire, release } from "./locks.ts";
+import { markDriverRecordReleased } from "./../ledger-stop.ts";
 
 import {
   installDriverLifecycle,
@@ -54,6 +55,8 @@ import { runDriverRounds } from "./rounds.ts";
 
 import { attachForDrive } from "./../attach.ts";
 
+import { clearDeadlineRetries } from "./restart.ts";
+
 import {
   decideTakeover,
   explainingRefusal,
@@ -65,6 +68,14 @@ import { pickUpDrive } from "./takeover-complete.ts";
 import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
 import { armLedger, ledgerIdentity, ledgerSettlement } from "./ledger.ts";
+
+import {
+  type EffectivePass,
+  effectivePass,
+  PassModelUsageError,
+  passModelLine,
+  withoutModel,
+} from "./../pass-model.ts";
 
 import type { DriveState } from "./../state/schema.ts";
 
@@ -80,6 +91,21 @@ import type { DriveState } from "./../state/schema.ts";
  * Refused rather than rewritten, because the pass names the PR in its own
  * argv and drive-status.ts compares that against $DRIVE_PR_TARGET verbatim.
  */
+/**
+ * Release a lock the driver still holds. Releasing the PR's marks the
+ * driver record released first: the evidence `drives.ts` needs to mark the
+ * ledger stopped, which a lock retained over an unwitnessed pass never gives.
+ */
+function releaseHeld(
+  lock: DriveLock,
+  prLock: DriveLock,
+  pr: string,
+  started: string,
+): void {
+  if (lock === prLock) markDriverRecordReleased(dirname(lock.dir), pr, started);
+  release(lock);
+}
+
 function requireCanonicalPr(pr: string): void {
   if (!isDigits(pr)) fail(2, `drive.ts: PR must be a number (got '${pr}')`);
   const canonicalPr = BigInt(pr).toString();
@@ -115,8 +141,13 @@ async function stateUnderLocks(
 export async function main(): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
   let { pr, keepDraft, handoffAt } = options;
-  const { maxRounds, dryRun, botsOnly, passTimeout, forward, agent } = options;
+  const { maxRounds, dryRun, botsOnly, passTimeout, forward } = options;
   const { takeOver, windowReopened } = options;
+  // The pass command as it runs, its model decided (`pass-model.ts`): every
+  // later use of it — the rounds, a re-arm or takeover command printed for a
+  // person — carries that model.
+  const pass = decidePass(options.agent, options.passModel);
+  const agent = pass.argv;
 
   const maxRoundsN = resolveMaxRounds(maxRounds);
   const deadlineRetryBudget = resolvePassDeadlineRetries();
@@ -174,6 +205,7 @@ export async function main(): Promise<number> {
   // mark-Ready outcomes, and the terminal state.
   const logPath = join(stateDir, `drive-pr-${pr}.log`);
   startDriverLog(logPath);
+  console.error(passModelLine(pass));
 
   // Everything that can refuse from the arguments and the durable state runs
   // before any lock is taken and before a takeover stops anyone: the pass
@@ -181,7 +213,7 @@ export async function main(): Promise<number> {
   // check is repeated once the locks are held (`stateUnderLocks`).
   const state = await readDriveState(pr);
   const refusal =
-    validatePassCommand(explicitPr, agent, botsOnly) ??
+    validatePassCommand(explicitPr, withoutModel(options.agent), botsOnly) ??
     quotaRefusal(state, agent, windowReopened);
   if (refusal !== undefined) return refusal;
 
@@ -217,6 +249,7 @@ export async function main(): Promise<number> {
     log: logPath,
     started: new Date().toISOString(),
     account,
+    model: pass.model,
   };
   const treeLock: DriveLock = {
     dir: join(stateDir, await worktreeLockName()),
@@ -240,13 +273,15 @@ export async function main(): Promise<number> {
   const hold = async (lock: DriveLock): Promise<void> => {
     // A refusal names the holder's doctor verdict, and the takeover command
     // when a takeover would be admitted.
-    await explainingRefusal(lock, driveTs, botsOnly, () => acquire(lock, pr));
+    await explainingRefusal(lock, driveTs, botsOnly, { pr, agent }, () =>
+      acquire(lock, pr),
+    );
     held.push(lock);
     lockResources.use(
       registerCleanup(() => {
         driverRuntime.driverLogRotates = false;
         // An unwitnessed pass termination deliberately abandons these locks.
-        if (held.includes(lock)) release(lock);
+        if (held.includes(lock)) releaseHeld(lock, prLock, pr, diag.started);
       }),
     );
   };
@@ -255,7 +290,7 @@ export async function main(): Promise<number> {
     pr,
     { tree: treeLock.dir, pr: prLock.dir },
     () => hold(treeLock),
-    armCommand(driveTs, pr, botsOnly),
+    armCommand(driveTs, pr, botsOnly, "", agent),
   );
   // Renewal starts the moment the first lock is held, and runs on its own
   // timer for the rest of the drive — a claim must stay fresh DURING the
@@ -263,18 +298,11 @@ export async function main(): Promise<number> {
   // PR's lock joins it once taken.
   startHeartbeat(held, agent);
   await hold(prLock);
-  // Once both the tree and the PR are ours: the tree is put on the PR's head
-  // (its branch, or the head commit detached when another working tree holds
-  // the branch), so every round's commit lands on what the attach left, no
-  // other driver's tree is ever moved, and no second driver of the PR, in
-  // another tree, attaches beside this one.
-  await attachForDrive(pr, dryRun);
-  createDriverRegistry(held);
-  lockResources.use(driverStopCompletionCleanup(held));
-  driverRuntime.driverLogRotates = true;
 
   // The SESSION every drive-state mutation of this drive belongs to, exported
-  // once the locks are actually held (`lease.ts`). This driver plus
+  // once the locks are actually held and before the first such mutation (the
+  // attach's own state write and its restart-count clear), so no write of this
+  // drive takes a sessionless lease that outlives it (`lease.ts`). This driver plus
   // every round's pass — each a separate agent process, each with an agent pid
   // of its own — must count as ONE session, or round 2's pass would read round
   // 1's lease as a stranger's; and the session has to stay live for the WHOLE
@@ -294,6 +322,24 @@ export async function main(): Promise<number> {
   // `diag.started` as the instance token when correlating a worktree lock to
   // a PR lock; `drives.ts` compares the same value against this variable.
   process.env.DRIVE_PR_SESSION_STARTED = diag.started;
+
+  // Once both the tree and the PR are ours: the tree is put on the PR's head
+  // (its branch, or the head commit detached when another working tree holds
+  // the branch), so every round's commit lands on what the attach left, no
+  // other driver's tree is ever moved, and no second driver of the PR, in
+  // another tree, attaches beside this one. A PR found closed here ends the
+  // drive as the round loop's PR_NOT_OPEN does, restart count included, and
+  // as a failure (exit 1) when that count could not be cleared.
+  await attachForDrive(pr, dryRun, async () => {
+    if (!(await clearDeadlineRetries(pr)))
+      fail(
+        1,
+        `drive.ts: PR #${pr} is not open; its restart count still stands`,
+      );
+  });
+  createDriverRegistry(held);
+  lockResources.use(driverStopCompletionCleanup(held));
+  driverRuntime.driverLogRotates = true;
 
   // The TREE this drive drives, so a pass measures local HEAD there rather
   // than wherever its shell happens to stand. A pass is an agent with a
@@ -398,7 +444,7 @@ export async function main(): Promise<number> {
     ledger,
     plan,
     current,
-    armCommand(driveTs, pr, botsOnly, " --take-over"),
+    armCommand(driveTs, pr, botsOnly, " --take-over", agent),
   );
   // From here the ledger says this driver is running, so whatever ends the
   // drive (an exit, a thrown refusal, a stop) marks it stopped.
@@ -451,6 +497,18 @@ export async function main(): Promise<number> {
     firstPassNotice,
   });
   return await settlement.done(roundsExit);
+}
+
+/** The pass command with its model decided; a refused `--pass-model` exits 2, an unreadable setting 1. */
+function decidePass(agent: string[], flag: string | undefined): EffectivePass {
+  try {
+    return effectivePass(agent, flag);
+  } catch (e) {
+    return fail(
+      e instanceof PassModelUsageError ? 2 : 1,
+      `drive.ts: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
 }
 
 /** Refuse a pass whose declared target or thread scope differs from the driver. */

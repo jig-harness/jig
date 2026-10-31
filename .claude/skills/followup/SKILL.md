@@ -9,10 +9,6 @@ allowed-tools:
   - Edit
   - Write
   - Bash
-  - mcp__linear__get_issue
-  - mcp__linear__list_issues
-  - mcp__linear__save_issue
-  - mcp__linear__save_comment
 ---
 
 # Followup: what a merged Jig pull request still owes
@@ -51,8 +47,10 @@ gh pr view "$PR" --json number,title,state,mergedAt,mergeCommit,baseRefName,head
   nothing.
 - `SHA` is `mergeCommit.oid`. Jig squash-merges, so `SHA^1` is `main` just
   before the merge, and `git diff --name-only SHA^1 SHA` is the change.
-- The tracker item: `Closes <KEY>-<n>` in the body, else the key in the
-  branch name. Leave it empty when neither names one.
+- The tracker item: `Closes #<n>` in the body, else the issue number the
+  branch name carries (`<n>-<slug>`). Leave it empty when neither names one.
+  `Part of #<n>` names the epic a step belongs to, not the item the merge
+  closes.
 - Fetch first: `git fetch --no-tags origin main`. Leave this clone's tags
   alone: a fetch that updates them refuses a tag origin holds elsewhere
   ("would clobber existing tag"), and [B](#b-tagging-the-release) reads
@@ -67,7 +65,9 @@ is.
 ### A. The tracker item and deferred findings
 
 1. **Status and closing comment**: `do-item`'s post-merge status rule decides
-   between done and ops-pending. The closing comment carries the pull
+   between done and ops-pending. An item that is itself a roadmap epic
+   (the `roadmap` flag), worked directly, stays open while its plan item is
+   still in `design/plan.md`, as in step 3. The closing comment carries the pull
    request's `## Out-of-tree follow-ups` section as unchecked boxes, and the
    merge commit.
 2. **Deferred findings**: every `**deferred**` reply was meant to become a
@@ -86,7 +86,11 @@ is.
 
    File what is missing with `defer-batch.ts`, as the deferral protocol says.
 3. **The epic**: when the item has a parent, `do-item`'s parent-status rule
-   (`reconcile_parent_status.ts`) decides its status.
+   (`reconcile_parent_status.ts`) decides its status. It sees only the
+   children's states, so for an epic that also carries the `roadmap` flag
+   check first that its plan item has left `design/plan.md`
+   ([label-taxonomy.yaml](../../../label-taxonomy.yaml)). While the item is
+   still there, the epic stays open whatever its children say.
 
 Without a tracker item, 1 and 3 are NOT OWED; 2 still applies.
 

@@ -61,6 +61,7 @@ import { definedFields } from "../../../../shared/defined-fields.ts";
  */
 
 import { drivenBranchName } from "./driven-branch.ts";
+import { consumerRoot, remoteName } from "../../../../shared/consumer.ts";
 import { gitCallTimeoutSeconds, readTimeoutEnv } from "./proc.ts";
 import { repoOfUrl } from "./repo-url.ts";
 
@@ -205,15 +206,16 @@ function pathCollisions(prSet: Set<string>, baseSet: Set<string>): string[] {
 }
 
 /**
- * Does the local `origin` remote's FETCH url actually point at the
- * repository this PR belongs to? `probeBaseDrift` always fetches
- * `origin +refs/heads/<base>:refs/remotes/origin/<base>` — correct whenever
- * `origin` IS that repository, which is every ordinary same-repo clone, but
- * silently wrong whenever it is not: a fork PR driven from a clone of the
- * fork (`origin` = the fork, not the PR's own repository), or the `gh`/git
- * disagreement `guarded-push.ts`'s own head-side guard exists for
+ * Does the drive's remote (`repository.remote`, else `origin`; `<remote>`
+ * below) actually FETCH from the repository this PR belongs to?
+ * `probeBaseDrift` always fetches
+ * `<remote> +refs/heads/<base>:refs/remotes/<remote>/<base>` — correct
+ * whenever `<remote>` IS that repository, which is every ordinary same-repo
+ * clone, but silently wrong whenever it is not: a fork PR driven from a clone
+ * of the fork (`<remote>` = the fork, not the PR's own repository), or the
+ * `gh`/git disagreement `guarded-push.ts`'s own head-side guard exists for
  * (`$GH_REPO`, `gh repo set-default`). `git fetch` cannot detect this itself
- * — it happily writes `refs/remotes/origin/<base>` from whatever `origin`
+ * — it happily writes `refs/remotes/<remote>/<base>` from whatever `<remote>`
  * answers with, under the name the caller asked for, so a wrong-repository
  * fetch reads exactly like a right one. This check has to run BEFORE that
  * fetch, using the identical `owner/name` extraction `guarded-push.ts` checks
@@ -226,25 +228,27 @@ function pathCollisions(prSet: Set<string>, baseSet: Set<string>): string[] {
  * against, so both callers read it the same way: `gh repo view --json
  * owner,name` (`base-sync.ts`'s own call, or `drive-status.ts`'s pre-existing
  * one). This function does no `gh` I/O of its own, keeping this module's
- * dependency surface local-git-only.
+ * dependency surface local-git-only. `remote` defaults to the configured
+ * remote of the repository at `root`.
  */
-export async function verifyOriginIsPrRepo(
+export async function verifyRemoteIsPrRepo(
   git: GitRunner,
   root: string,
   expectedRepo: string,
   env?: Record<string, string | undefined>,
+  remote: string = remoteName(consumerRoot(root)),
 ): Promise<{ ok: true } | { ok: false; why: string }> {
-  const urlRes = await git(["-C", root, "remote", "get-url", "origin"], {
+  const urlRes = await git(["-C", root, "remote", "get-url", remote], {
     timeoutSec: gitCallTimeoutSeconds(),
     ...definedFields({ env }),
   });
   if (urlRes.code !== 0 || urlRes.stdout.trim() === "") {
-    return { ok: false, why: "no fetch URL for the remote 'origin'" };
+    return { ok: false, why: `no fetch URL for the remote '${remote}'` };
   }
   const url = urlRes.stdout.trim();
   const actual = repoOfUrl(url);
   // GitHub repository paths are case-insensitive (and ASCII-only, so a plain
-  // `toLowerCase()` is length-preserving and safe here) — an `origin` whose
+  // `toLowerCase()` is length-preserving and safe here) — a remote whose
   // configured URL casing differs from `gh`'s canonical `owner/name` is the
   // SAME repository, not a mismatch.
   if (actual === "" || actual.toLowerCase() !== expectedRepo.toLowerCase()) {
@@ -252,8 +256,8 @@ export async function verifyOriginIsPrRepo(
       ok: false,
       why:
         actual === ""
-          ? `cannot parse an owner/name out of origin's fetch URL (${url})`
-          : `'origin' fetches ${actual} (${url}), not this PR's own repository ${expectedRepo} — refusing to fetch or measure its base branch from the wrong history`,
+          ? `cannot parse an owner/name out of ${remote}'s fetch URL (${url})`
+          : `'${remote}' fetches ${actual} (${url}), not this PR's own repository ${expectedRepo} — refusing to fetch or measure its base branch from the wrong history`,
     };
   }
   return { ok: true };
@@ -261,7 +265,7 @@ export async function verifyOriginIsPrRepo(
 
 /**
  * Is this checkout actually the PR's own head — not merely a descendant of
- * it? `origin` fetching the right REPOSITORY (above) does not prove this
+ * it? The remote fetching the right REPOSITORY (above) does not prove this
  * WORKTREE is checked out on the PR's own branch: invoked with an explicit PR
  * from an unrelated branch or worktree, or from a sibling branch created
  * from, or later merged with, the PR's head, the ancestor check alone would
@@ -330,6 +334,7 @@ export async function probeBaseDrift(
   baseBranch: string,
   fetchSeconds: number,
   env?: Record<string, string | undefined>,
+  remote: string = remoteName(consumerRoot(root)),
 ): Promise<DriftProbe> {
   // Only `fetch` talks to a remote and carries the caller's network deadline.
   // Everything below is LOCAL, but "local" is not "instant": a stalled
@@ -347,14 +352,14 @@ export async function probeBaseDrift(
   //. A caller with no leak to guard against (no
   // hook env in play) simply omits it.
   const localTimeoutSec = gitCallTimeoutSeconds();
-  const baseRef = `origin/${baseBranch}`;
+  const baseRef = `${remote}/${baseBranch}`;
   // An explicit `+src:dst` refspec, not a plain branch name: a plain name
-  // resolves through `origin`'s OWN configured `remote.origin.fetch`, so a
-  // narrowed or otherwise non-default mapping can let this exit 0 having
-  // updated some ref other than `refs/remotes/origin/<baseBranch>` — the
+  // resolves through the remote's OWN configured `remote.<remote>.fetch`, so
+  // a narrowed or otherwise non-default mapping can let this exit 0 having
+  // updated some ref other than `refs/remotes/<remote>/<baseBranch>` — the
   // exact ref `baseRef` above reads every measurement below from. Forcing the
   // destination here makes success mean what every caller already assumes it
-  // means: `origin/<baseBranch>` was actually refreshed
+  // means: `<remote>/<baseBranch>` was actually refreshed
   //. `baseBranch` cannot smuggle a second
   // `:` into this refspec: `base-sync.ts` runs it through `git
   // check-ref-format --branch` when it comes from `--base`, and git branch
@@ -366,8 +371,8 @@ export async function probeBaseDrift(
       root,
       "fetch",
       "--quiet",
-      "origin",
-      `+refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`,
+      remote,
+      `+refs/heads/${baseBranch}:refs/remotes/${remote}/${baseBranch}`,
     ],
     {
       timeoutSec: fetchSeconds,

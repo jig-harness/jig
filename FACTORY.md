@@ -141,13 +141,14 @@ The skills that run stations at this level:
 | [`explain`](plugin/skills/explain/SKILL.md) | Before deciding: a cited, dated explanation of how the part of the system in question works today |
 | [`decide`](plugin/skills/decide/SKILL.md) | A technical dilemma: checked against the decisions already made, then ruled or escalated to a person, and recorded |
 | [`adr`](plugin/skills/adr/SKILL.md) | Architecture: the decision record, and the checkable rules derived from it |
+| [`red-team`](plugin/skills/red-team/SKILL.md) | PRD and architecture: an adversarial review by persona, each persona in fresh context, into one findings report |
 | [`design-brief-builder`](plugin/skills/design-brief-builder/SKILL.md) | Design prototype loop: the brief for an external design session, and the returned bundle merged and checked |
 | [`review`](plugin/skills/review/SKILL.md) | Every stage: a plan or document reviewed against the repository's decisions |
 
 A person sets the intent, accepts each stage's artifact and takes the
-decisions `decide` escalates. On the roadmap: the greenfield kickoff and an
-adversarial `red-team` reviewer ([ROADMAP.md](ROADMAP.md) item 3), and epic
-planning on the tracker (ROADMAP.md, Later).
+decisions `decide` escalates. On the roadmap: the greenfield kickoff
+([ROADMAP.md](ROADMAP.md) item 3), and epic planning on the tracker
+(ROADMAP.md, Later).
 
 ## Execution: the work-item line
 
@@ -191,10 +192,15 @@ Follow-up items enter the line again at station 1, so the execution level is
 itself a loop. `drive-pr` stops on one named end state (converged, waiting on
 a person, conflicting, …) and never approves or merges. On the roadmap: a
 converged drive arming the merge it certified (ROADMAP.md item 9, which
-changes "a person merges" and is decided on its own), and a skill that runs
+changes "a person merges" and is decided on its own), a skill that runs
 the post-merge stage [M7](modules/M7-pr-lifecycle-review/README.md) states,
 which settles what a merge still owes beyond the follow-ups station 7 files
-(item 17).
+(item 17), and a [dispatcher](GLOSSARY.md) that starts the
+line's stations with nobody at the keyboard: a pickup for each item
+assigned to the factory's tracker identity, a restart for each drive that
+stopped on a usage limit or an answered question, a follow-up for each
+merge, and a notification to a person for the stops that are theirs
+(item 33, [designed](design/dark-factory-dispatch.md)).
 
 ## The learning loop (wraps both)
 

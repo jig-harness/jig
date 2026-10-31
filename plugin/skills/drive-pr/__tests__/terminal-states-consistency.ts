@@ -311,17 +311,11 @@ function sectionText(text: string, heading: string | undefined): Section {
 }
 
 /**
- * The prose restatements of the exit-code pairing. Three distinct row shapes
- * cover the corpus below: `drive-status.ts` uses its own doc-comment format;
- * `SKILL.md` uses a `| State | Exit | … |` table (state column first); the
- * others use `| Exit | State | … |` (exit column first). The file count is
- * `CORPUS_FILES.length` below, not restated here: a hand-copied tally of this
- * array drifts as soon as the array changes.
- *
- * `requiredIdentifiers` on each entry is the exact, pinned set `CorpusFile`'s
- * own doc comment explains — computed by running this file's extractor
- * against the real corpus and reading back its output, not hand-counted from
- * the prose.
+ * The prose restatements of the exit-code pairing, by row shape:
+ * `drive-status.ts`'s doc-comment format, `SKILL.md`'s `| State | Exit | … |`
+ * table and the others' `| Exit | State | … |`. `requiredIdentifiers` is the
+ * pinned set `CorpusFile` explains, read back from this file's extractor run
+ * against the real corpus, not hand-counted from the prose.
  */
 const CORPUS_FILES: readonly CorpusFile[] = [
   {

@@ -19,8 +19,13 @@
  *    to case or a `[bot]` suffix), and it carries that bot's chat marker and
  *    none of the bot's finding shape: no line a severity format for that
  *    login reads as a severity (`lib/severity-formats.ts`), since a chat
- *    reply can embed a fresh finding. A bot the list leaves out has no
- *    transparent chat follow-ups.
+ *    reply can embed a fresh finding. Only a recognizer known to be the
+ *    bot's can prove that absence: one `review.severity_formats` declares,
+ *    or a built-in one. Jig's format is assumed for the configured
+ *    reviewer (`review.reviewer_app`, else the `review.bots` logins), and an
+ *    assumed recognizer proves nothing, so a bot without a known format has
+ *    no transparent chat follow-ups, and neither has a bot the list leaves
+ *    out.
  *
  * Authorship is by login: an association check cannot tell a bot from a
  * person (both read `NONE`), and logins are unique across users and bots.
@@ -37,6 +42,7 @@
 import { botEntries, type ReviewBot } from "../../../../shared/consumer.ts";
 import { reviewBotEntries } from "./overlay.ts";
 import {
+  hasSeverityFormat,
   normalizeLogin,
   type SeverityFormat,
   severityOf,
@@ -181,6 +187,7 @@ export function isTransparentFollowUp(
   return (
     bot.chatMarker !== null &&
     body.includes(bot.chatMarker) &&
+    hasSeverityFormat(author, formats) &&
     !carriesFindingShape(body, author, formats)
   );
 }

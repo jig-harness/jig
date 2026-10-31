@@ -17,6 +17,59 @@ here have a design in this folder ([README.md](README.md)).
 
 ## Now
 
+### 33. The dispatcher: a tick that starts the execution line's stages
+
+Every stage of the execution line starts only when a person types it: an
+assigned item waits for someone to open a `do-item` session, a drive
+stopped by a usage limit or an answered park waits for someone to re-arm
+it, a merge waits for someone to run its follow-up. Nothing watches the
+tracker or the pull requests for the next thing to start, so with nobody at
+the keyboard the line stops at the first stage boundary.
+[design/dark-factory-dispatch.md](dark-factory-dispatch.md) has how it
+works: `jig dispatch` in `plugin/dispatch/`, a stateless tick on a timer
+`jig dispatch install` writes, reads the items assigned to the repository's
+factory identity in a dispatch state (through a new tracker-interface read,
+`assignedIssues(identity, states)`, and `assignedBy(key)` for who made the assignment, beside the unchanged pool query), the drive ledger on each
+pull request and the session runtime's list of running sessions; it
+reports every stage it would start with its evidence, and with `--apply`
+starts each one through a session runtime interface whose first
+implementation is Orca
+([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
+within a cap per account, round-robin among the accounts without a usage
+wall, binding a headless pass to its account through the Orca profile's
+configuration directory. Each launch leaves a launch record that brings the
+stage's answer back to the next tick, and a merged pull request's
+follow-up is guarded by a marker comment on it. A stop only a person can
+settle (a park, a drive stopped on a failure, a stalled pickup) is notified
+once. It never merges, answers a park, re-arms a drive a person stopped,
+takes over a driver another machine started or passes a flag reserved for
+a person, and writes a receipt per tick. Machine values in `~/.jig/dispatch.yaml`, a repository's
+in a `dispatch` section of `.config/jig.yaml`. Built in the design's order:
+the report, then re-arms within account caps with the timer, then pickups,
+then follow-ups and notifications, then control: a permanent outcome
+log, one row per ended launch with an outcome class from a
+closed list, a dashboard that filters it (`jig dispatch dashboard`, no
+report files), drift from each stage's expectation reported and notified
+but never acted on, recurring classes routed to `reflect`, and one
+mechanical nudge (`steer`, "continue" after a usage limit resets) with no
+open-ended prompt; the re-arm step waits on the drive
+running in a session of its own, and the pickups on `do-item` refusing an
+item already claimed. Notifications do not wait on item 32's framed park:
+a park's notification carries the parked questions as they are and gains
+the framed decision once that is built.
+
+Done when, on a host running Orca, an item assigned to the factory
+identity gets one workspace and one `do-item` session within one interval,
+a drive stopped on one account's usage limit is re-armed on another account
+by the next tick, a merged pull request gets one follow-up session, a park
+reaches a person's phone and its answer on the pull request re-arms the
+drive, every launch, refusal and notification is in the tick's
+receipts, every ended launch has a row with its outcome class in the
+outcome log, `jig dispatch dashboard` filtered to yesterday shows only
+yesterday's rows, a drive whose open threads rise across rounds is
+reported as drifting and notified once, and a session waiting after its
+account's wall reopened gets exactly one "continue" nudge.
+
 ### 3. The kickoff family
 
 The greenfield kickoff becomes a living skill instead of a frozen seed, with
@@ -29,30 +82,16 @@ rollout:
   documentation, scaffolding, agent hierarchy, implementation plans, tracker).
   It replaces `seeds/project-kickoff/`, which is an older copy. M6's PRD and
   architecture templates and the kickoff's own are merged into one of each.
-  The opinions M6 leaves out (personas, tiers, model routing) belong in the
-  skill, not the module. M6's PRD and architecture templates move into the
+  The opinions M6 leaves out (tiers, model routing) belong in the skill, not
+  the module; its red-team phase runs
+  [`red-team`](../plugin/skills/red-team/SKILL.md), which holds the
+  personas. M6's PRD and architecture templates move into the
   skill (`templates/`), moved and not copied, and M6's README links them there
   ([the module contract](../modules/AGENTS.md#the-module-contract)); the
   NOTICE entries move with them.
-- **`red-team`**: adversarial review of a requirements or architecture
-  document by persona, in a fresh session; the runnable form of M6's
-  per-stage adversarial review. The engineering personas (critical chief
-  technology officer, security auditor, performance engineer, cost
-  optimizer) read both documents; a requirements document is also read by
-  personas standing for the people who will use and approve it: a reader
-  who knows no engineering terms, one who cuts the scope to the smallest
-  release that still delivers the outcome, one who asks of each outcome how
-  it would be tested, and one who walks the user's day and names the
-  moments the document leaves out.
 - **Plan review**, folded into `review`, which already accepts a plan
   document: dependencies and critical path, completeness, simplification and
   effort checks.
-- **`docs`**: the runnable form of M4: runs the repository's frontmatter,
-  index and scar checks, flags stale drafts, and plans missing documentation by
-  project type. M4's gates (`modules/M4-docs-governance/reference/`) and their
-  self-tests move into the skill's `scripts/` and `__tests__/`, moved and not
-  copied, and M4's README links them there. The repository's M4 schema wins
-  over the source skill's own frontmatter rules.
 - **`upgrade-deps`**: grouped, changelog-driven dependency upgrades (the
   majors an update bot cannot do alone), opened through `do-item`'s
   pull-request policy and driven by `drive-pr`; the runnable side of M1's
@@ -149,15 +188,16 @@ Move into configuration when a consumer needs them:
   findings at once. Done when a deferral round files and appends its
   findings on both adapters, with the fake-tracker tests both adapters'
   tests use;
-- the drive pushes to and fetches from a remote named `origin`;
+- the git remote: the delivery skills read it from `repository.remote`
+  (default `origin`), but `review`, `review-reflections`, `reflect`,
+  `code-stats`, `changelog` and the audit's `config-fit.ts` still read
+  `origin` directly; they move onto the same setting, through
+  `remoteName()` in `shared/consumer.ts`;
 - the markers of Jig's own finding format (`ai-review-backlog`,
   `ai-review-round`, the leading `ai-review-*` comments) are fixed, and the
   summary-comment markers default to `<!-- ai-code-review -->` and
   `ai-reviewed-sha`: they become settings with neutral defaults, set to the
-  current names first in the repositories whose reviewer writes them;
-- fields named after Linear: the review-triage file's
-  `severity_mapping.<severity>.linear_priority` and
-  `fractal-metrics.ts --skip-linear`, renamed with the old names still read.
+  current names first in the repositories whose reviewer writes them.
 
 ### 11. Jig's own Simplified Technical English linter
 
@@ -218,18 +258,13 @@ how it works and what is left. Done when:
   time;
 - the home and adoption pages show an audit sheet of Jig's own audit.
 
-### 20. `code-stats`: test-runner configuration and audit evidence
+### 20. `code-stats`: a reference set and audit evidence
 
 The [code-stats skill](../plugin/skills/code-stats/README.md) classifies a
-repository's files from conventions, attributes, its `code_stats`
-configuration and a classify command. What is left:
+repository's files from conventions, attributes, its test runners'
+configuration, its `code_stats` configuration and a classify command. What
+is left:
 
-- **Test-runner configuration** as the classification layer between
-  built-in detection and `code_stats` (the seam is marked in
-  `classify.ts`): jest and vitest `testMatch` and `include`, pytest
-  `testpaths` and `python_files`, Gradle and Maven test source sets. Each
-  reader states what it cannot read (a computed configuration) rather than
-  guessing.
 - **A reference set** of public repositories (a Python service, a Go
   module, a Rust workspace, a Java build, a JavaScript monorepo), each run
   recorded with its commit and its results beside it, as
@@ -240,12 +275,10 @@ configuration and a classify command. What is left:
   generated share, the scaffolding size, and a large unclassified share as a
   finding about the configuration.
 
-Done when a repository whose tests only its test runner names is classified
-correctly with no `code_stats` section, the reference set's recorded results
-are checked by a test, and an audit sheet cites code-stats figures as
-evidence.
+Done when the reference set's recorded results are checked by a test, and
+an audit sheet cites code-stats figures as evidence.
 
-### 21. `changelog` skill: several artifacts, and the whole file checked
+### 21. `changelog` skill: several artifacts
 
 The [`changelog` skill](../plugin/skills/changelog/README.md) is the
 runnable form of [M16](../modules/M16-releases-versions/README.md) for a
@@ -260,13 +293,6 @@ repository with one released artifact. What is left:
   choice (Unreleased, or none). Done when a monorepo with two packages
   releases them independently through the action, and the single-artifact
   configuration keeps working unchanged.
-- **A whole-changelog check**, against the rules of the detected format
-  rather than a union of both: structure, category names and order, dates
-  written year-month-day, link references, and release coverage. Each rule,
-  its conditions and its exemptions are taken from the format's own
-  specification, cited where the check enforces them. Of the whole file,
-  Jig's own `scripts/check-changelog.ts` checks only that the version files
-  agree and that the current version has a heading.
 - **Other CI providers' templates** beside GitHub's workflow template, when
   a repository needs one.
 
@@ -388,14 +414,17 @@ overlay with its evidence, enables the plugin for everyone who clones, and
 checks the result the way the audit will; the audit measures, init writes.
 What it will build, one pull request per step:
 
-- **The shared detector**: `config-fit.ts`'s detection and draft move to
-  `plugin/shared/detect.ts` with their tests, the audit unchanged.
 - **The skill**: `plugin/skills/init/` with `init.ts` (derive, ask, write,
-  check), refresh mode after a plugin release, tests from a plugin copy
-  against fixture repositories with and without a configuration, the
-  lifecycle-map row and the README table row.
+  check) on the shared detector (`plugin/shared/detect.ts`), which learns the
+  changelog file, the label taxonomy and the title convention, the `fields` on
+  the configuration fit's findings so init can sort them, refresh mode
+  after a plugin release, tests from a plugin copy against fixture
+  repositories with and without a configuration, the lifecycle-map row and
+  the README table row.
 - **The pointers**: the adoption pages, setup's next step, the audit's
-  `remedy: init` marker and the sheet's command.
+  `remedy: init` marker and the sheet's command, and the configuration
+  fit's finding for a file written under an older plugin than the last
+  field-adding release.
 - **Project-level enablement** in the host settings files.
 
 Done when a fresh clone with no configuration runs `/jig:init`, commits
@@ -475,9 +504,6 @@ filed item, or not applicable. The delivery loop writes no spec and
 dictates no format.
 What it will build, one pull request per step:
 
-- **The resolver and the `body` adapter**, with the conformance test every
-  adapter passes and the pull-request section; `do-item` prints the result
-  and changes nothing else.
 - **The repository adapters**, two or three layouts per pull request, each
   with its fixture folder; M6's audit criterion with the last of them.
 - **`do-item` reads and requires**: the `spec` pre-scout by work type

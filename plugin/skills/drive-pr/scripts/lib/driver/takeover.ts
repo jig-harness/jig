@@ -386,15 +386,23 @@ export async function holdTreeAroundTakeover(
     await stopWedgedHolder(plan, pr, locks.pr, rearm);
 }
 
+/** The PR this driver was armed for, and the pass command it runs. */
+export interface OwnPass {
+  pr: string;
+  agent: readonly string[];
+}
+
 /**
  * Explain an exit-11 refusal: the holder's doctor verdict and, when a
- * takeover would be admitted, the command. Called with the refusal already
- * printed; never changes the exit.
+ * takeover would be admitted, the command — with this driver's own pass
+ * command when the holder drives the same PR, since that command names its
+ * PR. Called with the refusal already printed; never changes the exit.
  */
 export async function explainHolder(
   lock: DriveLock,
   driveTs: string,
   botsOnly: boolean,
+  own: OwnPass,
 ): Promise<void> {
   const holder = liveHolder(lock.dir);
   const pr = holder?.diag?.pr ?? "";
@@ -410,7 +418,10 @@ export async function explainHolder(
   );
   if (verdict === "WEDGED") {
     console.error("It is wedged, so a takeover is admitted:");
-    console.error(`  ${armCommand(driveTs, pr, botsOnly, " --take-over")}`);
+    const agent = pr === own.pr ? own.agent : [];
+    console.error(
+      `  ${armCommand(driveTs, pr, botsOnly, " --take-over", agent)}`,
+    );
   } else {
     console.error(
       "Do not stop a driver that is making progress; a takeover is admitted only once it is WEDGED or dead.",
@@ -423,13 +434,14 @@ export async function explainingRefusal<T>(
   lock: DriveLock,
   driveTs: string,
   botsOnly: boolean,
+  own: OwnPass,
   fn: () => T,
 ): Promise<T> {
   try {
     return fn();
   } catch (e) {
     if (e instanceof ExitError && e.code === SINGLE_INSTANCE_LOCK_EXIT)
-      await explainHolder(lock, driveTs, botsOnly).catch(() => undefined);
+      await explainHolder(lock, driveTs, botsOnly, own).catch(() => undefined);
     throw e;
   }
 }

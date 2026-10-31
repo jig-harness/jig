@@ -15,7 +15,7 @@
  *
  * This record, not the state's, is what every script that starts from a tree
  * reads. It is read only while the head is detached and only while it still
- * describes the tree (`recordChecks`): a tree on a branch answers from the
+ * describes the tree (`detachedTreeRecord`): a tree on a branch answers from the
  * branch, an attach by name removes the record, and a tree detached
  * somewhere else since answers as unrecorded, so a record left behind never
  * outranks what the tree has checked out since.
@@ -117,60 +117,83 @@ export function writeDrivenTree(gitDir: string, record: DrivenTree): void {
   }
 }
 
-/** A git call bounded by its caller: the arguments, then code and stdout. */
-export type TreeGit = (
-  args: string[],
-) => Promise<{ code: number; stdout: string }>;
-
-/**
- * The git calls that must all succeed for a record to still describe the tree
- * it sits in: its `HEAD` descends from the commit the attach put it on, and
- * the head branch it names is still a remote-tracking branch. A tree detached
- * somewhere else since, or a branch gone from the remote, reads as unrecorded.
- */
-export function recordChecks(record: DrivenTree): string[][] {
-  return [
-    ["merge-base", "--is-ancestor", record.head, "HEAD"],
-    [
-      "rev-parse",
-      "--verify",
-      "--quiet",
-      `refs/remotes/${record.remote}/${record.branch}^{commit}`,
-    ],
-  ];
+/** What a git call answered: its exit code and standard output. */
+export interface TreeGitResult {
+  code: number;
+  stdout: string;
 }
 
+/** A git call bounded by its caller: the arguments, then code and stdout. */
+export type TreeGit = (args: string[]) => Promise<TreeGitResult>;
+
+/** `TreeGit` for a synchronous caller. */
+export type TreeGitSync = (args: string[]) => TreeGitResult;
+
 /**
- * The record of the tree `git` runs in, when that tree's head is detached and
- * the record still describes it (`recordChecks`); `null` on a branch, without
- * a record, for a stale one, or when git cannot say.
+ * Every question that decides whether the tree's record describes it, in
+ * order, each answered by the caller's git: the head is detached; the record
+ * is there; the head descends from the commit the attach put the tree on; the
+ * head branch it names is still a remote-tracking branch; and no other remote
+ * branch holds the head unless its own does. The one sequence both readers
+ * drive, so a synchronous caller applies exactly the rules an asynchronous
+ * one does.
  */
-export async function detachedTreeRecord(
-  git: TreeGit,
-): Promise<DrivenTree | null> {
-  const branch = await git(["symbolic-ref", "--quiet", "HEAD"]);
+function* recordQuestions(): Generator<
+  string[],
+  DrivenTree | null,
+  TreeGitResult
+> {
+  const branch = yield ["symbolic-ref", "--quiet", "HEAD"];
   if (branch.code === 0) return null;
-  const dir = await git(["rev-parse", "--absolute-git-dir"]);
+  const dir = yield ["rev-parse", "--absolute-git-dir"];
   const gitDir = dir.stdout.trim();
   if (dir.code !== 0 || gitDir === "") return null;
   const record = readDrivenTree(gitDir);
   if (record === null) return null;
-  for (const check of recordChecks(record))
-    if ((await git(check)).code !== 0) return null;
+  const own = `refs/remotes/${record.remote}/${record.branch}`;
+  // A tree detached somewhere else since, or a branch gone from the remote,
+  // reads as unrecorded.
+  if ((yield ["merge-base", "--is-ancestor", record.head, "HEAD"]).code !== 0)
+    return null;
+  if (
+    (yield ["rev-parse", "--verify", "--quiet", `${own}^{commit}`]).code !== 0
+  )
+    return null;
   // Descent from the attached commit does not tell this PR's commits from a
   // stacked PR's, whose head descends from it too. A head some remote branch
   // already holds is that branch's work: the record describes it only when
   // its own branch is among them. A head no remote holds is the drive's own.
-  const holders = await git([
+  const holders = yield [
     "for-each-ref",
     "--contains",
     "HEAD",
     "--format=%(refname)",
     "refs/remotes",
-  ]);
+  ];
   if (holders.code !== 0) return null;
   const refs = holders.stdout.split("\n").filter((ref) => ref !== "");
-  const own = `refs/remotes/${record.remote}/${record.branch}`;
   if (refs.length > 0 && !refs.includes(own)) return null;
   return record;
+}
+
+/**
+ * The record of the tree `git` runs in, when that tree's head is detached and
+ * the record still describes it (`recordQuestions`); `null` on a branch,
+ * without a record, for a stale one, or when git cannot say.
+ */
+export async function detachedTreeRecord(
+  git: TreeGit,
+): Promise<DrivenTree | null> {
+  const questions = recordQuestions();
+  let step = questions.next();
+  while (!step.done) step = questions.next(await git(step.value));
+  return step.value;
+}
+
+/** `detachedTreeRecord` for a synchronous caller, by the same rules. */
+export function detachedTreeRecordSync(git: TreeGitSync): DrivenTree | null {
+  const questions = recordQuestions();
+  let step = questions.next();
+  while (!step.done) step = questions.next(git(step.value));
+  return step.value;
 }

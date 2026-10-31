@@ -13,7 +13,9 @@ import { detectQuotaBlock } from "./../quota/index.ts";
 
 import { handleQuotaBlock } from "./review-quota.ts";
 
-import { unpushedCountCommand } from "./../driven-branch.ts";
+import { unpushedCountAdvice } from "./../driven-branch.ts";
+
+import { git, gitCallTimeoutSeconds } from "./../proc.ts";
 
 import {
   admitDeadlineRestart,
@@ -116,7 +118,11 @@ async function restartAfterDeadline(
       `  The pass-deadline retry budget is spent (${context.deadlineRetryBudget}, drive.pass_deadline_retries; ${restart.taken} restart(s) already taken by this drive): stopping.`,
     );
   console.error(
-    `  Before re-arming, settle what the pass left: \`git status --short\` and \`${unpushedCountCommand()}\`.`,
+    `  Before re-arming, settle what the pass left: \`git status --short\` and ${await unpushedCountAdvice(
+      git,
+      process.cwd(),
+      { timeoutSec: gitCallTimeoutSeconds() },
+    )}.`,
   );
   return PASS_DEADLINE_EXIT;
 }
@@ -177,5 +183,10 @@ export async function handleFailedReviewPass(
   console.error(
     `pass failed on round ${round} (exit ${passRes.code}); not driving further`,
   );
+  // What it left stays in the tree; the stop names it, so a re-arm starts
+  // from the fixes the pass made rather than finding them by hand.
+  console.error("  What the failed pass left in the tree:");
+  for (const line of describeLeftovers(await passLeftovers()))
+    console.error(`  ${line}`);
   return disposition.exit;
 }

@@ -42,12 +42,33 @@ export const ENV_PREFIX = "JIG__";
 /** Set to `off`, the user layer is not read. */
 const USER_LAYER_SWITCH = "JIG_USER_LAYER";
 
+/**
+ * The variables that choose which layers are read, beside the `JIG__`
+ * fields: a process that must read the configuration another one read
+ * needs these as well as the fields.
+ */
+export const LAYER_SELECTORS: readonly string[] = [
+  "JIG_HOME",
+  "JIG_OVERLAY",
+  USER_LAYER_SWITCH,
+];
+
+/** The layer selectors whose value is a path, read relative to the working directory. */
+export const PATH_LAYER_SELECTORS: readonly string[] = [
+  "JIG_HOME",
+  "JIG_OVERLAY",
+];
+
 /** Fields only a repository (or one run) may set; the user layer refuses them. */
 export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "gates.command",
   "gc.kinds",
   "gc.worktree_roots",
   "gc.scratch_prefixes",
+  // The dispatcher reads its section from the default branch alone.
+  "dispatch.identity",
+  "dispatch.states",
+  "dispatch.followup_command",
   "repository.base_branch",
   "issue_tracker.team",
   "issue_tracker.github.repository",
@@ -80,6 +101,12 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "code_stats.kinds",
   "code_stats.modules",
   "code_stats.classify_command",
+  // Where a repository keeps its docs tree and its schema.
+  "docs.root",
+  "docs.schema",
+  // Where a repository keeps its specs, and how its items name them.
+  "specs.adapters",
+  "specs.body_section",
 ];
 
 /**
