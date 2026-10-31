@@ -984,8 +984,8 @@ could forge or forget.
    without the variables step 2's `env.unset` names, as the arm command is,
    so it reads the destination repository's template. It does
    nothing without `workspace_name.template` or outside Orca, and a failed
-   Orca rename only warns and exits `0`; a malformed argument, configuration
-   or unreadable title file exits `2`:
+   Orca rename only warns and exits `0`; a malformed argument, an invalid `workspace_name` field or an unreadable title
+   file exits `2`, and a configuration file that cannot be parsed exits `1`:
 
    ```bash
    bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" driving --id "<item key>" --title-file .context/workspace-title.md --pr <PR>
@@ -3087,7 +3087,7 @@ and merging it stay human steps.
 announcement or found one already posted, name the workspace for the ready stage
 when the repository sets `workspace_name.template` (it does nothing without
 it or outside Orca, and a failed Orca rename only warns and exits `0`, while a
-malformed argument, configuration or unreadable title file exits `2`). The item is the one tracker issue
+malformed argument, an invalid `workspace_name` field or an unreadable title file exits `2`, and a configuration file that cannot be parsed exits `1`). The item is the one tracker issue
 the PR serves ([Arm](#arm) step 3 reads it); write its title alone to
 `.context/workspace-title.md` with the file editor and pass the file, never
 the title inside the command, and quote the key. For a PR that serves no item,
