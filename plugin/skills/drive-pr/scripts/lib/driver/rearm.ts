@@ -67,6 +67,8 @@ import { isRecord } from "../../../../../shared/guards.ts";
 
 import { TRUSTED_ASSOCIATIONS } from "../../summary-findings.ts";
 
+import { pinsEmptyPassArgs } from "./../pass-args.ts";
+
 import { driveState, driveTs } from "./paths.ts";
 
 import { QUOTA_PARKED_EXIT } from "./settings.ts";
@@ -94,11 +96,12 @@ export function armCommand(
   agent: readonly string[] = [],
 ): string {
   const mode = botsOnly ? " --bots-only" : "";
+  const pinned = pinsEmptyPassArgs(agent) ? " --pass-args ''" : "";
   const pass =
     agent.length > 0
       ? agent.map(shellQuote).join(" ")
       : `claude -p "/jig:drive-pr${mode} ${pr}"`;
-  return `bun ${shellQuote(driveTs)} ${pr}${extra}${mode} -- ${pass}`;
+  return `bun ${shellQuote(driveTs)} ${pr}${extra}${pinned}${mode} -- ${pass}`;
 }
 
 /** Whether a pass command is scoped to bot threads, as `drive.ts` checks it. */

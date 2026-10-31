@@ -45,6 +45,7 @@ import {
 import { isRecord } from "../../../../shared/guards.ts";
 import { driveTs, drives } from "./driver/paths.ts";
 import type { ArmDriveMode } from "./overlay.ts";
+import { type PassArgs, permissionMode } from "./pass-args.ts";
 import type { PassModel } from "./pass-model.ts";
 
 type Env = Record<string, string | undefined>;
@@ -59,8 +60,9 @@ export interface ArmRequest {
   tree: string;
   /**
    * Drive flags for `drive.ts`, before its `--`: `--max-rounds N` and the
-   * like, and `--pass-model` when the caller names the model, so the driver
-   * log says it came from there.
+   * like, and `--pass-model` or `--pass-args` when the caller names the
+   * model or the extra pass arguments, so the driver log says they came from
+   * there.
    */
   forward: string[];
 }
@@ -130,8 +132,15 @@ export function sessionOverrides(
   return ["sh", "-c", DROP_LOGIN_FIELDS, "sh", "env", ...unset, ...set];
 }
 
-/** The argument list that starts the drive: `drive.ts` in the tree, its pass on `model`. */
-export function driveArgv(request: ArmRequest, model: string): string[] {
+/**
+ * The argument list that starts the drive: `drive.ts` in the tree, its pass
+ * on `model`, with `passArgs` before the pass's `-p`.
+ */
+export function driveArgv(
+  request: ArmRequest,
+  model: string,
+  passArgs: readonly string[] = [],
+): string[] {
   const { pr, tree, forward } = request;
   return [
     "bun",
@@ -145,6 +154,7 @@ export function driveArgv(request: ArmRequest, model: string): string[] {
     "claude",
     "--model",
     model,
+    ...passArgs,
     "-p",
     `/jig:drive-pr --bots-only ${pr}`,
   ];
@@ -242,6 +252,7 @@ export interface LiveDrive {
   started: string | null;
   log: string | null;
   model: string | null;
+  permissionMode: string | null;
   doctor: unknown;
 }
 
@@ -359,6 +370,7 @@ export function liveDriveIn(json: unknown, pr: string): LiveDrive | null {
       started: text(diag.started),
       log: text(diag.log),
       model: text(diag.model),
+      permissionMode: text(diag.permissionMode),
       doctor: row.doctor ?? null,
     };
   }
@@ -390,6 +402,11 @@ export interface ArmReport {
   fallback: string | null;
   model: string;
   modelSource: string;
+  /** The extra words the pass command carries before `-p`, and their source. */
+  passArgs: string[];
+  passArgsSource: string;
+  /** The permission mode the pass runs in (`pass-args.ts`). */
+  permissionMode: string;
   /** `null`, with `argv` empty, when the arm failed before it knew the tree. */
   command: string | null;
   argv: string[];
@@ -401,19 +418,23 @@ export interface ArmReport {
 }
 
 /**
- * The report of an arm that failed before it decided: a setting, the model
- * or the working tree could not be read. `command` is built on `model` (the
- * default where the configured one could not be read) once the tree is known.
+ * The report of an arm that failed before it decided: a setting, the model,
+ * the extra pass arguments or the working tree could not be read. `command`
+ * is built on `model` (the default where the configured one could not be
+ * read) and `passArgs` (none where they could not be read) once the tree is
+ * known.
  */
 export function failedReport(
   request: { pr: string; tree: string | null; forward: string[] },
   setting: ArmReport["armDrive"],
-  model: PassModel,
+  pass: { model: PassModel; passArgs: PassArgs },
   reason: string,
 ): ArmReport {
+  const { model, passArgs } = pass;
   const tree = request.tree;
   const known = tree === null ? null : { ...request, tree };
-  const argv = known === null ? [] : driveArgv(known, model.model);
+  const argv =
+    known === null ? [] : driveArgv(known, model.model, passArgs.words);
   return {
     pr: request.pr,
     tree,
@@ -424,6 +445,10 @@ export function failedReport(
     fallback: null,
     model: model.model,
     modelSource: model.source,
+    passArgs: passArgs.words,
+    passArgsSource: passArgs.source,
+    permissionMode:
+      permissionMode(["claude", ...passArgs.words]).mode ?? "default",
     command: known === null ? null : commandLine(argv),
     argv,
     tab: null,
@@ -438,6 +463,7 @@ export interface ArmInputs {
   request: ArmRequest;
   setting: { value: ArmDriveMode; source: string };
   model: PassModel;
+  passArgs: PassArgs;
   env: Env;
   platform?: NodeJS.Platform;
 }
@@ -447,8 +473,8 @@ export async function arm(
   inputs: ArmInputs,
   deps: TabDeps,
 ): Promise<{ report: ArmReport; exit: number }> {
-  const { request, setting, model, env } = inputs;
-  const base = failedReport(request, setting, model, "");
+  const { request, setting, model, passArgs, env } = inputs;
+  const base = failedReport(request, setting, { model, passArgs }, "");
   const choice = chooseWay(setting.value, env, inputs.platform);
   if ("error" in choice)
     return { report: { ...base, reason: choice.error }, exit: 1 };
@@ -510,6 +536,7 @@ function tabReport(
             outcome.drive.model === null
               ? "the live drive records no model"
               : "the live drive's own record, not this request",
+          permissionMode: outcome.drive.permissionMode ?? "unknown",
         },
         exit: 0,
       };

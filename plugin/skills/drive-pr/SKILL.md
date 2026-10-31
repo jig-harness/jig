@@ -324,6 +324,21 @@ named as that setting's; one that names no model is reported as none), the
 prints carries it. Another agent tool's pass command chooses its own model,
 and `--pass-model` is refused for it (exit `2`).
 
+**The pass arguments.** A Claude Code pass command can carry extra words
+before `-p`, such as `--permission-mode bypassPermissions`, without which a
+pass in a prompting mode is denied every write under a protected path such
+as `.claude/skills/**` (`--permission-mode auto` lets a classifier approve
+some). They come from `--pass-args "<words>"` for this run
+(one value, split on spaces; empty for none), else `drive.pass_args`, which
+`drive.ts` adds only to a pass command with no arguments of its own; a
+command that carries its own, as an arm command or a printed re-arm or
+takeover command does, runs as written. The driver log's `pass args:` and
+`permission mode:` lines and the `drives.ts` row name them (`inherited` when
+the command sets no mode: Claude Code's own settings then decide). Another agent tool's pass command ignores
+`drive.pass_args`, and the log says so; `--pass-args` is refused for it
+(exit `2`). A `drive.pass_args` that is not a list of words stops the drive
+(exit `1`), naming the field.
+
 **The attach.** Once it holds the tree's driver lock and the PR's,
 `drive.ts` attaches the PR to the tree it runs in
 (`scripts/attach-pr.ts`, which you can also run alone:
@@ -445,7 +460,7 @@ that spawned it, so its console is not where you look:
 - **Fleet listing** — `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts"` lists
   every drive lock in this clone's state universe with repository, owner, liveness (by
   exactly the rule recovery uses — `lib/claim.ts`), worktree, start time,
-  log path, pass model and billing account (the billing identity the pass is
+  log path, pass model, permission mode and billing account (the billing identity the pass is
   billing against, a subscription account or an API/Console key, resolved at
   arm time from the environment `drive.ts`
   itself held then, and re-resolved on the heartbeat timer whenever no pass
@@ -868,11 +883,13 @@ could forge or forget.
    It reads `do_item.arm_drive` (default `auto`: a terminal tab of the
    PR's workspace where this session can open one, in Orca on a macOS or
    Linux host; the session's background execution elsewhere, Windows hosts
-   included) and `drive.pass_model` (default `sonnet`) in that tree, and
+   included), `drive.pass_model` (default `sonnet`) and `drive.pass_args`
+   (default none) in that tree, and
    prints one JSON object: `command`, the driver's start command in the
    portable one-line form,
-   `bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model <model> -p "/jig:drive-pr --bots-only <PR>"`;
-   `model`; `handles`; and `status`, which says what to do. A tab is a
+   `bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model <model> -p "/jig:drive-pr --bots-only <PR>"`,
+   with the `drive.pass_args` words before `-p` when it is set;
+   `model`; `permissionMode`; `handles`; and `status`, which says what to do. A tab is a
    fresh login shell of the user's: `bun`, `claude` and the Claude account
    or profile the driver uses come from that shell, not from this session.
    - `armed` → the driver runs in a terminal tab of its own (`tab.title`)
@@ -932,11 +949,12 @@ could forge or forget.
 
    `--bots-only` is always on: an unattended sweep never acts on human threads
    (§ 2). Forward the invocation's own drive flags — `--keep-draft`,
-   `--max-rounds N`, `--handoff-at …`, `--pass-model M` — to `arm-drive.ts`,
+   `--max-rounds N`, `--handoff-at …`, `--pass-model M`, `--pass-args "W"`
+   — to `arm-drive.ts`,
    which puts them in `command` before `drive.ts`'s `--`, never in the pass
    prompt; for `--pass-model` it also writes the model the value resolves
-   to into the pass command's `--model`, and the driver log names the flag
-   as the source. Without `--max-rounds` the budget is the
+   to into the pass command's `--model`, for `--pass-args` the words before
+   `-p`, and the driver log names the flag as the source. Without `--max-rounds` the budget is the
    repository's `drive.max_rounds` (default 10); pass the flag only to override
    it. `--max-rounds` counts from the durable state, so
    re-arming a PR that has already run rounds resumes it ("at round 4 of 10")
@@ -999,7 +1017,7 @@ could forge or forget.
    repository that does not ignore `.context/`. The command exits `2` on a
    missing file. Then report. State: armed, the
    PR, the tree it drives from, where it runs (the tab's title, or the
-   background task's handle), the pass model (`model`), the verified
+   background task's handle), the pass model (`model`), the permission mode (`permissionMode`), the verified
    driver-log path (`drive.log` when the script found the drive listed, else
    `drive.ts: driver log → …` in its output, or `drive.ts: driver log
    unavailable: <reason>` when it keeps none; confirm it is a regular file
