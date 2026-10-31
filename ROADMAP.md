@@ -19,7 +19,9 @@ class, with the decision framed
 may raise how far an agent decides on its own during the hours nobody is
 there to ask; every decision taken that way is recorded on the pull request
 where a person can reverse it, and a morning report lists them. It ships
-once a working repository has validated it.
+once a working repository has validated it. Before that, the policy that
+bounds what an agent may decide is read from the pull request's base branch,
+so a pull request cannot widen what its own drive may decide.
 
 ### 33. The dispatcher: a tick that starts the execution line's stages
 

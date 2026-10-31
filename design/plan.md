@@ -19,7 +19,7 @@ here have a design in this folder ([README.md](README.md)).
 
 ### 32. Driving any pull request from anywhere, with autonomy that fits the hour
 
-Steps 1 to 4 of [the design](dark-factory-driving.md)'s build order are in
+Most of [the design](dark-factory-driving.md) is built, in
 [`drive-pr`](../plugin/skills/drive-pr/README.md) and
 [CONFIGURATION.md § `autonomy`](../plugin/CONFIGURATION.md#autonomy): a pull
 request is driven from any checkout, a stopped drive restarts itself or is
@@ -27,8 +27,12 @@ re-armed, a wedged or dead driver is taken over through the drive ledger on
 the pull request, the `attended` and `unattended` levels say what an agent
 decides and records instead of asking, and a park is reserved for the
 configured human decision classes and carries a framed decision. What the
-design still holds is step 5:
+design still holds:
 
+- **The policy from the base branch**: `autonomy.max_level` and
+  `autonomy.park_classes` read from the pull request's base branch, failing
+  closed when it cannot be read. Today they come from the working tree, so a
+  pull request that edits them changes what its own drive may decide.
 - **`wide` and off-hours windows**: `autonomy.off_hours` raising the level on
   a schedule, unless the environment chose a level for the run, and `wide`'s
   own column, where a decision outside the registry's classes is taken
@@ -36,16 +40,21 @@ design still holds is step 5:
   unanswered item is provisionally decided where its class allows it.
   `wide` is accepted today and acts as `unattended`.
 - **The morning report**: `drives.ts --report`, run by a person or a
-  scheduler the repository sets up, listing for each pull request this clone
-  knows or the account drove its terminal state, the provisional decisions
-  first, the takeovers and re-arms, the parked decisions in their framed form
-  and the deferred findings not yet filed; with the loop-metrics counters.
+  scheduler the repository sets up. It covers every pull request this clone
+  knows, plus every open pull request the account authored or drove, and
+  lists for each its terminal state, the provisional decisions first, the
+  takeovers and re-arms, the parked decisions in their framed form and the
+  deferred findings not yet filed; with the loop-metrics counters.
 
-Both are dark-by-default dials: they come into Jig once a working repository
-has run them and the design's validation measure holds.
+The policy from the base branch ships first and on its own. `wide` and
+`off_hours` are dark-by-default dials: they come into Jig once a working
+repository has run them and the design's validation measure holds.
 
-Done when a repository with `off_hours` on wakes to a morning report, run on
-request, whose provisional decisions a person can reverse from the pull
+Done when a drive reads its ceiling and park classes from the base branch;
+a `wide` run records a provisional decision where a person can reverse it
+and re-arms a parked drive once every unanswered item is provisionally
+decided; and a repository with `off_hours` on wakes to a morning report, run
+on request, whose provisional decisions a person can reverse from the pull
 request.
 
 ### 33. The dispatcher: a tick that starts the execution line's stages
