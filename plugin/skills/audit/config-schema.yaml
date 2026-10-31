@@ -314,13 +314,13 @@ fields:
     values: [attended, unattended, wide]
     default: attended
     read_by: [drive-pr, resolve-review-comments, file-issue, decide]
-    since: next
+    since: 0.103.0
   autonomy.max_level:
     type: enum
     values: [attended, unattended, wide]
     read_by: [drive-pr, resolve-review-comments, file-issue, decide]
     repository_only: true
-    since: next
+    since: 0.103.0
   autonomy.park_classes:
     type: list
     items: { type: string, pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" }
@@ -328,7 +328,7 @@ fields:
     nonempty: true
     read_by: [drive-pr]
     repository_only: true
-    since: next
+    since: 0.103.0
 
   ci.required_checks:
     type: list
