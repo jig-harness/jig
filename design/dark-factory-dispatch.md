@@ -125,12 +125,17 @@ guards keep one stage from starting twice:
   a trusted marker from another run. A manual run has no launch record on
   the dispatching machine, and may run on another host, so its marker
   names none: it says the run is manual (`run: manual`). The tick reads
-  nothing on this machine for it: a trusted manual marker holds the
-  follow-up (never started by the tick, never notified as failed) and is
-  reported on every tick with its author and age, since the person who
-  ran it sees its outcome and the tick has no record that could. A manual
-  follow-up that failed is settled as the tick's are, by deleting the
-  marker. Whoever posts a marker, the tick or a
+  nothing on this machine for it, so a manual marker carries its own
+  outcome, written by the run that posted it: the follow-up command edits
+  its marker to `done` once its last act has succeeded. A trusted manual
+  marker marked done means the follow-up is done: it is never started,
+  notified or reported again. One not marked done holds the follow-up
+  (never started by the tick, never notified as failed) and is reported on
+  every tick with its author and age, since the person who ran it sees its
+  outcome and the tick has no record that could; a person settles it by
+  marking it done when the run succeeded without marking it, or, as the
+  tick's are, by deleting it when the run failed, which makes the
+  follow-up wanted again. Whoever posts a marker, the tick or a
   manual run, reads the markers back after posting, and of two trusted
   markers on one pull request the earlier comment wins, as the drive's
   takeover claims do: the later poster deletes its marker and stands down
@@ -594,7 +599,8 @@ One pull request each, in this order; each is usable on its own.
 5. **Follow-ups and notifications.** The follow-up marker, the follow-up's
    outcome record, and a follow-up session per merged pull request with the repository's follow-up
    command, which claims the pull request with a manual marker when a
-   person runs it by hand (Jig's `/followup` first); the notifications above
+   person runs it by hand and marks that marker done when it succeeds
+   (Jig's `/followup` first); the notifications above
    through `notify`. The park's
    notification carries item 32's framed decision once that is built, and
    the receipts join its morning report then; a consumer repository's
