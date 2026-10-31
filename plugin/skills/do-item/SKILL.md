@@ -603,7 +603,8 @@ routing below remain **exact**.
    Then name the workspace for the stage. With `workspace_name.template` set
    and a runtime that can rename its workspaces (Orca), this renames it, for
    example to `[I] JIG-12 Rename workspaces`; without the template, or
-   anywhere else, it does nothing and never fails the step. The issue title is
+   anywhere else, it does nothing; a failed Orca rename only warns and exits `0`,
+   while a malformed argument, configuration or unreadable title file exits `2`. The issue title is
    tracker text, so write it alone to `.context/workspace-title.md` with the
    file editor and pass the file, never the title inside the command; quote
    the key, since a GitHub key (`#123`) starts a shell comment unquoted:

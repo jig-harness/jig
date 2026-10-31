@@ -983,8 +983,9 @@ could forge or forget.
    serves none or several leaves out `--id` and `--title-file`). Run it
    without the variables step 2's `env.unset` names, as the arm command is,
    so it reads the destination repository's template. It does
-   nothing without `workspace_name.template`, outside Orca, and never fails
-   the step:
+   nothing without `workspace_name.template` or outside Orca, and a failed
+   Orca rename only warns and exits `0`; a malformed argument, configuration
+   or unreadable title file exits `2`:
 
    ```bash
    bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" driving --id "<item key>" --title-file .context/workspace-title.md --pr <PR>
@@ -3085,7 +3086,8 @@ and merging it stay human steps.
 **judgment** — After `announce-merge-ready.ts` exits `0`, whether it posted the
 announcement or found one already posted, name the workspace for the ready stage
 when the repository sets `workspace_name.template` (it does nothing without
-it, outside Orca, and never fails the step). The item is the one tracker issue
+it or outside Orca, and a failed Orca rename only warns and exits `0`, while a
+malformed argument, configuration or unreadable title file exits `2`). The item is the one tracker issue
 the PR serves ([Arm](#arm) step 3 reads it); write its title alone to
 `.context/workspace-title.md` with the file editor and pass the file, never
 the title inside the command, and quote the key. For a PR that serves no item,
