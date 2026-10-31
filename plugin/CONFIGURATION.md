@@ -23,7 +23,7 @@ Contents: [the file](#the-file) ·
 [`pull_requests`](#pull_requests) · [`drive`](#drive) ·
 [`autonomy`](#autonomy) · [`ci`](#ci) ·
 [`issue_tracker`](#issue_tracker) · [`do_item`](#do_item) ·
-[`specs`](#specs) · [`work_batch`](#work_batch) · [`routing`](#routing) ·
+[`specs`](#specs) · [`workspace_name`](#workspace_name) · [`work_batch`](#work_batch) · [`routing`](#routing) ·
 [`fleet_health`](#fleet_health) · [`verify`](#verify) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
 [`code_stats`](#code_stats) · [`gc`](#gc) · [`dispatch`](#dispatch) ·
@@ -445,6 +445,24 @@ unknown key is refused.
 |-------|------|-------------|---------|--------------|
 | `specs.adapters` | list of adapter names, in order: `body` | Every adapter whose layout the repository holds, then `body` | do-item | Orders or restricts the adapters: only those listed run, in this order, and the first whose path patterns claim a referenced path reads it. Leaving `body` out stops the item's own sections from being read |
 | `specs.body_section` | heading text, without the `#` | `Spec` | do-item | The heading of the body section that names the item's spec, by link or path, and may carry its requirements, criteria and tasks inline. Matched at any heading level, ignoring case and a trailing colon. `Requirements` and `Acceptance criteria` sections are read beside it, so neither may be the spec section's heading. Headings and entries inside code (a fence, or an indented code block) are not read |
+
+## `workspace_name`
+
+Names the workspace a skill runs in after the work it holds and the stage the
+work is at, in a runtime that can rename its workspaces (Orca today). Absent,
+nothing is renamed. A failed rename only warns.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `workspace_name.template` | text with `{id}`, `{status}`, `{title}` and `{pr}` | none: workspaces keep their names | do-item, drive-pr | The name. `{id}` is the item key, `{status}` the stage's text from `workspace_name.statuses`, `{title}` the item title, `{pr}` `#<number>` once there is a pull request. A variable with no value renders empty. Any other `{name}` is refused |
+| `workspace_name.statuses` | map from a stage to text | `{implementing: "[I]", driving: "[D]", ready: "[R]", done: "✅"}` | do-item, drive-pr | What `{status}` stands for at each stage: do-item sets `implementing` at pickup and `driving` when it arms the drive, drive-pr sets `ready` after the merge-ready announcement posts. `done` is for a follow-up step. An entry overrides one stage and keeps the rest; a stage outside this set is refused |
+
+From the repository root, `bun "<do-item-skill-dir>/scripts/workspace-name.ts" <stage> [--id "<key>"] [--title-file <path>] [--pr <number>]`
+applies it, `<do-item-skill-dir>` being the installed `do-item` skill's
+directory. The title comes from a file because it is tracker text that a
+shell must not expand; `--title <text>` is for a caller that starts the
+script without a shell. `--id` is left out for a pull request that serves no
+item.
 
 ## `work_batch`
 
@@ -1060,6 +1078,9 @@ do_item:
   arm_drive: auto                        # auto | tab | background | print
   work_types:                            # fields of the depth table to override
     task: { review_skip_lines: 80 }
+workspace_name:
+  template: "{status} {id} {title}"   # [D] JIG-12 Rename workspaces
+  statuses: { ready: "[R]", done: "✅" }
 work_batch:
   point_budget: 16
   size_points: { xs: 1, small: 2, medium: 6 }   # keys: exactly issue_tracker.labels.batch_sizes
