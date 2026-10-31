@@ -22,6 +22,7 @@ import { fail, isDigits, runMain } from "../../../shared/cli.ts";
 import {
   type OrcaRunner,
   orcaCommand,
+  orcaEnvelope,
   orcaFailure,
   orcaResult,
   runOrca,
@@ -51,7 +52,8 @@ export async function linkWorkspacePr(
     | { id?: unknown; linkedPR?: unknown }
     | undefined;
   if (typeof worktree?.id !== "string" || worktree.id === "") {
-    if (current.stdout.includes(NOT_A_WORKTREE))
+    const envelope = orcaEnvelope(current.stdout);
+    if (envelope?.ok === false && envelope.code === NOT_A_WORKTREE)
       return "workspace-pr-link: Orca does not list this directory as a worktree; nothing to do";
     return `workspace-pr-link: ⚠ could not ask Orca which worktree this is ${orcaFailure(current)}`;
   }

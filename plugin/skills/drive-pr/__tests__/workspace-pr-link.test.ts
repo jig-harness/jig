@@ -93,4 +93,16 @@ describe("linkWorkspacePr", () => {
       "nothing to do",
     );
   });
+
+  test("warns when another error only mentions the not-a-worktree code", async () => {
+    const { runner } = orcaAnswering({
+      "worktree current --json": JSON.stringify({
+        ok: false,
+        error: { code: "transport_error", message: "selector_not_found" },
+      }),
+    });
+    expect(await linkWorkspacePr("42", ORCA, runner)).toContain(
+      "⚠ could not ask Orca which worktree this is",
+    );
+  });
 });
