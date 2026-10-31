@@ -991,7 +991,10 @@ could forge or forget.
    bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" driving --id "<item key>" --title-file .context/workspace-title.md --pr <PR>
    ```
 
-   The title file is written in `<tree>` too. Then report. State: armed, the
+   A drive armed on an existing PR has no title file yet, so before the
+   command read the served item's title with step 3's `get_issue.ts` and
+   write it alone to `<tree>/.context/workspace-title.md` with the file
+   editor; the command exits `2` on a missing file. Then report. State: armed, the
    PR, the tree it drives from, where it runs (the tab's title, or the
    background task's handle), the pass model (`model`), the verified
    driver-log path (`drive.log` when the script found the drive listed, else
