@@ -9,6 +9,26 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ## Now
 
+### 33. The dispatcher: a tick that starts the execution line's stages
+
+A small program on the machine that runs the agent sessions starts each
+stage of the execution line that should be running and is not: a session
+that picks up an item assigned to the team's
+[factory identity](GLOSSARY.md), a restart of a review drive stopped by a
+usage limit (on another account) or by a question a person has answered,
+and the follow-up after a merge. It runs every few minutes, reports what it
+would start and why before it is allowed to start anything, caps the
+sessions per subscription account, and reaches a person on their phone for
+the decisions that are theirs. It never merges. Every finished session
+leaves a row in an [outcome log](GLOSSARY.md) that one dashboard filters
+by time, repository, stage, account and outcome; a session that falls
+behind what its stage should achieve is reported as
+[drifting](GLOSSARY.md), never corrected on its own; and the one prompt
+it sends a session by itself is "continue", once a usage limit has reset.
+Orca is its first session runtime
+([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
+with others through the same interface.
+
 ### 3. The kickoff family
 
 A `kickoff` skill that starts a new repository from nothing: requirements,
