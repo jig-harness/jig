@@ -975,11 +975,14 @@ could forge or forget.
    - exit `0` inside the window → the drive already reached a terminal state;
      report its own reason.
    - still running → armed. Do not poll.
-6. **Name the workspace, report and stop.** When step 5 found the drive armed
-   (not refused, failed or already finished), name the workspace for the
-   driving stage, in `<tree>`, with the item the PR serves as in
+6. **Name the workspace, report and stop.** When step 4 found the drive
+   `armed`, or step 5 found it still running (not refused, failed or already
+   finished), name the workspace for the driving stage, in `<tree>`, with the
+   item the PR serves as in
    [§ Announcing merge-readiness](#announcing-merge-readiness) (a PR that
-   serves none or several leaves out `--id` and `--title-file`). It does
+   serves none or several leaves out `--id` and `--title-file`). Run it
+   without the variables step 2's `env.unset` names, as the arm command is,
+   so it reads the destination repository's template. It does
    nothing without `workspace_name.template`, outside Orca, and never fails
    the step:
 
