@@ -35,7 +35,10 @@ import {
   DEFAULT_ARM_DRIVE,
   DEFAULT_MAX_ROUNDS,
   DEFAULT_PASS_DEADLINE_RETRIES,
+  DEFAULT_PASS_ARGS,
   DEFAULT_PASS_MODEL,
+  PASS_ARG_PATTERN,
+  refusedPassArgs,
   PASS_MODEL_PATTERN,
 } from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
@@ -241,6 +244,10 @@ describe("the reading skills", () => {
     expect(field("pull_requests.open_as")?.values).toEqual([...OPEN_AS]);
     expect(field("do_item.arm_drive")?.values).toEqual([...ARM_DRIVE_MODES]);
     expect(field("drive.pass_model")?.pattern).toBe(PASS_MODEL_PATTERN.source);
+    expect(field("drive.pass_args")?.items).toEqual({
+      type: "string",
+      pattern: PASS_ARG_PATTERN.source,
+    });
     expect(field("pull_requests.issue_link")?.values).toEqual([...ISSUE_LINKS]);
     expect(field("pull_requests.title_format")?.values).toEqual([
       ...TITLE_FORMATS,
@@ -318,6 +325,7 @@ describe("the reading skills", () => {
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
       "drive.pass_deadline_retries": DEFAULT_PASS_DEADLINE_RETRIES,
       "drive.pass_model": DEFAULT_PASS_MODEL,
+      "drive.pass_args": DEFAULT_PASS_ARGS,
       "do_item.arm_drive": DEFAULT_ARM_DRIVE,
       "issue_tracker.adapter": DEFAULT_ADAPTER,
       "issue_tracker.github.states_from": DEFAULT_STATES_FROM,
@@ -375,6 +383,31 @@ describe("the reading skills", () => {
     expect(problems(2 ** 53)).toEqual([
       "drive.max_rounds must be a whole number ≥ 1",
     ]);
+  });
+
+  test("reject the drive.pass_args words the reading skill refuses, and accept the rest", () => {
+    const problems = (words: string[]) =>
+      checkConfig({ drive: { pass_args: words } }, schema).length;
+    for (const refused of [
+      ["--model", "opus"],
+      ["--model=opus"],
+      ["-p", "text"],
+      ["--print"],
+      ["--"],
+    ]) {
+      expect(refusedPassArgs(refused)).toBeDefined();
+      expect(problems(refused)).toBeGreaterThan(0);
+    }
+    // The schema cannot see an operand missing at the end of the list; the reading skill refuses it.
+    expect(refusedPassArgs(["--permission-mode"])).toBeDefined();
+    for (const accepted of [
+      ["--permission-mode", "bypassPermissions"],
+      ["--permission-mode=auto"],
+      ["--modelish"],
+    ]) {
+      expect(refusedPassArgs(accepted)).toBeUndefined();
+      expect(problems(accepted)).toBe(0);
+    }
   });
 
   test("report as errors the nulls remoteName refuses, and other nulls as not set", () => {

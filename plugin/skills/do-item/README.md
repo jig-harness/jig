@@ -89,8 +89,11 @@ elsewhere; `tab`, `background` and `print` (the command only) choose one.
 Each round's agent runs on `drive.pass_model`
 ([configuration](../../CONFIGURATION.md#drive)): `sonnet`, Claude Code's
 alias for the latest Sonnet, unless you name a model, an alias or a
-routing tier. The skill reports the command, the model, the driver log and
-the commands that list and stop the drive. An issue that waits on a person's
+routing tier, and with the extra arguments `drive.pass_args` gives its
+command (none unless the repository sets them; see
+[drive-pr](../drive-pr/README.md)). The skill reports
+the command, the model, the permission mode, the driver log and the
+commands that list and stop the drive. An issue that waits on a person's
 decision gets the command only.
 
 ## Continuing work
@@ -113,7 +116,7 @@ call, and an Orca call that fails only warns.
 
 The workspace is also renamed as the work moves, from a template over the item key, title, pull request and a short status (`[I]`
 implementing, `[D]` driving, `[R]` ready to merge; `✅` done is reserved for
-a follow-up step and nothing sets it yet), `{id} {status} {title}` by
+a follow-up step and nothing sets it yet), `{id} {status} {title} {pr}` by
 default: [`workspace_name`](../../CONFIGURATION.md#workspace_name) changes the
 template, and `template: ""` turns the renaming off.
 

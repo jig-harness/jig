@@ -1173,6 +1173,20 @@ make, use the entry's term instead.
   but is stuck (alive with no progress) or dead with nothing left unpushed;
   it is refused against a driver that is making progress
   ([drive-pr](plugin/skills/drive-pr/README.md#picking-up-a-stopped-drive)).
+- **Permission mode (of a pass)** — the setting of an agent tool that
+  decides which of its actions ask a person first. Claude Code's
+  `default` mode asks before most edits and commands; a pass of a *PR
+  drive loop* runs with no person at a terminal to answer, so whatever
+  would ask is denied instead, writes under protected paths such as
+  `.claude/skills/**` among them (the `auto` mode lets a classifier approve
+  some of these instead). `bypassPermissions` skips those prompts, though
+  explicit ask rules, tools that need a person, and Claude Code's checks
+  before removing critical paths still apply, so an unattended call can
+  still be denied. It trades the prompts for the instructions the drive
+  gives the pass (its push script, its bots-only rule), which steer it but
+  do not stop it; only Claude Code's deny rules and hooks still do. A repository chooses it for its passes with
+  `drive.pass_args`
+  ([configuration](plugin/CONFIGURATION.md#drive)).
 - **Drive ledger** — the resumable part of a *PR drive loop*'s saved state
   (its round, what it parked for a person and why, what it replied to and
   pushed, who drove it and when it last wrote), kept as one hidden-marker
@@ -1535,6 +1549,17 @@ make, use the entry's term instead.
 - **Marketplace** — a catalog an agent tool installs plugins from; usually a
   Git repository with a manifest listing its plugins. This repository is its
   own marketplace.
+- **Dark factory** — a delivery loop that runs with nobody watching: work is
+  picked up, implemented, reviewed and driven to its merge decision by agents,
+  and a person is involved only at the decisions the *HITL* registry reserves.
+  Jig is built toward one; the merge stays a person's.
+- **Provisional decision** — a decision an agent takes under the `wide`
+  *autonomy level* because nobody is there to ask, marked as such where it
+  is taken and listed first in the morning report, so a person can reverse
+  it before the merge. Under `wide`, a drive that parked re-arms once every
+  unanswered item is provisionally decided, where the item's class allows
+  it. Planned, with `wide`'s column and the morning report
+  ([design](design/dark-factory-driving.md#provisional-decisions)).
 - **Consumer overlay** — a repository's own values for a shared procedure,
   such as its gate command and reviewer names, kept in
   `.config/jig.yaml` and read by the procedure when it runs.

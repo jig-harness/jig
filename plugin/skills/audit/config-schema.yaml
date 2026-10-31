@@ -328,6 +328,14 @@ fields:
     default: sonnet
     since: 0.102.0
     read_by: [drive-pr, do-item]
+  drive.pass_args:
+    type: list
+    items:
+      type: string
+      pattern: "^(?!(?:--|-p|--print|--model)$)(?!--model=)\\S+$"
+    default: []
+    since: 0.109.0
+    read_by: [drive-pr, do-item]
   drive.escape_baseline_doc:
     type: path
     exists: expected
@@ -529,7 +537,7 @@ fields:
     type: string
     pattern: "^(?:[^{}]|\\{(?:id|status|title|pr)\\})*$"
     allow_empty: true
-    default: "{id} {status} {title}"
+    default: "{id} {status} {title} {pr}"
     read_by: [do-item, drive-pr]
     since: 0.104.0
   workspace_name.statuses:

@@ -2,7 +2,7 @@
 /**
  * Name the workspace this session runs in after the piece of work it holds and
  * the stage that work is at, from the repository's name template (by default
- * `{id} {status} {title}`); do nothing when the template is turned off.
+ * `{id} {status} {title} {pr}`); do nothing when the template is turned off.
  *
  * Usage: bun workspace-name.ts <stage> [--id <key>] [--title <text> | --title-file <path>] [--pr <number>]
  *
@@ -56,7 +56,7 @@ export const DEFAULT_STATUSES: Record<Stage, string> = {
 };
 
 /** The name when the repository sets no template. */
-export const DEFAULT_TEMPLATE = "{id} {status} {title}";
+export const DEFAULT_TEMPLATE = "{id} {status} {title} {pr}";
 
 const VARIABLES = ["id", "status", "title", "pr"] as const;
 

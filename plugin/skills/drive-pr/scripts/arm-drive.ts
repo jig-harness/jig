@@ -8,7 +8,8 @@
  *
  * Usage:
  *   arm-drive.ts <PR> [--mode auto|tab|background|print] [--pass-model M]
- *                [--max-rounds N] [--keep-draft] [--handoff-at V]
+ *                [--pass-args "WORDS"] [--max-rounds N] [--keep-draft]
+ *                [--handoff-at V]
  *
  *   --mode        overrides `do_item.arm_drive` (default `auto`) for this arm;
  *                 `print` where a human checkpoint withholds the drive
@@ -18,6 +19,12 @@
  *                 is written into the pass command as `claude --model
  *                 <model>`; the flag itself is forwarded to `drive.ts`, so the
  *                 driver log names it as the source
+ *   --pass-args   extra arguments for the pass command, for this drive: one
+ *                 value, split on whitespace (`"--permission-mode
+ *                 bypassPermissions"`); an empty value means none. Default
+ *                 `drive.pass_args`, else none. The words are written into
+ *                 the pass command before `-p`, and the flag is forwarded to
+ *                 `drive.ts`, as `--pass-model` is
  *   --max-rounds, --keep-draft, --handoff-at  forwarded to `drive.ts`
  *
  * Prints one JSON object (`ArmReport` in `lib/arm.ts`): `status` says what
@@ -31,9 +38,10 @@
  * `DRIVE_PR_ARM_CONFIRM_SEC` (default 45) bounds the wait for a tab's drive.
  *
  * Exit codes: 0 decided (and, for a tab, opened); 1 `tab` could not be
- * honoured, or a setting, the model or the working tree could not be read;
- * 2 usage: a malformed command line prints its usage only, a `--pass-model`
- * that names no model prints the `failed` report.
+ * honoured, or a setting (`drive.pass_args` among them), the model or the
+ * working tree could not be read; 2 usage: a malformed command line prints
+ * its usage only, a `--pass-model` that names no model or a `--pass-args`
+ * that holds a word it cannot (`--model`, `-p`) prints the `failed` report.
  */
 import { resolve } from "node:path";
 import { fail, isDigits, runMain, sleep } from "./lib/cli.ts";
@@ -57,6 +65,11 @@ import {
   ARM_DRIVE_MODES,
 } from "./lib/overlay.ts";
 import {
+  chosenPassArgs,
+  type PassArgs,
+  PassArgsUsageError,
+} from "./lib/pass-args.ts";
+import {
   configuredPassModel,
   type PassModel,
   PassModelUsageError,
@@ -66,12 +79,13 @@ import { git, gitIdentityEnv, run, tsArgv } from "./lib/proc.ts";
 import { runOrca } from "../../../shared/orca.ts";
 
 const USAGE =
-  "usage: arm-drive.ts <PR> [--mode auto|tab|background|print] [--pass-model M] [--max-rounds N] [--keep-draft] [--handoff-at V]";
+  'usage: arm-drive.ts <PR> [--mode auto|tab|background|print] [--pass-model M] [--pass-args "WORDS"] [--max-rounds N] [--keep-draft] [--handoff-at V]';
 
 interface Args {
   pr: string;
   mode: ArmDriveMode | undefined;
   passModel: string | undefined;
+  passArgs: string | undefined;
   forward: string[];
 }
 
@@ -79,13 +93,26 @@ interface Args {
 const VALUE_FLAGS = new Set([
   "--mode",
   "--pass-model",
+  "--pass-args",
   "--max-rounds",
   "--handoff-at",
 ]);
 
+/** The flags whose value may start with `--`, since it is a pass command's own. */
+const DASHED_VALUES = new Set(["--pass-args"]);
+
+/** The flags of this command line, which a dashed value may not be mistaken for. */
+const OWN_FLAGS = new Set([...VALUE_FLAGS, "--keep-draft"]);
+
 function value(argv: string[], index: number): string {
   const v = argv[index + 1];
-  if (v === undefined || v.startsWith("--"))
+  const flag = argv[index] as string;
+  const dashed = v?.startsWith("--") === true;
+  if (
+    v === undefined ||
+    (dashed && !DASHED_VALUES.has(flag)) ||
+    (dashed && (v === "--" || OWN_FLAGS.has(v.split(/\s/)[0] as string)))
+  )
     fail(2, `${argv[index]} requires a value`, USAGE);
   return v;
 }
@@ -100,6 +127,10 @@ function takeValue(args: Args, flag: string, v: string): void {
       return;
     case "--pass-model":
       args.passModel = v;
+      args.forward.push(flag, v);
+      return;
+    case "--pass-args":
+      args.passArgs = v;
       args.forward.push(flag, v);
       return;
     case "--max-rounds":
@@ -117,6 +148,7 @@ function parseArgs(argv: string[]): Args {
     pr: "",
     mode: undefined,
     passModel: undefined,
+    passArgs: undefined,
     forward: [],
   };
   for (let i = 0; i < argv.length; i++) {
@@ -155,11 +187,16 @@ function attempt<T>(read: () => T): T | Error {
   }
 }
 
+/** The flags a failed report's command leaves out, with their values. */
+const PASS_FLAGS = new Set(["--pass-model", "--pass-args"]);
+
 /**
  * The arm's inputs, or the `failed` report of the first one that could not
- * be read (exit 2 for a `--pass-model` that names no model, else 1). The
- * report's command is built on the default model when the model could not
- * be read, and without the `--pass-model` that failed.
+ * be read (exit 2 for a `--pass-model` that names no model or a
+ * `--pass-args` it refuses, else 1). The report's command is built on the
+ * default model when the model could not be read, with no extra pass
+ * arguments when they could not be read, and without the `--pass-model` and
+ * `--pass-args` flags.
  */
 async function readInputs(
   args: Args,
@@ -167,36 +204,53 @@ async function readInputs(
   const tree = await workingTree();
   const armDrive = attempt(() => setting(args.mode));
   const model = attempt(() => passModel(args.passModel));
-  const problems = [tree, armDrive, model].filter((v) => v instanceof Error);
+  const passArgs = attempt(() => chosenPassArgs(args.passArgs));
+  const problems = [tree, armDrive, model, passArgs].filter(
+    (v) => v instanceof Error,
+  );
   const problem = problems[0];
   if (
     problem === undefined &&
     !(tree instanceof Error) &&
     !(armDrive instanceof Error) &&
-    !(model instanceof Error)
+    !(model instanceof Error) &&
+    !(passArgs instanceof Error)
   )
     return {
       request: { pr: args.pr, tree, forward: args.forward },
       setting: armDrive,
       model,
+      passArgs,
       env: process.env,
     };
   const fallback = {
     model: DEFAULT_PASS_MODEL,
     source: "the default, since the configured model could not be read",
   };
+  const noArgs: PassArgs = {
+    words: [],
+    source: "none, since the extra pass arguments could not be read",
+  };
   const pr = args.pr;
   const forward = args.forward.filter(
-    (word, i, all) => word !== "--pass-model" && all[i - 1] !== "--pass-model",
+    (word, i, all) =>
+      !PASS_FLAGS.has(word) && !PASS_FLAGS.has(all[i - 1] ?? ""),
   );
   return {
     report: failedReport(
       { pr, tree: tree instanceof Error ? null : tree, forward },
       armDrive instanceof Error ? null : armDrive,
-      model instanceof Error ? fallback : model,
+      {
+        model: model instanceof Error ? fallback : model,
+        passArgs: passArgs instanceof Error ? noArgs : passArgs,
+      },
       `arm-drive.ts: ${problem?.message ?? "unknown"}`,
     ),
-    exit: problem instanceof PassModelUsageError ? 2 : 1,
+    exit:
+      problem instanceof PassModelUsageError ||
+      problem instanceof PassArgsUsageError
+        ? 2
+        : 1,
   };
 }
 
@@ -245,7 +299,7 @@ function confirmSeconds(): number {
 function answer({ report, exit }: { report: ArmReport; exit: number }): number {
   console.log(JSON.stringify(report, null, 2));
   console.error(
-    `arm-drive.ts: ${report.status}${report.way === null ? "" : ` (${report.way})`} — ${report.fallback ?? report.reason}; pass model ${report.model} (${report.modelSource})`,
+    `arm-drive.ts: ${report.status}${report.way === null ? "" : ` (${report.way})`} — ${report.fallback ?? report.reason}; pass model ${report.model} (${report.modelSource}); permission mode ${report.permissionMode}`,
   );
   return exit;
 }
