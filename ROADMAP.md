@@ -17,7 +17,7 @@ driver that died or stopped making progress, and resume from the state the
 previous driver left on the pull request itself. The drive stops for a
 person only on a configured human decision class (by default the
 [human-in-the-loop registry](modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md)'s
-rows plus two more), and then hands over the question, the options and their
+rows plus the classes a repository adds), and then hands over the question, the options and their
 consequences, the recommended option and what a person must do. A
 repository sets how far an agent decides on its own, and may raise it
 during the hours nobody is there to ask; every decision taken without a

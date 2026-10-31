@@ -276,12 +276,18 @@ decision; a park that still cannot fit stores its full record as its own
 comment under a second marker, and the ledger carries that comment's link.
 
 It is written at round boundaries and at every park and takeover. The forge
-offers no conditional update of a comment, so the write is read, compare the
-`updatedAt` and `generation`, write, then read back: a writer whose
-generation is not the one now stored re-reads, merges (the higher generation
-wins each field it changed) and writes again. Two creations that race leave
-two comments, of which the lower id is canonical and the other is deleted by
-its author on its next write. A ledger is **trusted** only when its
+offers no conditional update of a comment, and a read-back cannot tell two
+writers of one generation apart, so a change is never an overwrite: each
+writer appends an operation record (its actor, the generation it read and
+the fields it changed) as its own comment under a second marker, and the
+ledger's state is the deterministic fold of those records in comment-id
+order, the later record winning each field it names. No record is ever
+edited, so no change is lost; the single ledger comment is a snapshot of
+the fold that any writer may regenerate, and a reader that finds it behind
+the records folds them itself. The records are cut to the same last-twenty
+and body-limit rules as the snapshot. Two creations of the snapshot that
+race leave two comments, of which the lower id is canonical and the other is
+deleted by its author on its next write. A ledger is **trusted** only when its
 comment's author is the drive's own login or carries the owner, member or
 collaborator association; any other comment carrying the marker is ignored
 and reported. Trust names who may write; the fields that gate an action
@@ -330,7 +336,10 @@ reader takes them from the pull request's **base branch** snapshot, the
 boundary the review skill already draws for independent review, and ignores
 a `JIG_OVERLAY` redirect and the working tree's copy. A pull request that
 edits them takes effect after it merges. When the snapshot cannot be read the
-reader fails closed: ceiling `attended` and the default classes. A session with a person in it (an interactive run,
+reader fails closed: ceiling `attended`, and no decision is taken
+unattended until the policy reads, since a default class list could be
+weaker than the repository's own, so everything that would be decided is
+parked as a human decision. A session with a person in it (an interactive run,
 not a driver pass) reads `attended` unless the person set otherwise. The
 pass prints the level and its source at the start of every round; the round
 report and the ledger say which level each decision was taken under.
