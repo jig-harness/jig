@@ -447,6 +447,58 @@ describe("drives.ts --report", () => {
     expect((await run(24 * 30)).terminal.name).not.toBe("running");
   });
 
+  it("a stop that ended an earlier run does not end the run a lapsed ledger names", async () => {
+    const run = async (startedHoursAgo: number) => {
+      const forge = setUp();
+      writeState(forge, {
+        ...freshState(20),
+        ledgerGeneration: 3,
+        events: [{ at: ago(10), round: 1, kind: "stop", cause: "0" }],
+      } as DriveState);
+      const ledger = renderLedger(
+        ledgerFromState(
+          { ...freshState(20), rounds: 4, phase: "converged" },
+          {
+            generation: 3,
+            driver: {
+              actor: "wt-cccccccccccccccc",
+              clone: "clone-b",
+              heartbeat: ago(24 * 30),
+              state: "running",
+              started: ago(startedHoursAgo),
+            },
+            narrative: [],
+            claims: [],
+          },
+        ),
+      );
+      if ("error" in ledger) throw new Error(ledger.error);
+      forge.write("comments-20.json", [
+        {
+          id: 200,
+          body: ledger.body,
+          user: { login: "drive-bot" },
+          author_association: "NONE",
+          updated_at: ago(1),
+          created_at: ago(1),
+          html_url: "https://example.invalid/comment-200",
+        },
+      ]);
+      const r = await report(forge, ["--json"]);
+      expectSpawnExit(r, 0);
+      return JSON.parse(r.stdout).pullRequests.find(
+        (p: { number: number }) => p.number === 20,
+      );
+    };
+    // The run began after the recorded stop: that stop is not its end.
+    expect((await run(5)).terminal.name).toBe("stopped");
+    // The run began before it: the stop is that run's end.
+    expect((await run(20)).terminal).toMatchObject({
+      name: "CONVERGED",
+      exit: 0,
+    });
+  });
+
   it("a span too long for a date is refused as usage", async () => {
     const forge = setUp();
     const r = await report(forge, ["--since", "999999999999999999999h"]);

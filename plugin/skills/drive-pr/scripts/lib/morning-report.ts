@@ -191,7 +191,7 @@ function fromState(s: DriveState): DriveRecord {
   };
 }
 
-function fromLedger(l: Ledger): DriveRecord {
+function fromLedger(l: Ledger, nowMs: number): DriveRecord {
   return {
     source: "ledger",
     decisions: l.decisions,
@@ -207,7 +207,7 @@ function fromLedger(l: Ledger): DriveRecord {
     // "running"; past the lease window its heartbeat no longer says it is.
     runningElsewhere:
       l.driver.state === "running" &&
-      Date.now() - Date.parse(l.driver.heartbeat) <= stallThresholdMs(),
+      nowMs - Date.parse(l.driver.heartbeat) <= stallThresholdMs(),
   };
 }
 
@@ -519,15 +519,30 @@ const NO_RECORD: DriveRecord = {
 function recordOf(
   own: { state: DriveState } | undefined,
   remote: { ledger: Ledger | null } | undefined,
+  nowMs: number,
 ): DriveRecord {
   const ledger = remote?.ledger ?? null;
   if (own === undefined)
-    return ledger === null ? NO_RECORD : fromLedger(ledger);
+    return ledger === null ? NO_RECORD : fromLedger(ledger, nowMs);
   const local = fromState(own.state);
   if (ledger === null) return local;
   if (ledger.generation > (own.state.ledgerGeneration ?? 0))
-    return fromLedger(ledger);
-  return { ...local, runningElsewhere: fromLedger(ledger).runningElsewhere };
+    return fromLedger(ledger, nowMs);
+  return {
+    ...local,
+    // A stop recorded before the run the ledger says is running began ended
+    // an earlier run: it says nothing of how this one ended.
+    exit: stopEndsRun(own.state, ledger) ? local.exit : null,
+    runningElsewhere: fromLedger(ledger, nowMs).runningElsewhere,
+  };
+}
+
+/** Whether the state's last stop came at or after the start of the run a running ledger names. */
+function stopEndsRun(s: DriveState, ledger: Ledger): boolean {
+  const started = ledger.driver.started;
+  if (ledger.driver.state !== "running" || started === undefined) return true;
+  const stop = (s.events ?? []).findLast((e) => e.kind === "stop");
+  return stop === undefined || Date.parse(stop.at) >= Date.parse(started);
 }
 
 /** Gather the report. `live` holds the pull requests a live driver holds in this clone. */
@@ -551,7 +566,7 @@ export async function gatherMorningReport(opts: {
     pullRequests.push(
       await reportOne(
         pr,
-        recordOf(local.get(pr), remote),
+        recordOf(local.get(pr), remote, opts.now.getTime()),
         since,
         opts.live.has(pr),
         { url: remote?.url ?? "", title: remote?.title ?? "" },
