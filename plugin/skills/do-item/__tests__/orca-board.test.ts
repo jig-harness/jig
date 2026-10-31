@@ -31,7 +31,7 @@ describe("outside Orca", () => {
 
 describe("in an Orca terminal", () => {
   test("sets the working directory's card and links the pull request", async () => {
-    const { calls, runner } = orcaAnswering({
+    const { calls, commands, runner } = orcaAnswering({
       "worktree current --json": current,
       [setArgs("in-review", "42")]: set,
     });
@@ -42,6 +42,7 @@ describe("in an Orca terminal", () => {
       "worktree current --json",
       setArgs("in-review", "42"),
     ]);
+    expect(commands).toEqual([ORCA.ORCA_CLI_COMMAND, ORCA.ORCA_CLI_COMMAND]);
   });
 
   test("leaves a directory Orca does not list alone", async () => {
