@@ -17,10 +17,15 @@ import { run } from "../shared/proc.ts";
 import { MAX_TIMEOUT_SECONDS } from "../shared/resource-lock.ts";
 import { installedEntry, outsideCheckout } from "./launcher.ts";
 import type { MachineConfig } from "./config.ts";
-import { stateRoot } from "./receipts.ts";
+import { gcJobSpec, type JobSpec } from "./job-spec.ts";
 
-const LABEL = "dev.jig.gc";
-const CRON_MARKER = "# jig-gc";
+export type { JobSpec } from "./job-spec.ts";
+function cronMarker(spec: JobSpec): string {
+  return `# ${spec.name}`;
+}
+function timerUnit(spec: JobSpec): string {
+  return `${spec.name}.timer`;
+}
 export type Scheduler = "launchd" | "systemd" | "cron";
 function xml(value: string): string {
   return value
@@ -42,12 +47,32 @@ export interface Job {
   command: string[];
   env: Record<string, string>;
   hour: number;
+  /** The job written; resource collection's daily one, at `hour`, when absent. */
+  spec?: JobSpec;
+}
+/** The calendar part of each scheduler's job for `schedule`. */
+function launchdSchedule(schedule: JobSpec["schedule"]): string {
+  return "hour" in schedule
+    ? `<key>StartCalendarInterval</key><dict><key>Hour</key><integer>${schedule.hour}</integer><key>Minute</key><integer>0</integer></dict>`
+    : `<key>StartInterval</key><integer>${schedule.everyMinutes * 60}</integer>`;
+}
+function systemdSchedule(schedule: JobSpec["schedule"]): string {
+  return "hour" in schedule
+    ? `OnCalendar=*-*-* ${String(schedule.hour).padStart(2, "0")}:00:00\nPersistent=true`
+    : `OnActiveSec=1min\nOnUnitActiveSec=${schedule.everyMinutes}min`;
+}
+function cronSchedule(schedule: JobSpec["schedule"]): string {
+  return "hour" in schedule
+    ? `0 ${schedule.hour} * * *`
+    : `*/${schedule.everyMinutes} * * * *`;
 }
 export function jobFiles(
   scheduler: Scheduler,
   job: Job,
 ): Record<string, string> {
   const command = job.command;
+  const spec = job.spec ?? gcJobSpec(job.hour);
+  const label = spec.label;
   if (
     [...command, ...Object.values(job.env)].some((value) =>
       /[\r\n\0]/.test(value),
@@ -56,9 +81,9 @@ export function jobFiles(
     throw new GcError("Scheduler values cannot contain line breaks or NUL");
   if (scheduler === "launchd")
     return {
-      [`${LABEL}.plist`]: `<?xml version="1.0" encoding="UTF-8"?>
+      [`${label}.plist`]: `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict><key>Label</key><string>${LABEL}</string>
+<plist version="1.0"><dict><key>Label</key><string>${label}</string>
 <key>ProgramArguments</key><array>${command.map((arg) => `<string>${xml(arg)}</string>`).join("")}</array>
 <key>EnvironmentVariables</key><dict>${Object.entries(job.env)
         .map(
@@ -66,23 +91,24 @@ export function jobFiles(
             `<key>${xml(key)}</key><string>${xml(value)}</string>`,
         )
         .join("")}</dict>
-<key>StartCalendarInterval</key><dict><key>Hour</key><integer>${job.hour}</integer><key>Minute</key><integer>0</integer></dict>
-<key>StandardOutPath</key><string>${xml(join(stateRoot(), "scheduler.log"))}</string>
-<key>StandardErrorPath</key><string>${xml(join(stateRoot(), "scheduler-error.log"))}</string></dict></plist>\n`,
+${launchdSchedule(spec.schedule)}
+<key>StandardOutPath</key><string>${xml(join(spec.stateRoot, "scheduler.log"))}</string>
+<key>StandardErrorPath</key><string>${xml(join(spec.stateRoot, "scheduler-error.log"))}</string></dict></plist>\n`,
     };
   // Environment= preserves dollars; ExecStart= requires $$ for a literal.
   // https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html
   if (scheduler === "systemd")
     return {
-      "jig-gc.service": `[Unit]\nDescription=Jig resource collection\n[Service]\nType=oneshot\nExecStart=${command.map((arg) => systemd(arg.replace(/\$/g, () => "$$"))).join(" ")}\n${Object.entries(
+      [`${spec.name}.service`]: `[Unit]\nDescription=${spec.description}\n[Service]\nType=oneshot\nExecStart=${command.map((arg) => systemd(arg.replace(/\$/g, () => "$$"))).join(" ")}\n${Object.entries(
         job.env,
       )
         .map(([key, value]) => `Environment=${systemd(`${key}=${value}`)}`)
         .join("\n")}\n`,
-      "jig-gc.timer": `[Unit]\nDescription=Daily Jig resource report\n[Timer]\nOnCalendar=*-*-* ${String(job.hour).padStart(2, "0")}:00:00\nPersistent=true\n[Install]\nWantedBy=timers.target\n`,
+      [timerUnit(spec)]:
+        `[Unit]\nDescription=${spec.timerDescription}\n[Timer]\n${systemdSchedule(spec.schedule)}\n[Install]\nWantedBy=timers.target\n`,
     };
-  const line = `0 ${job.hour} * * * ${["env", ...Object.entries(job.env).map(([key, value]) => `${key}=${value}`), ...command].map(quote).join(" ")}`;
-  return { crontab: `${cronCommand(line)} ${CRON_MARKER}\n` };
+  const line = `${cronSchedule(spec.schedule)} ${["env", ...Object.entries(job.env).map(([key, value]) => `${key}=${value}`), ...command].map(quote).join(" ")}`;
+  return { crontab: `${cronCommand(line)} ${cronMarker(spec)}\n` };
 }
 /**
  * Cron reads percent signs before the shell sees quoting: an unescaped one
@@ -124,8 +150,8 @@ async function crontab(): Promise<string> {
  * Where the job's entry point lives. It is outside every plugin release, so
  * the job does not name one: the launcher finds the installed copy per run.
  */
-function launcherDirectory(): string {
-  return join(stateRoot(), "launcher");
+function launcherDirectory(spec: JobSpec): string {
+  return join(spec.stateRoot, "launcher");
 }
 /**
  * The agent tools the launcher may ask for the installed plugin copy, by the
@@ -156,8 +182,8 @@ const LAUNCHER_FILES = ["launcher.ts", "bunfig.toml"];
  * their targets before either is replaced, so a failed copy leaves the
  * previous pair in place.
  */
-function installLauncher(): void {
-  const directory = launcherDirectory();
+function installLauncher(spec: JobSpec): void {
+  const directory = launcherDirectory(spec);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const staged = LAUNCHER_FILES.map((name) => ({
     source: join(import.meta.dir, name),
@@ -180,9 +206,9 @@ function lockTimeout(value: string): string {
   return value;
 }
 /** The job to write; a removal names it only, so a bad value cannot block it. */
-function installedJob(machine: MachineConfig, removing = false): Job {
+function installedJob(spec: JobSpec, removing = false): Job {
   const root = homedir();
-  const directory = launcherDirectory();
+  const directory = launcherDirectory(spec);
   return {
     command: [
       realpathSync(process.execPath),
@@ -193,8 +219,7 @@ function installedJob(machine: MachineConfig, removing = false): Job {
         ([name, program]) => `--${name}=${program}`,
       ),
       "--",
-      "gc",
-      "--scheduled",
+      ...spec.args,
     ],
     env: {
       HOME: root,
@@ -220,29 +245,33 @@ function installedJob(machine: MachineConfig, removing = false): Job {
         ? { DRIVE_PR_STATE_DIR: resolve(process.env.DRIVE_PR_STATE_DIR) }
         : {}),
     },
-    hour: machine.hour,
+    hour: "hour" in spec.schedule ? spec.schedule.hour : 0,
+    spec,
   };
 }
 async function updateCron(
   files: Record<string, string>,
   remove: boolean,
+  spec: JobSpec,
 ): Promise<string> {
   const previous = await crontab();
   const retained = previous
     .split("\n")
-    .filter((line) => !line.endsWith(` ${CRON_MARKER}`) && line !== "")
+    .filter((line) => !line.endsWith(` ${cronMarker(spec)}`) && line !== "")
     .join("\n");
   await execute(
     ["crontab", "-"],
     `${retained}${retained ? "\n" : ""}${remove ? "" : files.crontab}`,
   );
-  return "crontab: jig-gc";
+  return `crontab: ${spec.name}`;
 }
 async function updateLaunchd(
   dir: string,
   files: Record<string, string>,
   remove: boolean,
+  spec: JobSpec,
 ): Promise<string> {
+  const LABEL = spec.label;
   const path = join(dir, `${LABEL}.plist`);
   const domain = `gui/${process.getuid?.()}`;
   if (await launchdLoaded(`${domain}/${LABEL}`))
@@ -258,19 +287,20 @@ async function updateSystemd(
   dir: string,
   files: Record<string, string>,
   remove: boolean,
+  spec: JobSpec,
 ): Promise<string> {
+  const timer = timerUnit(spec);
   // systemctl refuses to disable a unit that was never installed.
-  if (remove && existsSync(join(dir, "jig-gc.timer")))
-    await execute(["systemctl", "--user", "disable", "--now", "jig-gc.timer"]);
+  if (remove && existsSync(join(dir, timer)))
+    await execute(["systemctl", "--user", "disable", "--now", timer]);
   for (const [name, text] of Object.entries(files)) {
     const path = join(dir, name);
     if (remove) rmSync(path, { force: true });
     else writeFileSync(path, text, { mode: 0o600 });
   }
   await execute(["systemctl", "--user", "daemon-reload"]);
-  if (!remove)
-    await execute(["systemctl", "--user", "enable", "--now", "jig-gc.timer"]);
-  return join(dir, "jig-gc.timer");
+  if (!remove) await execute(["systemctl", "--user", "enable", "--now", timer]);
+  return join(dir, timer);
 }
 function jobDirectory(scheduler: "launchd" | "systemd"): string {
   return scheduler === "launchd"
@@ -281,25 +311,33 @@ async function applyJob(
   scheduler: Scheduler,
   files: Record<string, string>,
   remove: boolean,
+  spec: JobSpec,
 ): Promise<string> {
-  if (scheduler === "cron") return updateCron(files, remove);
+  if (scheduler === "cron") return updateCron(files, remove, spec);
   const dir = jobDirectory(scheduler);
   mkdirSync(dir, { recursive: true });
   return scheduler === "launchd"
-    ? updateLaunchd(dir, files, remove)
-    : updateSystemd(dir, files, remove);
+    ? updateLaunchd(dir, files, remove, spec)
+    : updateSystemd(dir, files, remove, spec);
 }
 export async function updateScheduler(
   machine: MachineConfig,
   remove = false,
 ): Promise<string> {
+  return updateJob(gcJobSpec(machine.hour), remove);
+}
+/** Write, or with `remove` take away, the job `spec` names. */
+export async function updateJob(
+  spec: JobSpec,
+  remove = false,
+): Promise<string> {
   const scheduler = detectScheduler();
-  const files = jobFiles(scheduler, installedJob(machine, remove));
-  mkdirSync(stateRoot(), { recursive: true, mode: 0o700 });
+  const files = jobFiles(scheduler, installedJob(spec, remove));
+  mkdirSync(spec.stateRoot, { recursive: true, mode: 0o700 });
   // In place before the job that runs it, and gone only after that job is.
-  if (!remove) installLauncher();
-  const job = await applyJob(scheduler, files, remove);
-  if (remove) rmSync(launcherDirectory(), { recursive: true, force: true });
+  if (!remove) installLauncher(spec);
+  const job = await applyJob(scheduler, files, remove, spec);
+  if (remove) rmSync(launcherDirectory(spec), { recursive: true, force: true });
   return job;
 }
 /**
@@ -311,27 +349,31 @@ export async function updateScheduler(
  */
 export interface SchedulerSnapshot {
   scheduler: Scheduler;
+  spec: JobSpec;
   files: Record<string, string | null>;
   launcher: Record<string, string | null>;
   enabled: boolean;
   active: boolean;
 }
-function launcherSnapshot(): Record<string, string | null> {
+function launcherSnapshot(spec: JobSpec): Record<string, string | null> {
   return Object.fromEntries(
     LAUNCHER_FILES.map((name) => {
-      const path = join(launcherDirectory(), name);
+      const path = join(launcherDirectory(spec), name);
       return [path, readOptional(path)];
     }),
   );
 }
 /** Puts back the launcher files the snapshot saw, each staged then renamed. */
-function restoreLauncher(launcher: Record<string, string | null>): void {
+function restoreLauncher(
+  launcher: Record<string, string | null>,
+  spec: JobSpec,
+): void {
   const entries = Object.entries(launcher);
   if (entries.every(([, text]) => text === null)) {
-    rmSync(launcherDirectory(), { recursive: true, force: true });
+    rmSync(launcherDirectory(spec), { recursive: true, force: true });
     return;
   }
-  mkdirSync(launcherDirectory(), { recursive: true, mode: 0o700 });
+  mkdirSync(launcherDirectory(spec), { recursive: true, mode: 0o700 });
   const temporary = (path: string) => `${path}.${process.pid}.tmp`;
   try {
     for (const [path, text] of entries)
@@ -419,19 +461,22 @@ function classify(
   value: string | undefined,
   yes: Set<string>,
   no: Set<string>,
+  timer: string,
 ): boolean {
   if (value !== undefined && yes.has(value)) return true;
   if (value !== undefined && no.has(value)) return false;
   throw new GcError(
-    `Cannot establish scheduler state: systemctl reported ${name}=${value ?? "(missing)"} for jig-gc.timer`,
+    `Cannot establish scheduler state: systemctl reported ${name}=${value ?? "(missing)"} for ${timer}`,
   );
 }
-async function systemdState(): Promise<{ enabled: boolean; active: boolean }> {
+async function systemdState(
+  timer: string,
+): Promise<{ enabled: boolean; active: boolean }> {
   const command = [
     "systemctl",
     "--user",
     "show",
-    "jig-gc.timer",
+    timer,
     "--property=LoadState,UnitFileState,ActiveState",
   ];
   const result = await run(command, { timeoutSec: 30 });
@@ -445,7 +490,7 @@ async function systemdState(): Promise<{ enabled: boolean; active: boolean }> {
   const load = props.get("LoadState");
   if (load === undefined)
     throw new GcError(
-      "Cannot establish scheduler state: systemctl reported no LoadState for jig-gc.timer",
+      `Cannot establish scheduler state: systemctl reported no LoadState for ${timer}`,
     );
   return {
     enabled:
@@ -455,22 +500,27 @@ async function systemdState(): Promise<{ enabled: boolean; active: boolean }> {
         props.get("UnitFileState"),
         ENABLED,
         NOT_ENABLED,
+        timer,
       ),
     active: classify(
       "ActiveState",
       props.get("ActiveState"),
       ACTIVE,
       NOT_ACTIVE,
+      timer,
     ),
   };
 }
 export async function snapshotScheduler(
   scheduler: Scheduler = detectScheduler(),
+  spec: JobSpec = gcJobSpec(),
 ): Promise<SchedulerSnapshot> {
-  const launcher = launcherSnapshot();
+  const launcher = launcherSnapshot(spec);
+  const LABEL = spec.label;
   if (scheduler === "cron")
     return {
       scheduler,
+      spec,
       files: { crontab: await crontab() },
       launcher,
       enabled: true,
@@ -480,24 +530,38 @@ export async function snapshotScheduler(
   const names =
     scheduler === "launchd"
       ? [`${LABEL}.plist`]
-      : ["jig-gc.service", "jig-gc.timer"];
+      : [`${spec.name}.service`, timerUnit(spec)];
   const files = Object.fromEntries(
     names.map((name) => [join(dir, name), readOptional(join(dir, name))]),
   );
   if (scheduler === "launchd") {
     const loaded = await launchdLoaded(`gui/${process.getuid?.()}/${LABEL}`);
-    return { scheduler, files, launcher, enabled: loaded, active: loaded };
+    return {
+      scheduler,
+      spec,
+      files,
+      launcher,
+      enabled: loaded,
+      active: loaded,
+    };
   }
-  return { scheduler, files, launcher, ...(await systemdState()) };
+  return {
+    scheduler,
+    spec,
+    files,
+    launcher,
+    ...(await systemdState(timerUnit(spec))),
+  };
 }
 /** Stops the replacement job; only a timer never installed may be skipped. */
-async function stopReplacement(launchd: boolean): Promise<void> {
+async function stopReplacement(launchd: boolean, spec: JobSpec): Promise<void> {
+  const timer = timerUnit(spec);
   if (launchd) {
-    const target = `gui/${process.getuid?.()}/${LABEL}`;
+    const target = `gui/${process.getuid?.()}/${spec.label}`;
     if (await launchdLoaded(target))
       await execute(["launchctl", "bootout", target]);
-  } else if (existsSync(join(jobDirectory("systemd"), "jig-gc.timer")))
-    await execute(["systemctl", "--user", "disable", "--now", "jig-gc.timer"]);
+  } else if (existsSync(join(jobDirectory("systemd"), timer)))
+    await execute(["systemctl", "--user", "disable", "--now", timer]);
 }
 async function startPrevious(snapshot: SchedulerSnapshot): Promise<void> {
   if (snapshot.scheduler === "launchd") {
@@ -511,23 +575,22 @@ async function startPrevious(snapshot: SchedulerSnapshot): Promise<void> {
       ]);
     return;
   }
+  const timer = timerUnit(snapshot.spec);
   await execute(["systemctl", "--user", "daemon-reload"]);
-  if (snapshot.enabled)
-    await execute(["systemctl", "--user", "enable", "jig-gc.timer"]);
-  if (snapshot.active)
-    await execute(["systemctl", "--user", "start", "jig-gc.timer"]);
+  if (snapshot.enabled) await execute(["systemctl", "--user", "enable", timer]);
+  if (snapshot.active) await execute(["systemctl", "--user", "start", timer]);
 }
 /** Writes back the snapshot's exact files and states, not a rebuilt job. */
 export async function restoreScheduler(
   snapshot: SchedulerSnapshot,
 ): Promise<void> {
   // In place before the restored job can start and run it.
-  restoreLauncher(snapshot.launcher);
+  restoreLauncher(snapshot.launcher, snapshot.spec);
   if (snapshot.scheduler === "cron") {
     await execute(["crontab", "-"], snapshot.files.crontab ?? "");
     return;
   }
-  await stopReplacement(snapshot.scheduler === "launchd");
+  await stopReplacement(snapshot.scheduler === "launchd", snapshot.spec);
   for (const [path, text] of Object.entries(snapshot.files))
     if (text === null) rmSync(path, { force: true });
     else writeFileSync(path, text, { mode: 0o600 });
@@ -538,6 +601,10 @@ export function schedulerPreview(
   machine: MachineConfig,
   remove: boolean,
 ): string {
+  return jobPreview(gcJobSpec(machine.hour), remove);
+}
+/** The concrete job `spec` names, as a confirmed install would write it. */
+export function jobPreview(spec: JobSpec, remove: boolean): string {
   let scheduler: Scheduler;
   try {
     scheduler = detectScheduler();
@@ -545,8 +612,8 @@ export function schedulerPreview(
     return `Scheduler preview unavailable: ${(error as Error).message}`;
   }
   if (remove)
-    return `Scheduler preview (${scheduler}): the jig-gc job is removed`;
-  const files = jobFiles(scheduler, installedJob(machine));
+    return `Scheduler preview (${scheduler}): the ${spec.name} job is removed`;
+  const files = jobFiles(scheduler, installedJob(spec));
   return [
     `Scheduler preview (${scheduler}):`,
     ...Object.entries(files).map(([name, text]) => `--- ${name}\n${text}`),

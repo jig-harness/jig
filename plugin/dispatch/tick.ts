@@ -2,8 +2,11 @@
  * One tick, under the tick lock: for each repository, read the records
  * (the dispatch section from the default branch, the tracker, the forge's
  * pull requests and their drive ledgers, the runtime's sessions), plan
- * wanted minus running, and report; then write the tick's receipt. A tick
- * starts nothing: it reports what it would start, and why.
+ * wanted minus running, and report; then write the tick's receipt. Without
+ * `--apply` a tick starts nothing: it reports what it would start, and why.
+ * With it, the re-arms and takeovers a repository's machine-file entry
+ * enables are launched within each account's cap (actions/drive.ts), and
+ * everything else is still reported.
  */
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { parseTrackerConfig } from "../skills/do-item/scripts/lib/tracker/config.ts";
@@ -15,6 +18,14 @@ import {
   openPullRequests,
   repoTarget,
 } from "./lib/forge.ts";
+import { type ApplyState, applyDrives } from "./lib/actions/drive.ts";
+import { lastAccount, slotTable } from "./lib/accounts.ts";
+import {
+  pruneLaunches,
+  readLaunches,
+  type ReadRecord,
+} from "./lib/launches.ts";
+import { type MachineConfig, machineRepository } from "./lib/machine-config.ts";
 import { planTick } from "./lib/plan.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type {
@@ -43,8 +54,20 @@ export interface TickOptions {
   repos: string[];
   /** Overrides the follow-up window's start for every repository. */
   followupSince?: string;
+  /** Launch what the machine file enables; needs `machine`. */
+  apply?: boolean;
+  machine?: MachineConfig | null;
   now?: Date;
   runtime?: SessionRuntime;
+}
+
+/** What one repository's gathering needs beyond its path. */
+interface TickContext {
+  options: TickOptions;
+  runtime: SessionRuntime;
+  nowMs: number;
+  launches: ReadRecord[];
+  apply: ApplyState | null;
 }
 
 function emptyReport(path: string, refused: string): RepoReport {
@@ -58,6 +81,7 @@ function emptyReport(path: string, refused: string): RepoReport {
     actions: [],
     running: [],
     unplaced: [],
+    launches: [],
     quiet: [],
   };
 }
@@ -75,10 +99,10 @@ function branchPattern(values: Record<string, unknown>): string {
 
 async function gatherRepo(
   path: string,
-  options: TickOptions,
-  runtime: SessionRuntime,
-  nowMs: number,
+  context: TickContext,
 ): Promise<RepoReport> {
+  const { options, runtime, nowMs } = context;
+  const entry = machineRepository(options.machine ?? null, path);
   let repo: RepoTarget;
   try {
     repo = await repoTarget(path);
@@ -109,6 +133,7 @@ async function gatherRepo(
     section,
     followupSince:
       options.followupSince ??
+      entry?.followupSince ??
       previousFollowupSince(path) ??
       new Date(nowMs).toISOString(),
   };
@@ -141,9 +166,11 @@ async function gatherRepo(
   let open: Awaited<ReturnType<typeof openPullRequests>> = [];
   let drives: Awaited<ReturnType<typeof readDrives>> = [];
   let merged: MergedPr[] = [];
+  let login: string | null = null;
   try {
     open = await openPullRequests(repo.slug);
-    drives = await readDrives(repo.slug, await resolveLogin(), open, nowMs);
+    login = await resolveLogin();
+    drives = await readDrives(repo.slug, login, open, nowMs);
     const since = report.followupSince as string;
     if (section.followupCommand !== null)
       merged = await mergedSince(repo.slug, since);
@@ -186,11 +213,26 @@ async function gatherRepo(
       : sessions.reason,
   });
 
-  const plan = planTick({ section, pickups, drives, merged, sessions });
+  const plan = planTick({
+    section,
+    pickups,
+    drives,
+    merged,
+    sessions,
+    launches: (context.apply?.records ?? context.launches).filter(
+      (r) => r.record.repo === repo.slug,
+    ),
+  });
   report.actions.push(...plan.actions);
   report.running.push(...plan.running);
   report.unplaced.push(...plan.unplaced);
   report.quiet.push(...plan.quiet);
+  if (context.apply !== null && entry?.stages.includes("rearm"))
+    await applyDrives(context.apply, repo, report, sessions, async (pr) => {
+      const listed = open.filter((p) => p.number === pr);
+      const [again] = await readDrives(repo.slug, login, listed, Date.now());
+      return again ?? null;
+    });
   return report;
 }
 
@@ -215,26 +257,64 @@ export type TickResult =
   | { held: string }
   | { receipt: TickReceipt; path: string };
 
+function applyState(
+  options: TickOptions,
+  runtime: SessionRuntime,
+  records: ReadRecord[],
+  nowMs: number,
+): ApplyState | null {
+  const machine = options.machine ?? null;
+  if (!options.apply || machine === null) return null;
+  return {
+    machine,
+    runtime,
+    records,
+    table: slotTable(machine.accounts, records, nowMs),
+    last: lastAccount(records),
+    identities: new Map(),
+  };
+}
+
+function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
+  return machine === null
+    ? orcaRuntime()
+    : orcaRuntime({
+        runtimeTimeoutMs: machine.runtimeTimeoutMs,
+        workspaceTimeoutMs: machine.workspaceTimeoutMs,
+      });
+}
+
 export async function runTick(options: TickOptions): Promise<TickResult> {
   const lock = takeTickLock();
   if ("heldBy" in lock) return { held: lock.heldBy };
   try {
     const now = options.now ?? new Date();
-    const runtime = options.runtime ?? orcaRuntime();
+    const machine = options.machine ?? null;
+    const runtime = options.runtime ?? defaultRuntime(machine);
+    const read = await readLaunches();
+    const days = machine?.receiptsDays;
+    pruneLaunches(read.records, now.getTime(), days ?? 30);
+    const apply = applyState(options, runtime, read.records, now.getTime());
     const receipt: TickReceipt = {
       version: 1,
       runId: newRunId(now),
       startedAt: now.toISOString(),
       finishedAt: now.toISOString(),
       completed: false,
-      apply: false,
+      apply: apply !== null,
       exitStatus: 0,
+      unreadableLaunches: read.unreadable,
       repos: [],
     };
+    const context: TickContext = {
+      options,
+      runtime,
+      nowMs: now.getTime(),
+      launches: apply?.records ?? read.records,
+      apply,
+    };
     for (const path of options.repos)
-      receipt.repos.push(
-        await gatherRepo(path, options, runtime, now.getTime()),
-      );
+      receipt.repos.push(await gatherRepo(path, context));
     const failed = receipt.repos.some(
       (r) => r.refused !== null || r.records.some((x) => !x.ok),
     );
@@ -242,7 +322,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     receipt.completed = true;
     receipt.finishedAt = new Date().toISOString();
     const path = writeReceipt(receipt);
-    pruneReceipts(Date.now());
+    pruneReceipts(Date.now(), undefined, days);
     return { receipt, path };
   } finally {
     lock.release();

@@ -4,9 +4,11 @@
  * the first implementation (`orca.ts`); a second is a second implementation
  * of these methods, with nothing in the tick changed.
  *
- * Only `sessions` is built: the tick reports and starts nothing. The other
- * methods are declared with their contracts and refuse until the build step
- * that needs them implements them.
+ * `sessions`, `openWorkspace` and `launch` for a headless pass are built;
+ * an interactive launch, `notify` and `steer` are declared with their
+ * contracts and refuse until the build step that needs them implements
+ * them. Every method runs under a deadline, and an answer past it counts as
+ * lost.
  */
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { RepoTarget } from "../types.ts";
@@ -65,7 +67,18 @@ export interface RuntimeReceipt {
   detail: string;
   /** The agent's id, for a launch that started one. */
   agentId?: string;
+  /** For `openWorkspace`: the workspace opened or reused. */
+  workspace?: { id: string; path: string };
+  /** The call ran past its deadline: its answer is lost, not a refusal. */
+  lost?: boolean;
 }
+
+/** What `launch` starts. */
+export type LaunchStage =
+  /** A headless pass: the wrapper (`run.ts`) under its launch record, in a terminal titled `title`. */
+  | { kind: "headless"; title: string; record: string }
+  /** An interactive session (`do-item`, a follow-up): build step 4. */
+  | { kind: "interactive"; skill: string; target: string };
 
 export interface SessionRuntime {
   readonly name: string;
@@ -78,16 +91,17 @@ export interface SessionRuntime {
   /** A workspace for an item (a new branch) or a pull request (its head), reused when one exists. */
   openWorkspace(
     repo: RepoTarget,
-    target: { item: string } | { pr: number },
+    target: { item: string } | { pr: number; head: string },
   ): Promise<RuntimeReceipt>;
   /**
    * A session in the workspace that runs the stage, billed to `account`.
    * `key` is the launch record's token: a second call with a key already
-   * launched starts no second session.
+   * launched starts no second session (for a headless pass the wrapper's
+   * claim on its record keeps that promise).
    */
   launch(
-    workspace: string,
-    stage: string,
+    workspace: { id: string; path: string },
+    stage: LaunchStage,
     account: string,
     key: string,
     sessionId?: string,

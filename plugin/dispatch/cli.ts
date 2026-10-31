@@ -1,25 +1,34 @@
 /**
- * `jig dispatch`: one tick of the dispatcher, as a report. It reads the
- * tracker, the forge's drive ledgers and the session runtime for each
- * repository and prints every stage it would start, with the record that
- * wants it and the evidence; it starts nothing. `--apply` is accepted and
- * refused until the step that launches re-arms is built.
+ * `jig dispatch`: one tick of the dispatcher. It reads the tracker, the
+ * forge's drive ledgers, the session runtime and this machine's launch
+ * records for each repository and prints every stage it would start, with
+ * the record that wants it and the evidence. With `--apply` it starts the
+ * stages the machine file (`~/.jig/dispatch.yaml`) enables for each
+ * repository; today that is the drives' re-arms and takeovers.
+ * `jig dispatch install` writes the timer that runs `--apply` every
+ * interval.
  */
 import { resolve } from "node:path";
 import { consumerRoot } from "../shared/consumer.ts";
 import { ExitError } from "../shared/cli.ts";
+import { installDispatch } from "./install.ts";
+import { runMain } from "./run.ts";
+import {
+  type MachineConfig,
+  MachineConfigError,
+  machineConfigPath,
+  readMachineConfig,
+} from "./lib/machine-config.ts";
 import { formatReceipt } from "./lib/report.ts";
 import { readReceipt, receiptPaths } from "./receipts.ts";
 import { runTick } from "./tick.ts";
 
-const USAGE = `jig dispatch [--repo <path>]... [--followup-since <date>] [--json]
+const USAGE = `jig dispatch [--apply] [--repo <path>]... [--followup-since <date>] [--json]
+jig dispatch install [--interval <5m>] [--yes] [--remove]
 jig dispatch receipts [<run-id>]`;
 
 /** Exit when another tick holds the lock. */
 const LOCK_HELD_EXIT = 3;
-
-const APPLY_REFUSAL =
-  "jig dispatch --apply: refused. This version only reports; starting re-arms within each account's cap, and the timer that runs the tick, arrive with the dispatcher's build step 3. Run without --apply for the report.";
 
 interface Options {
   repos: string[];
@@ -90,19 +99,51 @@ function showReceipts(argv: string[]): number {
   return 0;
 }
 
-export async function dispatchMain(argv: string[]): Promise<number> {
+function machineFile(): MachineConfig | null {
+  try {
+    return readMachineConfig();
+  } catch (error) {
+    if (error instanceof MachineConfigError)
+      throw new ExitError(2, error.message);
+    throw error;
+  }
+}
+
+/** The repositories a tick reads: `--repo`, else the machine file's, else this checkout. */
+function repositories(
+  options: Options,
+  machine: MachineConfig | null,
+): string[] {
+  if (options.repos.length > 0) return options.repos;
+  if (machine !== null && machine.repositories.length > 0)
+    return machine.repositories.map((r) => r.path);
+  return [consumerRoot()];
+}
+
+export async function dispatchMain(
+  argv: string[],
+  script = "",
+): Promise<number> {
   if (argv[0] === "--help" && argv.length === 1) {
     console.log(USAGE);
     return 0;
   }
   if (argv[0] === "receipts") return showReceipts(argv.slice(1));
+  // The wrapper a dispatched pass's terminal runs (run.ts), under its launch record.
+  if (argv[0] === "run") return runMain(argv.slice(1));
+  if (argv[0] === "install")
+    return installDispatch(argv.slice(1), script, machineFile());
   const options = parseArguments(argv);
-  if (options.apply) {
-    console.error(APPLY_REFUSAL);
-    return 2;
-  }
+  const machine = machineFile();
+  if (options.apply && machine === null)
+    throw new ExitError(
+      2,
+      `jig dispatch --apply needs the machine file ${machineConfigPath()}: the repositories, the stages enabled for each and the accounts it may bill (see CONFIGURATION.md § The machine's dispatch file). Run without --apply for the report.`,
+    );
   const result = await runTick({
-    repos: options.repos.length > 0 ? options.repos : [consumerRoot()],
+    repos: repositories(options, machine),
+    apply: options.apply,
+    machine,
     ...(options.followupSince === undefined
       ? {}
       : { followupSince: options.followupSince }),

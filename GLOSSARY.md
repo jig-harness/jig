@@ -1705,8 +1705,9 @@ make, use the entry's term instead.
   line with nobody at the keyboard: a pickup for an item assigned to the
   *factory identity*, a restart of a stopped review drive, the follow-up
   after a merge. It runs as a *tick* on a timer, starts sessions through a
-  *session runtime*, and never merges or answers a parked question. Planned
-  ([ROADMAP.md](ROADMAP.md) item 33); it is Jig's first *control plane*.
+  *session runtime*, and never merges or answers a parked question. It
+  reports every stage and restarts stopped drives today; the rest is
+  [ROADMAP.md](ROADMAP.md) item 33. It is Jig's first *control plane*.
 - **Tick** — one run of the *dispatcher*: read the tracker, the pull
   requests' drive ledgers and the running sessions, work out which stages
   are wanted and not running, report them, and start them only when told
@@ -1714,6 +1715,19 @@ make, use the entry's term instead.
   only what it did: what it started and how each ended, a receipt per
   tick, and the account walls and repeat suppressions those imply, so
   stopping it loses nothing and the next tick finds the same facts.
+- **Launch record** — the *dispatcher*'s record of one session it started,
+  written before the launch: what it starts, on which pull request or item,
+  on which subscription account, and a random token. The wrapper that runs
+  the session adds the process it runs as and, when it ends, the stage's
+  exit. A launch whose answer is lost still has its record, so it holds its
+  stage and its account's *slot*, and is never followed by a second launch.
+- **Slot** — one session the *dispatcher* may hold on a subscription
+  account at once. Each account has a cap of slots (two by default); a
+  *launch record* that is pending, running or unknown holds one.
+- **Wall** — a subscription account's usage limit, as the *dispatcher*
+  records it once a session it started stops on it: the account is left
+  out of every launch until the wall's reset. A later write never moves the
+  reset earlier.
 - **Session runtime** — the interface the *dispatcher* starts agent
   sessions through: list the sessions in a repository's workspaces, open a
   workspace, launch a session on a subscription account, notify a person.
