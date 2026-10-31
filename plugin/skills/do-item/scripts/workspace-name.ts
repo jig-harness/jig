@@ -21,8 +21,8 @@
  * `{status}`, `{title}` and `{pr}` filled in; a variable with no value
  * renders empty and the spaces around it collapse.
  *
- * Nothing turns it on but the template: without `workspace_name.template`
- * the script makes no call. It acts only in a terminal Orca opened whose
+ * Without `workspace_name.template` the name is `DEFAULT_TEMPLATE`; an empty
+ * string turns renaming off. It acts only in a terminal Orca opened whose
  * worktree Orca knows (the detection `orca-board.ts` uses). Every runtime
  * failure only warns and the exit is 0; a malformed command line or a
  * template naming an unknown variable exits 2.
@@ -184,7 +184,7 @@ function parseStatuses(statuses: unknown): Record<Stage, string> {
   for (const [stage, text] of Object.entries(statuses)) {
     if (!isStage(stage))
       fail(2, `workspace_name.statuses: unknown stage "${stage}"`);
-    if (typeof text !== "string" || text === "")
+    if (typeof text !== "string" || text.trim() === "")
       fail(2, `workspace_name.statuses.${stage} must be a non-empty string`);
     result[stage] = text;
   }

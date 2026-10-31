@@ -113,6 +113,13 @@ describe("nameConfig", () => {
     ).toThrow(ExitError);
   });
 
+  test("an empty or whitespace-only status is refused", () => {
+    for (const text of ["", "   "])
+      expect(() =>
+        nameConfig({ workspace_name: { statuses: { ready: text } } }),
+      ).toThrow(ExitError);
+  });
+
   test("a key the section does not declare is refused", () => {
     expect(() => nameConfig({ workspace_name: { templtae: "{id}" } })).toThrow(
       ExitError,
