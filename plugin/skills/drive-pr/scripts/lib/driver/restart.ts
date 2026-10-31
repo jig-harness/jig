@@ -424,6 +424,17 @@ export function describeLeftovers(l: PassLeftovers): string[] {
   return lines;
 }
 
+/**
+ * Print what the pass left in the tree to the driver's stderr under
+ * `heading`: the stop line of a drive that ends without restarting, so the
+ * reader learns whether work was stranded without running git themselves.
+ */
+export async function reportPassLeftovers(heading: string): Promise<void> {
+  console.error(`  ${heading}`);
+  for (const line of describeLeftovers(await passLeftovers()))
+    console.error(`  ${line}`);
+}
+
 /** The notice the pass after a killed one reads in `$DRIVE_PR_PASS_NOTICE`. */
 export function deadlineNotice(
   round: number,
