@@ -22,7 +22,9 @@
 #             type
 #   nullable  true when `null` is accepted and means "not set"
 #   items     list: the type of each entry: a type name; `fields:` for a
-#             list of mappings, each field typed; or, for a nested list or map,
+#             list of mappings, each field typed, with `optional:` naming the
+#             fields an entry may leave out and `or:` a type an entry may take
+#             instead of a mapping; or, for a nested list or map,
 #             `{ type: list, items: … }` or `{ type: map, values_type: … }`
 #   distinct  list: entries must be distinct
 #   nonempty  list: at least one entry
@@ -65,6 +67,8 @@ strict:
   - specs
   - work_batch
   - work_batch.ranking
+  - workspace_name
+  - workspace_name.statuses
   - routing
   - routing.raise
   - verify
@@ -112,7 +116,10 @@ fields:
 
   review.bots:
     type: list
-    items: string
+    items:
+      or: string
+      fields: { login: string, confirmation_marker: string, chat_marker: string }
+      optional: [confirmation_marker, chat_marker]
     read_by: [resolve-review-comments, drive-pr, review]
   review.job_pattern:
     type: regex
@@ -304,6 +311,27 @@ fields:
     exists: expected
     read_by: [drive-pr]
 
+  autonomy.level:
+    type: enum
+    values: [attended, unattended, wide]
+    default: attended
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    since: 0.103.0
+  autonomy.max_level:
+    type: enum
+    values: [attended, unattended, wide]
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    repository_only: true
+    since: 0.103.0
+  autonomy.park_classes:
+    type: list
+    items: { type: string, pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" }
+    distinct: true
+    nonempty: true
+    read_by: [drive-pr]
+    repository_only: true
+    since: 0.103.0
+
   ci.required_checks:
     type: list
     items: string
@@ -463,6 +491,17 @@ fields:
     read_by: [do-item]
     repository_only: true
     since: 0.100.0
+
+  workspace_name.template:
+    type: string
+    pattern: "^(?:[^{}]|\\{(?:id|status|title|pr)\\})*$"
+    read_by: [do-item, drive-pr]
+    since: 0.104.0
+  workspace_name.statuses:
+    type: map
+    keys: [implementing, driving, ready, done]
+    read_by: [do-item, drive-pr]
+    since: 0.104.0
 
   work_batch.point_budget:
     type: integer

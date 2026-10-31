@@ -39,8 +39,14 @@ export type TypeSpec =
       values?: string[];
     };
 
-/** A list's entries: one type for all, or mappings with a type per key. */
-export type Items = TypeSpec | { fields: Record<string, TypeSpec> };
+/**
+ * A list's entries: one type for all, or mappings with a type per key, the
+ * keys in `optional` allowed to be absent, and an entry of the `or` type
+ * accepted instead of a mapping (a login, or `{login, …}`).
+ */
+export type Items =
+  | TypeSpec
+  | { fields: Record<string, TypeSpec>; optional?: string[]; or?: TypeSpec };
 
 export interface Field {
   path: string;
@@ -172,11 +178,15 @@ function validSpecPattern(type: unknown, pattern: unknown): boolean {
 /** Whether a list field's `items` is a type spec or maps keys to type specs. */
 function validItems(items: unknown): boolean {
   if (validSpec(items)) return true;
+  if (!isRecord(items) || !isRecord(items.fields)) return false;
+  const fields = items.fields;
   return (
-    isRecord(items) &&
-    Object.keys(items).length === 1 &&
-    isRecord(items.fields) &&
-    Object.values(items.fields).every(validSpec)
+    Object.keys(items).every((k) => ["fields", "optional", "or"].includes(k)) &&
+    Object.values(fields).every(validSpec) &&
+    (items.optional === undefined ||
+      (stringList(items.optional) &&
+        items.optional.every((k) => Object.hasOwn(fields, k)))) &&
+    (items.or === undefined || validSpec(items.or))
   );
 }
 
@@ -420,11 +430,29 @@ function listEntryProblem(
     const problem = specProblem(entry, items);
     return problem ? `${label} ${problem}` : null;
   }
+  if (items.or !== undefined && !isRecord(entry)) {
+    const problem = specProblem(entry, items.or);
+    return problem ? `${label} ${problem}, or a mapping` : null;
+  }
   if (!isRecord(entry)) return `${label} must be a mapping`;
+  const problem = mappingEntryProblem(entry, items, label);
+  // A mapping the fields refuse may still satisfy the alternative.
+  if (problem !== null && items.or !== undefined)
+    return specProblem(entry, items.or) === null ? null : problem;
+  return problem;
+}
+
+/** What is wrong with a mapping entry of a list whose items have `fields`. */
+function mappingEntryProblem(
+  entry: Record<string, unknown>,
+  items: { fields: Record<string, TypeSpec>; optional?: string[] },
+  label: string,
+): string | null {
   for (const key of Object.keys(entry))
     if (!Object.hasOwn(items.fields, key))
       return `${label} has unknown key ${key} (known: ${Object.keys(items.fields).join(", ")})`;
   for (const [key, keyType] of Object.entries(items.fields)) {
+    if (entry[key] === undefined && items.optional?.includes(key)) continue;
     const problem =
       entry[key] === undefined
         ? "is missing"

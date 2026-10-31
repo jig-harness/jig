@@ -825,7 +825,7 @@ async function reviewBotFindings(
   report: FitReport,
 ): Promise<Finding[]> {
   const authors = reviewerCounts(pulls);
-  const declaredBots = texts(at(config, "review.bots"));
+  const declaredBots = texts(at(config, "review.bots"), "login");
   const findings: Finding[] = declaredBots
     .filter((bot) => !authors.has(normalLogin(bot)))
     .map((bot) => ({
