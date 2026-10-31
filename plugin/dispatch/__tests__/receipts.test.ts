@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import {
   mkdirSync,
   mkdtempSync,
+  readdirSync,
+  readFileSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -83,6 +85,20 @@ describe("pruneReceipts", () => {
     expect(previousFollowupSince("/a", dir)).toBe("2026-01-01T00:00:00Z");
     expect(receiptPaths(dir)).toHaveLength(2);
   });
+
+  it("keeps the newest window of a repository whose latest receipt has none", () => {
+    const dir = root();
+    const windowed = writeReceipt(
+      receipt("2026-01-01", "/a", "2026-01-01T00:00:00Z"),
+      dir,
+    );
+    const refused = receipt("2026-03-01", "/a", "");
+    refused.repos = refused.repos.map((r) => ({ ...r, followupSince: null }));
+    writeReceipt(refused, dir);
+    const removed = pruneReceipts(Date.parse("2026-06-01T00:00:00Z"), dir);
+    expect(removed).not.toContain(windowed);
+    expect(previousFollowupSince("/a", dir)).toBe("2026-01-01T00:00:00Z");
+  });
 });
 
 describe("takeTickLock", () => {
@@ -110,5 +126,23 @@ describe("takeTickLock", () => {
     const dir = root();
     writeFileSync(join(dir, "tick.lock"), "2147483646");
     expect("release" in takeTickLock(dir)).toBe(true);
+  });
+
+  it("leaves a guard a successor holds alone and yields to it", () => {
+    const dir = root();
+    writeFileSync(join(dir, "tick.lock"), "2147483646");
+    writeFileSync(join(dir, "tick.lock.reclaim.1"), String(process.pid));
+    expect("heldBy" in takeTickLock(dir)).toBe(true);
+    expect(readFileSync(join(dir, "tick.lock.reclaim.1"), "utf8")).toBe(
+      String(process.pid),
+    );
+  });
+
+  it("recovers past a guard whose owner is gone", () => {
+    const dir = root();
+    writeFileSync(join(dir, "tick.lock"), "2147483646");
+    writeFileSync(join(dir, "tick.lock.reclaim.1"), "2147483645");
+    expect("release" in takeTickLock(dir)).toBe(true);
+    expect(readdirSync(dir).filter((n) => n.includes(".reclaim."))).toEqual([]);
   });
 });

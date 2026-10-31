@@ -6,9 +6,9 @@
  * stays where it began however often the tick runs.
  *
  * A tick removes receipts older than the retention, keeping the latest
- * completed one whatever its age, and the latest completed one naming each
- * repository, since that receipt is the only record of the repository's
- * follow-up window.
+ * completed one whatever its age, the latest completed one naming each
+ * repository, and the latest one recording a follow-up window for each, since
+ * a receipt of a refused read names the repository without its window.
  */
 import {
   closeSync,
@@ -147,22 +147,26 @@ export function previousFollowupSince(
   return null;
 }
 
-/** The receipts to keep whatever their age: the latest completed one naming each repository, and the latest overall. */
+/** The receipts to keep whatever their age: the latest completed one overall, the latest naming each repository, and the latest holding each repository's follow-up window. */
 function newestPerRepository(paths: string[]): Set<string> {
   const keep = new Set<string>();
-  const seen = new Set<string>();
-  let latest = true;
-  for (const path of [...paths].reverse()) {
-    const receipt = readReceipt(path);
-    if (receipt === null || !receipt.completed) continue;
-    if (latest) keep.add(path);
-    latest = false;
-    for (const repo of receipt.repos)
-      if (!seen.has(repo.path)) {
-        seen.add(repo.path);
-        keep.add(path);
-      }
-  }
+  const named = new Set<string>();
+  const windowed = new Set<string>();
+  const first = (seen: Set<string>, repo: string) => {
+    const fresh = !seen.has(repo);
+    seen.add(repo);
+    return fresh;
+  };
+  const completed = [...paths]
+    .reverse()
+    .map((path) => ({ path, receipt: readReceipt(path) }))
+    .filter((r) => r.receipt?.completed);
+  if (completed[0] !== undefined) keep.add(completed[0].path);
+  for (const { path, receipt } of completed)
+    for (const repo of receipt?.repos ?? []) {
+      if (first(named, repo.path)) keep.add(path);
+      if (repo.followupSince && first(windowed, repo.path)) keep.add(path);
+    }
   return keep;
 }
 
@@ -228,32 +232,63 @@ function olderThan(path: string, ms: number): boolean {
   }
 }
 
+/** Whether a lock file's owner is gone: dead, or never wrote its pid within the grace. */
+function ownerGone(file: string): boolean {
+  const holder = lockHolder(file);
+  return holder === null ? olderThan(file, LOCK_GRACE_MS) : !alive(holder);
+}
+
+/** The guards of a lock, oldest generation first. */
+function guardsOf(path: string): { generation: number; file: string }[] {
+  const prefix = `${basename(path)}.reclaim.`;
+  const found: { generation: number; file: string }[] = [];
+  for (const name of readdirSync(dirname(path)))
+    if (name.startsWith(prefix) && /^\d+$/.test(name.slice(prefix.length)))
+      found.push({
+        generation: Number(name.slice(prefix.length)),
+        file: join(dirname(path), name),
+      });
+  return found.sort((a, b) => a.generation - b.generation);
+}
+
+/** Remove the guards below a generation whose owners are gone. */
+function sweepGuards(path: string, generation: number): void {
+  for (const g of guardsOf(path))
+    if (g.generation < generation && ownerGone(g.file))
+      rmSync(g.file, { force: true });
+}
+
+/** Replace the lock under the guard when it is still the abandoned one the caller saw. */
+function replaceSeen(path: string, seen: number | null): boolean {
+  const now = lockHolder(path);
+  const gone = now === null ? olderThan(path, LOCK_GRACE_MS) : !alive(now);
+  if (!gone || now !== seen) return false;
+  rmSync(path, { force: true });
+  return publishLock(path);
+}
+
 /**
  * Replace a lock the caller saw to be abandoned. Contenders serialize on a
- * guard file and re-read the lock under it, so a lock another tick took in
- * the meantime is left alone.
+ * guard and re-read the lock under it, so a lock another tick took in the
+ * meantime is left alone. A guard is never removed on someone else's
+ * observation: a contender publishes the guard of the generation after the
+ * newest one, whose owner is gone, and yields when a newer generation than
+ * its own exists, so no contender can unlink a guard a successor holds.
  */
 function reclaim(path: string, seen: number | null): boolean {
-  const guard = `${path}.reclaim`;
-  if (!publishLock(guard)) {
-    // A guard whose owner is gone is cleared for the next attempt.
-    const owner = lockHolder(guard);
-    if (
-      (owner === null && olderThan(guard, LOCK_GRACE_MS)) ||
-      (owner !== null && !alive(owner))
-    )
-      rmSync(guard, { force: true });
-    return false;
-  }
+  const newest = guardsOf(path).at(-1);
+  if (newest !== undefined && !ownerGone(newest.file)) return false;
+  const generation = (newest?.generation ?? 0) + 1;
+  const guard = `${path}.reclaim.${generation}`;
+  if (!publishLock(guard)) return false;
   try {
-    const now = lockHolder(path);
-    const abandoned =
-      now === null ? olderThan(path, LOCK_GRACE_MS) : !alive(now);
-    if (!abandoned || now !== seen) return false;
-    rmSync(path, { force: true });
-    return publishLock(path);
+    return (
+      !guardsOf(path).some((g) => g.generation > generation) &&
+      replaceSeen(path, seen)
+    );
   } finally {
     rmSync(guard, { force: true });
+    sweepGuards(path, generation);
   }
 }
 

@@ -135,12 +135,16 @@ function joins(
   };
 }
 
-/** The agents of a row; `null` when the row does not carry a readable list. */
+/** The agents of a row; `null` when the row does not carry a readable list, an agent without a state included. */
 function agents(row: Record<string, unknown>): AgentSession[] | null {
-  if (!Array.isArray(row.agents) || !row.agents.every(isRecord)) return null;
+  if (
+    !Array.isArray(row.agents) ||
+    !row.agents.every((a) => isRecord(a) && typeof a.state === "string")
+  )
+    return null;
   return row.agents.map((a) => ({
     id: typeof a.paneKey === "string" ? a.paneKey : "",
-    state: typeof a.state === "string" ? a.state : "unknown",
+    state: String(a.state),
     agentType: typeof a.agentType === "string" ? a.agentType : null,
   }));
 }

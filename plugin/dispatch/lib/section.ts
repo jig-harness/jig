@@ -4,8 +4,7 @@
  * the tick works beside pull requests' head branches, and a section read
  * there would let an unreviewed change choose what a timer starts.
  */
-import { parseConfigText } from "../../shared/config-layers.ts";
-import { isRecord } from "../../shared/guards.ts";
+import { isMapping, parseConfigText } from "../../shared/config-layers.ts";
 import { CANONICAL_STATES } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { DispatchSection } from "./types.ts";
 
@@ -41,7 +40,7 @@ export function dispatchSection(
   values: Record<string, unknown>,
 ): DispatchSection {
   const raw = values.dispatch;
-  if (raw !== undefined && raw !== null && !isRecord(raw))
+  if (raw !== undefined && raw !== null && !isMapping(raw))
     throw new SectionError("dispatch must be a mapping");
   const section = (raw ?? {}) as Record<string, unknown>;
   const unknown = Object.keys(section).filter((k) => !KEYS.includes(k));

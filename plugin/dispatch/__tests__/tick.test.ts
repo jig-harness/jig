@@ -142,6 +142,29 @@ describe("jig dispatch reports what it would start", () => {
     ]);
   });
 
+  it("plans nothing for a target whose agent has no readable state", async () => {
+    const w = fixture();
+    w.setWorkspaces([
+      {
+        branch: "feature/7-parked",
+        agents: [{} as unknown as { state: string }],
+      },
+    ]);
+    const receipt = await tick(w);
+    expect(receipt.repos[0]?.unplaced.map((u) => u.target)).toContain("PR #7");
+    expect(actions(receipt).map((a) => a[1])).not.toContain("PR #7");
+  });
+
+  it("refuses a dispatch section that is a timestamp", async () => {
+    const w = fixture();
+    w.setConfig("dispatch: 2026-10-31\n");
+    const r = await w.dispatch(["--repo", w.repo, "--json"]);
+    expectSpawnExit(r, 1);
+    expect((JSON.parse(r.stdout) as TickReceipt).repos[0]?.refused).toContain(
+      "dispatch must be a mapping",
+    );
+  });
+
   it("reads the dispatch section from the default branch: none there, no pickups or follow-ups", async () => {
     const w = fixture();
     w.setConfig(null);
