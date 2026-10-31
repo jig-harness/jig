@@ -4,9 +4,17 @@
  * Shared fixtures live in drive-pr-harness.ts and drive-loop-harness.ts.
  */
 
+import { parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { advanceStallStreak } from "../scripts/drive";
 
@@ -337,6 +345,13 @@ describe("drive.ts loop control", () => {
     expect(r.exitCode).toBe(6);
     expect(r.stderr).not.toContain("changed NOTHING");
     expect(r.stderr).toContain("--- round 3/3");
+    // Every round header is followed by the autonomy level and its source.
+    const headers = r.stderr.match(/^--- round \d+\/3 on PR #999 ---$/gm);
+    const levels = r.stderr.match(
+      /^--- round \d+\/3 on PR #999 ---\nautonomy: attended \(attended from the default\)$/gm,
+    );
+    expect(headers?.length).toBe(3);
+    expect(levels?.length).toBe(3);
   }, 120_000);
 
   it("has no --head to forward: a frozen head is not a measurement", async () => {
@@ -446,10 +461,15 @@ describe("drive.ts loop control", () => {
     // fingerprint changes on `parkedItemKeys` alone, which is exactly what a
     // regression that dropped parked keys from the fingerprint would not
     // catch through the thread-identity-swap probe above.
+    const record = join(
+      mkdtempSync(join(tmpdir(), "stall-park-")),
+      "record.md",
+    );
+    writeFileSync(record, parkRecord("Is this round's work a person's call"));
     const PASS_PARKS_ONE = [
       "sh",
       "-c",
-      `n=$(( $(cat "$DRIVE_PR_FIXTURES/park-count" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$DRIVE_PR_FIXTURES/park-count"; "${join(SCRIPTS, "drive-state.ts")}" park 999 --key "finding-$n" --kind finding --reason "round $n work"`,
+      `n=$(( $(cat "$DRIVE_PR_FIXTURES/park-count" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$DRIVE_PR_FIXTURES/park-count"; "${join(SCRIPTS, "drive-state.ts")}" park 999 --key "finding-$n" --kind finding --class escalated < "${record}"`,
     ];
     const r = await runDrive(
       {

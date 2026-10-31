@@ -1,3 +1,4 @@
+import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import {
   scopedStateDir,
   linkedScratchTree,
@@ -2613,17 +2614,7 @@ export async function park(
   kind: "thread" | "finding",
 ) {
   const proc = Bun.spawn(
-    scriptArgv(
-      join(SCRIPTS, "drive-state.ts"),
-      "park",
-      "999",
-      "--key",
-      key,
-      "--kind",
-      kind,
-      "--reason",
-      "arbiter escalated",
-    ),
+    scriptArgv(join(SCRIPTS, "drive-state.ts"), ...parkArgs(key, kind)),
     {
       cwd: fixtureStateTree(stateDir),
       env: {
@@ -2631,6 +2622,9 @@ export async function park(
         DRIVE_PR_STATE_DIR: stateDir,
         DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
       },
+      stdin: new TextEncoder().encode(
+        parkRecord("Did the arbiter escalate it"),
+      ),
       stdout: "pipe",
       stderr: "pipe",
     },

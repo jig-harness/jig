@@ -3,6 +3,7 @@
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
+import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
 
 import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -564,17 +565,13 @@ describe("drive-status.ts reports counts it never measured as null", () => {
       const parked = Bun.spawn(
         scriptArgv(
           join(SCRIPTS, "drive-state.ts"),
-          "park",
-          "999",
-          "--key",
-          key,
-          "--kind",
-          "finding",
-          "--reason",
-          "planted out of order",
+          ...parkArgs(key, "finding"),
         ),
         {
           env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: stateDir },
+          stdin: new TextEncoder().encode(
+            parkRecord("Was it planted out of order"),
+          ),
           stdout: "ignore",
           stderr: "ignore",
         },

@@ -106,23 +106,15 @@ interface LiveComment {
 
 /**
  * A comment landing AFTER the held reply is compatible with that reply only
- * when it is a reviewer bot's own automated confirmation. The strict "the held
- * reply is the latest comment" check exists to catch a human changing the
- * outcome; reviewer bots post a confirming follow-up within seconds of an
- * outcome reply, and `finish-round.ts` reaches this script only after a push
- * and a reviewer wait, so every hold used to lose that race (4–5 cycles, ~20
- * minutes, on one measured PR).
- *
- * The identity+shape predicate itself now lives in `./lib/bot-confirmation.ts`
- * — shared with `finish-round.ts`'s own pre-push untriaged-thread guard: that
- * guard used to judge strictly against the literal latest comment, so it
- * refused the round on the very confirmation this function exists to tolerate,
- * whenever CodeRabbit's confirmation landed before the push rather than during
- * this script's own post-push wait. One predicate for both callers is what
- * keeps them from drifting apart on the identical question again.
+ * when it is transparent: a listed review bot's confirmation, or its chat
+ * acknowledgement carrying no finding (`./lib/bot-confirmation.ts`, the one
+ * predicate `finish-round.ts`'s pre-push guard and the status gate share).
+ * Bots post such a follow-up within seconds of an outcome reply, and this
+ * script runs only after a push and a reviewer wait, so without it every
+ * hold would lose that race; a person's comment still refuses.
  */
-function isTrustedBotConfirmation(c: LiveComment): boolean {
-  return isTrustedBotConfirmationShared(
+function isTransparentFollowUp(c: LiveComment): boolean {
+  return isTransparentFollowUpShared(
     { authorLogin: c.author?.login ?? null, body: c.body },
     qualifyingOutcome,
   );
@@ -130,7 +122,7 @@ function isTrustedBotConfirmation(c: LiveComment): boolean {
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isTrustedBotConfirmation as isTrustedBotConfirmationShared } from "./lib/bot-confirmation.ts";
+import { isTransparentFollowUp as isTransparentFollowUpShared } from "./lib/bot-confirmation.ts";
 import { fail, isDigits, runMain, short } from "./lib/cli.ts";
 import { qualifyingOutcome } from "./lib/outcome.ts";
 import {
@@ -777,7 +769,7 @@ query($id:ID!){
   // comment, or any body this script does not recognize, still refuses.
   const heldIdx = nodes.findIndex((n) => n.url === claimed.commentUrl);
   const later = heldIdx === -1 ? [] : nodes.slice(heldIdx + 1);
-  if (heldIdx === -1 || !later.every(isTrustedBotConfirmation)) {
+  if (heldIdx === -1 || !later.every(isTransparentFollowUp)) {
     await restoreOrDie(
       `thread '${key}''s latest comment moved past the hold's own reply — a newer comment landed since it was held`,
     );

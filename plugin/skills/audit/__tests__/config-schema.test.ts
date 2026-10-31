@@ -6,6 +6,7 @@
  * value sets they accept).
  */
 import { REPOSITORY_ONLY_FIELDS } from "../../../shared/config-layers.ts";
+import { AUTONOMY_LEVELS, DEFAULT_LEVEL } from "../../../shared/autonomy.ts";
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -342,7 +343,25 @@ describe("the reading skills", () => {
       "verify.output_lines": DEFAULT_OUTPUT_LINES,
       "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
       "verify.retention_days": DEFAULT_RETENTION_DAYS,
+      "autonomy.level": DEFAULT_LEVEL,
     });
+  });
+
+  test("accept a review bot as a login or a mapping with its markers", () => {
+    const problems = (bots: unknown[]) =>
+      checkConfig({ review: { bots } }, schema).map((f) => f.message);
+    expect(
+      problems(["a[bot]", { login: "b[bot]", chat_marker: "<!-- c -->" }]),
+    ).toEqual([]);
+    expect(problems([{ login: "b", override: true }]).join()).toContain(
+      "unknown key override",
+    );
+    expect(problems([5]).join()).toContain("or a mapping");
+  });
+
+  test("accept the autonomy levels the resolver reads", () => {
+    for (const path of ["autonomy.level", "autonomy.max_level"])
+      expect(field(path)?.values).toEqual([...AUTONOMY_LEVELS]);
   });
 
   test("accept only integers the skills read exactly", () => {
