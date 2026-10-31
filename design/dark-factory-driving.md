@@ -296,7 +296,14 @@ and re-reads before it writes again; a collection (parked items, held items,
 the decisions taken unattended, the takeover claims) is never a field a record
 replaces: a record adds, changes or removes one item by its key, and a removal
 is a record of its own naming that key, so two writers that each add a
-different parked item both survive the fold. No record is ever
+different parked item both survive the fold. A record that changes or
+removes an existing item also names the item's revision, the comment id of the
+record that last set it, and the fold skips (and reports) it when the item
+now carries a later revision: A's delayed removal of a parked question K,
+prepared after reading its answer, cannot delete the new unanswered question
+B put under the same key, as an unpark checks the park's timestamp against the
+answer. Records on different keys never conflict, so the staleness check
+costs no concurrency. No record is ever
 edited, so no change is lost; the single ledger comment is a snapshot of
 the fold that any writer may regenerate, and a reader that finds it behind
 the records folds them itself. The snapshot, not the records, is cut by the
