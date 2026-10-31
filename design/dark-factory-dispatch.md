@@ -290,11 +290,12 @@ identity before it starts the stage (host, boot id, process id and the
 process's start time, the identity `drives.ts` captures for a driver so
 that a reused process id is never read as the same process) and records
 the stage's exit when it ends. A record that has neither a process
-identity nor an agent id is **pending**: it holds its stage and slot, the
-launch is retried only through the runtime's own retry for that launch
-(see The session runtime interface), and a record still pending at a later
-tick, with its launch's answer lost and no retry that produced one, is an
-unknown, reported, holding its stage and slot until a person clears it. The next
+identity nor an agent id is **pending**: it holds its stage and slot, and
+its launch is retried only under its own token, which the tick hands
+`launch` as the launch's key (see The session runtime interface), never as
+a fresh launch. A record still pending at a later tick, with its launch's
+answer lost and no keyed retry that produced one, is an unknown, reported,
+holding its stage and slot until a person clears it. The next
 tick reads the records: a record whose process is alive under that same
 identity holds its stage; one that ended carries the stage's answer; one
 whose identity cannot be checked (another boot, an unreadable process
@@ -342,7 +343,7 @@ The tick reaches the runtime only through these methods:
 | --- | --- |
 | `sessions(repo)` | the workspaces and their agents, joined to items and pull requests, with each agent's id and state and each workspace's comment and unread mark |
 | `openWorkspace(...)` | a workspace for an item (a new branch) or a pull request (its head branch), reused when one exists |
-| `launch(workspace, stage, account)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id |
+| `launch(workspace, stage, account, key)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id. `key` is the launch record's token: a second call with a key already launched starts no second session |
 | `notify(target, message)` | a message that reaches a person; its receipt carries the target's comment as written |
 | `steer(session, nudge)` | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting, its screen and attachment re-read in the same call just before the send |
 
@@ -361,9 +362,11 @@ constant rather than restated, so the two cannot drift apart; a shorter
 setting can cut off an open the tool itself would let finish. A tick
 opening a workspace holds the tick lock for as long as the open runs, and
 the ticks that find it held meanwhile exit at once. A launch whose answer is lost
-is retried only through the runtime's own retry for that launch, never as
-a fresh one, and its launch record, written before the call, holds its
-stage and slot meanwhile (see Launch records). Orca is the first
+is retried only by calling `launch` again with the same key, never as a
+fresh one, and its launch record, written before the call, holds its
+stage and slot meanwhile (see Launch records). An adapter that cannot keep
+that promise for a kind of session does not retry it: a pending record of
+that kind stays the reported unknown. Orca is the first
 implementation:
 
 - `sessions` from `orca worktree ps --json`; that it carries a workspace's
@@ -391,8 +394,14 @@ implementation:
   route where the repository declares `routing`, bound to the account as a
   headless pass is (below); that `orca agent launch` can bind its agent to
   an account so is checked when the pickup stage is built, and until it
-  does, interactive sessions are not launched; a lost answer is retried
-  with `--retry-launch`;
+  does, interactive sessions are not launched. The key is kept by the
+  record itself for a headless pass: the wrapper claims the record
+  atomically before it starts the stage, so a second terminal for a record
+  already claimed exits without starting it, and a retry relaunches the
+  wrapper under the same record. For an interactive session, that `orca
+  agent launch --retry-launch` retries by a key the adapter passes it,
+  rather than starting a second agent, is checked when the pickup stage is
+  built, and until it does, a lost interactive launch is not retried;
 - `notify` as a workspace marked unread with the message as its comment,
   appended to the comment while the workspace is still unread (see
   Notifications), which Orca's phone app shows. A workspace's comment carries a kickoff
