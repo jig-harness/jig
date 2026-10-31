@@ -203,6 +203,26 @@ console.log("ARMED");`,
     expect(r.stderr).toContain("holds no ledger this drive can read");
   });
 
+  it("refuses to start when a damaged ledger comment precedes the readable one", async () => {
+    const damaged = ownLedger().replace(
+      /"heartbeat":"[^"]*"/,
+      '"heartbeat":"not-a-date"',
+    );
+    const forge = fakeForge(
+      [forgeComment(50, damaged), forgeComment(60, ownLedger())],
+      { login: "drive-bot" },
+    );
+    const r = await probe(
+      forge,
+      `await d.armLedger("999", ${ID}, null, null, "take-over");
+console.log("ARMED");`,
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("EXIT 1");
+    expect(r.stdout).not.toContain("ARMED");
+    expect(r.stderr).toContain("cannot read ahead of the one it can");
+  });
+
   /** This clone's own stopped ledger, recording claim position 30. */
   function ownLedger(): string {
     return ledgerBody(
