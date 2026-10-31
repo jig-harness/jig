@@ -370,7 +370,7 @@ mechanical states, at every level.
 | Decision | `attended` | `unattended` | `wide` |
 |---|---|---|---|
 | File a tracker issue a skill needs (a deferral, a follow-up, a reflection escalation) | Confirm first | File it; the body says which skill filed it, from which pull request, and why | Same |
-| Defer a finding where no adapter can file | Record it in the pull request's deferral section ([below](#deferral-without-a-tracker)) | Same | Same |
+| Defer a finding where no adapter can file | Append a deferral record to the pull request ([below](#deferral-without-a-tracker)) | Same | Same |
 | A technical choice `decide` rules reversible inside one pull request | Decide and record | Same | Same |
 | A technical choice `decide` would rule underdetermined | Park under `technical-escalation` | Gather the missing evidence within the round's budget, then apply the ladder; still undetermined: park under `technical-escalation` | Same |
 | A technical choice `decide`'s last row would escalate: no sensitivity flag, no stakeholder category, no persisted-data or published-contract consequence | Park under `technical-escalation` | Park under `technical-escalation` | Decide, marked provisional |
@@ -498,8 +498,12 @@ writer loses none, and the pull request body is never rewritten: a person's
 edit to it cannot be overwritten because nothing writes it. A deferral is
 filed, changed or withdrawn by a later record naming the same item key; the
 thread is resolved with the `**deferred**` token linking the record. A plugin script, `file-deferred.ts <PR>`, turns
-the unfiled records into issues where an adapter can file and replaces
-each with its link; it runs from the consumer's own post-merge step or the
+the unfiled records into issues where an adapter can file and appends a
+record linking each; an issue is filed from a stable marker derived from the
+pull request and the item key, which is written into its body, and before it
+files, the script looks the marker up in the tracker, so a crash between the
+creation and the link, or a second invocation running at the same time,
+finds the issue and links it instead of creating another; it runs from the consumer's own post-merge step or the
 morning report, and on a pull request closed without merging. With no
 tracker at all the records stay in the merged pull request's comments and the
 morning report lists them until a person files them. A deferral is

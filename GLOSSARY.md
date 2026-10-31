@@ -581,6 +581,11 @@ make, use the entry's term instead.
   deferral. The static gate checks that a deferral names an item; a scheduled
   check asks the tracker whether the item has closed since
   ([M4's deferral check](plugin/skills/docs/scripts/deferral-references/README.md)).
+- **Deferral record** — a comment the review drive appends to a pull request
+  to defer a finding where no tracker adapter can file it: the finding, the
+  reason, the thread link and an item key. It is never edited, a later record
+  with the same key changes or withdraws the deferral, and it is turned into
+  an issue later. Not the same as a *deferral*, a sentence in a document.
 - **PRD (product requirements document)** — the document defining *what* a
   feature does for users and why — deliberately separate from *how* (the
   architecture doc).
