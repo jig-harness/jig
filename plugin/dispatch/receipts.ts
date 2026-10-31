@@ -192,6 +192,8 @@ export function pruneReceipts(
 
 /** Seconds an unreadable or empty lock is given before it counts as abandoned. */
 const LOCK_GRACE_MS = 10_000;
+/** The content a reclaim guard holds once its owner is done with it. */
+const FINISHED = "finished";
 
 /**
  * The lock file is published whole: the pid is written to a private file that
@@ -234,8 +236,19 @@ function olderThan(path: string, ms: number): boolean {
 
 /** Whether a lock file's owner is gone: dead, or never wrote its pid within the grace. */
 function ownerGone(file: string): boolean {
+  if (finished(file)) return true;
   const holder = lockHolder(file);
   return holder === null ? olderThan(file, LOCK_GRACE_MS) : !alive(holder);
+}
+
+/** Whether a guard was marked finished by its owner. */
+function finished(file: string): boolean {
+  try {
+    return readFileSync(file, "utf8").trim() === FINISHED;
+  } catch (err) {
+    swallow(err, `${file} cannot be read`);
+    return false;
+  }
 }
 
 /** The guards of a lock, oldest generation first. */
@@ -251,11 +264,15 @@ function guardsOf(path: string): { generation: number; file: string }[] {
   return found.sort((a, b) => a.generation - b.generation);
 }
 
-/** Remove the guards below a generation whose owners are gone. */
-function sweepGuards(path: string, generation: number): void {
-  for (const g of guardsOf(path))
-    if (g.generation < generation && ownerGone(g.file))
-      rmSync(g.file, { force: true });
+/**
+ * Remove the guards below the newest generation whose owners are gone. The
+ * newest guard stays, finished or not, so the next generation is always above
+ * every one ever published and a number is never reused.
+ */
+function sweepGuards(path: string): void {
+  const all = guardsOf(path);
+  for (const g of all.slice(0, -1))
+    if (ownerGone(g.file)) rmSync(g.file, { force: true });
 }
 
 /** Replace the lock under the guard when it is still the abandoned one the caller saw. */
@@ -272,8 +289,10 @@ function replaceSeen(path: string, seen: number | null): boolean {
  * guard and re-read the lock under it, so a lock another tick took in the
  * meantime is left alone. A guard is never removed on someone else's
  * observation: a contender publishes the guard of the generation after the
- * newest one, whose owner is gone, and yields when a newer generation than
- * its own exists, so no contender can unlink a guard a successor holds.
+ * newest one, whose owner is gone or which is marked finished, and yields when
+ * a newer generation than its own exists. The newest guard is kept, so
+ * generations only grow and two contenders never hold the same abandoned lock
+ * at once.
  */
 function reclaim(path: string, seen: number | null): boolean {
   const newest = guardsOf(path).at(-1);
@@ -287,8 +306,8 @@ function reclaim(path: string, seen: number | null): boolean {
       replaceSeen(path, seen)
     );
   } finally {
-    rmSync(guard, { force: true });
-    sweepGuards(path, generation);
+    writeFileSync(guard, FINISHED);
+    sweepGuards(path);
   }
 }
 

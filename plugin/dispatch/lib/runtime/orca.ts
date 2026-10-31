@@ -135,11 +135,14 @@ function joins(
   };
 }
 
-/** The agents of a row; `null` when the row does not carry a readable list, an agent without a state included. */
+/** The agents of a row; `null` when the row does not carry a readable list, an agent without a state (or with a blank one) included. */
 function agents(row: Record<string, unknown>): AgentSession[] | null {
   if (
     !Array.isArray(row.agents) ||
-    !row.agents.every((a) => isRecord(a) && typeof a.state === "string")
+    !row.agents.every(
+      (a) =>
+        isRecord(a) && typeof a.state === "string" && a.state.trim() !== "",
+    )
   )
     return null;
   return row.agents.map((a) => ({

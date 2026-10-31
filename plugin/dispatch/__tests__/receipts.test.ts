@@ -143,6 +143,19 @@ describe("takeTickLock", () => {
     writeFileSync(join(dir, "tick.lock"), "2147483646");
     writeFileSync(join(dir, "tick.lock.reclaim.1"), "2147483645");
     expect("release" in takeTickLock(dir)).toBe(true);
-    expect(readdirSync(dir).filter((n) => n.includes(".reclaim."))).toEqual([]);
+    expect(readdirSync(dir).filter((n) => n.includes(".reclaim."))).toEqual([
+      "tick.lock.reclaim.2",
+    ]);
+  });
+
+  it("never reuses a guard generation after a reclaim", () => {
+    const dir = root();
+    for (let round = 1; round <= 3; round++) {
+      writeFileSync(join(dir, "tick.lock"), "2147483646");
+      expect("release" in takeTickLock(dir)).toBe(true);
+      expect(readdirSync(dir).filter((n) => n.includes(".reclaim."))).toEqual([
+        `tick.lock.reclaim.${round}`,
+      ]);
+    }
   });
 });
