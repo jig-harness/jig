@@ -239,7 +239,13 @@ generation: the claim with the lowest comment id among those naming that
 generation. A later claimant stands down after reading the elected claim, and
 a driver exits only for an elected claim from another clone that is newer
 than its own drive, never for a claim that lost its election; every driver
-reads the ledger at each round boundary. The doubled replies a
+reads the ledger at each round boundary. Write permission alone authorizes
+nothing: a claim or a heartbeat counts only when its author is trusted by the
+ledger rule below and it names the identity of the driver it speaks for (tree,
+clone and the start time of its drive) and the generation it read, and a
+driver re-reads and validates both against the forge, not against its own
+state, before it yields to a claim or a takeover is admitted on a stale
+heartbeat; a record that fails the check is ignored and reported. The doubled replies a
 second driver can produce are measured and not repairable, which is why
 "do not kill the other driver" holds today; the ledger claim is what lets
 the rule become "do not drive beside a driver whose claim is newer than
@@ -282,7 +288,11 @@ writer appends an operation record (its actor, the generation it read and
 the fields it changed) as its own comment under a second marker, and the
 ledger's state is the deterministic fold of those records in comment-id
 order. A scalar field (the round, the phase, a head, the Ready mark) is won
-by the later record that names it; a collection (parked items, held items,
+by the later record that names it, unless that record is stale: each record
+states the generation it read, and the fold skips (and reports) a scalar
+update when a record applied since that generation already changed the same
+field, so a writer that read an older ledger can never overwrite newer state
+and re-reads before it writes again; a collection (parked items, held items,
 the decisions taken unattended, the takeover claims) is never a field a record
 replaces: a record adds, changes or removes one item by its key, and a removal
 is a record of its own naming that key, so two writers that each add a
