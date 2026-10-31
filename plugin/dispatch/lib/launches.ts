@@ -368,6 +368,34 @@ export function holds(state: LaunchState): boolean {
   );
 }
 
+/**
+ * The ids of each pull request's latest record when it ended on a refusal of
+ * a second driver: the stage's answer for as long as the ledger facts hold.
+ */
+function latestRefusals(records: ReadRecord[]): Set<string> {
+  const latest = new Map<number, ReadRecord>();
+  for (const r of records) {
+    const seen = latest.get(r.record.pr);
+    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
+      latest.set(r.record.pr, r);
+  }
+  const ids = new Set<string>();
+  for (const { record, state } of latest.values())
+    if (
+      state.kind === "ended" &&
+      state.exit.code !== null &&
+      DRIVER_REFUSALS.has(state.exit.code)
+    )
+      ids.add(record.id);
+  return ids;
+}
+
+/** When an ended or died record finished; `null` for one still holding its stage. */
+function finishedAt(record: LaunchRecord, state: LaunchState): number | null {
+  if (state.kind === "ended") return Date.parse(state.exit.at);
+  return state.kind === "died" ? Date.parse(record.createdAt) : null;
+}
+
 /** Remove an ended or died record's files once older than the retention. */
 export function pruneLaunches(
   records: ReadRecord[],
@@ -377,32 +405,10 @@ export function pruneLaunches(
 ): string[] {
   const cutoff = nowMs - days * 86_400_000;
   const removed: string[] = [];
-  const kept = new Set<string>();
-  // The latest record of a pull request that ended on a refusal of a second
-  // driver is the stage's answer for as long as the ledger facts hold.
-  const latest = new Map<number, ReadRecord>();
-  for (const r of records) {
-    const seen = latest.get(r.record.pr);
-    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
-      latest.set(r.record.pr, r);
-  }
-  for (const entry of latest.values()) {
-    const { state } = entry;
-    if (
-      state.kind === "ended" &&
-      state.exit.code !== null &&
-      DRIVER_REFUSALS.has(state.exit.code)
-    )
-      kept.add(entry.record.id);
-  }
+  const kept = latestRefusals(records);
   for (const { record, state } of records) {
-    if (kept.has(record.id)) continue;
-    if (state.kind !== "ended" && state.kind !== "died") continue;
-    const at =
-      state.kind === "ended"
-        ? Date.parse(state.exit.at)
-        : Date.parse(record.createdAt);
-    if (!Number.isFinite(at) || at > cutoff) continue;
+    const at = kept.has(record.id) ? null : finishedAt(record, state);
+    if (at === null || !Number.isFinite(at) || at > cutoff) continue;
     for (const kind of ["json", "claim", "exit"] as const)
       rmSync(file(record.id, kind, root), { force: true });
     removed.push(record.id);

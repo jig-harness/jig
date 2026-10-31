@@ -284,6 +284,33 @@ function admission(
     : admitTakeover(state.table, replaced);
 }
 
+/**
+ * The account a launch bills, admitted afresh against the walls and the
+ * identity check. A re-arm tries the next account when one fails its
+ * identity check, so a stale login cannot starve the others; a takeover has
+ * only its own account.
+ */
+async function admitAccount(
+  state: ApplyState,
+  action: Action,
+): Promise<{ slots: Slots } | { outcome: LaunchOutcome }> {
+  refreshWalls(state.table, Date.now(), state.root);
+  const failed = new Set<string>();
+  let refusal: LaunchOutcome | null = null;
+  for (;;) {
+    const admitted = admission(state, action, failed);
+    if ("waits" in admitted)
+      return { outcome: refusal ?? waits(action, admitted.waits) };
+    const slots = admitted.admitted;
+    const identity = await identityOf(state, slots);
+    if (identity.ok) return { slots };
+    const name = slots.account.name;
+    refusal ??= refused(action, `identity check: ${identity.reason}`, name);
+    if (action.takeover !== undefined) return { outcome: refusal };
+    failed.add(name);
+  }
+}
+
 /** One planned re-arm or takeover, through its fresh read, admission, workspace and launch. */
 async function launchOne(
   state: ApplyState,
@@ -294,25 +321,9 @@ async function launchOne(
 ): Promise<LaunchOutcome> {
   const changed = stillWanted(action, fresh);
   if (changed !== null) return waits(action, changed);
-  refreshWalls(state.table, Date.now(), state.root);
-  // A re-arm tries the next account when one fails its identity check, so a
-  // stale login cannot starve the others; a takeover has only its own account.
-  const failed = new Set<string>();
-  let refusal: LaunchOutcome | null = null;
-  let slots: Slots | null = null;
-  while (slots === null) {
-    const admitted = admission(state, action, failed);
-    if ("waits" in admitted) return refusal ?? waits(action, admitted.waits);
-    const identity = await identityOf(state, admitted.admitted);
-    if (identity.ok) {
-      slots = admitted.admitted;
-      break;
-    }
-    const name = admitted.admitted.account.name;
-    refusal ??= refused(action, `identity check: ${identity.reason}`, name);
-    if (action.takeover !== undefined) return refusal;
-    failed.add(name);
-  }
+  const admitted = await admitAccount(state, action);
+  if ("outcome" in admitted) return admitted.outcome;
+  const slots = admitted.slots;
   const pr = fresh as DrivenPr;
   const workspace = await workspaceFor(
     state,

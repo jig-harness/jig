@@ -254,16 +254,21 @@ async function readSessions(
 }
 
 export type TickResult =
-  { held: string } | { receipt: TickReceipt; path: string };
+  | { held: string }
+  | { receipt: TickReceipt; path: string };
 
 function applyState(
   options: TickOptions,
   runtime: SessionRuntime,
   records: ReadRecord[],
   nowMs: number,
+  unreadable: string[],
 ): ApplyState | null {
   const machine = options.machine ?? null;
   if (!options.apply || machine === null) return null;
+  // A record that cannot be read may belong to a live wrapper, so its slot and
+  // pull request cannot be told apart from a free one: launch nothing.
+  if (unreadable.length > 0) return null;
   return {
     machine,
     runtime,
@@ -283,6 +288,11 @@ function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
       });
 }
 
+/** Whether `--apply` was asked for with a machine file and then withheld. */
+function refusedApply(options: TickOptions, apply: ApplyState | null): boolean {
+  return options.apply === true && options.machine != null && apply === null;
+}
+
 export async function runTick(options: TickOptions): Promise<TickResult> {
   const lock = takeTickLock();
   if ("heldBy" in lock) return { held: lock.heldBy };
@@ -293,12 +303,13 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     const read = await readLaunches();
     const days = machine?.receiptsDays;
     pruneLaunches(read.records, now.getTime(), days ?? 30);
-    // A record that cannot be read may belong to a live wrapper, so its slot
-    // and pull request cannot be told apart from a free one: launch nothing.
-    const unsafe = read.unreadable.length > 0;
-    const apply = unsafe
-      ? null
-      : applyState(options, runtime, read.records, now.getTime());
+    const apply = applyState(
+      options,
+      runtime,
+      read.records,
+      now.getTime(),
+      read.unreadable,
+    );
     const receipt: TickReceipt = {
       version: 1,
       runId: newRunId(now),
@@ -322,8 +333,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     const failed = receipt.repos.some(
       (r) => r.refused !== null || r.records.some((x) => !x.ok),
     );
-    receipt.exitStatus =
-      failed || (unsafe && options.apply === true && machine !== null) ? 1 : 0;
+    receipt.exitStatus = failed || refusedApply(options, apply) ? 1 : 0;
     receipt.completed = true;
     receipt.finishedAt = new Date().toISOString();
     const path = writeReceipt(receipt);

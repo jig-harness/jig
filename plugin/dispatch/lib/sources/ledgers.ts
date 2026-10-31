@@ -35,7 +35,8 @@ import type { DrivenPr, Evidence, LedgerClass } from "../types.ts";
 
 /** What answers a park's items, when the ledger stopped `8`. */
 export type ParkReading =
-  { answered: number; waiting: string[] } | { unreadable: string };
+  | { answered: number; waiting: string[] }
+  | { unreadable: string };
 
 export interface Classified {
   class: LedgerClass;
