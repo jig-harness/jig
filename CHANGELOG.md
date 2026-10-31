@@ -348,6 +348,17 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.104.1] - 2026-10-31
+
+### Changed
+
+- `drive-pr`: the stops for a usage limit (exit `16`, and exit `6` when the
+  limit is met on the last round) and for a pass that found the pull request
+  no longer open (exit `5`) now list what the pass left in the tree, as a
+  failed pass's stop does: the uncommitted paths and the commits on top of the
+  head branch's remote ref, or that there are none, instead of advice to run
+  `git status` and `git log` yourself.
+
 ## [0.104.0] - 2026-10-31
 
 ### Added
@@ -4214,7 +4225,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.104.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.104.1...HEAD
+[0.104.1]: https://github.com/jig-harness/jig/compare/v0.104.0...v0.104.1
 [0.104.0]: https://github.com/jig-harness/jig/compare/v0.103.0...v0.104.0
 [0.103.0]: https://github.com/jig-harness/jig/compare/v0.102.0...v0.103.0
 [0.102.0]: https://github.com/jig-harness/jig/compare/v0.101.1...v0.102.0
