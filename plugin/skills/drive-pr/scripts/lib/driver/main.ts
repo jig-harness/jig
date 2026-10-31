@@ -77,6 +77,13 @@ import {
   withoutModel,
 } from "./../pass-model.ts";
 
+import {
+  type EffectivePassArgs,
+  effectivePassArgs,
+  PassArgsUsageError,
+  permissionLine,
+} from "./../pass-args.ts";
+
 import type { DriveState } from "./../state/schema.ts";
 
 /**
@@ -143,10 +150,10 @@ export async function main(): Promise<number> {
   let { pr, keepDraft, handoffAt } = options;
   const { maxRounds, dryRun, botsOnly, passTimeout, forward } = options;
   const { takeOver, windowReopened } = options;
-  // The pass command as it runs, its model decided (`pass-model.ts`): every
-  // later use of it — the rounds, a re-arm or takeover command printed for a
-  // person — carries that model.
-  const pass = decidePass(options.agent, options.passModel);
+  // The pass command as it runs, its model and extra arguments decided
+  // (`pass-model.ts`, `pass-args.ts`): every later use of it — the rounds, a
+  // re-arm or takeover command printed for a person — carries both.
+  const pass = decidePass(options.agent, options.passModel, options.passArgs);
   const agent = pass.argv;
 
   const maxRoundsN = resolveMaxRounds(maxRounds);
@@ -206,6 +213,8 @@ export async function main(): Promise<number> {
   const logPath = join(stateDir, `drive-pr-${pr}.log`);
   startDriverLog(logPath);
   console.error(passModelLine(pass));
+  console.error(pass.args.line);
+  console.error(permissionLine(pass.args.permission));
 
   // Everything that can refuse from the arguments and the durable state runs
   // before any lock is taken and before a takeover stops anyone: the pass
@@ -250,6 +259,7 @@ export async function main(): Promise<number> {
     started: new Date().toISOString(),
     account,
     model: pass.model,
+    permissionMode: pass.args.permission.mode,
   };
   const treeLock: DriveLock = {
     dir: join(stateDir, await worktreeLockName()),
@@ -498,13 +508,24 @@ export async function main(): Promise<number> {
   return await settlement.done(roundsExit);
 }
 
-/** The pass command with its model decided; a refused `--pass-model` exits 2, an unreadable setting 1. */
-function decidePass(agent: string[], flag: string | undefined): EffectivePass {
+/**
+ * The pass command with its model and extra arguments decided; a refused
+ * `--pass-model` or `--pass-args` exits 2, an unreadable setting 1.
+ */
+function decidePass(
+  agent: string[],
+  model: string | undefined,
+  args: string | undefined,
+): EffectivePass & { args: EffectivePassArgs } {
   try {
-    return effectivePass(agent, flag);
+    const pass = effectivePass(agent, model);
+    const extra = effectivePassArgs(pass.argv, args);
+    return { ...pass, argv: extra.argv, args: extra };
   } catch (e) {
     return fail(
-      e instanceof PassModelUsageError ? 2 : 1,
+      e instanceof PassModelUsageError || e instanceof PassArgsUsageError
+        ? 2
+        : 1,
       `drive.ts: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
