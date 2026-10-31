@@ -39,8 +39,8 @@ describe("in an Orca terminal", () => {
       await updateBoard({ status: "in-review", pr: "42" }, ORCA, runner),
     ).toBe("orca-board: in-review, PR #42 linked");
     expect(calls).toEqual([
-      "/opt/orca/bin/orca worktree current --json",
-      `/opt/orca/bin/orca ${setArgs("in-review", "42")}`,
+      "worktree current --json",
+      setArgs("in-review", "42"),
     ]);
   });
 
