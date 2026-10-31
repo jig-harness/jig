@@ -278,12 +278,23 @@ for a while. An item or pull request gets at most one action per tick.
 
 A launched stage runs for minutes or hours in its session, long after the
 tick that started it has ended, so the tick never sees its exit directly.
-Each launch therefore goes through a small wrapper, `plugin/dispatch/run.ts`,
-which writes a launch record under `~/.local/state/jig/dispatch/launches/`
-before it starts the stage (the action, the item or pull request, the
-account, and its process identity: host, boot id, process id and the
+Every launch therefore begins with a launch record under
+`~/.local/state/jig/dispatch/launches/`, which the tick writes before it
+calls the runtime's `launch` (the action, the item or pull request, the
+account, and a random token minted for that launch). From that write on,
+the record holds its stage and its account slot, so a launch whose answer
+is lost is never followed by a second session on the same stage or past
+the account's cap. A headless pass runs through a small wrapper,
+`plugin/dispatch/run.ts`, which is handed the record and adds its process
+identity before it starts the stage (host, boot id, process id and the
 process's start time, the identity `drives.ts` captures for a driver so
-that a reused process id is never read as the same process) and records the stage's exit when it ends. The next
+that a reused process id is never read as the same process) and records
+the stage's exit when it ends. A record that has neither a process
+identity nor an agent id is **pending**: it holds its stage and slot, the
+launch is retried only through the runtime's own retry for that launch
+(see The session runtime interface), and a record still pending at a later
+tick, with its launch's answer lost and no retry that produced one, is an
+unknown, reported, holding its stage and slot until a person clears it. The next
 tick reads the records: a record whose process is alive under that same
 identity holds its stage; one that ended carries the stage's answer; one
 whose identity cannot be checked (another boot, an unreadable process
@@ -304,9 +315,8 @@ died, reported with its last state.
 The wrapper is the command a headless pass runs. An interactive session
 (`do-item`, the follow-up) is started as the runtime's agent, which runs
 no wrapper, and an agent's state says that it finished, not whether its
-stage succeeded. Its launch record is therefore written by the tick at
-launch, with the agent's id from the launch's receipt and a random token
-minted for that launch, and the prompt the tick composes ends by asking the
+stage succeeded. Its launch record, written by the tick before the launch,
+gains the agent's id from the launch's receipt, and the prompt the tick composes ends by asking the
 session to record its result: `jig dispatch result <record> <token>
 done|failed`, which writes the stage's answer into that launch record. The
 command refuses a token that is not the record's own and a record that
@@ -337,12 +347,18 @@ The tick reaches the runtime only through these methods:
 | `steer(session, nudge)` | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting |
 
 Each returns the runtime's receipt, and each, a terminal-screen read for
-`steer` included, runs under a deadline (`dispatch.runtime_timeout`, one
-minute by default) and is cancelled past it: its answer counts as lost,
-and the tick goes on to its other actions and releases its lock, so a
-runtime that hangs costs one action, not every later tick. A launch whose answer is lost is
-retried only through the runtime's own retry for that launch, never as a
-fresh one. Orca is the first implementation:
+`steer` included, runs under a deadline and is cancelled past it: its
+answer counts as lost, and the tick goes on to its other actions and
+releases its lock, so a runtime that hangs costs one action, not every
+later tick. The deadline is `dispatch.runtime_timeout` (one minute by
+default) for every method but `openWorkspace`, whose setup runs the
+repository's create hook, a dependency install among it, and which runs
+under `dispatch.workspace_timeout` (15 minutes by default, the allowance
+the Orca workspace tool gives its own open). A launch whose answer is lost
+is retried only through the runtime's own retry for that launch, never as
+a fresh one, and its launch record, written before the call, holds its
+stage and slot meanwhile (see Launch records). Orca is the first
+implementation:
 
 - `sessions` from `orca worktree ps --json`; that it carries a workspace's
   comment and unread mark is checked when the notifications are built, and
@@ -396,7 +412,7 @@ nothing in the tick changed.
 The machine file lists the subscription accounts the dispatcher may bill
 and a cap for each (`max_per_account`, 2 by default): the number of
 sessions the dispatcher started on that account that are still running,
-waiting ones included. Sessions a person started are not counted: the
+waiting ones and pending launch records (see Launch records) included. Sessions a person started are not counted: the
 runtime does not report their account, and a person who shares an account
 with the dispatcher lowers its cap. A headless pass is admitted on an
 account with a free slot and no wall in effect, the accounts taken in turn
@@ -562,8 +578,11 @@ into the file of the month its time falls in. It holds these kinds of row:
   expectation, a session waiting past `blocked_after` with what the tick
   read as its cause, a stop the tick notified on a stage it did not launch
   (a park on a drive a person armed, say), and each nudge sent. An event
-  row is written when its suppression record is, and keyed by the same
-  facts.
+  row is keyed by the same facts as its suppression record and written
+  once its cause is settled: for a notification, when its suppression
+  record is written, which is on delivery (see Notifications); for a
+  nudge, whose suppression record is written before the send, once its
+  delivery is known (see Steering).
 
 The log therefore covers the stages this machine launched, and the stops
 on other stages only as far as the tick notifies them.
@@ -693,10 +712,16 @@ mechanically, so it rests on a wall record for interactive sessions:
   runtime reports attachment. The text is sent with Enter. Any check that
   fails or cannot be read sends nothing and is reported. Before sending,
   the tick writes the nudge's suppression record, keyed by the session and
-  its waiting episode, so a send whose answer is lost, or a tick that
-  stops after sending, never leads to a second one. The runtime's receipt
-  then marks it delivered and it is written as an event row; a nudge with
-  no receipt is notified to a person as not known to have arrived. A
+  its waiting episode and marked pending, so a send whose answer is lost,
+  or a tick that stops after sending, never leads to a second one. The
+  suppression record says only that a send was attempted; its delivery
+  is a second mark on it. The runtime's receipt marks it delivered; a
+  send whose answer is lost marks it not known to have arrived, which is
+  notified to a person. A suppression record a later tick finds still
+  pending (the tick stopped between writing it and reading the answer) is
+  marked not known to have arrived and notified the same way. The nudge's
+  event row is written with that mark, carrying it, so the log never
+  reads an attempted nudge as a delivered one. A
   session still waiting on that episode at the next tick is notified,
   never nudged again.
 
@@ -715,7 +740,7 @@ session runs. Its values are split as configuration always is:
 - **The machine's**, in `~/.jig/dispatch.yaml`: the repositories it
   dispatches for and the stages enabled for each, with `followup_since`;
   the accounts it may bill, each with its configuration directory and cap;
-  the interval, `wall_backoff`, `runtime_timeout`, the receipts' retention and the
+  the interval, `wall_backoff`, `runtime_timeout`, `workspace_timeout`, the receipts' retention and the
   dashboard's `dashboard.listen` address.
 - **A repository's**, in a `dispatch` section of its `.config/jig.yaml`,
   documented in [CONFIGURATION.md](../plugin/CONFIGURATION.md): the factory
