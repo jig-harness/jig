@@ -43,6 +43,7 @@ import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
 import { DEFAULT_SCANNER_APPS } from "../../resolve-review-comments/scripts/lib/scanner-annotations.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import { parseWorkTypes } from "../../do-item/scripts/lib/work-types.ts";
+import { DEFAULT_TEMPLATE as DEFAULT_WORKSPACE_TEMPLATE } from "../../do-item/scripts/workspace-name.ts";
 import {
   parseRouting,
   RAISE_FIELDS,
@@ -340,6 +341,7 @@ describe("the reading skills", () => {
       "specs.body_section": DEFAULT_BODY_SECTION,
       "routing.raise.reviews": parseRouting({}, parseWorkTypes({})).raise
         .reviews,
+      "workspace_name.template": DEFAULT_WORKSPACE_TEMPLATE,
       "verify.output_lines": DEFAULT_OUTPUT_LINES,
       "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
       "verify.retention_days": DEFAULT_RETENTION_DAYS,
@@ -466,7 +468,7 @@ describe("the reading skills", () => {
           f.path,
           skill,
           existsSync(
-            skill === "gc"
+            skill === "gc" || skill === "dispatch"
               ? join(plugin, "jig.ts")
               : skill === "evidence"
                 ? join(plugin, "shared", "evidence.ts")

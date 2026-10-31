@@ -20,6 +20,8 @@
 #             match; also allowed in a nested type spec of one of those types
 #             (a list's `items`), applying to each entry; refused on any other
 #             type
+#   allow_empty  string: true when the empty string is a value the skill reads
+#             (an off-switch), not a missing one
 #   nullable  true when `null` is accepted and means "not set"
 #   items     list: the type of each entry: a type name; `fields:` for a
 #             list of mappings, each field typed, with `optional:` naming the
@@ -64,9 +66,12 @@ strict:
   - reflection
   - code_stats
   - docs
+  - dispatch
   - specs
   - work_batch
   - work_batch.ranking
+  - workspace_name
+  - workspace_name.statuses
   - routing
   - routing.raise
   - verify
@@ -106,6 +111,25 @@ fields:
     read_by: [audit, gc]
     repository_only: true
     since: 0.83.0
+
+  dispatch.identity:
+    type: string
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.105.0
+  dispatch.states:
+    type: list
+    items: { type: enum, values: [triage, backlog, todo, in_progress, in_review, ops_pending, done, canceled, duplicate] }
+    distinct: true
+    nonempty: true
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.105.0
+  dispatch.followup_command:
+    type: string
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.105.0
 
   gates.command:
     type: command
@@ -253,7 +277,7 @@ fields:
     type: string
     pattern: "\\{key(_lower)?\\}"
     default: "{key_lower}-{slug}"
-    read_by: [do-item]
+    read_by: [do-item, dispatch]
   pull_requests.issue_link:
     type: enum
     values: [closes, refs, none]
@@ -344,43 +368,43 @@ fields:
     type: enum
     values: [linear, github]
     default: github
-    read_by: [do-item, drive-pr, decide, work-batch]
+    read_by: [do-item, drive-pr, decide, work-batch, dispatch]
   issue_tracker.team:
     type: string
     pattern: "^[A-Z][A-Z0-9]*$"
-    read_by: [do-item, drive-pr, review, work-batch]
+    read_by: [do-item, drive-pr, review, work-batch, dispatch]
     repository_only: true
   issue_tracker.states:
     type: map
     keys: [triage, backlog, todo, in_progress, in_review, ops_pending, done, canceled, duplicate]
-    read_by: [do-item, work-batch]
+    read_by: [do-item, work-batch, dispatch]
   issue_tracker.github.repository:
     type: string
     pattern: "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     repository_only: true
     since: 0.82.0
   issue_tracker.github.states_from:
     type: enum
     values: [labels, project]
     default: labels
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.82.0
   issue_tracker.github.project:
     type: string
     pattern: "^https://github\\.com/(orgs|users)/[A-Za-z0-9-]+/projects/[1-9][0-9]*/?$"
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     repository_only: true
     since: 0.82.0
   issue_tracker.github.status_field:
     type: string
     default: Status
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.82.0
   issue_tracker.github.priority_labels:
     type: map
     keys: [urgent, high, medium, low]
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.82.0
   issue_tracker.labels.epic:
     type: string
@@ -489,6 +513,19 @@ fields:
     read_by: [do-item]
     repository_only: true
     since: 0.100.0
+
+  workspace_name.template:
+    type: string
+    pattern: "^(?:[^{}]|\\{(?:id|status|title|pr)\\})*$"
+    allow_empty: true
+    default: "{id} {status} {title}"
+    read_by: [do-item, drive-pr]
+    since: 0.104.0
+  workspace_name.statuses:
+    type: map
+    keys: [implementing, driving, ready, done]
+    read_by: [do-item, drive-pr]
+    since: 0.104.0
 
   work_batch.point_budget:
     type: integer

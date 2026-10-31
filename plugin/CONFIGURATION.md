@@ -23,10 +23,10 @@ Contents: [the file](#the-file) ·
 [`pull_requests`](#pull_requests) · [`drive`](#drive) ·
 [`autonomy`](#autonomy) · [`ci`](#ci) ·
 [`issue_tracker`](#issue_tracker) · [`do_item`](#do_item) ·
-[`specs`](#specs) · [`work_batch`](#work_batch) · [`routing`](#routing) ·
+[`specs`](#specs) · [`workspace_name`](#workspace_name) · [`work_batch`](#work_batch) · [`routing`](#routing) ·
 [`fleet_health`](#fleet_health) · [`verify`](#verify) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
-[`code_stats`](#code_stats) · [`gc`](#gc) ·
+[`code_stats`](#code_stats) · [`gc`](#gc) · [`dispatch`](#dispatch) ·
 [procedure skills](#procedure-skills) ·
 [environment variables](#environment-variables) ·
 [complete example](#complete-example)
@@ -257,7 +257,7 @@ issue on merge, merged by a human.
 | `pull_requests.max_stack_depth` | whole number ≥ 1 | no cap | Most pull requests one stack may hold, the new one included. Needs `stacking` other than `none` |
 | `pull_requests.open_as` | `draft`, `ready` | `ready` when `drive.reviews_drafts` is `false`, else `draft` | How a new pull request opens |
 | `pull_requests.mark_ready` | whole number ≥ 1, `converged`, `never` | `1` | When `drive-pr` marks a draft Ready for review: after round N completes, only once the draft-reviewing reviewer has nothing left (`converged`), or never (a person marks it). A draft that converges before round N is marked at convergence, since reviewers that skip drafts would otherwise never see it. Marking Ready summons those reviewers, so a later number spends their review on a cleaner head |
-| `pull_requests.branch_name` | pattern | `{key_lower}-{slug}` | Branch name for an issue. Placeholders: `{key}` (`ENG-12`), `{key_lower}` (`eng-12`), `{slug}` (the issue title in lowercase words joined by `-`, at most 40 characters). Must contain `{key}` or `{key_lower}`: the issue key in the branch name is what links the pull request to its issue. Placeholders must be separated by at least one character, the key must not have a digit beside it, and `{slug}` may appear once, or the key cannot be read back from a branch. Example: `feature/{key_lower}-{slug}` |
+| `pull_requests.branch_name` | pattern | `{key_lower}-{slug}` | Branch name for an issue. Placeholders: `{key}` (`ENG-12`), `{key_lower}` (`eng-12`), `{slug}` (the issue title in lowercase words joined by `-`, at most 40 characters). Must contain `{key}` or `{key_lower}`: the issue key in the branch name is what links the pull request to its issue. Placeholders must be separated by at least one character, the key must not have a digit beside it, and `{slug}` may appear once, or the key cannot be read back from a branch. Example: `feature/{key_lower}-{slug}`. `do-item` and `dispatch` both read it |
 | `pull_requests.issue_link` | `closes`, `refs`, `none` | `closes` | The line linking the pull request to its issue: `Closes ENG-12` (merging closes the issue), `Refs ENG-12` (linked, left open), or none |
 | `pull_requests.size_budget` | whole number ≥ 1 | no budget | Most changed lines (added plus deleted, against the pull request's base) one pull request may carry; the audit record `.config/jig-audit.yaml`, which every audit rewrites whole, is not counted, and `pr-plan.ts` names it beside the size. Over it, `pr-plan.ts` refuses: split the change (into a stack when stacking is allowed), or state why it cannot be split with `--accept-oversize <reason>` and put the reason in the body |
 | `pull_requests.labels` | list of label names | none | Labels added when the pull request opens, such as `agent-authored`. Each must already exist in the repository |
@@ -359,14 +359,14 @@ in their own file or the environment.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `issue_tracker.adapter` | adapter name | `github` | do-item, drive-pr, decide, work-batch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers: `github` or `linear`. `github` (GitHub Issues) uses the signed-in `gh` command-line client, which also reads `GH_TOKEN` or `GITHUB_TOKEN`; with `JIG_GITHUB_GRAPHQL_URL` set it sends requests to that GraphQL endpoint (a GitHub Enterprise Server) with the token from `GH_TOKEN` or `GITHUB_TOKEN`. `linear` reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client. A file that sets `issue_tracker.team` without `issue_tracker.adapter` (or with it empty) is refused, since the default adapter has no team: add `adapter: linear` |
-| `issue_tracker.team` | team key such as `ENG` | **Required by the Linear adapter**; refused unless `issue_tracker.adapter` is set too | do-item, drive-pr, review, work-batch | Linear only: the key issue identifiers carry (`ENG` for `ENG-123`). GitHub Issues keys are `#123`, of the repository `issue_tracker.github.repository` names |
-| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate`. On GitHub Issues, `done`, `canceled` and `duplicate` are an issue closed as completed, not planned or duplicate, and each open state is the label (or, with `issue_tracker.github.states_from: project`, the board option) of that name; `todo` carries no label, so a new issue is in `todo` |
-| `issue_tracker.github.repository` | `owner/name` | The repository the git remote (`repository.remote`, else `origin`) points to on github.com | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the repository whose issues the skills work on |
-| `issue_tracker.github.states_from` | `labels` or `project` | `labels` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: where an open issue's workflow state is kept. `labels`: a label per state, named by `issue_tracker.states`. `project`: the option of a Projects board's single-select field; an open issue with no option is in `todo`, and one whose option names no open state is refused; the token then needs the `project` scope (`gh auth refresh -s project`) |
-| `issue_tracker.github.project` | a board's web address, `https://github.com/orgs/<org>/projects/<n>` or `https://github.com/users/<user>/projects/<n>` | **Required when `states_from` is `project`** | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the board whose field holds the state. Moving an issue to an open state adds it to the board when it is not there |
-| `issue_tracker.github.status_field` | field name | `Status` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the board's single-select field that holds the state |
-| `issue_tracker.github.priority_labels` | map from `urgent`, `high`, `medium`, `low` to a label | `priority: urgent`, `priority: high`, `priority: medium`, `priority: low` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the label that carries each priority (1 to 4); an issue with none has no priority. Each priority needs its own label, which with `states_from: labels` is also no state's label |
+| `issue_tracker.adapter` | adapter name | `github` | do-item, drive-pr, decide, work-batch, dispatch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers: `github` or `linear`. `github` (GitHub Issues) uses the signed-in `gh` command-line client, which also reads `GH_TOKEN` or `GITHUB_TOKEN`; with `JIG_GITHUB_GRAPHQL_URL` set it sends requests to that GraphQL endpoint (a GitHub Enterprise Server) with the token from `GH_TOKEN` or `GITHUB_TOKEN`. `linear` reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client. A file that sets `issue_tracker.team` without `issue_tracker.adapter` (or with it empty) is refused, since the default adapter has no team: add `adapter: linear` |
+| `issue_tracker.team` | team key such as `ENG` | **Required by the Linear adapter**; refused unless `issue_tracker.adapter` is set too | do-item, drive-pr, review, work-batch, dispatch | Linear only: the key issue identifiers carry (`ENG` for `ENG-123`). GitHub Issues keys are `#123`, of the repository `issue_tracker.github.repository` names |
+| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch, dispatch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate`. On GitHub Issues, `done`, `canceled` and `duplicate` are an issue closed as completed, not planned or duplicate, and each open state is the label (or, with `issue_tracker.github.states_from: project`, the board option) of that name; `todo` carries no label, so a new issue is in `todo` |
+| `issue_tracker.github.repository` | `owner/name` | The repository the git remote (`repository.remote`, else `origin`) points to on github.com | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: the repository whose issues the skills work on |
+| `issue_tracker.github.states_from` | `labels` or `project` | `labels` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: where an open issue's workflow state is kept. `labels`: a label per state, named by `issue_tracker.states`. `project`: the option of a Projects board's single-select field; an open issue with no option is in `todo`, and one whose option names no open state is refused; the token then needs the `project` scope (`gh auth refresh -s project`) |
+| `issue_tracker.github.project` | a board's web address, `https://github.com/orgs/<org>/projects/<n>` or `https://github.com/users/<user>/projects/<n>` | **Required when `states_from` is `project`** | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: the board whose field holds the state. Moving an issue to an open state adds it to the board when it is not there |
+| `issue_tracker.github.status_field` | field name | `Status` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: the board's single-select field that holds the state |
+| `issue_tracker.github.priority_labels` | map from `urgent`, `high`, `medium`, `low` to a label | `priority: urgent`, `priority: high`, `priority: medium`, `priority: low` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: the label that carries each priority (1 to 4); an issue with none has no priority. Each priority needs its own label, which with `states_from: labels` is also no state's label |
 | `issue_tracker.labels.epic` | label | `review.taxonomy.epic_label`, else `epic` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch | Marks an issue whose sub-issues are worked one at a time |
 | `issue_tracker.labels.hitl` | label | `hitl` | do-item, decide, work-batch | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
 | `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item, work-batch | A step a person performs outside the code; caps an epic at `ops_pending` |
@@ -445,6 +445,25 @@ unknown key is refused.
 |-------|------|-------------|---------|--------------|
 | `specs.adapters` | list of adapter names, in order: `body` | Every adapter whose layout the repository holds, then `body` | do-item | Orders or restricts the adapters: only those listed run, in this order, and the first whose path patterns claim a referenced path reads it. Leaving `body` out stops the item's own sections from being read |
 | `specs.body_section` | heading text, without the `#` | `Spec` | do-item | The heading of the body section that names the item's spec, by link or path, and may carry its requirements, criteria and tasks inline. Matched at any heading level, ignoring case and a trailing colon. `Requirements` and `Acceptance criteria` sections are read beside it, so neither may be the spec section's heading. Headings and entries inside code (a fence, or an indented code block) are not read |
+
+## `workspace_name`
+
+Names the workspace a skill runs in after the work it holds and the stage the
+work is at, in a runtime that can rename its workspaces (Orca today), for
+example `#12 [D] Rename workspaces`. On by default; `template: ""` turns it
+off. A failed rename only warns.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `workspace_name.template` | text with `{id}`, `{status}`, `{title}` and `{pr}` | `{id} {status} {title}` | do-item, drive-pr | The name. An empty string turns the renaming off; a blank one is refused. `{id}` is the item key, `{status}` the stage's text from `workspace_name.statuses`, `{title}` the item title, `{pr}` `#<number>` once there is a pull request. A variable with no value renders empty. Any other `{name}` is refused |
+| `workspace_name.statuses` | map from a stage to text | `{implementing: "[I]", driving: "[D]", ready: "[R]", done: "✅"}` | do-item, drive-pr | What `{status}` stands for at each stage: do-item sets `implementing` at pickup and `driving` when it arms the drive, drive-pr sets `ready` after the merge-ready announcement posts. `done` is for a follow-up step. An entry overrides one stage and keeps the rest; a stage outside this set is refused |
+
+From the repository root, `bun "<do-item-skill-dir>/scripts/workspace-name.ts" <stage> [--id "<key>"] [--title-file <path>] [--pr <number>]`
+applies it, `<do-item-skill-dir>` being the installed `do-item` skill's
+directory. The title comes from a file because it is tracker text that a
+shell must not expand; `--title <text>` is for a caller that starts the
+script without a shell. `--id` is left out for a pull request that serves no
+item.
 
 ## `work_batch`
 
@@ -903,6 +922,34 @@ Use `gc --json` for the receipt schema on standard output.
 The available collectors and remaining rollout work are in
 [the collector's README](gc/README.md).
 
+## `dispatch`
+
+What the [dispatcher](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (`jig dispatch`) starts for this
+repository: a program on the machine that runs the agent sessions, which
+looks at the tracker, the pull requests' drive ledgers and the running
+sessions, and reports each stage that should be running and is not. It
+reads this section from the repository's default branch as the forge holds
+it, fresh at every run, never from a checkout: a change to it takes effect
+once it merges, and a section that cannot be read plans nothing for the
+repository. The command reports only; see [the plugin's README](README.md#the-dispatcher).
+
+| Field | Type | Default / meaning | Read by |
+|-------|------|-------------------|---------|
+| `dispatch.identity` | string: a GitHub login, or a Linear user's email or display name | None: the repository has no pickups | dispatch |
+| `dispatch.states` | nonempty list of [canonical states](#issue_tracker) | `[todo]` | dispatch |
+| `dispatch.followup_command` | string | None: no follow-ups. Jig's own is `/followup`; a consumer repository names its own post-merge command | dispatch |
+
+An item is a pickup when it is assigned to `identity` and in one of
+`states`, and the person who made that assignment can write to the
+repository (GitHub: the one `issue_tracker.github.repository` names, which is
+the dispatched repository unless that field says otherwise) or is a non-guest member of the team (Linear); an item
+assigned by anyone else is reported and never planned. A pull request merged
+since the follow-up stage's start wants `followup_command`. That start
+(`followup_since`) is the machine's, not the repository's:
+`jig dispatch --followup-since <date>` sets it, and otherwise each run keeps
+the start the previous run's receipt recorded (the first run starts it at
+its own time).
+
 ## Complete example
 
 Every section, with values a typical repository might set. Copy only what
@@ -913,6 +960,10 @@ gc:
   kinds: [tool-state]
   worktree_roots: [../worktrees]
   scratch_prefixes: [/tmp/example-test.]
+dispatch:
+  identity: example-factory
+  states: [todo]
+  followup_command: /post-merge
 gates:
   command: make check                    # required by resolve-review-comments
 review:
@@ -1029,6 +1080,9 @@ do_item:
   arm_drive: auto                        # auto | tab | background | print
   work_types:                            # fields of the depth table to override
     task: { review_skip_lines: 80 }
+workspace_name:
+  template: "{status} {id} {title}"   # [D] JIG-12 Rename workspaces
+  statuses: { ready: "[R]", done: "✅" }
 work_batch:
   point_budget: 16
   size_points: { xs: 1, small: 2, medium: 6 }   # keys: exactly issue_tracker.labels.batch_sizes

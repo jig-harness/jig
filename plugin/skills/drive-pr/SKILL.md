@@ -162,7 +162,7 @@ consumer polling `--json` for one of these states will never see it there.
 | `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed and never wakes itself up. A re-arm picks it up once **every** parked item has an answer from an owner, member or collaborator, later than the park (§ Picking up a stopped drive) |
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
 | `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are. The driver **restarts** from a witnessed kill, leaving what the pass left in the tree for the next pass, up to `drive.pass_deadline_retries` (default 2) per drive (§ Running it); this exit is the deadline recurring past that budget, and says so, or a kill that could not be witnessed, which exits here at once with the locks held and spends no budget |
-| `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` / `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count 'refs/remotes/<remote>/<head-branch>..HEAD'` before re-arming, same as `PASS_DEADLINE`. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
+| `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so read what the stop lists the pass left (the uncommitted paths and the unpushed commits, or that there are none) before re-arming. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` ended `drive.ts` at a round boundary, after any running pass completed. Resume the stop directive before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
@@ -975,10 +975,32 @@ could forge or forget.
    - exit `0` inside the window → the drive already reached a terminal state;
      report its own reason.
    - still running → armed. Do not poll.
-6. **Report and stop.** State: armed, the PR, the tree it drives from, where
-   it runs (the tab's title, or the background task's handle), the pass
-   model (`model`), the verified driver-log path
-   (`drive.log` when the script found the drive listed, else
+6. **Name the workspace, report and stop.** When step 4 found the drive
+   `armed`, or step 5 found it still running (not refused, failed or already
+   finished), name the workspace for the driving stage, in `<tree>`, with the
+   item the PR serves as in
+   [§ Announcing merge-readiness](#announcing-merge-readiness) (a PR that
+   serves none or several leaves out `--id` and `--title-file`). Run it
+   without the variables step 2's `env.unset` names, as the arm command is,
+   so it reads the destination repository's template. It does
+   nothing when `workspace_name.template` is `""` or outside Orca, and a failed
+   Orca rename only warns and exits `0`; a malformed argument, an invalid `workspace_name` field or an unreadable title
+   file exits `2`, and a configuration file that cannot be parsed exits `1`:
+
+   ```bash
+   bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" driving --id "<item key>" --title-file "<tree git dir>/workspace-title.md" --pr <PR>
+   ```
+
+   A drive armed on an existing PR has no title file yet, so before the
+   command read the served item's title with step 3's `get_issue.ts` and
+   write it alone to `workspace-title.md` in `<tree git dir>`, the output of
+   `bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --absolute-git-dir`, with the file editor; the
+   file lives outside the worktree so it cannot leave untracked state in a
+   repository that does not ignore `.context/`. The command exits `2` on a
+   missing file. Then report. State: armed, the
+   PR, the tree it drives from, where it runs (the tab's title, or the
+   background task's handle), the pass model (`model`), the verified
+   driver-log path (`drive.log` when the script found the drive listed, else
    `drive.ts: driver log → …` in its output, or `drive.ts: driver log
    unavailable: <reason>` when it keeps none; confirm it is a regular file
    and can be opened for append with `bun "${CLAUDE_SKILL_DIR}/scripts/portable.ts" check-log <path>` before
@@ -3133,6 +3155,19 @@ What the skill still does about the budget it cannot see:
 
 On verified convergence only:
 
+**exact** — Where the session runs in an Orca workspace (or another workspace
+manager that links a workspace to a pull request) and the pull request was
+driven in this worktree, make the workspace point at it before announcing.
+In Orca this is the command below: it reads the workspace's linked pull
+request and sets it only when it is missing or names another one, prints
+what it did, does nothing outside Orca, and only warns (exit `0`) when Orca
+fails. Skip it for a pull request driven from a different worktree, whose
+workspace is not this one.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/workspace-pr-link.ts" <PR>
+```
+
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
@@ -3188,6 +3223,21 @@ trains readers to skip the block where the non-empty case needs their eyes.
 
 The wording is "safe to merge from the driver's perspective". Marking a PR ready
 and merging it stay human steps.
+
+**judgment** — After `announce-merge-ready.ts` exits `0`, whether it posted the
+announcement or found one already posted, name the workspace for the ready stage
+(it does nothing when `workspace_name.template` is `""` or outside Orca, and a failed Orca rename only warns and exits `0`, while a
+malformed argument, an invalid `workspace_name` field or an unreadable title file exits `2`, and a configuration file that cannot be parsed exits `1`). The item is the one tracker issue
+the PR serves (run [Arm](#arm) step 3's `get_issue.ts` lookup in this pass, since a driver pass is headless and one-shot); write its title alone to
+`workspace-title.md` in the worktree's git directory (the output of
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --absolute-git-dir`, outside the worktree, so the clean-tree
+check above is not tripped) with the file editor and pass the file, never
+the title inside the command, and quote the key. For a PR that serves no item,
+or more than one, leave out `--id` and `--title-file`:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/workspace-name.ts" ready --id "<item key>" --title-file "<git dir>/workspace-title.md" --pr <PR>
+```
 
 ## Deadlines
 

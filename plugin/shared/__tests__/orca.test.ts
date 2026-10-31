@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { orcaAnswering } from "../../../lib/test-helpers/orca-answering.ts";
 import {
+  currentWorktree,
   orcaCommand,
   orcaEnvelope,
   orcaFailure,
@@ -66,5 +68,45 @@ describe("the JSON envelope", () => {
     expect(
       orcaFailure({ code: 127, stdout: "", stderr: "orca: not found\n" }),
     ).toBe("(exit 127): orca: not found");
+  });
+});
+
+describe("currentWorktree", () => {
+  const CURRENT = "worktree current --json";
+  const answer = (worktree: unknown) =>
+    JSON.stringify({ ok: true, result: { worktree } });
+
+  test("reads the id and the link, null when absent", async () => {
+    const linked = orcaAnswering({
+      [CURRENT]: answer({ id: "w", linkedPR: 7 }),
+    });
+    expect(await currentWorktree("orca", linked.runner)).toEqual({
+      id: "w",
+      linkedPR: 7,
+    });
+    const bare = orcaAnswering({ [CURRENT]: answer({ id: "w" }) });
+    expect(await currentWorktree("orca", bare.runner)).toEqual({
+      id: "w",
+      linkedPR: null,
+    });
+  });
+
+  test("warns on a link that is neither a string, a number nor null", async () => {
+    const { runner } = orcaAnswering({
+      [CURRENT]: answer({ id: "w", linkedPR: { toString: null } }),
+    });
+    expect(await currentWorktree("orca", runner)).toEqual({
+      warning: "⚠ Orca answered a link that is not a pull request number",
+    });
+  });
+
+  test("answers none only for the not-a-worktree code", async () => {
+    const { runner } = orcaAnswering({
+      [CURRENT]: JSON.stringify({
+        ok: false,
+        error: { code: "selector_not_found" },
+      }),
+    });
+    expect(await currentWorktree("orca", runner)).toBe("none");
   });
 });
