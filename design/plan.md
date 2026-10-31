@@ -579,6 +579,35 @@ than an unflagged one with the `## Route` section saying why, a `route: yours` p
 delegates with nothing forwarded, and a loop-cost report shows the route
 beside the rounds.
 
+### 34. Jig in the Orca ecosystem
+
+Jig's tooling reaches [Orca](https://www.onorca.dev) in three places built
+on their own (the workspace tool behind the launcher, `do-item`'s board
+updates and workspace names, the dispatcher's session runtime), and the
+rest of the execution line does not meet it: a parked drive leaves its
+card where it was, `jig gc` cannot collect an Orca-managed worktree
+without leaving Orca's card and terminals behind, the dispatcher cannot
+read an account's usage from Orca's command line, and Orca's plugin
+system has no Jig in it. [design/orca-integration.md](orca-integration.md)
+has how it works, in three classes built in order: what Jig does on its
+own side (every stage moves the workspace card and marks a park unread;
+the worktrees kind collects an Orca-managed checkout through Orca, after
+the remove hook and the reflection park, with Orca's registry in the idle
+proof), what Jig asks of Orca (usage per account from the command line;
+a phone push only when an agent needs input; filed by a person, each
+with its pull request offered), and a worker-only plugin in its own
+repository that runs one `jig dispatch` tick when an agent's status
+changes, with no panel until a panel can receive data. One pull request
+per step, in the design's order; the board step waits on `drive-pr`
+linking the card to its pull request, and the plugin on item 33's tick.
+
+Done when a parked drive's card shows unread with the question as its
+comment and `/followup` moves it to completed, `jig gc --collect` on an
+idle Orca checkout leaves no card in `orca worktree list --json`, the
+dispatcher's account cap reads `orca account usage --json` where Orca has
+it, and an agent in a Jig repository reaching `waiting` under the plugin
+runs one tick within a minute.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the

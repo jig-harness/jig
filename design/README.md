@@ -66,6 +66,7 @@ with the review.
 | [The spec a work item links](spec-link.md), with its [research note](spec-ecosystems-research.md) | 29 |
 | [Routing work to an agent, a model and an effort](agent-routing.md) | 31 |
 | [The dispatcher, a tick that starts the execution line's stages](dark-factory-dispatch.md) | 33 |
+| [Jig in the Orca ecosystem](orca-integration.md) | 34 |
 
 ## Starting a design
 
