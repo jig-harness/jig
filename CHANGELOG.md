@@ -168,6 +168,10 @@ changes are marked **Breaking** and say what a consumer changes.
   ([GLOSSARY.md](GLOSSARY.md)). The design that derives it is
   [design/agent-routing.md](design/agent-routing.md), decided in
   [ADR-0009](docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md).
+- [GLOSSARY.md](GLOSSARY.md) defines the terms of the planned dispatcher,
+  which starts the execution line's stages with nobody at the keyboard:
+  dispatcher, tick, session runtime and factory identity, and the terms
+  of its control function: outcome log, stage drift and nudge.
 
 ### Changed
 
@@ -318,6 +322,9 @@ changes are marked **Breaking** and say what a consumer changes.
   agent, model and effort they choose. Set `agent` (with optional `model`,
   `effort` and `surface`) to keep the agent started
   ([tools/launcher](tools/launcher/README.md)).
+- [ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)
+  is amended: Herdr stays the first workspace runtime for Jig's tooling,
+  except the planned dispatcher, which targets Orca first.
 
 ### Fixed
 
