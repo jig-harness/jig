@@ -46,8 +46,8 @@ takes over a driver another machine started or passes a flag reserved for
 a person, and writes a receipt per tick. Machine values in `~/.jig/dispatch.yaml`, a repository's
 in a `dispatch` section of `.config/jig.yaml`. Built in the design's order:
 the report, then re-arms within account caps with the timer, then pickups,
-then follow-ups and notifications, then control: an outcome log no
-retention removes, one row per ended launch with an outcome class from a
+then follow-ups and notifications, then control: a permanent outcome
+log, one row per ended launch with an outcome class from a
 closed list, a dashboard that filters it (`jig dispatch dashboard`, no
 report files), drift from each stage's expectation reported and notified
 but never acted on, recurring classes routed to `reflect`, and one

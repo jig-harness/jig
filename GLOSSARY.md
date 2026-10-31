@@ -1698,17 +1698,18 @@ make, use the entry's term instead.
   state is the claim, so no item is picked up twice.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
   it started ended: one row per session with its stage, repository,
-  account, duration and an outcome class from a closed list (converged,
-  quota wall, parked for a person, stalled, died, and so on), or `unknown`
-  with its last state when no class fits. One dashboard filters it; it is
+  account, duration and an outcome class from the closed list the
+  dispatcher's design defines, among them converged, quota wall, parked
+  for a person, stalled and died; a stop no class in that list fits is
+  logged as `unknown` with its last state, never dropped. One dashboard filters it; it is
   never rendered into a report file.
 - **Stage drift** — a running stage falling short of what it is expected to
   achieve: a review drive whose open threads do not fall across rounds, a
   pickup that has not opened a pull request in time. The *dispatcher*
   reports drift and tells a person once; it never acts on it.
-- **Nudge** — a fixed prompt the *dispatcher* may send a running session
-  by itself, from a closed set with one entry: "continue" to a session
-  stopped on a usage limit that has since reset. Anything else a stuck
+- **Nudge** — a fixed prompt the *dispatcher* may send by itself, from a
+  closed set with one entry: "continue" to a session it started that is
+  waiting at its prompt after a usage limit that has since reset. Anything else a stuck
   session needs goes to a person.
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The

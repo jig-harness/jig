@@ -334,7 +334,7 @@ The tick reaches the runtime only through these methods:
 | `openWorkspace(...)` | a workspace for an item (a new branch) or a pull request (its head branch), reused when one exists |
 | `launch(workspace, stage, account)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id |
 | `notify(target, message)` | a message that reaches a person; its receipt carries the target's comment as written |
-| `steer(session, nudge)` | one of the closed set of nudges (see Control) sent to a running session |
+| `steer(session, nudge)` | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting |
 
 Each returns the runtime's receipt, and each, a terminal-screen read for
 `steer` included, runs under a deadline (`dispatch.runtime_timeout`, one
@@ -664,7 +664,7 @@ No route carries a class to the reflection store by itself in this
 design. The tick tunes none of its own dials.
 
 **Steering.** The session runtime gains `steer(session, nudge)`, which
-sends a fixed text to a running session. The set of nudges is closed and
+sends a fixed text to a session the runtime reports waiting. The set of nudges is closed and
 has one entry in this design, **continue**, the prompt people type by hand
 today ("Your usage limit has reset. Continue"). Its target must be known
 mechanically, so it rests on a wall record for interactive sessions:
