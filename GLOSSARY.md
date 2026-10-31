@@ -1187,6 +1187,11 @@ make, use the entry's term instead.
   claim** on the pull request, the earliest claim wins, and every driver
   reads the claims each round and stops when a newer one is there
   ([drive-pr](plugin/skills/drive-pr/README.md#where-its-state-lives)).
+- **Tombstone** — what a removal leaves behind in the *drive ledger* instead of
+  erasing the key: a record of the key's last revision, marked removed. Without
+  it a removed key looks the same as one that never existed, so a delayed
+  write prepared before the removal could add the item back; with it, that
+  write names a revision the key no longer carries and is skipped.
 - **CI hold** — an opt-in label on a pull request that the repository's
   continuous-integration workflows honour: while it is present they skip
   their expensive jobs and a required check fails or is cancelled (the
