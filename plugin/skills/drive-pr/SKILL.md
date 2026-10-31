@@ -3155,6 +3155,19 @@ What the skill still does about the budget it cannot see:
 
 On verified convergence only:
 
+**exact** — Where the session runs in an Orca workspace (or another workspace
+manager that links a workspace to a pull request) and the pull request was
+driven in this worktree, make the workspace point at it before announcing.
+In Orca this is the command below: it reads the workspace's linked pull
+request and sets it only when it is missing or names another one, prints
+what it did, does nothing outside Orca, and only warns (exit `0`) when Orca
+fails. Skip it for a pull request driven from a different worktree, whose
+workspace is not this one.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/workspace-pr-link.ts" <PR>
+```
+
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash

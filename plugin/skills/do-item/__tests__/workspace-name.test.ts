@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ExitError } from "../../../shared/cli.ts";
-import type { OrcaRunner } from "../../../shared/orca.ts";
+import { orcaAnswering } from "../../../../lib/test-helpers/orca-answering.ts";
 import {
   DEFAULT_STATUSES,
   DEFAULT_TEMPLATE,
@@ -27,17 +27,6 @@ const config = (template: string | null) => ({
   statuses: { ...DEFAULT_STATUSES },
 });
 
-function orcaAnswering(answers: Record<string, string>) {
-  const calls: string[] = [];
-  const runner: OrcaRunner = async (_command, args) => {
-    const key = args.join(" ");
-    calls.push(key);
-    const stdout = answers[key];
-    if (stdout === undefined) throw new Error(`unexpected call: ${key}`);
-    return { code: stdout.includes('"ok":true') ? 0 : 1, stdout, stderr: "" };
-  };
-  return { calls, runner };
-}
 const ok = JSON.stringify({ ok: true, result: { worktree: { id: ID } } });
 const renameKey = (name: string) =>
   `worktree set --worktree id:${ID} --display-name ${name} --json`;

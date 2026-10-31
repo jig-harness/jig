@@ -32,12 +32,12 @@ import { fail, isDigits, runMain } from "../../../shared/cli.ts";
 import { readConfig } from "../../../shared/consumer.ts";
 import { run } from "../../../shared/proc.ts";
 import {
+  currentWorktree,
   type OrcaRunner,
   orcaCommand,
   orcaFailure,
   orcaResult,
 } from "../../../shared/orca.ts";
-import { currentWorktree } from "./orca-board.ts";
 
 const USAGE =
   "usage: workspace-name.ts <implementing|driving|ready|done> [--id <key>] [--title <text> | --title-file <path>] [--pr <number>]";
@@ -231,8 +231,7 @@ export async function renameWorkspace(
   const current = await currentWorktree(command, runner);
   if (current === "none")
     return "workspace-name: Orca does not list this directory as a worktree; nothing to do";
-  if ("warning" in current)
-    return current.warning.replace(/^orca-board/, "workspace-name");
+  if ("warning" in current) return `workspace-name: ${current.warning}`;
   const done = await runner(command, [
     "worktree",
     "set",
