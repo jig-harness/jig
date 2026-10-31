@@ -1,10 +1,11 @@
 /** Re-read local identity; preserve unknown evidence and the session-lock veto. */
-import { lstatSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { lstatSync, realpathSync } from "node:fs";
+import { isAbsolute, normalize, resolve } from "node:path";
 import { layeredConfig, remoteName } from "../../shared/consumer.ts";
 import { readDrivenTree, type DrivenTree } from "../../shared/driven-tree.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { GcError } from "../../shared/gc-error.ts";
+import { orcaFailure, orcaResult, runOrca } from "../../shared/orca.ts";
 import { gcGit as git } from "../git.ts";
 import type { Proof } from "../types.ts";
 import {
@@ -138,10 +139,83 @@ async function drivenRequests(
     );
   return prs;
 }
+/** A path as git spells a worktree: links resolved, where the path exists. */
+export function canonicalWorktree(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      return normalize(path);
+    throw error;
+  }
+}
+/**
+ * Orca's own liveness evidence for a worktree it manages, from its registry
+ * (`orca worktree ps --json`): an agent Orca reports in any state but done
+ * (working, or waiting on a person) keeps the worktree, whatever git says.
+ * A registry that cannot be read, is cut short, or does not list the worktree
+ * proves nothing, so collection is refused. Null when Orca reports no agent
+ * still at work in it.
+ */
+async function orcaLiveness(
+  command: string,
+  path: string,
+): Promise<Proof | null> {
+  const unread = (why: string): Proof => ({
+    state: "unverified",
+    reason: `Orca's registry (orca worktree ps) ${why}`,
+  });
+  const done = await runOrca(command, ["worktree", "ps", "--json"]);
+  const result = orcaResult(done);
+  if (result === null) return unread(`could not be read ${orcaFailure(done)}`);
+  if (result.truncated !== false || !Array.isArray(result.worktrees))
+    return unread("answered an incomplete list");
+  const own = canonicalWorktree(path);
+  const row = result.worktrees.find(
+    (entry: unknown) =>
+      isMapping(entry) &&
+      typeof entry.path === "string" &&
+      canonicalWorktree(entry.path) === own,
+  );
+  if (!isMapping(row)) return unread("does not list the worktree");
+  if (!Array.isArray(row.agents)) return unread("lists no agents for it");
+  for (const agent of row.agents) {
+    if (!isMapping(agent) || typeof agent.state !== "string")
+      return unread("lists an agent without a state");
+    if (agent.state !== "done")
+      return {
+        state: "live",
+        reason: `Orca's registry reports an agent ${agent.state} in the worktree`,
+      };
+  }
+  return null;
+}
+/** The runtime that manages a worktree, when one does: Orca, by its command. */
+export interface WorktreeRuntime {
+  orca: string;
+}
+/**
+ * The proof of a worktree a runtime manages. The runtime's registry is read
+ * first: an agent at work there is the most direct evidence the worktree is
+ * in use, and it is read again on every proof, the final one before removal
+ * included. Its showing no agent stands in for session admission.
+ */
+export async function runtimeWorktreeProof(
+  path: string,
+  policy: WorktreePolicy,
+  idleDays: number,
+  runtime: WorktreeRuntime,
+): Promise<Proof> {
+  if (!lstatSync(path).isDirectory())
+    return { state: "finding", reason: "worktree root is not a directory" };
+  const registry = await orcaLiveness(runtime.orca, path);
+  return registry ?? worktreeProof(path, policy, idleDays, true);
+}
 export async function worktreeProof(
   path: string,
   policy: WorktreePolicy,
   idleDays: number,
+  coordinated = false,
 ): Promise<Proof> {
   if (!lstatSync(path).isDirectory())
     return { state: "finding", reason: "worktree root is not a directory" };
@@ -188,6 +262,7 @@ export async function worktreeProof(
     aheadOfBase: null,
     held: null,
     idleMs: null,
+    coordinated,
   };
   const local = localWorktreeVeto(facts);
   if (local) return local;

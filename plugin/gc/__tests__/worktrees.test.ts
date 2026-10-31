@@ -94,3 +94,18 @@ test("ignored local content needs independent preservation evidence", () => {
     classifyWorktree(evidence({ ignoredContent: true }), guard).state,
   ).toBe("finding");
 });
+test("a runtime's registry stands in for session admission, and only it", () => {
+  const coordinated = classifyWorktree(evidence({ coordinated: true }), guard);
+  expect(coordinated.state).toBe("dead");
+  expect(coordinated.reportOnly).toBeUndefined();
+  expect(coordinated.reason).toContain("registry shows no agent");
+  for (const overrides of [{ held: true }, { idleMs: 0 }, { dirty: true }])
+    expect(
+      classifyWorktree(evidence({ ...overrides, coordinated: true }), guard)
+        .state,
+    ).toBe("live");
+  expect(
+    classifyWorktree(evidence({ requests: [], coordinated: true }), guard)
+      .state,
+  ).toBe("finding");
+});

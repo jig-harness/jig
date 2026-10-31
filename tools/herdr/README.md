@@ -149,7 +149,9 @@ the plugin in [`plugin/`](plugin/herdr-plugin.toml) answers by running the
 create hook. The event runs in the background, so `open` waits for the hook
 to finish before it starts the agent: the hook runs under a claim in the
 worktree's git directory, and whoever takes it first runs it. Each hook
-runs under a small `bun` supervisor that starts it in a session and process
+runs under a small `bun` supervisor (the plugin's
+[`plugin/shared/worktree-hooks.ts`](../../plugin/shared/worktree-hooks.ts),
+which `jig gc` runs a hook under too) that starts it in a session and process
 group of its own and ends that whole group when the hook fails, when it
 outlives its 15 minutes, or when the tool that started it has gone (killed by
 a launcher's or SSH session's deadline, say). The claim names both its owner's process and that

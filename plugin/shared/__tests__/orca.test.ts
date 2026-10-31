@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   orcaCommand,
   orcaEnvelope,
+  orcaErrorText,
   orcaFailure,
   orcaResult,
   orcaTabCommand,
@@ -10,7 +11,7 @@ import {
 const ORCA = { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
 
 describe("orcaCommand", () => {
-  test("comes from its terminal's environment only", () => {
+  test("comes from its terminal's environment", () => {
     expect(orcaCommand({})).toBeNull();
     expect(orcaCommand({ ORCA_CLI_BIN_DIR: "/opt/orca/bin" }, "darwin")).toBe(
       "/opt/orca/bin/orca",
@@ -19,6 +20,16 @@ describe("orcaCommand", () => {
       "/opt/orca/bin/orca-ide",
     );
     expect(orcaCommand({ ...ORCA, ORCA_CLI_BIN_DIR: "/elsewhere" })).toBe(
+      "/opt/orca/bin/orca",
+    );
+  });
+
+  test("falls back to a configured command outside an Orca terminal", () => {
+    expect(orcaCommand({}, "linux", "/usr/local/bin/orca-ide")).toBe(
+      "/usr/local/bin/orca-ide",
+    );
+    expect(orcaCommand({}, "linux", "  ")).toBeNull();
+    expect(orcaCommand(ORCA, "linux", "/usr/local/bin/orca-ide")).toBe(
       "/opt/orca/bin/orca",
     );
   });
@@ -48,7 +59,7 @@ describe("the JSON envelope", () => {
     expect(orcaResult({ code: 1, stdout })).toBeNull();
   });
 
-  test("a refused call's error code", () => {
+  test("a refused call's error code and message", () => {
     const stdout = JSON.stringify({
       ok: false,
       error: { code: "selector_not_found" },
@@ -56,8 +67,21 @@ describe("the JSON envelope", () => {
     expect(orcaEnvelope(stdout)).toEqual({
       ok: false,
       code: "selector_not_found",
+      message: null,
     });
     expect(orcaResult({ code: 0, stdout })).toBeNull();
+    const dirty = orcaEnvelope(
+      JSON.stringify({
+        ok: false,
+        error: { code: "worktree_dirty", message: "uncommitted changes" },
+      }),
+    );
+    expect(dirty?.ok === false ? orcaErrorText(dirty) : null).toBe(
+      "uncommitted changes (worktree_dirty)",
+    );
+    expect(
+      orcaErrorText({ code: "repo_not_found", message: "repo_not_found" }),
+    ).toBe("repo_not_found");
   });
 
   test("output that is not Orca's has no envelope", () => {

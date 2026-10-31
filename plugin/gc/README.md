@@ -42,7 +42,7 @@ user's own fetches. See
 |------|----------|
 | `tool-state` | Runs drive-pr's existing state reaper in report mode for each configured clone. Receipts retain its full per-family proof. Collection remains disabled until state creators hold shared admission across every state use; the legacy reaper lock excludes only other reapers. |
 | `scratch` | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Where the identity cannot be captured (no readable process table), the record says so and the root is kept as unverified. Missing ownership is a finding. Collection remains disabled until fixture registration proves all holders gone. |
-| `worktrees` | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded. Ignored local content needs preservation evidence. Eligible worktrees remain report-only until the opener shares session admission. |
+| `worktrees` | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded. Ignored local content needs preservation evidence. A worktree [Orca](https://www.onorca.dev) manages is marked `runtime: orca` and collected through Orca ([below](#worktrees-orca-manages)); any other eligible worktree remains report-only until the opener shares session admission. |
 | `receipts` | Machine kind; removes receipts past retention while preserving the latest completed report for each repository and kind. Unfinished receipts and runs whose inventory failed never take that place. |
 
 Scratch creators use `shared/gc-lock.ts` to hold shared admission while
@@ -50,7 +50,32 @@ creating a scope and writing its owner record. Collectors take exclusive
 admission across the final proof and removal. An abandoned admission token
 blocks collection and needs inspection; it is never stolen on age.
 Worktree openers have not adopted that protocol, so clean or merged worktrees
-are reported only.
+are reported only, except those a workspace runtime manages.
+
+### Worktrees Orca manages
+
+Removing a worktree Orca manages with plain git leaves Orca's card, its
+terminals and its agent records behind. When the machine entry names Orca's
+command (`orca.command` in the user file's `gc` section, an absolute path:
+the scheduled run is not inside an Orca terminal, so the command cannot come
+from Orca's environment, and no environment names it), the inventory reads
+`orca worktree list --json` for the repository and marks each checkout
+`runtime: orca` or `runtime: none`. A list Orca cannot give in full fails the
+inventory, so a checkout it manages never passes for a plain one.
+
+An Orca checkout's proof reads Orca's registry (`orca worktree ps --json`)
+before anything else, and again in the final proof before removal: an agent
+Orca reports in any state but done (working, or waiting on a person) keeps
+the worktree whatever git says, and a registry that cannot be read, is cut
+short or does not list the worktree refuses collection. The registry stands
+in for the session admission the opener does not hold, so an Orca checkout
+that passes every other check is collected rather than reported. Collection
+runs the repository's remove hook (`.config/worktree-hooks/remove`) inside
+the worktree, parks its unsent reflection findings, and only then removes it
+with `orca worktree rm`, never `git worktree remove`; when a step fails the
+worktree stays and the receipt records the failure. The receipt of a
+collected worktree names the hook it ran, or that the repository has none,
+and the park.
 
 Reports and collections use the same receipt schema and human formatter.
 `would-collect`, `collected`, `refused`, `finding`, `unverified` and `failed`
