@@ -839,6 +839,26 @@ describe("arm-drive.ts", () => {
     expectSpawnExit(flag, 2);
     expect(report(flag).reason).toContain("--pass-args cannot hold --model");
     expect(report(flag).argv).not.toContain("--pass-args");
+    const end = await runArm(
+      tree,
+      ["42", "--mode", "print", "--pass-args", "-- x"],
+      CLAUDE,
+    );
+    expectSpawnExit(end, 2);
+    expect(report(end).reason).toContain("--pass-args cannot hold --:");
+  });
+
+  it("does not take the next flag of its own command line for the value of --pass-args", async () => {
+    const tree = scratchTree();
+    for (const next of ["--keep-draft", "--mode", "--max-rounds 3", "--"]) {
+      const run = await runArm(
+        tree,
+        ["42", "--pass-args", ...next.split(" ")],
+        CLAUDE,
+      );
+      expectSpawnExit(run, 2);
+      expect(run.stderr).toContain("--pass-args requires a value");
+    }
   });
 
   it("answers a directory that is no git working tree with a failed report and no command", async () => {

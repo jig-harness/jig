@@ -992,7 +992,8 @@ routing below remain **exact**.
 
       **Always emit `command`**, the exact unattended drive command, in the
       end-of-run status message **and** in the tracker comment that links the
-      PR, with the pass model (`model`). Prepare the comment now; post it
+      PR, with the pass model (`model`) and the permission mode
+      (`permissionMode`). Prepare the comment now; post it
       after step 3's arm check so it can report the observed outcome.
 
       Include the drive's **observability handles** in the same comment. Take

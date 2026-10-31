@@ -101,10 +101,18 @@ const VALUE_FLAGS = new Set([
 /** The flags whose value may start with `--`, since it is a pass command's own. */
 const DASHED_VALUES = new Set(["--pass-args"]);
 
+/** The flags of this command line, which a dashed value may not be mistaken for. */
+const OWN_FLAGS = new Set([...VALUE_FLAGS, "--keep-draft"]);
+
 function value(argv: string[], index: number): string {
   const v = argv[index + 1];
   const flag = argv[index] as string;
-  if (v === undefined || (v.startsWith("--") && !DASHED_VALUES.has(flag)))
+  const dashed = v?.startsWith("--") === true;
+  if (
+    v === undefined ||
+    (dashed && !DASHED_VALUES.has(flag)) ||
+    (dashed && (v === "--" || OWN_FLAGS.has(v.split(/\s/)[0] as string)))
+  )
     fail(2, `${argv[index]} requires a value`, USAGE);
   return v;
 }

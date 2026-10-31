@@ -1016,7 +1016,7 @@ could forge or forget.
    repository that does not ignore `.context/`. The command exits `2` on a
    missing file. Then report. State: armed, the
    PR, the tree it drives from, where it runs (the tab's title, or the
-   background task's handle), the pass model (`model`), the verified
+   background task's handle), the pass model (`model`), the permission mode (`permissionMode`), the verified
    driver-log path (`drive.log` when the script found the drive listed, else
    `drive.ts: driver log → …` in its output, or `drive.ts: driver log
    unavailable: <reason>` when it keeps none; confirm it is a regular file

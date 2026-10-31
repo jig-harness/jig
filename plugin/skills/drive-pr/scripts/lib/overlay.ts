@@ -295,6 +295,8 @@ export const PASS_ARG_PATTERN = /^\S+$/;
  * they can: the model has its own setting, and the drive writes the prompt.
  */
 export function refusedPassArgs(words: readonly string[]): string | undefined {
+  if (words.includes("--"))
+    return "cannot hold --: it would end the pass command's options and turn -p into its prompt";
   const word = words.find(
     (w) =>
       w === "-p" ||
