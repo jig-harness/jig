@@ -292,10 +292,12 @@ the fold that any writer may regenerate, and a reader that finds it behind
 the records folds them itself. The snapshot, not the records, is cut by the
 last-twenty and body-limit rules: a record is never trimmed, since the fold
 replays it. A record too large for one comment is written as several
-consecutive records of the same actor and generation, each carrying its
-sequence number and the count of the set, and the fold applies the set only
-once every part is present; a set missing a part is reported and skipped,
-never applied in part. Two creations of the snapshot that
+records that share a set id (a random identifier the writer mints for the
+operation, so two writers that share an actor or a generation never share
+one), each carrying its part number and the count of the set. The fold groups
+parts by set id alone, never expects them to be adjacent, applies a set once
+every part is present, and orders it by the comment id of its last part; a set
+missing a part is reported and skipped, never applied in part. Two creations of the snapshot that
 race leave two comments, of which the lower id is canonical and the other is
 deleted by its author on its next write. A ledger is **trusted** only when its
 comment's author is the drive's own login or carries the owner, member or
@@ -489,21 +491,17 @@ The deferral protocol's rule that nothing is deferred without a tracked
 issue gains one alternative. A deferral whose adapter cannot file (the batch
 step is bound to one tracker until
 [plan item 10](plan.md#10-values-the-skills-still-assume) moves it onto the
-interface) is recorded in a `## Deferred` section of the pull request body
-under a hidden marker, with the finding quoted, the reason and the thread
-link, projected from durable deferral operations: each deferral is an
-append-only operation record under the ledger's operation marker (the finding,
-the reason, the thread link, an item key), so none is lost to a concurrent
-writer, and the body section is a projection the fold regenerates, never the
-source. A person's edit to the section is read back as an operation of its own
-(an added, changed or removed entry) before the projection is rewritten, and
-an edit outside the section is carried over unchanged from the body read
-immediately before the write; the thread is resolved with the `**deferred**`
-token linking the section. A plugin script, `file-deferred.ts <PR>`, turns
-the section's entries into issues where an adapter can file and replaces
+interface) is recorded as a **deferral record**: a comment the drive owns on the pull
+request, under its own hidden marker, with the finding quoted, the reason, the
+thread link and an item key. Records are only ever appended, so a concurrent
+writer loses none, and the pull request body is never rewritten: a person's
+edit to it cannot be overwritten because nothing writes it. A deferral is
+filed, changed or withdrawn by a later record naming the same item key; the
+thread is resolved with the `**deferred**` token linking the record. A plugin script, `file-deferred.ts <PR>`, turns
+the unfiled records into issues where an adapter can file and replaces
 each with its link; it runs from the consumer's own post-merge step or the
 morning report, and on a pull request closed without merging. With no
-tracker at all the entries stay in the merged pull request's body and the
+tracker at all the records stay in the merged pull request's comments and the
 morning report lists them until a person files them. A deferral is
 therefore never a park.
 
@@ -515,8 +513,8 @@ drove (found through the forge's search for the ledger marker), since the
 time (default: the last report): its terminal state and what it means for
 the person; the provisional decisions, first; the takeovers and re-arms;
 the parked decisions in their framed form; the issues filed and the
-deferred entries not yet filed, including those in a closed pull request's
-body, found through the deferral section's hidden marker. It is the one thing a person reads after an
+deferred entries not yet filed, including those in a closed pull request,
+found through the deferral record's hidden marker. It is the one thing a person reads after an
 unattended night. Where a repository has a pre-merge follow-up step, that
 step's list includes the pull request's provisional decisions.
 
