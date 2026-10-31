@@ -3,9 +3,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ExitError } from "../../../shared/cli.ts";
-import type { OrcaRunner } from "../../../shared/orca.ts";
+import { orcaAnswering } from "../../../../lib/test-helpers/orca-answering.ts";
 import {
   DEFAULT_STATUSES,
+  DEFAULT_TEMPLATE,
   type NameRequest,
   nameConfig,
   parseArgs,
@@ -26,17 +27,6 @@ const config = (template: string | null) => ({
   statuses: { ...DEFAULT_STATUSES },
 });
 
-function orcaAnswering(answers: Record<string, string>) {
-  const calls: string[] = [];
-  const runner: OrcaRunner = async (_command, args) => {
-    const key = args.join(" ");
-    calls.push(key);
-    const stdout = answers[key];
-    if (stdout === undefined) throw new Error(`unexpected call: ${key}`);
-    return { code: stdout.includes('"ok":true') ? 0 : 1, stdout, stderr: "" };
-  };
-  return { calls, runner };
-}
 const ok = JSON.stringify({ ok: true, result: { worktree: { id: ID } } });
 const renameKey = (name: string) =>
   `worktree set --worktree id:${ID} --display-name ${name} --json`;
@@ -74,8 +64,28 @@ describe("renderName", () => {
 });
 
 describe("nameConfig", () => {
-  test("absent means off, with the default statuses", () => {
-    expect(nameConfig({})).toEqual(config(null));
+  test("absent means the default template, with the default statuses", () => {
+    expect(nameConfig({})).toEqual(config(DEFAULT_TEMPLATE));
+    expect(nameConfig({ workspace_name: {} }).template).toBe(DEFAULT_TEMPLATE);
+  });
+
+  test("an empty template turns it off; a blank one is refused", () => {
+    expect(
+      nameConfig({ workspace_name: { template: "" } }).template,
+    ).toBeNull();
+    expect(() => nameConfig({ workspace_name: { template: "  " } })).toThrow(
+      ExitError,
+    );
+  });
+
+  test("the default template names item, status and title", () => {
+    expect(
+      renderName(
+        DEFAULT_TEMPLATE,
+        { stage: "implementing", id: "#348", title: "Rename it", pr: "" },
+        DEFAULT_STATUSES,
+      ),
+    ).toBe("#348 [I] Rename it");
   });
 
   test("a status entry overrides one stage and keeps the rest", () => {
@@ -90,6 +100,13 @@ describe("nameConfig", () => {
     expect(() =>
       nameConfig({ workspace_name: { statuses: { merged: "M" } } }),
     ).toThrow(ExitError);
+  });
+
+  test("an empty or whitespace-only status is refused", () => {
+    for (const text of ["", "   "])
+      expect(() =>
+        nameConfig({ workspace_name: { statuses: { ready: text } } }),
+      ).toThrow(ExitError);
   });
 
   test("a key the section does not declare is refused", () => {
@@ -158,7 +175,7 @@ describe("parseArgs", () => {
 });
 
 describe("renameWorkspace", () => {
-  test("makes no call without a template", async () => {
+  test("makes no call with the template turned off", async () => {
     const { calls, runner } = orcaAnswering({});
     expect(
       await renameWorkspace(request, config(null), ORCA, runner),

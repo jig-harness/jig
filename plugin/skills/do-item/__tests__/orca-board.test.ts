@@ -1,23 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { ExitError } from "../../../shared/cli.ts";
+import { orcaAnswering } from "../../../../lib/test-helpers/orca-answering.ts";
 import type { OrcaRunner } from "../../../shared/orca.ts";
 import { parseArgs, updateBoard } from "../scripts/orca-board.ts";
 
 const ORCA = { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
 const ID = "repo-1::/ws/app/feat-x";
-
-/** A runner answering Orca's calls from a table keyed on the arguments; records every call. */
-function orcaAnswering(answers: Record<string, string>) {
-  const calls: string[] = [];
-  const runner: OrcaRunner = async (command, args) => {
-    const key = args.join(" ");
-    calls.push(`${command} ${key}`);
-    const stdout = answers[key];
-    if (stdout === undefined) throw new Error(`unexpected call: ${key}`);
-    return { code: stdout.includes('"ok":true') ? 0 : 1, stdout, stderr: "" };
-  };
-  return { calls, runner };
-}
 
 const current = JSON.stringify({ ok: true, result: { worktree: { id: ID } } });
 const set = JSON.stringify({ ok: true, result: { worktree: { id: ID } } });
@@ -43,7 +31,7 @@ describe("outside Orca", () => {
 
 describe("in an Orca terminal", () => {
   test("sets the working directory's card and links the pull request", async () => {
-    const { calls, runner } = orcaAnswering({
+    const { calls, commands, runner } = orcaAnswering({
       "worktree current --json": current,
       [setArgs("in-review", "42")]: set,
     });
@@ -51,9 +39,10 @@ describe("in an Orca terminal", () => {
       await updateBoard({ status: "in-review", pr: "42" }, ORCA, runner),
     ).toBe("orca-board: in-review, PR #42 linked");
     expect(calls).toEqual([
-      "/opt/orca/bin/orca worktree current --json",
-      `/opt/orca/bin/orca ${setArgs("in-review", "42")}`,
+      "worktree current --json",
+      setArgs("in-review", "42"),
     ]);
+    expect(commands).toEqual([ORCA.ORCA_CLI_COMMAND, ORCA.ORCA_CLI_COMMAND]);
   });
 
   test("leaves a directory Orca does not list alone", async () => {

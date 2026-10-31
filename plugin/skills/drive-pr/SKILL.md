@@ -983,7 +983,7 @@ could forge or forget.
    serves none or several leaves out `--id` and `--title-file`). Run it
    without the variables step 2's `env.unset` names, as the arm command is,
    so it reads the destination repository's template. It does
-   nothing without `workspace_name.template` or outside Orca, and a failed
+   nothing when `workspace_name.template` is `""` or outside Orca, and a failed
    Orca rename only warns and exits `0`; a malformed argument, an invalid `workspace_name` field or an unreadable title
    file exits `2`, and a configuration file that cannot be parsed exits `1`:
 
@@ -3155,6 +3155,19 @@ What the skill still does about the budget it cannot see:
 
 On verified convergence only:
 
+**exact** — Where the session runs in an Orca workspace (or another workspace
+manager that links a workspace to a pull request) and the pull request was
+driven in this worktree, make the workspace point at it before announcing.
+In Orca this is the command below: it reads the workspace's linked pull
+request and sets it only when it is missing or names another one, prints
+what it did, does nothing outside Orca, and only warns (exit `0`) when Orca
+fails. Skip it for a pull request driven from a different worktree, whose
+workspace is not this one.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/workspace-pr-link.ts" <PR>
+```
+
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
@@ -3213,8 +3226,7 @@ and merging it stay human steps.
 
 **judgment** — After `announce-merge-ready.ts` exits `0`, whether it posted the
 announcement or found one already posted, name the workspace for the ready stage
-when the repository sets `workspace_name.template` (it does nothing without
-it or outside Orca, and a failed Orca rename only warns and exits `0`, while a
+(it does nothing when `workspace_name.template` is `""` or outside Orca, and a failed Orca rename only warns and exits `0`, while a
 malformed argument, an invalid `workspace_name` field or an unreadable title file exits `2`, and a configuration file that cannot be parsed exits `1`). The item is the one tracker issue
 the PR serves (run [Arm](#arm) step 3's `get_issue.ts` lookup in this pass, since a driver pass is headless and one-shot); write its title alone to
 `workspace-title.md` in the worktree's git directory (the output of

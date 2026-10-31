@@ -348,6 +348,21 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.107.0] - 2026-10-31
+
+### Added
+
+- `drive-pr` checks, before it announces merge-readiness, that the Orca
+  workspace it drove the pull request in is linked to that pull request, and
+  corrects the link when it is missing or names another one
+  (`scripts/workspace-pr-link.ts`). Outside Orca it does nothing.
+
+## [0.106.0] - 2026-10-31
+
+### Changed
+
+- `do-item` and `drive-pr` now rename the Orca workspace they run in by default, to `{id} {status} {title}` (for example `#12 [D] Rename workspaces`). [`workspace_name.template`](plugin/CONFIGURATION.md#workspace_name) changes the name, and setting it to `""` turns the renaming off.
+
 ## [0.105.0] - 2026-10-31
 
 ### Added
@@ -4245,7 +4260,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.105.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.107.0...HEAD
+[0.107.0]: https://github.com/jig-harness/jig/compare/v0.106.0...v0.107.0
+[0.106.0]: https://github.com/jig-harness/jig/compare/v0.105.0...v0.106.0
 [0.105.0]: https://github.com/jig-harness/jig/compare/v0.104.1...v0.105.0
 [0.104.1]: https://github.com/jig-harness/jig/compare/v0.104.0...v0.104.1
 [0.104.0]: https://github.com/jig-harness/jig/compare/v0.103.0...v0.104.0
