@@ -258,6 +258,7 @@ export function world(): World {
     GH_TOKEN: "test-token",
   };
   delete env.ORCA_CLI_COMMAND;
+  delete env.ORCA_CLI_BIN_DIR;
   delete env.JIG_CONSUMER_ROOT;
 
   return {
