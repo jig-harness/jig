@@ -251,7 +251,12 @@ second driver can produce are measured and not repairable, which is why
 the rule become "do not drive beside a driver whose claim is newer than
 yours". The arbitration holds only once every driver of a pull request runs
 a plugin version that reads the ledger, and the drive's documentation says
-so.
+so. A driver that predates the ledger publishes no heartbeat and cannot be
+fenced from here, so the ledger cannot see it. Every ledger write therefore
+carries the writing driver's plugin version, a cross-clone takeover is
+admitted only against a heartbeat that names a ledger-capable version, and
+before the first ledger-capable arm on a pull request the operator stops any
+older driver of it.
 
 ### The ledger on the pull request
 
