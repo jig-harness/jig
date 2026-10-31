@@ -114,12 +114,11 @@ with the pull request linked, once the pull request opens. Nothing turns
 this on and nothing in another runtime changes: outside Orca it makes no
 call, and an Orca call that fails only warns.
 
-A repository can also have the workspace renamed as the work moves, from a
-template over the item key, title, pull request and a short status (`[I]`
+The workspace is also renamed as the work moves, from a template over the item key, title, pull request and a short status (`[I]`
 implementing, `[D]` driving, `[R]` ready to merge; `✅` done is reserved for
-a follow-up step and nothing sets it yet): set
-[`workspace_name`](../../CONFIGURATION.md#workspace_name). Nothing is renamed
-without it.
+a follow-up step and nothing sets it yet), `{id} {status} {title}` by
+default: [`workspace_name`](../../CONFIGURATION.md#workspace_name) changes the
+template, and `template: ""` turns the renaming off.
 
 It also arms the drive in a terminal tab of its own in the workspace, titled
 `drive #<PR>`, so the drive outlives the session, a person can watch its

@@ -77,13 +77,19 @@ function forgeComment(c: unknown): ForgeComment | null {
   };
 }
 
-/** Every comment on the pull request, or why they could not be read. */
-async function listComments(pr: string): Promise<ForgeComment[] | string> {
+/**
+ * Every comment on the pull request, or why they could not be read. `repo`
+ * (`owner/name`) names the repository; without it, the current directory's.
+ */
+async function listComments(
+  pr: string,
+  repo = "{owner}/{repo}",
+): Promise<ForgeComment[] | string> {
   const r = await forge([
     "api",
     "--paginate",
     "--slurp",
-    `repos/{owner}/{repo}/issues/${pr}/comments?per_page=100`,
+    `repos/${repo}/issues/${pr}/comments?per_page=100`,
   ]);
   if (!r.ok) return r.why;
   const pages = json(r.stdout, "the comment listing");
@@ -102,8 +108,9 @@ async function listComments(pr: string): Promise<ForgeComment[] | string> {
 export async function readLedgerSnapshot(
   pr: string,
   selfLogin: string | null,
+  repo?: string,
 ): Promise<LedgerSnapshot | string> {
-  const comments = await listComments(pr);
+  const comments = await listComments(pr, repo);
   return typeof comments === "string"
     ? `the comments could not be read (${comments})`
     : snapshotFrom(comments, selfLogin);

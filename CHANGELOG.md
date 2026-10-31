@@ -348,6 +348,52 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.107.0] - 2026-10-31
+
+### Added
+
+- `drive-pr` checks, before it announces merge-readiness, that the Orca
+  workspace it drove the pull request in is linked to that pull request, and
+  corrects the link when it is missing or names another one
+  (`scripts/workspace-pr-link.ts`). Outside Orca it does nothing.
+
+## [0.106.0] - 2026-10-31
+
+### Changed
+
+- `do-item` and `drive-pr` now rename the Orca workspace they run in by default, to `{id} {status} {title}` (for example `#12 [D] Rename workspaces`). [`workspace_name.template`](plugin/CONFIGURATION.md#workspace_name) changes the name, and setting it to `""` turns the renaming off.
+
+## [0.105.0] - 2026-10-31
+
+### Added
+
+- `jig dispatch`, the dispatcher's tick as a report: for each repository it
+  reads the items assigned to the repository's factory identity, each open
+  pull request's drive ledger and the sessions Orca runs, and prints every
+  pickup, re-arm, follow-up and notification it would start, each with the
+  record that wants it and the evidence, starting nothing. A stage a running
+  session holds is listed as running, and a record it cannot read is
+  reported, never planned. Each run writes a receipt that
+  `jig dispatch receipts` lists; `--apply` is refused in this version. See
+  [the dispatcher](plugin/README.md#the-dispatcher) and the
+  [`dispatch` section](plugin/CONFIGURATION.md#dispatch) of
+  `.config/jig.yaml` (`identity`, `states`, `followup_command`), which is
+  read from the default branch only.
+- The tracker interface reads the issues assigned to one user in given
+  states (`assignedIssues`) and who made an issue's current assignment
+  (`assignedBy`), on GitHub Issues and Linear.
+
+## [0.104.1] - 2026-10-31
+
+### Changed
+
+- `drive-pr`: the stops for a usage limit (exit `16`, and exit `6` when the
+  limit is met on the last round) and for a pass that found the pull request
+  no longer open (exit `5`) now list what the pass left in the tree, as a
+  failed pass's stop does: the uncommitted paths and the commits on top of the
+  head branch's remote ref, or that there are none, instead of advice to run
+  `git status` and `git log` yourself.
+
 ## [0.104.0] - 2026-10-31
 
 ### Added
@@ -4214,7 +4260,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.104.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.107.0...HEAD
+[0.107.0]: https://github.com/jig-harness/jig/compare/v0.106.0...v0.107.0
+[0.106.0]: https://github.com/jig-harness/jig/compare/v0.105.0...v0.106.0
+[0.105.0]: https://github.com/jig-harness/jig/compare/v0.104.1...v0.105.0
+[0.104.1]: https://github.com/jig-harness/jig/compare/v0.104.0...v0.104.1
 [0.104.0]: https://github.com/jig-harness/jig/compare/v0.103.0...v0.104.0
 [0.103.0]: https://github.com/jig-harness/jig/compare/v0.102.0...v0.103.0
 [0.102.0]: https://github.com/jig-harness/jig/compare/v0.101.1...v0.102.0

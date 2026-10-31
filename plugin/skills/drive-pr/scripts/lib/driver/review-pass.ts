@@ -7,6 +7,8 @@ import { passExitDisposition } from "./settings.ts";
 
 import { handleFailedReviewPass } from "./review-failure.ts";
 
+import { reportPassLeftovers } from "./restart.ts";
+
 import { clearPendingVerdicts } from "./../state/pass-handoff.ts";
 
 import { resolveStateDir } from "./../state/store.ts";
@@ -73,6 +75,7 @@ export async function runReviewPassPhase(
     console.error(
       `pass reported the PR is no longer open on round ${round}; stopping`,
     );
+    await reportPassLeftovers("What the pass left in the tree:");
     return disposition.exit;
   }
   if (disposition.kind === "failed") {

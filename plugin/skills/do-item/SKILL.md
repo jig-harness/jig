@@ -600,10 +600,9 @@ routing below remain **exact**.
    bun "${CLAUDE_SKILL_DIR}/scripts/orca-board.ts" in-progress
    ```
 
-   Then name the workspace for the stage. With `workspace_name.template` set
-   and a runtime that can rename its workspaces (Orca), this renames it, for
-   example to `[I] JIG-12 Rename workspaces`; without the template, or
-   anywhere else, it does nothing; a failed Orca rename only warns and exits `0`,
+   Then name the workspace for the stage. With a runtime that can rename its workspaces (Orca), this renames it, for
+   example to `JIG-12 [I] Rename workspaces` (the default `workspace_name.template`);
+   with the template set to `""`, or anywhere else, it does nothing; a failed Orca rename only warns and exits `0`,
    while a malformed argument, an invalid `workspace_name` field or an unreadable title
    file exits `2`, and a configuration file that cannot be parsed exits `1`. The issue title is
    tracker text, so write it alone to `.context/workspace-title.md` with the
