@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 /**
  * Name the workspace this session runs in after the piece of work it holds and
- * the stage that work is at, when the repository configures a name template;
- * do nothing otherwise.
+ * the stage that work is at, from the repository's name template (by default
+ * `{id} {status} {title}`); do nothing when the template is turned off.
  *
  * Usage: bun workspace-name.ts <stage> [--id <key>] [--title <text> | --title-file <path>] [--pr <number>]
  *
@@ -21,8 +21,8 @@
  * `{status}`, `{title}` and `{pr}` filled in; a variable with no value
  * renders empty and the spaces around it collapse.
  *
- * Nothing turns it on but the template: without `workspace_name.template`
- * the script makes no call. It acts only in a terminal Orca opened whose
+ * Without `workspace_name.template` the name is `DEFAULT_TEMPLATE`; an empty
+ * string turns renaming off. It acts only in a terminal Orca opened whose
  * worktree Orca knows (the detection `orca-board.ts` uses). Every runtime
  * failure only warns and the exit is 0; a malformed command line or a
  * template naming an unknown variable exits 2.
@@ -55,6 +55,9 @@ export const DEFAULT_STATUSES: Record<Stage, string> = {
   done: "✅",
 };
 
+/** The name when the repository sets no template. */
+export const DEFAULT_TEMPLATE = "{id} {status} {title}";
+
 const VARIABLES = ["id", "status", "title", "pr"] as const;
 
 /** Braces only in complete, unnested pairs; which names they hold is checked on rendering. */
@@ -68,6 +71,7 @@ export interface NameRequest {
 }
 
 export interface NameConfig {
+  /** Null when the template is turned off with an empty string. */
   template: string | null;
   statuses: Record<Stage, string>;
 }
@@ -131,14 +135,14 @@ function readTitleFile(path: string): string {
 }
 
 /**
- * The `workspace_name` section of the configuration: the template (null when
- * the feature is off) and the status text per stage. A template or status
- * that is not a non-empty string, or a status key that is not a stage, exits 2.
+ * The `workspace_name` section of the configuration: the template (the default
+ * when absent, null when set to an empty string) and the status text per
+ * stage. A template that is not a string or is only blank, a status that is not a non-empty string, or a status key that is not a stage, exits 2.
  */
 export function nameConfig(config: Record<string, unknown>): NameConfig {
   const section = config.workspace_name;
   if (section === undefined || section === null)
-    return { template: null, statuses: { ...DEFAULT_STATUSES } };
+    return { template: DEFAULT_TEMPLATE, statuses: { ...DEFAULT_STATUSES } };
   if (typeof section !== "object" || Array.isArray(section))
     fail(2, "workspace_name must be a mapping");
   const { template, statuses, ...unknown } = section as Record<string, unknown>;
@@ -155,9 +159,15 @@ export function nameConfig(config: Record<string, unknown>): NameConfig {
 }
 
 function parseTemplate(template: unknown): string | null {
-  if (template === undefined || template === null) return null;
-  if (typeof template !== "string" || template.trim() === "")
-    fail(2, "workspace_name.template must be a non-empty string");
+  if (template === undefined || template === null) return DEFAULT_TEMPLATE;
+  if (typeof template !== "string")
+    fail(2, "workspace_name.template must be a string");
+  if (template === "") return null;
+  if (template.trim() === "")
+    fail(
+      2,
+      'workspace_name.template must not be blank (use "" to turn it off)',
+    );
   if (!TEMPLATE_GRAMMAR.test(template))
     fail(
       2,
@@ -174,7 +184,7 @@ function parseStatuses(statuses: unknown): Record<Stage, string> {
   for (const [stage, text] of Object.entries(statuses)) {
     if (!isStage(stage))
       fail(2, `workspace_name.statuses: unknown stage "${stage}"`);
-    if (typeof text !== "string" || text === "")
+    if (typeof text !== "string" || text.trim() === "")
       fail(2, `workspace_name.statuses.${stage} must be a non-empty string`);
     result[stage] = text;
   }
@@ -212,7 +222,7 @@ export async function renameWorkspace(
   runner: OrcaRunner = runOrca,
 ): Promise<string> {
   if (config.template === null)
-    return "workspace-name: no workspace_name.template; nothing to do";
+    return "workspace-name: workspace_name.template is empty; nothing to do";
   const name = renderName(config.template, request, config.statuses);
   if (name === "")
     return "workspace-name: the template renders empty; nothing to do";
