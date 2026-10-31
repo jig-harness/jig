@@ -200,7 +200,11 @@ function answerBody(text: string, status: number, what: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
-    throw new JiraApiError(`Jira returned no JSON on ${what}`, { status });
+    throw new JiraApiError(`Jira returned no JSON on ${what}`, {
+      status,
+      unavailable: true,
+      answerLost: true,
+    });
   }
 }
 

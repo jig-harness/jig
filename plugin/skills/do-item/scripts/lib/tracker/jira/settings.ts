@@ -132,7 +132,7 @@ function namesOf<K extends string>(
       );
     out[key as K] = nonEmpty(value, at);
   }
-  const values = keys.map((k) => out[k]);
+  const values = keys.map((k) => out[k].trim());
   const twice = values.find(
     (n, i) =>
       values.findIndex((m) => m.toLowerCase() === n.toLowerCase()) !== i,

@@ -25,7 +25,7 @@ import {
 } from "./read.ts";
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-import { ORDER, OPEN } from "./jql.ts";
+import { KEY, ORDER, OPEN } from "./jql.ts";
 import type { JiraModel } from "./model.ts";
 import type { JiraSettings, LinkedRelation } from "./settings.ts";
 import {
@@ -109,8 +109,6 @@ export interface Client {
   trusted(user: Record<string, unknown> | null): Promise<boolean>;
   /** The credential's profile time zone, read once. */
   timeZone(): Promise<string>;
-  /** The credential's own account id, read once. */
-  selfId(): Promise<string>;
 }
 
 /** An Atlassian account id: the 24-hex form or the `<n>:<uuid>` form. */
@@ -207,7 +205,6 @@ export function jiraClient(opts: ClientOptions): Client {
   let zone: Promise<string> | undefined;
   let me: Promise<Record<string, unknown>> | undefined;
   const assignables = new Map<string, Promise<boolean>>();
-  const editors = new Map<string, Promise<boolean>>();
 
   /** The credential's own profile, read once. */
   function myself(): Promise<Record<string, unknown>> {
@@ -216,43 +213,6 @@ export function jiraClient(opts: ClientOptions): Client {
       me = undefined;
     });
     return me;
-  }
-
-  /**
-   * Whether the account holds the Edit Issues permission in the project;
-   * cached per account. Jira answers this search only to a credential with
-   * Administer Projects in the project, or Administer Jira.
-   */
-  function canEdit(accountId: string): Promise<boolean> {
-    let found = editors.get(accountId);
-    if (found === undefined) {
-      found = (async () => {
-        let users: unknown;
-        try {
-          users = await get("user/permission/search", {
-            accountId,
-            projectKey: project,
-            permissions: "EDIT_ISSUES",
-            maxResults: 2,
-          });
-        } catch (err) {
-          if (err instanceof JiraApiError && err.status === 403)
-            throw new JiraApiError(
-              `Jira refused the edit-permission check of ${accountId} in ${project}: the credential needs the Administer Projects permission in the project, or Administer Jira`,
-              { status: 403 },
-            );
-          throw err;
-        }
-        if (!Array.isArray(users))
-          throw new JiraApiError(
-            `edit permission of ${accountId} in ${project}: expected a list`,
-          );
-        return users.some((u) => isRecord(u) && u.accountId === accountId);
-      })();
-      found.catch(() => editors.delete(accountId));
-      editors.set(accountId, found);
-    }
-    return found;
   }
 
   /** Exactly one of `items` named `name`, or a refusal saying how many. */
@@ -312,6 +272,11 @@ export function jiraClient(opts: ClientOptions): Client {
     },
 
     children(key, open = false, signal) {
+      if (!KEY.test(key))
+        throw new TrackerRequestError(
+          "invalid",
+          `not a Jira issue key: ${key}`,
+        );
       // No project clause: an Epic's children may live in other projects.
       return client.search(
         `${[`parent = ${key}`, ...(open ? [OPEN] : [])].join(" AND ")}${ORDER}`,
@@ -486,10 +451,7 @@ export function jiraClient(opts: ClientOptions): Client {
     async trusted(user) {
       if (user === null || typeof user.accountId !== "string") return false;
       if (user.accountType !== "atlassian" || user.guest === true) return false;
-      return (
-        (await client.assignable(user.accountId)) &&
-        (await canEdit(user.accountId))
-      );
+      return client.assignable(user.accountId);
     },
 
     timeZone() {
@@ -506,10 +468,6 @@ export function jiraClient(opts: ClientOptions): Client {
         zone = undefined;
       });
       return zone;
-    },
-
-    async selfId() {
-      return str((await myself()).accountId, "myself.accountId");
     },
   };
   return client;

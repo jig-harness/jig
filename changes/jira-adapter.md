@@ -17,7 +17,10 @@ GitHub Issues and Linear.
 - Its credentials, `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment: an
   Atlassian account's email address and an API token made for it.
 - The `issue_tracker.jira` configuration section, whose unknown fields are
-  refused: `site`, the Jira Cloud site's `https://` address (required);
+  refused: `site`, the Jira Cloud site's `https://` address (required; an
+  `*.atlassian.net` host, or one `JIRA_ALLOWED_HOSTS` in the environment
+  names, so a repository's configuration cannot send the credential
+  elsewhere);
   `issue_type` (default `Task`) and `subtask_type` (default the project's
   one sub-task type), the types new issues get; and `priorities`,
   `resolutions` and `link_types`, which name the Jira priorities,
@@ -32,7 +35,3 @@ GitHub Issues and Linear.
   or display name that matches exactly one user. An assignment starts a
   pickup only when a person's Atlassian account made it, not a guest, that
   can be assigned issues in the project.
-- Jira trusts a comment author or assigner only after asking which accounts
-  hold the Edit Issues permission, an answer Jira gives only to a credential
-  with Administer Projects in the project, or Administer Jira; a refusal names
-  that requirement. `issue_tracker.jira.site` takes no port.

@@ -591,7 +591,12 @@ routing below remain **exact**.
    ```
 
    (**judgment** — native, Linear:
-   `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`.)
+   `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`.
+   Jira: the script form is the whole step. The tracker interface has no
+   assignment write, so the issue keeps the assignee it reached you with:
+   the dispatcher starts a pickup only for an issue already assigned to the
+   factory account, and a person who hands an issue over assigns it in Jira
+   first.)
 
    Then show the start on Orca's workspace board. In a worktree of
    [Orca](https://www.onorca.dev) this moves the worktree's card to In

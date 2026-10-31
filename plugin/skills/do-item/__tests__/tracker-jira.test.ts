@@ -1,10 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { TrackerConfigError } from "../scripts/lib/tracker/config-error.ts";
 import { TrackerRequestError } from "../scripts/lib/tracker/port.ts";
-import {
-  adfToMarkdown,
-  markdownToAdf,
-} from "../scripts/lib/tracker/jira/adf.ts";
+import { adfToMarkdown } from "../scripts/lib/tracker/jira/adf.ts";
 import { JiraApiError } from "../scripts/lib/tracker/jira/transport.ts";
 import {
   type Call,
@@ -272,71 +269,6 @@ describe("Jira adapter: transitions", () => {
     expect(calls[2]?.body).toEqual({ transition: { id: "31" } });
   });
 
-  const LOST = () =>
-    new JiraApiError("Jira API unreachable", {
-      unavailable: true,
-      answerLost: true,
-    });
-
-  it("reconciles a create whose answer was lost with the issue it filed", async () => {
-    const { t } = jira(
-      routes({
-        "GET priority/search": PRIORITIES,
-        "POST issue": LOST(),
-        "POST search/jql": page(
-          issue({
-            key: "ENG-77",
-            title: "New",
-            created: new Date().toISOString(),
-          }),
-        ),
-      }),
-    );
-    expect(
-      await t.createIssue({ title: "New", description: "", labels: [] }),
-    ).toEqual({ identifier: "ENG-77", url: `${SITE}/browse/ENG-77` });
-  });
-
-  it("does not take an older issue, or one with other words, for a lost create", async () => {
-    for (const found of [
-      issue({ key: "ENG-70", title: "New" }),
-      issue({
-        key: "ENG-71",
-        title: "New",
-        description: "other work",
-        created: new Date().toISOString(),
-      }),
-    ]) {
-      const { t } = jira(
-        routes({
-          "GET priority/search": PRIORITIES,
-          "POST issue": LOST(),
-          "POST search/jql": page(found),
-        }),
-      );
-      await expect(
-        t.createIssue({ title: "New", description: "", labels: [] }),
-      ).rejects.toThrow("may have been filed");
-    }
-  });
-
-  it("refuses to guess among several issues a lost create may have filed", async () => {
-    const created = new Date().toISOString();
-    const { t } = jira(
-      routes({
-        "GET priority/search": PRIORITIES,
-        "POST issue": LOST(),
-        "POST search/jql": page(
-          issue({ key: "ENG-80", title: "New", created }),
-          issue({ key: "ENG-81", title: "New", created }),
-        ),
-      }),
-    );
-    await expect(
-      t.createIssue({ title: "New", description: "", labels: [] }),
-    ).rejects.toThrow("ENG-80, ENG-81");
-  });
-
   it("refuses an outcome a resolution-less transition does not reach", async () => {
     const { t } = jira(
       routes({
@@ -404,56 +336,6 @@ describe("Jira adapter: comments", () => {
       "Done in **PR**\n\n<!-- jig:marker -->",
     );
     expect(calls[1]?.route).toBe("POST issue/10001/comment");
-  });
-
-  const SELF = { accountId: "5b10ac8d82e05b22cc7d4ef5" };
-  const lostComment = (existing: Record<string, unknown>[]) =>
-    routes({
-      "POST issue/ENG-1/comment": new JiraApiError("Jira API unreachable", {
-        unavailable: true,
-        answerLost: true,
-      }),
-      "GET myself": SELF,
-      "GET issue/ENG-1/comment": comments(...existing),
-    });
-
-  it("reconciles a lost comment answer with this credential's fresh comment, however it is formatted", async () => {
-    const now = new Date().toISOString();
-    const { t } = jira(
-      lostComment([
-        comment("1", adfToMarkdown(markdownToAdf("_hello_")), SELF, now),
-      ]),
-    );
-    await t.postComment("ENG-1", "_hello_");
-  });
-
-  it("does not take an older comment or another account's for a lost one", async () => {
-    const now = new Date().toISOString();
-    for (const existing of [
-      comment("1", "Done", SELF, "2026-01-03T09:00:00.000+0000"),
-      comment("2", "Done", { accountId: "other" }, now),
-    ]) {
-      const { t } = jira(lostComment([existing]));
-      await expect(t.postComment("ENG-1", "Done")).rejects.toThrow(
-        "unreachable",
-      );
-    }
-  });
-
-  it("reads no history for a comment cancelled in flight", async () => {
-    const abort = new AbortController();
-    const { t, calls } = jira(
-      routes({
-        "POST issue/ENG-1/comment": () => {
-          abort.abort();
-          throw new JiraApiError("Jira request cancelled");
-        },
-      }),
-    );
-    await expect(t.postComment("ENG-1", "Done", abort.signal)).rejects.toThrow(
-      "cancelled",
-    );
-    expect(calls.map((c) => c.route)).toEqual(["POST issue/ENG-1/comment"]);
   });
 
   it("sends nothing once the signal is aborted", async () => {

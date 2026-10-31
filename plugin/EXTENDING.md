@@ -200,7 +200,9 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     under a sub-task;
   - a project is the issue's first fix version, and labels are Jira labels:
     they hold no whitespace, are shared by the whole site and are written as
-    given; the debt ledger's label (`ledger.label` in the
+    given; `file-issue` checks every proposed label against the site's labels
+    before writing, so each taxonomy label and the debt ledger's label
+    (`ledger.label` in the
     [fleet-health file](CONFIGURATION.md#the-fleet-health-file)) must
     already exist on the site;
   - parent and children are Jira's parent field, for sub-tasks and an
@@ -208,7 +210,7 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     `issue_tracker.jira.link_types` names; links of other types are ignored;
   - a comment, or an assignment, is trusted when a person's Atlassian
     account made it, not a guest, that can be assigned issues in the
-    project and can edit them; an app's account, Jira Automation's own included, never is.
+    project; an app's account, Jira Automation's own included, never is.
 
 **To add one.** Implement the `Tracker` interface in a module beside
 `linear.ts`, register it in `ADAPTERS` in

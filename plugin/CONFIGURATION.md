@@ -836,7 +836,7 @@ These are set per machine or per run, not committed:
 | `JIG_AFTER_VERSION_TIMEOUT_SEC` | Seconds `changelog.after_version` may run before it is stopped and the release fails; 1800 by default |
 | `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
-| `JIRA_EMAIL`, `JIRA_API_TOKEN` | Credentials for the Jira adapter: an Atlassian account's email address and an API token made for it. Reading who may be trusted as a comment author or assigner asks Jira which accounts hold the Edit Issues permission, which Jira lets only an account with the Administer Projects permission in the project, or Administer Jira, ask; without it those reads fail with a message naming the requirement |
+| `JIRA_EMAIL`, `JIRA_API_TOKEN` | Credentials for the Jira adapter: an Atlassian account's email address and an API token made for it |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
 | `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees), and `attach-pr.ts --place` choose the tree without attaching; `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
 | `DRIVE_PR_LEDGER` | `off` makes `drive.ts` drive without the drive ledger on the pull request: no seeding from it, no check for another clone's driver, no writes; `on` or unset uses it ([where its state lives](skills/drive-pr/README.md#where-its-state-lives)) |
@@ -952,7 +952,7 @@ repository. What a run may start is the machine's to say, in
 An item is a pickup when it is assigned to `identity` and in one of
 `states`, and the person who made that assignment can write to the
 repository (GitHub: the one `issue_tracker.github.repository` names, which is
-the dispatched repository unless that field says otherwise), is a non-guest member of the team (Linear), or is a person's Atlassian account, not a guest, that can be assigned and can edit issues in the project (Jira); an item
+the dispatched repository unless that field says otherwise), is a non-guest member of the team (Linear), or is a person's Atlassian account, not a guest, that can be assigned issues in the project (Jira); an item
 assigned by anyone else is reported and never planned. On Jira an app's
 account, Jira Automation's own included, is never trusted, so a Jira
 Automation rule that assigns an item starts a pickup only when it runs as a
