@@ -3,6 +3,7 @@
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
+import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
 
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -70,10 +71,11 @@ describe("drive-state.ts durability", () => {
       try {
         await state(
           d,
-          ["park", "999", "--key", "k", "--kind", "thread", "--reason", "r"],
+          parkArgs("k", "thread"),
           {
             DRIVE_PR_SESSION: String(a.pid),
           },
+          parkRecord("Should the session lease name its holder"),
         );
         const refused = await state(d, ["phase", "999", "--set", "triage"], {
           DRIVE_PR_SESSION: String(process.pid),

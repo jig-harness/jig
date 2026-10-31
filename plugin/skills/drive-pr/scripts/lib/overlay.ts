@@ -15,11 +15,13 @@ import { isAbsolute, join } from "node:path";
 import { layersFingerprint } from "../../../../shared/config-layers.ts";
 import { DecodeError, isDistinctNameList } from "../../../../shared/guards.ts";
 import {
+  botEntries,
   configSource,
   consumerRoot,
   readConfig,
   readRemoteName,
   remoteName,
+  type ReviewBot,
 } from "../../../../shared/consumer.ts";
 import { verifyRemoteIsPrRepo } from "./base-drift.ts";
 import { attachedTree } from "./driven-branch.ts";
@@ -147,11 +149,27 @@ export function reviewedShaMarker(): string {
   );
 }
 
+/**
+ * `review.bots` as entries, each a login or `{login, …markers}`; `undefined`
+ * when the field is not a list. Entries of another shape are dropped, as
+ * this best-effort reader always has.
+ */
+export function reviewBotEntries(): (string | ReviewBot)[] | undefined {
+  const bots = section("review").bots;
+  if (!Array.isArray(bots)) return undefined;
+  return bots.filter(
+    (b): b is string | ReviewBot =>
+      (typeof b === "string" && b !== "") ||
+      (typeof b === "object" &&
+        b !== null &&
+        typeof (b as { login?: unknown }).login === "string" &&
+        (b as { login: string }).login !== ""),
+  );
+}
+
 /** `review.bots`: the logins the review skill treats as reviewers. */
 export function reviewBots(): string[] {
-  const bots = section("review").bots;
-  if (!Array.isArray(bots)) return [];
-  return bots.filter((b): b is string => typeof b === "string" && b !== "");
+  return botEntries(reviewBotEntries() ?? []).map((b) => b.login);
 }
 
 /**

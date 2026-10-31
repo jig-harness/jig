@@ -61,7 +61,7 @@
  *      pass-child evidence a later sweep reads may no longer be there) —
  *      would never surface. A human decision waiting is not going anywhere;
  *      a drive that is actually stuck right now is.
- *   5. `parkedCount > 0` → `NEEDS_HUMAN`.
+ *   5. `parkedCount > 0` → `NEEDS_HUMAN`, naming each parked question.
  *   6. A live lock with either a currently-running pass or recent progress →
  *      `HEALTHY` — the only branch that reaches it; the function's own
  *      default is `UNKNOWN`.
@@ -161,6 +161,8 @@ export interface DoctorInput {
   passChild: PassChildAnswer;
   quotaPark: QuotaParkRecord | null;
   parkedCount: number;
+  /** Each parked decision's question, so the row names them; absent: the count. */
+  parkedQuestions?: string[];
   /** Worktree leftovers; `null` when the worktree could not be inspected. */
   leftovers: DoctorLeftovers | null;
   stallThresholdMs: number;
@@ -266,6 +268,16 @@ function describeQuotaPark(park: QuotaParkRecord, now: Date): string {
         ? `resets ${park.resetAt} — already past, not yet re-armed`
         : `resets ${park.resetAt}`;
   return `parked on a ${park.vendor} ${park.window}-window quota wall at ${park.at} (${reset})`;
+}
+
+/** The parked questions, quoted; their count when they are not known. */
+function needsHumanReason(input: DoctorInput): string {
+  const questions = (input.parkedQuestions ?? []).map((q) =>
+    JSON.stringify(q.replace(/\s+/g, " ")),
+  );
+  return questions.length > 0
+    ? `awaiting a person's decision: ${questions.join("; ")}`
+    : `${input.parkedCount} item(s) parked awaiting a human decision`;
 }
 
 export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
@@ -439,7 +451,7 @@ export function classifyDrive(input: DoctorInput, now: Date): DoctorRow {
   if (input.parkedCount > 0) {
     return {
       verdict: "NEEDS_HUMAN",
-      reason: `${input.parkedCount} item(s) parked awaiting a human decision`,
+      reason: needsHumanReason(input),
       recovery: null,
     };
   }

@@ -7,7 +7,7 @@ import {
 } from "../../../resolve-review-comments/scripts/lib/code-scanning.ts";
 import { swallow } from "../../../../shared/errors.ts";
 import { TRUSTED_ASSOCIATIONS } from "../summary-findings.ts";
-import { isTrustedBotConfirmation } from "./bot-confirmation.ts";
+import { isTransparentFollowUp } from "./bot-confirmation.ts";
 import { hasLeaveOpenMarker, qualifyingOutcome } from "./outcome.ts";
 import { ghCall, run, tsArgv } from "./proc.ts";
 
@@ -141,7 +141,7 @@ interface ThreadComment {
 /**
  * `awaitsAlert` for an unresolved, unheld thread, judged on its latest
  * trusted qualifying reply when every comment after it is a trusted bot's
- * automated confirmation (`isTrustedBotConfirmation`): a bot confirming the
+ * transparent follow-up (`isTransparentFollowUp`): a bot confirming the
  * owner's reply does not make the thread untriaged. The opening comment is
  * the finding, never a reply, and a truncated thread fails closed.
  */
@@ -160,7 +160,7 @@ export function threadAwaitsAlert(t: {
     if (outcome) return awaitsAlert(t.comments[0], outcome);
     const confirmation =
       typeof c.url === "string" &&
-      isTrustedBotConfirmation(
+      isTransparentFollowUp(
         { authorLogin: c.author, body: c.body },
         qualifyingOutcome,
       );

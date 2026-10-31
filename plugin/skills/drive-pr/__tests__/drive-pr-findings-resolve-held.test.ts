@@ -364,6 +364,39 @@ describe("resolve-held-thread.ts", () => {
       expect(r.held).toEqual([]);
     });
 
+    const CHAT_MARKER = "<!-- coderabbit-ai-generated:v1 -->";
+
+    it("resolves when the only later comment is CodeRabbit's chat acknowledgement", async () => {
+      const r = await holdAndResolve(
+        "acknowledge",
+        heldThenLater([
+          {
+            author: "coderabbitai",
+            bot: true,
+            body: `${CHAT_MARKER}\n\`@example-user\` Thanks: the fix is noted, and nothing further is requested.\n`,
+          },
+        ]),
+      );
+      expectSpawnExit(r, 0);
+      expect(r.resolved.trim()).toBe("PRRT_a");
+      expect(r.held).toEqual([]);
+    });
+
+    it("refuses and restores when the acknowledgement carries a new finding", async () => {
+      expectRefusedAndRestored(
+        await holdAndResolve(
+          "acknowledge-finding",
+          heldThenLater([
+            {
+              author: "coderabbitai",
+              bot: true,
+              body: `${CHAT_MARKER}\nThanks. One more thing:\n\n_⚠️ Potential issue_ | _🟠 Major_ | _⚡ Quick win_\n\nThe guard still reads the unvalidated value.\n`,
+            },
+          ]),
+        ),
+      );
+    });
+
     it("drains an already-resolved thread WITHOUT a mutation", async () => {
       // A bot follow-up that matches no confirmation shape at all: the
       // resolved thread is what drains it, not the comment.

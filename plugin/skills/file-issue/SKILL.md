@@ -101,7 +101,9 @@ Where this skill says "ask the user", use `AskUserQuestion` under Claude
 Code where the session can use it; in any interactive harness where it
 cannot (another harness, or a permission mode that denies the tool), ask a
 plain-text numbered question and end the turn. With nobody to answer, stop and state the question rather
-than write anything. Never pick on the user's behalf.
+than write anything. Never pick on the user's behalf. The one exception is
+the confirmation of [step 9](#9-confirm) under the `unattended` autonomy
+level, which the level itself answers.
 
 ## Modes
 
@@ -136,9 +138,12 @@ than write anything. Never pick on the user's behalf.
    `container` flag (an epic) goes on the container. When an issue is
    split, move such a flag from the parent to the children that carry the
    change.
-4. **Confirm before writing.** Show the user the complete plan (titles,
-   labels, priority, parent, relations, the body) and write only after they
-   accept it.
+4. **Confirm before writing, unless the autonomy level says nobody is
+   there.** Show the user the complete plan (titles, labels, priority,
+   parent, relations, the body) and write only after they accept it, under
+   the `attended` level. Under `unattended`, write without the confirmation,
+   and the body says which skill filed it, from which pull request and why
+   ([step 9](#9-confirm)).
 5. **No guessing a facet.** A facet the taxonomy marks optional (a category
    whose `requires` names an umbrella) is left off when unsure: the
    umbrella alone is a complete labelling, and a wrong facet is worse than
@@ -332,10 +337,26 @@ parent's set and on each child's. Every set passes before step 9.
 
 ### 9. Confirm
 
-**exact** — Show the user the plan: each issue's title, labels, priority,
-parent and relations, and each issue's body in full, children's included:
-the body is what step 10 writes. Write nothing until the user
-accepts; apply their changes and validate again.
+**exact** — Read whether this run confirms. Name the skill that asked for the
+issue (this one, or the one that called it), the pull request it came from,
+and why, in one line:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/confirm-step.ts" --skill <skill> --pr <pull-request-url> --why "<one line>"
+```
+
+It prints `confirm: <level>` or `skip: <level>`, then the filed-by line.
+
+- **`confirm`** (the `attended` level, and every interactive session unless
+  its person chose a level): show the user the plan, each issue's title,
+  labels, priority, parent and relations, and each issue's body in full,
+  children's included: the body is what step 10 writes. Write nothing until
+  the user accepts; apply their changes and validate again.
+- **`skip`** (the `unattended` level a driver pass reads where the repository
+  allows it): put the printed filed-by line at the end of each issue's body,
+  and go on to step 10. Under a drive, record the filing afterwards
+  (drive-pr § 8), so a person finds and can close it. With no pull request
+  behind the run, there is no `skip`: confirm.
 
 ### 10. Write
 
@@ -418,7 +439,8 @@ toward the split.
 **exact** — Validate the issue's resulting label set and every new child's
 ([rule 1](#the-rules-every-write-obeys)); show the user the change (labels
 added and removed, the new body if any, the children, the relations) and
-write only after they accept.
+write only after they accept. Planning an existing issue always confirms,
+whatever the autonomy level.
 
 Create the children first, with `"parent": "<KEY>"`, as in
 [File, step 10](#10-write), so each flag moving from the issue to a child
