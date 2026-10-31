@@ -22,11 +22,11 @@ import { fail, isDigits, runMain } from "../../../shared/cli.ts";
 import {
   type OrcaRunner,
   orcaCommand,
-  orcaEnvelope,
   orcaFailure,
   orcaResult,
   runOrca,
 } from "../../../shared/orca.ts";
+import { currentWorktree } from "../../do-item/scripts/orca-board.ts";
 
 const USAGE = "usage: workspace-pr-link.ts <PR>";
 
@@ -36,9 +36,6 @@ export function parseArgs(args: string[]): string {
   return pr;
 }
 
-/** The error code Orca answers with when no worktree contains the directory. */
-const NOT_A_WORKTREE = "selector_not_found";
-
 /** Point the working directory's workspace at `pr`; returns the line to report. */
 export async function linkWorkspacePr(
   pr: string,
@@ -47,16 +44,11 @@ export async function linkWorkspacePr(
 ): Promise<string> {
   const command = orcaCommand(env);
   if (command === null) return "workspace-pr-link: not in Orca; nothing to do";
-  const current = await runner(command, ["worktree", "current", "--json"]);
-  const worktree = orcaResult(current)?.worktree as
-    | { id?: unknown; linkedPR?: unknown }
-    | undefined;
-  if (typeof worktree?.id !== "string" || worktree.id === "") {
-    const envelope = orcaEnvelope(current.stdout);
-    if (envelope?.ok === false && envelope.code === NOT_A_WORKTREE)
-      return "workspace-pr-link: Orca does not list this directory as a worktree; nothing to do";
-    return `workspace-pr-link: ⚠ could not ask Orca which worktree this is ${orcaFailure(current)}`;
-  }
+  const worktree = await currentWorktree(command, runner);
+  if (worktree === "none")
+    return "workspace-pr-link: Orca does not list this directory as a worktree; nothing to do";
+  if ("warning" in worktree)
+    return worktree.warning.replace(/^orca-board/, "workspace-pr-link");
   if (String(worktree.linkedPR) === pr)
     return `workspace-pr-link: already linked to PR #${pr}`;
   const done = await runner(command, [

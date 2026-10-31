@@ -1,23 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { ExitError } from "../../../shared/cli.ts";
+import { orcaAnswering } from "../../../../lib/test-helpers/orca-answering.ts";
 import type { OrcaRunner } from "../../../shared/orca.ts";
 import { parseArgs, updateBoard } from "../scripts/orca-board.ts";
 
 const ORCA = { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
 const ID = "repo-1::/ws/app/feat-x";
-
-/** A runner answering Orca's calls from a table keyed on the arguments; records every call. */
-function orcaAnswering(answers: Record<string, string>) {
-  const calls: string[] = [];
-  const runner: OrcaRunner = async (command, args) => {
-    const key = args.join(" ");
-    calls.push(`${command} ${key}`);
-    const stdout = answers[key];
-    if (stdout === undefined) throw new Error(`unexpected call: ${key}`);
-    return { code: stdout.includes('"ok":true') ? 0 : 1, stdout, stderr: "" };
-  };
-  return { calls, runner };
-}
 
 const current = JSON.stringify({ ok: true, result: { worktree: { id: ID } } });
 const set = JSON.stringify({ ok: true, result: { worktree: { id: ID } } });
