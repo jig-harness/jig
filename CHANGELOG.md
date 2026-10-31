@@ -348,6 +348,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.108.0] - 2026-10-31
+
+### Changed
+
+- The default `workspace_name.template` now ends with the pull request: `{id} {status} {title} {pr}` (for example `<item-id> [D] Rename workspaces #<number>`). The suffix appears once the work has a pull request, so the name at pickup is unchanged. [`workspace_name.template`](plugin/CONFIGURATION.md#workspace_name) sets another name, and `""` turns the renaming off.
+
 ## [0.107.0] - 2026-10-31
 
 ### Added
@@ -4260,7 +4266,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.107.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.108.0...HEAD
+[0.108.0]: https://github.com/jig-harness/jig/compare/v0.107.0...v0.108.0
 [0.107.0]: https://github.com/jig-harness/jig/compare/v0.106.0...v0.107.0
 [0.106.0]: https://github.com/jig-harness/jig/compare/v0.105.0...v0.106.0
 [0.105.0]: https://github.com/jig-harness/jig/compare/v0.104.1...v0.105.0
