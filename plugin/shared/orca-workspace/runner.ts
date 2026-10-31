@@ -37,6 +37,9 @@ export type Runner = (argv: string[], options?: RunOptions) => RunResult;
 /** The deadline for one command when its caller sets none. */
 export const COMMAND_TIMEOUT_MS = 120_000;
 
+/** The most output one command may print before it is cut off. */
+export const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+
 /** Lines to the operator; the default writes them to stderr. */
 export type Log = (line: string) => void;
 
@@ -56,6 +59,8 @@ export const localRunner: Runner = (argv, options) => {
   const result = spawnSync(command, args, {
     env: { ...withoutLeakyGitEnv(), LC_ALL: "C", LANGUAGE: "" },
     timeout: options?.timeoutMs ?? COMMAND_TIMEOUT_MS,
+    // A verbose hook must not die on Bun's 1 MiB default.
+    maxBuffer: MAX_OUTPUT_BYTES,
     ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
   });
   return {

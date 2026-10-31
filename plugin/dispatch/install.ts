@@ -131,7 +131,7 @@ export async function installDispatch(
       "Scheduler installation requires the installed plugin copy, outside every worktree",
     );
   if (!options.uninstall) await checkLauncherResolves();
-  return exclusiveGcLock("dispatch-install", async () => {
+  return exclusiveGcLock("install", async () => {
     // Captured first, so a failed update puts back the job that was running.
     const previous = await snapshotScheduler(undefined, spec);
     let job: string;

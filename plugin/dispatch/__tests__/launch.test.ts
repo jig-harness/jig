@@ -209,14 +209,18 @@ describe("jig dispatch --apply launches re-arms within account caps", () => {
     ]);
     machineFile(w, [{ ...account(w, "a", "a@example.com"), max: 1 }]);
     earlierRecord(w, { id: "20261030T210000Z-bbbbbbbb", account: "a" });
-    claimed(w, "20261030T210000Z-bbbbbbbb", {
-      host: hostname(),
-      bootId: bootId(),
-      pid: 2 ** 22 + 1,
-      start: "gone",
-      claimedAt: "2026-10-30T21:00:00.000Z",
-    });
-    writeFileSync(join(w.dir, "drive-exit"), "0");
+    claimed(
+      w,
+      "20261030T210000Z-bbbbbbbb",
+      {
+        host: hostname(),
+        bootId: bootId(),
+        pid: 2 ** 22 + 1,
+        start: "gone",
+        claimedAt: "2026-10-30T21:00:00.000Z",
+      },
+      0,
+    );
     expect(launches(await tick(w))).toEqual([]);
     expect(terminalCreates(w)).toHaveLength(0);
   });

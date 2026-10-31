@@ -132,7 +132,12 @@ export async function dispatchMain(
   // The wrapper a dispatched pass's terminal runs (run.ts), under its launch record.
   if (argv[0] === "run") return runMain(argv.slice(1));
   if (argv[0] === "install")
-    return installDispatch(argv.slice(1), script, machineFile());
+    // A removal needs no machine file: a broken one must not keep the timer installed.
+    return installDispatch(
+      argv.slice(1),
+      script,
+      argv.includes("--uninstall") ? null : machineFile(),
+    );
   const options = parseArguments(argv);
   const machine = machineFile();
   if (options.apply && machine === null)

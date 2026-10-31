@@ -27,7 +27,7 @@ describe("the machine file's bounds", () => {
     expect(config("wall_backoff: 999999999999999999999999h\n")).toThrow(
       "at most 24d",
     );
-    expect(config("runtime_timeout: 31d\n")).toThrow();
+    expect(config("runtime_timeout: 721h\n")).toThrow("at most 24d");
   });
 
   it("refuses two names for one identity", () => {
