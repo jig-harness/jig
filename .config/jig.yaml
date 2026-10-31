@@ -16,6 +16,9 @@ gc:
   worktree_roots:
     - ../../orca/workspaces/jig
     - ../../worktrees/jig # Herdr-era worktrees, until none remain
+dispatch:
+  # What `jig dispatch` wants after a merge here: Jig's own post-merge pass.
+  followup_command: /followup
 gates:
   command: bun run gates
 review:

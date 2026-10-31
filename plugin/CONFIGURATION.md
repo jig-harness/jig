@@ -25,7 +25,7 @@ Contents: [the file](#the-file) ·
 [`specs`](#specs) · [`work_batch`](#work_batch) · [`routing`](#routing) ·
 [`fleet_health`](#fleet_health) · [`verify`](#verify) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
-[`code_stats`](#code_stats) · [`gc`](#gc) ·
+[`code_stats`](#code_stats) · [`gc`](#gc) · [`dispatch`](#dispatch) ·
 [procedure skills](#procedure-skills) ·
 [environment variables](#environment-variables) ·
 [complete example](#complete-example)
@@ -875,6 +875,33 @@ Use `gc --json` for the receipt schema on standard output.
 The available collectors and remaining rollout work are in
 [the collector's README](gc/README.md).
 
+## `dispatch`
+
+What the [dispatcher](../GLOSSARY.md) (`jig dispatch`) starts for this
+repository: a program on the machine that runs the agent sessions, which
+looks at the tracker, the pull requests' drive ledgers and the running
+sessions, and reports each stage that should be running and is not. It
+reads this section from the repository's default branch as the forge holds
+it, fresh at every run, never from a checkout: a change to it takes effect
+once it merges, and a section that cannot be read plans nothing for the
+repository. The command reports only; see [the plugin's README](README.md#the-dispatcher).
+
+| Field | Type | Default / meaning | Read by |
+|-------|------|-------------------|---------|
+| `dispatch.identity` | string: a GitHub login, or a Linear user's email or display name | None: the repository has no pickups | dispatch |
+| `dispatch.states` | nonempty list of [canonical states](#issue_tracker) | `[todo]` | dispatch |
+| `dispatch.followup_command` | string | None: no follow-ups. Jig's own is `/followup`; a consumer repository names its own post-merge command | dispatch |
+
+An item is a pickup when it is assigned to `identity` and in one of
+`states`, and the person who made that assignment can write to the
+repository (GitHub) or is a non-guest member of the team (Linear); an item
+assigned by anyone else is reported and never planned. A pull request merged
+since the follow-up stage's start wants `followup_command`. That start
+(`followup_since`) is the machine's, not the repository's: until the
+machine's dispatch file holds it, `jig dispatch --followup-since <date>` sets
+it, and otherwise each run keeps the start the previous run's receipt
+recorded (the first run starts it at its own time).
+
 ## Complete example
 
 Every section, with values a typical repository might set. Copy only what
@@ -885,6 +912,10 @@ gc:
   kinds: [tool-state]
   worktree_roots: [../worktrees]
   scratch_prefixes: [/tmp/example-test.]
+dispatch:
+  identity: example-factory
+  states: [todo]
+  followup_command: /post-merge
 gates:
   command: make check                    # required by resolve-review-comments
 review:

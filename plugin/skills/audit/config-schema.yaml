@@ -105,6 +105,25 @@ fields:
     repository_only: true
     since: 0.83.0
 
+  dispatch.identity:
+    type: string
+    read_by: [dispatch]
+    repository_only: true
+    since: next
+  dispatch.states:
+    type: list
+    items: { type: enum, values: [triage, backlog, todo, in_progress, in_review, ops_pending, done, canceled, duplicate] }
+    distinct: true
+    nonempty: true
+    read_by: [dispatch]
+    repository_only: true
+    since: next
+  dispatch.followup_command:
+    type: string
+    read_by: [dispatch]
+    repository_only: true
+    since: next
+
   gates.command:
     type: command
     read_by: [resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar]

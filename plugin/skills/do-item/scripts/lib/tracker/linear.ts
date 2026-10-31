@@ -14,6 +14,7 @@
 
 import { type RunResult, run } from "../../../../drive-pr/scripts/lib/proc.ts";
 import { pager, postGraphQL, runClient } from "./graphql.ts";
+import { assignedOperations } from "./linear-assigned.ts";
 import {
   CLOSED_STATE_TYPES,
   type CanonicalState,
@@ -1482,6 +1483,12 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       const issue = record(data, "data").issue;
       return issue === null ? null : parsePoolIssue(issue);
     },
+    ...assignedOperations({
+      ...opts,
+      pageAll,
+      poolQuery: POOL_QUERY,
+      parsePool: parsePoolIssue,
+    }),
 
     async createIssue(issue) {
       requireTitle(issue.title);

@@ -1,4 +1,5 @@
 import { parseDeclaration } from "../../../../gc/config.ts";
+import { dispatchSection } from "../../../../dispatch/lib/section.ts";
 import { ExitError } from "../../../../shared/cli.ts";
 import { isMapping as isRecord } from "../../../../shared/config-layers.ts";
 import { parseReviewConfig } from "../../../../shared/consumer.ts";
@@ -141,6 +142,7 @@ export function skillValidation(
   );
   attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));
   attempt("gc", () => parseDeclaration(config.gc, root));
+  attempt("dispatch", () => dispatchSection(config));
   attempt("docs", () => parseDocsSettings(config.docs, root));
   attempt("design-brief-builder (handback)", () => {
     const handback = at(config, "design_brief.handback");

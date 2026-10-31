@@ -55,6 +55,7 @@ type ReportOps = Pick<
   | "openIssues"
   | "openChildren"
   | "poolIssue"
+  | "assignedIssues"
 >;
 
 /** What the reports borrow from the pickup operations. */
@@ -422,6 +423,27 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
     async poolIssue(key) {
       const found = await client.issue(client.ref(key), OPEN_CHILDREN);
       return found === null ? null : pool(found.issue, found.raw);
+    },
+
+    async assignedIssues(identity, states) {
+      if (states.length === 0)
+        throw new TrackerRequestError(
+          "invalid",
+          "an assigned-issues query needs at least one state",
+        );
+      // The state is a label or a board column, so it is applied locally.
+      return (
+        await client.list(
+          { states: ["OPEN"], assignee: identity },
+          OPEN_CHILDREN,
+        )
+      )
+        .filter(({ issue }) =>
+          states.includes(
+            model.stateOf({ ...issue, labels: wholeLabels(issue) }),
+          ),
+        )
+        .map(({ issue, raw }) => pool(issue, raw));
     },
   };
 }

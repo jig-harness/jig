@@ -65,6 +65,10 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "gc.kinds",
   "gc.worktree_roots",
   "gc.scratch_prefixes",
+  // The dispatcher reads its section from the default branch alone.
+  "dispatch.identity",
+  "dispatch.states",
+  "dispatch.followup_command",
   "repository.base_branch",
   "issue_tracker.team",
   "issue_tracker.github.repository",
