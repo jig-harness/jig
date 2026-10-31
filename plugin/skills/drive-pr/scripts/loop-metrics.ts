@@ -223,9 +223,10 @@ async function localAutonomy(
   pr: string,
 ): Promise<{ rec: DurableAutonomy; generation: number } | null> {
   const r = await run(tsArgv(driveState, ["get", pr]), {
-    stderr: "ignore",
+    stderr: "pipe",
     timeoutSec: helperTimeoutSeconds(),
   });
+  // No state for this pull request is the common case, and not an error.
   if (r.code !== 0) return null;
   try {
     const s: unknown = JSON.parse(r.stdout);

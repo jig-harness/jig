@@ -364,15 +364,7 @@ describe("recovering the ledger of a driver that could not write it", () => {
       ),
       0,
     );
-    writeFileSync(
-      join(s.leaf, "ledger-driver-999.json"),
-      JSON.stringify({
-        worktree: s.forge.repo,
-        started: s.started,
-        pid: await deadPid(),
-        host: hostname(),
-      }),
-    );
+    await plantRecord(s, true);
     expectSpawnExit(await drives(s, ["--doctor"]), 0);
     expect(driverOf(s)?.state).toBe("stopped");
     const got = await driveState(s, ["get", "999"]);

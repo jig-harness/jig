@@ -56,6 +56,7 @@ import {
 } from "./lib/outcome.ts";
 import { helperTimeoutSeconds, resolvePr, run, tsArgv } from "./lib/proc.ts";
 import { standsOnProvisionalReply } from "./lib/provisional.ts";
+import { isUsableState } from "./lib/state/schema.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -207,7 +208,10 @@ async function readState(pr: string): Promise<StateView> {
     timeoutSec: helperTimeoutSeconds(),
   });
   if (r.code !== 0) fail(1, "provisional-reply: cannot read the drive state");
-  return JSON.parse(r.stdout) as StateView;
+  const state: unknown = JSON.parse(r.stdout);
+  if (!isUsableState(state, Number(pr)))
+    fail(1, "provisional-reply: the drive state does not read");
+  return state;
 }
 
 /** Refuse unless the arbiter's recorded ruling on the thread admits a provisional decision. */
