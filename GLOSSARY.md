@@ -1203,6 +1203,10 @@ make, use the entry's term instead.
   by its ceiling, `autonomy.max_level`; a person's own configuration may
   choose a level up to that ceiling. The level changes nothing the *HITL*
   registry reserves ([configuration](plugin/CONFIGURATION.md#autonomy)).
+  Planned: off-hours windows that raise the level while nobody is there to
+  ask, unless the environment chose a level for the run, and `wide`'s own
+  column of *provisional decisions*
+  ([design](design/dark-factory-driving.md#wide-and-the-off-hours-windows)).
 - **Transparent follow-up** — a review bot's comment after a reply the drive
   is holding open until its fix is pushed, which carries no new finding: a
   confirmation marked with the bot's confirmation marker, or a chat
@@ -1515,6 +1519,17 @@ make, use the entry's term instead.
 - **Marketplace** — a catalog an agent tool installs plugins from; usually a
   Git repository with a manifest listing its plugins. This repository is its
   own marketplace.
+- **Dark factory** — a delivery loop that runs with nobody watching: work is
+  picked up, implemented, reviewed and driven to its merge decision by agents,
+  and a person is involved only at the decisions the *HITL* registry reserves.
+  Jig is built toward one; the merge stays a person's.
+- **Provisional decision** — a decision an agent takes under the `wide`
+  *autonomy level* because nobody is there to ask, marked as such where it
+  is taken and listed first in the morning report, so a person can reverse
+  it before the merge. Under `wide`, a drive that parked re-arms once every
+  unanswered item is provisionally decided, where the item's class allows
+  it. Planned, with `wide`'s column and the morning report
+  ([design](design/dark-factory-driving.md#provisional-decisions)).
 - **Consumer overlay** — a repository's own values for a shared procedure,
   such as its gate command and reviewer names, kept in
   `.config/jig.yaml` and read by the procedure when it runs.
