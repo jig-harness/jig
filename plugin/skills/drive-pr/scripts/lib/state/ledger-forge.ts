@@ -433,7 +433,11 @@ async function ledgerOf(
   const snapshot = await readLedgerSnapshot(pr, login);
   if (typeof snapshot === "string") return snapshot;
   const canonical = snapshot.canonical;
-  if (canonical === null) return null;
+  const damaged = snapshot.malformed[0];
+  if (canonical === null)
+    return damaged === undefined
+      ? null
+      : `its ledger (comment ${damaged.id}) is malformed: its data does not read`;
   const parsed = canonical.parsed;
   if (parsed.kind === "ledger")
     return { ledger: parsed.ledger, ledgerBy: canonical.comment.login };

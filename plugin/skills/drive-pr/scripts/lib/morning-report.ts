@@ -209,18 +209,15 @@ function fromLedger(l: Ledger): DriveRecord {
 const after = (at: string, since: number) => Date.parse(at) >= since;
 
 /** `text` on one line, cut to `max` characters. */
-function oneLine(text: string, max: number): string {
-  // Remove until stable, then any comment delimiter left over, so a nested
-  // `<!<!---->--` cannot reassemble one.
+export function oneLine(text: string, max: number): string {
+  // Remove comments and any stray delimiter (`-->` or `--!>` ends one) until
+  // nothing changes, so a nested `<!<!---->--` cannot reassemble one.
   let stripped = text;
   for (let prev = ""; prev !== stripped; ) {
     prev = stripped;
-    stripped = stripped.replace(/<!--[\s\S]*?-->/g, "");
+    stripped = stripped.replace(/<!--[\s\S]*?--!?>|<!--|--!?>/g, "");
   }
-  const line = stripped
-    .replace(/<!--|-->/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const line = stripped.replace(/\s+/g, " ").trim();
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 

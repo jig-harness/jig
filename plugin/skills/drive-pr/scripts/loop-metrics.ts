@@ -218,25 +218,27 @@ function autonomyOf(s: {
 
 /**
  * This clone's drive state, with the ledger generation it last wrote or
- * seeded from; `null` when it holds none that ever drove.
+ * seeded from; `null` when it holds none that ever drove, and `"unread"` when
+ * it exists but could not be read (`get` prints a fresh state for an absent
+ * one, so a failure is never absence).
  */
 async function localAutonomy(
   pr: string,
-): Promise<{ rec: DurableAutonomy; generation: number } | null> {
+): Promise<{ rec: DurableAutonomy; generation: number } | null | "unread"> {
   const r = await run(tsArgv(driveState, ["get", pr]), {
     stderr: "pipe",
     timeoutSec: helperTimeoutSeconds(),
   });
-  // No state for this pull request is the common case, and not an error.
-  if (r.code !== 0) return null;
+  if (r.code !== 0) return "unread";
   try {
     const s: unknown = JSON.parse(r.stdout);
-    return isUsableState(s, Number.parseInt(pr, 10)) && s.rounds > 0
+    if (!isUsableState(s, Number.parseInt(pr, 10))) return "unread";
+    return s.rounds > 0
       ? { rec: autonomyOf(s), generation: s.ledgerGeneration ?? 0 }
       : null;
   } catch (err) {
     swallow(err, "drive-state.ts get printed no JSON");
-    return null;
+    return "unread";
   }
 }
 
@@ -255,7 +257,9 @@ async function localAutonomy(
 export async function durableAutonomy(
   pr: string,
 ): Promise<DurableAutonomy | null> {
-  const local = await localAutonomy(pr);
+  const read = await localAutonomy(pr);
+  const localUnread = read === "unread";
+  const local = localUnread ? null : read;
   const { ledger, unread } = ledgerRecord(
     await readLedgerSnapshot(pr, await resolveLogin()),
   );
@@ -263,11 +267,16 @@ export async function durableAutonomy(
     ledger !== null &&
     (local === null || ledger.generation > local.generation)
   )
-    return withConversationReversals(pr, autonomyOf(ledger));
-  if (!unread)
+    return withConversationReversals(
+      pr,
+      localUnread
+        ? { ...autonomyOf(ledger), unreadLedger: true }
+        : autonomyOf(ledger),
+    );
+  if (!unread && !localUnread)
     return local === null ? null : withConversationReversals(pr, local.rec);
   console.error(
-    `loop-metrics: #${pr}'s drive ledger could not be established, so decisions recorded only there are not counted and the reversal share is withheld.`,
+    `loop-metrics: #${pr}'s ${localUnread ? "local drive state" : "drive ledger"} could not be established, so decisions recorded only there are not counted and the reversal share is withheld.`,
   );
   return withConversationReversals(pr, {
     ...(local === null ? autonomyOf({}) : local.rec),
@@ -280,7 +289,7 @@ export async function durableAutonomy(
  * not be established (an unreadable listing, an unsupported version, a
  * malformed body); an absent ledger is neither.
  */
-function ledgerRecord(
+export function ledgerRecord(
   snapshot: Awaited<ReturnType<typeof readLedgerSnapshot>>,
 ): {
   ledger: Ledger | null;
@@ -288,7 +297,8 @@ function ledgerRecord(
 } {
   if (typeof snapshot === "string") return { ledger: null, unread: true };
   const parsed = snapshot.canonical?.parsed;
-  if (parsed === undefined) return { ledger: null, unread: false };
+  if (parsed === undefined)
+    return { ledger: null, unread: snapshot.malformed.length > 0 };
   return parsed.kind === "ledger"
     ? { ledger: parsed.ledger, unread: false }
     : { ledger: null, unread: true };
