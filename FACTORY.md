@@ -192,10 +192,15 @@ Follow-up items enter the line again at station 1, so the execution level is
 itself a loop. `drive-pr` stops on one named end state (converged, waiting on
 a person, conflicting, …) and never approves or merges. On the roadmap: a
 converged drive arming the merge it certified (ROADMAP.md item 9, which
-changes "a person merges" and is decided on its own), and a skill that runs
+changes "a person merges" and is decided on its own), a skill that runs
 the post-merge stage [M7](modules/M7-pr-lifecycle-review/README.md) states,
 which settles what a merge still owes beyond the follow-ups station 7 files
-(item 17).
+(item 17), and a [dispatcher](GLOSSARY.md) that starts the
+line's stations with nobody at the keyboard: a pickup for each item
+assigned to the factory's tracker identity, a restart for each drive that
+stopped on a usage limit or an answered question, a follow-up for each
+merge, and a notification to a person for the stops that are theirs
+(item 33, [designed](design/dark-factory-dispatch.md)).
 
 ## The learning loop (wraps both)
 
