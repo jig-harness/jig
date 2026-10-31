@@ -518,7 +518,7 @@ fields:
     type: string
     pattern: "^(?:[^{}]|\\{(?:id|status|title|pr)\\})*$"
     allow_empty: true
-    default: "{id} {status} {title}"
+    default: "{id} {status} {title} {pr}"
     read_by: [do-item, drive-pr]
     since: 0.104.0
   workspace_name.statuses:
