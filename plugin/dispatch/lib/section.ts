@@ -9,9 +9,9 @@ import { isRecord } from "../../shared/guards.ts";
 import { CANONICAL_STATES } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import type { DispatchSection } from "./types.ts";
 
-export const DEFAULT_STATES = ["todo"];
+const DEFAULT_STATES = ["todo"];
 
-export class SectionError extends Error {}
+class SectionError extends Error {}
 
 function text(value: unknown, field: string): string | null {
   if (value === undefined || value === null) return null;

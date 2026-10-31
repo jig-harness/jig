@@ -47,7 +47,7 @@ const DONE: Record<number, string> = {
 };
 
 /** The evidence a report prints for one ledger. */
-export function ledgerEvidence(ledger: Ledger, nowMs: number): Evidence {
+function ledgerEvidence(ledger: Ledger, nowMs: number): Evidence {
   const beat = Date.parse(ledger.driver.heartbeat);
   return {
     generation: ledger.generation,

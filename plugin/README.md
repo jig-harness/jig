@@ -113,7 +113,7 @@ both configuration layers.
 
 ## The dispatcher
 
-`jig dispatch` is the start of the [dispatcher](../GLOSSARY.md): a program
+`jig dispatch` is the start of the [dispatcher](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): a program
 on the machine that runs the agent sessions, which looks at the tracker,
 the pull requests and the running sessions and says which stage of the
 delivery loop should be running and is not. It reports and starts nothing:

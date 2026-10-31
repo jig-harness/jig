@@ -877,7 +877,7 @@ The available collectors and remaining rollout work are in
 
 ## `dispatch`
 
-What the [dispatcher](../GLOSSARY.md) (`jig dispatch`) starts for this
+What the [dispatcher](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (`jig dispatch`) starts for this
 repository: a program on the machine that runs the agent sessions, which
 looks at the tracker, the pull requests' drive ledgers and the running
 sessions, and reports each stage that should be running and is not. It

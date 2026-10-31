@@ -16,9 +16,9 @@ const USAGE = `jig dispatch [--repo <path>]... [--followup-since <date>] [--json
 jig dispatch receipts [<run-id>]`;
 
 /** Exit when another tick holds the lock. */
-export const LOCK_HELD_EXIT = 3;
+const LOCK_HELD_EXIT = 3;
 
-export const APPLY_REFUSAL =
+const APPLY_REFUSAL =
   "jig dispatch --apply: refused. This version only reports; starting re-arms within each account's cap, and the timer that runs the tick, arrive with the dispatcher's build step 3. Run without --apply for the report.";
 
 interface Options {

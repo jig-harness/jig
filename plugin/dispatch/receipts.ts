@@ -22,10 +22,11 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { isMapping } from "../shared/config-layers.ts";
+import { swallow } from "../shared/errors.ts";
 import type { RepoReport } from "./lib/types.ts";
 
 /** Days a receipt is kept; the machine file sets it once there is one. */
-export const RETENTION_DAYS = 30;
+const RETENTION_DAYS = 30;
 
 export interface TickReceipt {
   version: 1;
@@ -38,7 +39,7 @@ export interface TickReceipt {
   repos: RepoReport[];
 }
 
-export function stateRoot(): string {
+function stateRoot(): string {
   return join(homedir(), ".local", "state", "jig", "dispatch");
 }
 
@@ -104,7 +105,8 @@ export function readReceipt(path: string): TickReceipt | null {
       Array.isArray(value.repos)
       ? (value as unknown as TickReceipt)
       : null;
-  } catch {
+  } catch (err) {
+    swallow(err, `${path} is not a receipt`);
     return null;
   }
 }

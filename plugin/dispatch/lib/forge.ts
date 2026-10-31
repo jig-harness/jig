@@ -12,9 +12,9 @@ import { OVERLAY_RELPATH } from "../../shared/config-layers.ts";
 import type { MergedPr, RepoTarget } from "./types.ts";
 
 /** The most pull requests one listing reads; a full page means a partial read. */
-export const PR_LIMIT = 1000;
+const PR_LIMIT = 1000;
 
-export class ForgeReadError extends Error {}
+class ForgeReadError extends Error {}
 
 async function gh(args: string[], cwd?: string): Promise<string> {
   const r = await ghCall(args, {

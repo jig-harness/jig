@@ -1,8 +1,9 @@
 /**
- * The Linear adapter's assignment reads: the issues assigned to one user in
- * the given states, and who made an issue's current assignment, from the
- * issue's history. Kept beside `linear.ts`, which hands in its pool query and
- * parser, so the two reads share the pool form the candidate pools return.
+ * The Linear adapter's pool filters and assignment reads: the filter a
+ * candidate pool reads with, the issues assigned to one user in the given
+ * states, and who made an issue's current assignment, from the issue's
+ * history. `linear.ts` hands in its pool query and parser, so the
+ * assignment reads return the pool form the candidate pools do.
  *
  * A Linear user is named by email or display name, compared without regard
  * to case. An assigner is trusted when it is a non-guest member of the team.
@@ -10,7 +11,51 @@
 
 import { isRecord } from "../../../../../shared/guards.ts";
 import type { LinearTransport } from "./linear.ts";
-import type { Assigner, CanonicalState, PoolIssue, Tracker } from "./port.ts";
+import {
+  type Assigner,
+  type CanonicalState,
+  CLOSED_STATE_TYPES,
+  type PoolIssue,
+  type PoolQuery,
+  type Tracker,
+  TrackerRequestError,
+} from "./port.ts";
+
+/** An issue's assignment that cannot be traced to the user who made it. */
+class AssignmentError extends Error {}
+
+/** The filter of an issue that is not finished. */
+export const OPEN = { state: { type: { nin: [...CLOSED_STATE_TYPES] } } };
+
+/**
+ * Linear's issue filter for a pool. Each label clause is its own `and` entry:
+ * two `labels` keys in one object would leave only the last. "Carries none"
+ * is `every` + `nin`; `some` + `nin` would match any issue with one label
+ * outside the list, which is nearly all of them.
+ */
+export function poolFilter(
+  team: string,
+  query: PoolQuery,
+): Record<string, unknown> {
+  if (
+    query.withSomeOf.length === 0 ||
+    query.withSomeOf.some((l) => l.length === 0)
+  )
+    throw new TrackerRequestError(
+      "invalid",
+      "a pool query needs at least one non-empty label list; an empty one would read every open issue",
+    );
+  return {
+    and: [
+      { team: { key: { eq: team } } },
+      OPEN,
+      ...query.withSomeOf.map((l) => ({ labels: { name: { in: l } } })),
+      ...(query.withNoneOf === undefined || query.withNoneOf.length === 0
+        ? []
+        : [{ labels: { every: { name: { nin: query.withNoneOf } } } }]),
+    ],
+  };
+}
 
 type Pager = (
   transport: LinearTransport,
@@ -47,7 +92,7 @@ query TrackerAssignmentHistory($id: String!, $team: String!, $after: String) {
 }`;
 
 function field(v: unknown, where: string): Record<string, unknown> {
-  if (!isRecord(v)) throw new Error(`${where}: expected an object`);
+  if (!isRecord(v)) throw new AssignmentError(`${where}: expected an object`);
   return v;
 }
 
@@ -62,7 +107,7 @@ function names(user: unknown, name: string): boolean {
 
 function assigner(actor: unknown, key: string, team: string): Assigner {
   if (!isRecord(actor) || typeof actor.id !== "string")
-    throw new Error(
+    throw new AssignmentError(
       `issue ${key}: its assignment was made by no user (an integration or an automation)`,
     );
   const teams = field(actor.teams, `issue ${key} assigner.teams`).nodes;
@@ -83,7 +128,10 @@ export function assignedOperations(
   return {
     async assignedIssues(identity, wanted) {
       if (wanted.length === 0)
-        throw new Error("an assigned-issues query needs at least one state");
+        throw new TrackerRequestError(
+          "invalid",
+          "an assigned-issues query needs at least one state",
+        );
       const filter = {
         and: [
           { team: { key: { eq: team } } },
@@ -123,14 +171,14 @@ export function assignedOperations(
       );
       const who = assignee ?? (isRecord(current) ? current.id : undefined);
       if (typeof who !== "string")
-        throw new Error(`issue ${key} is assigned to nobody`);
+        throw new AssignmentError(`issue ${key} is assigned to nobody`);
       const latest = nodes
         .map((n, i) => field(n, `history of ${key}[${i}]`))
         .filter((n) => names(n.toAssignee, who))
         .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
         .at(-1);
       if (latest === undefined)
-        throw new Error(
+        throw new AssignmentError(
           `issue ${key}: its history holds no assignment of ${who}`,
         );
       return assigner(latest.actor, key, team);
