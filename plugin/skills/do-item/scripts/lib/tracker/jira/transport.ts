@@ -52,6 +52,8 @@ export class JiraApiError extends Error {
   readonly status: number | null;
   readonly notFound: boolean;
   readonly unavailable: boolean;
+  /** The request left and no usable answer came back, so a write may have landed. */
+  readonly answerLost: boolean;
   readonly retryAfterSec: number | null;
   readonly errorMessages: string[];
   readonly errors: Record<string, string>;
@@ -61,6 +63,7 @@ export class JiraApiError extends Error {
       status?: number | null;
       notFound?: boolean;
       unavailable?: boolean;
+      answerLost?: boolean;
       retryAfterSec?: number | null;
       errorMessages?: string[];
       errors?: Record<string, string>;
@@ -70,6 +73,7 @@ export class JiraApiError extends Error {
     this.status = opts.status ?? null;
     this.notFound = opts.notFound ?? false;
     this.unavailable = opts.unavailable ?? false;
+    this.answerLost = opts.answerLost ?? false;
     this.retryAfterSec = opts.retryAfterSec ?? null;
     this.errorMessages = opts.errorMessages ?? [];
     this.errors = opts.errors ?? {};
@@ -213,7 +217,7 @@ async function bodyText(
     if (!res.ok) return "";
     throw new JiraApiError(
       `Jira answer lost while reading the body on ${what}: ${err instanceof Error ? err.message : String(err)}`,
-      { unavailable: true, status: res.status },
+      { unavailable: true, answerLost: true, status: res.status },
     );
   }
 }
@@ -239,7 +243,7 @@ export function httpTransport(
       if (cancelled(signal)) throw abortedError(signal);
       throw new JiraApiError(
         `Jira API unreachable on ${what}: ${err instanceof Error ? err.message : String(err)}`,
-        { unavailable: true },
+        { unavailable: true, answerLost: true },
       );
     }
     const text = await bodyText(res, signal, what);

@@ -43,7 +43,7 @@ import {
   refuseSameIssue,
   requireTitle,
 } from "../requests.ts";
-import { markdownToAdf } from "./adf.ts";
+import { adfToMarkdown, markdownToAdf } from "./adf.ts";
 import { assignerOperations } from "./assigner.ts";
 import type { Client, IssueTypeMeta } from "./client.ts";
 import { type JiraIssue, record, str } from "./read.ts";
@@ -253,51 +253,69 @@ export function jiraTracker(client: Client): Tracker {
     });
   }
 
-  /** A write whose outcome is unknown: the request left but no answer came back. */
+  /** A write whose outcome is unknown: the request left but no usable answer came back. */
   function lostAnswer(err: unknown): boolean {
-    return err instanceof JiraApiError && err.status === null && !err.notFound;
+    return err instanceof JiraApiError && err.answerLost;
   }
 
-  /** The created issue's record; after a lost answer, the issue found filed. */
+  /** Has the caller cancelled? A function so a check after an await is not narrowed away. */
+  const cancelled = (signal: AbortSignal | undefined) =>
+    signal?.aborted === true;
+
+  /** How far the server's clock may differ from this one when dating a write. */
+  const CLOCK_SKEW_MS = 120_000;
+
+  /** Markdown as Jira would hand it back: what a write must be compared by. */
+  const canonical = (markdown: string) =>
+    adfToMarkdown(markdownToAdf(markdown)).trim();
+
+  /** The created issue's record; after a lost answer, the one issue this write left. */
   async function filed(
     write: () => Promise<unknown>,
-    title: string,
-    parent: string | null,
+    wanted: { title: string; parent: string | null; description: string },
   ): Promise<Record<string, unknown>> {
+    const sentAt = Date.now();
     try {
       return record(await write(), "created issue");
     } catch (err) {
       if (!lostAnswer(err)) throw err;
-      const found = await findFiled(title, parent);
-      if (found === null)
-        throw new JiraApiError(
-          `the answer to filing '${title}' was lost and no such issue was found; it may have been filed`,
-          { unavailable: true },
-        );
-      return { key: found.key };
+      const found = await findFiled(wanted, sentAt);
+      if (found.length === 1) return { key: (found[0] as JiraIssue).key };
+      throw new JiraApiError(
+        found.length === 0
+          ? `the answer to filing '${wanted.title}' was lost and no such issue was found; it may have been filed`
+          : `the answer to filing '${wanted.title}' was lost and ${found.length} issues match it (${found.map((i) => i.key).join(", ")}); it cannot be told which, if any, this write filed`,
+        { unavailable: true },
+      );
     }
   }
 
-  /** The issue a lost create answer may have left: same title, parent and reporter, filed lately. */
+  /**
+   * The issues a lost create answer may have left: same title, parent,
+   * description and reporter, created since the write was sent.
+   */
   async function findFiled(
-    title: string,
-    parent: string | null,
-  ): Promise<JiraIssue | null> {
+    wanted: { title: string; parent: string | null; description: string },
+    sentAt: number,
+  ): Promise<JiraIssue[]> {
     const found = await client
       .search(
         inProject(
           project,
           "reporter = currentUser()",
           'created >= "-15m"',
-          `summary ~ ${quote(title)}`,
+          `summary ~ ${quote(wanted.title)}`,
         ),
-        `issues just filed as '${title}'`,
+        `issues just filed as '${wanted.title}'`,
       )
       .catch(() => []);
-    return (
-      found.find(
-        (i) => i.title === title && (i.parent?.key ?? null) === parent,
-      ) ?? null
+    const description = canonical(wanted.description);
+    return found.filter(
+      (i) =>
+        i.title === wanted.title &&
+        (i.parent?.key ?? null) === wanted.parent &&
+        canonical(i.description) === description &&
+        Date.parse(i.createdAt) >= sentAt - CLOCK_SKEW_MS,
     );
   }
 
@@ -389,6 +407,7 @@ export function jiraTracker(client: Client): Tracker {
         throw new JiraApiError("the comment was cancelled before it was sent");
       if (issue.trim() === "")
         throw new TrackerRequestError("invalid", "a comment needs an issue");
+      const sentAt = Date.now();
       try {
         await transport(
           {
@@ -399,9 +418,24 @@ export function jiraTracker(client: Client): Tracker {
           signal,
         );
       } catch (err) {
-        if (!lostAnswer(err)) throw err;
-        const sent = await client.comments(issue).catch(() => []);
-        if (sent.some((c) => c.body.trim() === body.trim())) return;
+        if (!lostAnswer(err) || cancelled(signal)) throw err;
+        // Only this credential's comment, written since this call began, in
+        // the same words, is this call's: an older or another account's is not.
+        const want = canonical(body);
+        const [self, history] = await Promise.all([
+          client.selfId().catch(() => null),
+          client.comments(issue, signal).catch(() => []),
+        ]);
+        if (
+          self !== null &&
+          history.some(
+            (c) =>
+              c.author?.accountId === self &&
+              Date.parse(c.createdAt) >= sentAt - CLOCK_SKEW_MS &&
+              canonical(c.body) === want,
+          )
+        )
+          return;
         throw err;
       }
     },
@@ -443,7 +477,11 @@ export function jiraTracker(client: Client): Tracker {
             },
           },
         });
-      const created = await filed(write, issue.title, parent?.key ?? null);
+      const created = await filed(write, {
+        title: issue.title,
+        parent: parent?.key ?? null,
+        description: issue.description,
+      });
       if (typeof created.key !== "string")
         throw new JiraApiError(
           "the created issue's key is missing; the issue may have been filed",

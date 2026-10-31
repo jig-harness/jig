@@ -32,3 +32,7 @@ GitHub Issues and Linear.
   or display name that matches exactly one user. An assignment starts a
   pickup only when a person's Atlassian account made it, not a guest, that
   can be assigned issues in the project.
+- Jira trusts a comment author or assigner only after asking which accounts
+  hold the Edit Issues permission, an answer Jira gives only to a credential
+  with Administer Projects in the project, or Administer Jira; a refusal names
+  that requirement. `issue_tracker.jira.site` takes no port.

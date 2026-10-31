@@ -195,7 +195,7 @@ describe("Jira transport", () => {
         path: "issue/ENG-1/comment",
         body: {},
       }),
-    ).rejects.toThrow("connection reset");
+    ).rejects.toMatchObject({ answerLost: true, status: 201 });
   });
 
   it("sends Basic authentication, JSON and the query under /rest/api/3", async () => {

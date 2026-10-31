@@ -273,6 +273,37 @@ describe("Jira adapter: comments with trust", () => {
     expect(read.map((c) => c.trusted)).toEqual([false]);
   });
 
+  it("asks once per account whether it may edit, and names the permission a refusal lacks", async () => {
+    const { t, calls } = jira(
+      routes({
+        "GET issue/ENG-1": issue({ key: "ENG-1" }),
+        "GET issue/ENG-1/comment": comments(
+          comment("1", "a", MEMBER),
+          comment("2", "b", MEMBER),
+        ),
+        "GET user/assignable/search": assignable(MEMBER.accountId),
+        "GET user/permission/search": assignable(MEMBER.accountId),
+      }),
+    );
+    await t.issueComments("ENG-1");
+    expect(
+      calls.filter((c) => c.route === "GET user/permission/search"),
+    ).toHaveLength(1);
+    const refused = jira(
+      routes({
+        "GET issue/ENG-1": issue({ key: "ENG-1" }),
+        "GET issue/ENG-1/comment": comments(comment("1", "a", MEMBER)),
+        "GET user/assignable/search": assignable(MEMBER.accountId),
+        "GET user/permission/search": new JiraApiError("forbidden", {
+          status: 403,
+        }),
+      }),
+    );
+    await expect(refused.t.issueComments("ENG-1")).rejects.toThrow(
+      "Administer Projects",
+    );
+  });
+
   it("fails rather than trust when membership cannot be read", async () => {
     const { t } = jira(
       routes({

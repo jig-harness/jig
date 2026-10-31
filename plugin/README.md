@@ -439,7 +439,7 @@ plugin's. Delete such a copy when you adopt the plugin's version.
 
 `drive-pr` and `do-item` read the same configuration file as the review
 skill. Every field below has a default except `issue_tracker.team`, which the
-tracker scripts require on Linear and Jira (`issue_tracker.adapter: linear` or `jira`); on GitHub
+tracker scripts require on Linear and Jira (`issue_tracker.adapter: linear` or `jira`), and, on Jira, `issue_tracker.jira.site`; on GitHub
 Issues, the default, the key is the repository's own
 (`issue_tracker.github.repository`, by default the git remote's: `repository.remote`, else `origin`), so no
 team is set. A drive does not need an AI reviewer: without one it

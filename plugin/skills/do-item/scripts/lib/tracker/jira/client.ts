@@ -109,6 +109,8 @@ export interface Client {
   trusted(user: Record<string, unknown> | null): Promise<boolean>;
   /** The credential's profile time zone, read once. */
   timeZone(): Promise<string>;
+  /** The credential's own account id, read once. */
+  selfId(): Promise<string>;
 }
 
 /** An Atlassian account id: the 24-hex form or the `<n>:<uuid>` form. */
@@ -203,21 +205,54 @@ export function jiraClient(opts: ClientOptions): Client {
   let links: Promise<Record<LinkedRelation, LinkType>> | undefined;
   let types: Promise<IssueTypeMeta[]> | undefined;
   let zone: Promise<string> | undefined;
+  let me: Promise<Record<string, unknown>> | undefined;
   const assignables = new Map<string, Promise<boolean>>();
+  const editors = new Map<string, Promise<boolean>>();
 
-  /** Whether the account holds the Edit Issues permission in the project. */
-  async function canEdit(accountId: string): Promise<boolean> {
-    const users = await get("user/permission/search", {
-      accountId,
-      projectKey: project,
-      permissions: "EDIT_ISSUES",
-      maxResults: 2,
+  /** The credential's own profile, read once. */
+  function myself(): Promise<Record<string, unknown>> {
+    me ??= (async () => record(await get("myself"), "myself"))();
+    me.catch(() => {
+      me = undefined;
     });
-    if (!Array.isArray(users))
-      throw new JiraApiError(
-        `edit permission of ${accountId} in ${project}: expected a list`,
-      );
-    return users.some((u) => isRecord(u) && u.accountId === accountId);
+    return me;
+  }
+
+  /**
+   * Whether the account holds the Edit Issues permission in the project;
+   * cached per account. Jira answers this search only to a credential with
+   * Administer Projects in the project, or Administer Jira.
+   */
+  function canEdit(accountId: string): Promise<boolean> {
+    let found = editors.get(accountId);
+    if (found === undefined) {
+      found = (async () => {
+        let users: unknown;
+        try {
+          users = await get("user/permission/search", {
+            accountId,
+            projectKey: project,
+            permissions: "EDIT_ISSUES",
+            maxResults: 2,
+          });
+        } catch (err) {
+          if (err instanceof JiraApiError && err.status === 403)
+            throw new JiraApiError(
+              `Jira refused the edit-permission check of ${accountId} in ${project}: the credential needs the Administer Projects permission in the project, or Administer Jira`,
+              { status: 403 },
+            );
+          throw err;
+        }
+        if (!Array.isArray(users))
+          throw new JiraApiError(
+            `edit permission of ${accountId} in ${project}: expected a list`,
+          );
+        return users.some((u) => isRecord(u) && u.accountId === accountId);
+      })();
+      found.catch(() => editors.delete(accountId));
+      editors.set(accountId, found);
+    }
+    return found;
   }
 
   /** Exactly one of `items` named `name`, or a refusal saying how many. */
@@ -459,8 +494,7 @@ export function jiraClient(opts: ClientOptions): Client {
 
     timeZone() {
       zone ??= (async () => {
-        const me = record(await get("myself"), "myself");
-        const tz = str(me.timeZone, "myself.timeZone");
+        const tz = str((await myself()).timeZone, "myself.timeZone");
         try {
           new Intl.DateTimeFormat("en", { timeZone: tz });
         } catch {
@@ -472,6 +506,10 @@ export function jiraClient(opts: ClientOptions): Client {
         zone = undefined;
       });
       return zone;
+    },
+
+    async selfId() {
+      return str((await myself()).accountId, "myself.accountId");
     },
   };
   return client;

@@ -420,7 +420,7 @@ fields:
     since: 0.82.0
   issue_tracker.jira.site:
     type: string
-    pattern: "^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$"
+    pattern: "^https://[A-Za-z0-9.-]+/?$"
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     repository_only: true
     since: next
