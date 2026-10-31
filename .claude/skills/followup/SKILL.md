@@ -1,6 +1,6 @@
 ---
 name: followup
-description: "After a Jig pull request merges, settle what the merge still owes: the tracker item and deferred findings, the release tags, the website, status pages, consumer repositories and live drivers; or, before the merge, list what it will owe."
+description: "After a Jig pull request merges, settle what the merge still owes: the tracker item and deferred findings, the release tags, the website, status pages, consumer repositories and live drivers and cleanup; or, before the merge, list what it will owe."
 argument-hint: "<PR number>"
 allowed-tools:
   - Read
@@ -274,14 +274,16 @@ decision for a person (AGENTS.md, HITL decisions): flag it.
 
 ### F. Cleanup
 
-Merged local branches, worktrees, scratch directories (a `.context/` path
-included) and drive state are machine-local leftovers `jig gc` collects
-([resource GC](../../../design/resource-gc.md)): this arm neither checks nor
-offers them. It covers only what a collector cannot see.
+`jig gc` ([resource GC](../../../design/resource-gc.md)) reports worktrees
+and drive state and does not yet delete them or inventory local branches; this
+repository's `gc.kinds` registers no scratch prefixes, so it does not see
+`.context/` notes. Until a collector covers a leftover, it stays owed here.
 
 | Thing | Check | Teardown |
 |---|---|---|
 | A live driver on this pull request | `bun plugin/skills/drive-pr/scripts/drives.ts` | `drives.ts --stop <PR>` |
+| The local branch | `git branch --list <headRefName>` (Step 0). A squash merge leaves it out of `git branch --merged`, so Step 0's `MERGED` state shows only that the pull request's head merged; `git rev-parse <headRefName>` must equal Step 0's `headRefOid` for the branch to hold nothing else | delete it, only when its tip is `headRefOid` and no driver is live in this worktree. Any other tip holds commits the merge does not have: push them to a branch of their own, or ask, before deleting |
+| The workspace's `.context/` notes | what this work wrote there | remove what no later work needs |
 | Scaffolding in the merged diff | a disabled check, a `.only(`, a loosened timeout, a suppression | a follow-up change |
 
 Never `git stash` any of this (CONTRIBUTING.md § Parallel workspaces).
@@ -313,7 +315,7 @@ act:
 | Read-only checks: `status.ts`, `tag.ts` (without `--rerun`), `site-diff.ts`, `drives.ts`, `gh run` | on its own |
 | Running the release workflow, creating or replacing a release tag | ask first |
 | Re-running a failed deploy | ask first |
-| Stopping a live driver | ask first |
+| Stopping a live driver, deleting a branch | ask first |
 | Anything in another repository, or anything near the origin-reference boundary | a person decides |
 
 Close with what is left for a person, by name. When every arm is NOT OWED,
@@ -325,8 +327,8 @@ On an open pull request the skill runs the same arms against the pull
 request's diff (`origin/main` and its head instead of `SHA^1` and `SHA`) and
 records what the merge will owe, carrying out nothing: the
 `## Out-of-tree follow-ups` section of the description, the deferred
-findings still to file, the site pages the change will reach, the live-driver
-and scaffolding inventory. The post-merge pass then checks a list instead of rebuilding it.
+findings still to file, the site pages the change will reach, the cleanup
+inventory. The post-merge pass then checks a list instead of rebuilding it.
 
 Building the head for `site-diff.ts` runs the pull request's code (its
 install and the site's build scripts) with your credentials. Run it only on a
