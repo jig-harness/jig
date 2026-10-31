@@ -287,8 +287,13 @@ export function passModelSetting(): string | undefined {
 /** The extra arguments a pass command gets when neither `--pass-args` nor `drive.pass_args` names any. */
 export const DEFAULT_PASS_ARGS: readonly string[] = [];
 
-/** One word of a pass command's extra arguments: no whitespace. */
-export const PASS_ARG_PATTERN = /^\S+$/;
+/**
+ * One word of a pass command's extra arguments: no whitespace, and none of
+ * the words `refusedPassArgs` refuses, so the audit's schema rejects what the
+ * reading skill would stop on.
+ */
+export const PASS_ARG_PATTERN =
+  /^(?!(?:--|-p|--print|--model)$)(?!--model=)\S+$/;
 
 /**
  * Why `words` cannot be extra arguments of a pass command, `undefined` when
@@ -297,6 +302,8 @@ export const PASS_ARG_PATTERN = /^\S+$/;
 export function refusedPassArgs(words: readonly string[]): string | undefined {
   if (words.includes("--"))
     return "cannot hold --: it would end the pass command's options and turn -p into its prompt";
+  if (words[words.length - 1] === "--permission-mode")
+    return "cannot end with --permission-mode: it needs a mode after it, and the drive's -p would be read as that mode";
   const word = words.find(
     (w) =>
       w === "-p" ||

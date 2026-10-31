@@ -54,6 +54,46 @@ function wouldRun(stderr: string): string {
   return /\(dry-run\) would run: (.*)/.exec(stderr)?.[1] ?? "";
 }
 
+/** A printed command's words, split as a shell would split `shellQuote`'s output. */
+function words(command: string): string[] {
+  return [...command.matchAll(/'([^']*)'|(\S+)/g)].map(
+    (m) => m[1] ?? (m[2] as string),
+  );
+}
+
+/**
+ * Parks a drive armed with `pass` and `flags` and returns the re-arm command
+ * it printed as the flags between its PR and `--` and the pass command after.
+ */
+async function parkedRearm(
+  pass: string[],
+  env: Record<string, string>,
+  flags: string[] = [],
+): Promise<{ flags: string[]; agent: string[] }> {
+  const { dir, stateDir } = writeFixture(
+    { threads: [{ id: "PRRT_parked", path: "a.ts", bot: true }] },
+    scratchClean.dir,
+  );
+  await park(stateDir, "PRRT_parked", "thread");
+  const parked = await runDriveIn(
+    dir,
+    stateDir,
+    ["--no-head-sync", ...flags, "--", ...pass],
+    undefined,
+    { env: { ...QUIET, ...env } },
+  );
+  expectSpawnExit({ ...parked, stdout: null }, 8);
+  const printed = words(
+    /^\s+(bun \S+ 999 .*-- .*)$/m.exec(parked.stderr)?.[1] ?? "",
+  );
+  const dashes = printed.indexOf("--");
+  expect(dashes).toBeGreaterThan(2);
+  return {
+    flags: printed.slice(3, dashes),
+    agent: printed.slice(dashes + 1),
+  };
+}
+
 describe("the pass arguments", () => {
   it("adds drive.pass_args before -p and names the permission mode in the driver log", async () => {
     const r = await dryRun(["claude", "-p", PROMPT], [], SETTING);
@@ -88,7 +128,7 @@ describe("the pass arguments", () => {
     const r = await dryRun(["claude", "-p", PROMPT]);
     expect(wouldRun(r.stderr)).toBe(`claude --model sonnet -p ${PROMPT}`);
     expect(r.stderr).toContain(
-      "permission mode: default (the pass command sets no --permission-mode)",
+      "permission mode: inherited (the pass command sets no --permission-mode; Claude Code's settings decide)",
     );
   });
 
@@ -115,30 +155,42 @@ describe("the pass arguments", () => {
   });
 
   it("prints a re-arm command that carries the words, and running it keeps them after the setting is gone", async () => {
-    const { dir, stateDir } = writeFixture(
-      { threads: [{ id: "PRRT_parked", path: "a.ts", bot: true }] },
-      scratchClean.dir,
-    );
-    await park(stateDir, "PRRT_parked", "thread");
-    const parked = await runDriveIn(
-      dir,
-      stateDir,
-      ["--no-head-sync", "--", "claude", "-p", PROMPT],
-      undefined,
-      { env: { ...QUIET, ...SETTING } },
-    );
-    expectSpawnExit({ ...parked, stdout: null }, 8);
-    const rearm = /^\s+(bun \S+ 999 -- .*)$/m.exec(parked.stderr)?.[1] ?? "";
-    expect(rearm).toEndWith(
-      `-- claude --model sonnet --permission-mode bypassPermissions -p '${PROMPT}'`,
-    );
-    const again = await dryRun(
-      ["claude", "--model", "sonnet", ...BYPASS, "-p", PROMPT],
-      [],
-    );
+    const printed = await parkedRearm(["claude", "-p", PROMPT], SETTING);
+    expect(printed.agent).toEqual([
+      "claude",
+      "--model",
+      "sonnet",
+      ...BYPASS,
+      "-p",
+      PROMPT,
+    ]);
+    const again = await dryRun(printed.agent, printed.flags);
     expect(wouldRun(again.stderr)).toBe(
       `claude --model sonnet --permission-mode bypassPermissions -p ${PROMPT}`,
     );
+  });
+
+  it("prints a re-arm command that keeps an empty --pass-args override, so running it does not bring the setting back", async () => {
+    const printed = await parkedRearm(["claude", "-p", PROMPT], SETTING, [
+      "--pass-args",
+      "",
+    ]);
+    expect(printed.flags).toEqual(["--pass-args", ""]);
+    const again = await dryRun(printed.agent, printed.flags, SETTING);
+    expect(wouldRun(again.stderr)).toBe(`claude --model sonnet -p ${PROMPT}`);
+    expect(again.stderr).toContain("pass args: none (--pass-args)");
+    // Without the printed flag the setting would apply again.
+    const bare = await dryRun(printed.agent, [], SETTING);
+    expect(wouldRun(bare.stderr)).toContain("--permission-mode");
+  });
+
+  it("refuses a --pass-args value that is another driver flag", async () => {
+    const r = await dryRun(
+      ["claude", "-p", PROMPT],
+      ["--pass-args", "--take-over"],
+    );
+    expectSpawnExit({ ...r, stdout: null }, 2);
+    expect(r.stderr).toContain("--pass-args requires a value");
   });
 
   it("hands the pass process the permission mode drive.pass_args sets", async () => {

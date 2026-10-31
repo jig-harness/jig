@@ -23,7 +23,7 @@
  * `--pass-args`, whose words are Claude Code's grammar. The permission mode
  * is read from the command as it runs (`--permission-mode X`, or
  * `--dangerously-skip-permissions` for `bypassPermissions`), and is
- * `default` when the command sets none.
+ * `inherited` (Claude Code's own settings decide) when the command sets none.
  */
 import { basename } from "node:path";
 import { passVendor } from "./identity.ts";
@@ -104,6 +104,24 @@ function hasOwnArgs(argv: readonly string[]): boolean {
   return !(rest.length === 2 && rest.some((word) => PRINT.has(word)));
 }
 
+/**
+ * Whether a printed re-arm or takeover command must carry `--pass-args ''`:
+ * a Claude Code pass command with no arguments of its own, run where
+ * `drive.pass_args` names some, got there only by an empty override, and a
+ * command that did not say so would pick the configured words up again.
+ */
+export function pinsEmptyPassArgs(
+  argv: readonly string[],
+  configured: () => PassArgs = configuredPassArgs,
+): boolean {
+  return (
+    argv[0] !== undefined &&
+    passVendor(argv) === "claude" &&
+    !hasOwnArgs(argv) &&
+    configured().words.length > 0
+  );
+}
+
 /** The permission mode a pass runs in and where it was read. */
 export interface PermissionMode {
   /** `null` when the pass command is not Claude Code's. */
@@ -111,7 +129,11 @@ export interface PermissionMode {
   source: string;
 }
 
-/** The permission mode a `claude` pass command sets; `default` when it sets none. */
+/**
+ * The permission mode a `claude` pass command sets; `inherited` when it sets
+ * none, since Claude Code then reads `permissions.defaultMode` from its
+ * settings and the command cannot say which mode that is.
+ */
 export function permissionMode(argv: readonly string[]): PermissionMode {
   if (argv.slice(1).includes("--dangerously-skip-permissions"))
     return {
@@ -127,7 +149,11 @@ export function permissionMode(argv: readonly string[]): PermissionMode {
       mode = word.slice("--permission-mode=".length);
   }
   return mode === null
-    ? { mode: "default", source: "the pass command sets no --permission-mode" }
+    ? {
+        mode: "inherited",
+        source:
+          "the pass command sets no --permission-mode; Claude Code's settings decide",
+      }
     : { mode, source: "the pass command's --permission-mode" };
 }
 

@@ -10,7 +10,8 @@ release: minor
   on `arm-drive.ts` and `drive.ts` overrides it for one drive. Set it to
   `[--permission-mode, bypassPermissions]` to let unattended passes write
   under protected paths such as `.claude/skills/**`, which a pass without a
-  terminal is otherwise denied, at the cost of every permission prompt;
+  terminal is otherwise denied in a prompting mode, at the cost of skipping
+  its permission prompts;
   the default is empty
   ([configuration](../plugin/CONFIGURATION.md#drive)). The driver log and
   `drives.ts` name the permission mode each pass runs in, re-arm and

@@ -1178,10 +1178,13 @@ make, use the entry's term instead.
   `default` mode asks before most edits and commands; a pass of a *PR
   drive loop* runs with no person at a terminal to answer, so whatever
   would ask is denied instead, writes under protected paths such as
-  `.claude/skills/**` among them. `bypassPermissions` asks nothing, so it trades
-  those prompts for the instructions the drive gives the pass (its push
-  script, its bots-only rule), which steer it but do not stop it; only
-  Claude Code's deny rules and hooks still do. A repository chooses it for its passes with
+  `.claude/skills/**` among them (the `auto` mode lets a classifier approve
+  some of these instead). `bypassPermissions` skips those prompts, though
+  explicit ask rules, tools that need a person, and Claude Code's checks
+  before removing critical paths still apply, so an unattended call can
+  still be denied. It trades the prompts for the instructions the drive
+  gives the pass (its push script, its bots-only rule), which steer it but
+  do not stop it; only Claude Code's deny rules and hooks still do. A repository chooses it for its passes with
   `drive.pass_args`
   ([configuration](plugin/CONFIGURATION.md#drive)).
 - **Drive ledger** — the resumable part of a *PR drive loop*'s saved state

@@ -326,14 +326,15 @@ and `--pass-model` is refused for it (exit `2`).
 
 **The pass arguments.** A Claude Code pass command can carry extra words
 before `-p`, such as `--permission-mode bypassPermissions`, without which a
-pass is denied every write under a protected path such as
-`.claude/skills/**`. They come from `--pass-args "<words>"` for this run
+pass in a prompting mode is denied every write under a protected path such
+as `.claude/skills/**` (`--permission-mode auto` lets a classifier approve
+some). They come from `--pass-args "<words>"` for this run
 (one value, split on spaces; empty for none), else `drive.pass_args`, which
 `drive.ts` adds only to a pass command with no arguments of its own; a
 command that carries its own, as an arm command or a printed re-arm or
 takeover command does, runs as written. The driver log's `pass args:` and
-`permission mode:` lines and the `drives.ts` row name them (`default` when
-the command sets no mode). Another agent tool's pass command ignores
+`permission mode:` lines and the `drives.ts` row name them (`inherited` when
+the command sets no mode: Claude Code's own settings then decide). Another agent tool's pass command ignores
 `drive.pass_args`, and the log says so; `--pass-args` is refused for it
 (exit `2`). A `drive.pass_args` that is not a list of words stops the drive
 (exit `1`), naming the field.

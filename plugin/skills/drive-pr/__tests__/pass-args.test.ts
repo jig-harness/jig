@@ -46,6 +46,16 @@ describe("parsePassArgsFlag", () => {
     for (const value of ["--model opus", "--model=opus", "-p x", "--print"])
       expect(() => parsePassArgsFlag(value)).toThrow(PassArgsUsageError);
   });
+
+  it("refuses a --permission-mode left without its mode", () => {
+    expect(() => parsePassArgsFlag("--permission-mode")).toThrow(
+      PassArgsUsageError,
+    );
+    expect(parsePassArgsFlag("--permission-mode auto")).toEqual([
+      "--permission-mode",
+      "auto",
+    ]);
+  });
 });
 
 describe("withPassArgs", () => {
@@ -120,7 +130,7 @@ describe("effectivePassArgs", () => {
       "pass args: --permission-mode acceptEdits (--pass-args)",
     );
     const none = effectivePassArgs(PASS, "", configured);
-    expect([none.argv, none.permission.mode]).toEqual([PASS, "default"]);
+    expect([none.argv, none.permission.mode]).toEqual([PASS, "inherited"]);
   });
 
   it("names no words and the default mode when nothing sets any", () => {
@@ -130,7 +140,7 @@ describe("effectivePassArgs", () => {
       "pass args: none (the default; drive.pass_args is not set)",
     );
     expect(permissionLine(pass.permission)).toBe(
-      "permission mode: default (the pass command sets no --permission-mode)",
+      "permission mode: inherited (the pass command sets no --permission-mode; Claude Code's settings decide)",
     );
   });
 

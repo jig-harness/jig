@@ -315,7 +315,7 @@ function drive(startedMs: number): LiveDrive {
     started: new Date(startedMs).toISOString(),
     log: "/state/drive-pr-42.log",
     model: "sonnet",
-    permissionMode: "default",
+    permissionMode: "inherited",
     doctor: null,
   };
 }
@@ -749,7 +749,7 @@ describe("arm-drive.ts", () => {
     expect(answer).toMatchObject({
       passArgs: [],
       passArgsSource: "the default; drive.pass_args is not set",
-      permissionMode: "default",
+      permissionMode: "inherited",
     });
   });
 
