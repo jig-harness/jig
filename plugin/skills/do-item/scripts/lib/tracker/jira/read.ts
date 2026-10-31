@@ -95,13 +95,19 @@ export interface JiraIssue {
   updatedAt: string;
 }
 
+const STATUS_CATEGORIES = ["new", "indeterminate", "done"];
+
 export function statusOf(v: unknown, where: string): JiraStatus {
   const s = record(v, where);
-  const category = isRecord(s.statusCategory) ? s.statusCategory.key : "new";
+  const category = isRecord(s.statusCategory) ? s.statusCategory.key : null;
+  if (typeof category !== "string" || !STATUS_CATEGORIES.includes(category))
+    throw new JiraApiError(
+      `${where}.statusCategory.key: expected one of ${STATUS_CATEGORIES.join(", ")} (got ${JSON.stringify(category)})`,
+    );
   return {
     id: String(s.id ?? ""),
     name: str(s.name, `${where}.name`),
-    category: typeof category === "string" ? category : "new",
+    category,
   };
 }
 

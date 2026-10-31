@@ -208,7 +208,7 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     `issue_tracker.jira.link_types` names; links of other types are ignored;
   - a comment, or an assignment, is trusted when a person's Atlassian
     account made it, not a guest, that can be assigned issues in the
-    project; an app's account, Jira Automation's own included, never is.
+    project and can edit them; an app's account, Jira Automation's own included, never is.
 
 **To add one.** Implement the `Tracker` interface in a module beside
 `linear.ts`, register it in `ADAPTERS` in

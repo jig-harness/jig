@@ -25,7 +25,7 @@ import {
 } from "./read.ts";
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-import { inProject } from "./jql.ts";
+import { ORDER, OPEN } from "./jql.ts";
 import type { JiraModel } from "./model.ts";
 import type { JiraSettings, LinkedRelation } from "./settings.ts";
 import {
@@ -62,6 +62,8 @@ export interface IssueTypeMeta {
   name: string;
   subtask: boolean;
   level: number;
+  /** False when the metadata gave no hierarchy level and `level` is a guess. */
+  levelKnown: boolean;
 }
 
 export interface Client {
@@ -149,6 +151,11 @@ async function searchUsers(
     users.push(
       ...page.map((u, i) => record(u, `user search for '${who}'[${i}]`)),
     );
+    if (users.length >= USERS_CEILING)
+      throw new TrackerRequestError(
+        "unresolved",
+        `Jira user search for '${who}' reached its ${USERS_CEILING}-account ceiling, so its matches are not a complete census; name the account by its id`,
+      );
     if (page.length < USERS_PAGE) return users;
   }
 }
@@ -173,6 +180,9 @@ async function searchAccount(get: Get, who: string): Promise<string> {
 /** The page size of a user search. */
 const USERS_PAGE = 50;
 
+/** Jira documents at most this many accounts per user search. */
+const USERS_CEILING = 1000;
+
 export interface ClientOptions {
   project: string;
   site: string;
@@ -194,6 +204,21 @@ export function jiraClient(opts: ClientOptions): Client {
   let types: Promise<IssueTypeMeta[]> | undefined;
   let zone: Promise<string> | undefined;
   const assignables = new Map<string, Promise<boolean>>();
+
+  /** Whether the account holds the Edit Issues permission in the project. */
+  async function canEdit(accountId: string): Promise<boolean> {
+    const users = await get("user/permission/search", {
+      accountId,
+      projectKey: project,
+      permissions: "EDIT_ISSUES",
+      maxResults: 2,
+    });
+    if (!Array.isArray(users))
+      throw new JiraApiError(
+        `edit permission of ${accountId} in ${project}: expected a list`,
+      );
+    return users.some((u) => isRecord(u) && u.accountId === accountId);
+  }
 
   /** Exactly one of `items` named `name`, or a refusal saying how many. */
   function onlyNamed<T extends { name: string }>(
@@ -252,12 +277,9 @@ export function jiraClient(opts: ClientOptions): Client {
     },
 
     children(key, open = false, signal) {
+      // No project clause: an Epic's children may live in other projects.
       return client.search(
-        inProject(
-          project,
-          `parent = ${key}`,
-          ...(open ? ["statusCategory != Done"] : []),
-        ),
+        `${[`parent = ${key}`, ...(open ? [OPEN] : [])].join(" AND ")}${ORDER}`,
         `children of ${key}`,
         signal,
       );
@@ -388,6 +410,8 @@ export function jiraClient(opts: ClientOptions): Client {
               : t.subtask === true
                 ? -1
                 : 0,
+          levelKnown:
+            typeof t.hierarchyLevel === "number" || t.subtask === true,
         }));
       })();
       types.catch(() => {
@@ -427,7 +451,10 @@ export function jiraClient(opts: ClientOptions): Client {
     async trusted(user) {
       if (user === null || typeof user.accountId !== "string") return false;
       if (user.accountType !== "atlassian" || user.guest === true) return false;
-      return client.assignable(user.accountId);
+      return (
+        (await client.assignable(user.accountId)) &&
+        (await canEdit(user.accountId))
+      );
     },
 
     timeZone() {

@@ -180,7 +180,7 @@ export function reportOperations(client: Client): ReportOps {
       const batch = keys.slice(i, i + BATCH);
       const found = await searchPages(
         client.transport,
-        inProject(project, `parent in ${keyList(batch)}`, OPEN),
+        `parent in ${keyList(batch)} AND ${OPEN}${ORDER}`,
         ["parent"],
         `open children of ${batch.join(", ")}`,
       );

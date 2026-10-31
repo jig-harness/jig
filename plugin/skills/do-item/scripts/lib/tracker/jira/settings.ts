@@ -76,7 +76,20 @@ function sectionOf(raw: unknown): Record<string, unknown> {
   return settingsSection(raw, "jira", FIELDS);
 }
 
-const SITE = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?\/?$/;
+const SITE = /^https:\/\/[A-Za-z0-9.-]+\/?$/;
+
+/**
+ * Hosts a credential may be sent to: Atlassian Cloud, and any host the
+ * environment (trusted, unlike the repository's configuration) names in
+ * `JIRA_ALLOWED_HOSTS`, comma separated.
+ */
+function hostAllowed(host: string, env = process.env): boolean {
+  if (host.endsWith(".atlassian.net")) return true;
+  return (env.JIRA_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .includes(host.toLowerCase());
+}
 
 function siteOf(v: unknown): string | null {
   if (v === undefined || v === null) return null;
@@ -85,6 +98,11 @@ function siteOf(v: unknown): string | null {
     throw new TrackerConfigError(
       field("site"),
       `${field("site")} must be the site's https address, such as https://example.atlassian.net (got ${JSON.stringify(site)})`,
+    );
+  if (!hostAllowed(new URL(site).hostname))
+    throw new TrackerConfigError(
+      field("site"),
+      `${field("site")} must be an Atlassian Cloud site (*.atlassian.net); another host receives the credential only when JIRA_ALLOWED_HOSTS names it (got ${JSON.stringify(site)})`,
     );
   return site.replace(/\/$/, "");
 }

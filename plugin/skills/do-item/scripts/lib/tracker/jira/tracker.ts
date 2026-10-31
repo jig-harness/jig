@@ -81,7 +81,8 @@ export function summaryOf(issue: JiraIssue, client: Client): IssueSummary {
 function levelOf(parent: JiraIssue, types: IssueTypeMeta[]): number {
   const own = parent.issueType;
   if (own === null) return 0;
-  const meta = types.find((t) => same(t.name, own.name)) ?? own;
+  const found = types.find((t) => same(t.name, own.name));
+  const meta = found?.levelKnown === false ? own : (found ?? own);
   return meta.subtask ? -1 : meta.level;
 }
 
@@ -246,10 +247,58 @@ export function jiraTracker(client: Client): Tracker {
       path: "issueLink",
       body: {
         type: { name: types[type].name },
-        outwardIssue: { key: from.key },
-        inwardIssue: { key: to.key },
+        inwardIssue: { key: from.key },
+        outwardIssue: { key: to.key },
       },
     });
+  }
+
+  /** A write whose outcome is unknown: the request left but no answer came back. */
+  function lostAnswer(err: unknown): boolean {
+    return err instanceof JiraApiError && err.status === null && !err.notFound;
+  }
+
+  /** The created issue's record; after a lost answer, the issue found filed. */
+  async function filed(
+    write: () => Promise<unknown>,
+    title: string,
+    parent: string | null,
+  ): Promise<Record<string, unknown>> {
+    try {
+      return record(await write(), "created issue");
+    } catch (err) {
+      if (!lostAnswer(err)) throw err;
+      const found = await findFiled(title, parent);
+      if (found === null)
+        throw new JiraApiError(
+          `the answer to filing '${title}' was lost and no such issue was found; it may have been filed`,
+          { unavailable: true },
+        );
+      return { key: found.key };
+    }
+  }
+
+  /** The issue a lost create answer may have left: same title, parent and reporter, filed lately. */
+  async function findFiled(
+    title: string,
+    parent: string | null,
+  ): Promise<JiraIssue | null> {
+    const found = await client
+      .search(
+        inProject(
+          project,
+          "reporter = currentUser()",
+          'created >= "-15m"',
+          `summary ~ ${quote(title)}`,
+        ),
+        `issues just filed as '${title}'`,
+      )
+      .catch(() => []);
+    return (
+      found.find(
+        (i) => i.title === title && (i.parent?.key ?? null) === parent,
+      ) ?? null
+    );
   }
 
   const tracker: Tracker = {
@@ -326,6 +375,13 @@ export function jiraTracker(client: Client): Tracker {
         path: `${path(issue.key)}/transitions`,
         body: { transition: { id: chosen.id }, ...resolution },
       });
+      if (isResolvedState(state) && !chosen.resolution) {
+        const after = await client.mustIssue(issue.key);
+        if (model.read(after).canonical !== state)
+          throw new JiraApiError(
+            `${issue.key} entered ${after.status.name}, which its transition cannot record as ${state}: the transition has no resolution field`,
+          );
+      }
     },
 
     async postComment(issue, body, signal) {
@@ -333,14 +389,21 @@ export function jiraTracker(client: Client): Tracker {
         throw new JiraApiError("the comment was cancelled before it was sent");
       if (issue.trim() === "")
         throw new TrackerRequestError("invalid", "a comment needs an issue");
-      await transport(
-        {
-          method: "POST",
-          path: `${path(issue)}/comment`,
-          body: { body: markdownToAdf(body) },
-        },
-        signal,
-      );
+      try {
+        await transport(
+          {
+            method: "POST",
+            path: `${path(issue)}/comment`,
+            body: { body: markdownToAdf(body) },
+          },
+          signal,
+        );
+      } catch (err) {
+        if (!lostAnswer(err)) throw err;
+        const sent = await client.comments(issue).catch(() => []);
+        if (sent.some((c) => c.body.trim() === body.trim())) return;
+        throw err;
+      }
     },
 
     ...reportOperations(client),
@@ -361,8 +424,8 @@ export function jiraTracker(client: Client): Tracker {
         issue.project === undefined
           ? null
           : await client.version(issue.project);
-      const created = record(
-        await transport({
+      const write = () =>
+        transport({
           method: "POST",
           path: "issue",
           body: {
@@ -379,9 +442,8 @@ export function jiraTracker(client: Client): Tracker {
               ...(version === null ? {} : { fixVersions: [{ id: version }] }),
             },
           },
-        }),
-        "created issue",
-      );
+        });
+      const created = await filed(write, issue.title, parent?.key ?? null);
       if (typeof created.key !== "string")
         throw new JiraApiError(
           "the created issue's key is missing; the issue may have been filed",

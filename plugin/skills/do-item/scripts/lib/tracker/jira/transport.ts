@@ -179,6 +179,8 @@ function requestInit(
   const init: RequestInit = {
     method: request.method,
     headers,
+    // A redirect would carry the credential to another host.
+    redirect: "manual",
     signal: signal === undefined ? timeout : AbortSignal.any([timeout, signal]),
   };
   if (request.body !== undefined) {
@@ -195,6 +197,24 @@ function answerBody(text: string, status: number, what: string): unknown {
     return JSON.parse(text);
   } catch {
     throw new JiraApiError(`Jira returned no JSON on ${what}`, { status });
+  }
+}
+
+/** The answer's body; one lost while reading fails a success, and is empty on a failure. */
+async function bodyText(
+  res: Response,
+  signal: AbortSignal | undefined,
+  what: string,
+): Promise<string> {
+  try {
+    return await res.text();
+  } catch (err) {
+    if (cancelled(signal)) throw abortedError(signal);
+    if (!res.ok) return "";
+    throw new JiraApiError(
+      `Jira answer lost while reading the body on ${what}: ${err instanceof Error ? err.message : String(err)}`,
+      { unavailable: true, status: res.status },
+    );
   }
 }
 
@@ -222,7 +242,7 @@ export function httpTransport(
         { unavailable: true },
       );
     }
-    const text = await res.text().catch(() => "");
+    const text = await bodyText(res, signal, what);
     if (!res.ok) throw httpFailure(res.status, res.headers, text, what);
     return answerBody(text, res.status, what);
   };

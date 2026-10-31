@@ -60,6 +60,12 @@ describe("issue_tracker.jira", () => {
         parseJiraSettings({ site: "http://example.atlassian.net" }),
       ),
     ).toBe("issue_tracker.jira.site");
+    expect(
+      fieldOf(() => parseJiraSettings({ site: "https://attacker.example" })),
+    ).toBe("issue_tracker.jira.site");
+    expect(
+      fieldOf(() => parseJiraSettings({ site: "https://localhost" })),
+    ).toBe("issue_tracker.jira.site");
     expect(fieldOf(() => parseJiraSettings({ issue_type: "" }))).toBe(
       "issue_tracker.jira.issue_type",
     );
@@ -159,6 +165,38 @@ describe("Jira transport", () => {
     return { sent, impl };
   };
   const credential = { email: "factory@example.com", token: "t0ken" };
+
+  it("does not follow redirects with the credential", async () => {
+    const { sent, impl } = fake(302, "", {
+      location: "https://other.example/",
+    });
+    await expect(
+      httpTransport(SITE, credential, impl)({ method: "GET", path: "myself" }),
+    ).rejects.toThrow();
+    expect(sent[0]?.init.redirect).toBe("manual");
+  });
+
+  it("fails a mutation whose success body is lost mid-read", async () => {
+    const impl = (async () => {
+      const body = new ReadableStream({
+        start(c) {
+          c.error(new Error("connection reset"));
+        },
+      });
+      return new Response(body, { status: 201 });
+    }) as unknown as typeof fetch;
+    await expect(
+      httpTransport(
+        SITE,
+        credential,
+        impl,
+      )({
+        method: "POST",
+        path: "issue/ENG-1/comment",
+        body: {},
+      }),
+    ).rejects.toThrow("connection reset");
+  });
 
   it("sends Basic authentication, JSON and the query under /rest/api/3", async () => {
     const { sent, impl } = fake(200, '{"ok":true}');

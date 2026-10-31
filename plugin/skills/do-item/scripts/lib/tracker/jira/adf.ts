@@ -211,10 +211,38 @@ function listNode(first: Marker, items: AdfNode[]): AdfNode {
 
 const EMPTY_ITEM: AdfNode[] = [{ type: "paragraph", content: [] }];
 
+const TASK = /^\[( |x|X)\] +(.*)$/;
+
+/** A task list when every item is `[ ] text` or `[x] text` in one paragraph. */
+function taskList(bodies: string[][]): AdfNode | null {
+  const items: AdfNode[] = [];
+  for (const body of bodies) {
+    const m = TASK.exec(body[0] ?? "");
+    if (m === null) return null;
+    const parsed = blocks([m[2] as string, ...body.slice(1)]);
+    const only = parsed[0];
+    if (parsed.length !== 1 || only?.type !== "paragraph") return null;
+    items.push({
+      type: "taskItem",
+      attrs: {
+        localId: crypto.randomUUID(),
+        state: m[1] === " " ? "TODO" : "DONE",
+      },
+      content: only.content ?? [],
+    });
+  }
+  return {
+    type: "taskList",
+    attrs: { localId: crypto.randomUUID() },
+    content: items,
+  };
+}
+
 const list: BlockReader = (lines, at) => {
   const first = markerOf(lines[at]);
   if (first === null || first.indent >= 4) return null;
   const items: AdfNode[] = [];
+  const bodies: string[][] = [];
   let end = at;
   for (
     let m = sibling(lines[end], first);
@@ -222,6 +250,7 @@ const list: BlockReader = (lines, at) => {
     m = sibling(lines[end], first)
   ) {
     const item = itemLines(lines, end, m.content);
+    bodies.push(item.body);
     const content = blocks(item.body);
     items.push({
       type: "listItem",
@@ -229,7 +258,8 @@ const list: BlockReader = (lines, at) => {
     });
     end = item.end;
   }
-  return { nodes: [listNode(first, items)], end };
+  const tasks = first.ordered ? null : taskList(bodies);
+  return { nodes: [tasks ?? listNode(first, items)], end };
 };
 
 /** Lines up to the next blank line or block, joined by hard breaks. */

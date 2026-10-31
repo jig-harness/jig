@@ -120,7 +120,7 @@ describe("Jira adapter: windows", () => {
     const facts = await t.issuesInWindow({ label: "bug", createdIn: window });
     expect(facts.map((f) => f.id)).toEqual(["ENG-2"]);
     expect(jqlOf(calls[1] as Call)).toBe(
-      'project = ENG AND labels = "bug" AND created >= "2026-03-01 00:59" AND created < "2026-03-08 01:01" ORDER BY created ASC',
+      'project = ENG AND labels = "bug" AND created >= "2026-02-28 23:00" AND created < "2026-03-08 03:00" ORDER BY created ASC',
     );
   });
 
@@ -199,6 +199,10 @@ describe("Jira adapter: windows", () => {
           MEMBER.accountId,
           APP.accountId,
         ),
+        "GET user/permission/search": assignable(
+          MEMBER.accountId,
+          APP.accountId,
+        ),
       }),
     );
     const found = await t.commentsContaining({
@@ -210,7 +214,7 @@ describe("Jira adapter: windows", () => {
       ["ENG-1", "<!-- jig:finding a -->", true],
       ["ENG-1", "<!-- jig:finding b -->", false],
     ]);
-    expect(jqlOf(calls[1] as Call)).toContain('updated >= "2026-03-01 00:59"');
+    expect(jqlOf(calls[1] as Call)).toContain('updated >= "2026-02-28 23:00"');
   });
 });
 
@@ -236,6 +240,10 @@ describe("Jira adapter: comments with trust", () => {
           MEMBER.accountId,
           guest.accountId,
         ),
+        "GET user/permission/search": assignable(
+          MEMBER.accountId,
+          guest.accountId,
+        ),
       }),
     );
     const { uuid, comments: read } = await t.issueComments("ENG-1");
@@ -250,6 +258,19 @@ describe("Jira adapter: comments with trust", () => {
     expect(
       calls.filter((c) => c.route === "GET user/assignable/search"),
     ).toHaveLength(2);
+  });
+
+  it("does not trust an assignable account without edit permission", async () => {
+    const { t } = jira(
+      routes({
+        "GET issue/ENG-1": issue({ key: "ENG-1" }),
+        "GET issue/ENG-1/comment": comments(comment("1", "a", MEMBER)),
+        "GET user/assignable/search": assignable(MEMBER.accountId),
+        "GET user/permission/search": assignable(),
+      }),
+    );
+    const { comments: read } = await t.issueComments("ENG-1");
+    expect(read.map((c) => c.trusted)).toEqual([false]);
   });
 
   it("fails rather than trust when membership cannot be read", async () => {
@@ -425,7 +446,7 @@ describe("Jira adapter: candidate pools", () => {
       'project = ENG AND statusCategory != Done AND labels in ("a", "b") AND labels in ("c") AND (labels not in ("x") OR labels is EMPTY) ORDER BY created ASC',
     );
     expect(jqlOf(calls[1] as Call)).toBe(
-      "project = ENG AND parent in (ENG-1, ENG-2) AND statusCategory != Done ORDER BY created ASC",
+      "parent in (ENG-1, ENG-2) AND statusCategory != Done ORDER BY created ASC",
     );
     expect(calls[1]?.body.fields).toEqual(["parent"]);
     expect(pool[0]).toEqual({
@@ -563,6 +584,7 @@ describe("Jira adapter: assignments", () => {
         isLast: true,
       },
       "GET user/assignable/search": assignable(MEMBER.accountId),
+      "GET user/permission/search": assignable(MEMBER.accountId),
     });
 
   it("reads the factory's issues in the dispatch states by its account", async () => {

@@ -11,7 +11,7 @@
 import type { AdfMark, AdfNode } from "./adf.ts";
 
 export const RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
-export const COMMENT_LINE = /^\s*<!--.*-->\s*$/;
+export const COMMENT_LINE = /^\s*<!--[\s\S]*-->\s*$/;
 export const isWord = (c: string | undefined) =>
   c !== undefined && /[\p{L}\p{N}]/u.test(c);
 
@@ -214,7 +214,11 @@ const BLOCKS: Record<string, (node: AdfNode) => string> = {
   },
   codeBlock: (node) => {
     const text = (node.content ?? []).map((c) => c.text ?? "").join("");
-    const fence = text.includes("```") ? "~~~" : "```";
+    const longest = Math.max(
+      0,
+      ...(text.match(/`+/g) ?? []).map((r) => r.length),
+    );
+    const fence = "`".repeat(Math.max(3, longest + 1));
     const body = text === "" ? "" : `${text}\n`;
     return `${fence}${str(node.attrs?.language)}\n${body}${fence}`;
   },

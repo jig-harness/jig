@@ -122,7 +122,7 @@ describe("Jira adapter: reading an issue", () => {
     });
     expect(calls[0]?.query.fields).toContain("statuscategorychangedate");
     expect(jqlOf(calls[1] as Call)).toBe(
-      "project = ENG AND parent = ENG-12 ORDER BY created ASC",
+      "parent = ENG-12 ORDER BY created ASC",
     );
   });
 
@@ -245,16 +245,56 @@ describe("Jira adapter: transitions", () => {
     });
   });
 
-  it("sends no resolution when the screen has none", async () => {
+  it("sends no resolution when the screen has none, and checks the outcome", async () => {
+    let moved = false;
     const { t, calls } = jira(
+      routes({
+        "GET issue/ENG-1": () =>
+          moved
+            ? issue({
+                key: "ENG-1",
+                status: "Done",
+                category: "done",
+                resolution: "Done",
+              })
+            : issue({ key: "ENG-1" }),
+        "GET issue/ENG-1/transitions": transitions(["31", "Done", false]),
+        "POST issue/ENG-1/transitions": () => {
+          moved = true;
+          return null;
+        },
+      }),
+    );
+    await t.transition("ENG-1", "done");
+    expect(calls[2]?.body).toEqual({ transition: { id: "31" } });
+  });
+
+  it("reconciles a create whose answer was lost with the issue it filed", async () => {
+    const { t } = jira(
+      routes({
+        "GET priority/search": PRIORITIES,
+        "POST issue": new JiraApiError("Jira API unreachable", {
+          unavailable: true,
+        }),
+        "POST search/jql": page(issue({ key: "ENG-77", title: "New" })),
+      }),
+    );
+    expect(
+      await t.createIssue({ title: "New", description: "", labels: [] }),
+    ).toEqual({ identifier: "ENG-77", url: `${SITE}/browse/ENG-77` });
+  });
+
+  it("refuses an outcome a resolution-less transition does not reach", async () => {
+    const { t } = jira(
       routes({
         "GET issue/ENG-1": issue({ key: "ENG-1" }),
         "GET issue/ENG-1/transitions": transitions(["31", "Done", false]),
         "POST issue/ENG-1/transitions": null,
       }),
     );
-    await t.transition("ENG-1", "done");
-    expect(calls[2]?.body).toEqual({ transition: { id: "31" } });
+    await expect(t.transition("ENG-1", "done")).rejects.toThrow(
+      "no resolution field",
+    );
   });
 
   it("refuses a state no single transition reaches, naming what is available", async () => {
@@ -590,8 +630,15 @@ describe("Jira adapter: relations", () => {
             links: linked ? [{ type: "Blocks", outward: "ENG-2" }] : [],
           }),
         "GET issue/ENG-2": issue({ key: "ENG-2" }),
-        "POST issueLink": () => {
-          linked = true;
+        "POST issueLink": (c: Call) => {
+          // ENG-1 reads "blocks ENG-2" only when it is the inward issue.
+          const body = c.body as {
+            inwardIssue: { key: string };
+            outwardIssue: { key: string };
+          };
+          linked =
+            body.inwardIssue.key === "ENG-1" &&
+            body.outwardIssue.key === "ENG-2";
           return null;
         },
       }),
@@ -601,8 +648,8 @@ describe("Jira adapter: relations", () => {
     expect(writes(calls)).toEqual(["POST issueLink"]);
     expect(calls.find((c) => c.route === "POST issueLink")?.body).toEqual({
       type: { name: "Blocks" },
-      outwardIssue: { key: "ENG-1" },
-      inwardIssue: { key: "ENG-2" },
+      inwardIssue: { key: "ENG-1" },
+      outwardIssue: { key: "ENG-2" },
     });
   });
 

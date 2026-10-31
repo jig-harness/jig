@@ -116,6 +116,25 @@ describe("ADF: Markdown round trip", () => {
     expect(adfToMarkdown(markdownToAdf(""))).toBe("");
   });
 
+  it("writes task lists as taskItems and reads them back", () => {
+    const md = "- [ ] open\n- [x] shipped";
+    const adf = markdownToAdf(md);
+    expect(adf.content[0]?.type).toBe("taskList");
+    expect((adf.content[0]?.content ?? []).map((i) => i.attrs?.state)).toEqual([
+      "TODO",
+      "DONE",
+    ]);
+    expect(adfToMarkdown(adf)).toBe(md);
+  });
+
+  it("fences code longer than any backtick run it holds", () => {
+    const md = "````\n```\n~~~\n````";
+    const written = adfToMarkdown(markdownToAdf(md));
+    expect(written).toBe(md);
+    const code = markdownToAdf(written).content[0];
+    expect(code?.content?.[0]?.text).toBe("```\n~~~");
+  });
+
   it("escapes text that would read back as syntax", () => {
     const written = adfToMarkdown(doc(para(text("# a *b* [c] 2. d"))));
     expect(written).toBe("\\# a \\*b\\* \\[c\\] 2. d");

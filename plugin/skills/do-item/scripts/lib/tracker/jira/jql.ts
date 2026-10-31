@@ -66,6 +66,13 @@ export function jqlDate(ms: number, timeZone: string): string {
 const MINUTE = 60_000;
 
 /**
+ * Padding on each bound: local wall times of two instants either side of a
+ * daylight-saving rollback can invert, so the window is made wider than any
+ * offset change.
+ */
+const PAD = 2 * 60 * MINUTE;
+
+/**
  * `field >= since - 1m AND field < until + 1m` in `timeZone`: wide enough
  * for every issue in the window whatever the rounding; the caller filters
  * each by its exact time.
@@ -75,7 +82,7 @@ export function widened(
   window: { sinceMs: number; untilMs: number },
   timeZone: string,
 ): string {
-  return `${field} >= ${quote(jqlDate(window.sinceMs - MINUTE, timeZone))} AND ${field} < ${quote(jqlDate(window.untilMs + MINUTE, timeZone))}`;
+  return `${field} >= ${quote(jqlDate(window.sinceMs - PAD, timeZone))} AND ${field} < ${quote(jqlDate(window.untilMs + PAD, timeZone))}`;
 }
 
 /** `field >= since - 1m` in `timeZone`. */
@@ -84,7 +91,7 @@ export function since(
   sinceMs: number,
   timeZone: string,
 ): string {
-  return `${field} >= ${quote(jqlDate(sinceMs - MINUTE, timeZone))}`;
+  return `${field} >= ${quote(jqlDate(sinceMs - PAD, timeZone))}`;
 }
 
 /** The issues carrying at least one of `labels`. */
