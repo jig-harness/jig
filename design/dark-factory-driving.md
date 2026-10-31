@@ -289,8 +289,13 @@ is a record of its own naming that key, so two writers that each add a
 different parked item both survive the fold. No record is ever
 edited, so no change is lost; the single ledger comment is a snapshot of
 the fold that any writer may regenerate, and a reader that finds it behind
-the records folds them itself. The records are cut to the same last-twenty
-and body-limit rules as the snapshot. Two creations of the snapshot that
+the records folds them itself. The snapshot, not the records, is cut by the
+last-twenty and body-limit rules: a record is never trimmed, since the fold
+replays it. A record too large for one comment is written as several
+consecutive records of the same actor and generation, each carrying its
+sequence number and the count of the set, and the fold applies the set only
+once every part is present; a set missing a part is reported and skipped,
+never applied in part. Two creations of the snapshot that
 race leave two comments, of which the lower id is canonical and the other is
 deleted by its author on its next write. A ledger is **trusted** only when its
 comment's author is the drive's own login or carries the owner, member or

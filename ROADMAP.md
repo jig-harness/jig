@@ -12,7 +12,9 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 ### 32. Driving any pull request from anywhere, with autonomy that fits the hour
 
 Any session, in any checkout of the repository or none, on any machine and
-any account that Claude Code's pass bills, can arm the review drive on a pull request, take over a
+any account that Claude Code's pass bills, can arm the review drive on a
+supported pull request (not one from a fork, and not into a working tree with
+uncommitted changes or an unfinished git operation), take over a
 driver that died or stopped making progress, and resume from the state the
 previous driver left on the pull request itself. The drive stops for a
 person only on a configured human decision class (by default the

@@ -1507,7 +1507,7 @@ make, use the entry's term instead.
   only when that driver is dead or wedged; recorded in the drive state and
   the *drive ledger*. A drive that stopped holds no driver and is re-armed
   instead: after a usage limit by a session on another account (or the same
-  account once the limit has reset), and after a park at any autonomy level
+  account once the limit has reset, or once a person says the window reopened), and after a park at any autonomy level
   once its parked questions are answered.
 - **Provisional decision** — a decision an agent took under a raised
   *autonomy level* because nobody was there to ask, marked as such where it
