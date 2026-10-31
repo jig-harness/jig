@@ -269,6 +269,7 @@ export async function armLedger(
       "Re-arm once the pull request's comments read, or set DRIVE_PR_LEDGER=off to drive without the ledger.",
     );
   const ledger = readLedger(pr, snapshot);
+  refuseDamaged(pr, ledger, snapshot);
   const refusal = refuseBesideAnotherClone(
     pr,
     ledger,
@@ -354,6 +355,24 @@ function continuation(
     `ledger: another clone's claim (comment ${rival.id}, ${rival.claim.actor}) is past this clone's recorded position ${position}; arbitrating the drive by a claim.`,
   );
   return null;
+}
+
+/**
+ * A ledger that cannot be read is not an absent one: it may name a running
+ * driver, and a start without it would drive beside that driver with none of
+ * the recorded round or parked state.
+ */
+function refuseDamaged(
+  pr: string,
+  ledger: Ledger | null,
+  snapshot: LedgerSnapshot,
+): void {
+  if (ledger === null && snapshot.malformed.length > 0)
+    fail(
+      1,
+      `drive.ts: PR #${pr}'s drive ledger holds no ledger this drive can read; not starting the drive, since whether another clone drives it is unknown.`,
+      "Delete the damaged ledger comment and re-arm, or set DRIVE_PR_LEDGER=off to drive without the ledger.",
+    );
 }
 
 /** Report what is ignored, and refuse a version this code does not read. */
