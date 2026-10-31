@@ -672,8 +672,9 @@ that spawned it, so its console is not where you look:
   driven worktree is warned.
 - **Morning report** — `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --report [--since <time>] [--json]`
   is what a person reads after an unattended night: every pull request this
-  clone's state has news of and every open one the signed-in account
-  authored or drove (found through the drive ledger), since the last report
+  clone's state has news of, every open one the signed-in account drove
+  (found through the drive ledger) and every other open one it authored
+  (found by author, for its deferred entries), since the last report
   (remembered in the state directory only by a report with no `--since`
   that read everything; the last day for a first one) or
   `--since` (a time such as `2026-10-29T06:00Z`, or a span such as `12h`). For each: its

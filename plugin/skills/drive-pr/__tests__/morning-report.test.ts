@@ -406,6 +406,47 @@ describe("drives.ts --report", () => {
     });
   });
 
+  it("a running ledger whose heartbeat is past the lease window is not a running drive", async () => {
+    const run = async (heartbeatHoursAgo: number) => {
+      const forge = setUp();
+      const ledger = renderLedger(
+        ledgerFromState(
+          { ...freshState(20), rounds: 4, phase: "converged" },
+          {
+            generation: 3,
+            driver: {
+              actor: "wt-cccccccccccccccc",
+              clone: "clone-b",
+              heartbeat: ago(heartbeatHoursAgo),
+              state: "running",
+            },
+            narrative: [],
+            claims: [],
+          },
+        ),
+      );
+      if ("error" in ledger) throw new Error(ledger.error);
+      forge.write("comments-20.json", [
+        {
+          id: 200,
+          body: ledger.body,
+          user: { login: "drive-bot" },
+          author_association: "NONE",
+          updated_at: ago(1),
+          created_at: ago(1),
+          html_url: "https://example.invalid/comment-200",
+        },
+      ]);
+      const r = await report(forge, ["--json"]);
+      expectSpawnExit(r, 0);
+      return JSON.parse(r.stdout).pullRequests.find(
+        (p: { number: number }) => p.number === 20,
+      );
+    };
+    expect((await run(1)).terminal.name).toBe("running");
+    expect((await run(24 * 30)).terminal.name).not.toBe("running");
+  });
+
   it("a span too long for a date is refused as usage", async () => {
     const forge = setUp();
     const r = await report(forge, ["--since", "999999999999999999999h"]);

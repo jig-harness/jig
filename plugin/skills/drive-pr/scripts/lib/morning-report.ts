@@ -29,6 +29,7 @@ import { swallow } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { deferredEntries } from "../../../resolve-review-comments/scripts/lib/deferred-section.ts";
 import { fail } from "./cli.ts";
+import { stallThresholdMs } from "./doctor.ts";
 import { renderMorningReport } from "./morning-report-render.ts";
 import { resolveStateDir } from "./state/store.ts";
 import { ghCall } from "./proc.ts";
@@ -202,7 +203,11 @@ function fromLedger(l: Ledger): DriveRecord {
       l.driver.state === "stopped"
         ? (l.driver.exit ?? lastStop(l.events ?? []))
         : null,
-    runningElsewhere: l.driver.state === "running",
+    // A driver that stopped after its last ledger write still reads
+    // "running"; past the lease window its heartbeat no longer says it is.
+    runningElsewhere:
+      l.driver.state === "running" &&
+      Date.now() - Date.parse(l.driver.heartbeat) <= stallThresholdMs(),
   };
 }
 
