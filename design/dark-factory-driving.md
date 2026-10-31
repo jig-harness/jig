@@ -281,7 +281,12 @@ writers of one generation apart, so a change is never an overwrite: each
 writer appends an operation record (its actor, the generation it read and
 the fields it changed) as its own comment under a second marker, and the
 ledger's state is the deterministic fold of those records in comment-id
-order, the later record winning each field it names. No record is ever
+order. A scalar field (the round, the phase, a head, the Ready mark) is won
+by the later record that names it; a collection (parked items, held items,
+the decisions taken unattended, the takeover claims) is never a field a record
+replaces: a record adds, changes or removes one item by its key, and a removal
+is a record of its own naming that key, so two writers that each add a
+different parked item both survive the fold. No record is ever
 edited, so no change is lost; the single ledger comment is a snapshot of
 the fold that any writer may regenerate, and a reader that finds it behind
 the records folds them itself. The records are cut to the same last-twenty
@@ -481,9 +486,14 @@ step is bound to one tracker until
 [plan item 10](plan.md#10-values-the-skills-still-assume) moves it onto the
 interface) is recorded in a `## Deferred` section of the pull request body
 under a hidden marker, with the finding quoted, the reason and the thread
-link, written by the ledger's read, compare, write and read-back protocol
-(the forge offers no conditional update), re-reading and merging when a
-person's edit landed in between so that edit survives; the thread is resolved with the `**deferred**`
+link, projected from durable deferral operations: each deferral is an
+append-only operation record under the ledger's operation marker (the finding,
+the reason, the thread link, an item key), so none is lost to a concurrent
+writer, and the body section is a projection the fold regenerates, never the
+source. A person's edit to the section is read back as an operation of its own
+(an added, changed or removed entry) before the projection is rewritten, and
+an edit outside the section is carried over unchanged from the body read
+immediately before the write; the thread is resolved with the `**deferred**`
 token linking the section. A plugin script, `file-deferred.ts <PR>`, turns
 the section's entries into issues where an adapter can file and replaces
 each with its link; it runs from the consumer's own post-merge step or the
