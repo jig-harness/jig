@@ -16,6 +16,7 @@ import {
   command,
   constant,
   type InferValue,
+  map,
   message,
   multiple,
   object,
@@ -87,10 +88,13 @@ const tick = object({
       description: message`A repository to read; repeat it for more. Without it, the machine file's repositories, else the current checkout.`,
     }),
   ),
-  followupSince: optional(
-    option("--followup-since", dateValue, {
-      description: message`Start the window that merges owe follow-ups from at this date, for every repository.`,
-    }),
+  followupSince: map(
+    multiple(
+      option("--followup-since", dateValue, {
+        description: message`Start the window that merges owe follow-ups from at this date, for every repository. The last one given wins.`,
+      }),
+    ),
+    (values) => values.at(-1),
   ),
   json: option("--json", {
     description: message`Print the receipt as JSON.`,
@@ -101,10 +105,13 @@ const installation = command(
   "install",
   object({
     action: constant("install"),
-    intervalMs: optional(
-      option("--interval", intervalValue, {
-        description: message`How often the timer runs, in whole minutes (5m, 1h). Without it, the machine file's interval, else five minutes.`,
-      }),
+    intervalMs: map(
+      multiple(
+        option("--interval", intervalValue, {
+          description: message`How often the timer runs, in whole minutes (5m, 1h). Without it, the machine file's interval, else five minutes. The last one given wins.`,
+        }),
+      ),
+      (values) => values.at(-1),
     ),
     confirm: option("--yes", {
       description: message`Write the job the preview shows.`,

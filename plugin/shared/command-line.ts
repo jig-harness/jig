@@ -12,17 +12,17 @@ export const USAGE_EXIT = 2;
 
 /**
  * A directory, resolved against the working directory. An option name in its
- * place (`--repo --json`) is a value left out, never a path.
+ * place (`--repo --json`), or an empty string, is a value left out, never a path.
  */
 export const pathValue: ValueParser<"sync", string> = {
   mode: "sync",
   metavar: "PATH",
   placeholder: "",
   parse: (input) =>
-    input.startsWith("--")
+    input.length === 0 || input.startsWith("--")
       ? {
           success: false,
-          error: message`Expected a path, but got the option ${input}.`,
+          error: message`Expected a path, but got ${input === "" ? "nothing" : "the option " + input}.`,
         }
       : { success: true, value: resolve(input) },
   format: (value) => value,

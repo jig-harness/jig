@@ -140,7 +140,7 @@ export const gcCommand = command(
   } as const),
   {
     brief: message`Report and collect what agent sessions leave on this machine.`,
-    description: message`Reports the scratch directories, tool state, worktrees and old receipts the repository declares, with the evidence that their owners have finished, and writes a receipt for the run. Nothing is removed without --collect.`,
+    description: message`Reports the scratch directories, tool state, worktrees and old receipts the repository declares, with the evidence that their owners have finished, and writes a receipt for the run. Nothing is removed unless the run collects: with --collect, or with --scheduled on the configured collection weekday or under disk pressure.`,
   },
 );
 

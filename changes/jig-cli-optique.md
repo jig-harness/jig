@@ -8,4 +8,4 @@ release: minor
 
 ### Changed
 
-- A refused `jig gc` or `jig dispatch` command line prints Optique's error with the command's usage on standard error, still with exit 2. A switch given twice (`jig dispatch --json --json`) is now refused there as it already was for `jig gc`, and `jig --help` exits 0 with the help instead of 2.
+- A refused `jig gc` or `jig dispatch` command line prints Optique's error with the command's usage on standard error, still with exit 2. A repeated value option (`--interval`, `--followup-since`) still takes the last one given. A switch given twice (`jig dispatch --json --json`) is now refused there as it already was for `jig gc`, and `jig --help` exits 0 with the help instead of 2.

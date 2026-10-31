@@ -97,6 +97,21 @@ describe("walls", () => {
 });
 
 describe("jig dispatch install", () => {
+  it("lets the last of a repeated --interval win", async () => {
+    const w = world();
+    current = w;
+    machineFile(w, [account(w, "a", "a@example.com")]);
+    const r = await w.dispatch([
+      "install",
+      "--interval",
+      "5m",
+      "--interval",
+      "10m",
+    ]);
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("10");
+  });
+
   it("previews the tick's job, every interval, and writes nothing without --yes", async () => {
     const w = world();
     current = w;
