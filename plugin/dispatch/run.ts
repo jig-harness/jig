@@ -27,8 +27,11 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { swallow } from "../shared/errors.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
-import { readDriveState } from "../skills/drive-pr/scripts/lib/driver/rearm.ts";
-import { driveTs } from "../skills/drive-pr/scripts/lib/driver/paths.ts";
+import { run } from "../shared/proc.ts";
+import {
+  driveState,
+  driveTs,
+} from "../skills/drive-pr/scripts/lib/driver/paths.ts";
 import { passEnvironment } from "./lib/accounts.ts";
 import {
   claimRecord,
@@ -94,13 +97,37 @@ function runDrive(
   });
 }
 
+/** The reset in the drive state's quota park, read under the same trusted startup as the drive: the state script runs in the consumer's workspace. */
+async function parkedReset(pr: number): Promise<string | null> {
+  const done = await run(
+    [
+      process.execPath,
+      "--no-env-file",
+      `--config=${BUNFIG}`,
+      driveState,
+      "get",
+      String(pr),
+    ],
+    { stderr: "pipe", timeoutSec: 120 },
+  );
+  if (done.code !== 0) return null;
+  try {
+    const state: unknown = JSON.parse(done.stdout);
+    const park = (state as { quotaPark?: { resetAt?: unknown } } | null)
+      ?.quotaPark;
+    return typeof park?.resetAt === "string" ? park.resetAt : null;
+  } catch (error) {
+    swallow(error, "drive-state.ts get printed no JSON");
+    return null;
+  }
+}
+
 /** The reset the drive recorded for its park, when it is still ahead. */
 async function recordedReset(
   pr: number,
   nowMs: number,
 ): Promise<string | null> {
-  const state = await readDriveState(String(pr));
-  const reset = state?.quotaPark?.resetAt ?? null;
+  const reset = await parkedReset(pr);
   return reset !== null && Date.parse(reset) > nowMs ? reset : null;
 }
 

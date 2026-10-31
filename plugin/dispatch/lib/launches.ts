@@ -104,7 +104,13 @@ export interface LaunchExit {
 export type LaunchState =
   | { kind: "pending" }
   | { kind: "alive"; process: ProcessIdentity }
-  | { kind: "unknown"; reason: string; process: ProcessIdentity }
+  | {
+      kind: "unknown";
+      reason: string;
+      process: ProcessIdentity;
+      /** It ended on its account's wall, which was never written: the whole account stays closed. */
+      wallUnrecorded?: true;
+    }
   | { kind: "died"; process: ProcessIdentity }
   | { kind: "ended"; exit: LaunchExit; process: ProcessIdentity | null };
 
@@ -350,6 +356,7 @@ function stateOf(
     return {
       kind: "unknown",
       reason: "it ended on its account's wall, which could not be recorded",
+      wallUnrecorded: true,
       process: claim ?? {
         host: "",
         bootId: "",

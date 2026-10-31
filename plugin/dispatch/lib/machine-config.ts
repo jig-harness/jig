@@ -247,8 +247,28 @@ function distinct<T>(items: T[], key: (t: T) => string, what: string): T[] {
   return items;
 }
 
+/** The longest a timer holds: the tick's overall deadline is armed with it. */
+const MAX_TIMER_MS = 2_147_483_647;
+
+/** What one tick may spend at the file's limits: two workspace opens and eight runtime calls, in milliseconds. */
+export function tickBudgetMs(limits: {
+  workspaceTimeoutMs: number;
+  runtimeTimeoutMs: number;
+}): number {
+  return 2 * limits.workspaceTimeoutMs + 8 * limits.runtimeTimeoutMs;
+}
+
 /** The machine file's values, with defaults. */
 function parseMachineConfig(values: unknown, where: string): MachineConfig {
+  const config = parseValues(values, where);
+  if (tickBudgetMs(config) > MAX_TIMER_MS)
+    throw new MachineConfigError(
+      `${where}: workspace_timeout and runtime_timeout together allow a tick longer than 24d (2 workspace opens plus 8 runtime calls); shorten them`,
+    );
+  return config;
+}
+
+function parseValues(values: unknown, where: string): MachineConfig {
   const top = values ?? {};
   if (!isMapping(top))
     throw new MachineConfigError(`${where} must be a mapping`);

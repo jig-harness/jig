@@ -24,6 +24,7 @@ import {
   duration,
   type MachineConfig,
   machineConfigPath,
+  tickBudgetMs,
 } from "./lib/machine-config.ts";
 import { stateRoot } from "./receipts.ts";
 
@@ -82,13 +83,7 @@ export function dispatchJobSpec(
   machine: MachineConfig | null = null,
   env: NodeJS.ProcessEnv = process.env,
 ): JobSpec {
-  const needed =
-    machine === null
-      ? 0
-      : Math.ceil(
-          (2 * machine.workspaceTimeoutMs + 8 * machine.runtimeTimeoutMs) /
-            1000,
-        );
+  const needed = machine === null ? 0 : Math.ceil(tickBudgetMs(machine) / 1000);
   return {
     name: "jig-dispatch",
     label: "dev.jig.dispatch",

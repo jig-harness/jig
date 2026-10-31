@@ -56,17 +56,43 @@ export interface Slots {
   account: MachineAccount;
   held: number;
   wall: Wall | null;
+  /** The names walls for this account were recorded under: its own and those of records written before a rename. */
+  wallNames: string[];
+  /** A launch ended on this account's wall and the wall was never recorded: no launch is admitted until a person clears that record. */
+  wallUnrecorded: boolean;
 }
 
-/** The slots a set of records holds, per account name. */
-function heldByAccount(records: ReadRecord[]): Map<string, number> {
+/**
+ * The listed account a record bills: the one of its name, else the one with
+ * its vendor and configuration directory, so an account renamed between ticks
+ * keeps the slots and walls recorded under its old name.
+ */
+function accountOf(
+  accounts: MachineAccount[],
+  record: { account: string; vendor: string; configDir: string },
+): string | null {
+  const named = accounts.find((a) => a.name === record.account);
+  if (named !== undefined) return named.name;
+  const same = accounts.filter(
+    (a) => a.vendor === record.vendor && a.configDir === record.configDir,
+  );
+  return same.length === 1 ? (same[0] as MachineAccount).name : null;
+}
+
+/** The slots a set of records holds, per listed account name. */
+function heldByAccount(
+  accounts: MachineAccount[],
+  records: ReadRecord[],
+): Map<string, number> {
   const holding = records.filter((r) => holds(r.state));
   const ids = new Set(holding.map((r) => r.record.id));
   const held = new Map<string, number>();
   for (const { record } of holding) {
     // A takeover shares the slot of the record it replaces while both hold.
     if (record.replaces !== null && ids.has(record.replaces)) continue;
-    held.set(record.account, (held.get(record.account) ?? 0) + 1);
+    const name = accountOf(accounts, record);
+    if (name === null) continue;
+    held.set(name, (held.get(name) ?? 0) + 1);
   }
   return held;
 }
@@ -77,12 +103,50 @@ export function slotTable(
   nowMs: number,
   root?: string,
 ): Slots[] {
-  const held = heldByAccount(records);
-  return accounts.map((account) => ({
-    account,
-    held: held.get(account.name) ?? 0,
-    wall: wallOf(account.name, nowMs, root),
-  }));
+  const held = heldByAccount(accounts, records);
+  const unrecorded = new Set(
+    records
+      .filter(
+        (r) => r.state.kind === "unknown" && r.state.wallUnrecorded === true,
+      )
+      .map((r) => accountOf(accounts, r.record)),
+  );
+  // The names a record once billed the account under hold its walls too.
+  const names = new Map<string, Set<string>>(
+    accounts.map((a) => [a.name, new Set([a.name])]),
+  );
+  for (const { record } of records) {
+    const name = accountOf(accounts, record);
+    if (name !== null) names.get(name)?.add(record.account);
+  }
+  return accounts.map((account) => {
+    const wallNames = [...(names.get(account.name) ?? [account.name])];
+    return {
+      account,
+      held: held.get(account.name) ?? 0,
+      wall: latestWall(wallNames, nowMs, root),
+      wallNames,
+      wallUnrecorded: unrecorded.has(account.name),
+    };
+  });
+}
+
+/** The wall furthest ahead among the walls recorded under `names`. */
+function latestWall(
+  names: string[],
+  nowMs: number,
+  root?: string,
+): Wall | null {
+  let latest: Wall | null = null;
+  for (const name of names) {
+    const wall = wallOf(name, nowMs, root);
+    if (
+      wall !== null &&
+      (latest === null || Date.parse(wall.resetAt) > Date.parse(latest.resetAt))
+    )
+      latest = wall;
+  }
+  return latest;
 }
 
 /** Read every account's wall again, as a wrapper may have written one since the table was built. */
@@ -92,7 +156,7 @@ export function refreshWalls(
   root?: string,
 ): void {
   for (const slots of table)
-    slots.wall = wallOf(slots.account.name, nowMs, root);
+    slots.wall = latestWall(slots.wallNames, nowMs, root);
 }
 
 /** Every account's slots, in one line for a report. */
@@ -101,7 +165,7 @@ function describeSlots(table: Slots[]): string {
   return table
     .map(
       (s) =>
-        `${s.account.name} ${s.held}/${s.account.maxPerAccount}${s.wall === null ? "" : ` (walled until ${s.wall.resetAt})`}`,
+        `${s.account.name} ${s.held}/${s.account.maxPerAccount}${s.wall === null ? "" : ` (walled until ${s.wall.resetAt})`}${s.wallUnrecorded ? " (wall not recorded)" : ""}`,
     )
     .join(", ");
 }
@@ -110,6 +174,8 @@ function describeSlots(table: Slots[]): string {
 function closed(slots: Slots): string | null {
   if (slots.account.vendor !== "claude")
     return "no headless drive pass is documented for its vendor";
+  if (slots.wallUnrecorded)
+    return "its wall was not recorded; it stays closed until that launch record is cleared";
   if (slots.wall !== null) return `walled until ${slots.wall.resetAt}`;
   return slots.held >= slots.account.maxPerAccount ? "full" : null;
 }
@@ -141,6 +207,10 @@ export function admitTakeover(table: Slots[], replaced: ReadRecord): Admission {
   if (slots.account.vendor !== "claude" || replaced.record.vendor !== "claude")
     return {
       waits: `${slots.account.name}: no headless drive pass is documented for its vendor`,
+    };
+  if (slots.wallUnrecorded)
+    return {
+      waits: `${slots.account.name}, whose slot it takes, ended on a wall that was not recorded`,
     };
   if (slots.wall !== null)
     return {

@@ -30,6 +30,15 @@ describe("the machine file's bounds", () => {
     expect(config("runtime_timeout: 721h\n")).toThrow("at most 24d");
   });
 
+  it("refuses limits whose tick budget together passes the timer range", () => {
+    expect(config("workspace_timeout: 576h\nruntime_timeout: 1m\n")).toThrow(
+      "longer than 24d",
+    );
+    expect(
+      config("workspace_timeout: 1h\nruntime_timeout: 1m\n")(),
+    ).not.toBeNull();
+  });
+
   it("refuses two names for one identity", () => {
     const read = config(
       `accounts:\n${account("a", "me@example.com")}${account("b", "ME@example.com")}`,
