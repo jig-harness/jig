@@ -268,7 +268,7 @@ This is the same contract as [resource collection](../plugin/gc/README.md):
 report first, act only when told, and fail closed: a record that cannot be
 read leaves the actions that depend on it out of the plan and names the
 failure. `--apply` starts only the stages the machine file enables for each
-repository (`stages: [rearm, pickup, followup, notify]`); a stage it does
+repository (`stages: [rearm, pickup, followup, notify, steer]`); a stage it does
 not enable is reported as with no `--apply`. The timer always runs with
 `--apply`, so the machine file alone decides what it starts, and a
 repository is switched on one stage at a time once its report has been read
@@ -336,7 +336,11 @@ The tick reaches the runtime only through these methods:
 | `notify(target, message)` | a message that reaches a person; its receipt carries the target's comment as written |
 | `steer(session, nudge)` | one of the closed set of nudges (see Control) sent to a running session |
 
-Each returns the runtime's receipt. A launch whose answer is lost is
+Each returns the runtime's receipt, and each, a terminal-screen read for
+`steer` included, runs under a deadline (`dispatch.runtime_timeout`, one
+minute by default) and is cancelled past it: its answer counts as lost,
+and the tick goes on to its other actions and releases its lock, so a
+runtime that hangs costs one action, not every later tick. A launch whose answer is lost is
 retried only through the runtime's own retry for that launch, never as a
 fresh one. Orca is the first implementation:
 
@@ -520,7 +524,7 @@ its reason, each launch with the runtime's answer, each notification. A
 tick removes receipts and ended launch records older than the machine
 file's retention, keeping the latest completed receipt. These records are
 kept apart from them and do not expire: the outcome log (see Control) and
-the two below. A follow-up's outcome record,
+the records below. A follow-up's outcome record,
 one per merged pull request, is what tells a done follow-up from a failed
 one after its launch record has gone. What suppresses a repeat is a small suppression
 record per cause (an unchanged refusal not to retry, a notification
@@ -535,7 +539,7 @@ drives' own.
 
 The dispatcher starts stages; it also has to show how they went, so that
 a person can see where the dispatched part of the line loses work and
-change what causes it. It does that in five parts: an outcome log, an
+change what causes it. It does that through an outcome log, an
 expectation per stage, one dashboard, the reflection loop, and one
 mechanical nudge.
 
@@ -543,17 +547,18 @@ mechanical nudge.
 expire with the machine file's retention; what the factory learns from
 must not. The tick appends rows to an outcome log under
 `~/.local/state/jig/dispatch/`, one file per month (`log-<year>-<month>.jsonl`),
-which nothing removes. It holds two kinds of row:
+which nothing removes. Every row carries its key and its time, and goes
+into the file of the month its time falls in. It holds these kinds of row:
 
-- **An ended row**, one per launch record, when the record ends: the
-  stage, the repository, the item or pull request, the account, the model
+- **An ended row**, one per launch record, when the record ends, timed at
+  the record's end: the stage, the repository, the item or pull request, the account, the model
   the tick launched it with (none when the tick named none), the
   duration, the drive's rounds (its ledger's round at the end less the
   round at launch), an outcome class, and a reason that always carries the
   stage's own answer verbatim: the exit code, the recorded result, or the
   last state.
-- **An event row**, once per cause, for what the tick observed rather than
-  what ended: a stalled pickup, a double claim, a stage drifting from its
+- **An event row**, once per cause, timed when the tick observed it, for
+  what the tick observed rather than what ended: a stalled pickup, a double claim, a stage drifting from its
   expectation, a session waiting past `blocked_after` with what the tick
   read as its cause, a stop the tick notified on a stage it did not launch
   (a park on a drive a person armed, say), and each nudge sent. An event
@@ -564,13 +569,17 @@ The log therefore covers the stages this machine launched, and the stops
 on other stages only as far as the tick notifies them.
 
 An ended row's class comes from a closed list, with every stage's answer
-placed:
+placed. The class is read from the record's final answer, and an answer
+that fits more than one row takes the first in table order: a pickup that
+records `done` after its pull request merged is converged, a session that
+met a wall and then finished is classed by how it finished, and a driver
+replaced by a takeover is stalled, not refused.
 
 | Class | Stage answers placed in it |
 | --- | --- |
 | converged | a drive's convergence (`drive.ts` exit `0`); a pickup's or follow-up's recorded result `done` |
 | merged | a drive or pickup whose pull request merged while it ran (exit `5`, merged); never a follow-up, which starts after the merge |
-| quota wall | a usage limit: `drive.ts` exit `16`, or an interactive session's wall record (below) |
+| quota wall | a usage limit: `drive.ts` exit `16`, or an interactive session that ended with no result while a wall recorded from it (below) stood |
 | parked for a person | a park (exit `8`) |
 | stalled | the drive's stall (exit `14`) or its round limit (exit `6`); a driver replaced by a takeover, logged with reason `taken over` |
 | died | a process gone without an exit; an interactive session that ended with no result |
@@ -587,12 +596,16 @@ evidence: a reason that recurs among the `unknown` rows becomes a class in
 a later change.
 
 Each launch record gains a `logged` mark, set once its ended row is
-appended. A tick that stopped between the append and the mark finds the
-record's key among the last rows of the current month's file, which are
-in append order, before it appends; an event row is checked the same way
-against its suppression record. A row is one line written in one append;
-a reader skips a last line with no newline, and the next append writes the
-missing newline first. The follow-up's outcome record (see Receipts) stays
+appended, and keeps the row's time from when the record ends, so a retry
+writes the same row into the same month's file. A tick that stopped
+between the append and the mark finds the record's key among the last
+rows of that file, which are in append order, before it appends; an event
+row keeps its time on its suppression record and is checked the same way.
+A row is one line written in one append. A reader skips any line that
+does not parse as a row, and before it appends, the tick settles an
+unterminated last line: one that parses is kept and given its newline,
+one that does not is cut off, so a torn write never becomes a completed
+line. The follow-up's outcome record (see Receipts) stays
 what it is: it settles whether a merged pull request still wants a
 follow-up, and the tick reads it; the ended row for the same launch is the
 analysis record, read only by people and the dashboard, and the tick never
@@ -663,22 +676,29 @@ mechanically, so it rests on a wall record for interactive sessions:
   `plugin/skills/drive-pr/scripts/lib/quota/`), and keeps it on the launch
   record. While the session runs, the tick reads that session's own record
   through the same adapters (`detectQuotaBlock`), against the account's
-  configuration directory, and a wall it finds is written to the account's
-  wall record with the session id. A launch that cannot carry the session
+  configuration directory. A wall it finds is written to the account's
+  wall record, which admission reads, and as a waiting episode (the wall
+  and its reset) on that session's own launch record, so every session
+  behind one account's wall has its own. A launch that cannot carry the session
   id records no wall and gets no nudge; that an Orca agent launch can pass
   it through is checked when the control step is built.
-- **Sending the nudge.** The tick sends **continue** to a session only when
-  all of these hold: the runtime reports it waiting; its account's wall,
-  recorded from this session, has reached its reset; the session's last
+- **Sending the nudge.** The tick sends **continue** only with `--apply`
+  and only for a repository whose machine-file stages include `steer`,
+  which no other stage implies. It sends it to a session only when all of
+  these hold: the runtime reports it waiting; the waiting episode on its
+  launch record has reached its reset; the session's last
   record is still that wall; and the terminal, read through the runtime
   just before sending, shows the agent's input prompt with an empty input
   line and no menu or question on screen, and no person attached where the
   runtime reports attachment. The text is sent with Enter. Any check that
-  fails or cannot be read sends nothing and is reported. A nudge counts as
-  sent once the runtime's receipt acknowledges it, keyed by the account,
-  the wall record and the session through a suppression record, and is
-  written as an event row; a session still waiting on that wall at the
-  next tick is notified, never nudged again.
+  fails or cannot be read sends nothing and is reported. Before sending,
+  the tick writes the nudge's suppression record, keyed by the session and
+  its waiting episode, so a send whose answer is lost, or a tick that
+  stops after sending, never leads to a second one. The runtime's receipt
+  then marks it delivered and it is written as an event row; a nudge with
+  no receipt is notified to a person as not known to have arrived. A
+  session still waiting on that episode at the next tick is notified,
+  never nudged again.
 
 There is no open-ended "keep going" nudge. Every other stuck state (a
 waiting session with no wall, a drifting stage, a session that asked a
@@ -695,7 +715,7 @@ session runs. Its values are split as configuration always is:
 - **The machine's**, in `~/.jig/dispatch.yaml`: the repositories it
   dispatches for and the stages enabled for each, with `followup_since`;
   the accounts it may bill, each with its configuration directory and cap;
-  the interval, `wall_backoff`, the receipts' retention and the
+  the interval, `wall_backoff`, `runtime_timeout`, the receipts' retention and the
   dashboard's `dashboard.listen` address.
 - **A repository's**, in a `dispatch` section of its `.config/jig.yaml`,
   documented in [CONFIGURATION.md](../plugin/CONFIGURATION.md): the factory
@@ -771,8 +791,8 @@ One pull request each, in this order; each is usable on its own.
    the receipts join its morning report then; a consumer repository's
    follow-up waits on its own post-merge command (item 17).
 6. **Control.** The outcome log and its classifier, the expectations and
-   stage drift, `jig dispatch dashboard`, the interactive wall record, and
-   `steer` with its one nudge. Usable alone: every stage the dispatcher
+   stage drift, `jig dispatch dashboard`, the interactive wall record and
+   waiting episodes, and the `steer` stage with its one nudge. Usable alone: every stage the dispatcher
    launched or notified has a recorded reason, and one view shows all of
    them. Its parts wait on different steps: the log and a drive's drift on
    step 3, so there are launches to log; sending drift notifications on
