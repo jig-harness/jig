@@ -50,9 +50,11 @@ layout, and the checker exits 2 when the parser does not load. Every
 section is read from what the parser returns, so any YAML spelling of it
 counts (`required: [title]` as well as one `- title` line per member). A
 schema that is not valid YAML, or a section of the wrong shape (a `required`
-that is not a list of names, an enum without `values`), fails the check with
-`FAIL <schema> (the schema cannot be used as written)` rather than dropping
-the checks it would have made.
+that is not a list of names, an enum without `values`), is reported as
+`FAIL <schema> (the schema cannot be used as written)` with each problem, and
+the run stops there with exit 2: no document is checked against a vocabulary
+the schema failed to give, since each would only fail that vocabulary's checks
+and bury the errors that say what to fix.
 
 ## Supported YAML subset
 
@@ -158,8 +160,9 @@ so run the checker from the repository root.
 `NEW_DOCS` the files that also need `description`, one path per line (so a
 name may contain spaces); an entry that names none of the files checked is a
 violation, so a list in the wrong shape fails rather than skipping the check. Exit
-codes: 0 all docs valid, 1 at least one violation (or a path rule that cannot
-be evaluated), 2 a missing schema or an unreadable file.
+codes: 0 all docs valid, 1 at least one violation, 2 the check could not run:
+a missing or unreadable schema, a schema that cannot be used as written (a
+path rule that cannot be evaluated included), or an unreadable file.
 
 ```sh
 # explicit files (what hooks/CI pass)

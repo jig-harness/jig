@@ -223,7 +223,7 @@ test("a prefix that matches no document in the tree fails the check", () => {
       cwd: fixtures,
       schema: typo,
     });
-    expect(result.code).toBe(1);
+    expect(result.code).toBe(2);
     expect(result.out).toContain(
       "rule 'archive-holds-archived-docs': path 'docs/archvie/' matches no document in the tree",
     );
@@ -237,7 +237,7 @@ test("a path rule that cannot be evaluated fails the check (fail closed)", () =>
     cwd: fixtures,
     schema: fix("rules-broken.yaml"),
   });
-  expect(result.code).toBe(1);
+  expect(result.code).toBe(2);
   expect(result.out).toContain("the schema cannot be used as written");
   expect(result.out).toContain(
     "rule 'bad-pattern': forbidden_body_patterns[0] pattern does not compile",
@@ -293,7 +293,7 @@ test("a schema section of the wrong shape fails the run instead of dropping its 
   );
   try {
     const result = run([fix("good/caching.md")], { schema: odd });
-    expect(result.code).toBe(1);
+    expect(result.code).toBe(2);
     expect(result.out).toContain("'required' must be a list of names");
   } finally {
     rmSync(odd, { force: true });
@@ -305,7 +305,7 @@ test("a schema that is not valid YAML fails the run", () => {
   writeFileSync(broken, "required: [title\n");
   try {
     const result = run([fix("good/caching.md")], { schema: broken });
-    expect(result.code).toBe(1);
+    expect(result.code).toBe(2);
     expect(result.out).toContain("schema is not valid YAML");
   } finally {
     rmSync(broken, { force: true });
@@ -356,7 +356,7 @@ test("an explicit null section is a schema error, not an omitted one", () => {
       expect(text).toMatch(pattern);
       writeFileSync(nulled, text.replace(pattern, replacement));
       const result = run([fix("good/caching.md")], { schema: nulled });
-      expect(result.code).toBe(1);
+      expect(result.code).toBe(2);
       expect(result.out).toContain(section);
     }
   } finally {
@@ -384,7 +384,7 @@ test("a value YAML loads as an object but not a mapping is a schema error", () =
       expect(text).toMatch(pattern);
       writeFileSync(dated, text.replace(pattern, replacement));
       const result = run([fix("good/caching.md")], { schema: dated });
-      expect(result.code).toBe(1);
+      expect(result.code).toBe(2);
       expect(result.out).toContain(section);
     }
   } finally {
@@ -395,4 +395,28 @@ test("a value YAML loads as an object but not a mapping is a schema error", () =
 test("a schema that cannot be read exits 2, not as a schema violation", () => {
   const result = run([fix("good/caching.md")], { schema: fixtures });
   expect(result.code).toBe(2);
+});
+
+test("a schema with one malformed section reports it alone and checks no document", () => {
+  const odd = join(scratch, "no-values-schema.yaml");
+  writeFileSync(
+    odd,
+    readFileSync(schema, "utf8").replace(
+      /^status:\n {2}values:/m,
+      "status:\n  fields:",
+    ),
+  );
+  try {
+    const result = run([fix("good/caching.md"), fix("bad/broken.md")], {
+      schema: odd,
+    });
+    expect(result.code).toBe(2);
+    expect(result.out.match(/^FAIL /gm)).toHaveLength(1);
+    expect(result.out.match(/^ {2}- /gm)).toHaveLength(1);
+    expect(result.out).toContain("'status.values' must be a non-empty list");
+    expect(result.out).not.toContain("not in schema enum");
+    expect(result.out).not.toContain("broken.md");
+  } finally {
+    rmSync(odd, { force: true });
+  }
 });
