@@ -924,8 +924,9 @@ One pull request each, in this order; each is usable on its own.
    on a Codex account runs the Codex pass command with `CODEX_HOME` set and
    the Claude variables absent; an account of a vendor with no documented
    pass command is reported, never launched; a Codex account is reported,
-   never launched, while the inherited pass deadline is `0`. Waits on step 3 and on step 4
-   for the interactive launch. Usable alone: a drive stopped on a Claude
+   never launched, while the inherited pass deadline is `0`; a Codex pass
+   that outruns a positive deadline is terminated. Waits on step 3 and on
+   step 4 for the interactive launch. Usable alone: a drive stopped on a Claude
    wall restarts on a Codex account.
 
 ## Left out
