@@ -1051,6 +1051,8 @@ make, use the entry's term instead.
   against them before it's ever allowed to block anything.
 - **Review lens** — one additive, numbered check taught to a reviewer (a
   prompt module or checklist bullet), typically born from a documented miss.
+  A repository numbers its own (`LENS-NNN`); a *seed lens*'s `jig.` id
+  (`jig.swallowed-failure`) serves as its number.
 - **Seed lens** — a *review lens* Jig ships rather than one a repository grew
   from its own misses: the review form of one rule a Jig module states, for
   the part of the rule no gate can check.
