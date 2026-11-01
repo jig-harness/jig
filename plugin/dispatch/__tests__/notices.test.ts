@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { type Cause, fitting } from "../lib/actions/notify.ts";
+import type { Workspace } from "../lib/runtime/port.ts";
 import { listsOwn, readBack } from "../lib/followup-marker.ts";
 import { parkNotice } from "../lib/notices.ts";
 import type { DrivenPr, FollowupMarker } from "../lib/types.ts";
@@ -60,4 +62,16 @@ test("a notice key longer than its bound is cut and still tells two keys apart",
   expect(a.key.length).toBeLessThanOrEqual(200);
   expect(a.text.length).toBeLessThanOrEqual(4000);
   expect(a.key).not.toBe(b.key);
+});
+
+test("a notice that does not fit beside an unread comment waits and a later one that fits goes", () => {
+  const cause = (n: number) =>
+    ({ notice: { key: `k${n}`, text: "x".repeat(n) } }) as unknown as Cause;
+  const workspace = {
+    unread: true,
+    comment: `[jig dispatch: old]\n${"y".repeat(15_000)}`,
+  } as unknown as Workspace;
+  const { send, later } = fitting(workspace, [cause(2000), cause(500)]);
+  expect(send.map((c) => c.notice.key)).toEqual(["k500"]);
+  expect(later.map((c) => c.notice.key)).toEqual(["k2000"]);
 });

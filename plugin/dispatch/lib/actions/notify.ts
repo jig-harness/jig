@@ -128,7 +128,7 @@ function takesComment(w: Workspace): boolean {
 }
 
 /** A notification the plan names, with its cause and message. */
-type Cause = Action & { cause: NotifyCause; notice: Notice };
+export type Cause = Action & { cause: NotifyCause; notice: Notice };
 
 function isCause(a: Action): a is Cause {
   return (
@@ -208,21 +208,25 @@ async function noticesWorkspace(
 /** The most characters one comment holds: it travels as one process argument, which a platform bounds. */
 const MAX_COMMENT = 16_000;
 
-/** The causes that fit one comment after the unread text, which is kept whole; the rest wait until it is read. */
-function fitting(
+/** The causes that fit one comment after the unread text, which is kept whole; one that does not fit waits until it is read, and a later one that fits still goes. */
+export function fitting(
   workspace: Workspace,
   causes: Cause[],
 ): { send: Cause[]; later: Cause[] } {
   const unread = workspace.unread && holdsNotice(workspace.comment);
   let used = unread ? workspace.comment.length : 0;
   const send: Cause[] = [];
+  const later: Cause[] = [];
   for (const c of causes) {
     const next = used + c.notice.text.length + 2;
-    if ((unread || send.length > 0) && next > MAX_COMMENT) break;
+    if ((unread || send.length > 0) && next > MAX_COMMENT) {
+      later.push(c);
+      continue;
+    }
     send.push(c);
     used = next;
   }
-  return { send, later: causes.slice(send.length) };
+  return { send, later };
 }
 
 /** The message for a workspace: its comment whole while it is still unread from an earlier notification, then the causes' texts. */
