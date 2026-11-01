@@ -407,15 +407,11 @@ then become a plan item of its own or been dropped.
 
 ### 23. Seed review lenses
 
-M7 says how [review lenses](../GLOSSARY.md) are held but ships none, so
-nothing in `review` checks a change against the rules Jig's own modules
-state. [design/review-lenses.md](review-lenses.md) has how it works:
+`review` runs [review lenses](../GLOSSARY.md) from one file each, and
+ships the seed lens `jig.swallowed-failure` for M15; the other rules Jig's
+modules state that no gate can judge have none yet.
+[design/review-lenses.md](review-lenses.md) has how it works. What is left:
 
-- **The lens contract and the first lens**: one file per lens, selected by
-  what the diff adds or removes, run by `review`'s semantic tier with fresh
-  context, each finding carrying the evidence its lens asks for, and capped
-  at a warning; `review.lenses` configuration; `jig.swallowed-failure` for
-  M15.
 - **`jig.test-gap`** for M14.
 - **`jig.stale-comment`**, after M4 gains its rule for comments in code.
 - **`jig.type-invariants`**, after M15 gains its rule for types.

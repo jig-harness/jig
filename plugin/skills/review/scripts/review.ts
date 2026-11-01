@@ -28,6 +28,17 @@ import {
 import { layeredConfig } from "../../../shared/consumer.ts";
 import { run, type RunOptions, type RunResult } from "../../../shared/proc.ts";
 import { withoutTracePropagation } from "../../../shared/trace.ts";
+import {
+  changedPaths,
+  effectiveDiff,
+  type Git,
+  gitVersionProblem,
+  nulSeparated,
+  requireExisting,
+} from "./effective-diff.ts";
+import { instructionFiles, lensBrief } from "./lens-brief.ts";
+import { parseLens, realInside } from "./lens-file.ts";
+import { renderSelection, type Selection } from "./lens-selection.ts";
 
 class ReviewError extends Error {
   override name = "ReviewError";
@@ -35,9 +46,11 @@ class ReviewError extends Error {
 
 interface Session {
   root: string;
+  remote: string;
   base: string;
   baseTree: string;
   files: string;
+  diff: string;
   bunfig: string;
 }
 function inside(root: string, path: string): boolean {
@@ -102,8 +115,12 @@ function policyEnvironment(state: Session): Record<string, string> {
     JIG_USER_LAYER: "off",
   };
 }
-function assertCompleted(child: RunResult, label: string): void {
-  if (child.code !== 0)
+function assertCompleted(
+  child: RunResult,
+  label: string,
+  accept: readonly number[] = [0],
+): void {
+  if (!accept.includes(child.code) || child.signal !== undefined)
     throw new ReviewError(`${label} failed: ${childFailureOutput(child)}`);
   if (child.groupSurvived)
     throw new ReviewError(
@@ -113,13 +130,20 @@ function assertCompleted(child: RunResult, label: string): void {
 function childFailureOutput(child: RunResult): string {
   return child.stderr || child.stdout || String(child.code);
 }
-async function call(argv: string[], options: RunOptions): Promise<string> {
+async function execute(
+  argv: string[],
+  options: RunOptions,
+  accept: readonly number[] = [0],
+): Promise<RunResult> {
   const child = await withoutTracePropagation(() =>
-    run(argv, { ...options, timeoutSec: 60 }),
+    run(argv, { timeoutSec: 60, ...options }),
   );
-  assertCompleted(child, `${argv[0] ?? ""} ${argv[1] ?? ""}`);
+  assertCompleted(child, `${argv[0] ?? ""} ${argv[1] ?? ""}`, accept);
   if (child.stderr) process.stderr.write(child.stderr);
-  return child.stdout;
+  return child;
+}
+async function call(argv: string[], options: RunOptions): Promise<string> {
+  return (await execute(argv, options)).stdout;
 }
 /**
  * What git and gh need to reach a remote: the SSH agent, proxies, certificate
@@ -154,10 +178,16 @@ function toolEnvironment(root: string): Record<string, string> {
   return env;
 }
 async function git(root: string, ...args: string[]): Promise<string> {
-  return call(["git", ...args], {
-    cwd: root,
-    env: toolEnvironment(root),
-  });
+  return (await gitIn(root)(args, [0])).stdout;
+}
+/** Git in the reviewed tree, accepting the exit statuses each call names. */
+function gitIn(root: string): Git {
+  return (args, accept) =>
+    execute(
+      ["git", ...args],
+      { cwd: root, env: toolEnvironment(root) },
+      accept,
+    );
 }
 /** Locate the checkout without executing a program from an unchecked PATH. */
 function reviewedRoot(): string {
@@ -174,17 +204,18 @@ function required(value: string | undefined, label: string): string {
   if (!value) throw new ReviewError(`${label} is required`);
   return value;
 }
-function paths(text: string): string[] {
-  if (text && !text.endsWith("\0"))
-    throw new ReviewError("effective file list is not NUL terminated");
-  return text.split("\0").filter(Boolean);
-}
 function isReviewedRelativePath(root: string, path: string): boolean {
   return path !== "" && !isAbsolute(path) && inside(root, resolve(root, path));
 }
 function validatePath(root: string, path: string): void {
   if (/[\r\n\0]/.test(path))
     throw new ReviewError("a review path contains a newline or NUL");
+  // `join` and `resolve` collapse `..` before a link in front of it is
+  // followed, while git follows the link first.
+  if (path.split(/[\\/]/).includes(".."))
+    throw new ReviewError(
+      `review path must not contain ".." segments: ${path}`,
+    );
   if (!isReviewedRelativePath(root, path))
     throw new ReviewError(
       `review path must stay relative to the repository: ${path}`,
@@ -194,14 +225,17 @@ function readState(file: string): Session {
   const value = decodeJson(readFileSync(file, "utf8"), isRecord, file);
   return {
     root: field(value, "root", isString),
+    remote:
+      value.remote === undefined ? "origin" : field(value, "remote", isString),
     base: field(value, "base", isString),
     baseTree: field(value, "baseTree", isString),
     files: field(value, "files", isString),
+    diff: field(value, "diff", isString),
     bunfig: field(value, "bunfig", isString),
   };
 }
 function fileList(state: Session): string[] {
-  const list = paths(readFileSync(state.files, "utf8"));
+  const list = nulSeparated(readFileSync(state.files, "utf8"));
   for (const path of list) validatePath(state.root, path);
   return list;
 }
@@ -245,41 +279,59 @@ async function policy(
 
 interface SetupOptions {
   pr: string | undefined;
+  base: string | undefined;
+  remote: string | undefined;
   files: string[] | undefined;
 }
 interface SessionFiles {
   directory: string;
   baseTree: string;
   files: string;
+  diff: string;
   emptyConfig: string;
 }
-function invalidSetupArgument(
-  arg: string,
-  index: number,
-  end: number,
-  prIndex: number,
-): boolean {
-  if (index >= end) return false;
-  if (arg === "--pr") return false;
-  return prIndex < 0 || index !== prIndex + 1;
+const SETUP_USAGE =
+  "setup accepts --pr <number> or --base <branch>, optionally --remote <name>, then --files <paths...>";
+const SETUP_FLAGS: Record<string, "pr" | "base" | "remote"> = {
+  "--pr": "pr",
+  "--base": "base",
+  "--remote": "remote",
+};
+/** The flags before `--files`, and the paths after it. */
+function splitFiles(args: string[]): {
+  flags: string[];
+  files: string[] | undefined;
+} {
+  const at = args.indexOf("--files");
+  return at < 0
+    ? { flags: args, files: undefined }
+    : { flags: args.slice(0, at), files: args.slice(at + 1) };
+}
+function setupFlag(
+  flag: string | undefined,
+  given: string | undefined,
+): ["pr" | "base" | "remote", string] {
+  const key = SETUP_FLAGS[String(flag)];
+  const value = required(given, `${flag} value`);
+  if (key === undefined || value.startsWith("-"))
+    throw new ReviewError(SETUP_USAGE);
+  return [key, value];
 }
 function setupOptions(args: string[]): SetupOptions {
-  const prIndex = args.indexOf("--pr");
-  const pr =
-    prIndex < 0 ? undefined : required(args[prIndex + 1], "--pr number");
-  const fileIndex = args.indexOf("--files");
-  if (
-    args.some((arg, i) =>
-      invalidSetupArgument(
-        arg,
-        i,
-        fileIndex < 0 ? args.length : fileIndex,
-        prIndex,
-      ),
-    )
-  )
-    throw new ReviewError("setup accepts --pr <number> and --files <paths...>");
-  return { pr, files: fileIndex < 0 ? undefined : args.slice(fileIndex + 1) };
+  const { flags, files } = splitFiles(args);
+  const options: SetupOptions = {
+    pr: undefined,
+    base: undefined,
+    remote: undefined,
+    files,
+  };
+  for (let i = 0; i < flags.length; i += 2) {
+    const [key, value] = setupFlag(flags[i], flags[i + 1]);
+    options[key] = value;
+  }
+  if (options.pr !== undefined && options.base !== undefined)
+    throw new ReviewError(SETUP_USAGE);
+  return options;
 }
 function createSessionFiles(root: string): SessionFiles {
   const directory = mkdtempSync(join(tmpdir(), "jig-review-"));
@@ -287,6 +339,7 @@ function createSessionFiles(root: string): SessionFiles {
     directory,
     baseTree: join(directory, "base"),
     files: join(directory, "effective-files.nul"),
+    diff: join(directory, "effective.diff"),
     emptyConfig: join(directory, "empty-bunfig.toml"),
   };
   writeFileSync(files.emptyConfig, "");
@@ -302,7 +355,28 @@ async function gh(root: string, ...args: string[]): Promise<string> {
     env: toolEnvironment(root),
   });
 }
-async function defaultBranch(root: string): Promise<string> {
+/**
+ * The selected remote's repository as gh names it, so a lookup never reads
+ * the working directory's own. Null when the remote's address is not an
+ * `owner/repo` path (a local path, for one), where gh's default stands.
+ */
+async function remoteRepository(
+  root: string,
+  remote: string,
+): Promise<string | null> {
+  const address = (
+    await gitIn(root)(["config", "--get", `remote.${remote}.url`], [0, 1])
+  ).stdout.trim();
+  const found =
+    /^(?:https?|ssh|git):\/\/(?:[^@/]*@)?([^/:]+)(?::\d+)?\/(.+?)(?:\.git)?\/*$/i.exec(
+      address,
+    ) ?? /^(?:[^@/\s]+@)?([^:/\s]+):(?!\/\/)(.+?)(?:\.git)?\/*$/.exec(address);
+  const path = found?.[2];
+  if (!found?.[1] || !path || !/^[^/]+\/[^/]+$/.test(path)) return null;
+  const host = found[1].toLowerCase();
+  return host === "github.com" ? path : `${host}/${path}`;
+}
+async function defaultBranch(root: string, remote: string): Promise<string> {
   let branch: string;
   try {
     branch = (
@@ -311,17 +385,19 @@ async function defaultBranch(root: string): Promise<string> {
         "symbolic-ref",
         "--quiet",
         "--short",
-        "refs/remotes/origin/HEAD",
+        `refs/remotes/${remote}/HEAD`,
       )
     )
       .trim()
-      .replace(/^origin\//, "");
+      .replace(`${remote}/`, "");
   } catch {
+    const repository = await remoteRepository(root, remote);
     branch = (
       await gh(
         root,
         "repo",
         "view",
+        ...(repository ? [repository] : []),
         "--json",
         "defaultBranchRef",
         "-q",
@@ -341,25 +417,27 @@ function configuredBase(
 }
 async function resolveBase(
   root: string,
+  remote: string,
   pr: string | undefined,
 ): Promise<string> {
-  const branch = await defaultBranch(root);
-  await git(root, "fetch", "origin", branch);
+  const branch = await defaultBranch(root, remote);
+  await git(root, "fetch", remote, branch);
   const overlayPath = ".config/jig.yaml";
   const exists = (
     await git(
       root,
       "ls-tree",
       "--name-only",
-      `origin/${branch}`,
+      `${remote}/${branch}`,
       "--",
       overlayPath,
     )
   ).trim();
   const overlay = exists
-    ? await git(root, "show", `origin/${branch}:${overlayPath}`)
+    ? await git(root, "show", `${remote}/${branch}:${overlayPath}`)
     : null;
   const config = layeredConfig(root, { JIG_USER_LAYER: "off" }, overlay).values;
+  const repository = pr ? await remoteRepository(root, remote) : null;
   return pr
     ? (
         await gh(
@@ -367,6 +445,7 @@ async function resolveBase(
           "pr",
           "view",
           pr,
+          ...(repository ? ["-R", repository] : []),
           "--json",
           "baseRefName",
           "-q",
@@ -375,37 +454,60 @@ async function resolveBase(
       ).trim()
     : configuredBase(config, branch);
 }
-async function collectFiles(
+interface EffectiveChange {
+  list: string[];
+  diff: string;
+}
+function distinctSorted(paths: readonly string[]): string[] {
+  return [...new Set(paths)].sort(byCodeUnit);
+}
+/**
+ * The effective file list and diff. Explicit files are each compared with
+ * nothing, so every line counts as added; otherwise every change since the
+ * merge base, committed, staged, unstaged and untracked.
+ */
+async function collectChange(
   root: string,
+  remote: string,
   base: string,
   explicit: string[] | undefined,
-): Promise<string[]> {
+): Promise<EffectiveChange> {
   const mergeBase = (
-    await git(root, "merge-base", `origin/${base}`, "HEAD")
+    await git(root, "merge-base", `${remote}/${base}`, "HEAD")
   ).trim();
-  const selected = explicit ?? [
-    ...paths(
-      await git(root, "diff", "--no-renames", "--name-only", "-z", mergeBase),
-    ),
-    ...paths(
-      await git(root, "ls-files", "--others", "--exclude-standard", "-z"),
-    ),
-  ];
-  for (const path of selected) validatePath(root, path);
-  return [...new Set(selected)].sort(byCodeUnit);
+  if (explicit) {
+    for (const path of explicit) validatePath(root, path);
+    requireExisting(root, explicit);
+    const list = distinctSorted(explicit);
+    return {
+      list,
+      diff: await effectiveDiff(gitIn(root), mergeBase, [], list),
+    };
+  }
+  const { tracked, untracked } = await changedPaths(gitIn(root), mergeBase);
+  for (const path of [...tracked, ...untracked]) validatePath(root, path);
+  return {
+    list: distinctSorted([...tracked, ...untracked]),
+    diff: await effectiveDiff(gitIn(root), mergeBase, tracked, untracked),
+  };
 }
 function saveSession(
   root: string,
+  remote: string,
   base: string,
   files: SessionFiles,
-  list: string[],
+  change: EffectiveChange,
 ): void {
+  const list = change.list;
   writeFileSync(files.files, list.length ? `${list.join("\0")}\0` : "");
+  writeFileSync(files.diff, change.diff);
   const state: Session = {
     root,
+    remote,
     base,
     baseTree: files.baseTree,
     files: files.files,
+    diff: files.diff,
     bunfig: existsSync(join(files.baseTree, "bunfig.toml"))
       ? join(files.baseTree, "bunfig.toml")
       : files.emptyConfig,
@@ -415,29 +517,37 @@ function saveSession(
   writeFileSync(session, `${JSON.stringify(state)}\n`);
   console.log(JSON.stringify({ session, ...state }));
 }
+/** Stop before anything is created when git cannot pin the diff's attributes. */
+async function requireGitVersion(root: string): Promise<void> {
+  const problem = gitVersionProblem(await git(root, "--version"));
+  if (problem) throw new ReviewError(problem);
+}
 async function setup(args: string[]): Promise<void> {
   const options = setupOptions(args);
   const root = reviewedRoot();
   checkedHostEnvironment(root);
+  await requireGitVersion(root);
   const files = createSessionFiles(root);
   let attached = false;
   try {
-    const base = await resolveBase(root, options.pr);
-    await git(root, "fetch", "origin", base);
+    const remote = options.remote ?? "origin";
+    const base = options.base ?? (await resolveBase(root, remote, options.pr));
+    await git(root, "fetch", remote, base);
     await git(
       root,
       "worktree",
       "add",
       "--detach",
       files.baseTree,
-      `origin/${base}`,
+      `${remote}/${base}`,
     );
     attached = true;
     saveSession(
       root,
+      remote,
       base,
       files,
-      await collectFiles(root, base, options.files),
+      await collectChange(root, remote, base, options.files),
     );
   } catch (error) {
     if (attached)
@@ -577,15 +687,99 @@ async function printTrailers(state: Session): Promise<void> {
     state.root,
     "log",
     "--format=%h %(trailers:key=Ratchet-Loosen,valueonly,separator=%x2C )",
-    `origin/${state.base}..HEAD`,
+    `${state.remote}/${state.base}..HEAD`,
   );
   for (const line of output.split("\n"))
     if (line && !/^[0-9a-f]+\s*$/.test(line)) console.log(line);
+}
+/** Where the lens step keeps the selection the briefs are written from. */
+function selectionFile(state: Session): string {
+  return join(dirname(state.files), "lenses.json");
+}
+function isSelection(value: unknown): value is Selection {
+  return isRecord(value) && Array.isArray(value.lenses);
+}
+/**
+ * Select the lenses inside the base snapshot, keep the selection for the
+ * briefs, and print one line per lens. A configuration error stops here.
+ */
+async function selectLenses(state: Session, args: string[]): Promise<void> {
+  if (args.some((arg) => !/^--lens=.+$/.test(arg)))
+    throw new ReviewError("lenses accepts only --lens=<id>");
+  const json = await policy(state, join(import.meta.dir, "select-lenses.ts"), [
+    state.files,
+    state.diff,
+    "--json",
+    ...args,
+  ]);
+  const selection = decodeJson(json, isSelection, "select-lenses output");
+  writeFileSync(selectionFile(state), json);
+  process.stdout.write(renderSelection(selection));
+}
+/** Write the brief one selected lens's reviewer runs from, and print its path. */
+function writeBrief(state: Session, args: string[]): void {
+  const id = required(args[0], "lens id");
+  if (!existsSync(selectionFile(state)))
+    throw new ReviewError(
+      "select the lenses first: review.ts lenses <session>",
+    );
+  const selection = decodeJson(
+    readFileSync(selectionFile(state), "utf8"),
+    isSelection,
+    "the saved lens selection",
+  );
+  const chosen = selection.lenses.find((lens) => lens.id === id && lens.runs);
+  if (!chosen) throw new ReviewError(`${id} is not a lens this selection runs`);
+  if (
+    chosen.source === "repository" &&
+    !realInside(state.baseTree, chosen.file)
+  )
+    throw new ReviewError(`lens file leaves the base snapshot: ${chosen.file}`);
+  const lensText = readFileSync(chosen.file, "utf8");
+  const lens = parseLens(lensText, chosen.file, chosen.source);
+  const list = fileList(state);
+  const brief = lensBrief({
+    label: `${lens.id}@${lens.version}`,
+    lensText,
+    evidence: lens.evidence,
+    reviewedRoot: state.root,
+    touched: list
+      .map((file) => join(state.root, file))
+      .filter((path) => existsSync(path) && realInside(state.root, path)),
+    instructions: instructionFiles(state.baseTree, list),
+    diff: readFileSync(state.diff, "utf8"),
+    earlier: args[1] === undefined ? null : readFileSync(args[1], "utf8"),
+  });
+  const path = join(dirname(state.files), `brief-${lens.id}.md`);
+  writeFileSync(path, brief);
+  console.log(path);
+}
+/** How long one lens's agent run may take before it is cancelled. */
+const AGENT_DEADLINE_SECONDS = 1800;
+/**
+ * Run one brief through the harness's agent command, started inside the
+ * base snapshot with the enumerated environment, the brief on its stdin.
+ */
+async function runAgent(state: Session, args: string[]): Promise<void> {
+  const brief = required(args[0], "brief file");
+  const command = args.slice(1);
+  required(command[0], "agent command");
+  const child = await execute(command, {
+    cwd: state.baseTree,
+    env: policyEnvironment(state),
+    stdin: readFileSync(brief, "utf8"),
+    reapGroup: true,
+    timeoutSec: AGENT_DEADLINE_SECONDS,
+  });
+  process.stdout.write(child.stdout);
 }
 const operations: Record<
   string,
   (state: Session, args: string[]) => void | Promise<void>
 > = {
+  lenses: selectLenses,
+  brief: writeBrief,
+  agent: runAgent,
   cleanup,
   files: printFiles,
   locate: locateRules,
@@ -604,7 +798,7 @@ async function main(): Promise<void> {
   const operation = operations[command ?? ""];
   if (!operation)
     throw new ReviewError(
-      "expected setup, files, locate, config, check, run, catalog, patterns, trailers or cleanup",
+      "expected setup, files, locate, config, check, run, catalog, patterns, trailers, lenses, brief, agent or cleanup",
     );
   await operation(state, operationArgs);
 }

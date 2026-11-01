@@ -200,6 +200,25 @@ describe("what the repository configures or lacks", () => {
     expect(status(json(run.stdout), "last_updated")).toBe("failed");
   });
 
+  test("a schema that cannot be used makes the frontmatter check fail, not report findings", () => {
+    const root = repository({
+      "docs/.frontmatter-schema.yaml": SCHEMA.replace(
+        /^status:\n {2}values:/m,
+        "status:\n  fields:",
+      ),
+      "docs/a.md": doc({ status: "approved" }),
+      "docs/b.md": doc({ status: "draft" }),
+    });
+    const run = runDocs(root, ["--json"], TODAY);
+    expectSpawnExit(run, 2);
+    const report = json(run.stdout);
+    expect(status(report, "frontmatter")).toBe("failed");
+    expect(about(report, "frontmatter")).toEqual([]);
+    expect(
+      report.checks.find((c) => c.name === "frontmatter")?.detail,
+    ).toContain("'status.values' must be a non-empty list of values");
+  });
+
   test("a check that cannot run wins over another check's error", () => {
     const run = runDocs(governedService(), ["--json", "--base", "no-such-ref"]);
     expectSpawnExit(run, 2);
