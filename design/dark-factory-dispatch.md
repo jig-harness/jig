@@ -533,8 +533,11 @@ admitted. An interactive session is launched as that vendor's Orca agent.
 These differences travel with the session, not the dispatcher: the
 review-arbiter agent exists only in Claude Code, and a Codex session uses
 the substitute the plugin documents; the turn-budget hook counts nothing
-under Codex, so a Codex pass has no turn cap of its own, and the
-expectations in Control are its backstop. A Codex wall is recorded as a
+under Codex, so a Codex pass has no turn cap of its own; a pass that
+runs on without finishing is bounded by the drive's pass deadline
+(`DRIVE_PR_PASS_TIMEOUT`), which kills it whatever its vendor, and
+Control's drive expectation, which compares rounds, sees the passes that
+do finish. A Codex wall is recorded as a
 Claude one is, by the drive's quota adapter for the vendor, keyed by the
 account; binding the pass through the account's own configuration
 directory is what lets the adapter attribute the wall to that account,
@@ -916,9 +919,8 @@ One pull request each, in this order; each is usable on its own.
    agent's state) are made for Codex on the host. Tests: a re-arm admitted
    on a Codex account runs the Codex pass command with `CODEX_HOME` set and
    the Claude variables absent; an account of a vendor with no documented
-   pass command is reported, never launched. Waits on step 3, on step 4
-   for the interactive launch, and on step 6's expectations, the backstop
-   for a Codex pass's missing turn cap. Usable alone: a drive stopped on a Claude
+   pass command is reported, never launched. Waits on step 3 and on step 4
+   for the interactive launch. Usable alone: a drive stopped on a Claude
    wall restarts on a Codex account.
 
 ## Left out

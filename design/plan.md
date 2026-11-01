@@ -115,7 +115,10 @@ account's wall reopened gets exactly one "continue" nudge, a converged pull
 request that now conflicts with its base or whose head moved past the one
 the drive verified is re-armed once, one still at the verified head and
 mergeable is left alone, and one whose mergeability the forge is still
-computing is reported unplaced with no launch.
+computing is reported unplaced with no launch, a drive stopped on a Claude
+account's wall is re-armed on a Codex account with `CODEX_HOME` bound and
+the Claude variables absent, and an account of a vendor with no documented
+pass command is reported and never launched.
 
 ### 35. One jig command line
 
