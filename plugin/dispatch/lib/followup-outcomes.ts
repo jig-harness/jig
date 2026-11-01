@@ -23,6 +23,8 @@ export interface FollowupOutcome {
   record: string;
   outcome: "done" | "failed";
   at: string;
+  /** When that launch record was created; absent in a record written before it was kept. */
+  created?: string;
 }
 
 function outcomesRoot(root: string): string {
@@ -41,41 +43,78 @@ function isOutcome(value: unknown): value is FollowupOutcome {
     typeof value.pr === "number" &&
     typeof value.record === "string" &&
     (value.outcome === "done" || value.outcome === "failed") &&
-    typeof value.at === "string"
+    typeof value.at === "string" &&
+    (value.created === undefined || typeof value.created === "string")
   );
 }
 
-/** The outcome records of `repo`, by pull request; one that does not read is left out. */
-export function readOutcomes(
+/** The outcome files under the root: those of `repo` that read, and the pull requests whose file does not. */
+function scanOutcomes(
   repo: string,
-  root = stateRoot(),
-): Map<number, FollowupOutcome> {
-  const out = new Map<number, FollowupOutcome>();
+  root: string,
+): { read: Map<number, FollowupOutcome>; unreadable: Set<number> } {
+  const read = new Map<number, FollowupOutcome>();
+  const unreadable = new Set<number>();
   let names: string[];
   try {
     names = readdirSync(outcomesRoot(root));
   } catch (error) {
     swallow(error, "no follow-up outcome has been written yet");
-    return out;
+    return { read, unreadable };
   }
+  const prefix = `${repo.replace(/[^A-Za-z0-9._-]/g, "__")}-`;
   for (const name of names) {
     if (!name.endsWith(".json")) continue;
+    // The file name carries the repository and pull request, so a file that does not read still names its pull request.
+    const named = name.startsWith(prefix)
+      ? /^(\d+)\.json$/.exec(name.slice(prefix.length))
+      : null;
     try {
       const value: unknown = JSON.parse(
         readFileSync(join(outcomesRoot(root), name), "utf8"),
       );
-      if (isOutcome(value) && value.repo === repo) out.set(value.pr, value);
+      if (isOutcome(value)) {
+        if (value.repo === repo) read.set(value.pr, value);
+      } else if (named !== null) unreadable.add(Number(named[1]));
     } catch (error) {
       swallow(error, `${name} is not a follow-up outcome`);
+      if (named !== null) unreadable.add(Number(named[1]));
     }
   }
-  return out;
+  return { read, unreadable };
+}
+
+/** The outcome records of `repo`, by pull request; one that does not read is left out (see `unreadableOutcomes`). */
+export function readOutcomes(
+  repo: string,
+  root = stateRoot(),
+): Map<number, FollowupOutcome> {
+  return scanOutcomes(repo, root).read;
+}
+
+/** The pull requests of `repo` whose outcome file exists and does not read: their outcome is unknown, not absent. */
+export function unreadableOutcomes(
+  repo: string,
+  root = stateRoot(),
+): Set<number> {
+  return scanOutcomes(repo, root).unreadable;
 }
 
 /** How an ended follow-up record ended: its session's recorded result, else failed. */
 export function outcomeOf(r: ReadRecord): "done" | "failed" | null {
   if (r.state.kind !== "ended" && r.state.kind !== "died") return null;
   return r.result === "done" ? "done" : "failed";
+}
+
+/** Whether the written outcome belongs to an attempt later than `record`. */
+function supersedes(
+  written: FollowupOutcome,
+  record: { id: string; createdAt: string },
+): boolean {
+  const a = Date.parse(written.created ?? "");
+  const b = Date.parse(record.createdAt);
+  if (Number.isFinite(a) && Number.isFinite(b) && a !== b) return a > b;
+  return written.record > record.id;
 }
 
 /**
@@ -99,8 +138,8 @@ export function settleFollowups(
     }
     const written = outcomes.get(record.pr);
     if (written?.record === record.id && written.outcome === outcome) continue;
-    // A later attempt's outcome stands over an earlier record that ends after it.
-    if (written !== undefined && written.record > record.id) continue;
+    // A later attempt's outcome stands over an earlier record that ends after it: ordered by when the record was created, the ids only break a tie (their suffix is random within a second).
+    if (written !== undefined && supersedes(written, record)) continue;
     const value: FollowupOutcome = {
       version: 1,
       repo: record.repo,
@@ -108,6 +147,7 @@ export function settleFollowups(
       record: record.id,
       outcome,
       at: new Date().toISOString(),
+      created: record.createdAt,
     };
     mkdirSync(outcomesRoot(root), { recursive: true, mode: 0o700 });
     writeWhole(

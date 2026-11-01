@@ -34,6 +34,8 @@ export interface FollowupInput {
   merged: MarkedPr[];
   launches: ReadRecord[];
   outcomes: ReadonlyMap<number, FollowupOutcome>;
+  /** The pull requests whose outcome file does not read: unknown, not absent. */
+  unreadableOutcomes?: ReadonlySet<number>;
   nowMs: number;
 }
 
@@ -112,6 +114,18 @@ function planTickMarker(
       stage: "followup",
       reason: `launch record ${id} (${found.state.kind}) holds its follow-up, claimed by marker comment ${marker.id}`,
       evidence: { record: id, marker: marker.id },
+    });
+    return;
+  }
+  if (
+    ended === null &&
+    found === undefined &&
+    input.unreadableOutcomes?.has(pr.number) === true
+  ) {
+    plan.unplaced.push({
+      target,
+      record: "forge",
+      reason: `marker comment ${marker.id} names launch record ${id}, which is gone, and the pull request's outcome file does not read: its result is unknown, a person settles it`,
     });
     return;
   }

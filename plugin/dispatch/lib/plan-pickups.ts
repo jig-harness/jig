@@ -66,7 +66,7 @@ function sessionsFor(
   item: string,
   held: Holding,
   launches: ReadRecord[],
-): { count: number; evidence: string } {
+): { count: number; evidence: string; who: string } {
   const live = held.kind === "running" ? held.workspaces : [];
   const paths = new Set(live.map((w) => w.path));
   const outside = holdingRecords(item, launches).filter(
@@ -79,7 +79,17 @@ function sessionsFor(
         `launch record ${r.record.id} (${r.state.kind}) in ${r.record.workspace?.path ?? "no workspace yet"}`,
     ),
   ];
-  return { count: live.length + outside.length, evidence: parts.join("; ") };
+  const who = [
+    ...live.map((w) => `workspace ${w.id}`),
+    ...outside.map((r) => `record ${r.record.id}`),
+  ]
+    .sort()
+    .join(", ");
+  return {
+    count: live.length + outside.length,
+    evidence: parts.join("; "),
+    who,
+  };
 }
 
 function doubleClaim(
@@ -87,6 +97,7 @@ function doubleClaim(
   item: { key: string; state: string },
   count: number,
   evidence: string,
+  who: string,
 ): Action {
   const reason = `double claim: ${count} running sessions join to it, so nothing starts for it`;
   return {
@@ -98,7 +109,7 @@ function doubleClaim(
     cause: "double-claim",
     notice: pickupNotice(
       slug,
-      `${item.key} double claim, in ${item.state}`,
+      `${item.key} double claim, in ${item.state}, between ${who}`,
       `${item.key} ${reason} (${evidence}); a person settles which session keeps it`,
     ),
   };
@@ -122,9 +133,9 @@ export function planPickups(input: PickupInput): PickupPlan {
 
   for (const item of input.pickups) {
     const held = holding(sessions, joined(item.key));
-    const { count, evidence } = sessionsFor(item.key, held, launches);
+    const { count, evidence, who } = sessionsFor(item.key, held, launches);
     if (count > 1) {
-      plan.actions.push(doubleClaim(input.slug, item, count, evidence));
+      plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
       continue;
     }
     const hold = pickupHold(item.key, launches);
@@ -192,9 +203,9 @@ function planClaimed(
   joined: (w: Workspace) => boolean,
 ): void {
   const held = holding(input.sessions, joined);
-  const { count, evidence } = sessionsFor(item.key, held, input.launches);
+  const { count, evidence, who } = sessionsFor(item.key, held, input.launches);
   if (count > 1) {
-    plan.actions.push(doubleClaim(input.slug, item, count, evidence));
+    plan.actions.push(doubleClaim(input.slug, item, count, evidence, who));
     return;
   }
   if (count === 1) {

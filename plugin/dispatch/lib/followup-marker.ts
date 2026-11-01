@@ -182,3 +182,11 @@ export function earlierThan(
 ): FollowupMarker | null {
   return trustedMarkers(markers).find((m) => m.id < own) ?? null;
 }
+
+/** Whether the read-back lists marker `id` as a trusted marker: a listing that lags behind the post does not. */
+export function listsOwn(
+  markers: readonly FollowupMarker[],
+  id: number,
+): boolean {
+  return trustedMarkers(markers).some((m) => m.id === id);
+}

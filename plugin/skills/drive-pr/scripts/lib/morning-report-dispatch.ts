@@ -11,7 +11,7 @@
 import { readReceipt, receiptPaths } from "../../../../dispatch/receipts.ts";
 
 export interface DispatchEntry {
-  /** When the tick that did it started. */
+  /** When the tick that did it started (a tick enters the report when its receipt is published, at its end). */
   at: string;
   /** The repository's `owner/name`, or its path when the tick could not name it. */
   repo: string;
@@ -68,6 +68,34 @@ function noticeEntry(n: Notification): [string, Part] | null {
   ];
 }
 
+/** The entries of a receipt's list; a list that is missing or an entry that is not an object (the receipt parsed, its lists were not checked) yields none, and `readable` says so. */
+function entriesOf<T>(
+  list: readonly T[] | undefined,
+  entry: (item: T) => [string, Part] | null,
+): Array<[string, Part] | null> {
+  if (!Array.isArray(list)) return [];
+  return list.map((item) =>
+    typeof item === "object" && item !== null ? entry(item) : null,
+  );
+}
+
+/** Whether the lists this report reads are lists of objects. A receipt written before notifications were sent has no `notifications`. */
+function readable(repo: Repo): boolean {
+  const ok = (list: unknown) =>
+    list === undefined ||
+    (Array.isArray(list) &&
+      list.every((item) => typeof item === "object" && item !== null));
+  return (
+    Array.isArray(repo.launches) && ok(repo.launches) && ok(repo.notifications)
+  );
+}
+
+/** When a tick's receipt became readable: its end, since the receipt is written after every repository finished. */
+function publishedAt(receipt: Receipt): number {
+  const end = Date.parse(receipt.finishedAt);
+  return Number.isFinite(end) ? end : Date.parse(receipt.startedAt);
+}
+
 /** One repository's entries in one receipt. */
 function repoEntries(
   receipt: Receipt,
@@ -76,8 +104,8 @@ function repoEntries(
   const name = repo.slug ?? repo.path;
   // A receipt written before notifications were sent has none.
   const parts = [
-    ...repo.launches.map((l) => launchEntry(l, receipt.runId)),
-    ...(repo.notifications ?? []).map(noticeEntry),
+    ...entriesOf(repo.launches, (l) => launchEntry(l, receipt.runId)),
+    ...entriesOf(repo.notifications, noticeEntry),
   ];
   return parts
     .filter((p): p is [string, Part] => p !== null)
@@ -105,10 +133,17 @@ export function dispatchSince(since: number, root?: string): DispatchSince {
     const receipt = readReceipt(path);
     if (receipt === null)
       unread.push(`the dispatch receipt ${path} does not read`);
-    else if (Date.parse(receipt.startedAt) >= since)
-      for (const repo of receipt.repos)
+    else if (publishedAt(receipt) >= since)
+      for (const repo of receipt.repos) {
+        if (!readable(repo)) {
+          unread.push(
+            `the dispatch receipt ${path} has a repository entry whose launches or notifications do not read`,
+          );
+          continue;
+        }
         for (const [key, entry] of repoEntries(receipt, repo))
           entries.set(key, entry);
+      }
   }
   return {
     entries: [...entries.values()].sort((a, b) => a.at.localeCompare(b.at)),

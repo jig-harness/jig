@@ -33,7 +33,11 @@ import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
 import { lastAccount, slotTable } from "./lib/accounts.ts";
 import { readMarkers } from "./lib/followup-marker.ts";
-import { readOutcomes, settleFollowups } from "./lib/followup-outcomes.ts";
+import {
+  readOutcomes,
+  settleFollowups,
+  unreadableOutcomes,
+} from "./lib/followup-outcomes.ts";
 import { readIdle, updateIdle } from "./lib/idle.ts";
 import {
   pruneLaunches,
@@ -396,6 +400,7 @@ function planRepo(
   const plan = planTick({
     ...input,
     outcomes: readOutcomes(repo),
+    unreadableOutcomes: unreadableOutcomes(repo),
     launches: records,
     idleSince: readIdle(repo),
     nowMs,

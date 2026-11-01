@@ -167,37 +167,80 @@ function outcomeFor(
   };
 }
 
-/** The repository's notices workspace: the one on `NOTICES_BRANCH`, else opened now. */
+const NO_JOIN = { keys: null, branchPattern: "", pullRequests: [] } as const;
+
+/** Why a workspace on the notices branch must not be written; `null` when it takes the message. */
+function noticesBlocked(w: Workspace): string | null {
+  return takesComment(w)
+    ? null
+    : `the workspace on ${NOTICES_BRANCH} (${w.path}) holds a comment that is not the dispatcher's, which a notification would overwrite`;
+}
+
+/** The repository's notices workspace: the one on `NOTICES_BRANCH`, else opened now; its comment is read before it is adopted. */
 async function noticesWorkspace(
   state: ApplyState,
   repo: RepoTarget,
   workspaces: Workspace[],
 ): Promise<Workspace | string> {
   const found = workspaces.find((w) => w.branch === NOTICES_BRANCH);
-  if (found !== undefined) return found;
+  if (found !== undefined) return noticesBlocked(found) ?? found;
   const opened = await openWithinBudget(state, repo, {
     notices: NOTICES_BRANCH,
   });
   if ("waits" in opened) return opened.waits;
   if ("refused" in opened)
     return `the notices workspace could not be opened: ${opened.refused}`;
-  return {
-    ...opened.workspace,
-    branch: NOTICES_BRANCH,
-    items: [],
-    prs: [],
-    agents: [],
-    unverifiableTerminals: 0,
-    comment: "",
-    unread: false,
-  };
+  // Opening reattaches a workspace that already holds the branch: its comment is read again, not assumed empty.
+  let again: SessionsReport;
+  try {
+    again = await state.runtime.sessions(repo, NO_JOIN);
+  } catch (error) {
+    return `the notices workspace opened, and its comment could not be read: ${failureText(error)}`;
+  }
+  if (!again.ok)
+    return `the notices workspace opened, and its comment could not be read: ${again.reason}`;
+  const read = again.workspaces.find((w) => w.path === opened.workspace.path);
+  if (read === undefined)
+    return "the notices workspace opened and is not in the runtime's answer yet";
+  return noticesBlocked(read) ?? read;
 }
 
-/** The message for a workspace: the causes' texts, after its comment while it is still unread from an earlier notification. */
+/** The most characters one comment holds: it travels as one process argument, which a platform bounds. */
+const MAX_COMMENT = 16_000;
+
+/** The causes that fit one comment with the unread text before them, in order; the rest wait for the next tick. */
+function fitting(
+  workspace: Workspace,
+  causes: Cause[],
+): { send: Cause[]; later: Cause[] } {
+  const unread = workspace.unread && holdsNotice(workspace.comment);
+  const kept = unread ? Math.min(workspace.comment.length, MAX_COMMENT / 2) : 0;
+  let used = kept;
+  const send: Cause[] = [];
+  for (const c of causes) {
+    const next = used + c.notice.text.length + 2;
+    if (send.length > 0 && next > MAX_COMMENT) break;
+    send.push(c);
+    used = next;
+  }
+  return { send, later: causes.slice(send.length) };
+}
+
+/** The message for a workspace: the causes' texts, after the tail of its comment while it is still unread from an earlier notification (cut from its start to stay within the bound; those notices arrived and are kept in the receipts). */
 function messageFor(workspace: Workspace, causes: Cause[]): string {
   const texts = causes.map((c) => c.notice.text);
-  const keep = workspace.unread && holdsNotice(workspace.comment);
-  return (keep ? [workspace.comment, ...texts] : texts).join("\n\n");
+  if (!(workspace.unread && holdsNotice(workspace.comment)))
+    return texts.join("\n\n");
+  const room = Math.max(
+    0,
+    MAX_COMMENT - texts.reduce((n, t) => n + t.length + 2, 0),
+  );
+  const old = workspace.comment;
+  const earlier =
+    old.length > room
+      ? `…${old.slice(old.length - Math.max(0, room - 1))}`
+      : old;
+  return [earlier, ...texts].join("\n\n");
 }
 
 /** `notify`'s answer; a call that throws is an answer lost. */
@@ -248,8 +291,19 @@ async function sendTo(
   const late = outOfTime(state);
   if (late !== null)
     return [...out, ...fresh.map((c) => outcomeFor(c, "waits", null, late))];
-  const receipt = await deliver(state, workspace, messageFor(workspace, fresh));
-  for (const c of fresh) {
+  const { send, later } = fitting(workspace, fresh);
+  out.push(
+    ...later.map((c) =>
+      outcomeFor(
+        c,
+        "waits",
+        null,
+        "the comment is full: it goes in the next tick, once the workspace's unread notices are read",
+      ),
+    ),
+  );
+  const receipt = await deliver(state, workspace, messageFor(workspace, send));
+  for (const c of send) {
     const why = notArrived(receipt, c);
     if (why === null) suppress(c, workspace.path);
     out.push(

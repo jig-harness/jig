@@ -68,14 +68,16 @@ jig dispatch marker claim "$PR"     # prints {"pr": …, "comment": <id>}
 MARKER=<id>
 ```
 
-Exit `3` means an earlier marker holds the follow-up: another run has it,
-so stop here and say so. When the dispatcher started this session, its
+Only exit `0` means this run holds the follow-up. Exit `3` means an earlier
+marker holds it: another run has it. Any other exit (`1` the forge could not
+be read, `2` the marker is missing or not trusted) proves no ownership. On
+every nonzero exit stop here and say so; retry later rather than go on. When the dispatcher started this session, its
 prompt names the marker it posted: that claim is this session's, so use
 that id as `MARKER` and post none of your own.
 
 Before each act that writes outside the pull request (an issue closed, a
-release workflow run, a tag pushed), check the claim again, and stop on exit
-`3`:
+release workflow run, a tag pushed), check the claim again, and stop on any nonzero
+exit:
 
 ```bash
 jig dispatch marker check "$PR" --comment "$MARKER"

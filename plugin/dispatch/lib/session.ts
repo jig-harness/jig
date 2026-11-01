@@ -61,7 +61,7 @@ function followupPrompt(record: LaunchRecord): string {
     `${record.command} ${pr}`,
     "",
     "jig dispatch started this session for the follow-up of a merged pull request; nobody is at the keyboard.",
-    `It claimed the follow-up with the marker comment ${marker} on the pull request. That claim is this session's: post no marker of your own. Before each act that writes outside the pull request (an issue closed, a tag pushed), check that no earlier marker has appeared, and stop if one has: ${jigCommand(["marker", "check", pr, "--comment", marker, "--repo", record.repo])}`,
+    `It claimed the follow-up with the marker comment ${marker} on the pull request. That claim is this session's: post no marker of your own. Before each act that writes outside the pull request (an issue closed, a tag pushed), check that you still hold the claim, and stop on any nonzero exit (an earlier marker, an unreadable forge, a missing marker): ${jigCommand(["marker", "check", pr, "--comment", marker, "--repo", record.repo])}`,
     "When you stop, record how the follow-up ended, once:",
     `- every arm is settled, what you may carry out carried out and the rest reported: ${resultCommand(record, "done")}`,
     `- you stopped short of that (a question, a failure, an earlier marker): ${resultCommand(record, "failed")}`,

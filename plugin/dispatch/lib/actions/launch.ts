@@ -139,7 +139,7 @@ export type Opened =
 
 /**
  * Open a workspace through the runtime, within the tick's budget: a tick
- * opens at most `OPENS_PER_TICK`, and a launch that needs another waits for
+ * opens at most `OPENS_PER_TICK`, one of them kept for the notices workspace, and a launch that needs another waits for
  * the next tick rather than run past the deadline the timer gives it.
  */
 export async function openWithinBudget(
@@ -150,9 +150,11 @@ export async function openWithinBudget(
   const late = outOfTime(state);
   if (late !== null) return { waits: late };
   const done = state.opened ?? 0;
-  if (done >= OPENS_PER_TICK)
+  // One open is kept for the notices workspace, so a queue of launches never starves the notifications that reach a person.
+  const cap = "notices" in target ? OPENS_PER_TICK : OPENS_PER_TICK - 1;
+  if (done >= cap)
     return {
-      waits: `this tick has opened the ${OPENS_PER_TICK} workspaces its budget covers; a later tick opens this one`,
+      waits: `this tick has opened the ${cap} workspaces its budget covers${"notices" in target ? "" : " for launches (one is kept for notifications)"}; a later tick opens this one`,
     };
   state.opened = done + 1;
   let opened: RuntimeReceipt;

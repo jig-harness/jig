@@ -26,6 +26,7 @@ import { holding } from "../holding.ts";
 import {
   deleteMarker,
   earlierThan,
+  listsOwn,
   postMarker,
   readMarkers,
   tickMarker,
@@ -148,9 +149,11 @@ async function claim(
       ? `the markers could not be read back after posting: ${markers.unreadable}`
       : (() => {
           const earlier = earlierThan(markers, posted);
-          return earlier === null
-            ? null
-            : `an earlier marker (comment ${earlier.id} by ${earlier.login}) claimed it first; this one stands down`;
+          if (earlier === null)
+            return listsOwn(markers, posted)
+              ? null
+              : `the read-back does not list the posted marker (comment ${posted})`;
+          return `an earlier marker (comment ${earlier.id} by ${earlier.login}) claimed it first; this one stands down`;
         })();
   if (why === null) return null;
   const deleted = await deleteMarker(repo.slug, posted);
@@ -218,10 +221,32 @@ async function launchOne(
     command: ctx.section.followupCommand,
     marker: null,
   };
+  const tooLate = outOfTime(state);
+  if (tooLate !== null) return waits(action, tooLate, slots.account.name);
   holdRecord(state, record, slots);
   const lost = await claim(state, repo, ctx, record);
   if (lost !== null) return refused(action, lost, slots.account.name);
+  // The claim stands on the forge: past the deadline the record stays held, and the next tick reconciles it.
+  const late2 = outOfTime(state);
+  if (late2 !== null) return waits(action, late2, slots.account.name);
   return launchHeld(state, record);
+}
+
+/**
+ * A follow-up record that holds its slot with no marker and no attempt: a
+ * tick died between writing it and posting its marker, so nothing was ever
+ * started under it. It is removed, or it would hold an account slot for good.
+ */
+function dropUnmarked(state: ApplyState, repo: RepoTarget): void {
+  for (const r of [...state.records])
+    if (
+      r.record.action === "followup" &&
+      r.record.repo === repo.slug &&
+      r.record.marker === null &&
+      r.record.attempts.length === 0 &&
+      r.state.kind === "pending"
+    )
+      dropRecord(state, r.record);
 }
 
 /** `--apply` for one repository's follow-ups. */
@@ -233,6 +258,7 @@ export async function applyFollowups(
 ): Promise<void> {
   const wanted = report.actions.filter((a) => a.stage === "followup");
   if (reportedUnbound(state, wanted, report)) return;
+  dropUnmarked(state, repo);
   for (const action of rotated(state, wanted, "targets"))
     report.launches.push(await launchOne(state, repo, action, ctx));
 }

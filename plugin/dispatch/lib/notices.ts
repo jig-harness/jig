@@ -33,14 +33,15 @@ export function holdsNotice(comment: string): boolean {
   return comment.includes(TAG);
 }
 
-/** A message: its key line, then its lines, cut to `MAX_TEXT`. */
-function notice(key: string, lines: string[]): Notice {
+/** A message: its key line, then its lines, cut to `MAX_TEXT`; the `tail` lines are never cut. */
+function notice(key: string, lines: string[], tail: string[] = []): Notice {
   const head = keyLine(key);
   const body = lines.join("\n");
-  const room = MAX_TEXT - head.length - 1;
+  const end = tail.length === 0 ? "" : `\n${tail.join("\n")}`;
+  const room = MAX_TEXT - head.length - 1 - end.length;
   return {
     key,
-    text: `${head}\n${body.length > room ? `${body.slice(0, room - 1)}…` : body}`,
+    text: `${head}\n${body.length > room ? `${body.slice(0, Math.max(0, room - 1))}…` : body}${end}`,
   };
 }
 
@@ -59,7 +60,9 @@ export function parkNotice(slug: string, pr: DrivenPr): Notice {
       `PR #${pr.number} (${pr.title}) is parked: ${waiting.length === 1 ? "one decision waits" : `${waiting.length} decisions wait`} for a person.`,
       "",
       ...waiting.flatMap((p) => [...p.lines, ""]),
-      "Answer each on the pull request, in a comment with a line `answer <key>: …` (or on its thread). Once every one is answered, the next tick re-arms the drive.",
+    ],
+    [
+      "Answer each on the pull request, in a comment with a line `answer <key>: …` (or on its thread). Once every one is answered, the next tick re-arms the drive. A decision above that is cut off is framed in full in the drive's ledger comment on the pull request.",
       pr.url,
     ],
   );
@@ -89,7 +92,7 @@ export function followupFailedNotice(
 ): Notice {
   return notice(`${slug} PR #${pr.number} follow-up failed, marker ${marker}`, [
     `The follow-up of merged PR #${pr.number} failed: ${why}.`,
-    "Run the follow-up by hand, or delete its marker comment on the pull request so the next tick starts it again. The tick never starts it again by itself.",
+    "Delete its marker comment on the pull request: the marker holds the claim, so a run by hand stops behind it. Then run the follow-up by hand, or leave it for the next tick to start again. The tick never starts it again by itself.",
     pr.url,
   ]);
 }

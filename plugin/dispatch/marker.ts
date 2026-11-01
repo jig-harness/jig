@@ -24,6 +24,7 @@ import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.
 import {
   deleteMarker,
   earlierThan,
+  listsOwn,
   editMarker,
   manualMarker,
   postMarker,
@@ -57,7 +58,8 @@ async function claim(slug: string, pr: number): Promise<number> {
     return stop(1, `the marker could not be posted: ${posted}`);
   const markers = await readMarkers(slug, pr, login);
   const earlier = "unreadable" in markers ? null : earlierThan(markers, posted);
-  if (!("unreadable" in markers) && earlier === null) {
+  const listed = !("unreadable" in markers) && listsOwn(markers, posted);
+  if (listed && earlier === null) {
     console.log(JSON.stringify({ pr, comment: posted }));
     return 0;
   }
@@ -66,10 +68,15 @@ async function claim(slug: string, pr: number): Promise<number> {
     deleted === ""
       ? ""
       : `; its own marker (comment ${posted}) could not be deleted (${deleted}): delete it by hand`;
-  return "unreadable" in markers
+  if ("unreadable" in markers)
+    return stop(
+      1,
+      `the markers could not be read back: ${markers.unreadable}${kept}`,
+    );
+  return earlier === null
     ? stop(
         1,
-        `the markers could not be read back: ${markers.unreadable}${kept}`,
+        `the read-back does not list the posted marker (comment ${posted}); retry${kept}`,
       )
     : stop(
         EARLIER,
