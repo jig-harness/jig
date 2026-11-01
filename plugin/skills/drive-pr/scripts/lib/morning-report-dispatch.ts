@@ -79,14 +79,30 @@ function entriesOf<T>(
   );
 }
 
-/** Whether the lists this report reads are lists of objects. A receipt written before notifications were sent has no `notifications`. */
+const isText = (v: unknown): boolean => typeof v === "string";
+
+/** Whether a list entry carries the string fields this report reads from it. */
+function hasText(item: unknown, fields: readonly string[]): boolean {
+  if (typeof item !== "object" || item === null) return false;
+  const o = item as Record<string, unknown>;
+  return fields.every((f) => isText(o[f]));
+}
+
+/** Whether the lists this report reads are lists of entries with the fields it reads. A receipt written before notifications were sent has no `notifications`. */
 function readable(repo: Repo): boolean {
-  const ok = (list: unknown) =>
+  const ok = (list: unknown, fields: readonly string[]) =>
     list === undefined ||
-    (Array.isArray(list) &&
-      list.every((item) => typeof item === "object" && item !== null));
+    (Array.isArray(list) && list.every((item) => hasText(item, fields)));
+  const orNull = (field: "account" | "record") => (l: unknown) => {
+    const v = (l as Record<string, unknown>)[field];
+    return v === null || isText(v);
+  };
   return (
-    Array.isArray(repo.launches) && ok(repo.launches) && ok(repo.notifications)
+    Array.isArray(repo.launches) &&
+    ok(repo.launches, ["target", "action", "outcome", "detail"]) &&
+    repo.launches.every(orNull("account")) &&
+    repo.launches.every(orNull("record")) &&
+    ok(repo.notifications, ["target", "cause", "key", "outcome"])
   );
 }
 

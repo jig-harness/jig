@@ -208,39 +208,29 @@ async function noticesWorkspace(
 /** The most characters one comment holds: it travels as one process argument, which a platform bounds. */
 const MAX_COMMENT = 16_000;
 
-/** The causes that fit one comment with the unread text before them, in order; the rest wait for the next tick. */
+/** The causes that fit one comment after the unread text, which is kept whole; the rest wait until it is read. */
 function fitting(
   workspace: Workspace,
   causes: Cause[],
 ): { send: Cause[]; later: Cause[] } {
   const unread = workspace.unread && holdsNotice(workspace.comment);
-  const kept = unread ? Math.min(workspace.comment.length, MAX_COMMENT / 2) : 0;
-  let used = kept;
+  let used = unread ? workspace.comment.length : 0;
   const send: Cause[] = [];
   for (const c of causes) {
     const next = used + c.notice.text.length + 2;
-    if (send.length > 0 && next > MAX_COMMENT) break;
+    if ((unread || send.length > 0) && next > MAX_COMMENT) break;
     send.push(c);
     used = next;
   }
   return { send, later: causes.slice(send.length) };
 }
 
-/** The message for a workspace: the causes' texts, after the tail of its comment while it is still unread from an earlier notification (cut from its start to stay within the bound; those notices arrived and are kept in the receipts). */
+/** The message for a workspace: its comment whole while it is still unread from an earlier notification, then the causes' texts. */
 function messageFor(workspace: Workspace, causes: Cause[]): string {
   const texts = causes.map((c) => c.notice.text);
   if (!(workspace.unread && holdsNotice(workspace.comment)))
     return texts.join("\n\n");
-  const room = Math.max(
-    0,
-    MAX_COMMENT - texts.reduce((n, t) => n + t.length + 2, 0),
-  );
-  const old = workspace.comment;
-  const earlier =
-    old.length > room
-      ? `…${old.slice(old.length - Math.max(0, room - 1))}`
-      : old;
-  return [earlier, ...texts].join("\n\n");
+  return [workspace.comment, ...texts].join("\n\n");
 }
 
 /** `notify`'s answer; a call that throws is an answer lost. */
@@ -302,6 +292,7 @@ async function sendTo(
       ),
     ),
   );
+  if (send.length === 0) return out;
   const receipt = await deliver(state, workspace, messageFor(workspace, send));
   for (const c of send) {
     const why = notArrived(receipt, c);

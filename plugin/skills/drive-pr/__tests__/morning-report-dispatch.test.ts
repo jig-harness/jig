@@ -63,7 +63,7 @@ function receipt(at: Date, repos: RepoReport[]): TickReceipt {
   };
 }
 
-function setUp(): Forge {
+function setUp(extra: RepoReport[] = []): Forge {
   const forge = fakeForge("");
   forge.write("login", "drive-bot");
   forge.write("search.json", { items: [] });
@@ -121,6 +121,7 @@ function setUp(): Forge {
     ]),
     root,
   );
+  if (extra.length > 0) writeReceipt(receipt(ago(1), extra), root);
   return forge;
 }
 
@@ -155,5 +156,15 @@ describe("drives.ts --report: what the dispatcher did", () => {
     expect(r.stdout).toContain("Dispatched on this machine");
     expect(r.stdout).toContain("launch followup PR #9: launched on a");
     expect(r.stdout).not.toContain("too old");
+  });
+
+  it("reports a receipt entry missing the fields it reads as unread", async () => {
+    const bad = repo({
+      launches: [{}] as unknown as LaunchOutcome[],
+      notifications: [{}] as unknown as RepoReport["notifications"],
+    });
+    const r = await report(setUp([bad]), ["--json"]);
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).unread).toHaveLength(1);
   });
 });

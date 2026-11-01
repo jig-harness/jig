@@ -154,6 +154,22 @@ async function claim(
       : seen.kind === "missing"
         ? `the read-back does not list the posted marker (comment ${posted})`
         : `an earlier marker (comment ${seen.marker.id} by ${seen.marker.login}) claimed it first; this one stands down`;
+  return relinquish(state, repo, record, posted, why);
+}
+
+/**
+ * Give a record's posted marker back: the marker is deleted and the record
+ * removed, so nothing starts and no slot stays held. A marker that cannot be
+ * deleted ends its record failed, so the next tick reports a failed follow-up
+ * for a person to settle. Returns why nothing started.
+ */
+async function relinquish(
+  state: ApplyState,
+  repo: RepoTarget,
+  record: LaunchRecord,
+  posted: number,
+  why: string,
+): Promise<string> {
   const deleted = await deleteMarker(repo.slug, posted);
   if (deleted === "") {
     dropRecord(state, record);
@@ -256,28 +272,61 @@ async function claimAndLaunch(
   holdRecord(state, record, slots);
   const lost = await claim(state, repo, ctx, record);
   if (lost !== null) return refused(action, lost, name);
-  // The claim stands on the forge: past the deadline the record stays held, and the next tick reconciles it.
   const after = outOfTime(state);
-  return after === null
-    ? launchHeld(state, record)
-    : waits(action, after, name);
+  if (after === null) return launchHeld(state, record);
+  // Past the deadline nothing launches, and a marked record with no attempt has no replay path: give the claim back.
+  const gone = await relinquish(
+    state,
+    repo,
+    record,
+    record.marker as number,
+    after,
+  );
+  return waits(action, gone, name);
 }
 
 /**
  * A follow-up record that holds its slot with no marker and no attempt: a
- * tick died between writing it and posting its marker, so nothing was ever
- * started under it. It is removed, or it would hold an account slot for good.
+ * tick died between writing it and recording its marker, so nothing was ever
+ * started under it. A marker posted in that interval is on the forge and names
+ * the record, so the forge is read first: that marker is given back with the
+ * record, and a forge that cannot be read leaves the record for the next tick.
+ * Otherwise it would hold an account slot for good.
  */
-function dropUnmarked(state: ApplyState, repo: RepoTarget): void {
-  for (const r of [...state.records])
-    if (
+async function dropUnmarked(
+  state: ApplyState,
+  repo: RepoTarget,
+  ctx: FollowupContext,
+): Promise<void> {
+  const unmarked = state.records.filter(
+    (r) =>
       r.record.action === "followup" &&
       r.record.repo === repo.slug &&
       r.record.marker === null &&
       r.record.attempts.length === 0 &&
-      r.state.kind === "pending"
-    )
+      r.state.kind === "pending",
+  );
+  for (const r of unmarked) {
+    const pr = r.record.pr;
+    if (pr === null) {
       dropRecord(state, r.record);
+      continue;
+    }
+    const markers = await readMarkers(repo.slug, pr, ctx.login);
+    if ("unreadable" in markers) continue;
+    const own = markers.find(
+      (m) => m.run.kind === "tick" && m.run.record === r.record.id,
+    );
+    if (own === undefined) dropRecord(state, r.record);
+    else
+      await relinquish(
+        state,
+        repo,
+        r.record,
+        own.id,
+        "a marker posted before the record was written down",
+      );
+  }
 }
 
 /** `--apply` for one repository's follow-ups. */
@@ -289,7 +338,7 @@ export async function applyFollowups(
 ): Promise<void> {
   const wanted = report.actions.filter((a) => a.stage === "followup");
   if (reportedUnbound(state, wanted, report)) return;
-  dropUnmarked(state, repo);
+  await dropUnmarked(state, repo, ctx);
   for (const action of rotated(state, wanted, "targets"))
     report.launches.push(await launchOne(state, repo, action, ctx));
 }
