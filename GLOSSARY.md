@@ -1775,7 +1775,8 @@ make, use the entry's term instead.
   one of the repository's dispatch states is started, when a person with
   write access made the assignment. The `do-item` session claims it
   (assigns it to itself and moves it to the in-progress state, refusing an
-  item someone already holds), so no item is picked up twice.
+  item someone already holds), which keeps an item from being picked up twice
+  in all but a race between two claims, which the dispatcher reports.
 - **Stalled pickup** — an item the *factory identity* claimed (in its
   in-progress state) that has had no running session for longer than the
   repository's `dispatch.stalled_after`. The *dispatcher* reports it and

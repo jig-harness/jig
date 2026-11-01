@@ -172,7 +172,9 @@ the release in step 4 restores them. Then, for each:
 
    (**judgment** — native: read the issue and stop on the same refusals,
    save its state and assignee through the harness's tracker tool (the
-   mapped state name, assignee "me"), then read it again.)
+   mapped state name, assignee "me"), then read it again and drop the
+   issue when it shows another assignee, or is gone or no longer in the
+   mapped state.)
 
 2. Comment on it, naming the anchor and every other issue in the batch, so a
    second agent sees it is spoken for and by which batch

@@ -36,6 +36,7 @@ import {
   openWithinBudget,
   replay,
   replayable,
+  rotated,
   startRecord,
   waits,
   workspaceOr,
@@ -164,8 +165,8 @@ export async function applyDrives(
   fresh: (pr: number) => Promise<DrivenPr | null>,
 ): Promise<void> {
   await retryPending(state, repo, report, fresh);
-  for (const action of report.actions) {
-    if (action.stage !== "rearm") continue;
+  const rearms = report.actions.filter((a) => a.stage === "rearm");
+  for (const action of rotated(state, rearms)) {
     const pr = Number(action.target.replace(/^PR #/, ""));
     let read: DrivenPr | null;
     try {

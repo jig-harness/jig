@@ -54,6 +54,8 @@ export type PickupPlan = Pick<
 > & {
   /** The claimed items idle this tick: the idle clock runs for these and stops for the rest. */
   idleNow: string[];
+  /** The claimed items whose idleness could not be told: their clock is neither started nor stopped. */
+  idleKeep: string[];
 };
 
 /** The sessions joined to an item: running workspaces, and records holding it outside them. */
@@ -99,6 +101,7 @@ export function planPickups(input: PickupInput): PickupPlan {
     unplaced: [],
     quiet: [],
     idleNow: [],
+    idleKeep: [],
   };
   const { sessions, launches } = input;
   const joined = (key: string) => (w: Workspace) => w.items.includes(key);
@@ -189,6 +192,7 @@ function planClaimed(
     return;
   }
   if (held.kind === "unknown") {
+    plan.idleKeep.push(item.key);
     plan.unplaced.push({
       target: item.key,
       record: "runtime",

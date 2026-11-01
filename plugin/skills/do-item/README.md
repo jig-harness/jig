@@ -57,7 +57,7 @@ Before it starts the work, the skill claims the item: it assigns it to
 itself (the user its tracker credentials act as) and moves it to the
 in-progress state. It refuses an item already in progress or assigned to
 someone else, and stops when reading the item back shows another claim
-landed first, so a manual pickup and a dispatched one never work on one
+landed first, so a manual pickup and a dispatched one rarely work on one
 item side by side. A tracker has no conditional write, so two claims
 racing inside that re-read can both pass; the
 [dispatcher](../../README.md#the-dispatcher) reports an item two running

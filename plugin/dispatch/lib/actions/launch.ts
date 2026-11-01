@@ -22,7 +22,11 @@ import {
   removeRecord,
   writeRecord,
 } from "../launches.ts";
-import { type MachineConfig, OPENS_PER_TICK } from "../machine-config.ts";
+import {
+  type MachineConfig,
+  OPENS_PER_TICK,
+  tickBudgetMs,
+} from "../machine-config.ts";
 import type {
   ItemTarget,
   LaunchStage,
@@ -44,7 +48,32 @@ export interface ApplyState {
   last: string | null;
   /** The workspaces this tick has opened so far, within `OPENS_PER_TICK`. */
   opened?: number;
+  /** When the tick began, for its overall deadline and the rotation of its targets. */
+  startedAt?: number;
   root?: string;
+}
+
+/**
+ * Why the tick has no time left to start another launch: the runtime calls
+ * of a tick are not bounded by a count, so the budget its timer was armed
+ * with is also checked as a deadline. `null` while time remains.
+ */
+export function outOfTime(state: ApplyState): string | null {
+  if (state.startedAt === undefined) return null;
+  const budget = tickBudgetMs(state.machine);
+  return Date.now() - state.startedAt >= budget
+    ? `this tick has used the ${Math.ceil(budget / 1000)}s its timer allows; a later tick starts this one`
+    : null;
+}
+
+/**
+ * The targets in this tick's order: rotated by the tick's start, so a
+ * target whose open fails every time cannot keep every later one waiting.
+ */
+export function rotated<T>(state: ApplyState, items: T[]): T[] {
+  if (items.length < 2 || state.startedAt === undefined) return items;
+  const start = Math.floor(state.startedAt / 60_000) % items.length;
+  return [...items.slice(start), ...items.slice(0, start)];
 }
 
 /** A pending record's launch is retried once, under its own key. */
@@ -65,6 +94,8 @@ export async function openWithinBudget(
   repo: RepoTarget,
   target: ItemTarget | { pr: number; head: string },
 ): Promise<Opened> {
+  const late = outOfTime(state);
+  if (late !== null) return { waits: late };
   const done = state.opened ?? 0;
   if (done >= OPENS_PER_TICK)
     return {
@@ -248,10 +279,11 @@ export async function replay(
   action: Action,
   blocked: string | null,
 ): Promise<LaunchOutcome> {
-  if (blocked !== null)
+  const late = blocked ?? outOfTime(state);
+  if (late !== null)
     return waits(
       action,
-      `the pending launch of ${record.id} is not replayed: ${blocked}`,
+      `the pending launch of ${record.id} is not replayed: ${late}`,
       record.account,
     );
   const attempt = await callLaunch(state, record);

@@ -313,8 +313,18 @@ function planRepo(
   report.unplaced.push(...plan.unplaced);
   report.quiet.push(...plan.quiet);
   if (input.claimed === null) return;
-  updateIdle(repo, plan.idleNow, nowMs);
-  releaseEnded(records, repo, new Set(input.pickups.map((p) => p.key)));
+  updateIdle(repo, plan.idleNow, nowMs, undefined, plan.idleKeep);
+  // An item the read left out (who assigned it could not be read, or not by a
+  // person with write access) is still assigned: only leaving the dispatch
+  // states releases its record.
+  releaseEnded(
+    records,
+    repo,
+    new Set([
+      ...input.pickups.map((p) => p.key),
+      ...report.unplaced.map((u) => u.target),
+    ]),
+  );
 }
 
 /** Why the pickups this repository wants can only be reported, when the runtime cannot bind them. */
@@ -388,6 +398,7 @@ function applyState(
     records,
     table: slotTable(machine.accounts, records, nowMs),
     last: lastAccount(records),
+    startedAt: Date.now(),
   };
 }
 

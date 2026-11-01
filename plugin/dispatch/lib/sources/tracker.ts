@@ -162,8 +162,18 @@ export async function freshPickup(
   } catch (error) {
     return `the tracker cannot be read again: ${failureText(error)}`;
   }
-  return (
-    issues.find((i) => i.identifier === key) ??
-    `it is no longer assigned to ${section.identity} in ${section.states.join(", ")}`
-  );
+  const issue = issues.find((i) => i.identifier === key);
+  if (issue === undefined)
+    return `it is no longer assigned to ${section.identity} in ${section.states.join(", ")}`;
+  // The assignment authorizes the pickup: who made it is read again, so a
+  // reassignment by someone without write access, or an assigner whose access
+  // ended since the plan, starts nothing.
+  try {
+    const by = await tracker.assignedBy(key, section.identity);
+    if (!by.trusted)
+      return `it is assigned to ${section.identity} by ${by.name}, who cannot write to ${tracker.team}`;
+  } catch (error) {
+    return `who assigned it cannot be read again: ${failureText(error)}`;
+  }
+  return issue;
 }

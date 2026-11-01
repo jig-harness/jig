@@ -555,6 +555,26 @@ function latestRefusals(records: ReadRecord[]): Set<string> {
   return ids;
 }
 
+/**
+ * The ids of each item's latest pickup record: while it is unreleased it is
+ * the only thing that keeps the item from being picked up again, so it stays
+ * until `releaseEnded` has seen the item leave the dispatch states.
+ */
+function latestPickups(records: ReadRecord[]): Set<string> {
+  const latest = new Map<string, ReadRecord>();
+  for (const r of records) {
+    if (r.record.action !== "pickup") continue;
+    const key = `${r.record.repo}\0${String(r.record.item)}`;
+    const seen = latest.get(key);
+    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
+      latest.set(key, r);
+  }
+  const ids = new Set<string>();
+  for (const { record } of latest.values())
+    if (!record.released) ids.add(record.id);
+  return ids;
+}
+
 /** When an ended or died record finished; `null` for one still holding its stage. */
 function finishedAt(record: LaunchRecord, state: LaunchState): number | null {
   if (state.kind === "ended") return Date.parse(state.exit.at);
@@ -571,6 +591,7 @@ export function pruneLaunches(
   const cutoff = nowMs - days * 86_400_000;
   const removed: string[] = [];
   const kept = latestRefusals(records);
+  for (const id of latestPickups(records)) kept.add(id);
   for (const { record, state } of records) {
     const at = kept.has(record.id) ? null : finishedAt(record, state);
     if (at === null || !Number.isFinite(at) || at > cutoff) continue;

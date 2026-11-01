@@ -602,7 +602,8 @@ routing below remain **exact**.
    (**judgment** — native, Linear: read the issue and stop on the same two
    refusals, then
    `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`,
-   then read it again and stop when it shows another assignee.)
+   then read it again and stop, as on exit `4`, when it shows another
+   assignee, or when the issue is gone or no longer in the mapped state.)
 
    Then show the start on Orca's workspace board. In a worktree of
    [Orca](https://www.onorca.dev) this moves the worktree's card to In

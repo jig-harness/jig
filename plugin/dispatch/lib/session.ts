@@ -7,6 +7,7 @@
  * another process of the same user.
  */
 import { resolve } from "node:path";
+import { shellQuote } from "../../shared/cli.ts";
 import type { LaunchRecord, SessionResult } from "./launches.ts";
 
 /** The skill a pickup starts. */
@@ -30,7 +31,9 @@ function resultCommand(
     record.id,
     record.token,
     result,
-  ].join(" ");
+  ]
+    .map(shellQuote)
+    .join(" ");
 }
 
 /** The prompt a pickup's session starts with. */

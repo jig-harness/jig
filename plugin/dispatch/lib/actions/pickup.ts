@@ -47,13 +47,15 @@ import {
   changedWhileOpening,
   type Opened,
   openWithinBudget,
+  outOfTime,
   replay,
+  rotated,
   replayable,
   startRecord,
   waits,
   workspaceOr,
 } from "./launch.ts";
-import { pickupHold } from "./pickup-hold.ts";
+import { holdingRecords, pickupHold } from "./pickup-hold.ts";
 
 /** What a repository's pickups need beyond the apply state. */
 export interface PickupContext {
@@ -69,12 +71,17 @@ export interface PickupContext {
 /** Why the item must not be started now; `null` when nothing changed. */
 async function changed(
   state: ApplyState,
+  repo: RepoTarget,
   ctx: PickupContext,
   key: string,
 ): Promise<{ issue: PoolIssue } | { why: string }> {
   const issue = await freshPickup(ctx.tracker, ctx.section, key);
   if (typeof issue === "string") return { why: issue };
-  const hold = pickupHold(key, state.records);
+  // Item keys repeat across repositories: only this repository's records hold it.
+  const hold = pickupHold(
+    key,
+    state.records.filter((r) => r.record.repo === repo.slug),
+  );
   if (hold.kind !== "none") return { why: hold.why };
   let sessions: SessionsReport;
   try {
@@ -122,7 +129,9 @@ async function launchOne(
   action: Action,
   ctx: PickupContext,
 ): Promise<LaunchOutcome> {
-  const before = await changed(state, ctx, action.target);
+  const late = outOfTime(state);
+  if (late !== null) return waits(action, late);
+  const before = await changed(state, repo, ctx, action.target);
   if ("why" in before) return waits(action, before.why);
   const admitted = await admitAccount(state, action);
   if ("outcome" in admitted) return admitted.outcome;
@@ -136,7 +145,7 @@ async function launchOne(
   const { workspace } = opened;
   const stale = await changedWhileOpening(state, action, slots);
   if (stale !== null) return stale;
-  const after = await changed(state, ctx, action.target);
+  const after = await changed(state, repo, ctx, action.target);
   if ("why" in after) return waits(action, after.why, slots.account.name);
   const route = await pickupRoute(
     after.issue,
@@ -170,6 +179,40 @@ async function launchOne(
   return { ...launched, detail: `${launched.detail}; ${route.detail}` };
 }
 
+/**
+ * Why a pending pickup must not be replayed: another record holds the item,
+ * or a session other than the one in the record's own workspace has joined
+ * it. `null` when nothing competes.
+ */
+async function competing(
+  state: ApplyState,
+  repo: RepoTarget,
+  ctx: PickupContext,
+  record: LaunchRecord,
+): Promise<string | null> {
+  const item = record.item as string;
+  const other = holdingRecords(
+    item,
+    state.records.filter((r) => r.record.repo === repo.slug),
+  ).find((r) => r.record.id !== record.id);
+  if (other !== undefined)
+    return `launch record ${other.record.id} also holds the item`;
+  let sessions: SessionsReport;
+  try {
+    sessions = await ctx.sessions();
+  } catch (error) {
+    return `the runtime cannot be read again: ${failureText(error)}`;
+  }
+  const held = holding(sessions, (w) => w.items.includes(item));
+  if (held.kind === "unknown") return held.reason;
+  const own = record.workspace?.id;
+  const rivals =
+    held.kind === "running" ? held.workspaces.filter((w) => w.id !== own) : [];
+  return rivals.length === 0
+    ? null
+    : `a session started for it elsewhere since: ${rivals.map((w) => w.path).join(", ")}`;
+}
+
 /** Retry, once and under its own key, each pending pickup of `repo` whose launch got no answer. */
 async function retryPending(
   state: ApplyState,
@@ -181,7 +224,10 @@ async function retryPending(
     const item = record.item as string;
     const fresh = await freshPickup(ctx.tracker, ctx.section, item);
     const blocked =
-      typeof fresh === "string" ? fresh : await accountBlocked(state, record);
+      typeof fresh === "string"
+        ? fresh
+        : ((await competing(state, repo, ctx, record)) ??
+          (await accountBlocked(state, record)));
     const action = { target: item, stage: "pickup" } as Action;
     report.launches.push(await replay(state, record, action, blocked));
   }
@@ -205,6 +251,6 @@ export async function applyPickups(
     return;
   }
   await retryPending(state, repo, report, ctx);
-  for (const action of wanted)
+  for (const action of rotated(state, wanted))
     report.launches.push(await launchOne(state, repo, action, ctx));
 }

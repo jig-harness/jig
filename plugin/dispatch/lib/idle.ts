@@ -86,19 +86,23 @@ export function readIdle(
 
 /**
  * Start the clock of each item idle now that has none, and stop the clock
- * of every other item of `repo`.
+ * of every other item of `repo` except those in `keep`, whose idleness could
+ * not be told this tick.
  */
 export function updateIdle(
   repo: string,
   idleNow: ReadonlyArray<string>,
   nowMs: number,
   root = stateRoot(),
+  keep: ReadonlyArray<string> = [],
 ): void {
   const idle = new Set(idleNow);
+  const unknown = new Set(keep);
   const kept = new Set<string>();
   for (const entry of entries(root)) {
     if (entry.repo !== repo) continue;
     if (idle.has(entry.item)) kept.add(entry.item);
+    else if (unknown.has(entry.item)) continue;
     else rmSync(entry.path, { force: true });
   }
   const fresh = [...idle].filter((item) => !kept.has(item));

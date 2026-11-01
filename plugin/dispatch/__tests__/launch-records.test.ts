@@ -123,6 +123,26 @@ describe("retention", () => {
     );
     expect(pruneLaunches([a, b], Date.parse("2027-01-01"), 7, dir)).toEqual([]);
   });
+
+  it("keeps an unreleased pickup until it is released", () => {
+    const dir = root();
+    const pickup = (released: boolean) =>
+      ended(
+        record("20260101T000000Z-aaaaaaaa", {
+          action: "pickup",
+          pr: null,
+          item: "#12",
+          released,
+        }),
+        1,
+        "2026-01-01T00:00:00.000Z",
+      );
+    const now = Date.parse("2027-01-01");
+    expect(pruneLaunches([pickup(false)], now, 7, dir)).toEqual([]);
+    expect(pruneLaunches([pickup(true)], now, 7, dir)).toEqual([
+      "20260101T000000Z-aaaaaaaa",
+    ]);
+  });
 });
 
 describe("reading records", () => {

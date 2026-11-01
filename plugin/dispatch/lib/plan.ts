@@ -42,6 +42,8 @@ export interface PlanInput {
 type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
   /** The claimed items idle this tick, for the idle clock. */
   idleNow: string[];
+  /** The claimed items whose clock is left as it is. */
+  idleKeep: string[];
 };
 
 /** The ledger classes that need nothing from the tick but a line in the report. */
