@@ -59,6 +59,8 @@ function record(id: string, over: Partial<LaunchRecord> = {}): LaunchRecord {
     model: null,
     effort: null,
     released: false,
+    command: null,
+    marker: null,
     ...over,
   };
 }

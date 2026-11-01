@@ -204,6 +204,9 @@ export function fakeForge(overlay = ""): Forge {
     DRIVE_PR_HANDOFF_DIR: join(root, "handoff"),
     JIG_OVERLAY: overlayFile,
     JIG_HOME: join(root, "home"),
+    // The dispatcher's receipts the morning report reads are this home's, never the machine's.
+    HOME: join(root, "home"),
+    USERPROFILE: join(root, "home"),
   });
   const lines = (name: string) =>
     existsSync(join(dir, name))

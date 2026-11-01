@@ -31,11 +31,12 @@ import type {
 } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { readLedgerSnapshot } from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { minutesBetween } from "../text.ts";
-import type { DrivenPr, Evidence, LedgerClass } from "../types.ts";
+import { framedDecisionLines } from "../../../skills/drive-pr/scripts/lib/state/park-frame.ts";
+import type { DrivenPr, Evidence, LedgerClass, WaitingPark } from "../types.ts";
 
 /** What answers a park's items, when the ledger stopped `8`. */
 export type ParkReading =
-  | { answered: number; waiting: string[] }
+  | { answered: number; waiting: string[]; parks?: WaitingPark[] }
   | { unreadable: string };
 
 export interface Classified {
@@ -185,6 +186,11 @@ async function parkOf(
     : {
         answered: found.answered.length,
         waiting: found.waiting.map((p) => `${p.kind} ${p.key}`),
+        parks: found.waiting.map((p) => ({
+          key: p.key,
+          kind: p.kind,
+          lines: framedDecisionLines(p),
+        })),
       };
 }
 
@@ -211,11 +217,27 @@ async function driveOf(
     return { ...base, class: "unplaced", why: why ?? "", evidence: {} };
   const ledger = snapshot.canonical.parsed.ledger;
   const park = await parkOf(pr.number, ledger, slug);
+  const classified = classifyLedger(ledger, nowMs, windowMs, park);
   return {
     ...base,
-    ...classifyLedger(ledger, nowMs, windowMs, park),
+    ...classified,
     evidence: ledgerEvidence(ledger, nowMs),
+    ...waitingOf(classified, park),
   };
+}
+
+/** The unanswered decisions a parked ledger carries into its notification. */
+function waitingOf(
+  classified: Classified,
+  park: ParkReading | undefined,
+): { waiting?: WaitingPark[] } {
+  if (
+    classified.class !== "parked" ||
+    park === undefined ||
+    "unreadable" in park
+  )
+    return {};
+  return park.parks === undefined ? {} : { waiting: park.parks };
 }
 
 /**

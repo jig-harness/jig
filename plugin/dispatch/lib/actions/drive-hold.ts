@@ -19,7 +19,12 @@
  *   first, so a lost launch stays visible and a takeover in flight is not
  *   stacked on.
  */
-import { DRIVER_REFUSALS, holds, type ReadRecord } from "../launches.ts";
+import {
+  DRIVER_REFUSALS,
+  holds,
+  isDrive,
+  type ReadRecord,
+} from "../launches.ts";
 import type { DrivenPr } from "../types.ts";
 
 export type DriveHold =
@@ -93,7 +98,7 @@ function standingRefusal(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
 
 export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
   const mine = records
-    .filter((r) => r.record.pr === pr.number)
+    .filter((r) => isDrive(r.record) && r.record.pr === pr.number)
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt));
   if (pr.class === "silent") {
     const inFlight = mine.find(

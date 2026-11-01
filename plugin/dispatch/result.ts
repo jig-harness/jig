@@ -46,7 +46,7 @@ export function resultMain(argv: string[], root?: string): number {
     );
     return 2;
   }
-  if (record.action !== "pickup") {
+  if (record.action !== "pickup" && record.action !== "followup") {
     console.error(
       `jig dispatch result: ${id} is a headless pass's record; its exit is its answer`,
     );
@@ -58,6 +58,12 @@ export function resultMain(argv: string[], root?: string): number {
     );
     return ALREADY;
   }
-  console.log(JSON.stringify({ record: id, item: record.item, result }));
+  console.log(
+    JSON.stringify({
+      record: id,
+      ...(record.item === null ? { pr: record.pr } : { item: record.item }),
+      result,
+    }),
+  );
   return 0;
 }

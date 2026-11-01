@@ -120,7 +120,8 @@ supported kinds and collection limits, and
 on the machine that runs the agent sessions, which looks at the tracker,
 the pull requests and the running sessions, says which stage of the
 delivery loop should be running and is not, and, when told to, restarts
-the drives that stopped on something a machine can settle:
+the drives that stopped on something a machine can settle and tells a
+person about the stops only a person can settle:
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch [--apply] [--repo <path>]... [--json]
@@ -142,8 +143,8 @@ lists.
 
 **`--apply`** starts what the machine file
 ([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))
-enables for each repository: the `rearm` stage, and the `pickup` stage
-below. With `rearm`, each re-arm
+enables for each repository: the `rearm` stage, and the `pickup`,
+`followup` and `notify` stages below. With `rearm`, each re-arm
 of a stopped drive, and each takeover of a wedged driver this machine
 started, runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
 of the pull request's workspace, opened from the pull request when none
@@ -158,8 +159,7 @@ holds its slot and is retried only under its own record. A refusal
 `drive.ts` gives (another driver holds the pull request) is the stage's
 answer and is not launched again on the same ledger facts. A record whose
 process cannot be checked (another host or boot) holds its slot until a
-person removes its files. Follow-ups and notifications are still reported,
-not started.
+person removes its files.
 
 **Pickups** (the `pickup` stage) start one `do-item` session per item
 assigned to the factory identity in a dispatch state, once: just before
@@ -198,6 +198,59 @@ an agent.
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed
 ```
+
+**Follow-ups** (the `followup` stage) start one session per pull request
+merged since the stage was switched on (`followup_since`), running the
+repository's `dispatch.followup_command` on it (`/followup` in Jig) in the
+pull request's workspace. A hidden-marker comment on the merged pull
+request is the claim: the dispatcher posts one naming its launch record
+before it starts the session, reads the markers back, and stands down when
+an earlier one is there. A follow-up a person runs by hand claims the same
+way, and marks its marker done once it succeeded:
+
+```sh
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker claim <PR> [--repo owner/name]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker check <PR> --comment <id> [--repo owner/name]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker done <PR> --comment <id> [--repo owner/name]
+```
+
+`claim` exits `3` when an earlier marker holds the follow-up, and `check`
+does when one has appeared since, so the run stops before it acts. Only a
+marker written by the dispatcher's own login or by an owner, member or
+collaborator counts. When a dispatched follow-up's session ends, its result
+is kept in an outcome record per pull request that never expires; a
+follow-up that failed, or whose marker names a launch record this machine no
+longer has, is notified once and never started again: delete its marker to
+have it run again. A follow-up is an interactive session, so with Orca it is
+reported and nothing is posted or started, as a pickup is.
+
+**Notifications** (the `notify` stage) reach a person once per cause: a drive
+parked with a decision unanswered, carrying the drive's framed decision for
+each one; a drive stopped on an exit only a person settles, or with no exit;
+a failed follow-up; a stalled pickup, a double claim, a session waiting past
+`dispatch.blocked_after`. With Orca the message becomes the comment of the
+pull request's or item's workspace, and the workspace is marked unread,
+which Orca's phone app shows; a target with no workspace that can take a
+comment (none, or one whose comment may still be its agent's kickoff
+prompt) goes to the repository's notices workspace, a branch of the default
+branch (`jig-dispatch-notices`) into which no agent is launched. A message
+counts as sent only once the workspace's comment, read back, carries its key
+line (`[jig dispatch: …]`), and is never sent again while its cause stands;
+while a workspace is still unread, a new message is appended to its comment
+rather than replacing it. The answer to a park is never sent back through
+the notification: it is a comment on the pull request with a line
+`answer <key>: …`, and the next tick re-arms the drive.
+
+**The morning routine.** Nothing needs restarting after a night: the timer
+ran every tick. Read the morning report,
+`drives.ts --report` ([drive-pr](skills/drive-pr/README.md)), which lists
+beside the drives what the dispatcher launched, refused and notified on this
+machine since the last report. Answer each park from the phone: open the
+unread workspace, read the framed decision, and comment `answer <key>: …` on
+the pull request; the next tick re-arms the drive. Settle what a
+notification says only a person can (a failed follow-up's marker, a stalled
+pickup, a stop with its handoff), then merge what converged: the dispatcher
+never merges.
 
 **`jig dispatch install`** previews the timer that runs `--apply` every
 interval (the machine file's `interval`, five minutes by default), and
