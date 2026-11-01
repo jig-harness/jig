@@ -123,6 +123,25 @@ function paths(root?: string): string[] | string {
   }
 }
 
+/** One receipt's entries into `entries`; a repository entry that does not read goes into `unread`. */
+function collect(
+  receipt: Receipt,
+  path: string,
+  entries: Map<string, DispatchEntry>,
+  unread: string[],
+): void {
+  for (const repo of receipt.repos) {
+    if (!readable(repo)) {
+      unread.push(
+        `the dispatch receipt ${path} has a repository entry whose launches or notifications do not read`,
+      );
+      continue;
+    }
+    for (const [key, entry] of repoEntries(receipt, repo))
+      entries.set(key, entry);
+  }
+}
+
 /** The dispatcher's launches, refusals and notifications since `since` (milliseconds), oldest first. */
 export function dispatchSince(since: number, root?: string): DispatchSince {
   const listed = paths(root);
@@ -134,16 +153,7 @@ export function dispatchSince(since: number, root?: string): DispatchSince {
     if (receipt === null)
       unread.push(`the dispatch receipt ${path} does not read`);
     else if (publishedAt(receipt) >= since)
-      for (const repo of receipt.repos) {
-        if (!readable(repo)) {
-          unread.push(
-            `the dispatch receipt ${path} has a repository entry whose launches or notifications do not read`,
-          );
-          continue;
-        }
-        for (const [key, entry] of repoEntries(receipt, repo))
-          entries.set(key, entry);
-      }
+      collect(receipt, path, entries, unread);
   }
   return {
     entries: [...entries.values()].sort((a, b) => a.at.localeCompare(b.at)),

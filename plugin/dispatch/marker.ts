@@ -24,7 +24,7 @@ import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.
 import {
   deleteMarker,
   earlierThan,
-  listsOwn,
+  readBack,
   editMarker,
   manualMarker,
   postMarker,
@@ -56,10 +56,8 @@ async function claim(slug: string, pr: number): Promise<number> {
   const posted = await postMarker(slug, pr, manualMarker(false));
   if (typeof posted === "string")
     return stop(1, `the marker could not be posted: ${posted}`);
-  const markers = await readMarkers(slug, pr, login);
-  const earlier = "unreadable" in markers ? null : earlierThan(markers, posted);
-  const listed = !("unreadable" in markers) && listsOwn(markers, posted);
-  if (listed && earlier === null) {
+  const seen = readBack(await readMarkers(slug, pr, login), posted);
+  if (seen.kind === "stands") {
     console.log(JSON.stringify({ pr, comment: posted }));
     return 0;
   }
@@ -68,20 +66,17 @@ async function claim(slug: string, pr: number): Promise<number> {
     deleted === ""
       ? ""
       : `; its own marker (comment ${posted}) could not be deleted (${deleted}): delete it by hand`;
-  if ("unreadable" in markers)
+  if (seen.kind === "unreadable")
+    return stop(1, `the markers could not be read back: ${seen.reason}${kept}`);
+  if (seen.kind === "missing")
     return stop(
       1,
-      `the markers could not be read back: ${markers.unreadable}${kept}`,
+      `the read-back does not list the posted marker (comment ${posted}); retry${kept}`,
     );
-  return earlier === null
-    ? stop(
-        1,
-        `the read-back does not list the posted marker (comment ${posted}); retry${kept}`,
-      )
-    : stop(
-        EARLIER,
-        `an earlier marker (comment ${earlier?.id} by ${earlier?.login}) holds the follow-up; stop before acting${kept}`,
-      );
+  return stop(
+    EARLIER,
+    `an earlier marker (comment ${seen.marker.id} by ${seen.marker.login}) holds the follow-up; stop before acting${kept}`,
+  );
 }
 
 async function checkOrDone(

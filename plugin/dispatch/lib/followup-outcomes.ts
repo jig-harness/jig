@@ -42,10 +42,30 @@ function isOutcome(value: unknown): value is FollowupOutcome {
     typeof value.repo === "string" &&
     typeof value.pr === "number" &&
     typeof value.record === "string" &&
-    (value.outcome === "done" || value.outcome === "failed") &&
+    ["done", "failed"].includes(String(value.outcome)) &&
     typeof value.at === "string" &&
-    (value.created === undefined || typeof value.created === "string")
+    ["undefined", "string"].includes(typeof value.created)
   );
+}
+
+/** An outcome file's content, or `null` when it does not read as an outcome. */
+function readOutcomeFile(path: string): FollowupOutcome | null {
+  try {
+    const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return isOutcome(value) ? value : null;
+  } catch (error) {
+    swallow(error, `${path} is not a follow-up outcome`);
+    return null;
+  }
+}
+
+/** The pull request a file name of `repo` names, or `null` when it is not one of its files. */
+function namedPr(repo: string, name: string): number | null {
+  const prefix = `${repo.replace(/[^A-Za-z0-9._-]/g, "__")}-`;
+  const m = name.startsWith(prefix)
+    ? /^(\d+)\.json$/.exec(name.slice(prefix.length))
+    : null;
+  return m === null ? null : Number(m[1]);
 }
 
 /** The outcome files under the root: those of `repo` that read, and the pull requests whose file does not. */
@@ -62,24 +82,13 @@ function scanOutcomes(
     swallow(error, "no follow-up outcome has been written yet");
     return { read, unreadable };
   }
-  const prefix = `${repo.replace(/[^A-Za-z0-9._-]/g, "__")}-`;
-  for (const name of names) {
-    if (!name.endsWith(".json")) continue;
+  for (const name of names.filter((n) => n.endsWith(".json"))) {
+    const value = readOutcomeFile(join(outcomesRoot(root), name));
     // The file name carries the repository and pull request, so a file that does not read still names its pull request.
-    const named = name.startsWith(prefix)
-      ? /^(\d+)\.json$/.exec(name.slice(prefix.length))
-      : null;
-    try {
-      const value: unknown = JSON.parse(
-        readFileSync(join(outcomesRoot(root), name), "utf8"),
-      );
-      if (isOutcome(value)) {
-        if (value.repo === repo) read.set(value.pr, value);
-      } else if (named !== null) unreadable.add(Number(named[1]));
-    } catch (error) {
-      swallow(error, `${name} is not a follow-up outcome`);
-      if (named !== null) unreadable.add(Number(named[1]));
-    }
+    const named = namedPr(repo, name);
+    if (value === null) {
+      if (named !== null) unreadable.add(named);
+    } else if (value.repo === repo) read.set(value.pr, value);
   }
   return { read, unreadable };
 }

@@ -78,6 +78,33 @@ function endedAs(
   return found === undefined ? null : outcomeOf(found);
 }
 
+/** Why a marker whose record is gone and whose outcome file does not read cannot be judged failed; `null` otherwise. */
+function lostOutcome(
+  input: FollowupInput,
+  pr: number,
+  marker: number,
+  id: string,
+  gone: boolean,
+): string | null {
+  if (!gone || input.unreadableOutcomes?.has(pr) !== true) return null;
+  return `marker comment ${marker} names launch record ${id}, which is gone, and the pull request's outcome file does not read: its result is unknown, a person settles it`;
+}
+
+/** Why the launch record a marker names is not this pull request's follow-up; `null` when it is, or is not on this machine. */
+function foreignRecord(
+  found: ReadRecord | undefined,
+  pr: MarkedPr,
+  marker: number,
+  id: string,
+): string | null {
+  if (
+    found === undefined ||
+    (found.record.action === "followup" && found.record.pr === pr.number)
+  )
+    return null;
+  return `its follow-up marker (comment ${marker}) names launch record ${id}, which is a ${found.record.action} of ${targetOf(found.record)}: a person settles it`;
+}
+
 /** A pull request the tick's own marker claims, by the record it names and the outcome. */
 function planTickMarker(
   input: FollowupInput,
@@ -88,18 +115,20 @@ function planTickMarker(
   const target = `PR #${pr.number}`;
   const id = marker.run.record;
   const found = input.launches.find((r) => r.record.id === id);
-  if (
-    found !== undefined &&
-    (found.record.action !== "followup" || found.record.pr !== pr.number)
-  ) {
-    plan.unplaced.push({
-      target,
-      record: "forge",
-      reason: `its follow-up marker (comment ${marker.id}) names launch record ${id}, which is a ${found.record.action} of ${targetOf(found.record)}: a person settles it`,
-    });
+  const ended = endedAs(input, pr.number, id, found);
+  const unsettled =
+    foreignRecord(found, pr, marker.id, id) ??
+    lostOutcome(
+      input,
+      pr.number,
+      marker.id,
+      id,
+      found === undefined && ended === null,
+    );
+  if (unsettled !== null) {
+    plan.unplaced.push({ target, record: "forge", reason: unsettled });
     return;
   }
-  const ended = endedAs(input, pr.number, id, found);
   if (ended === "done") {
     plan.quiet.push({
       target,
@@ -114,18 +143,6 @@ function planTickMarker(
       stage: "followup",
       reason: `launch record ${id} (${found.state.kind}) holds its follow-up, claimed by marker comment ${marker.id}`,
       evidence: { record: id, marker: marker.id },
-    });
-    return;
-  }
-  if (
-    ended === null &&
-    found === undefined &&
-    input.unreadableOutcomes?.has(pr.number) === true
-  ) {
-    plan.unplaced.push({
-      target,
-      record: "forge",
-      reason: `marker comment ${marker.id} names launch record ${id}, which is gone, and the pull request's outcome file does not read: its result is unknown, a person settles it`,
     });
     return;
   }

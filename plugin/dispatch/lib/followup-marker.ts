@@ -190,3 +190,21 @@ export function listsOwn(
 ): boolean {
   return trustedMarkers(markers).some((m) => m.id === id);
 }
+
+/** What the read-back after posting marker `own` shows: it stands, or why not. */
+export type ReadBack =
+  | { kind: "stands" }
+  | { kind: "unreadable"; reason: string }
+  | { kind: "missing" }
+  | { kind: "earlier"; marker: FollowupMarker };
+
+export function readBack(
+  markers: FollowupMarker[] | { unreadable: string },
+  own: number,
+): ReadBack {
+  if ("unreadable" in markers)
+    return { kind: "unreadable", reason: markers.unreadable };
+  const earlier = earlierThan(markers, own);
+  if (earlier !== null) return { kind: "earlier", marker: earlier };
+  return listsOwn(markers, own) ? { kind: "stands" } : { kind: "missing" };
+}

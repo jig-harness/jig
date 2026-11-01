@@ -22,11 +22,11 @@
  *
  * The marker is the one thing the dispatcher writes to the forge.
  */
+import type { Slots } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import {
   deleteMarker,
-  earlierThan,
-  listsOwn,
+  readBack,
   postMarker,
   readMarkers,
   tickMarker,
@@ -143,19 +143,17 @@ async function claim(
   }
   record.marker = posted;
   writeRecord(record, state.root);
-  const markers = await readMarkers(repo.slug, record.pr, ctx.login);
+  const seen = readBack(
+    await readMarkers(repo.slug, record.pr, ctx.login),
+    posted,
+  );
+  if (seen.kind === "stands") return null;
   const why =
-    "unreadable" in markers
-      ? `the markers could not be read back after posting: ${markers.unreadable}`
-      : (() => {
-          const earlier = earlierThan(markers, posted);
-          if (earlier === null)
-            return listsOwn(markers, posted)
-              ? null
-              : `the read-back does not list the posted marker (comment ${posted})`;
-          return `an earlier marker (comment ${earlier.id} by ${earlier.login}) claimed it first; this one stands down`;
-        })();
-  if (why === null) return null;
+    seen.kind === "unreadable"
+      ? `the markers could not be read back after posting: ${seen.reason}`
+      : seen.kind === "missing"
+        ? `the read-back does not list the posted marker (comment ${posted})`
+        : `an earlier marker (comment ${seen.marker.id} by ${seen.marker.login}) claimed it first; this one stands down`;
   const deleted = await deleteMarker(repo.slug, posted);
   if (deleted === "") {
     dropRecord(state, record);
@@ -167,6 +165,42 @@ async function claim(
     state.root,
   );
   return `${why}; its own marker (comment ${posted}) could not be deleted (${deleted}), so its record ends failed`;
+}
+
+/** The launch record of a follow-up, before it holds its slot. */
+function newFollowupRecord(
+  state: ApplyState,
+  repo: RepoTarget,
+  pr: MarkedPr,
+  ctx: FollowupContext,
+  slots: Slots,
+  workspace: { id: string; path: string },
+): LaunchRecord & { pr: number } {
+  return {
+    version: 1,
+    id: newRecordId(new Date()),
+    token: newToken(),
+    action: "followup",
+    repo: repo.slug,
+    repoPath: repo.path,
+    pr: pr.number,
+    item: null,
+    account: slots.account.name,
+    vendor: slots.account.vendor,
+    configDir: slots.account.configDir,
+    wallBackoffMs: state.machine.wallBackoffMs,
+    replaces: null,
+    facts: `merged ${pr.mergedAt}`,
+    createdAt: new Date().toISOString(),
+    workspace,
+    attempts: [],
+    agentId: null,
+    model: null,
+    effort: null,
+    released: false,
+    command: ctx.section.followupCommand,
+    marker: null,
+  };
 }
 
 /** One planned follow-up, through its fresh read, admission, workspace, marker and launch. */
@@ -196,40 +230,37 @@ async function launchOne(
   if (stale !== null) return stale;
   const after = await changed(repo, ctx, pr.number);
   if (after !== null) return waits(action, after, slots.account.name);
-  const record: LaunchRecord & { pr: number } = {
-    version: 1,
-    id: newRecordId(new Date()),
-    token: newToken(),
-    action: "followup",
-    repo: repo.slug,
-    repoPath: repo.path,
-    pr: pr.number,
-    item: null,
-    account: slots.account.name,
-    vendor: slots.account.vendor,
-    configDir: slots.account.configDir,
-    wallBackoffMs: state.machine.wallBackoffMs,
-    replaces: null,
-    facts: `merged ${pr.mergedAt}`,
-    createdAt: new Date().toISOString(),
-    workspace: opened.workspace,
-    attempts: [],
-    agentId: null,
-    model: null,
-    effort: null,
-    released: false,
-    command: ctx.section.followupCommand,
-    marker: null,
-  };
-  const tooLate = outOfTime(state);
-  if (tooLate !== null) return waits(action, tooLate, slots.account.name);
+  const record = newFollowupRecord(
+    state,
+    repo,
+    pr,
+    ctx,
+    slots,
+    opened.workspace,
+  );
+  return claimAndLaunch(state, repo, action, ctx, record, slots);
+}
+
+/** Hold the record, claim on the forge, launch: the deadline is checked before the claim and before the launch. */
+async function claimAndLaunch(
+  state: ApplyState,
+  repo: RepoTarget,
+  action: Action,
+  ctx: FollowupContext,
+  record: LaunchRecord & { pr: number },
+  slots: Slots,
+): Promise<LaunchOutcome> {
+  const name = slots.account.name;
+  const before = outOfTime(state);
+  if (before !== null) return waits(action, before, name);
   holdRecord(state, record, slots);
   const lost = await claim(state, repo, ctx, record);
-  if (lost !== null) return refused(action, lost, slots.account.name);
+  if (lost !== null) return refused(action, lost, name);
   // The claim stands on the forge: past the deadline the record stays held, and the next tick reconciles it.
-  const late2 = outOfTime(state);
-  if (late2 !== null) return waits(action, late2, slots.account.name);
-  return launchHeld(state, record);
+  const after = outOfTime(state);
+  return after === null
+    ? launchHeld(state, record)
+    : waits(action, after, name);
 }
 
 /**
