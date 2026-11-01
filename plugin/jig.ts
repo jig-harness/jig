@@ -14,11 +14,6 @@
 import { fileURLToPath } from "node:url";
 import { GcConfigurationError } from "./shared/gc-error.ts";
 import { gcComponent } from "./gc/component.ts";
-import {
-  dispatchCommand,
-  strictDispatchCommand,
-  winningIntervalArguments,
-} from "./dispatch/cli.ts";
 import { dispatchComponent } from "./dispatch/component.ts";
 import { runMain as dispatchRun } from "./dispatch/run.ts";
 import type { Component } from "./runtime/component.ts";
@@ -32,19 +27,23 @@ const COMPONENTS: readonly Component[] = [gcComponent, dispatchComponent];
 
 const verbs = verbCommands(COMPONENTS.map((component) => component.name));
 
-const programOf = (dispatchParser: typeof dispatchCommand) =>
+/** Each component's own command beside the verbs; `strict` takes a component's stricter parser. */
+const programOf = (strict: boolean) =>
   or(
     verbs,
-    map(gcComponent.command, (gc) => ({ component: "gc" as const, gc })),
-    map(dispatchParser, (dispatch) => ({
-      component: "dispatch" as const,
-      dispatch,
-    })),
+    ...COMPONENTS.map((component) =>
+      map(
+        strict
+          ? (component.strictCommand ?? component.command)
+          : component.command,
+        (args) => ({ component: component.name, args }),
+      ),
+    ),
   );
-const program = programOf(dispatchCommand);
-// `dispatch install` holds its interval to whole minutes, which only the
-// interval that wins has to meet, so it is checked in a second parse.
-const strictProgram = programOf(strictDispatchCommand);
+const program = programOf(false);
+// A component may hold the option that wins to more than the first parse
+// does, so it is checked in a second one.
+const strictProgram = programOf(true);
 
 function reportError(error: unknown): never {
   if (error instanceof GcConfigurationError) {
@@ -88,15 +87,17 @@ export function parseCommandLine(
 
 type Parsed = ReturnType<typeof parseCommandLine>;
 
-/** Whether the command is `dispatch install` with an interval that is not whole minutes. */
-function partialMinutes(parsed: Parsed): boolean {
-  if ("verb" in parsed || parsed.component !== "dispatch") return false;
-  const args = parsed.dispatch;
+/** The command line to parse again strictly, for a component command that asks for it. */
+function strictArgv(parsed: Parsed, argv: readonly string[]) {
+  if ("verb" in parsed) return null;
   return (
-    args.action === "install" &&
-    args.intervalMs !== undefined &&
-    args.intervalMs % 60_000 !== 0
+    componentNamed(parsed.component).strictArguments?.(parsed.args, argv) ??
+    null
   );
+}
+
+function componentNamed(name: string): Component {
+  return COMPONENTS.find((component) => component.name === name) as Component;
 }
 
 /** Runs a parsed command line: a lifecycle verb, or a component's own command. */
@@ -107,9 +108,7 @@ function execute(parsed: Parsed, script: string): Promise<number> {
       script,
       run: (argv) => execute(parseCommandLine(argv), script),
     });
-  return parsed.component === "gc"
-    ? gcComponent.main(parsed.gc, script)
-    : dispatchComponent.main(parsed.dispatch, script);
+  return componentNamed(parsed.component).main(parsed.args, script);
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -123,8 +122,8 @@ export async function main(argv: string[]): Promise<number> {
       reportError(error);
     }
   const parsed = parseCommandLine(argv);
-  if (partialMinutes(parsed))
-    parseCommandLine(winningIntervalArguments(argv), strictProgram);
+  const strict = strictArgv(parsed, argv);
+  if (strict !== null) parseCommandLine(strict, strictProgram);
   try {
     return await execute(parsed, script);
   } catch (error) {

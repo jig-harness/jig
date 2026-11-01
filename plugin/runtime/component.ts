@@ -61,6 +61,16 @@ export interface Component<A = unknown> {
   readonly command: Parser<"sync", A, unknown>;
   /** Runs what its own command parsed. */
   main(args: A, script: string): Promise<number>;
+  /**
+   * A stricter parser for the same command, for a check that only the winning
+   * value of a repeated option has to meet; with `strictArguments`.
+   */
+  readonly strictCommand?: Parser<"sync", A, unknown>;
+  /**
+   * The command line to parse again with `strictCommand`, or null when the
+   * parsed `args` need no second parse.
+   */
+  strictArguments?(args: A, argv: readonly string[]): readonly string[] | null;
   /** The job its timer runs: `jig run` runs `job().args`, and `status` looks the job up by its names. */
   job(): JobSpec;
   /**

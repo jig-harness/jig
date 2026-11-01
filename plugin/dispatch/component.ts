@@ -19,19 +19,29 @@ import {
   dispatchMain,
   machineFile,
   showReceipts,
+  strictDispatchCommand,
+  winningIntervalArguments,
 } from "./cli.ts";
-import {
-  dispatchJobSpec,
-  installDispatch,
-  intervalMinutes,
-} from "./install.ts";
-import { machineConfigPath } from "./lib/machine-config.ts";
+import { dispatchJobSpec, installDispatch } from "./install.ts";
+import { type MachineConfig, machineConfigPath } from "./lib/machine-config.ts";
 import { readReceipt, receiptPaths } from "./receipts.ts";
 
-/** The tick's job at the machine file's interval. */
+/**
+ * The tick's job, by its names, arguments and deadline: what `jig run` runs
+ * and `jig status` looks up. A machine file that does not read, or an
+ * interval that is not whole minutes, is for an install to refuse; the
+ * installed job's own schedule is what status reports.
+ */
 function job() {
-  const machine = machineFile();
-  return dispatchJobSpec(intervalMinutes(null, machine), machine);
+  let machine: MachineConfig | null = null;
+  try {
+    machine = machineFile();
+  } catch {
+    // Left to install, which refuses the file with its message.
+  }
+  const minutes =
+    machine === null ? 5 : Math.max(1, Math.ceil(machine.intervalMs / 60_000));
+  return dispatchJobSpec(minutes, machine);
 }
 
 function missingOptIn(): string | null {
@@ -61,6 +71,15 @@ export const dispatchComponent: Component<DispatchArguments> = {
   name: "dispatch",
   command: dispatchCommand,
   main: dispatchMain,
+  // `dispatch install` holds its interval to whole minutes, which only the
+  // interval that wins has to meet.
+  strictCommand: strictDispatchCommand,
+  strictArguments: (args, argv) =>
+    args.action === "install" &&
+    args.intervalMs !== undefined &&
+    args.intervalMs % 60_000 !== 0
+      ? winningIntervalArguments(argv)
+      : null,
   job,
   missingOptIn,
   install: (request) =>

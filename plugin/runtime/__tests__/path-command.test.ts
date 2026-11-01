@@ -65,3 +65,13 @@ test("a value the script cannot carry is refused", () => {
     "double quote",
   );
 });
+
+test("a deadline is carried unless the caller sets one", () => {
+  expect(commandText(["bun"], "linux", 21600)).toContain(
+    'DEADLINE_SEC:-21600}"',
+  );
+  expect(commandText(["bun"], "win32", 21600)).toContain(
+    "if not defined JIG_LAUNCHER_DEADLINE_SEC set JIG_LAUNCHER_DEADLINE_SEC=21600",
+  );
+  expect(commandText(["bun"], "linux")).not.toContain("DEADLINE");
+});

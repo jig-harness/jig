@@ -124,6 +124,8 @@ export interface VerbContext {
   components: readonly Component[];
   /** The running `jig.ts`. */
   script: string;
+  /** The platform the verbs run on; Windows has no scheduler for a component's job. */
+  platform?: NodeJS.Platform;
   /** Runs a `jig` command line in this process: how `run` starts a timer's command. */
   run(argv: readonly string[]): Promise<number>;
 }
@@ -175,22 +177,41 @@ export async function runVerb(
   switch (args.verb) {
     case "install": {
       checkCommandPath();
-      const code = await each(
-        args.components,
-        components,
-        (component) => {
-          heading(component);
-          return component.install({
-            repository: args.repository,
-            confirm: args.confirm,
-            script,
-          });
-        },
-        console.log,
-      );
+      // Jobs run on systemd, launchd or cron; on Windows the command alone is
+      // written, and naming a component is refused as the component refuses it.
+      const jobless =
+        (context.platform ?? process.platform) === "win32" &&
+        args.components.length === 0;
+      if (jobless)
+        console.log(
+          "Scheduled jobs need macOS or Linux: writing the jig command only.",
+        );
+      const code = jobless
+        ? 0
+        : await each(
+            args.components,
+            components,
+            (component) => {
+              heading(component);
+              return component.install({
+                repository: args.repository,
+                confirm: args.confirm,
+                script,
+              });
+            },
+            console.log,
+          );
       if (code !== 0) return code;
       console.log("== the jig command ==");
-      return installCommand({ confirm: args.confirm, script });
+      const deadlineSec = Math.max(
+        0,
+        ...components.map((component) => component.job().deadlineSec ?? 0),
+      );
+      return installCommand({
+        confirm: args.confirm,
+        script,
+        ...(deadlineSec > 0 ? { deadlineSec } : {}),
+      });
     }
     case "uninstall": {
       const code = await each(args.components, components, (component) => {

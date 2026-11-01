@@ -80,7 +80,7 @@ export function dispatchJobSpec(
  * The timer's interval in minutes: `--interval` (`override`), else the machine
  * file's, else five; whole minutes, or a usage error (exit 2).
  */
-export function intervalMinutes(
+function intervalMinutes(
   override: number | null,
   machine: MachineConfig | null,
 ): number {

@@ -9,4 +9,4 @@ release: minor
 
 ### Changed
 
-- `jig gc install`, `jig dispatch install` (with `--uninstall`, `--machine` and `--interval`), `jig gc receipts` and `jig dispatch receipts` keep working as before but no longer appear in `jig --help` or a component's help, which name the lifecycle commands instead. `jig dispatch receipts <date>` now lists that day's receipts, as `jig receipts dispatch <date>` does. Jobs already installed keep running unchanged: there is nothing a consumer must change.
+- `jig gc install` (with `--uninstall`, and `--machine` only with `--uninstall`), `jig dispatch install` (with `--uninstall` and `--interval`; it refuses `--machine`), `jig gc receipts` and `jig dispatch receipts` keep working as before but no longer appear in `jig --help` or a component's help, which name the lifecycle commands instead. `jig dispatch receipts <date>` now lists that day's receipts, as `jig receipts dispatch <date>` does. Jobs already installed keep running unchanged: there is nothing a consumer must change.

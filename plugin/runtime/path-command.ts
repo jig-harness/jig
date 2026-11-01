@@ -14,6 +14,7 @@
  */
 import {
   mkdirSync,
+  lstatSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -56,6 +57,7 @@ function shellQuote(value: string): string {
 export function commandText(
   command: readonly string[],
   platform: NodeJS.Platform = process.platform,
+  deadlineSec?: number,
 ): string {
   if (command.some((value) => /[\r\n\0]/.test(value)))
     throw new GcError(
@@ -69,13 +71,27 @@ export function commandText(
       );
     // A batch file reads a percent sign as a variable unless it is doubled.
     const quoted = command.map((value) => `"${value.replace(/%/g, "%%")}"`);
-    return `@echo off\r\nrem ${MARKER}; ${purpose}.\r\n${quoted.join(" ")} %*\r\n`;
+    const deadline =
+      deadlineSec === undefined
+        ? ""
+        : `if not defined JIG_LAUNCHER_DEADLINE_SEC set JIG_LAUNCHER_DEADLINE_SEC=${deadlineSec}\r\n`;
+    return `@echo off\r\nrem ${MARKER}; ${purpose}.\r\n${deadline}${quoted.join(" ")} %*\r\n`;
   }
-  return `#!/bin/sh\n# ${MARKER}; ${purpose}.\nexec ${command.map(shellQuote).join(" ")} "$@"\n`;
+  const deadline =
+    deadlineSec === undefined
+      ? ""
+      : `JIG_LAUNCHER_DEADLINE_SEC="\${JIG_LAUNCHER_DEADLINE_SEC:-${deadlineSec}}"\nexport JIG_LAUNCHER_DEADLINE_SEC\n`;
+  return `#!/bin/sh\n# ${MARKER}; ${purpose}.\n${deadline}exec ${command.map(shellQuote).join(" ")} "$@"\n`;
 }
 
+/**
+ * The text of the file at `path`; null when the directory entry is absent.
+ * An entry that is not a regular file (a symlink, even a dangling one, or a
+ * directory) is not one `jig install` wrote and reads as empty text.
+ */
 function readOptional(path: string): string | null {
   try {
+    if (!lstatSync(path).isFile()) return "";
     return readFileSync(path, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
@@ -107,15 +123,25 @@ export function checkCommandPath(): void {
     );
 }
 
-/** The command's preview, then, with `confirm`, the launcher copy and the script. */
+/**
+ * The command's preview, then, with `confirm`, the launcher copy and the script.
+ * `deadlineSec` is the longest run any component's job is granted: the
+ * launcher stops a command at its collection default otherwise, which is
+ * shorter than a dispatcher tick's budget.
+ */
 export function installCommand(options: {
   confirm: boolean;
   script: string;
+  deadlineSec?: number;
 }): number {
   checkCommandPath();
   const path = commandPath();
   const directory = commandLauncherDirectory();
-  const text = commandText(launcherCommand(directory));
+  const text = commandText(
+    launcherCommand(directory),
+    process.platform,
+    options.deadlineSec,
+  );
   console.log(`The jig command (${path}):\n${text}`);
   if (!options.confirm) {
     console.log("Preview only. Repeat with --yes to write it.");

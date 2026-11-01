@@ -17,7 +17,13 @@ import { readReceipt, receiptPaths } from "./receipts.ts";
 
 /** The daily job at the machine file's hour. */
 function job() {
-  return gcJobSpec(gcConfiguration(process.cwd(), null).machine.hour);
+  try {
+    return gcJobSpec(gcConfiguration(process.cwd(), null).machine.hour);
+  } catch {
+    // The job's names and arguments do not depend on the hour; a machine
+    // file that does not read is for install to refuse, not status or run.
+    return gcJobSpec();
+  }
 }
 
 /** The newest receipt that reads; null when there is none. */

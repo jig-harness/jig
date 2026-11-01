@@ -1546,8 +1546,9 @@ make, use the entry's term instead.
   way on every *component* of the `jig` command, rather than doing one
   component's own work: `jig install`, `jig uninstall`, `jig status`,
   `jig receipts` and `jig run`. With no component named, it acts on all of
-  them (`jig install` only on those whose opt-in exists); each component's
-  own work stays under its name (`jig gc --collect`).
+  them, except that `jig install` and `jig run` leave out a component whose
+  opt-in is missing, and `jig receipts` always names one component; each
+  component's own work stays under its name (`jig gc --collect`).
 - **Type guard** — a function that checks at run time that a value has a
   given shape, and tells the type checker so when it does. Data read from
   outside the program (JSON, a configuration file) is checked by one before

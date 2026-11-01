@@ -62,3 +62,9 @@ test("schedules read in words", () => {
   expect(describeSchedule({ everyMinutes: 1 })).toBe("every 1 minute");
   expect(describeSchedule({ everyMinutes: 5 })).toBe("every 5 minutes");
 });
+
+test("tomorrow's hour is the configured one though today's was skipped by the clocks", () => {
+  const now = new Date(2026, 10, 1, 12, 0);
+  const next = nextRun({ hour: 2 }, now);
+  expect(next).toEqual(new Date(2026, 10, 2, 2, 0));
+});

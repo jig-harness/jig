@@ -19,7 +19,7 @@ type Schedule = JobSpec["schedule"];
 /** The installed job's text that holds its schedule, and where it is; null when absent. */
 function installedJob(
   snapshot: SchedulerSnapshot,
-): { text: string; where: string } | null {
+): { text: string; where: string; active: boolean } | null {
   const { spec } = snapshot;
   if (snapshot.scheduler === "cron") {
     const line = (snapshot.files.crontab ?? "")
@@ -27,7 +27,7 @@ function installedJob(
       .find((entry) => entry.endsWith(` # ${spec.name}`));
     return line === undefined
       ? null
-      : { text: line, where: `crontab: # ${spec.name}` };
+      : { text: line, where: `crontab: # ${spec.name}`, active: true };
   }
   const suffix =
     snapshot.scheduler === "launchd"
@@ -45,6 +45,7 @@ function installedJob(
   return {
     text: text as string,
     where: `${snapshot.scheduler}: ${path}${states.length ? ` (${states.join(", ")})` : ""}`,
+    active: states.length === 0,
   };
 }
 
@@ -101,7 +102,13 @@ export function nextRun(schedule: Schedule, now: Date): Date | null {
   if (!("hour" in schedule)) return null;
   const next = new Date(now);
   next.setHours(schedule.hour, 0, 0, 0);
-  if (next <= now) next.setDate(next.getDate() + 1);
+  if (next <= now) {
+    // From `now`'s own date: today's hour, if the clocks skipped it, may
+    // have rolled into the next day and must not carry into tomorrow's.
+    next.setTime(now.getTime());
+    next.setDate(next.getDate() + 1);
+    next.setHours(schedule.hour, 0, 0, 0);
+  }
   return next;
 }
 
@@ -140,7 +147,7 @@ export async function scheduledStatus(
     detail: job.where,
     schedule: schedule === null ? null : describeSchedule(schedule),
     nextRun:
-      schedule === null
+      schedule === null || !job.active
         ? null
         : (nextRun(schedule, now)?.toISOString() ?? null),
     lastRun,

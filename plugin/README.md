@@ -131,7 +131,9 @@ jig run       [COMPONENT...]
   refused. It also writes the `jig` command, `~/.local/bin/jig`
   (`jig.cmd` on Windows), and says so when that directory is not on `PATH`.
 - **`jig uninstall`** removes this repository's entry in resource
-  collection; the jobs stay, since they serve the other repositories.
+  collection; the jobs stay while they serve other repositories. Resource
+  collection's job goes with its last registration, unless receipts are
+  kept; the dispatcher's stays until `--machine`.
   `--machine` removes each component's job as well, and, with no component
   named, the `jig` command too.
 - **`jig status`** says whether each component's job is installed, where,

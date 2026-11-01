@@ -121,7 +121,7 @@ test.each([
 test("bare gc parses as a report and bare dispatch as a tick", () => {
   expect(parseCommandLine(["gc"])).toEqual({
     component: "gc",
-    gc: {
+    args: {
       action: "collect",
       mode: undefined,
       repository: undefined,
@@ -131,7 +131,7 @@ test("bare gc parses as a report and bare dispatch as a tick", () => {
   });
   expect(parseCommandLine(["dispatch"])).toEqual({
     component: "dispatch",
-    dispatch: {
+    args: {
       action: "tick",
       apply: false,
       repos: [],
@@ -144,11 +144,11 @@ test("bare gc parses as a report and bare dispatch as a tick", () => {
 test("the installed jobs' command lines parse as the scheduled run and the applying tick", () => {
   expect(parseCommandLine(gcJobSpec().args)).toMatchObject({
     component: "gc",
-    gc: { action: "collect", mode: "scheduled" },
+    args: { action: "collect", mode: "scheduled" },
   });
   expect(parseCommandLine(dispatchJobSpec(5).args)).toMatchObject({
     component: "dispatch",
-    dispatch: { action: "tick", apply: true },
+    args: { action: "tick", apply: true },
   });
 });
 
@@ -157,7 +157,7 @@ test.each([
     ["gc", "install"],
     {
       component: "gc",
-      gc: {
+      args: {
         action: "install",
         repository: undefined,
         confirm: false,
@@ -169,7 +169,7 @@ test.each([
     ["gc", "install", "--uninstall", "--machine", "--yes"],
     {
       component: "gc",
-      gc: {
+      args: {
         action: "install",
         repository: undefined,
         confirm: true,
@@ -181,7 +181,7 @@ test.each([
     ["dispatch", "install", "--interval", "10m", "--yes"],
     {
       component: "dispatch",
-      dispatch: {
+      args: {
         action: "install",
         intervalMs: 600_000,
         confirm: true,
@@ -191,13 +191,13 @@ test.each([
   ],
   [
     ["gc", "receipts"],
-    { component: "gc", gc: { action: "receipts", query: undefined } },
+    { component: "gc", args: { action: "receipts", query: undefined } },
   ],
   [
     ["dispatch", "receipts"],
     {
       component: "dispatch",
-      dispatch: { action: "receipts", runId: undefined },
+      args: { action: "receipts", runId: undefined },
     },
   ],
 ])("the earlier form jig %p parses as it did", (args, parsed) => {
