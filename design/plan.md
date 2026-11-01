@@ -165,10 +165,13 @@ Built in this order:
    morning report, and when it fails it is reported, named by `jig doctor`,
    and not tried again inside the interval. The launcher runs it from the
    installed copy, never from itself, and the launcher copy is refreshed by
-   `jig upgrade` as step 3 has it. Both harnesses install each version into
-   its own directory, so a run already started keeps the files it started
-   with. `jig install --no-upgrade`, or `upgrade: off` in the machine file,
-   opts a machine out.
+   `jig upgrade` as step 3 has it. A versioned cache install puts each
+   version into its own directory, so a run already started keeps the files
+   it started with. A plugin loaded in place from a local marketplace has no
+   such directory: the scheduled upgrade skips it, reports the skip in the
+   job's receipt, and leaves updating it to the person who maintains that
+   folder. `jig install --no-upgrade`, or `upgrade: off` in the machine
+   file, opts a machine out.
 
 Done when `jig` on `PATH` installs, upgrades, checks and removes both
 components through the same verbs, `jig doctor` reports the plugin's
