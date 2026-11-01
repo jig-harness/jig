@@ -1084,7 +1084,9 @@ recorded reset), `idle/` (since when each claimed item has had no
 running session, for `stalled_after`), `followups/` (each dispatched
 follow-up's outcome, done or failed, kept whatever `receipts_days` says),
 `notices/` (a record per notification sent, dropped once its cause
-is gone), `nudges/` (a record per nudge attempted, with whether it
+is gone, except a drift's, which stays for the life of its launch and
+expectation so a launch that recovers and drifts again does not notify
+twice), `nudges/` (a record per nudge attempted, with whether it
 arrived) and the outcome log, `log-<year>-<month>.jsonl` (a row per launch
 that ended and per cause observed, which nothing removes). A launch record a run
 cannot check (claimed on another host or before a reboot) holds its

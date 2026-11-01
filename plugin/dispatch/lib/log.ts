@@ -37,6 +37,7 @@ import {
   writeSync,
 } from "node:fs";
 import { join } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { stateRoot } from "../receipts.ts";
@@ -191,19 +192,29 @@ function settleLastLine(fd: number, size: number): number {
   return start;
 }
 
-/** Whether a month file already holds a row with `key`. */
-function holdsKey(path: string, key: string): boolean {
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch (error) {
-    swallow(error, `${path} does not read`);
-    return false;
-  }
+/**
+ * Whether the month file open as `fd` already holds a row with `key`. It is
+ * read through the descriptor already held and in chunks, so a failure is the
+ * caller's (a lookup that cannot read is not an absent key) and no call
+ * holds the whole file.
+ */
+function holdsKey(fd: number, size: number, key: string): boolean {
   const needle = `"key":${JSON.stringify(key)}`;
-  return text
-    .split("\n")
-    .some((line) => line.includes(needle) && parseLine(line)?.key === key);
+  const chunk = Buffer.alloc(1024 * 1024);
+  const decoder = new StringDecoder("utf8");
+  let carry = "";
+  let at = 0;
+  while (at < size) {
+    const read = readSync(fd, chunk, 0, Math.min(chunk.length, size - at), at);
+    if (read === 0) break;
+    at += read;
+    const lines = (carry + decoder.write(chunk.subarray(0, read))).split("\n");
+    carry = lines.pop() ?? "";
+    if (lines.some((l) => l.includes(needle) && parseLine(l)?.key === key))
+      return true;
+  }
+  carry += decoder.end();
+  return carry.includes(needle) && parseLine(carry)?.key === key;
 }
 
 /**
@@ -216,7 +227,7 @@ export function appendRow(row: LogRow, root = stateRoot()): boolean {
   const fd = openSync(path, "a+", 0o600);
   try {
     const size = settleLastLine(fd, statSync(path).size);
-    if (holdsKey(path, row.key)) return false;
+    if (holdsKey(fd, size, row.key)) return false;
     writeSync(fd, `${JSON.stringify(row)}\n`, size);
     return true;
   } finally {

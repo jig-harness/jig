@@ -249,7 +249,10 @@ async function gatherRepo(
     }${bindingNote(runtime, section)}`,
   });
 
-  await observeRunning(context, repo, report, drives, sessions);
+  const created = new Map<number, string>();
+  for (const p of [...open, ...merged])
+    if (p.createdAt !== undefined) created.set(p.number, p.createdAt);
+  await observeRunning(context, repo, report, drives, sessions, created);
   planRepo(context, repo.slug, report, {
     slug: repo.slug,
     section,
@@ -359,12 +362,13 @@ async function observeRunning(
   report: RepoReport,
   drives: Awaited<ReturnType<typeof readDrives>>,
   sessions: SessionsReport,
+  created: ReadonlyMap<number, string>,
 ): Promise<void> {
   const records = allRecords(context);
   await sampleThreads(records, repo.slug, drives, (pr) =>
     unresolvedThreadCount(repo.slug, pr),
   );
-  observeOpened(records, repo.slug, sessions);
+  observeOpened(records, repo.slug, sessions, created);
   const timeoutSec = Math.ceil(
     (context.options.machine?.runtimeTimeoutMs ?? 60_000) / 1000,
   );

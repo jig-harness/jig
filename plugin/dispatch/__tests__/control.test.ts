@@ -263,6 +263,10 @@ describe("the screen check before a nudge", () => {
         "╰────╯",
       ]),
     ).toBe("the input box holds text below its first line");
+    expect(screenNotReady([rule, "> ", "  delete the old records", rule])).toBe(
+      "the input box holds text below its first line",
+    );
+    expect(screenNotReady([rule, "> ", "", rule])).toBeNull();
     expect(screenNotReady([rule, "> continue please", rule])).toBe(
       "the input line holds text",
     );

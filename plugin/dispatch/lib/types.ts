@@ -106,6 +106,7 @@ export interface MergedPr {
   title: string;
   head: string;
   mergedAt: string;
+  createdAt?: string;
 }
 
 /** A follow-up marker comment on a merged pull request, as the tick reads it. */

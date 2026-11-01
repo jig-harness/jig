@@ -365,6 +365,22 @@ function prune(
     }
 }
 
+/** Append the event row of each stored suppression a stop kept from the log, whether or not its cause is still named. */
+function recoverEvents(
+  sent: Map<string, Suppression & { file: string }>,
+  root: string,
+): void {
+  for (const [key, s] of sent) {
+    if (s.event === undefined || existsSync(loggedMark(s.file))) continue;
+    try {
+      appendRow(s.event, root);
+      publishOnce(loggedMark(s.file), `${s.at}\n`);
+    } catch (error) {
+      swallow(error, `the event row of ${key} waits for a later tick`);
+    }
+  }
+}
+
 /** The causes for each target workspace; a cause with none reachable is reported as waiting. */
 async function groupByTarget(
   state: ApplyState,
@@ -477,6 +493,7 @@ export async function applyNotices(
   const root = state.root ?? stateRoot();
   const causes = report.actions.filter(isCause);
   const sent = readSuppressions(repo.slug, root);
+  recoverEvents(sent, root);
   prune(report, new Set(causes.map((c) => c.notice.key)), sent, root);
   const due = causes.filter((c) => !sent.has(c.notice.key));
   for (const c of causes) {

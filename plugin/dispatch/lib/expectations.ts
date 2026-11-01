@@ -78,13 +78,16 @@ export async function sampleThreads(
 
 /**
  * Record, on each running pickup's launch record of `repo`, the first tick
- * that sees a pull request in its workspace: the pull request may close or
- * merge before the pickup ends, and its expectation stays met.
+ * that sees a pull request in its workspace created after the launch: one
+ * the workspace already carried is not this pickup's, and the pull request
+ * may close or merge before the pickup ends, so its expectation stays met.
+ * A pull request whose creation time is not known is not counted.
  */
 export function observeOpened(
   records: ReadRecord[],
   repo: string,
   sessions: SessionsReport,
+  created: ReadonlyMap<number, string>,
   root?: string,
 ): void {
   for (const r of records) {
@@ -96,7 +99,12 @@ export function observeOpened(
       record.openedAt !== undefined
     )
       continue;
-    if ((workspaceOf(r, sessions)?.prs.length ?? 0) === 0) continue;
+    const launched = Date.parse(record.createdAt);
+    const mine = (workspaceOf(r, sessions)?.prs ?? []).some((n) => {
+      const at = Date.parse(created.get(n) ?? "");
+      return Number.isFinite(at) && at >= launched;
+    });
+    if (!mine) continue;
     record.openedAt = new Date().toISOString();
     writeRecord(record, root);
   }

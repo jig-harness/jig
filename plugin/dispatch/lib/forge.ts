@@ -98,11 +98,12 @@ interface ListedPr {
   url: string;
   title: string;
   headRefName: string;
+  createdAt?: string;
   mergedAt?: string;
 }
 
 async function listPrs(slug: string, extra: string[]): Promise<ListedPr[]> {
-  const fields = ["number", "url", "title", "headRefName"];
+  const fields = ["number", "url", "title", "headRefName", "createdAt"];
   if (extra.includes("merged")) fields.push("mergedAt");
   const out = parsed(
     await gh([
@@ -139,6 +140,7 @@ async function listPrs(slug: string, extra: string[]): Promise<ListedPr[]> {
       url: typeof p.url === "string" ? p.url : "",
       title: typeof p.title === "string" ? p.title : "",
       headRefName: p.headRefName,
+      ...(typeof p.createdAt === "string" ? { createdAt: p.createdAt } : {}),
       ...(typeof p.mergedAt === "string" ? { mergedAt: p.mergedAt } : {}),
     };
   });
@@ -169,6 +171,7 @@ export async function mergedSince(
       title: p.title,
       head: p.headRefName,
       mergedAt: p.mergedAt as string,
+      ...(p.createdAt === undefined ? {} : { createdAt: p.createdAt }),
     }))
     .sort((a, b) => a.number - b.number);
 }

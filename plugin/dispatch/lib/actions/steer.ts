@@ -26,7 +26,13 @@
  * There is no open-ended nudge: every other stuck state is a notification.
  */
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { join } from "node:path";
 import { swallow } from "../../../shared/errors.ts";
 import { isRecord } from "../../../shared/guards.ts";
@@ -78,6 +84,11 @@ function attemptFile(root: string, record: string, episode: string): string {
 
 function deliveryFile(root: string, record: string, episode: string): string {
   return join(nudgesRoot(root), `${digest(record, episode)}.delivery`);
+}
+
+/** The mark that a nudge's event row is in the log: a later tick does not look for it again. */
+function loggedFile(root: string, record: string, episode: string): string {
+  return join(nudgesRoot(root), `${digest(record, episode)}.logged`);
 }
 
 function readJson(path: string): unknown {
@@ -133,7 +144,7 @@ function nudgeKey(record: string, episode: string): string {
   return `${record} ${episode}`;
 }
 
-/** Append a nudge's event row; its key makes a repeat a no-op. */
+/** Append a nudge's event row, then its logged mark; the row's key makes a repeat a no-op. */
 function logDelivery(
   nudge: NudgeRecord,
   delivery: "delivered" | "unknown",
@@ -155,6 +166,7 @@ function logDelivery(
     },
     root,
   );
+  publishOnce(loggedFile(root, nudge.record, nudge.episode), `${nudge.at}\n`);
 }
 
 /** Write a nudge's delivery mark, and its event row with it. */
@@ -182,6 +194,7 @@ export function settlePending(
 ): void {
   for (const nudge of nudges.values()) {
     if (nudge.delivery !== "pending") {
+      if (existsSync(loggedFile(root, nudge.record, nudge.episode))) continue;
       try {
         logDelivery(nudge, nudge.delivery, nudge.detail, root);
       } catch (error) {
