@@ -91,8 +91,10 @@ test("a brief does not list a touched file whose link leads outside the reviewed
   ]);
   expectSpawnExit(written, 0);
   const brief = readFileSync(written.stdout.trim(), "utf8");
-  expect(brief).toContain(`- ${join(root, "src/a.ts")}\n`);
-  expect(brief).not.toContain(`- ${join(root, "src/private.ts")}\n`);
+  expect(brief).toContain(`- ${join(realpathSync(root), "src/a.ts")}\n`);
+  expect(brief).not.toContain(
+    `- ${join(realpathSync(root), "src/private.ts")}\n`,
+  );
 });
 
 test("a brief is refused for a lens the selection does not run, or before any selection", () => {

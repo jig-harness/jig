@@ -415,7 +415,7 @@ test("setup refuses a file reached through a link that leaves the repository", (
     "--files",
     "linkdir/outside.ts",
   ]);
-  expect(result.exitCode).not.toBe(0);
+  expectSpawnExit(result, 1);
   expect(result.stderr).toContain("leaves the reviewed tree through a link");
   expect(result.stdout).not.toContain("private");
 });

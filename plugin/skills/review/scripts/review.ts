@@ -359,8 +359,8 @@ async function remoteRepository(
   remote: string,
 ): Promise<string | null> {
   const address = (
-    await git(root, "config", "--get", `remote.${remote}.url`)
-  ).trim();
+    await gitIn(root)(["config", "--get", `remote.${remote}.url`], [0, 1])
+  ).stdout.trim();
   const found =
     /^(?:https?|ssh|git):\/\/(?:[^@/]*@)?([^/:]+)(?::\d+)?\/(.+?)(?:\.git)?\/*$/i.exec(
       address,
