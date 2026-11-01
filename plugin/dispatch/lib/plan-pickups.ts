@@ -83,7 +83,7 @@ function sessionsFor(
     ...live.map((w) => `workspace ${w.id}`),
     ...outside.map((r) => `record ${r.record.id}`),
   ]
-    .sort((a, b) => a.localeCompare(b))
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
     .join(", ");
   return {
     count: live.length + outside.length,

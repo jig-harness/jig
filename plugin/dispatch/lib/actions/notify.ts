@@ -148,7 +148,11 @@ function joins(cause: Cause, w: Workspace): boolean {
 /** The workspace joined to a cause's target that can take its message; `null` when none. */
 function joinedTarget(cause: Cause, workspaces: Workspace[]): Workspace | null {
   const joined = workspaces.filter((w) => joins(cause, w) && takesComment(w));
-  return joined.sort((a, b) => a.path.localeCompare(b.path))[0] ?? null;
+  return (
+    joined.sort((a, b) =>
+      a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+    )[0] ?? null
+  );
 }
 
 function outcomeFor(
