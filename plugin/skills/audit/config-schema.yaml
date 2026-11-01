@@ -261,18 +261,18 @@ fields:
     type: path
     exists: expected
     read_by: [review, do-item]
-    since: next
+    since: 0.116.0
   review.lenses.off:
     type: list
     items: string
     distinct: true
     read_by: [review, do-item]
-    since: next
+    since: 0.116.0
   review.lenses.triggers:
     type: map
     values_type: { type: map, values_type: { type: list, items: string } }
     read_by: [review, do-item]
-    since: next
+    since: 0.116.0
 
   repository.base_branch:
     type: string
