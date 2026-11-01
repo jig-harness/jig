@@ -1740,8 +1740,10 @@ make, use the entry's term instead.
   *factory identity*, a restart of a stopped review drive, the follow-up
   after a merge. It runs as a *tick* on a timer, starts sessions through a
   *session runtime*, and never merges or answers a parked question. It
-  reports every stage and restarts stopped drives today; the rest is
-  [ROADMAP.md](ROADMAP.md) item 33. It is Jig's first *control plane*.
+  reports every stage and restarts stopped drives today, and starts
+  pickups where its *session runtime* can bind a session to the account it
+  bills; the rest is [ROADMAP.md](ROADMAP.md) item 33. It is Jig's first
+  *control plane*.
 - **Tick** — one run of the *dispatcher*: read the tracker, the pull
   requests' drive ledgers and the running sessions, work out which stages
   are wanted and not running, report them, and start them only when told
@@ -1771,8 +1773,18 @@ make, use the entry's term instead.
 - **Factory identity** — the tracker user a repository assigns an item to
   when the *dispatcher* should pick it up. An item assigned to it and in
   one of the repository's dispatch states is started, when a person with
-  write access made the assignment; the pickup's move to the in-progress
-  state is the claim, so no item is picked up twice.
+  write access made the assignment. The `do-item` session claims it
+  (assigns it to itself and moves it to the in-progress state, refusing an
+  item someone already holds), so no item is picked up twice.
+- **Stalled pickup** — an item the *factory identity* claimed (in its
+  in-progress state) that has had no running session for longer than the
+  repository's `dispatch.stalled_after`. The *dispatcher* reports it and
+  never starts it again: a second session would be a second implementer on
+  a claimed item, so a person settles it.
+- **Double claim** — an item more than one running session works on at
+  once: two workspaces, or a workspace beside a launch the *dispatcher*
+  still holds for another one. The dispatcher reports it and starts
+  nothing for it.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
   it started ended: one row per session with its stage, repository,
   account, duration and an outcome class from the closed list the

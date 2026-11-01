@@ -93,8 +93,9 @@ report files), drift from each stage's expectation reported and notified
 but never acted on, recurring classes routed to `reflect`, and one
 mechanical nudge (`steer`, "continue" after a usage limit resets) with no
 open-ended prompt; the re-arm step waits on the drive
-running in a session of its own, and the pickups on `do-item` refusing an
-item already claimed. A park's notification carries the park's framed
+running in a session of its own, and the pickups' launches on an Orca
+session that can be bound to a chosen account (until then the pickups are
+reported, not started). A park's notification carries the park's framed
 decision.
 
 Done when, on a host running Orca, an item assigned to the factory

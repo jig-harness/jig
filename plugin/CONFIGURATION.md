@@ -946,8 +946,10 @@ repository. What a run may start is the machine's to say, in
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
 | `dispatch.identity` | string: a GitHub login; a Linear user's email or display name; or, on Jira, an Atlassian account id, or an email or display name that matches exactly one user (more or fewer matches are refused) | None: the repository has no pickups | dispatch |
-| `dispatch.states` | nonempty list of [canonical states](#issue_tracker) | `[todo]` | dispatch |
+| `dispatch.states` | nonempty list of [canonical states](#issue_tracker), without `in_progress` (the state `do-item`'s claim moves an item to) | `[todo]` | dispatch |
 | `dispatch.followup_command` | string | None: no follow-ups. Jig's own is `/followup`; a consumer repository names its own post-merge command | dispatch |
+| `dispatch.stalled_after` | duration (`90s`, `30m`, `1h`) | `30m`: a claimed item (assigned to `identity` in `in_progress`) with no running session for longer is reported as a stalled pickup, never relaunched | dispatch |
+| `dispatch.blocked_after` | duration | `30m`: a session the dispatcher started that its runtime reports waiting (on a question or a permission prompt) for longer is reported; it keeps its slot | dispatch |
 
 An item is a pickup when it is assigned to `identity` and in one of
 `states`, and the person who made that assignment can write to the
@@ -957,7 +959,15 @@ assigned by anyone else is reported and never planned. On Jira an app's
 account, Jira Automation's own included, is never trusted, so a Jira
 Automation rule that assigns an item starts a pickup only when it runs as a
 person. The sessions dispatched for a Jira repository run with the
-`JIRA_EMAIL` and `JIRA_API_TOKEN` of the account `identity` names. A pull request merged
+`JIRA_EMAIL` and `JIRA_API_TOKEN` of the account `identity` names. A
+dispatched `do-item` session claims its item with that identity's
+credentials (assigned to it, moved to `in_progress`), so the tick then
+watches the item among the claimed ones: one more than one running session
+joins to is a double claim, and one idle past `stalled_after` a stalled
+pickup; both are reported and nothing is started for them. A pickup whose
+session ended without claiming the item is not started again until the
+item leaves the dispatch states or its assignment for one run and comes
+back. A pull request merged
 since the follow-up stage's start wants `followup_command`. That start
 (`followup_since`) is the machine's, not the repository's:
 `jig dispatch --followup-since <date>` sets it, and otherwise each run keeps
@@ -995,7 +1005,7 @@ receipts_days: 30
 | Setting | Default / meaning |
 |---------|-------------------|
 | `repositories[].path` | Required; the repository's local checkout. List a repository in one machine's file only |
-| `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` (re-arms and takeovers of drives) is the one that starts anything in this version; the others are accepted and their actions reported |
+| `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` starts re-arms and takeovers of drives. `pickup` starts a `do-item` session per item the repository's `dispatch` section makes a pickup, only where the session runtime can bind an interactive session to its account: Orca cannot yet, so each pickup is reported with that reason and nothing is started. The others are accepted and their actions reported |
 | `repositories[].followup_since` | None; when the follow-up stage started for it. Without it, the previous run's receipt keeps the start |
 | `accounts[].name` | Required; the account's name here, which launch records and walls are kept under |
 | `accounts[].vendor` | Required; `claude` or `codex`. A headless drive pass runs on `claude` accounts only in this version |
@@ -1005,13 +1015,15 @@ receipts_days: 30
 | `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
 | `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on its usage limit (exit `16`) when the drive recorded no reset |
 | `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
-| `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's workspace. Twice this plus eight times `runtime_timeout` is one tick's budget, and a file whose budget passes 24 days is refused |
+| `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's or an item's workspace. Twice this plus eight times `runtime_timeout` is one tick's budget, and a file whose budget passes 24 days is refused; a tick opens at most two workspaces, and a launch that needs a third waits for the next tick |
 | `receipts_days` | 30; days receipts and ended launch records are kept |
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`: `receipts/`, `launches/` (one record
-per launch, written before it) and `walls/` (each account's usage-limit
-wall, which lifts at its latest recorded reset). A launch record a run
+per launch, written before it, with a pickup session's own result beside
+it), `walls/` (each account's usage-limit wall, which lifts at its latest
+recorded reset) and `idle/` (since when each claimed item has had no
+running session, for `stalled_after`). A launch record a run
 cannot check (claimed on another host or before a reboot) holds its
 account's slot until a person removes its files from `launches/`.
 
@@ -1029,6 +1041,8 @@ dispatch:
   identity: example-factory
   states: [todo]
   followup_command: /post-merge
+  stalled_after: 30m
+  blocked_after: 30m
 gates:
   command: make check                    # required by resolve-review-comments
 review:

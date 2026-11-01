@@ -160,16 +160,19 @@ holds the issue back, and a changed assignee means someone else took it.
 Record, for each issue you keep, its state and assignee ids from that line:
 the release in step 4 restores them. Then, for each:
 
-1. Move it to `in_progress` and assign it to yourself, as `/jig:do-item`
-   Step 4a item 2 does:
+1. Claim it (assign it to yourself and move it to `in_progress`), as
+   `/jig:do-item` Step 4a item 2 does:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" transition "<KEY>" in_progress
+   bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" claim "<KEY>"
    ```
 
-   (**judgment** — the assignee through the harness's tracker tool, the one
-   that saves an issue's state and assignee: the mapped state name, assignee
-   "me".)
+   On exit `3` (someone already holds it) or `4` (another claim landed
+   first), drop the issue from the batch as a changed line is dropped.
+
+   (**judgment** — native: read the issue and stop on the same refusals,
+   save its state and assignee through the harness's tracker tool (the
+   mapped state name, assignee "me"), then read it again.)
 
 2. Comment on it, naming the anchor and every other issue in the batch, so a
    second agent sees it is spoken for and by which batch

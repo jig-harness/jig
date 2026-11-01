@@ -138,7 +138,8 @@ lists.
 
 **`--apply`** starts what the machine file
 ([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))
-enables for each repository. Today that is the `rearm` stage: each re-arm
+enables for each repository: the `rearm` stage, and the `pickup` stage
+below. With `rearm`, each re-arm
 of a stopped drive, and each takeover of a wedged driver this machine
 started, runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
 of the pull request's workspace, opened from the pull request when none
@@ -153,8 +154,46 @@ holds its slot and is retried only under its own record. A refusal
 `drive.ts` gives (another driver holds the pull request) is the stage's
 answer and is not launched again on the same ledger facts. A record whose
 process cannot be checked (another host or boot) holds its slot until a
-person removes its files. Pickups, follow-ups and notifications are still
-reported, not started.
+person removes its files. Follow-ups and notifications are still reported,
+not started.
+
+**Pickups** (the `pickup` stage) start one `do-item` session per item
+assigned to the factory identity in a dispatch state, once: just before
+the launch the item is read again (still assigned, still in a dispatch
+state, no session running for it, no launch record holding it), an account
+with a free slot is admitted and its identity checked, the item gets a
+workspace (a new branch named by `pull_requests.branch_name`, its issue
+linked), and the session starts on `/jig:do-item <key>` with the model and
+effort of the item's route. Its prompt ends by asking the session to record
+how it ended, `jig dispatch result <record> <token> done|failed`, which
+refuses another record's token and a second answer. The session holds its
+slot while the runtime reports its agent working or waiting, and gives it
+back when the agent finishes. `do-item` claims the item itself
+(`tracker.ts claim`: refused when the item is already in progress or
+assigned to someone else, and abandoned when a re-read shows another claim
+landed first), so the tick never writes to the tracker. A claimed item
+with no running session for longer than `dispatch.stalled_after` is
+reported as stalled and never relaunched; an item more than one running
+session joins to is reported as a double claim; a session waiting longer
+than `dispatch.blocked_after` is reported.
+
+A pickup starts only where the session runtime binds the session to the
+account it bills, whatever account the host has active. Orca cannot yet:
+`orca agent launch` takes no account and no environment of its own (`orca
+account select` covers OpenCode and Devin only), and starts its agent with
+the configuration directory of the account the host has selected, which a
+person can switch at any moment. So with Orca every pickup is reported,
+with that reason, and nothing is opened or started. The launch path is
+built behind the runtime's answer: a terminal tab running the dispatcher's
+wrapper, which binds the session through the account's configuration
+directory as it does a drive's pass, and reads the agent's id back as the
+terminal's tab and pane, the id `orca worktree ps` reports agents under.
+It switches on once Orca is shown to report a session started that way as
+an agent.
+
+```sh
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed
+```
 
 **`jig dispatch install`** previews the timer that runs `--apply` every
 interval (the machine file's `interval`, five minutes by default), and

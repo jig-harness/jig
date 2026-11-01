@@ -74,9 +74,9 @@ function orcaEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
 }
 
 /**
- * The tick's job, every `minutes`. Its overall budget covers two workspace
- * opens and the runtime calls around them at the machine file's limits, and
- * never less than `MIN_TICK_BUDGET_SEC`.
+ * The tick's job, every `minutes`. Its overall budget covers the workspace
+ * opens one tick makes (`OPENS_PER_TICK`) and the runtime calls around them
+ * at the machine file's limits, and never less than `MIN_TICK_BUDGET_SEC`.
  */
 export function dispatchJobSpec(
   minutes: number,

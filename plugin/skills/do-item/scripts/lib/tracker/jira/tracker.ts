@@ -45,6 +45,7 @@ import {
 } from "../requests.ts";
 import { markdownToAdf } from "./adf.ts";
 import { assignerOperations } from "./assigner.ts";
+import { claimOperations } from "./claim.ts";
 import type { Client, IssueTypeMeta } from "./client.ts";
 import { type JiraIssue, record, str } from "./read.ts";
 import { inProject, OPEN, quote } from "./jql.ts";
@@ -357,6 +358,7 @@ export function jiraTracker(client: Client): Tracker {
 
     ...reportOperations(client),
     ...assignerOperations(client),
+    ...claimOperations(client),
 
     async createIssue(issue) {
       requireTitle(issue.title);

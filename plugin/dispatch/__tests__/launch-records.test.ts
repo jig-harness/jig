@@ -54,13 +54,22 @@ function record(id: string, over: Partial<LaunchRecord> = {}): LaunchRecord {
     createdAt: "2026-01-01T00:00:00.000Z",
     workspace: null,
     attempts: [],
+    item: null,
+    agentId: null,
+    model: null,
+    effort: null,
+    released: false,
     ...over,
   };
 }
 
 function ended(r: LaunchRecord, code: number, at: string): ReadRecord {
   const exit: LaunchExit = { at, code, signal: null };
-  return { record: r, state: { kind: "ended", exit, process: WHO } };
+  return {
+    record: r,
+    state: { kind: "ended", exit, process: WHO },
+    result: null,
+  };
 }
 
 const silent = (started: string): DrivenPr => ({

@@ -180,10 +180,10 @@ function describeSlots(table: Slots[]): string {
     .join(", ");
 }
 
-/** Why an account cannot take a headless drive pass now; `null` when it can. */
-function closed(slots: Slots): string | null {
+/** Why an account cannot take `what` (a headless drive pass, a pickup's session) now; `null` when it can. */
+function closed(slots: Slots, what: string): string | null {
   if (slots.account.vendor !== "claude")
-    return "no headless drive pass is documented for its vendor";
+    return `no ${what} is documented for its vendor`;
   if (slots.wallUnrecorded)
     return "its wall was not recorded; it stays closed until that launch record is cleared";
   if (slots.wall !== null) return `walled until ${slots.wall.resetAt}`;
@@ -192,16 +192,17 @@ function closed(slots: Slots): string | null {
 
 export type Admission = { admitted: Slots } | { waits: string };
 
-/** The account a re-arm runs on, taken in turn after `last`. */
+/** The account a re-arm (or a pickup, naming `what`) runs on, taken in turn after `last`. */
 export function admitRearm(
   table: Slots[],
   last: string | null,
   excluded: ReadonlySet<string> = new Set(),
+  what = "a headless drive pass",
 ): Admission {
   const start = table.findIndex((s) => s.account.name === last) + 1;
   for (let i = 0; i < table.length; i++) {
     const slots = table[(start + i) % table.length] as Slots;
-    if (!excluded.has(slots.account.name) && closed(slots) === null)
+    if (!excluded.has(slots.account.name) && closed(slots, what) === null)
       return { admitted: slots };
   }
   return { waits: `no account has a free slot: ${describeSlots(table)}` };

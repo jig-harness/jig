@@ -250,12 +250,17 @@ function distinct<T>(items: T[], key: (t: T) => string, what: string): T[] {
 /** The longest a timer holds: the tick's overall deadline is armed with it. */
 const MAX_TIMER_MS = 2_147_483_647;
 
-/** What one tick may spend at the file's limits: two workspace opens and eight runtime calls, in milliseconds. */
+/** The workspaces one tick may open: its budget covers this many opens, and a launch that needs another waits for the next tick. */
+export const OPENS_PER_TICK = 2;
+
+/** What one tick may spend at the file's limits: its workspace opens and eight runtime calls, in milliseconds. */
 export function tickBudgetMs(limits: {
   workspaceTimeoutMs: number;
   runtimeTimeoutMs: number;
 }): number {
-  return 2 * limits.workspaceTimeoutMs + 8 * limits.runtimeTimeoutMs;
+  return (
+    OPENS_PER_TICK * limits.workspaceTimeoutMs + 8 * limits.runtimeTimeoutMs
+  );
 }
 
 /** The machine file's values, with defaults. */

@@ -43,17 +43,18 @@ export function account(w: World, name: string, email: string): Account {
   return { name, identity: email, dir };
 }
 
-/** The machine file: the world's repository with `rearm`, and these accounts. */
+/** The machine file: the world's repository with `stages` (`rearm` by default), and these accounts. */
 export function machineFile(
   w: World,
   accounts: Array<Account & { max?: number }>,
   extra: Record<string, unknown> = {},
+  stages: string[] = ["rearm"],
 ): void {
   mkdirSync(join(w.home, ".jig"), { recursive: true });
   writeFileSync(
     join(w.home, ".jig", "dispatch.yaml"),
     dump({
-      repositories: [{ path: w.repo, stages: ["rearm"] }],
+      repositories: [{ path: w.repo, stages }],
       accounts: accounts.map((a) => ({
         name: a.name,
         vendor: "claude",
@@ -86,6 +87,11 @@ export function earlierRecord(
     createdAt: "2026-10-30T20:00:00.000Z",
     workspace: { id: "repo-1::/ws/0", path: w.repo },
     attempts: [],
+    item: null,
+    agentId: null,
+    model: null,
+    effort: null,
+    released: false,
     ...fields,
   };
   writeRecord(record, dispatchState(w));

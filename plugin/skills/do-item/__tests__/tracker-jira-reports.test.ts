@@ -653,6 +653,8 @@ describe("Jira adapter: assignments", () => {
       identity: "factory@example.com",
       states: ["todo"],
       followupCommand: null,
+      stalledAfterMs: 1_800_000,
+      blockedAfterMs: 1_800_000,
     };
     const member = await readPickups(() => jira(assigned(MEMBER)).t, section);
     expect(member.read.ok).toBe(true);

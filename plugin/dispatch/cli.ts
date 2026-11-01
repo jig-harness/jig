@@ -4,9 +4,11 @@
  * records for each repository and prints every stage it would start, with
  * the record that wants it and the evidence. With `--apply` it starts the
  * stages the machine file (`~/.jig/dispatch.yaml`) enables for each
- * repository; today that is the drives' re-arms and takeovers.
+ * repository: the drives' re-arms and takeovers, and the pickups where the
+ * session runtime binds an interactive session to its account.
  * `jig dispatch install` writes the timer that runs `--apply` every
- * interval.
+ * interval; `jig dispatch result` is how a dispatched interactive session
+ * records how it ended.
  */
 import { resolve } from "node:path";
 import { consumerRoot } from "../shared/consumer.ts";
@@ -21,11 +23,13 @@ import {
 } from "./lib/machine-config.ts";
 import { formatReceipt } from "./lib/report.ts";
 import { readReceipt, receiptPaths } from "./receipts.ts";
+import { resultMain } from "./result.ts";
 import { runTick } from "./tick.ts";
 
 const USAGE = `jig dispatch [--apply] [--repo <path>]... [--followup-since <date>] [--json]
 jig dispatch install [--interval <5m>] [--yes] [--uninstall]
-jig dispatch receipts [<run-id>]`;
+jig dispatch receipts [<run-id>]
+jig dispatch result <record> <token> done|failed`;
 
 /** Exit when another tick holds the lock. */
 const LOCK_HELD_EXIT = 3;
@@ -131,6 +135,8 @@ export async function dispatchMain(
   if (argv[0] === "receipts") return showReceipts(argv.slice(1));
   // The wrapper a dispatched pass's terminal runs (run.ts), under its launch record.
   if (argv[0] === "run") return runMain(argv.slice(1));
+  // An interactive session's own answer, under its launch record's token.
+  if (argv[0] === "result") return resultMain(argv.slice(1));
   if (argv[0] === "install")
     // A removal needs no machine file: a broken one must not keep the timer installed.
     return installDispatch(

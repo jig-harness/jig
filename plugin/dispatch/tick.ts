@@ -6,27 +6,35 @@
  * `--apply` a tick starts nothing: it reports what it would start, and why.
  * With it, the re-arms and takeovers a repository's machine-file entry
  * enables are launched within each account's cap (actions/drive.ts), and
- * everything else is still reported.
+ * its pickups too where the runtime binds an interactive session to its
+ * account (actions/pickup.ts); everything else is still reported.
  */
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { parseTrackerConfig } from "../skills/do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../skills/do-item/scripts/lib/tracker/index.ts";
-import { issueKeysOf } from "../skills/do-item/scripts/lib/tracker/keys.ts";
+import {
+  type IssueKeys,
+  issueKeysOf,
+} from "../skills/do-item/scripts/lib/tracker/keys.ts";
 import {
   defaultBranchConfig,
   mergedSince,
   openPullRequests,
   repoTarget,
 } from "./lib/forge.ts";
+import type { Tracker } from "../skills/do-item/scripts/lib/tracker/port.ts";
 import { type ApplyState, applyDrives } from "./lib/actions/drive.ts";
+import { applyPickups } from "./lib/actions/pickup.ts";
+import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
 import { lastAccount, slotTable } from "./lib/accounts.ts";
+import { readIdle, updateIdle } from "./lib/idle.ts";
 import {
   pruneLaunches,
   readLaunches,
   type ReadRecord,
 } from "./lib/launches.ts";
 import { type MachineConfig, machineRepository } from "./lib/machine-config.ts";
-import { planTick } from "./lib/plan.ts";
+import { type PlanInput, planTick } from "./lib/plan.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type {
   JoinTargets,
@@ -37,7 +45,14 @@ import { readSection } from "./lib/section.ts";
 import { readDrives } from "./lib/sources/ledgers.ts";
 import { readPickups } from "./lib/sources/tracker.ts";
 import { failureText } from "./lib/text.ts";
-import type { MergedPr, RepoReport, RepoTarget } from "./lib/types.ts";
+import type {
+  ClaimedItem,
+  DispatchSection,
+  MergedPr,
+  RepoReport,
+  RepoTarget,
+  WantedItem,
+} from "./lib/types.ts";
 import {
   newRunId,
   previousFollowupSince,
@@ -138,29 +153,8 @@ async function gatherRepo(
       new Date(nowMs).toISOString(),
   };
 
-  // The tracker: the pickups wanted.
-  let keys: ReturnType<typeof issueKeysOf> = null;
-  let pickups: Awaited<ReturnType<typeof readPickups>>["wanted"] = [];
-  try {
-    const parsed = parseTrackerConfig(values);
-    // GitHub Issues with no repository named are the forge repository's own.
-    const config =
-      parsed.adapter === "github" && parsed.github.repository === null
-        ? { ...parsed, github: { ...parsed.github, repository: repo.slug } }
-        : parsed;
-    keys = issueKeysOf(config);
-    const reading = await readPickups(() => openTracker(config, path), section);
-    report.records.push(reading.read);
-    report.unplaced.push(...reading.unplaced);
-    pickups = reading.wanted;
-  } catch (error) {
-    report.records.push({
-      record: "tracker",
-      source: where,
-      ok: false,
-      detail: `the tracker cannot be opened: ${failureText(error)}`,
-    });
-  }
+  const tracked = await readTracker(values, repo, section, report, where);
+  const { keys } = tracked;
 
   // The forge: the open pull requests and their ledgers, and the merges.
   let open: Awaited<ReturnType<typeof openPullRequests>> = [];
@@ -196,44 +190,163 @@ async function gatherRepo(
   }
 
   // The runtime: which of them a session holds.
-  const sessions = await readSessions(runtime, repo, {
+  const join: JoinTargets = {
     keys,
     branchPattern: branchPattern(values),
     pullRequests: [
       ...open.map((p) => ({ number: p.number, head: p.headRefName })),
       ...merged.map((p) => ({ number: p.number, head: p.head })),
     ],
-  });
+  };
+  const sessions = await readSessions(runtime, repo, join);
   report.records.push({
     record: "runtime",
     source: `${runtime.name}: ${sessions.source}`,
     ok: sessions.ok,
-    detail: sessions.ok
-      ? `${sessions.workspaces.length} workspace(s) of ${repo.slug}`
-      : sessions.reason,
+    detail: `${
+      sessions.ok
+        ? `${sessions.workspaces.length} workspace(s) of ${repo.slug}`
+        : sessions.reason
+    }${bindingNote(runtime, section)}`,
   });
 
-  const plan = planTick({
+  planRepo(context, repo.slug, report, {
     section,
-    pickups,
+    pickups: tracked.pickups,
+    claimed: tracked.claimed,
     drives,
     merged,
     sessions,
-    launches: (context.apply?.records ?? context.launches).filter(
-      (r) => r.record.repo === repo.slug,
-    ),
+  });
+  const apply = context.apply;
+  if (apply === null) return report;
+  if (entry?.stages.includes("rearm"))
+    await applyDrives(apply, repo, report, sessions, async (pr) => {
+      const listed = open.filter((p) => p.number === pr);
+      const [again] = await readDrives(repo.slug, login, listed, Date.now());
+      return again ?? null;
+    });
+  if (entry?.stages.includes("pickup") && tracked.tracker !== null && keys)
+    await applyPickups(apply, repo, report, {
+      section,
+      tracker: tracked.tracker,
+      keys,
+      branchPattern: join.branchPattern,
+      sessions: () => readSessions(runtime, repo, join),
+    });
+  return report;
+}
+
+/** What the tracker gives one repository's tick. */
+interface Tracked {
+  keys: IssueKeys | null;
+  pickups: WantedItem[];
+  /** `null` when the claimed items could not be read. */
+  claimed: ClaimedItem[] | null;
+  /** The tracker opened for the read, for the pickups' fresh reads; `null` when none was. */
+  tracker: Tracker | null;
+}
+
+/** The tracker's part of a repository's tick: the pickups wanted, and the items claimed. */
+async function readTracker(
+  values: Record<string, unknown>,
+  repo: RepoTarget,
+  section: DispatchSection,
+  report: RepoReport,
+  where: string,
+): Promise<Tracked> {
+  const tracked: Tracked = {
+    keys: null,
+    pickups: [],
+    claimed: null,
+    tracker: null,
+  };
+  try {
+    const parsed = parseTrackerConfig(values);
+    // GitHub Issues with no repository named are the forge repository's own.
+    const config =
+      parsed.adapter === "github" && parsed.github.repository === null
+        ? { ...parsed, github: { ...parsed.github, repository: repo.slug } }
+        : parsed;
+    tracked.keys = issueKeysOf(config);
+    const reading = await readPickups(() => {
+      tracked.tracker = openTracker(config, repo.path);
+      return tracked.tracker;
+    }, section);
+    report.records.push(reading.read);
+    report.unplaced.push(...reading.unplaced);
+    tracked.pickups = reading.wanted;
+    if (reading.read.ok) tracked.claimed = reading.claimed;
+  } catch (error) {
+    report.records.push({
+      record: "tracker",
+      source: where,
+      ok: false,
+      detail: `the tracker cannot be opened: ${failureText(error)}`,
+    });
+  }
+  return tracked;
+}
+
+/**
+ * Plan one repository's tick into its report, with this machine's launch
+ * records read beside the sessions; then keep the idle clock and release
+ * the ended pickups whose item left the dispatch states, when the claimed
+ * items were read whole.
+ */
+function planRepo(
+  context: TickContext,
+  repo: string,
+  report: RepoReport,
+  input: Omit<PlanInput, "launches" | "idleSince" | "nowMs">,
+): void {
+  const { nowMs } = context;
+  const records = settleRecords(context, repo, input.sessions, nowMs);
+  const plan = planTick({
+    ...input,
+    launches: records,
+    idleSince: readIdle(repo),
+    nowMs,
   });
   report.actions.push(...plan.actions);
   report.running.push(...plan.running);
   report.unplaced.push(...plan.unplaced);
   report.quiet.push(...plan.quiet);
-  if (context.apply !== null && entry?.stages.includes("rearm"))
-    await applyDrives(context.apply, repo, report, sessions, async (pr) => {
-      const listed = open.filter((p) => p.number === pr);
-      const [again] = await readDrives(repo.slug, login, listed, Date.now());
-      return again ?? null;
-    });
-  return report;
+  if (input.claimed === null) return;
+  updateIdle(repo, plan.idleNow, nowMs);
+  releaseEnded(records, repo, new Set(input.pickups.map((p) => p.key)));
+}
+
+/** Why the pickups this repository wants can only be reported, when the runtime cannot bind them. */
+function bindingNote(
+  runtime: SessionRuntime,
+  section: DispatchSection,
+): string {
+  const binding = runtime.interactiveBinding;
+  return binding.ok || section.identity === null
+    ? ""
+    : `; pickups are reported only: ${binding.reason}`;
+}
+
+/**
+ * This machine's launch records for `repo`, each pickup's read beside its
+ * agent: one whose agent the runtime reports finished no longer holds its
+ * slot, so the slot table is counted again.
+ */
+function settleRecords(
+  context: TickContext,
+  repo: string,
+  sessions: SessionsReport,
+  nowMs: number,
+): ReadRecord[] {
+  const all = context.apply?.records ?? context.launches;
+  if (settleAgents(all, repo, sessions, nowMs) && context.apply !== null)
+    context.apply.table = slotTable(
+      context.apply.machine.accounts,
+      context.apply.records,
+      nowMs,
+    );
+  return all.filter((r) => r.record.repo === repo);
 }
 
 /** The runtime's answer; a rejected read is a failed report, never an escape. */

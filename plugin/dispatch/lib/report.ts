@@ -26,7 +26,7 @@ function repoLines(r: RepoReport, apply: boolean): string[] {
   if (r.actions.length === 0) lines.push(`  ${verb} start nothing`);
   for (const a of r.actions)
     lines.push(
-      `  ${verb} ${a.stage.padEnd(8)} ${a.target}, wanted by the ${a.record}: ${a.reason}${evidence(a.evidence)}`,
+      `  ${verb} ${a.stage.padEnd(8)} ${a.target}${a.cause === undefined ? "" : ` (${a.cause})`}, wanted by the ${a.record}: ${a.reason}${evidence(a.evidence)}`,
     );
   lines.push(...r.launches.map(launchLine));
   for (const x of r.running)

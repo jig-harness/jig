@@ -169,6 +169,9 @@ export function fakeTracker(
     relate: unsupported("relate"),
     assignedIssues: unsupported("assignedIssues"),
     assignedBy: unsupported("assignedBy"),
+    viewer: unsupported("viewer"),
+    assignees: unsupported("assignees"),
+    assign: unsupported("assign"),
     async openIssues(query) {
       queries.push(query);
       if (
