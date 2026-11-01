@@ -164,15 +164,18 @@ codes: 0 all docs valid, 1 at least one violation, 2 the check could not run:
 a missing or unreadable schema, a schema that cannot be used as written (a
 path rule that cannot be evaluated included), or an unreadable file.
 
+`<skill-dir>` stands for the absolute path of the installed `docs` skill
+directory; run the commands from the consuming repository's root.
+
 ```sh
 # explicit files (what hooks/CI pass)
-bun exec "SCHEMA=docs/.frontmatter-schema.yaml bun frontmatter-check.ts docs/a.md docs/b.md"
+bun exec "SCHEMA=docs/.frontmatter-schema.yaml bun <skill-dir>/scripts/frontmatter-check/frontmatter-check.ts docs/a.md docs/b.md"
 
 # new docs also require `description`
-bun exec "NEW_DOCS=docs/new.md bun frontmatter-check.ts docs/new.md"
+bun exec "NEW_DOCS=docs/new.md bun <skill-dir>/scripts/frontmatter-check/frontmatter-check.ts docs/new.md"
 
 # no args: scan the whole tree
-bun exec "DOCS_DIR=docs bun frontmatter-check.ts"
+bun exec "DOCS_DIR=docs bun <skill-dir>/scripts/frontmatter-check/frontmatter-check.ts"
 ```
 
 Wire it into a pre-commit hook over staged `docs/**/*.md` for fast feedback and
