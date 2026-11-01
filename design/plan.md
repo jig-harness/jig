@@ -149,7 +149,8 @@ Built in this order:
 2. **Lifecycle verbs over one component interface, `jig` on `PATH`**: the
    verbs above for both components, each component's `install` and
    `receipts` reached through them with the old forms still working, and
-   the launcher installing a `jig` command that runs the installed copy.
+   `jig install` writing a `jig` command that runs the installed copy
+   through the launcher.
 3. **`doctor` and `upgrade`**: `tools/plugin/setup.ts`'s install, update
    and check move into the plugin as `jig upgrade` and `jig doctor`, moved
    and not copied: `tools/plugin/setup.ts` keeps only a call into the

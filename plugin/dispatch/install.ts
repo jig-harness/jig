@@ -11,15 +11,16 @@ import { resolve } from "node:path";
 import { ExitError } from "../shared/cli.ts";
 import { GcError } from "../shared/gc-error.ts";
 import { exclusiveGcLock } from "../shared/gc-lock.ts";
+import type { JobSpec } from "../runtime/job-spec.ts";
 import {
   checkLauncherResolves,
+  detectScheduler,
   installedScript,
-  type JobSpec,
   jobPreview,
   restoreScheduler,
   snapshotScheduler,
   updateJob,
-} from "../gc/scheduler.ts";
+} from "../runtime/scheduler.ts";
 import {
   type MachineConfig,
   machineConfigPath,
@@ -74,29 +75,43 @@ export function dispatchJobSpec(
   };
 }
 
-export async function installDispatch(
-  options: InstallOptions,
-  script: string,
+/**
+ * The timer's interval in minutes: `--interval` (`override`), else the machine
+ * file's, else five; whole minutes, or a usage error (exit 2).
+ */
+function intervalMinutes(
+  override: number | null,
   machine: MachineConfig | null,
-): Promise<number> {
-  if (options.intervalMs !== null && options.intervalMs % 60_000 !== 0)
+): number {
+  if (override !== null && override % 60_000 !== 0)
     throw new ExitError(
       2,
-      `the interval must be whole minutes; --interval is ${options.intervalMs / 1000}s`,
+      `the interval must be whole minutes; --interval is ${override / 1000}s`,
     );
-  if (machine === null && !options.uninstall)
-    throw new ExitError(
-      2,
-      `jig dispatch install needs the machine file ${machineConfigPath()} first: the timer runs --apply, and that file says what it may start`,
-    );
-  const ms = options.intervalMs ?? machine?.intervalMs ?? 5 * 60_000;
+  const ms = override ?? machine?.intervalMs ?? 5 * 60_000;
   if (ms % 60_000 !== 0)
     throw new ExitError(
       2,
       `the interval must be whole minutes; the machine file's interval is ${ms / 1000}s`,
     );
-  const minutes = ms / 60_000;
-  const spec = dispatchJobSpec(minutes, machine);
+  return ms / 60_000;
+}
+
+export async function installDispatch(
+  options: InstallOptions,
+  script: string,
+  machine: MachineConfig | null,
+): Promise<number> {
+  if (options.intervalMs !== null) intervalMinutes(options.intervalMs, null);
+  if (machine === null && !options.uninstall)
+    throw new ExitError(
+      2,
+      `the dispatch timer needs the machine file ${machineConfigPath()} first: it runs --apply, and that file says what it may start`,
+    );
+  const spec = dispatchJobSpec(
+    intervalMinutes(options.intervalMs, machine),
+    machine,
+  );
   console.log(jobPreview(spec, options.uninstall));
   if (!options.confirm) {
     console.log("Preview only. Repeat with --yes to write the job.");
@@ -109,7 +124,7 @@ export async function installDispatch(
   if (!options.uninstall) await checkLauncherResolves();
   return exclusiveGcLock("install", async () => {
     // Captured first, so a failed update puts back the job that was running.
-    const previous = await snapshotScheduler(undefined, spec);
+    const previous = await snapshotScheduler(detectScheduler(), spec);
     let job: string;
     try {
       job = await updateJob(spec, options.uninstall);

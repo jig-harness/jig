@@ -12,6 +12,7 @@
  * claims a merged pull request's follow-up, checks its claim and marks it
  * done.
  */
+import { basename, dirname } from "node:path";
 import { consumerRoot } from "../shared/consumer.ts";
 import { ExitError } from "../shared/cli.ts";
 import { pathValue } from "../shared/command-line.ts";
@@ -150,7 +151,8 @@ const installation = (wholeMinutes: boolean) =>
     }),
     {
       brief: message`Install the timer that runs dispatch --apply.`,
-      description: message`Previews the scheduler job that runs jig dispatch --apply every interval; --yes writes it.`,
+      description: message`Previews the scheduler job that runs jig dispatch --apply every interval; --yes writes it. The same as jig install dispatch, or with --uninstall jig uninstall dispatch --machine, with --interval in place of the machine file's; kept for the command lines that use this form.`,
+      hidden: true,
     },
   );
 
@@ -164,7 +166,11 @@ const receipts = command(
       }),
     ),
   }),
-  { brief: message`List the receipts of earlier runs, or print one.` },
+  {
+    brief: message`List the receipts of earlier runs, or print one.`,
+    description: message`The same as jig receipts dispatch; kept for the command lines that use this form.`,
+    hidden: true,
+  },
 );
 
 const result = command(
@@ -210,7 +216,12 @@ const marker = command(
   },
 );
 
-/** `jig dispatch`: one tick by default, `install`, `receipts`, `result` and `marker` as its subcommands. */
+/**
+ * `jig dispatch`: one tick by default, with `result` and `marker` as its
+ * subcommands. Its `install` and `receipts` subcommands do what the
+ * lifecycle verbs `jig install dispatch` and `jig receipts dispatch` do, and
+ * stay for the command lines that use them, hidden from help.
+ */
 const dispatch = (wholeMinutes: boolean) =>
   command(
     "dispatch",
@@ -254,17 +265,27 @@ export function winningIntervalArguments(argv: readonly string[]): string[] {
 }
 type Tick = Extract<DispatchArguments, { action: "tick" }>;
 
-function showReceipts(id: string | undefined): number {
+/** One line per receipt that reads: its run, outcome, size and file. */
+function listReceipts(paths: readonly string[]): void {
+  for (const path of paths) {
+    const r = readReceipt(path);
+    if (r === null) continue;
+    const actions = r.repos.reduce((n, repo) => n + repo.actions.length, 0);
+    console.log(
+      `${r.runId}  ${r.startedAt}  ${r.completed ? `exit ${r.exitStatus}` : "incomplete"}  ${r.repos.length} repositor${r.repos.length === 1 ? "y" : "ies"}, ${actions} action(s)  ${path}`,
+    );
+  }
+}
+
+/** Lists every receipt, or that day's (`YYYY-MM-DD`), or prints the run with that id. */
+export function showReceipts(id: string | undefined): number {
   const paths = receiptPaths();
   if (id === undefined) {
-    for (const path of paths) {
-      const r = readReceipt(path);
-      if (r === null) continue;
-      const actions = r.repos.reduce((n, repo) => n + repo.actions.length, 0);
-      console.log(
-        `${r.runId}  ${r.startedAt}  ${r.completed ? `exit ${r.exitStatus}` : "incomplete"}  ${r.repos.length} repositor${r.repos.length === 1 ? "y" : "ies"}, ${actions} action(s)  ${path}`,
-      );
-    }
+    listReceipts(paths);
+    return 0;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(id)) {
+    listReceipts(paths.filter((path) => basename(dirname(path)) === id));
     return 0;
   }
   const path = paths.find(
@@ -276,7 +297,8 @@ function showReceipts(id: string | undefined): number {
   return 0;
 }
 
-function machineFile(): MachineConfig | null {
+/** The machine file, or null without one; one that does not read is a usage error (exit 2). */
+export function machineFile(): MachineConfig | null {
   try {
     return readMachineConfig();
   } catch (error) {

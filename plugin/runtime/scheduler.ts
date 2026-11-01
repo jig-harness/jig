@@ -1,6 +1,11 @@
+/**
+ * The platform schedulers' jobs (a launchd job, a systemd user timer or a
+ * crontab line), written for each component of the `jig` command from its
+ * `JobSpec`. A job runs a launcher copied out of the plugin, with an explicit
+ * environment, and the launcher runs the installed copy of the plugin.
+ */
 import { jigHome } from "../shared/config-layers.ts";
 import { GcError } from "../shared/gc-error.ts";
-/** Platform schedulers run an installed copy with an explicit environment. */
 import {
   copyFileSync,
   existsSync,
@@ -16,10 +21,8 @@ import { join, resolve } from "node:path";
 import { run } from "../shared/proc.ts";
 import { MAX_TIMEOUT_SECONDS } from "../shared/resource-lock.ts";
 import { installedEntry, outsideCheckout } from "./launcher.ts";
-import type { MachineConfig } from "./config.ts";
-import { gcJobSpec, type JobSpec } from "./job-spec.ts";
+import type { JobSpec } from "./job-spec.ts";
 
-export type { JobSpec } from "./job-spec.ts";
 function cronMarker(spec: JobSpec): string {
   return `# ${spec.name}`;
 }
@@ -46,9 +49,8 @@ function systemd(value: string): string {
 export interface Job {
   command: string[];
   env: Record<string, string>;
-  hour: number;
-  /** The job written; resource collection's daily one, at `hour`, when absent. */
-  spec?: JobSpec;
+  /** The job written: its names, schedule and where its logs go. */
+  spec: JobSpec;
 }
 /** The calendar part of each scheduler's job for `schedule`. */
 function launchdSchedule(schedule: JobSpec["schedule"]): string {
@@ -79,7 +81,7 @@ export function jobFiles(
   job: Job,
 ): Record<string, string> {
   const command = job.command;
-  const spec = job.spec ?? gcJobSpec(job.hour);
+  const spec = job.spec;
   const label = spec.label;
   if (
     [...command, ...Object.values(job.env)].some((value) =>
@@ -139,7 +141,7 @@ async function execute(command: string[], stdin?: string): Promise<void> {
       `${command[0]} failed: ${result.stderr || result.stdout}`,
     );
 }
-function detectScheduler(): Scheduler {
+export function detectScheduler(): Scheduler {
   if (process.platform === "darwin") return "launchd";
   if (process.platform !== "linux")
     throw new GcError("GC scheduling supports macOS and Linux");
@@ -186,12 +188,11 @@ export async function checkLauncherResolves(): Promise<void> {
 }
 const LAUNCHER_FILES = ["launcher.ts", "bunfig.toml"];
 /**
- * Replaces the launcher and its trusted startup file. Both are copied beside
- * their targets before either is replaced, so a failed copy leaves the
- * previous pair in place.
+ * Replaces the launcher and its trusted startup file in `directory`. Both are
+ * copied beside their targets before either is replaced, so a failed copy
+ * leaves the previous pair in place.
  */
-function installLauncher(spec: JobSpec): void {
-  const directory = launcherDirectory(spec);
+export function installLauncher(directory: string): void {
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const staged = LAUNCHER_FILES.map((name) => ({
     source: join(import.meta.dir, name),
@@ -222,48 +223,62 @@ function specEnvironment(spec: JobSpec): Record<string, string> {
     ...spec.env,
   };
 }
+/**
+ * The command that runs the launcher installed in `directory`, up to the
+ * `--` after which the installed `jig.ts` arguments follow: Bun and the agent
+ * tools by the absolute paths found now.
+ */
+export function launcherCommand(directory: string): string[] {
+  return [
+    realpathSync(process.execPath),
+    "--no-env-file",
+    `--config=${join(directory, "bunfig.toml")}`,
+    join(directory, "launcher.ts"),
+    ...Object.entries(pluginPrograms()).map(
+      ([name, program]) => `--${name}=${program}`,
+    ),
+    "--",
+  ];
+}
+/** `names`' values in this environment, each resolved to an absolute path, where set. */
+function resolvedPaths(names: readonly string[]): Record<string, string> {
+  return Object.fromEntries(
+    names.flatMap((name) => {
+      const value = process.env[name];
+      return value ? [[name, resolve(value)]] : [];
+    }),
+  );
+}
+/** The heavy-run lock's settings the job keeps: where it lives, its name and its wait. */
+function lockEnvironment(removing: boolean): Record<string, string> {
+  const { LOCK_NAME, LOCK_TIMEOUT } = process.env;
+  return {
+    ...resolvedPaths(["LOCK_ROOT"]),
+    ...(LOCK_NAME ? { LOCK_NAME } : {}),
+    // The lock wait, and the launcher's deadline built on it.
+    ...(LOCK_TIMEOUT && !removing
+      ? { LOCK_TIMEOUT: lockTimeout(LOCK_TIMEOUT) }
+      : {}),
+  };
+}
 /** The job to write; a removal names it only, so a bad value cannot block it. */
 function installedJob(spec: JobSpec, removing = false): Job {
-  const root = homedir();
-  const directory = launcherDirectory(spec);
   return {
-    command: [
-      realpathSync(process.execPath),
-      "--no-env-file",
-      `--config=${join(directory, "bunfig.toml")}`,
-      join(directory, "launcher.ts"),
-      ...Object.entries(pluginPrograms()).map(
-        ([name, program]) => `--${name}=${program}`,
-      ),
-      "--",
-      ...spec.args,
-    ],
+    command: [...launcherCommand(launcherDirectory(spec)), ...spec.args],
     env: {
-      HOME: root,
+      HOME: homedir(),
       PATH: process.env.PATH ?? "/usr/bin:/bin",
       JIG_HOME: jigHome(),
-      ...(process.env.TMPDIR ? { TMPDIR: resolve(process.env.TMPDIR) } : {}),
-      ...(process.env.LOCK_ROOT
-        ? { LOCK_ROOT: resolve(process.env.LOCK_ROOT) }
-        : {}),
-      ...(process.env.LOCK_NAME ? { LOCK_NAME: process.env.LOCK_NAME } : {}),
-      // The lock wait, and the launcher's deadline built on it.
-      ...(process.env.LOCK_TIMEOUT && !removing
-        ? { LOCK_TIMEOUT: lockTimeout(process.env.LOCK_TIMEOUT) }
-        : {}),
+      ...resolvedPaths(["TMPDIR"]),
+      ...lockEnvironment(removing),
       // The agent tools read their registries from these.
-      ...(process.env.CLAUDE_CONFIG_DIR
-        ? { CLAUDE_CONFIG_DIR: resolve(process.env.CLAUDE_CONFIG_DIR) }
-        : {}),
-      ...(process.env.CODEX_HOME
-        ? { CODEX_HOME: resolve(process.env.CODEX_HOME) }
-        : {}),
-      ...(process.env.DRIVE_PR_STATE_DIR
-        ? { DRIVE_PR_STATE_DIR: resolve(process.env.DRIVE_PR_STATE_DIR) }
-        : {}),
+      ...resolvedPaths([
+        "CLAUDE_CONFIG_DIR",
+        "CODEX_HOME",
+        "DRIVE_PR_STATE_DIR",
+      ]),
       ...specEnvironment(spec),
     },
-    hour: "hour" in spec.schedule ? spec.schedule.hour : 0,
     spec,
   };
 }
@@ -338,12 +353,6 @@ async function applyJob(
     ? updateLaunchd(dir, files, remove, spec)
     : updateSystemd(dir, files, remove, spec);
 }
-export async function updateScheduler(
-  machine: MachineConfig,
-  remove = false,
-): Promise<string> {
-  return updateJob(gcJobSpec(machine.hour), remove);
-}
 /** Write, or with `remove` take away, the job `spec` names. */
 export async function updateJob(
   spec: JobSpec,
@@ -355,7 +364,7 @@ export async function updateJob(
   const files = jobFiles(scheduler, installedJob(named, remove));
   mkdirSync(spec.stateRoot, { recursive: true, mode: 0o700 });
   // In place before the job that runs it, and gone only after that job is.
-  if (!remove) installLauncher(spec);
+  if (!remove) installLauncher(launcherDirectory(spec));
   const job = await applyJob(scheduler, files, remove, spec);
   if (remove) rmSync(launcherDirectory(spec), { recursive: true, force: true });
   return job;
@@ -532,8 +541,8 @@ async function systemdState(
   };
 }
 export async function snapshotScheduler(
-  scheduler: Scheduler = detectScheduler(),
-  spec: JobSpec = gcJobSpec(),
+  scheduler: Scheduler,
+  spec: JobSpec,
 ): Promise<SchedulerSnapshot> {
   const launcher = launcherSnapshot(spec);
   const LABEL = spec.label;
@@ -616,13 +625,6 @@ export async function restoreScheduler(
     else writeFileSync(path, text, { mode: 0o600 });
   await startPrevious(snapshot);
 }
-/** The concrete job a confirmed install would write, shown before confirmation. */
-export function schedulerPreview(
-  machine: MachineConfig,
-  remove: boolean,
-): string {
-  return jobPreview(gcJobSpec(machine.hour), remove);
-}
 /** The concrete job `spec` names, as a confirmed install would write it. */
 export function jobPreview(spec: JobSpec, remove: boolean): string {
   let scheduler: Scheduler;
@@ -641,13 +643,4 @@ export function jobPreview(spec: JobSpec, remove: boolean): string {
 }
 export function installedScript(script: string): boolean {
   return outsideCheckout(script);
-}
-/** Preserve unrelated YAML settings when only the machine's gc entry changes. */
-export function previousMachineText(path: string): string {
-  try {
-    return readFileSync(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
-    throw error;
-  }
 }

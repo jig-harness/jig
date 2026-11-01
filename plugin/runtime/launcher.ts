@@ -1,11 +1,15 @@
 /**
- * The scheduled job's entry point. `jig gc install` copies this file, with the
- * trusted `bunfig.toml`, to a fixed place under the gc state directory and
- * points the job there, so the job names no plugin release. Each run asks the
- * agent tool which copy of the plugin is installed now and runs that copy's
- * collector; a plugin update therefore reaches the job without a new install.
+ * The entry point of every scheduled job and of the `jig` command on `PATH`.
+ * Installing a job copies this file, with the trusted `bunfig.toml`, to a
+ * fixed place under that component's state directory and points the job
+ * there (`jig install` does the same for the `jig` command), so neither names
+ * a plugin release. Each run asks the agent tool which copy of the plugin is
+ * installed now and runs that copy's `jig.ts` with the arguments after `--`;
+ * a plugin update therefore reaches them without a new install.
  *
  * It runs alone, from that copy: Bun's built-ins and `node:` modules only.
+ * Copies written by earlier releases keep running, so what it passes to
+ * `jig.ts` (`--config=<plugin>/gc/bunfig.toml`, then the arguments) stays.
  *
  *   bun --no-env-file --config=<dir>/bunfig.toml <dir>/launcher.ts \
  *     [--claude=<program>] [--codex=<program>] -- gc --scheduled
@@ -128,6 +132,25 @@ interface Supervision {
   announce?: string;
 }
 
+/** The longest delay `setTimeout` takes; a longer one fires at once. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
+/**
+ * `setTimeout` for any delay: one past the timer's range waits in segments
+ * rather than firing at once. `clear` ends it.
+ */
+function longTimeout(run: () => void, ms: number): { clear(): void } {
+  let timer: ReturnType<typeof setTimeout>;
+  const arm = (left: number) => {
+    timer = setTimeout(
+      () => (left > MAX_TIMER_MS ? arm(left - MAX_TIMER_MS) : run()),
+      Math.min(left, MAX_TIMER_MS),
+    );
+  };
+  arm(ms);
+  return { clear: () => clearTimeout(timer) };
+}
+
 /**
  * Runs one child to its end under the launcher's ownership: every process the
  * launcher waits on starts here. The child leads its own process group, so a
@@ -161,7 +184,7 @@ function supervise(command: string[], options: Supervision): Promise<Outcome> {
     let done = false;
     const release = () => {
       done = true;
-      clearTimeout(deadline);
+      deadline.clear();
       clearTimeout(escalation);
       for (const name of STOP_SIGNALS) process.off(name, onSignal);
     };
@@ -188,9 +211,7 @@ function supervise(command: string[], options: Supervision): Promise<Outcome> {
       if (stopped || done) return;
       stopped = cause;
       if (options.announce)
-        console.error(
-          `jig gc launcher: ${reason}; stopping ${options.announce}`,
-        );
+        console.error(`jig launcher: ${reason}; stopping ${options.announce}`);
       if (graceMs <= 0) {
         finish(null);
         return;
@@ -198,7 +219,7 @@ function supervise(command: string[], options: Supervision): Promise<Outcome> {
       signal("SIGTERM");
       escalation = setTimeout(() => finish(null), graceMs);
     };
-    const deadline = setTimeout(
+    const deadline = longTimeout(
       () => stop("deadline", `ran past ${options.deadlineMs / 1000}s`),
       options.deadlineMs,
     );
@@ -299,7 +320,7 @@ export async function installedEntry(
     }
   }
   throw new LauncherError(
-    `Cannot find the installed jig plugin (${failures.join("; ") || "no agent tool recorded"}); run jig gc install again`,
+    `Cannot find the installed jig plugin (${failures.join("; ") || "no agent tool recorded"}); run jig install again`,
   );
 }
 
@@ -322,16 +343,20 @@ export function parseLauncherArguments(argv: string[]): {
  * How long one collection may run: the machine heavy-run lock's wait
  * (`LOCK_TIMEOUT`, whole seconds, zero included; an hour unless set) and two
  * hours of work after it. A job that sets `JIG_LAUNCHER_DEADLINE_SEC` (whole
- * seconds) names its own bound instead.
+ * seconds) names its own bound instead. A value too large to represent as a
+ * finite number is not a bound and falls back to the default.
  */
 export function collectionDeadlineMs(
   env: NodeJS.ProcessEnv = process.env,
 ): number {
   const own = env.JIG_LAUNCHER_DEADLINE_SEC ?? "";
-  if (/^[1-9][0-9]*$/.test(own)) return Number(own) * 1000;
+  const named = Number(own) * 1000;
+  if (/^[1-9][0-9]*$/.test(own) && Number.isFinite(named)) return named;
   const timeout = env.LOCK_TIMEOUT ?? "";
-  const wait = /^[0-9]+$/.test(timeout) ? Number(timeout) : 3600;
-  return (wait + 7200) * 1000;
+  const given = /^[0-9]+$/.test(timeout)
+    ? (Number(timeout) + 7200) * 1000
+    : NaN;
+  return Number.isFinite(given) ? given : (3600 + 7200) * 1000;
 }
 
 /**
@@ -348,7 +373,7 @@ export async function runCollector(
   const { code, stopped } = await supervise(command, {
     deadlineMs,
     graceMs,
-    announce: "the collector",
+    announce: "the run",
   });
   // A stopped run did not finish, even when the collector exits 0 on SIGTERM.
   return stopped ? code || 1 : (code ?? 1);
@@ -366,7 +391,7 @@ async function main(argv: string[]): Promise<number> {
       ...rest,
     ]);
   } catch (error) {
-    console.error(`jig gc launcher: ${(error as Error).message}`);
+    console.error(`jig launcher: ${(error as Error).message}`);
     return 1;
   }
 }

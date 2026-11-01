@@ -111,7 +111,8 @@ const installation = command(
   }),
   {
     brief: message`Register a repository and install the daily job.`,
-    description: message`Previews the repository's bounds and the daily scheduler job; --yes writes them.`,
+    description: message`Previews the repository's bounds and the daily scheduler job; --yes writes them. The same as jig install gc, or with --uninstall jig uninstall gc; kept for the command lines that use this form.`,
+    hidden: true,
   },
 );
 
@@ -125,10 +126,18 @@ const receipts = command(
       }),
     ),
   }),
-  { brief: message`List the receipts of earlier runs, or print one.` },
+  {
+    brief: message`List the receipts of earlier runs, or print one.`,
+    description: message`The same as jig receipts gc; kept for the command lines that use this form.`,
+    hidden: true,
+  },
 );
 
-/** `jig gc`: a report by default, `install` and `receipts` as its subcommands. */
+/**
+ * `jig gc`: a report by default. Its `install` and `receipts` subcommands do
+ * what the lifecycle verbs `jig install gc` and `jig receipts gc` do, and stay
+ * for the command lines that use them, hidden from help.
+ */
 export const gcCommand = command(
   "gc",
   withDefault(or(installation, receipts, collection), {
@@ -193,7 +202,13 @@ async function executeRun(options: Options): Promise<number> {
   );
   return receipt.exitStatus;
 }
-function showReceipts(query: string | undefined): number {
+/** Prints every receipt's path, that day's, or the run with that id. */
+export function showReceipts(query: string | undefined): number {
+  if (query !== undefined && !RECEIPT_QUERY.test(query))
+    throw new ExitError(
+      USAGE_EXIT,
+      `Expected a date (YYYY-MM-DD) or a run id, but got ${query}.`,
+    );
   const paths = receiptPaths();
   if (!query || /^\d{4}-\d{2}-\d{2}$/.test(query)) {
     console.log(

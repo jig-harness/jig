@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { jobFiles } from "../../gc/scheduler.ts";
+import { jobFiles } from "../../runtime/scheduler.ts";
 import { dispatchJobSpec } from "../install.ts";
 import { readMachineConfig } from "../lib/machine-config.ts";
 
@@ -57,7 +57,7 @@ describe("the machine file's account directories", () => {
 });
 
 describe("the timer's cadence", () => {
-  const job = { command: ["x"], env: {}, hour: 3 };
+  const job = { command: ["x"], env: {} };
   const cron = (minutes: number) =>
     jobFiles("cron", { ...job, spec: dispatchJobSpec(minutes) }).crontab;
 
