@@ -19,6 +19,11 @@ import {
   machineFile,
 } from "./launch-fixtures.ts";
 
+/** The preview's cadence in whichever scheduler's own form it was rendered: systemd, launchd or cron. */
+const cadence = (minutes: number) =>
+  new RegExp(
+    `OnUnitActiveSec=${minutes}min|StartInterval</key><integer>${minutes * 60}<|\\*/${minutes} \\* \\* \\* \\*`,
+  );
 const RUN_TS = resolve(import.meta.dir, "../run.ts");
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
 
@@ -109,7 +114,7 @@ describe("jig dispatch install", () => {
       "10m",
     ]);
     expectSpawnExit(r, 0);
-    expect(r.stdout).toContain("every 10 minutes");
+    expect(r.stdout).toMatch(cadence(10));
   });
 
   it("checks whole minutes on the interval that wins, not on each one given", async () => {
@@ -124,7 +129,7 @@ describe("jig dispatch install", () => {
       "10m",
     ]);
     expectSpawnExit(kept, 0);
-    expect(kept.stdout).toContain("every 10 minutes");
+    expect(kept.stdout).toMatch(cadence(10));
     const refused = await w.dispatch(["install", "--interval", "90s"]);
     expectSpawnExit(refused, 2);
     expect(refused.stderr).toContain("whole minutes");
