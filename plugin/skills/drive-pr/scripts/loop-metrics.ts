@@ -4,7 +4,11 @@
  *
  * Prints, for a PR driven or not: how many rounds it took, how many threads it
  * produced, what the outcome mix was, and how much of the final code landed
- * AFTER review started. `drive.ts` prints this block when it stops, so a driven
+ * AFTER review started. Beside them, what the drive did without a person
+ * (`lib/metrics-autonomy.ts`): self-restarts by cause, re-arms and takeovers,
+ * provisional decisions and how many a person reversed before the merge (the
+ * validation measure for the `wide` autonomy level), and the review bots'
+ * transparent acknowledgements. `drive.ts` prints this block when it stops, so a driven
  * PR's final summary carries the numbers without manual archaeology.
  *
  * That last quantity is temporal, not causal — it is every commit after the
@@ -54,6 +58,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { remoteName } from "../../../shared/consumer.ts";
+import { swallow } from "../../../shared/errors.ts";
 import { fail, isDigits, runMain } from "./lib/cli.ts";
 import {
   type EscapeBaseline,
@@ -67,7 +72,19 @@ import {
   renderLoopMetrics,
   renderSeverityOutageWarnings,
 } from "./lib/metrics.ts";
-import { git, resolvePr, run, tsArgv } from "./lib/proc.ts";
+import type { DurableAutonomy } from "./lib/metrics-autonomy.ts";
+import {
+  git,
+  helperTimeoutSeconds,
+  resolvePr,
+  run,
+  tsArgv,
+} from "./lib/proc.ts";
+import { prComments } from "./lib/driver/rearm.ts";
+import { reversalInConversation } from "./lib/provisional.ts";
+import { readLedgerSnapshot, resolveLogin } from "./lib/state/ledger-forge.ts";
+import type { Ledger } from "./lib/state/ledger.ts";
+import { isUsableState } from "./lib/state/schema.ts";
 import { type PrSample, resolveRepo, samplePr } from "./lib/sample.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -186,6 +203,141 @@ async function durableRounds(pr: string): Promise<number | null> {
   return isDigits(raw) ? Number.parseInt(raw, 10) : null;
 }
 
+/** What a drive state or a ledger records of the drive's autonomy. */
+function autonomyOf(s: {
+  decisions?: DurableAutonomy["decisions"];
+  events?: DurableAutonomy["events"];
+  takeovers?: readonly unknown[];
+}): DurableAutonomy {
+  return {
+    decisions: s.decisions ?? [],
+    events: s.events ?? [],
+    takeovers: (s.takeovers ?? []).length,
+  };
+}
+
+/**
+ * This clone's drive state, with the ledger generation it last wrote or
+ * seeded from; `null` when it holds none that ever drove, and `"unread"` when
+ * it exists but could not be read (`get` prints a fresh state for an absent
+ * one, so a failure is never absence).
+ */
+async function localAutonomy(
+  pr: string,
+): Promise<{ rec: DurableAutonomy; generation: number } | null | "unread"> {
+  const r = await run(tsArgv(driveState, ["get", pr]), {
+    stderr: "pipe",
+    timeoutSec: helperTimeoutSeconds(),
+  });
+  if (r.code !== 0) return "unread";
+  try {
+    const s: unknown = JSON.parse(r.stdout);
+    if (!isUsableState(s, Number.parseInt(pr, 10))) return "unread";
+    return s.rounds > 0
+      ? { rec: autonomyOf(s), generation: s.ledgerGeneration ?? 0 }
+      : null;
+  } catch (err) {
+    swallow(err, "drive-state.ts get printed no JSON");
+    return "unread";
+  }
+}
+
+/**
+ * What the drive recorded of its autonomy: its decisions, its self-restarts
+ * and re-arms, and how many takeovers. From the newer of this clone's state
+ * and the pull request's drive ledger, by the rule the morning report picks
+ * its record with (a ledger whose generation is past the one this clone last
+ * wrote is another clone's later drive), so a drive run or taken over from
+ * another clone counts toward the validation measure too. A ledger that
+ * could not be established (unreadable, an unsupported version, malformed)
+ * leaves this clone's state, marked `unreadLedger` so the validation share is
+ * withheld. `null` when neither holds a record and the ledger is absent, soft
+ * like `durableRounds`.
+ */
+export async function durableAutonomy(
+  pr: string,
+): Promise<DurableAutonomy | null> {
+  const read = await localAutonomy(pr);
+  const localUnread = read === "unread";
+  const local = localUnread ? null : read;
+  const { ledger, unread } = ledgerRecord(
+    await readLedgerSnapshot(pr, await resolveLogin()),
+  );
+  if (
+    ledger !== null &&
+    (local === null || ledger.generation > local.generation)
+  )
+    return withConversationReversals(
+      pr,
+      localUnread
+        ? { ...autonomyOf(ledger), unreadLedger: true }
+        : autonomyOf(ledger),
+    );
+  if (!unread && !localUnread)
+    return local === null ? null : withConversationReversals(pr, local.rec);
+  console.error(
+    `loop-metrics: #${pr}'s ${localUnread ? "local drive state" : "drive ledger"} could not be established, so decisions recorded only there are not counted and the reversal share is withheld.`,
+  );
+  return withConversationReversals(pr, {
+    ...(local === null ? autonomyOf({}) : local.rec),
+    unreadLedger: true,
+  });
+}
+
+/**
+ * The canonical ledger in a snapshot, and whether one that may exist could
+ * not be established (an unreadable listing, an unsupported version, a
+ * malformed body); an absent ledger is neither.
+ */
+export function ledgerRecord(
+  snapshot: Awaited<ReturnType<typeof readLedgerSnapshot>>,
+): {
+  ledger: Ledger | null;
+  unread: boolean;
+} {
+  if (typeof snapshot === "string") return { ledger: null, unread: true };
+  const parsed = snapshot.canonical?.parsed;
+  if (parsed === undefined)
+    return { ledger: null, unread: snapshot.malformed.length > 0 };
+  return parsed.kind === "ledger"
+    ? { ledger: parsed.ledger, unread: false }
+    : { ledger: null, unread: true };
+}
+
+/**
+ * The record with each provisional `decide` ruling's reversal read from the
+ * pull request's conversation, as a thread's is read from the thread: a
+ * person's `answer <key>:` after the drive stopped is recorded by no round
+ * boundary. An unreadable conversation leaves the record as recorded, with
+ * those rulings counted as unchecked, so the validation share is withheld.
+ */
+async function withConversationReversals(
+  pr: string,
+  rec: DurableAutonomy,
+): Promise<DurableAutonomy> {
+  const open = rec.decisions.filter(
+    (d) => d.class === "decide-provisional" && d.reversed === undefined,
+  );
+  if (open.length === 0) return rec;
+  const conversation = await prComments(pr);
+  if (conversation === null) {
+    console.error(
+      `loop-metrics: #${pr}'s conversation could not be read, so a reversal of its provisional rulings since the drive stopped is not counted and the reversal share is withheld.`,
+    );
+    return { ...rec, uncheckedRulings: open.length };
+  }
+  return {
+    ...rec,
+    decisions: rec.decisions.map((d) => {
+      if (!open.includes(d)) return d;
+      const by = reversalInConversation(conversation, d.key ?? "", d.at);
+      return by === null
+        ? d
+        : { ...d, reversed: { by: by.author, url: by.url, at: by.at } };
+    }),
+  };
+}
+
 /**
  * The recorded defect-escape baseline, resolved against THIS clone's
  * repository root — best-effort, like `durableRounds` above: an
@@ -221,6 +373,8 @@ export interface ReportDeps {
   resolveRepo: typeof resolveRepo;
   samplePr: typeof samplePr;
   durableRounds: (pr: string) => Promise<number | null>;
+  /** This clone's drive state's autonomy record; absent reads as none held. */
+  durableAutonomy?: (pr: string) => Promise<DurableAutonomy | null>;
   resolveSiblingCommitOids: (sample: PrSample) => Promise<ReadonlySet<string>>;
   resolveEscapeBaseline: typeof resolveEscapeBaseline;
   write: (s: string) => void;
@@ -230,6 +384,7 @@ const defaultDeps: ReportDeps = {
   resolveRepo,
   samplePr,
   durableRounds,
+  durableAutonomy,
   resolveSiblingCommitOids: (sample) =>
     resolveSiblingCommitOids(sample, remoteName()),
   resolveEscapeBaseline,
@@ -261,6 +416,7 @@ export async function runReport(
     sample,
     await deps.durableRounds(pr),
     await deps.resolveSiblingCommitOids(sample),
+    (await deps.durableAutonomy?.(pr)) ?? null,
   );
   const escapeBaseline = await deps.resolveEscapeBaseline();
   deps.write(renderReport(metrics, escapeBaseline, json));

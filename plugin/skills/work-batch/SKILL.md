@@ -93,7 +93,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>" [--budget N] [--limit
 | An epic's key | The epic's open children |
 | One issue's key | Open issues sharing its area-naming label; the issue is kept first. An issue that may not join a batch itself ends the run with a recommendation to work it alone |
 
-An issue key is `ENG-123` on Linear and `#123` on GitHub Issues, an issue of
+An issue key is `ENG-123` on Linear and Jira and `#123` on GitHub Issues, an issue of
 the configured repository; this document writes it as `<KEY>`. Quote a key,
 and an anchor, on a command line: an unquoted `#` starts a shell comment.
 

@@ -60,7 +60,7 @@ hook or the interface instead.
 | --- | --- | --- | --- |
 | Local checks, generators, lints | Any command | [A command](#commands-a-repository-supplies) | — |
 | Review skills, implementing agents, scouts | The repository's own | [Configuration](#the-repositorys-own-skills-and-agents) | — |
-| Issue tracker | GitHub Issues (the default); Linear | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
+| Issue tracker | GitHub Issues (the default); Linear; Jira Cloud | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
 | Reflection store | A folder of files, a Notion database, a GitHub repository's issues, or any command | [A store command](#reflection-stores), no change to Jig | Jira: roadmap, later |
 | AI reviewer | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats); GitHub code scanning alerts from any tool, SonarQube Cloud's included | [Configuration](#ai-reviewers) | — |
 | Forge (where pull requests live) | GitHub, through the `gh` command | — | [No forge interface yet](#forge-github): roadmap, later |
@@ -170,6 +170,48 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
   `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client.
   Keys are `<TEAM>-<n>`, with the team from `issue_tracker.team`.
 
+- **Jira Cloud** ([`jira/`](skills/do-item/scripts/lib/tracker/jira/tracker.ts)),
+  the adapter `issue_tracker.adapter: jira` selects: the issues of one
+  project on one site (`issue_tracker.team` is the project key,
+  `issue_tracker.jira.site` the site). It uses Jira's REST API version 3
+  with `JIRA_EMAIL` and `JIRA_API_TOKEN`, an Atlassian account's email
+  address and an API token made for it, and converts text between Markdown
+  and ADF (Atlassian Document Format), the rich-text form Jira stores. Keys
+  are `<PROJECT>-<n>`. How the interface's vocabulary maps onto Jira:
+  - a state is the status whose name `issue_tracker.states` gives, matched
+    ignoring case; a status no name matches is read by its status category
+    (To Do: not started, In Progress: started, Done: completed). `done`,
+    `canceled` and `duplicate` are told apart by their status, or, where
+    they share one, by the resolution `issue_tracker.jira.resolutions` names,
+    which the adapter sets on the transition into it when the transition's
+    screen has a resolution field. A move takes one transition, the one out
+    of the current status into a status of the state's name, and is refused,
+    naming the transitions there are, when none or several match. A
+    workflow suits this with a status per state the repository uses,
+    transitions into In Progress, In Review and Done that any status can
+    take, and a resolution field on the Done transition's screen;
+  - priority is a Jira priority (`issue_tracker.jira.priorities`); a Jira
+    issue always has one, so moving an issue to no priority is refused, and
+    one with another priority reads as none;
+  - the issue type is the tracker's own type, so an issue of type Bug or
+    Task is typed without a label; a new issue gets
+    `issue_tracker.jira.issue_type`, or under a standard issue the sub-task
+    type (`issue_tracker.jira.subtask_type`), and an issue cannot be created
+    under a sub-task;
+  - a project is the issue's first fix version, and labels are Jira labels:
+    they hold no whitespace, are shared by the whole site and are written as
+    given; `file-issue` checks every proposed label against the site's labels
+    before writing, so each taxonomy label and the debt ledger's label
+    (`ledger.label` in the
+    [fleet-health file](CONFIGURATION.md#the-fleet-health-file)) must
+    already exist on the site;
+  - parent and children are Jira's parent field, for sub-tasks and an
+    Epic's issues alike, and relations are issue links of the types
+    `issue_tracker.jira.link_types` names; links of other types are ignored;
+  - a comment, or an assignment, is trusted when a person's Atlassian
+    account made it, not a guest, that can be assigned issues in the
+    project; an app's account, Jira Automation's own included, never is.
+
 **To add one.** Implement the `Tracker` interface in a module beside
 `linear.ts`, register it in `ADAPTERS` in
 [`index.ts`](skills/do-item/scripts/lib/tracker/index.ts), give its key
@@ -223,10 +265,9 @@ step is the one file it still allows.
 
 Fixing it means adding file attachment to the interface, and moving the
 deferral step and the skills' instructions onto it. Roadmap item 10 holds
-the deferral step; item 12 holds the next
-adapters (Jira, and a plan file kept in the repository), behind open
-decisions: the plan file's format, and whether an adapter may leave out the
-reporting operations.
+the deferral step; item 12 holds the next adapter, a plan file kept in the
+repository, behind open decisions: the plan file's format, and whether an
+adapter may leave out the reporting operations.
 
 ## Reflection stores
 

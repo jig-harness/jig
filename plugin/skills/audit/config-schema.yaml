@@ -62,6 +62,10 @@ strict:
   - issue_tracker.labels
   - issue_tracker.github
   - issue_tracker.github.priority_labels
+  - issue_tracker.jira
+  - issue_tracker.jira.priorities
+  - issue_tracker.jira.resolutions
+  - issue_tracker.jira.link_types
   - resolve_conflicts
   - reflection
   - code_stats
@@ -353,6 +357,17 @@ fields:
     read_by: [drive-pr, resolve-review-comments, file-issue, decide]
     repository_only: true
     since: 0.103.0
+  autonomy.off_hours.level:
+    type: enum
+    values: [attended, unattended, wide]
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    since: 0.113.0
+  autonomy.off_hours.schedule:
+    type: list
+    items: string
+    nonempty: true
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    since: 0.113.0
   autonomy.park_classes:
     type: list
     items: { type: string, pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" }
@@ -374,7 +389,7 @@ fields:
 
   issue_tracker.adapter:
     type: enum
-    values: [linear, github]
+    values: [linear, github, jira]
     default: github
     read_by: [do-item, drive-pr, decide, work-batch, dispatch]
   issue_tracker.team:
@@ -414,6 +429,36 @@ fields:
     keys: [urgent, high, medium, low]
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.82.0
+  issue_tracker.jira.site:
+    type: string
+    pattern: "^https://[A-Za-z0-9.-]+/?$"
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    repository_only: true
+    since: 0.111.0
+  issue_tracker.jira.issue_type:
+    type: string
+    default: Task
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
+  issue_tracker.jira.subtask_type:
+    type: string
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
+  issue_tracker.jira.priorities:
+    type: map
+    keys: [urgent, high, medium, low]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
+  issue_tracker.jira.resolutions:
+    type: map
+    keys: [done, canceled, duplicate]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
+  issue_tracker.jira.link_types:
+    type: map
+    keys: [blocks, related, duplicate]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch]

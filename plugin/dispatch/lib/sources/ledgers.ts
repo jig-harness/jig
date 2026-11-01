@@ -182,7 +182,10 @@ async function parkOf(
   const found = await parkAnswers(pr, ledger.parked, slug);
   return "unreadable" in found
     ? found
-    : { answered: found.answered.length, waiting: found.waiting };
+    : {
+        answered: found.answered.length,
+        waiting: found.waiting.map((p) => `${p.kind} ${p.key}`),
+      };
 }
 
 /** One pull request's drive; `null` when it carries no ledger. */

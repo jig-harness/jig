@@ -2,7 +2,7 @@
  * The shape of an issue key, per tracker: how a key looks in text, in a
  * branch name and in a file name, and how a key a person typed is read.
  *
- * Linear's keys carry a team (`ENG-123`); GitHub's carry only a number
+ * Linear's and Jira's keys carry a team or project (`ENG-123`); GitHub's carry only a number
  * within the repository (`#123`). Every caller that finds, validates or
  * builds a key goes through the `IssueKeys` the configured adapter's shape
  * gives, so a tracker with another shape is a new entry here, not a change
