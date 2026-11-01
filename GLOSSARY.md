@@ -1539,8 +1539,15 @@ make, use the entry's term instead.
   plugin's `jig` command joins into one command line: resource collection
   (`jig gc`) and the *dispatcher* (`jig dispatch`). Each defines its command
   beside its code, and `jig` combines them, so help and shell completion
-  cover every component the same way. A program, unlike Jig's practice
+  cover every component the same way; each also implements one interface
+  the *lifecycle verbs* act through. A program, unlike Jig's practice
   modules, which are documented practices.
+- **Lifecycle verb (of the `jig` command)** — a command that acts the same
+  way on every *component* of the `jig` command, rather than doing one
+  component's own work: `jig install`, `jig uninstall`, `jig status`,
+  `jig receipts` and `jig run`. With no component named, it acts on all of
+  them (`jig install` only on those whose opt-in exists); each component's
+  own work stays under its name (`jig gc --collect`).
 - **Type guard** — a function that checks at run time that a value has a
   given shape, and tells the type checker so when it does. Data read from
   outside the program (JSON, a configuration file) is checked by one before

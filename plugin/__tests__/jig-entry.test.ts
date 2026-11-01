@@ -34,16 +34,18 @@ test("a dispatch usage error exits 2 and says why", () => {
   );
 });
 
+const VERBS = ["install", "uninstall", "status", "receipts", "run"];
+
 test.each([
-  [["--help"], ["gc", "dispatch", "completion"]],
-  [["help"], ["gc", "dispatch", "completion"]],
+  [["--help"], [...VERBS, "gc", "dispatch", "completion"]],
+  [["help"], [...VERBS, "gc", "dispatch", "completion"]],
   [
     ["gc", "--help"],
-    ["install", "receipts", "--collect", "--scheduled"],
+    ["--collect", "--scheduled", "--kind"],
   ],
   [
     ["help", "gc"],
-    ["install", "receipts", "--kind", "--json"],
+    ["--collect", "--kind", "--json"],
   ],
   [
     ["gc", "install", "--help"],
@@ -51,12 +53,29 @@ test.each([
   ],
   [
     ["dispatch", "--help"],
-    ["install", "receipts", "--apply", "--repo"],
+    ["--apply", "--repo", "--followup-since"],
   ],
   [
     ["dispatch", "install", "--help"],
     ["--interval", "--yes"],
   ],
+  [
+    ["install", "--help"],
+    ["--repo", "--yes", "COMPONENT", "gc, dispatch"],
+  ],
+  [
+    ["uninstall", "--help"],
+    ["--machine", "--yes", "COMPONENT"],
+  ],
+  [
+    ["status", "--help"],
+    ["--json", "COMPONENT"],
+  ],
+  [
+    ["help", "receipts"],
+    ["COMPONENT", "DATE|RUN-ID"],
+  ],
+  [["run", "--help"], ["COMPONENT"]],
 ])("jig %p prints help naming its commands and exits 0", (args, names) => {
   const result = jig(...args);
   expectSpawnExit(result, 0);
@@ -87,6 +106,11 @@ test.each([
   [["dispatch", "--followup-since", "nope"], '"nope"'],
   [["dispatch", "install", "--interval", "90s"], "whole minutes"],
   [["dispatch", "receipts", "one", "two"], "`two`"],
+  [["install", "bogus"], '"bogus"'],
+  [["install", "--machine"], "`--machine`"],
+  [["receipts"], "COMPONENT"],
+  [["status", "--yes"], "`--yes`"],
+  [["run", "--json"], "`--json`"],
 ])("jig %p is refused with exit 2 and the reason", (args, reason) => {
   const result = jig(...args);
   expectSpawnExit(result, 2);
@@ -126,6 +150,117 @@ test("the installed jobs' command lines parse as the scheduled run and the apply
     component: "dispatch",
     dispatch: { action: "tick", apply: true },
   });
+});
+
+test.each([
+  [
+    ["gc", "install"],
+    {
+      component: "gc",
+      gc: {
+        action: "install",
+        repository: undefined,
+        confirm: false,
+        uninstall: undefined,
+      },
+    },
+  ],
+  [
+    ["gc", "install", "--uninstall", "--machine", "--yes"],
+    {
+      component: "gc",
+      gc: {
+        action: "install",
+        repository: undefined,
+        confirm: true,
+        uninstall: { uninstall: true, machine: true },
+      },
+    },
+  ],
+  [
+    ["dispatch", "install", "--interval", "10m", "--yes"],
+    {
+      component: "dispatch",
+      dispatch: {
+        action: "install",
+        intervalMs: 600_000,
+        confirm: true,
+        uninstall: false,
+      },
+    },
+  ],
+  [
+    ["gc", "receipts"],
+    { component: "gc", gc: { action: "receipts", query: undefined } },
+  ],
+  [
+    ["dispatch", "receipts"],
+    {
+      component: "dispatch",
+      dispatch: { action: "receipts", runId: undefined },
+    },
+  ],
+])("the earlier form jig %p parses as it did", (args, parsed) => {
+  expect(parseCommandLine(args) as unknown).toStrictEqual(parsed);
+});
+
+test("the earlier install and receipts forms stay out of help", () => {
+  const help = [
+    jig("--help"),
+    jig("gc", "--help"),
+    jig("dispatch", "--help"),
+    jig("help", "gc"),
+  ].map((result) => {
+    expectSpawnExit(result, 0);
+    return result.stdout.toString();
+  });
+  for (const text of help) {
+    expect(text).not.toMatch(/jig (gc|dispatch) \[?\(?(install|receipts)/);
+    expect(text).not.toContain(
+      "Register a repository and install the daily job.",
+    );
+    expect(text).not.toContain("Install the timer that runs dispatch --apply.");
+    expect(text).not.toContain(
+      "List the receipts of earlier runs, or print one.",
+    );
+  }
+});
+
+test.each([
+  [
+    ["install"],
+    { verb: "install", components: [], repository: undefined, confirm: false },
+  ],
+  [
+    ["install", "dispatch", "gc", "--yes"],
+    {
+      verb: "install",
+      components: ["dispatch", "gc"],
+      repository: undefined,
+      confirm: true,
+    },
+  ],
+  [
+    ["uninstall", "--machine", "--yes"],
+    {
+      verb: "uninstall",
+      components: [],
+      repository: undefined,
+      machine: true,
+      confirm: true,
+    },
+  ],
+  [
+    ["status", "gc", "--json"],
+    { verb: "status", components: ["gc"], json: true },
+  ],
+  [
+    ["receipts", "dispatch", "2026-10-31"],
+    { verb: "receipts", component: "dispatch", query: "2026-10-31" },
+  ],
+  [["run"], { verb: "run", components: [] }],
+])("the lifecycle verb jig %p parses", (args, parsed) => {
+  expect(parseCommandLine(args) as unknown).toStrictEqual(parsed);
 });
 
 test("dispatch --apply reaches the tick, which asks for the machine file", () => {

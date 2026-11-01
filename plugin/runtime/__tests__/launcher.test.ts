@@ -507,5 +507,5 @@ test.skipIf(
     { stdout: "pipe", stderr: "pipe", timeout: 30000 },
   );
   expectSpawnExit(result, 1);
-  expect(result.stderr.toString()).toContain("run jig gc install again");
+  expect(result.stderr.toString()).toContain("run jig install again");
 });

@@ -1,11 +1,15 @@
 /**
- * The scheduled job's entry point. `jig gc install` copies this file, with the
- * trusted `bunfig.toml`, to a fixed place under the gc state directory and
- * points the job there, so the job names no plugin release. Each run asks the
- * agent tool which copy of the plugin is installed now and runs that copy's
- * collector; a plugin update therefore reaches the job without a new install.
+ * The entry point of every scheduled job and of the `jig` command on `PATH`.
+ * Installing a job copies this file, with the trusted `bunfig.toml`, to a
+ * fixed place under that component's state directory and points the job
+ * there (`jig install` does the same for the `jig` command), so neither names
+ * a plugin release. Each run asks the agent tool which copy of the plugin is
+ * installed now and runs that copy's `jig.ts` with the arguments after `--`;
+ * a plugin update therefore reaches them without a new install.
  *
  * It runs alone, from that copy: Bun's built-ins and `node:` modules only.
+ * Copies written by earlier releases keep running, so what it passes to
+ * `jig.ts` (`--config=<plugin>/gc/bunfig.toml`, then the arguments) stays.
  *
  *   bun --no-env-file --config=<dir>/bunfig.toml <dir>/launcher.ts \
  *     [--claude=<program>] [--codex=<program>] -- gc --scheduled
@@ -188,9 +192,7 @@ function supervise(command: string[], options: Supervision): Promise<Outcome> {
       if (stopped || done) return;
       stopped = cause;
       if (options.announce)
-        console.error(
-          `jig gc launcher: ${reason}; stopping ${options.announce}`,
-        );
+        console.error(`jig launcher: ${reason}; stopping ${options.announce}`);
       if (graceMs <= 0) {
         finish(null);
         return;
@@ -299,7 +301,7 @@ export async function installedEntry(
     }
   }
   throw new LauncherError(
-    `Cannot find the installed jig plugin (${failures.join("; ") || "no agent tool recorded"}); run jig gc install again`,
+    `Cannot find the installed jig plugin (${failures.join("; ") || "no agent tool recorded"}); run jig install again`,
   );
 }
 
@@ -348,7 +350,7 @@ export async function runCollector(
   const { code, stopped } = await supervise(command, {
     deadlineMs,
     graceMs,
-    announce: "the collector",
+    announce: "the run",
   });
   // A stopped run did not finish, even when the collector exits 0 on SIGTERM.
   return stopped ? code || 1 : (code ?? 1);
@@ -366,7 +368,7 @@ async function main(argv: string[]): Promise<number> {
       ...rest,
     ]);
   } catch (error) {
-    console.error(`jig gc launcher: ${(error as Error).message}`);
+    console.error(`jig launcher: ${(error as Error).message}`);
     return 1;
   }
 }

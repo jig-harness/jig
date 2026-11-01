@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { jobFiles } from "../../gc/scheduler.ts";
+import { jobFiles } from "../../runtime/scheduler.ts";
 import { dispatchJobSpec } from "../install.ts";
 import { wallOf, writeWall } from "../lib/walls.ts";
 import { type World, world } from "./fixtures.ts";
@@ -175,7 +175,6 @@ describe("jig dispatch install", () => {
     const job = {
       command: ["bun", "jig.ts", "dispatch", "--apply"],
       env: {},
-      hour: 0,
       spec: dispatchJobSpec(5),
     };
     expect(jobFiles("systemd", job)["jig-dispatch.timer"]).toContain(

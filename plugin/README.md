@@ -79,6 +79,7 @@ that a skill hands a narrow job to):
 | [review-arbiter](agents/review-arbiter.md) | Rules on contested review findings the triage rubric cannot settle (fix now, reject, won't fix, defer or escalate to a human); reads code, never edits | `jig:review-arbiter` (Claude Code; see [Codex notes](#codex-notes)) |
 
 Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
+[the `jig` command](#the-jig-command) ·
 [machine resource collection](#machine-resource-collection) ·
 [the dispatcher](#the-dispatcher) ·
 [requirements](#requirements) ·
@@ -95,24 +96,76 @@ Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
 [moving from the `groundwork` plugin](#moving-from-the-groundwork-plugin) ·
 [moving off the per-worktree installer](#moving-off-the-per-worktree-installer)
 
-## Machine resource collection
+## The `jig` command
 
-The plugin also ships `jig gc`, a command-line tool that reports registered
-machine-local leftovers and writes a receipt. Run it with trusted Bun startup:
+The plugin also ships `jig`, a command line for the tools that run on the
+machine rather than in a session. Its components are
+[resource collection](#machine-resource-collection) (`jig gc`) and
+[the dispatcher](#the-dispatcher) (`jig dispatch`), and the same commands
+install, remove, report on and run each of them. The first install runs
+from the installed plugin copy, with trusted Bun startup, and puts `jig` on
+`PATH`:
 
 ```sh
-bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts gc
+bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts install --yes
 ```
 
-Replace `<plugin>` with the absolute installed plugin path. `gc install`
-previews the repository bounds and daily scheduler; `--yes` confirms them.
-`gc --help` (or `help gc`) lists the options of each form, and `--help`
-alone lists every command; `completion bash`, `zsh`, `fish`, `pwsh` or `nu`
-prints a completion script for that shell, which completes a command named
-`jig`. Collecting runs use the install-recorded base declaration and stay
-within the confirmed bounds. See [resource collection](gc/README.md) for
-supported kinds and collection limits, and
-[configuration](CONFIGURATION.md#gc) for both configuration layers.
+Replace `<plugin>` with the absolute installed plugin path (`claude plugin
+list --json` names it). After that, from any repository:
+
+```sh
+jig install   [COMPONENT...] [--repo <path>] [--yes]
+jig uninstall [COMPONENT...] [--repo <path>] [--machine] [--yes]
+jig status    [COMPONENT...] [--json]
+jig receipts  COMPONENT [<date> | <run-id>]
+jig run       [COMPONENT...]
+```
+
+- **`jig install`** previews each component's scheduled job, and writes it
+  with `--yes`. Without a component named, it installs resource collection,
+  registering this repository (or `--repo`), and the dispatcher only when
+  its [machine file](CONFIGURATION.md#the-machines-dispatch-file) exists: the
+  dispatcher's timer starts drives on the accounts that file names, so on a
+  machine without it the install says the dispatcher was skipped and why.
+  Named (`jig install dispatch`), a component without its machine file is
+  refused. It also writes the `jig` command, `~/.local/bin/jig`
+  (`jig.cmd` on Windows), and says so when that directory is not on `PATH`.
+- **`jig uninstall`** removes this repository's entry in resource
+  collection; the jobs stay, since they serve the other repositories.
+  `--machine` removes each component's job as well, and, with no component
+  named, the `jig` command too.
+- **`jig status`** says whether each component's job is installed, where,
+  its schedule and next run, and its last run's receipt.
+- **`jig receipts gc`** (or `dispatch`) lists the receipts of earlier runs;
+  a date lists that day's, a run id prints that run.
+- **`jig run`** runs now what each component's timer runs:
+  `jig gc --scheduled` and `jig dispatch --apply`.
+
+The `jig` command runs the launcher the scheduled jobs run, from its own copy
+under `~/.local/state/jig/launcher/`: at each run it asks the agent tool
+(`claude plugin list --json`, or `codex plugin list --json`) for the
+installed plugin copy and runs that one, so a plugin update reaches `jig`
+without a new install. It runs in your shell's environment, recording only
+the paths of Bun and the agent tools, so run `jig install` again after
+moving either. A file at `~/.local/bin/jig` that `jig install` did not
+write is never replaced or removed. The component forms `jig gc install`,
+`jig dispatch install`, `jig gc receipts` and `jig dispatch receipts` do
+the same as the commands above and keep working, unlisted in the help.
+
+`jig --help` (or `jig help <command>`) lists every command and its options,
+and `jig completion bash`, `zsh`, `fish`, `pwsh` or `nu` prints a completion
+script for that shell.
+
+## Machine resource collection
+
+`jig gc` reports registered machine-local leftovers and writes a receipt;
+`jig gc --collect` removes what the evidence shows is finished, within the
+bounds confirmed at install, and `jig install gc` registers a repository
+and its daily job. Collecting runs use the install-recorded base
+declaration and stay within the confirmed bounds. See
+[resource collection](gc/README.md) for supported kinds and collection
+limits, and [configuration](CONFIGURATION.md#gc) for both configuration
+layers.
 
 ## The dispatcher
 
@@ -123,12 +176,10 @@ delivery loop should be running and is not, and, when told to, restarts
 the drives that stopped on something a machine can settle:
 
 ```sh
-bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch [--apply] [--repo <path>]... [--json]
-bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch install [--interval 5m] [--yes] [--uninstall]
+jig dispatch [--apply] [--repo <path>]... [--followup-since <date>] [--json]
 ```
 
-`dispatch --help`, `dispatch install --help` and `dispatch receipts --help`
-list the options of each form. For each repository (`--repo`, else the
+`jig dispatch --help` lists its options. For each repository (`--repo`, else the
 machine file's, else the current one) it prints every action it would take,
 each with the record that wants it and the evidence: a pickup for an item
 assigned to the repository's factory identity, a re-arm for a drive its
@@ -137,7 +188,7 @@ park), a follow-up for a merge, a notification for a drive only a person can
 settle. A stage a running session or a launch record already holds is listed
 as running; a record it cannot read, or a target it cannot place, is
 reported and never planned. Each run writes a receipt under
-`~/.local/state/jig/dispatch/receipts/`, which `jig dispatch receipts`
+`~/.local/state/jig/dispatch/receipts/`, which `jig receipts dispatch`
 lists.
 
 **`--apply`** starts what the machine file
@@ -160,13 +211,16 @@ process cannot be checked (another host or boot) holds its slot until a
 person removes its files. Pickups, follow-ups and notifications are still
 reported, not started.
 
-**`jig dispatch install`** previews the timer that runs `--apply` every
+**`jig install dispatch`** previews the timer that runs `--apply` every
 interval (the machine file's `interval`, five minutes by default), and
 writes it with `--yes`, from the installed plugin copy, on the scheduler
 code [resource collection](gc/README.md) uses: a systemd user timer, a
-launchd job or a crontab line. Install it on the host that runs the
-sessions (with Orca, the Orca server's host). `--uninstall --yes` removes
-it.
+launchd job or a crontab line; `jig install` with no component named
+installs it too once the machine file exists. Install it on the host that
+runs the sessions (with Orca, the Orca server's host).
+`jig uninstall dispatch --machine --yes` removes it. The earlier
+`jig dispatch install [--interval 5m] [--yes] [--uninstall]` keeps working,
+and is the one form that sets an interval other than the machine file's.
 
 The session runtime it reads and launches in is
 [Orca](https://www.onorca.dev) (`orca` on `PATH`, or `ORCA_CLI_COMMAND`),

@@ -26,6 +26,7 @@ export {
 export type {
   InferValue,
   Message,
+  Parser,
   ValueParser,
   ValueParserResult,
 } from "@optique/core";

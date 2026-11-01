@@ -1,5 +1,11 @@
 import { GcError } from "../shared/gc-error.ts";
-import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { canonicalPath, cloneCheckouts, primaryCheckout } from "./checkout.ts";
 import { gcConfiguration, type MachineConfig } from "./config.ts";
@@ -9,15 +15,16 @@ import { isMapping } from "../shared/config-layers.ts";
 import { remoteHeadBranch, worktreeRemote } from "./kinds/worktree-proof.ts";
 import { exclusiveGcLock } from "../shared/gc-lock.ts";
 import {
+  checkLauncherResolves,
+  detectScheduler,
   installedScript,
-  previousMachineText,
+  jobPreview,
   restoreScheduler,
   type SchedulerSnapshot,
-  checkLauncherResolves,
-  schedulerPreview,
   snapshotScheduler,
-  updateScheduler,
-} from "./scheduler.ts";
+  updateJob,
+} from "../runtime/scheduler.ts";
+import { gcJobSpec } from "./job-spec.ts";
 
 export async function install(options: {
   repository: string;
@@ -63,7 +70,7 @@ export async function install(options: {
   console.log(
     keepJob
       ? "Scheduler preview: the jig-gc job is unchanged"
-      : schedulerPreview(next, noEntries),
+      : jobPreview(gcJobSpec(next.hour), noEntries),
   );
   if (!options.confirm) {
     console.log(
@@ -96,12 +103,12 @@ export async function install(options: {
     }
     // Captured before anything changes, so a failure can put back the job
     // that was actually running rather than one rebuilt from this copy.
-    const previousJob = await snapshotScheduler();
+    const previousJob = await snapshotScheduler(detectScheduler(), gcJobSpec());
     mkdirSync(dirname(machinePath), { recursive: true, mode: 0o700 });
     writeMachine(machinePath, dump({ ...values, gc: next }));
     let job: string;
     try {
-      job = await updateScheduler(next, noEntries);
+      job = await updateJob(gcJobSpec(next.hour), noEntries);
     } catch (error) {
       throw new GcError(
         `${message(error)}; ${await rollBack(machinePath, original, previousJob)}`,
@@ -185,6 +192,15 @@ async function proposedEntry(root: string, repository: unknown) {
   };
   const current = await baseDeclaration(entry);
   return { ...entry, bounds: current.declaration };
+}
+/** Preserve unrelated YAML settings when only the machine's gc entry changes. */
+function previousMachineText(path: string): string {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+    throw error;
+  }
 }
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

@@ -5,33 +5,35 @@ machine. A collector needs evidence that their owners have finished before it
 removes anything. `jig gc` reports that evidence, refuses uncertainty, checks
 again before collection, and leaves a receipt for every run.
 
-Run from an installed plugin copy with trusted Bun startup. Replace
-`<plugin>` with its absolute installed path. In the examples, `jig` means
-`bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts`; it can
-be a shell alias for that full command. The trusted configuration prevents a
-checkout's Bun preloads and environment files from running before collection.
-
+It is a component of the plugin's [`jig` command](../README.md#the-jig-command),
+which `jig install` puts on `PATH`. Before that, run it from the installed
+plugin copy as `bun --no-env-file --config=<plugin>/gc/bunfig.toml
+<plugin>/jig.ts`, with `<plugin>` the copy's absolute path. Either way the
+trusted configuration prevents a checkout's Bun preloads and environment
+files from running before collection.
 
 ```sh
 jig gc
 jig gc --repo <repository> --kind scratch --json
 jig gc --collect
-jig gc receipts
-jig gc install --repo <repository>
+jig receipts gc
+jig install gc --repo <repository>
+jig status gc
 jig gc --help
 ```
 
-`jig gc --help`, `jig gc install --help` and `jig gc receipts --help` list
-each form's options, and `jig completion <shell>` prints a completion script
-for bash, zsh, fish, PowerShell (`pwsh`) or Nushell (`nu`).
+`jig gc --help`, `jig install --help` and `jig receipts --help` list each
+form's options, and `jig completion <shell>` prints a completion script for
+bash, zsh, fish, PowerShell (`pwsh`) or Nushell (`nu`).
 
-The install command prints a preview. Repeat with `--yes` to confirm the
-bounds and write the machine entry and daily scheduler job. `install
---uninstall` removes this repository's entry; the job stays while any
-repository or machine kind remains. `install --uninstall --machine` removes
-every entry and the shared job. Each operation previews before `--yes`.
-A checkout can run reports; scheduling requires an installed copy that a
-worktree reaper cannot remove.
+`jig install gc` prints a preview. Repeat with `--yes` to confirm the
+bounds and write the machine entry and daily scheduler job. `jig uninstall
+gc` removes this repository's entry; the job stays while any repository or
+machine kind remains. `jig uninstall gc --machine` removes every entry and
+the shared job. Each operation previews before `--yes`. The form
+`jig gc install [--repo <repository>] [--uninstall [--machine]] [--yes]`
+does the same and keeps working. A checkout can run reports; scheduling
+requires an installed copy that a worktree reaper cannot remove.
 
 The repository declares kinds in `.config/jig.yaml`. The machine file
 controls the schedule, retention and longer idle guards. Collecting runs
@@ -74,7 +76,8 @@ configured weekday or under configured disk pressure. It uses launchd on
 macOS, a systemd user timer on Linux where available, and cron otherwise.
 The job records its environment and the path of Bun, but not the plugin
 copy's, which changes with each release. It runs a launcher that install
-copies, with the trusted startup file, to `~/.local/state/jig/gc/launcher/`.
+copies, with the trusted startup file, to `~/.local/state/jig/gc/launcher/`
+(the `jig` command runs its own copy of the same launcher).
 At each run the launcher asks the agent tool (`claude plugin list --json`, or
 `codex plugin list --json`, by the absolute path found at install) for the
 installed copy of the plugin and runs that copy's collector, so a plugin
@@ -86,7 +89,7 @@ changes only the machine entry and leaves the job, its launcher and the agent
 tools it recorded as they are, so it never needs the plugin to be found. A run that finds no installed copy later fails
 and says so in the scheduler's error output. An agent tool that does not answer within 30 seconds or prints more than 4 MiB gets `SIGKILL` with its process group, and its lookup fails: the launcher then asks the other agent tool it recorded, and the run fails, naming each failed lookup, only when none names an installed copy. A stop from the scheduler during the lookup ends the agent tool too and asks no further one. A run is bounded: past the heavy-run lock's wait (`LOCK_TIMEOUT`, an hour unless set) and two hours more, or when the scheduler stops the launcher, the collector's process group gets `SIGTERM`, then `SIGKILL` 30 seconds later, and the run fails. The launcher signals only the process groups it started: a descendant that starts its own session leaves the group, is not stopped, and can no longer hold the run open. Install records `LOCK_TIMEOUT` in the job when it is set, and refuses a value the lock would not accept. The job's environment carries
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME` when set, so it asks the same registry
-the install did. Run `jig gc install --repo <repository> --yes`
+the install did. Run `jig install gc --repo <repository> --yes`
 again after moving Bun or an agent tool, or to replace the launcher. A failed install puts back the previous job's files, launcher and activation. Collecting
 runs hold
 the same heavy-run lock as local gates. The design's later container, branch

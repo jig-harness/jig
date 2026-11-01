@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { collectionDeadlineMs } from "../../gc/launcher.ts";
+import { collectionDeadlineMs } from "../../runtime/launcher.ts";
 import { driveHold } from "../lib/actions/drive-hold.ts";
 import {
   type LaunchExit,

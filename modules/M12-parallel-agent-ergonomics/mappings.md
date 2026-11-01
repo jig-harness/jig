@@ -273,15 +273,18 @@ partial report as proof that the cause is gone.
 The invariant is a daily report and a weekly collection, with explicit
 executable paths and environment. The installed plugin copy owns the command;
 a worktree checkout cannot host a job that may remove that checkout.
-`bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts gc install` previews the repository bounds and installs
-on confirmation (`--yes`). See [the command](../../plugin/gc/README.md) for
-its configuration, proof requirements and rollout limits.
+`jig install gc` previews the repository bounds and installs on
+confirmation (`--yes`); the first install, before the plugin's `jig` command
+is on `PATH`, runs from the installed copy as
+`bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts install`.
+See [the command](../../plugin/gc/README.md) for its configuration, proof
+requirements and rollout limits.
 
 | Platform scheduler | Installed file or entry | Cadence | See the last run | Remove |
 |--------------------|-------------------------|---------|------------------|--------|
-| macOS launchd | `~/Library/LaunchAgents/dev.jig.gc.plist` | `StartCalendarInterval.Hour`, from machine `gc.hour` | `launchctl print gui/<uid>/dev.jig.gc`; collection receipts | `gc install --uninstall --machine --yes` |
-| Linux systemd user timer | `~/.config/systemd/user/jig-gc.service` and `jig-gc.timer` | `OnCalendar`, from machine `gc.hour` | `systemctl --user status jig-gc.timer`; `journalctl --user -u jig-gc.service`; receipts | `gc install --uninstall --machine --yes` |
-| cron fallback | Current user's crontab, marked `# jig-gc` | Daily hour field from machine `gc.hour` | Collection receipts; scheduler's own mail or logs | `gc install --uninstall --machine --yes` |
+| macOS launchd | `~/Library/LaunchAgents/dev.jig.gc.plist` | `StartCalendarInterval.Hour`, from machine `gc.hour` | `jig status gc`; `launchctl print gui/<uid>/dev.jig.gc`; collection receipts | `jig uninstall gc --machine --yes` |
+| Linux systemd user timer | `~/.config/systemd/user/jig-gc.service` and `jig-gc.timer` | `OnCalendar`, from machine `gc.hour` | `jig status gc`; `systemctl --user status jig-gc.timer`; `journalctl --user -u jig-gc.service`; receipts | `jig uninstall gc --machine --yes` |
+| cron fallback | Current user's crontab, marked `# jig-gc` | Daily hour field from machine `gc.hour` | `jig status gc`; collection receipts; scheduler's own mail or logs | `jig uninstall gc --machine --yes` |
 
 The command chooses collection on machine `gc.collect_day` or under
 `gc.min_free_bytes` pressure; other daily runs report. Removing one repository
