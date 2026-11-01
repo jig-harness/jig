@@ -62,7 +62,8 @@ request.
 Every stage of the execution line starts only when a person types it: an
 assigned item waits for someone to open a `do-item` session, a drive
 stopped by a usage limit or an answered park waits for someone to re-arm
-it, a merge waits for someone to run its follow-up. Nothing watches the
+it, a converged pull request that its base later conflicts waits for
+someone to notice, a merge waits for someone to run its follow-up. Nothing watches the
 tracker or the pull requests for the next thing to start, so with nobody at
 the keyboard the line stops at the first stage boundary.
 [design/dark-factory-dispatch.md](dark-factory-dispatch.md) has how it
@@ -92,7 +93,9 @@ closed list, a dashboard that filters it (`jig dispatch dashboard`, no
 report files), drift from each stage's expectation reported and notified
 but never acted on, recurring classes routed to `reflect`, and one
 mechanical nudge (`steer`, "continue" after a usage limit resets) with no
-open-ended prompt; the re-arm step waits on the drive
+open-ended prompt, then the re-drive of a converged pull request the
+forge reports conflicting or whose head moved after the drive verified
+it; the re-arm step waits on the drive
 running in a session of its own, and the pickups on `do-item` refusing an
 item already claimed. A park's notification carries the park's framed
 decision.

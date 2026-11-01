@@ -210,6 +210,15 @@ which the driver writes into its ledger as it stops, not the status
 reporter's: `drive.ts` maps convergence to `0`, where `drive-status.ts`
 reports `3`
 ([terminal states](../plugin/skills/drive-pr/references/terminal-states.md)).
+A converged drive is read beside two facts its stop does not fix: the
+pull request's mergeability as the forge reports it, read with the pull
+request, and its head against the head the ledger says the drive
+verified. Main moving under a converged pull request can make it
+conflict, and a person's push after the drive stopped leaves the new
+head unreviewed; either makes the drive stale, and the drive itself
+already knows what to do on a re-arm (a conflict-resolve round for the
+first, its ordinary rounds for the second). A mergeability the forge is
+still computing leaves the pull request unplaced for that tick.
 A stopped ledger with no exit has no known origin: `drives.ts --stop`
 records one, and so does the driver's own recovery after a crash, a thrown
 refusal or a signal, so the tick cannot read a person's decision into it.
@@ -218,7 +227,8 @@ refusal or a signal, so the tick cannot read a person's decision into it.
 | --- | --- | --- |
 | running, heartbeat inside the lease window | driven | nothing |
 | running, heartbeat past the lease window | silent | takes it over only when this machine's launch record started that driver; otherwise reports it |
-| stopped `0` (converged), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
+| stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified | stale | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head |
+| stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
 | stopped `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
 | stopped with no exit | stopped, origin unknown | never re-armed, since it may be a person's stop; notifies once per stop, with the drive's handoff |
 | stopped `16` (quota-parked) | re-armable | re-arms on an admitted account other than the one its launch record names, when one does, or after the wall's reset |
@@ -518,6 +528,12 @@ visible in every report rather than silent.
   reported, never taken over.
 - **Re-arm a drive a person may have stopped** (a mailbox stop or pause,
   or a stop with no exit), or relaunch a stalled pickup.
+- **Keep a converged pull request current with its base.** It re-drives a
+  converged pull request on two mechanical facts only: the forge reports
+  it conflicting with its base, or its head moved past the head the drive
+  verified. A pull request its base merely moved past, still mergeable,
+  is left as it is: merging the base in on every move is a round and a
+  CI run for a pull request the merge would take cleanly.
 - **Pass the flags the skills reserve for a person**: `--window-reopened`
   and `clear-lease`.
 - **Write to the tracker.** The item's own state is the claim, and `do-item`
@@ -854,6 +870,16 @@ One pull request each, in this order; each is usable on its own.
    pickup and follow-up expectations on steps 4 and 5; the nudge on
    interactive launches (step 4, itself waiting on an agent launch that
    binds its account) and on a launch that carries the vendor session id.
+7. **Re-drive a stale converged pull request.** The forge read gains each
+   open pull request's mergeability, the ledger classification the
+   `stale` class (converged, and conflicting or past the verified head),
+   and the plan re-arms it through step 3's launch, on any admitted
+   account. Tests: a converged ledger on a conflicting pull request is
+   re-armed once; one whose head moved is re-armed once; one still at the
+   verified head and mergeable is left alone; a mergeability still being
+   computed leaves it unplaced. Waits on step 3 only. Usable alone: a
+   pull request that converged and then conflicted no longer waits for a
+   person to notice.
 
 ## Left out
 
