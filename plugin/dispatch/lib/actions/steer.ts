@@ -133,17 +133,13 @@ function nudgeKey(record: string, episode: string): string {
   return `${record} ${episode}`;
 }
 
-/** Write a nudge's delivery mark, and its event row with it. */
-function markDelivery(
+/** Append a nudge's event row; its key makes a repeat a no-op. */
+function logDelivery(
   nudge: NudgeRecord,
   delivery: "delivered" | "unknown",
   detail: string,
   root: string,
 ): void {
-  publishOnce(
-    deliveryFile(root, nudge.record, nudge.episode),
-    `${JSON.stringify({ delivery, detail, at: new Date().toISOString() })}\n`,
-  );
   appendRow(
     {
       kind: "event",
@@ -161,16 +157,38 @@ function markDelivery(
   );
 }
 
+/** Write a nudge's delivery mark, and its event row with it. */
+function markDelivery(
+  nudge: NudgeRecord,
+  delivery: "delivered" | "unknown",
+  detail: string,
+  root: string,
+): void {
+  publishOnce(
+    deliveryFile(root, nudge.record, nudge.episode),
+    `${JSON.stringify({ delivery, detail, at: new Date().toISOString() })}\n`,
+  );
+  logDelivery(nudge, delivery, detail, root);
+}
+
 /**
  * Mark each nudge of `repo` still pending (a tick stopped between the send
- * and its mark) as not known to have arrived, with its event row.
+ * and its mark) as not known to have arrived, with its event row; a nudge
+ * already marked gets its event row again when a stop kept it from the log.
  */
 export function settlePending(
   nudges: Map<string, NudgeRecord>,
   root = stateRoot(),
 ): void {
   for (const nudge of nudges.values()) {
-    if (nudge.delivery !== "pending") continue;
+    if (nudge.delivery !== "pending") {
+      try {
+        logDelivery(nudge, nudge.delivery, nudge.detail, root);
+      } catch (error) {
+        swallow(error, `the event row of the nudge of ${nudge.record} waits`);
+      }
+      continue;
+    }
     const detail = "a later tick found the send without its answer";
     try {
       markDelivery(nudge, "unknown", detail, root);
@@ -204,6 +222,17 @@ function waitingOn(
   if (found === undefined || !WAITING_STATES.has(found.agent.state))
     return null;
   return { episode, agent: record.agentId, workspace: found.workspace.path };
+}
+
+/** The notification that a delivered nudge did not settle the wait, while the session's last record is still the wall; a session that went on waits on something else now. */
+function unansweredWhileWaiting(
+  input: SteerInput,
+  r: ReadRecord,
+  nudge: NudgeRecord,
+  episode: WaitingEpisode,
+): Action[] {
+  const workspace = r.record.workspace?.path;
+  return episode.last ? [unanswered(input, r, nudge, workspace)] : [];
 }
 
 /** A notification that a nudge did not settle the wait. */
@@ -267,7 +296,7 @@ export function planSteers(input: SteerInput): {
     const target = targetOf(record);
     const sent = input.nudges.get(nudgeKey(record.id, episode.observedAt));
     if (sent !== undefined) {
-      actions.push(unanswered(input, r, sent, workspace));
+      actions.push(...unansweredWhileWaiting(input, r, sent, episode));
       continue;
     }
     const reset = episode.resetAt === null ? NaN : Date.parse(episode.resetAt);

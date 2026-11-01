@@ -1022,7 +1022,8 @@ the start the previous run's receipt recorded (the first run starts it at
 its own time), unless the machine file's entry for the repository names
 one.
 
-The last three fields are the stages' expectations. A stage outside its
+The expectation fields (`drive_rounds_flat`, `pickup_within` and
+`followup_within`) govern the stages' expectations. A stage outside its
 expectation is reported as drifting, written to the outcome log and
 notified once; the dispatcher never acts on drift, and never changes these
 values itself: when a class keeps recurring on the dashboard, the change is

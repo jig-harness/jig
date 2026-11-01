@@ -112,6 +112,9 @@ export async function observeWalls(
     const found = await probe(r, cwd, timeoutSec);
     if (typeof found === "string") {
       failures.push(`launch record ${r.record.id}: ${found}`);
+      // Without a successful read this tick cannot say the wall is still the
+      // session's last record, so no earlier reading may authorize a nudge.
+      wentOn(r, new Date().toISOString(), root);
       continue;
     }
     keepEpisode(r, found, root);
@@ -119,7 +122,7 @@ export async function observeWalls(
   return failures;
 }
 
-/** The session went on past its last wall, or never met one: its latest episode is no longer its last record. */
+/** The session went on past its last wall, never met one, or could not be read this tick: its latest episode is not known to be its last record. */
 function wentOn(r: ReadRecord, readAt: string, root?: string): void {
   const { record } = r;
   const episodes = record.episodes ?? [];
@@ -171,9 +174,11 @@ function keepEpisode(
     readAt,
   };
   const same = episodes.at(-1)?.observedAt === found.observedAt;
+  // The account's wall first: a stop between the two writes leaves no
+  // episode, so the next tick finds the wall as new and publishes both.
+  if (!same) writeWall(accountWallOf(record, found), root);
   record.episodes = same
     ? [...episodes.slice(0, -1), episode]
     : [...episodes, episode];
   writeRecord(record, root);
-  if (!same) writeWall(accountWallOf(record, found), root);
 }

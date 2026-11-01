@@ -46,6 +46,8 @@ export interface TickReceipt {
   applyWithheld?: string;
   /** Launch record files that do not read, left out of every count. */
   unreadableLaunches?: string[];
+  /** Outcome rows that could not be written for records of repositories this tick did not read. */
+  unloggedOutcomes?: string[];
   repos: RepoReport[];
 }
 

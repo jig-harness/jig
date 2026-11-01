@@ -10,8 +10,8 @@
  * wall: a session that went on after the wall (a person typed, the agent
  * resumed) is no longer waiting on it, and gets no nudge.
  */
-import { readFileSync } from "node:fs";
 import { detectQuotaBlock } from "../../skills/drive-pr/scripts/lib/quota/index.ts";
+import { readBoundedTail } from "../../skills/drive-pr/scripts/lib/quota/types.ts";
 import { swallow } from "../../shared/errors.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 
@@ -25,10 +25,16 @@ export interface ProbedWall {
   last: boolean;
 }
 
-/** The last record of a session file, parsed; `null` when it does not read. */
+/** How much of a session file's end is read to find its last record. */
+const LAST_RECORD_BYTES = 256 * 1024;
+
+/**
+ * The last record of a session file, parsed; `null` when it does not read,
+ * including a last record longer than the bytes read.
+ */
 function lastRecord(path: string): Record<string, unknown> | null {
   try {
-    const lines = readFileSync(path, "utf8")
+    const lines = readBoundedTail(path, LAST_RECORD_BYTES)
       .split("\n")
       .filter((l) => l.trim() !== "");
     const value: unknown = JSON.parse(lines.at(-1) ?? "");
@@ -39,8 +45,19 @@ function lastRecord(path: string): Record<string, unknown> | null {
   }
 }
 
-function seconds(ms: number): number {
-  return Math.floor(ms / 1000);
+/** Whether `record` is the wall record itself: a rate-limit error written at the wall's exact instant, in the session. */
+function isWall(
+  record: Record<string, unknown> | null,
+  observedAt: Date,
+  sessionId: string,
+): boolean {
+  if (record === null || record.error !== "rate_limit") return false;
+  if (typeof record.sessionId === "string" && record.sessionId !== sessionId)
+    return false;
+  return (
+    typeof record.timestamp === "string" &&
+    Date.parse(record.timestamp) === observedAt.getTime()
+  );
 }
 
 /** The wall the session `sessionId` met in `cwd` since `since`, if any. */
@@ -57,17 +74,12 @@ export function probeWall(
     correlation: { vendor: "claude", sessionId },
   });
   if (block === null) return null;
-  const last = lastRecord(block.source);
-  const at =
-    typeof last?.timestamp === "string" ? Date.parse(last.timestamp) : NaN;
   return {
     observedAt: block.observedAt.toISOString(),
     resetAt: block.resetAt?.toISOString() ?? null,
     window: block.window,
     evidence: block.evidence,
-    last:
-      Number.isFinite(at) &&
-      seconds(at) === seconds(block.observedAt.getTime()),
+    last: isWall(lastRecord(block.source), block.observedAt, sessionId),
   };
 }
 

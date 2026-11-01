@@ -126,6 +126,8 @@ export interface LaunchRecord {
   sessionId?: string | null;
   /** A drive's unresolved-thread count at each ledger round, recorded the first tick that sees the round. */
   samples?: ThreadSample[];
+  /** When a tick first saw a pickup's workspace hold a pull request; its expectation of opening one is met for good. */
+  openedAt?: string;
   /** The usage-limit walls an interactive session was seen waiting on, oldest first. */
   episodes?: WaitingEpisode[];
   /** When the record ended, as its outcome row is timed; set before the row is appended, so a retry writes the same row. */
@@ -320,6 +322,14 @@ function isLaunchRecord(value: unknown): value is LaunchRecord {
   );
 }
 
+/** Whether a value is absent or a time. */
+function optionalTime(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === "string" && Number.isFinite(Date.parse(value)))
+  );
+}
+
 /** The fields a later version added, each absent or of its type. */
 function optionalFields(value: Record<string, unknown>): boolean {
   return (
@@ -329,10 +339,9 @@ function optionalFields(value: Record<string, unknown>): boolean {
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
-    (value.endedAt === undefined ||
-      (typeof value.endedAt === "string" &&
-        Number.isFinite(Date.parse(value.endedAt)))) &&
+    optionalTime(value.endedAt) &&
     (value.logged === undefined || typeof value.logged === "boolean") &&
+    optionalTime(value.openedAt) &&
     optionalList(value.samples, isSample) &&
     optionalList(value.episodes, isEpisode)
   );

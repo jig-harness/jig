@@ -45,7 +45,12 @@ import { join } from "node:path";
 import { swallow } from "../../../shared/errors.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { publishOnce, stateRoot } from "../../receipts.ts";
-import { appendRow, driveClass, type OutcomeClass } from "../log.ts";
+import {
+  appendRow,
+  driveClass,
+  type LogRow,
+  type OutcomeClass,
+} from "../log.ts";
 import { carries, holdsNotice } from "../notices.ts";
 import type {
   RuntimeReceipt,
@@ -76,6 +81,10 @@ interface Suppression {
   key: string;
   at: string;
   workspace: string;
+  /** The event row the cause owes the outcome log, kept so a stop before the append cannot lose it. */
+  event?: LogRow;
+  /** Set for a cause notified once for the life of its key: the cause going away does not release it. */
+  lasting?: boolean;
 }
 
 function noticesRoot(root: string): string {
@@ -329,17 +338,28 @@ async function sendTo(
 /**
  * Drop the suppression records of `repo` whose cause this tick no longer
  * names, when every record was read whole and the target is not one the
- * tick could not place: the facts that made the cause have changed.
+ * tick could not place: the facts that made the cause have changed. A
+ * drift is notified once per launch and expectation, so its record stays.
  */
 function prune(
   report: RepoReport,
   keys: ReadonlySet<string>,
   sent: Map<string, Suppression & { file: string }>,
+  root: string,
 ): void {
   if (!report.records.every((r) => r.ok)) return;
   const unplaced = new Set(report.unplaced.map((u) => u.target));
   for (const [key, s] of sent)
-    if (!keys.has(key) && !unplaced.has(s.target)) {
+    if (!keys.has(key) && !unplaced.has(s.target) && s.lasting !== true) {
+      if (s.event !== undefined && !existsSync(loggedMark(s.file))) {
+        // The cause is gone before its row was appended: append it from the record.
+        try {
+          appendRow(s.event, root);
+        } catch (error) {
+          swallow(error, `the event row of ${key} waits for a later tick`);
+          continue;
+        }
+      }
       rmSync(s.file, { force: true });
       rmSync(s.file.replace(/\.json$/, ".logged"), { force: true });
     }
@@ -414,24 +434,7 @@ function logEvent(repo: string, cause: Cause, at: string, root: string): void {
   const file = fileOf(repo, cause.notice.key, root);
   if (cause.launched === true || existsSync(loggedMark(file))) return;
   try {
-    appendRow(
-      {
-        kind: "event",
-        key: `event ${cause.notice.key}`,
-        at,
-        repo,
-        stage: stageOf(cause),
-        target: cause.target,
-        event: cause.cause,
-        account:
-          typeof cause.evidence.account === "string"
-            ? cause.evidence.account
-            : null,
-        class: classOf(cause),
-        reason: cause.reason,
-      },
-      root,
-    );
+    appendRow(eventRow(repo, cause, at), root);
     publishOnce(loggedMark(file), `${at}\n`);
   } catch (error) {
     swallow(
@@ -439,6 +442,25 @@ function logEvent(repo: string, cause: Cause, at: string, root: string): void {
       `the event row of ${cause.notice.key} waits for a later tick`,
     );
   }
+}
+
+/** The event row for a cause timed at `at`. */
+function eventRow(repo: string, cause: Cause, at: string): LogRow {
+  return {
+    kind: "event",
+    key: `event ${cause.notice.key}`,
+    at,
+    repo,
+    stage: stageOf(cause),
+    target: cause.target,
+    event: cause.cause,
+    account:
+      typeof cause.evidence.account === "string"
+        ? cause.evidence.account
+        : null,
+    class: classOf(cause),
+    reason: cause.reason,
+  };
 }
 
 function loggedMark(file: string): string {
@@ -455,7 +477,7 @@ export async function applyNotices(
   const root = state.root ?? stateRoot();
   const causes = report.actions.filter(isCause);
   const sent = readSuppressions(repo.slug, root);
-  prune(report, new Set(causes.map((c) => c.notice.key)), sent);
+  prune(report, new Set(causes.map((c) => c.notice.key)), sent, root);
   const due = causes.filter((c) => !sent.has(c.notice.key));
   for (const c of causes) {
     const earlier = sent.get(c.notice.key);
@@ -481,6 +503,8 @@ export async function applyNotices(
         key: c.notice.key,
         at,
         workspace,
+        ...(c.launched === true ? {} : { event: eventRow(repo.slug, c, at) }),
+        ...(c.cause === "drifting" ? { lasting: true } : {}),
       },
       root,
     );

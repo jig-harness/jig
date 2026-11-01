@@ -178,16 +178,31 @@ function stageFields(
   };
 }
 
-/** Whether this machine's latest drive of the pull request is the stop its ledger shows: its ended row holds the stop. */
+/** How long after its ledger's last write a stopped driver's wrapper may still be recorded exiting. */
+const EXIT_SLACK_MS = 60_000;
+
+/**
+ * Whether this machine's latest drive of the pull request produced the stop
+ * its ledger shows: it ended with the ledger's exit, and the ledger was last
+ * written between its launch and its exit, so its ended row holds the stop.
+ * A stop written after the exit is another driver's.
+ */
 function stoppedOurs(pr: DrivenPr, launches: ReadRecord[]): boolean {
   const latest = launches
     .filter((r) => isDrive(r.record) && r.record.pr === pr.number)
     .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
     .at(-1);
+  if (
+    latest === undefined ||
+    latest.state.kind !== "ended" ||
+    latest.state.exit.code !== (pr.evidence.exit ?? null)
+  )
+    return false;
+  const beat = Date.parse(String(pr.evidence.heartbeat));
   return (
-    latest !== undefined &&
-    latest.state.kind === "ended" &&
-    latest.state.exit.code === (pr.evidence.exit ?? null)
+    Number.isFinite(beat) &&
+    beat >= Date.parse(latest.record.createdAt) &&
+    beat <= Date.parse(latest.state.exit.at) + EXIT_SLACK_MS
   );
 }
 

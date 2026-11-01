@@ -41,7 +41,7 @@ import {
   readNudges,
   settlePending,
 } from "./lib/actions/steer.ts";
-import { sampleThreads } from "./lib/expectations.ts";
+import { observeOpened, sampleThreads } from "./lib/expectations.ts";
 import { logEnded } from "./lib/log-ended.ts";
 import { observeWalls } from "./lib/session-walls.ts";
 import type { Tracker } from "../skills/do-item/scripts/lib/tracker/port.ts";
@@ -59,6 +59,7 @@ import {
   unreadableOutcomes,
 } from "./lib/followup-outcomes.ts";
 import { readIdle, updateIdle } from "./lib/idle.ts";
+import { hasEnded } from "./lib/log.ts";
 import {
   pruneLaunches,
   readLaunches,
@@ -363,6 +364,7 @@ async function observeRunning(
   await sampleThreads(records, repo.slug, drives, (pr) =>
     unresolvedThreadCount(repo.slug, pr),
   );
+  observeOpened(records, repo.slug, sessions);
   const timeoutSec = Math.ceil(
     (context.options.machine?.runtimeTimeoutMs ?? 60_000) / 1000,
   );
@@ -553,6 +555,41 @@ function settleRecords(
   return all.filter((r) => r.record.repo === repo);
 }
 
+/**
+ * Give each record of a repository this tick did not read its ended row
+ * before the record can expire, without a ledger to count rounds by, and
+ * prune the records whose rows are in the log; whether the tick failed.
+ */
+async function settleOutcomes(
+  receipt: TickReceipt,
+  context: TickContext,
+  days: number | undefined,
+): Promise<boolean> {
+  const records = allRecords(context);
+  const unlogged = await logEnded(records, {
+    all: records,
+    drives: null,
+    merged: async () => null,
+    nowIso: new Date(context.nowMs).toISOString(),
+  });
+  if (unlogged.length > 0) receipt.unloggedOutcomes = unlogged;
+  // A record that ended without its outcome row in the log is kept.
+  pruneLaunches(
+    records.filter((r) => !hasEnded(r) || r.record.logged === true),
+    context.nowMs,
+    days ?? 30,
+  );
+  return (
+    unlogged.length > 0 ||
+    receipt.repos.some(
+      (r) =>
+        r.refused !== null ||
+        r.records.some((x) => !x.ok) ||
+        r.unplaced.some((u) => u.target === "the outcome log"),
+    )
+  );
+}
+
 /** The runtime's answer; a rejected read is a failed report, never an escape. */
 async function readSessions(
   runtime: SessionRuntime,
@@ -659,19 +696,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       apply === null ? options.repos : rotated(apply, options.repos);
     for (const path of order)
       receipt.repos.push(await gatherRepo(path, context));
-    // A record of a repository this tick did not read still gets its ended
-    // row before its record can expire, without a ledger to count rounds by.
-    const records = allRecords(context);
-    await logEnded(records, {
-      all: records,
-      drives: null,
-      merged: async () => null,
-      nowIso: now.toISOString(),
-    });
-    pruneLaunches(records, now.getTime(), days ?? 30);
-    const failed = receipt.repos.some(
-      (r) => r.refused !== null || r.records.some((x) => !x.ok),
-    );
+    const failed = await settleOutcomes(receipt, context, days);
     receipt.exitStatus = failed || withheld !== undefined ? 1 : 0;
     receipt.completed = true;
     receipt.finishedAt = new Date().toISOString();

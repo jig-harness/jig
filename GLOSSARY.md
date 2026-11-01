@@ -1838,6 +1838,11 @@ make, use the entry's term instead.
   closed set with one entry: "continue" to a session it started that is
   waiting at its prompt after a usage limit that has since reset. Anything else a stuck
   session needs goes to a person.
+- **Waiting episode** — one stretch of a session the *dispatcher* started
+  waiting at its prompt behind a usage limit, kept on that session's launch
+  record: the wall's observation time and reset, and whether the session's
+  last record is still the wall. A new observation time starts a new
+  episode; the *nudge* is sent at most once per episode.
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of

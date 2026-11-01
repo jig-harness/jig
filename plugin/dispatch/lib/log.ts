@@ -104,9 +104,6 @@ export interface EventRow {
 
 export type LogRow = EndedRow | EventRow;
 
-/** How far back from the end of a month's file a writer looks for a row's key. */
-const TAIL_BYTES = 256 * 1024;
-
 const FILE = /^log-(\d{4})-(\d{2})\.jsonl$/;
 
 /** The month file a time falls in. */
@@ -155,39 +152,63 @@ function parseLine(line: string): LogRow | null {
   }
 }
 
-/** The last `bytes` of a file, from the start of a whole line. */
-function tail(fd: number, size: number, bytes: number): string {
-  const start = Math.max(0, size - bytes);
-  const buffer = Buffer.alloc(size - start);
-  readSync(fd, buffer, 0, buffer.length, start);
-  const text = buffer.toString("utf8");
-  return start === 0 ? text : text.slice(text.indexOf("\n") + 1);
+/** The longest unterminated last line kept when it parses; a longer one is cut off. */
+const MAX_LINE_BYTES = 8 * 1024 * 1024;
+
+/** The offset just after the file's last newline before `size`; 0 when it has none. */
+function lineStart(fd: number, size: number): number {
+  const chunk = Buffer.alloc(64 * 1024);
+  let end = size;
+  while (end > 0) {
+    const start = Math.max(0, end - chunk.length);
+    const read = readSync(fd, chunk, 0, end - start, start);
+    const at = chunk.subarray(0, read).lastIndexOf(0x0a);
+    if (at !== -1) return start + at + 1;
+    end = start;
+  }
+  return 0;
 }
 
 /**
  * Settle an unterminated last line: one that parses keeps it and gains its
- * newline, one that does not is cut off. Returns the file's size after.
+ * newline, one that does not is cut off whole. Returns the file's size after.
  */
 function settleLastLine(fd: number, size: number): number {
   if (size === 0) return 0;
   const last = Buffer.alloc(1);
   readSync(fd, last, 0, 1, size - 1);
   if (last.toString() === "\n") return size;
-  const text = tail(fd, size, Math.min(size, TAIL_BYTES));
-  const cut = text.lastIndexOf("\n");
-  const line = text.slice(cut + 1);
-  if (parseLine(line) !== null) {
-    writeSync(fd, "\n", size);
-    return size + 1;
+  const start = lineStart(fd, size);
+  if (size - start <= MAX_LINE_BYTES) {
+    const buffer = Buffer.alloc(size - start);
+    readSync(fd, buffer, 0, buffer.length, start);
+    if (parseLine(buffer.toString("utf8")) !== null) {
+      writeSync(fd, "\n", size);
+      return size + 1;
+    }
   }
-  const keep = size - Buffer.byteLength(line);
-  ftruncateSync(fd, keep);
-  return keep;
+  ftruncateSync(fd, start);
+  return start;
+}
+
+/** Whether a month file already holds a row with `key`. */
+function holdsKey(path: string, key: string): boolean {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    swallow(error, `${path} does not read`);
+    return false;
+  }
+  const needle = `"key":${JSON.stringify(key)}`;
+  return text
+    .split("\n")
+    .some((line) => line.includes(needle) && parseLine(line)?.key === key);
 }
 
 /**
- * Append `row` to its month's file, unless its key is already among the
- * file's last rows: true when this call wrote it.
+ * Append `row` to its month's file, unless a row with its key is already in
+ * the file: true when this call wrote it.
  */
 export function appendRow(row: LogRow, root = stateRoot()): boolean {
   mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -195,10 +216,7 @@ export function appendRow(row: LogRow, root = stateRoot()): boolean {
   const fd = openSync(path, "a+", 0o600);
   try {
     const size = settleLastLine(fd, statSync(path).size);
-    const present = tail(fd, size, TAIL_BYTES)
-      .split("\n")
-      .some((line) => parseLine(line)?.key === row.key);
-    if (present) return false;
+    if (holdsKey(path, row.key)) return false;
     writeSync(fd, `${JSON.stringify(row)}\n`, size);
     return true;
   } finally {
@@ -304,7 +322,7 @@ export function driveClass(
 /** The wall an interactive session still waited on when it ended, if any. */
 function wallAtEnd(r: ReadRecord, endedAt: string): string | null {
   const latest = r.record.episodes?.at(-1);
-  if (latest === undefined) return null;
+  if (latest === undefined || !latest.last) return null;
   const stood =
     latest.resetAt === null || Date.parse(latest.resetAt) > Date.parse(endedAt);
   return stood

@@ -75,13 +75,23 @@ export function screenNotReady(lines: readonly string[]): string | null {
   if (shown.some((l) => MENU.test(l)))
     return "a menu or a question is on the screen";
   const zone = shown.slice(-PROMPT_ZONE);
-  const prompt = zone.findLast((l) => PROMPT.test(l));
-  if (prompt === undefined) return "the screen shows no input prompt";
-  const input = prompt
+  const at = zone.findLastIndex((l) => PROMPT.test(l));
+  if (at === -1) return "the screen shows no input prompt";
+  const input = (zone[at] as string)
     .replace(/^\s*[│|]?\s*[>❯]/, "")
     .replace(/[│|]\s*$/, "")
     .trim();
-  return input === "" ? null : "the input line holds text";
+  if (input !== "") return "the input line holds text";
+  // The input box continues below its prompt line when the text wraps or has several lines.
+  const continued = zone.slice(at + 1).some(
+    (l) =>
+      /^\s*[│|]/.test(l) &&
+      l
+        .replace(/^\s*[│|]/, "")
+        .replace(/[│|]\s*$/, "")
+        .trim() !== "",
+  );
+  return continued ? "the input box holds text below its first line" : null;
 }
 
 /** The terminal whose tab and pane make the agent id `session`. */

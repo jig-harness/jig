@@ -77,6 +77,19 @@ describe("the outcome log's file", () => {
     ]);
   });
 
+  it("cuts a torn last line longer than any window, and finds a key far back in the file", () => {
+    const dir = root();
+    appendRow(row("first"), dir);
+    const file = logFile("2026-11-01T10:00:00.000Z", dir);
+    appendFileSync(file, `${"x".repeat(600 * 1024)}`);
+    expect(appendRow(row("after"), dir)).toBe(true);
+    for (let i = 0; i < 3000; i++) appendRow(row(`filler-${i}`), dir);
+    expect(appendRow(row("first"), dir)).toBe(false);
+    const keys = readRows(undefined, undefined, dir).map((r) => r.key);
+    expect(keys.slice(0, 2)).toEqual(["first", "after"]);
+    expect(keys.filter((k) => k === "first")).toHaveLength(1);
+  });
+
   it("puts a row in the file of its month, and a reader skips a line that is not a row", () => {
     const dir = root();
     appendRow(row("oct", "2026-10-31T23:59:59.000Z"), dir);
@@ -242,6 +255,14 @@ describe("the screen check before a nudge", () => {
       screenNotReady(["limit reached", rule, "> ", rule, "  ? for shortcuts"]),
     ).toBeNull();
     expect(screenNotReady(["╭────╮", "│ >  │", "╰────╯"])).toBeNull();
+    expect(
+      screenNotReady([
+        "╭────╮",
+        "│ >  │",
+        "│ delete the old records │",
+        "╰────╯",
+      ]),
+    ).toBe("the input box holds text below its first line");
     expect(screenNotReady([rule, "> continue please", rule])).toBe(
       "the input line holds text",
     );

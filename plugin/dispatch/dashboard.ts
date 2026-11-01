@@ -268,13 +268,16 @@ const token = new URLSearchParams(location.search).get("token") || "";
 const form = document.getElementById("filters");
 const pad = (n) => String(n).padStart(2, "0");
 const local = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+let exact = null;
+let latest = 0;
 function preset(name) {
   const now = new Date();
   const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   let from = midnight, to = now;
-  if (name === "yesterday") { from = new Date(midnight.getTime() - 86400000); to = new Date(midnight.getTime() - 1); }
+  if (name === "yesterday") { from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1); to = new Date(midnight.getTime() - 1); }
   else if (name !== "today") from = new Date(now.getTime() - Number(name) * 86400000);
   form.from.value = local(from); form.to.value = local(to);
+  exact = { from: { text: form.from.value, iso: from.toISOString() }, to: { text: form.to.value, iso: to.toISOString() } };
   for (const b of document.querySelectorAll("#presets button")) b.setAttribute("aria-pressed", String(b.dataset.preset === name));
   load();
 }
@@ -286,12 +289,16 @@ function fill(select, values) {
 }
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 function minutes(ms) { return ms === null || ms === undefined ? "" : Math.round(ms / 60000) + " min"; }
+function bound(k, v) { return exact && exact[k].text === v ? exact[k].iso : new Date(v).toISOString(); }
 async function load() {
+  const mine = ++latest;
   const q = new URLSearchParams({ token });
-  for (const [k, v] of new FormData(form)) if (v !== "") q.set(k, k === "from" || k === "to" ? new Date(v).toISOString() : v);
+  for (const [k, v] of new FormData(form)) if (v !== "") q.set(k, k === "from" || k === "to" ? bound(k, v) : v);
   const answer = await fetch("rows?" + q.toString(), { cache: "no-store" });
+  if (mine !== latest) return;
   if (!answer.ok) { document.getElementById("meta").textContent = "The dashboard refused the request (" + answer.status + ")."; return; }
   const data = await answer.json();
+  if (mine !== latest) return;
   for (const name of ["repo", "stage", "account", "class"]) fill(form[name], data.options[name]);
   const counts = document.getElementById("counts");
   counts.replaceChildren(...Object.entries(data.counts).sort((a, b) => b[1] - a[1]).map(([k, n]) => { const c = el("span", "count", k + " "); c.append(el("b", "", String(n))); return c; }));

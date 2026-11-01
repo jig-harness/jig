@@ -76,6 +76,32 @@ export async function sampleThreads(
   }
 }
 
+/**
+ * Record, on each running pickup's launch record of `repo`, the first tick
+ * that sees a pull request in its workspace: the pull request may close or
+ * merge before the pickup ends, and its expectation stays met.
+ */
+export function observeOpened(
+  records: ReadRecord[],
+  repo: string,
+  sessions: SessionsReport,
+  root?: string,
+): void {
+  for (const r of records) {
+    const { record } = r;
+    if (
+      record.repo !== repo ||
+      record.action !== "pickup" ||
+      r.state.kind !== "alive" ||
+      record.openedAt !== undefined
+    )
+      continue;
+    if ((workspaceOf(r, sessions)?.prs.length ?? 0) === 0) continue;
+    record.openedAt = new Date().toISOString();
+    writeRecord(record, root);
+  }
+}
+
 export interface DriftInput {
   slug: string;
   section: DispatchSection;
@@ -142,7 +168,7 @@ function sessionDrift(r: ReadRecord, input: DriftInput): Broken | null {
         };
   }
   const within = input.section.pickupWithinMs;
-  if (elapsed <= within) return null;
+  if (elapsed <= within || record.openedAt !== undefined) return null;
   const workspace = workspaceOf(r, input.sessions);
   // An unread runtime cannot say whether the pull request exists.
   if (workspace === undefined || workspace.prs.length > 0) return null;

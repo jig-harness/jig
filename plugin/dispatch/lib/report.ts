@@ -80,6 +80,9 @@ export function formatReceipt(receipt: TickReceipt, path: string): string {
     ...(receipt.unreadableLaunches ?? []).map(
       (p) => `launch record that does not read, left out: ${p}`,
     ),
+    ...(receipt.unloggedOutcomes ?? []).map(
+      (reason) => `outcome log: ${reason}`,
+    ),
     ...receipt.repos.flatMap((r) => [...repoLines(r, receipt.apply), ""]),
     `Receipt: ${path}`,
   ].join("\n");
