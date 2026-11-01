@@ -155,12 +155,30 @@ Built in this order:
    and not copied: `tools/plugin/setup.ts` keeps only a call into the
    plugin's code, so a first install from a checkout still works. `doctor`
    also runs the audit's configuration-fit check.
+4. **The timers keep the plugin current**: the launcher runs the installed
+   copy's `jig upgrade --scheduled` before each job and resolves the entry
+   again, so the job runs the copy the upgrade installed. The upgrade is on
+   by default (a machine that runs the dispatcher is the one with nobody at
+   the keyboard), follows the channel the machine installed from, and a pin
+   receives nothing. It runs at most once per `upgrade.every` (an hour)
+   whichever timer fires first, is a line in that job's receipt and in the
+   morning report, and when it fails it is reported, named by `jig doctor`,
+   and not tried again inside the interval. The launcher runs it from the
+   installed copy, never from itself, and the launcher copy is refreshed by
+   `jig upgrade` as step 3 has it. Both harnesses install each version into
+   its own directory, so a run already started keeps the files it started
+   with. `jig install --no-upgrade`, or `upgrade: off` in the machine file,
+   opts a machine out.
 
 Done when `jig` on `PATH` installs, upgrades, checks and removes both
 components through the same verbs, `jig doctor` reports the plugin's
 installation and the repository's configuration fit, `tools/plugin/setup.ts`
-holds no logic of its own, and a job installed before the first step still
-runs on a machine that took every release since.
+holds no logic of its own, a job installed before the first step still
+runs on a machine that took every release since, two timers firing within
+one interval run the upgrade once and the job after it runs the newly
+installed copy, a failed upgrade is reported and withheld for the rest of
+the interval while the job still runs, and a pinned machine or one with
+`upgrade: off` runs no upgrade.
 
 ### 3. The kickoff family
 
