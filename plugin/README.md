@@ -277,8 +277,9 @@ and the drive drifts when the latest is not below the count
 pull request within `dispatch.pickup_within`; a follow-up ends within
 `dispatch.followup_within`. A stage outside its expectation is reported as
 drifting with the evidence (the counts per round, the time since launch,
-the item's state), written to the log and notified once. It is never acted
-on: the stage keeps running and keeps its slot, and whether to stop it is a
+the item's state), and, where the machine file enables `notify` and the run
+applies, notified once, which writes it to the log: a run that only reports
+leaves no row for it. It is never acted on: the stage keeps running and keeps its slot, and whether to stop it is a
 person's call.
 
 **The one nudge** (the `steer` stage). When an interactive session the

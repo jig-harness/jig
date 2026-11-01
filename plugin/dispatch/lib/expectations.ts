@@ -99,15 +99,23 @@ export function observeOpened(
       record.openedAt !== undefined
     )
       continue;
-    const launched = Date.parse(record.createdAt);
-    const mine = (workspaceOf(r, sessions)?.prs ?? []).some((n) => {
-      const at = Date.parse(created.get(n) ?? "");
-      return Number.isFinite(at) && at >= launched;
-    });
-    if (!mine) continue;
+    if (!openedByPickup(r, sessions, created)) continue;
     record.openedAt = new Date().toISOString();
     writeRecord(record, root);
   }
+}
+
+/** Whether the record's workspace carries a pull request created at or after the launch. */
+function openedByPickup(
+  r: ReadRecord,
+  sessions: SessionsReport,
+  created: ReadonlyMap<number, string>,
+): boolean {
+  const launched = Date.parse(r.record.createdAt);
+  return (workspaceOf(r, sessions)?.prs ?? []).some((n) => {
+    const at = Date.parse(created.get(n) ?? "");
+    return Number.isFinite(at) && at >= launched;
+  });
 }
 
 export interface DriftInput {
@@ -115,6 +123,8 @@ export interface DriftInput {
   section: DispatchSection;
   launches: ReadRecord[];
   sessions: SessionsReport;
+  /** Each pull request's creation time, for telling this pickup's pull request from an older one. */
+  created: ReadonlyMap<number, string>;
   /** Each item's state as the tracker read it, for a pickup's evidence. */
   itemStates: ReadonlyMap<string, string>;
   /** The launch records a waiting notification is planned for this tick. */
@@ -179,7 +189,11 @@ function sessionDrift(r: ReadRecord, input: DriftInput): Broken | null {
   if (elapsed <= within || record.openedAt !== undefined) return null;
   const workspace = workspaceOf(r, input.sessions);
   // An unread runtime cannot say whether the pull request exists.
-  if (workspace === undefined || workspace.prs.length > 0) return null;
+  if (
+    workspace === undefined ||
+    openedByPickup(r, input.sessions, input.created)
+  )
+    return null;
   return {
     expectation: "opens a pull request within pickup_within",
     why: `it has run ${minutes(elapsed)} and opened no pull request (dispatch.pickup_within ${minutes(within)})`,

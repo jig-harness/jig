@@ -76,8 +76,9 @@ describe("the quota probe for an interactive session", () => {
     const project = join(config, "projects", "-work-example-repo-12");
     mkdirSync(project, { recursive: true });
     const file = join(project, `${SESSION}.jsonl`);
+    // A wall time with milliseconds: the record and the block must agree to the millisecond.
     const at = new Date(Date.now() - 3 * 3_600_000);
-    at.setUTCMilliseconds(0);
+    if (at.getUTCMilliseconds() === 0) at.setUTCMilliseconds(417);
     const since = new Date(at.getTime() - 3_600_000).toISOString();
     // Another session's wall in the same directory is not this session's.
     writeFileSync(

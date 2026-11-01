@@ -47,6 +47,8 @@ export interface PlanInput {
   /** The pull requests whose outcome file does not read. */
   unreadableOutcomes?: ReadonlySet<number>;
   sessions: SessionsReport;
+  /** Each pull request's creation time; a pickup's pull request is one created after its launch. */
+  created?: ReadonlyMap<number, string>;
   /** This machine's launch records for the repository. */
   launches: ReadRecord[];
   /** Since when each claimed item has been idle (the idle clock). */
@@ -145,6 +147,7 @@ export function planTick(input: PlanInput): Plan {
     section: input.section,
     launches: input.launches,
     sessions,
+    created: input.created ?? new Map(),
     itemStates: new Map([
       ...input.pickups.map((p) => [p.key, p.state] as const),
       ...(input.claimed ?? []).map((c) => [c.key, c.state] as const),

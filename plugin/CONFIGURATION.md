@@ -1024,8 +1024,9 @@ one.
 
 The expectation fields (`drive_rounds_flat`, `pickup_within` and
 `followup_within`) govern the stages' expectations. A stage outside its
-expectation is reported as drifting, written to the outcome log and
-notified once; the dispatcher never acts on drift, and never changes these
+expectation is reported as drifting, and, where the machine file enables
+`notify` and the run applies, notified once and written to the outcome log
+(a run that only reports writes no row for it); the dispatcher never acts on drift, and never changes these
 values itself: when a class keeps recurring on the dashboard, the change is
 a person's, through `reflect` and `review-reflections` (see
 [the plugin's README](README.md#the-dispatcher)).

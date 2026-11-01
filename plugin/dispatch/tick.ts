@@ -261,6 +261,7 @@ async function gatherRepo(
     drives,
     merged,
     sessions,
+    created,
   });
   await logRepo(context, repo.slug, report, drives);
   if (context.apply !== null)
@@ -500,7 +501,12 @@ function planRepo(
   report.actions.push(...plan.actions);
   report.running.push(...plan.running);
   const nudges = readNudges(repo);
-  settlePending(nudges);
+  for (const reason of settlePending(nudges))
+    report.unplaced.push({
+      target: "the outcome log",
+      record: "runtime",
+      reason,
+    });
   const steers = planSteers({
     slug: repo,
     launches: records,
@@ -570,12 +576,20 @@ async function settleOutcomes(
   days: number | undefined,
 ): Promise<boolean> {
   const records = allRecords(context);
-  const unlogged = await logEnded(records, {
-    all: records,
-    drives: null,
-    merged: async () => null,
-    nowIso: new Date(context.nowMs).toISOString(),
-  });
+  // A repository this tick read gave its records their rows in `logRepo`,
+  // with its ledgers beside them; the rest get the row without them.
+  const read = new Set(
+    receipt.repos.filter((r) => r.refused === null).map((r) => r.slug),
+  );
+  const unlogged = await logEnded(
+    records.filter((r) => !read.has(r.record.repo)),
+    {
+      all: records,
+      drives: null,
+      merged: async () => null,
+      nowIso: new Date(context.nowMs).toISOString(),
+    },
+  );
   if (unlogged.length > 0) receipt.unloggedOutcomes = unlogged;
   // A record that ended without its outcome row in the log is kept.
   pruneLaunches(

@@ -336,6 +336,22 @@ async function sendTo(
 }
 
 /**
+ * An outcome-log write that failed: kept for a later tick to retry, and
+ * reported so the tick fails and the receipt says what the dashboard lacks.
+ */
+function outcomeLogFailed(
+  report: RepoReport,
+  what: string,
+  error: unknown,
+): void {
+  report.unplaced.push({
+    target: "the outcome log",
+    record: "runtime",
+    reason: `${what} did not reach the log and waits for a later tick: ${failureText(error)}`,
+  });
+}
+
+/**
  * Drop the suppression records of `repo` whose cause this tick no longer
  * names, when every record was read whole and the target is not one the
  * tick could not place: the facts that made the cause have changed. A
@@ -356,7 +372,7 @@ function prune(
         try {
           appendRow(s.event, root);
         } catch (error) {
-          swallow(error, `the event row of ${key} waits for a later tick`);
+          outcomeLogFailed(report, `the event row of ${key}`, error);
           continue;
         }
       }
@@ -369,6 +385,7 @@ function prune(
 function recoverEvents(
   sent: Map<string, Suppression & { file: string }>,
   root: string,
+  report: RepoReport,
 ): void {
   for (const [key, s] of sent) {
     if (s.event === undefined || existsSync(loggedMark(s.file))) continue;
@@ -376,7 +393,7 @@ function recoverEvents(
       appendRow(s.event, root);
       publishOnce(loggedMark(s.file), `${s.at}\n`);
     } catch (error) {
-      swallow(error, `the event row of ${key} waits for a later tick`);
+      outcomeLogFailed(report, `the event row of ${key}`, error);
     }
   }
 }
@@ -446,17 +463,20 @@ function classOf(cause: Cause): OutcomeClass | null {
  * record, then that record's logged mark: a cause about a stage this
  * machine launched has its ended row instead, and gets none.
  */
-function logEvent(repo: string, cause: Cause, at: string, root: string): void {
+function logEvent(
+  repo: string,
+  cause: Cause,
+  at: string,
+  root: string,
+  report: RepoReport,
+): void {
   const file = fileOf(repo, cause.notice.key, root);
   if (cause.launched === true || existsSync(loggedMark(file))) return;
   try {
     appendRow(eventRow(repo, cause, at), root);
     publishOnce(loggedMark(file), `${at}\n`);
   } catch (error) {
-    swallow(
-      error,
-      `the event row of ${cause.notice.key} waits for a later tick`,
-    );
+    outcomeLogFailed(report, `the event row of ${cause.notice.key}`, error);
   }
 }
 
@@ -493,14 +513,14 @@ export async function applyNotices(
   const root = state.root ?? stateRoot();
   const causes = report.actions.filter(isCause);
   const sent = readSuppressions(repo.slug, root);
-  recoverEvents(sent, root);
+  recoverEvents(sent, root, report);
   prune(report, new Set(causes.map((c) => c.notice.key)), sent, root);
   const due = causes.filter((c) => !sent.has(c.notice.key));
   for (const c of causes) {
     const earlier = sent.get(c.notice.key);
     if (earlier === undefined) continue;
     // A tick that stopped between the suppression and its row writes the row now.
-    logEvent(repo.slug, c, earlier.at, root);
+    logEvent(repo.slug, c, earlier.at, root, report);
     report.notifications.push(
       outcomeFor(c, "suppressed", earlier.workspace, `sent ${earlier.at}`),
     );
@@ -525,7 +545,7 @@ export async function applyNotices(
       },
       root,
     );
-    logEvent(repo.slug, c, at, root);
+    logEvent(repo.slug, c, at, root, report);
   };
   const groups = await groupByTarget(
     state,

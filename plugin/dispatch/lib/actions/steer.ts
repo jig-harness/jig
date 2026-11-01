@@ -191,14 +191,17 @@ function markDelivery(
 export function settlePending(
   nudges: Map<string, NudgeRecord>,
   root = stateRoot(),
-): void {
+): string[] {
+  const failed: string[] = [];
   for (const nudge of nudges.values()) {
     if (nudge.delivery !== "pending") {
       if (existsSync(loggedFile(root, nudge.record, nudge.episode))) continue;
       try {
         logDelivery(nudge, nudge.delivery, nudge.detail, root);
       } catch (error) {
-        swallow(error, `the event row of the nudge of ${nudge.record} waits`);
+        failed.push(
+          `the event row of the nudge of ${nudge.record} did not reach the log and waits for a later tick: ${failureText(error)}`,
+        );
       }
       continue;
     }
@@ -208,9 +211,12 @@ export function settlePending(
       nudge.delivery = "unknown";
       nudge.detail = detail;
     } catch (error) {
-      swallow(error, `the nudge of ${nudge.record} stays pending`);
+      failed.push(
+        `the nudge of ${nudge.record} stays pending: ${failureText(error)}`,
+      );
     }
   }
+  return failed;
 }
 
 export interface SteerInput {

@@ -263,6 +263,19 @@ describe("the screen check before a nudge", () => {
         "╰────╯",
       ]),
     ).toBe("the input box holds text below its first line");
+    // A draft line shaped like a rule is still the draft, bordered or not.
+    expect(
+      screenNotReady([
+        "╭────╮",
+        "│ >  │",
+        "│ --- │",
+        "│ delete the old records │",
+        "╰────╯",
+      ]),
+    ).toBe("the input box holds text below its first line");
+    expect(
+      screenNotReady([rule, "> ", "---", "  delete the old records", rule]),
+    ).toBe("the input box holds text below its first line");
     expect(screenNotReady([rule, "> ", "  delete the old records", rule])).toBe(
       "the input box holds text below its first line",
     );

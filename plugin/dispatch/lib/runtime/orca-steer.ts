@@ -59,8 +59,10 @@ async function call(args: string[], timeoutMs: number): Promise<Answer> {
 
 /** A prompt line: the agent's input marker, alone or inside the input box's border. */
 const PROMPT = /^\s*[│|]?\s*[>❯](?:\s|$)/;
-/** A line of nothing but box-drawing rules, corners and spaces. */
-const RULE = /^(?=.*[─━═\-_])[\s─━═╭╮╰╯┌┐└┘├┤│|+\-_]+$/;
+/** An unbordered prompt's underline: three or more box-drawing rule characters and nothing else (a draft's own `---` is not one). */
+const UNDERLINE = /^\s*[─━═]{3,}\s*$/;
+/** A bordered input box's bottom border, from its corner to its corner. */
+const BOTTOM = /^\s*[╰└][^╯┘]*[╯┘]\s*$/;
 /** What a menu or a question looks like on an agent's screen. */
 const MENU =
   /^\s*[❯>]\s*\d+[.)]\s|\(y\/n\)|\[y\/n\]|esc to cancel|enter to (confirm|select)|do you want|would you like/i;
@@ -85,9 +87,11 @@ export function screenNotReady(lines: readonly string[]): string | null {
     .trim();
   if (input !== "") return "the input line holds text";
   // The input continues below its prompt line when the text wraps or has several lines, bordered or not;
-  // it ends at the next rule (the box's bottom border or the line under an unbordered prompt).
+  // a bordered box ends at its bottom border, whatever its text looks like, and an unbordered prompt
+  // at the rule line under it.
   const below = zone.slice(at + 1);
-  const end = below.findIndex((l) => RULE.test(l));
+  const bordered = /^\s*[│|]/.test(zone[at] as string);
+  const end = below.findIndex((l) => (bordered ? BOTTOM : UNDERLINE).test(l));
   const region = end === -1 ? below : below.slice(0, end);
   const continued = region.some(
     (l) =>

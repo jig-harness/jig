@@ -21,12 +21,13 @@
  * A row is one line written in one append. Before it appends, the writer
  * settles an unterminated last line (one that parses keeps it and gains its
  * newline, one that does not is cut off), and looks for the row's key among
- * the file's last rows, so a retry after a tick that stopped between the
+ * the file's rows (read once per process, then only what was appended), so a retry after a tick that stopped between the
  * append and its mark writes nothing twice. A reader skips any line that
  * does not parse as a row.
  */
 import {
   closeSync,
+  fstatSync,
   ftruncateSync,
   mkdirSync,
   openSync,
@@ -192,29 +193,61 @@ function settleLastLine(fd: number, size: number): number {
   return start;
 }
 
+/** The keys of a month file's rows up to `size`, which ends on a line boundary. */
+interface KeyIndex {
+  ino: number;
+  size: number;
+  keys: Set<string>;
+}
+
+/** What this process has read of each month file; a file that shrank or was replaced is read again whole. */
+const indexes = new Map<string, KeyIndex>();
+
 /**
- * Whether the month file open as `fd` already holds a row with `key`. It is
- * read through the descriptor already held and in chunks, so a failure is the
- * caller's (a lookup that cannot read is not an absent key) and no call
- * holds the whole file.
+ * Add to `keys` the keys of the rows of the file open as `fd` from byte
+ * `from` (a line start) to `size`. It reads through the descriptor already
+ * held and in chunks, so a failure is the caller's (a lookup that cannot read
+ * is not an absent key) and no call holds the whole file.
  */
-function holdsKey(fd: number, size: number, key: string): boolean {
-  const needle = `"key":${JSON.stringify(key)}`;
+function indexKeys(fd: number, from: number, size: number, keys: Set<string>) {
   const chunk = Buffer.alloc(1024 * 1024);
   const decoder = new StringDecoder("utf8");
+  const add = (line: string) => {
+    const key = parseLine(line)?.key;
+    if (key !== undefined) keys.add(key);
+  };
   let carry = "";
-  let at = 0;
+  let at = from;
   while (at < size) {
     const read = readSync(fd, chunk, 0, Math.min(chunk.length, size - at), at);
     if (read === 0) break;
     at += read;
     const lines = (carry + decoder.write(chunk.subarray(0, read))).split("\n");
     carry = lines.pop() ?? "";
-    if (lines.some((l) => l.includes(needle) && parseLine(l)?.key === key))
-      return true;
+    lines.forEach(add);
   }
   carry += decoder.end();
-  return carry.includes(needle) && parseLine(carry)?.key === key;
+  if (carry !== "") add(carry);
+}
+
+/**
+ * Whether the month file open as `fd` already holds a row with `key`. A file
+ * is read whole once per process and only what was appended since after that,
+ * so a run of appends does not read the month again for each.
+ */
+function holdsKey(path: string, fd: number, size: number, key: string) {
+  const ino = fstatSync(fd).ino;
+  let index = indexes.get(path);
+  if (index === undefined || index.ino !== ino || index.size > size) {
+    indexes.delete(path);
+    index = { ino, size: 0, keys: new Set() };
+  }
+  if (index.size < size) {
+    indexKeys(fd, index.size, size, index.keys);
+    index.size = size;
+  }
+  indexes.set(path, index);
+  return index.keys.has(key);
 }
 
 /**
@@ -227,7 +260,9 @@ export function appendRow(row: LogRow, root = stateRoot()): boolean {
   const fd = openSync(path, "a+", 0o600);
   try {
     const size = settleLastLine(fd, statSync(path).size);
-    if (holdsKey(fd, size, row.key)) return false;
+    if (holdsKey(path, fd, size, row.key)) return false;
+    // The index stops at `size`: the next call reads this row, and any a
+    // concurrent writer appended, as the part of the file after it.
     writeSync(fd, `${JSON.stringify(row)}\n`, size);
     return true;
   } finally {
