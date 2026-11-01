@@ -18,7 +18,15 @@
  * nothing.
  */
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import {
+  dirname,
+  isAbsolute,
+  join,
+  posix,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { fail, runMain } from "../../../shared/cli.ts";
 import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
 import { isRecord } from "../../../shared/guards.ts";
@@ -76,7 +84,11 @@ function escapes(part: string): boolean {
 /** The lens directory, which must stay inside the base snapshot. */
 function lensDir(root: string, dir: string): string {
   const absolute = resolve(root, dir);
-  const real = existsSync(absolute) ? realpathSync(absolute) : absolute;
+  // A directory that does not exist yet is resolved from its nearest
+  // existing ancestor, so a link above it is followed like any other.
+  let existing = absolute;
+  while (!existsSync(existing)) existing = dirname(existing);
+  const real = resolve(realpathSync(existing), relative(existing, absolute));
   if (isAbsolute(dir) || escapes(relative(realpathSync(root), real)))
     throw new LensConfigError(
       `review.lenses.dir must stay inside the repository: ${dir}`,
