@@ -349,6 +349,27 @@ async function gh(root: string, ...args: string[]): Promise<string> {
     env: toolEnvironment(root),
   });
 }
+/**
+ * The selected remote's repository as gh names it, so a lookup never reads
+ * the working directory's own. Null when the remote's address is not an
+ * `owner/repo` path (a local path, for one), where gh's default stands.
+ */
+async function remoteRepository(
+  root: string,
+  remote: string,
+): Promise<string | null> {
+  const address = (
+    await git(root, "config", "--get", `remote.${remote}.url`)
+  ).trim();
+  const found =
+    /^(?:https?|ssh|git):\/\/(?:[^@/]*@)?([^/:]+)(?::\d+)?\/(.+?)(?:\.git)?\/*$/i.exec(
+      address,
+    ) ?? /^(?:[^@/\s]+@)?([^:/\s]+):(?!\/\/)(.+?)(?:\.git)?\/*$/.exec(address);
+  const path = found?.[2];
+  if (!found?.[1] || !path || !/^[^/]+\/[^/]+$/.test(path)) return null;
+  const host = found[1].toLowerCase();
+  return host === "github.com" ? path : `${host}/${path}`;
+}
 async function defaultBranch(root: string, remote: string): Promise<string> {
   let branch: string;
   try {
@@ -364,11 +385,13 @@ async function defaultBranch(root: string, remote: string): Promise<string> {
       .trim()
       .replace(`${remote}/`, "");
   } catch {
+    const repository = await remoteRepository(root, remote);
     branch = (
       await gh(
         root,
         "repo",
         "view",
+        ...(repository ? [repository] : []),
         "--json",
         "defaultBranchRef",
         "-q",
@@ -408,6 +431,7 @@ async function resolveBase(
     ? await git(root, "show", `${remote}/${branch}:${overlayPath}`)
     : null;
   const config = layeredConfig(root, { JIG_USER_LAYER: "off" }, overlay).values;
+  const repository = pr ? await remoteRepository(root, remote) : null;
   return pr
     ? (
         await gh(
@@ -415,6 +439,7 @@ async function resolveBase(
           "pr",
           "view",
           pr,
+          ...(repository ? ["-R", repository] : []),
           "--json",
           "baseRefName",
           "-q",

@@ -260,6 +260,63 @@ test("GitHub default-branch fallback also excludes reviewed-tree executables", (
   expect(existsSync(marker)).toBe(false);
 });
 
+test("gh lookups name the selected remote's repository, and fall back to gh's own when the remote is no owner/repo address", () => {
+  const trustedBin = mkdtempSync(join(tmpdir(), "review-trusted-tools-"));
+  roots.push(trustedBin);
+  const seen = join(trustedBin, "gh-args.txt");
+  writeFakeProgram(
+    join(trustedBin, "gh"),
+    `#!/usr/bin/env bun\nimport {appendFileSync} from "node:fs";appendFileSync(${JSON.stringify(seen)}, JSON.stringify(process.argv.slice(2)) + "\\n");console.log("main");\n`,
+  );
+  const env = {
+    ...process.env,
+    PATH: [trustedBin, process.env.PATH ?? ""].join(delimiter),
+  };
+  const lookups = (address: string | null): string[] => {
+    rmSync(seen, { force: true });
+    const root = fixture();
+    git(root, "symbolic-ref", "--delete", "refs/remotes/origin/HEAD");
+    if (address) {
+      git(root, "config", `url.${root}.insteadOf`, address);
+      git(root, "remote", "set-url", "origin", address);
+    }
+    const result = run(
+      root,
+      process.execPath,
+      [...launch, "setup", "--pr", "7", "--files", "kept.ts"],
+      env,
+    );
+    expectSpawnExit(result, 0);
+    sessions.push(JSON.parse(result.stdout).session);
+    return readFileSync(seen, "utf8").trim().split("\n");
+  };
+  expect(lookups("https://github.com/acme/widgets.git")).toEqual([
+    JSON.stringify([
+      "repo",
+      "view",
+      "acme/widgets",
+      "--json",
+      "defaultBranchRef",
+      "-q",
+      ".defaultBranchRef.name",
+    ]),
+    JSON.stringify([
+      "pr",
+      "view",
+      "7",
+      "-R",
+      "acme/widgets",
+      "--json",
+      "baseRefName",
+      "-q",
+      ".baseRefName",
+    ]),
+  ]);
+  const local = lookups(null).join("\n");
+  expect(local).not.toContain("acme");
+  expect(local).not.toContain("-R");
+});
+
 test("git and gh keep their transport settings, and nothing else of the caller's environment", () => {
   const root = fixture();
   git(root, "symbolic-ref", "--delete", "refs/remotes/origin/HEAD");
