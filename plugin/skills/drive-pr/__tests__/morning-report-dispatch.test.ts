@@ -50,12 +50,16 @@ function repo(fields: Partial<RepoReport>): RepoReport {
   };
 }
 
-function receipt(at: Date, repos: RepoReport[]): TickReceipt {
+function receipt(
+  at: Date,
+  repos: RepoReport[],
+  finishedAt: Date = at,
+): TickReceipt {
   return {
     version: 1,
     runId: newRunId(at),
     startedAt: at.toISOString(),
-    finishedAt: at.toISOString(),
+    finishedAt: finishedAt.toISOString(),
     completed: true,
     apply: true,
     exitStatus: 0,
@@ -173,6 +177,49 @@ describe("drives.ts --report: what the dispatcher did", () => {
       launches: [
         launch("PR #9", "followup", "launchd" as LaunchOutcome["outcome"], "x"),
       ],
+    });
+    const r = await report(setUp([bad]), ["--json"]);
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).unread).toHaveLength(1);
+  });
+
+  it("includes a receipt whose tick started before the report's time and finished after it", async () => {
+    const forge = setUp();
+    const root = join(
+      forge.env.HOME as string,
+      ".local",
+      "state",
+      "jig",
+      "dispatch",
+    );
+    writeReceipt(
+      receipt(
+        ago(30),
+        [repo({ launches: [launch("PR #11", "rearm", "launched", "spans")] })],
+        ago(0.5),
+      ),
+      root,
+    );
+    const r = await report(forge, ["--json"]);
+    expectSpawnExit(r, 0);
+    const targets = JSON.parse(r.stdout).dispatch.map(
+      (d: Record<string, string>) => d.target,
+    );
+    expect(targets).toContain("PR #11");
+  });
+
+  it("reports a notification whose workspace is not text or null as unread", async () => {
+    const bad = repo({
+      notifications: [
+        {
+          target: "PR #5",
+          cause: "parked",
+          key: "k",
+          outcome: "sent",
+          workspace: {},
+          detail: "x",
+        },
+      ] as unknown as RepoReport["notifications"],
     });
     const r = await report(setUp([bad]), ["--json"]);
     expectSpawnExit(r, 0);

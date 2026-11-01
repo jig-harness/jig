@@ -188,7 +188,7 @@ export type ExpectedRun = { kind: "tick"; record: string } | { kind: "manual" };
 
 /** Whether a marker's body still says what its poster wrote. */
 function readsAs(run: FollowupMarker["run"], expected: ExpectedRun) {
-  if (expected.kind === "manual") return run.kind === "manual";
+  if (expected.kind === "manual") return run.kind === "manual" && !run.done;
   return run.kind === "tick" && run.record === expected.record;
 }
 

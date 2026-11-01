@@ -122,7 +122,11 @@ function readable(repo: Repo): boolean {
       repo.notifications,
       ["target", "cause", "key", "outcome"],
       NOTICE_OUTCOMES,
-    )
+    ) &&
+    (repo.notifications ?? []).every((n) => {
+      const w = (n as { workspace?: unknown }).workspace;
+      return w === null || typeof w === "string";
+    })
   );
 }
 
