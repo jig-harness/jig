@@ -361,13 +361,13 @@ fields:
     type: enum
     values: [attended, unattended, wide]
     read_by: [drive-pr, resolve-review-comments, file-issue, decide]
-    since: next
+    since: 0.113.0
   autonomy.off_hours.schedule:
     type: list
     items: string
     nonempty: true
     read_by: [drive-pr, resolve-review-comments, file-issue, decide]
-    since: next
+    since: 0.113.0
   autonomy.park_classes:
     type: list
     items: { type: string, pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" }
