@@ -106,10 +106,13 @@ bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts gc
 
 Replace `<plugin>` with the absolute installed plugin path. `gc install`
 previews the repository bounds and daily scheduler; `--yes` confirms them.
-Collecting runs use the install-recorded base declaration and stay within
-the confirmed bounds. See [resource collection](gc/README.md) for supported
-kinds and collection limits, and [configuration](CONFIGURATION.md#gc) for
-both configuration layers.
+`gc --help` (or `help gc`) lists the options of each form, and `--help`
+alone lists every command; `completion bash`, `zsh`, `fish`, `pwsh` or `nu`
+prints a completion script for that shell, which completes a command named
+`jig`. Collecting runs use the install-recorded base declaration and stay
+within the confirmed bounds. See [resource collection](gc/README.md) for
+supported kinds and collection limits, and
+[configuration](CONFIGURATION.md#gc) for both configuration layers.
 
 ## The dispatcher
 
@@ -124,15 +127,16 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch install [--interval 5m] [--yes] [--uninstall]
 ```
 
-For each repository (`--repo`, else the machine file's, else the current
-one) it prints every action it would take, each with the record that wants
-it and the evidence: a pickup for an item assigned to the repository's
-factory identity, a re-arm for a drive its ledger shows stopped on a
-mechanical state (a usage limit, an answered park), a follow-up for a
-merge, a notification for a drive only a person can settle. A stage a
-running session or a launch record already holds is listed as running; a
-record it cannot read, or a target it cannot place, is reported and never
-planned. Each run writes a receipt under
+`dispatch --help`, `dispatch install --help` and `dispatch receipts --help`
+list the options of each form. For each repository (`--repo`, else the
+machine file's, else the current one) it prints every action it would take,
+each with the record that wants it and the evidence: a pickup for an item
+assigned to the repository's factory identity, a re-arm for a drive its
+ledger shows stopped on a mechanical state (a usage limit, an answered
+park), a follow-up for a merge, a notification for a drive only a person can
+settle. A stage a running session or a launch record already holds is listed
+as running; a record it cannot read, or a target it cannot place, is
+reported and never planned. Each run writes a receipt under
 `~/.local/state/jig/dispatch/receipts/`, which `jig dispatch receipts`
 lists.
 
