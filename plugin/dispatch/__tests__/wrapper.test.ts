@@ -128,6 +128,7 @@ describe("jig dispatch install", () => {
     const refused = await w.dispatch(["install", "--interval", "90s"]);
     expectSpawnExit(refused, 2);
     expect(refused.stderr).toContain("whole minutes");
+    expect(refused.stderr).toContain("Usage:");
   });
 
   it("previews the tick's job, every interval, and writes nothing without --yes", async () => {

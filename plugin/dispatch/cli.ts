@@ -55,21 +55,33 @@ const dateValue: ValueParser<"sync", string> = {
   format: (value) => value,
 };
 
-/** A duration (`90s`, `5m`, `1h`) in milliseconds; `install` requires whole minutes of the interval that wins. */
-const intervalValue: ValueParser<"sync", number> = {
+/**
+ * A duration (`90s`, `5m`, `1h`) in milliseconds. `install` requires whole
+ * minutes of the interval that wins, so the lenient form takes any duration
+ * and `winningIntervalArguments` feeds the strict one the winner alone.
+ */
+const intervalValue = (wholeMinutes: boolean): ValueParser<"sync", number> => ({
   mode: "sync",
   metavar: "DURATION",
   placeholder: 60_000,
   parse: (input) => {
     try {
-      return { success: true, value: duration(input, "The interval") };
+      const ms = duration(input, "The interval");
+      if (wholeMinutes && ms % 60_000 !== 0)
+        return {
+          success: false,
+          error: [
+            text(`The interval must be whole minutes, but got ${input}.`),
+          ],
+        };
+      return { success: true, value: ms };
     } catch (error) {
       if (!(error instanceof MachineConfigError)) throw error;
       return { success: false, error: [text(`${error.message}.`)] };
     }
   },
   format: (ms) => `${ms / 60_000}m`,
-};
+});
 
 const tick = object({
   action: constant("tick"),
@@ -94,30 +106,31 @@ const tick = object({
   }),
 });
 
-const installation = command(
-  "install",
-  object({
-    action: constant("install"),
-    intervalMs: map(
-      multiple(
-        option("--interval", intervalValue, {
-          description: message`How often the timer runs, in whole minutes (5m, 1h). Without it, the machine file's interval, else five minutes. The last one given wins.`,
-        }),
+const installation = (wholeMinutes: boolean) =>
+  command(
+    "install",
+    object({
+      action: constant("install"),
+      intervalMs: map(
+        multiple(
+          option("--interval", intervalValue(wholeMinutes), {
+            description: message`How often the timer runs, in whole minutes (5m, 1h). Without it, the machine file's interval, else five minutes. The last one given wins.`,
+          }),
+        ),
+        (values) => values.at(-1),
       ),
-      (values) => values.at(-1),
-    ),
-    confirm: option("--yes", {
-      description: message`Write the job the preview shows.`,
+      confirm: option("--yes", {
+        description: message`Write the job the preview shows.`,
+      }),
+      uninstall: option("--uninstall", {
+        description: message`Remove the job instead.`,
+      }),
     }),
-    uninstall: option("--uninstall", {
-      description: message`Remove the job instead.`,
-    }),
-  }),
-  {
-    brief: message`Install the timer that runs dispatch --apply.`,
-    description: message`Previews the scheduler job that runs jig dispatch --apply every interval; --yes writes it.`,
-  },
-);
+    {
+      brief: message`Install the timer that runs dispatch --apply.`,
+      description: message`Previews the scheduler job that runs jig dispatch --apply every interval; --yes writes it.`,
+    },
+  );
 
 const receipts = command(
   "receipts",
@@ -133,22 +146,44 @@ const receipts = command(
 );
 
 /** `jig dispatch`: one tick by default, `install` and `receipts` as its subcommands. */
-export const dispatchCommand = command(
-  "dispatch",
-  withDefault(or(installation, receipts, tick), {
-    action: "tick",
-    apply: false,
-    repos: [],
-    followupSince: undefined,
-    json: false,
-  } as const),
-  {
-    brief: message`Say which stages of the delivery loop should be running, and start them.`,
-    description: message`Reads the tracker, the pull requests' drive ledgers, the running sessions and this machine's launch records for each repository, and prints every action it would take, with the record that wants it and the evidence. Each run writes a receipt.`,
-  },
-);
+const dispatch = (wholeMinutes: boolean) =>
+  command(
+    "dispatch",
+    withDefault(or(installation(wholeMinutes), receipts, tick), {
+      action: "tick",
+      apply: false,
+      repos: [],
+      followupSince: undefined,
+      json: false,
+    } as const),
+    {
+      brief: message`Say which stages of the delivery loop should be running, and start them.`,
+      description: message`Reads the tracker, the pull requests' drive ledgers, the running sessions and this machine's launch records for each repository, and prints every action it would take, with the record that wants it and the evidence. Each run writes a receipt.`,
+    },
+  );
+
+export const dispatchCommand = dispatch(false);
+/** The same command with `install --interval` held to whole minutes. */
+export const strictDispatchCommand = dispatch(true);
 
 export type DispatchArguments = InferValue<typeof dispatchCommand>;
+
+/**
+ * `argv` with every `--interval` but the last removed: the one that wins,
+ * which `strictDispatchCommand` then validates alone.
+ */
+export function winningIntervalArguments(argv: readonly string[]): string[] {
+  const starts: number[] = [];
+  argv.forEach((arg, i) => {
+    if (arg === "--interval" || arg.startsWith("--interval=")) starts.push(i);
+  });
+  const drop = new Set<number>();
+  for (const i of starts.slice(0, -1)) {
+    drop.add(i);
+    if (argv[i] === "--interval") drop.add(i + 1);
+  }
+  return argv.filter((_, i) => !drop.has(i));
+}
 type Tick = Extract<DispatchArguments, { action: "tick" }>;
 
 function showReceipts(id: string | undefined): number {
