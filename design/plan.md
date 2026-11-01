@@ -180,7 +180,9 @@ holds no logic of its own, a job installed before the first step still
 runs on a machine that took every release since, two timers firing within
 one interval run the upgrade once and the job after it runs the newly
 installed copy, a failed upgrade is reported and withheld for the rest of
-the interval while the job still runs, and a pinned machine or one with
+the interval while the job still runs, a scheduled run on a plugin loaded
+in place from a local marketplace leaves that folder untouched, records the
+skip in the receipt and still runs the job, and a pinned machine or one with
 `upgrade: off` runs no upgrade.
 
 ### 3. The kickoff family
