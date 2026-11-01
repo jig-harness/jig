@@ -74,6 +74,23 @@ export function openPullRequestWorkspace(
   );
 }
 
+/**
+ * The repository's notices workspace: `branch`, cut from the repository's
+ * base when new, with nothing linked. The dispatcher writes only its
+ * comment and never launches an agent into it.
+ */
+export function openNoticesWorkspace(
+  repo: { id: string; path: string },
+  branch: string,
+  timeoutMs: number,
+): Promise<RuntimeReceipt> {
+  return open(
+    repo,
+    { branch, comment: "jig dispatch notices", createFlags: [] },
+    timeoutMs,
+  );
+}
+
 /** An item's workspace: its branch, from the repository's base when new, its issue linked. */
 export function openItemWorkspace(
   repo: { id: string; path: string },

@@ -563,7 +563,11 @@ each it gives the terminal state and what it means for you, the provisional
 decisions first (and whether someone reversed them), the takeovers and
 re-arms, the parked decisions in full, the issues filed and the deferred
 findings not yet filed, with the `file-deferred.ts` command that files them.
-`--json` prints the same as data.
+Where the [dispatcher](../../README.md#the-dispatcher) runs on the machine,
+it then lists what the dispatcher did over the same time, from its tick
+receipts: the sessions it launched, the launches it refused, and the
+notifications it sent (a refusal repeated tick after tick is listed once).
+`--json` prints the same as data, the dispatcher's part under `dispatch`.
 
 Where your repository has a pre-merge follow-up step, have its list include
 the pull request's provisional decisions, so the person merging reads each

@@ -12,6 +12,11 @@
  * Orca cannot yet start an interactive session billed to a chosen account
  * (`ORCA_BINDING`): `orca agent launch` starts its agent on the account the
  * host has active, and takes no account or environment of its own.
+ *
+ * `notify` writes the workspace's comment and marks it unread (`orca
+ * worktree set --comment … --unread`), then reads the comment back
+ * (`orca worktree show`), which is the receipt the tick checks for each
+ * message's key (`orca-notify.ts`).
  */
 import { realpathSync } from "node:fs";
 import { orcaCommand, orcaFailure, orcaResult } from "../../../shared/orca.ts";
@@ -20,7 +25,12 @@ import { run } from "../../../shared/proc.ts";
 import { keyFromBranch } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { RepoTarget } from "../types.ts";
 import { orcaLaunch } from "./orca-launch.ts";
-import { openItemWorkspace, openPullRequestWorkspace } from "./orca-open.ts";
+import { orcaNotify } from "./orca-notify.ts";
+import {
+  openItemWorkspace,
+  openNoticesWorkspace,
+  openPullRequestWorkspace,
+} from "./orca-open.ts";
 import {
   type AgentSession,
   type Binding,
@@ -340,6 +350,12 @@ export function orcaRuntime(
     async openWorkspace(repo, target) {
       const found = await orcaRepo(repo, timeoutSec);
       if (typeof found === "string") return { ok: false, detail: found };
+      if ("notices" in target)
+        return openNoticesWorkspace(
+          found,
+          target.notices,
+          deadlines.workspaceTimeoutMs,
+        );
       return "pr" in target
         ? openPullRequestWorkspace(found, target, deadlines.workspaceTimeoutMs)
         : openItemWorkspace(found, target, deadlines.workspaceTimeoutMs);
@@ -349,7 +365,8 @@ export function orcaRuntime(
         return { ok: false, detail: binding.reason };
       return orcaLaunch(workspace, stage, key, deadlines.runtimeTimeoutMs);
     },
-    notify: () => notYet("notify", "build step 5"),
+    notify: (target, message) =>
+      orcaNotify(target, message, deadlines.runtimeTimeoutMs),
     steer: () => notYet("steer", "build step 6"),
   };
 }

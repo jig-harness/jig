@@ -12,7 +12,10 @@
  * person; the provisional decisions, first; the takeovers and re-arms; the
  * parked decisions in their framed form; the issues filed and the deferred
  * entries not yet filed. Every other open pull request the account authored
- * is listed too, for its deferred entries. Of a clone's own state and the
+ * is listed too, for its deferred entries. Then what the dispatcher (`jig
+ * dispatch`) did on this machine since the same time, from its receipts:
+ * its launches, refusals and notifications (`morning-report-dispatch.ts`).
+ * Of a clone's own state and the
  * ledger, the newer speaks for a pull request both describe: the ledger
  * when another clone wrote a later generation of it, else the state, which
  * is written every round and after the ledger's last write.
@@ -30,6 +33,10 @@ import { isRecord } from "../../../../shared/guards.ts";
 import { deferredEntries } from "../../../resolve-review-comments/scripts/lib/deferred-section.ts";
 import { fail } from "./cli.ts";
 import { stallThresholdMs } from "./doctor.ts";
+import {
+  type DispatchEntry,
+  dispatchSince,
+} from "./morning-report-dispatch.ts";
 import { renderMorningReport } from "./morning-report-render.ts";
 import { resolveStateDir } from "./state/store.ts";
 import { ghCall } from "./proc.ts";
@@ -99,6 +106,8 @@ export interface MorningReport {
   since: string;
   sinceSource: "flag" | "last report" | "first report";
   pullRequests: ReportPullRequest[];
+  /** What the dispatcher launched, refused and notified on this machine since the report's time. */
+  dispatch: DispatchEntry[];
   /** What could not be read, each a sentence. */
   unread: string[];
 }
@@ -601,11 +610,14 @@ export async function gatherMorningReport(opts: {
       ),
     );
   }
+  const dispatched = dispatchSince(since);
+  unread.push(...dispatched.unread);
   return {
     now: opts.now.toISOString(),
     since: opts.since,
     sinceSource: opts.sinceSource,
     pullRequests,
+    dispatch: dispatched.entries,
     unread,
   };
 }

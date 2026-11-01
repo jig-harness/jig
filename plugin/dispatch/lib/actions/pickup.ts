@@ -49,6 +49,7 @@ import {
   openWithinBudget,
   outOfTime,
   replay,
+  reportedUnbound,
   rotated,
   replayable,
   startRecord,
@@ -181,6 +182,8 @@ async function launchOne(
     model: route.model,
     effort: route.effort,
     released: false,
+    command: null,
+    marker: null,
   };
   const launched = await startRecord(state, record, slots);
   return { ...launched, detail: `${launched.detail}; ${route.detail}` };
@@ -248,15 +251,7 @@ export async function applyPickups(
   ctx: PickupContext,
 ): Promise<void> {
   const wanted = report.actions.filter((a) => a.stage === "pickup");
-  const binding = state.runtime.interactiveBinding;
-  if (!binding.ok) {
-    for (const action of wanted)
-      report.launches.push({
-        ...waits(action, binding.reason),
-        outcome: "reported",
-      });
-    return;
-  }
+  if (reportedUnbound(state, wanted, report)) return;
   await retryPending(state, repo, report, ctx);
   for (const action of rotated(state, wanted, "targets"))
     report.launches.push(await launchOne(state, repo, action, ctx));

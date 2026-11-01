@@ -1,5 +1,6 @@
 /**
- * What every `--apply` launch shares, a drive's pass or a pickup's session:
+ * What every `--apply` launch shares, a drive's pass or an interactive
+ * session (a pickup's, a follow-up's):
  * the state carried across a tick's repositories, the account admitted
  * afresh against its walls and the identity check, the launch record
  * written before the runtime's `launch` and the slot it holds, and the
@@ -30,12 +31,18 @@ import {
 import type {
   ItemTarget,
   LaunchStage,
+  NoticesTarget,
   RuntimeReceipt,
   SessionRuntime,
 } from "../runtime/port.ts";
 import { PICKUP_SKILL } from "../session.ts";
 import { failureText } from "../text.ts";
-import type { Action, LaunchOutcome, RepoTarget } from "../types.ts";
+import type {
+  Action,
+  LaunchOutcome,
+  RepoReport,
+  RepoTarget,
+} from "../types.ts";
 
 /** What `--apply` carries across a tick's repositories. */
 export interface ApplyState {
@@ -89,8 +96,8 @@ export function outOfTime(state: ApplyState): string | null {
     : null;
 }
 
-/** The stages a repository's tick applies (rearm, pickup), for the targets' radix. */
-const STAGES_PER_REPO = 2;
+/** The stages a repository's tick applies (rearm, pickup, followup), for the targets' radix. */
+const STAGES_PER_REPO = 3;
 
 /** The level of the hierarchy a rotation orders; each is a digit of the tick index, the repositories the lowest. */
 export type RotationLevel = "repositories" | "stages" | "targets";
@@ -132,20 +139,26 @@ export type Opened =
 
 /**
  * Open a workspace through the runtime, within the tick's budget: a tick
- * opens at most `OPENS_PER_TICK`, and a launch that needs another waits for
+ * opens at most `OPENS_PER_TICK`, one of them kept for the notices workspace, and a launch that needs another waits for
  * the next tick rather than run past the deadline the timer gives it.
  */
 export async function openWithinBudget(
   state: ApplyState,
   repo: RepoTarget,
-  target: ItemTarget | { pr: number; head: string },
+  target: ItemTarget | { pr: number; head: string } | NoticesTarget,
 ): Promise<Opened> {
   const late = outOfTime(state);
   if (late !== null) return { waits: late };
   const done = state.opened ?? 0;
-  if (done >= OPENS_PER_TICK)
+  // One open is kept for the notices workspace, so a queue of launches never starves the notifications that reach a person.
+  const keeps = state.machine.repositories.some((r) =>
+    r.stages.includes("notify"),
+  );
+  const cap =
+    "notices" in target || !keeps ? OPENS_PER_TICK : OPENS_PER_TICK - 1;
+  if (done >= cap)
     return {
-      waits: `this tick has opened the ${OPENS_PER_TICK} workspaces its budget covers; a later tick opens this one`,
+      waits: `this tick has opened the ${cap} workspaces its budget covers${"notices" in target || !keeps ? "" : " for launches (one is kept for notifications)"}; a later tick opens this one`,
     };
   state.opened = done + 1;
   let opened: RuntimeReceipt;
@@ -171,22 +184,32 @@ function attemptOf(receipt: RuntimeReceipt): LaunchAttempt {
   };
 }
 
-/** What the runtime starts for a record: a drive's headless pass, or a pickup's interactive session. */
+/** What the runtime starts for a record: a drive's headless pass, or a pickup's or a follow-up's interactive session. */
 function stageOf(record: LaunchRecord): LaunchStage {
-  if (record.action !== "pickup")
+  if (record.action === "pickup")
     return {
-      kind: "headless",
-      title: `drive #${record.pr}`,
+      kind: "interactive",
+      title: `do-item ${record.item}`,
       record: record.id,
+      skill: PICKUP_SKILL,
+      target: record.item as string,
+      model: record.model,
+      effort: record.effort,
+    };
+  if (record.action === "followup")
+    return {
+      kind: "interactive",
+      title: `follow-up #${record.pr}`,
+      record: record.id,
+      skill: record.command ?? "",
+      target: String(record.pr),
+      model: record.model,
+      effort: record.effort,
     };
   return {
-    kind: "interactive",
-    title: `do-item ${record.item}`,
+    kind: "headless",
+    title: `drive #${record.pr}`,
     record: record.id,
-    skill: PICKUP_SKILL,
-    target: record.item as string,
-    model: record.model,
-    effort: record.effort,
   };
 }
 
@@ -259,7 +282,8 @@ function outcome(
 
 /** The launch an action asks for. */
 function kindOf(action: Action): LaunchOutcome["action"] {
-  if (action.stage === "pickup") return "pickup";
+  if (action.stage === "pickup" || action.stage === "followup")
+    return action.stage;
   return action.takeover === undefined ? "rearm" : "takeover";
 }
 
@@ -276,6 +300,26 @@ export function waits(
     record: null,
     detail,
   };
+}
+
+/**
+ * Report every wanted interactive launch, and start none, when the runtime
+ * cannot bind an interactive session to the account it bills; true when it
+ * reported them.
+ */
+export function reportedUnbound(
+  state: ApplyState,
+  wanted: Action[],
+  report: RepoReport,
+): boolean {
+  const binding = state.runtime.interactiveBinding;
+  if (binding.ok) return false;
+  for (const action of wanted)
+    report.launches.push({
+      ...waits(action, binding.reason),
+      outcome: "reported",
+    });
+  return true;
 }
 
 function refused(
@@ -376,12 +420,12 @@ function admission(
   action: Action,
   excluded: ReadonlySet<string>,
 ) {
-  if (action.stage === "pickup")
+  if (action.stage === "pickup" || action.stage === "followup")
     return admitRearm(
       state.table,
       state.last,
       excluded,
-      "an interactive pickup session",
+      `an interactive ${action.stage} session`,
     );
   if (action.takeover === undefined)
     return admitRearm(state.table, state.last, excluded);
@@ -449,6 +493,37 @@ export async function changedWhileOpening(
 }
 
 /**
+ * Write the record and hold its slot, before anything that acts for it:
+ * from here on the record holds its stage and its account's slot.
+ */
+export function holdRecord(
+  state: ApplyState,
+  record: LaunchRecord,
+  slots: Slots,
+): void {
+  writeRecord(record, state.root);
+  if (!sharesSlot(state, record)) slots.held += 1;
+  state.records.push({ record, state: { kind: "pending" }, result: null });
+  state.last = slots.account.name;
+}
+
+/** Give back the slot and remove the record of a held launch that is not going ahead. */
+export function dropRecord(state: ApplyState, record: LaunchRecord): void {
+  release(state, record);
+}
+
+/** Call `launch` under a held record's token; a launch the runtime answered it did not start gives the slot back. */
+export async function launchHeld(
+  state: ApplyState,
+  record: LaunchRecord,
+): Promise<LaunchOutcome> {
+  const attempt = await callLaunch(state, record);
+  if (attempt.outcome === "failed" && releasable(record))
+    release(state, record);
+  return outcome(record, attempt, false);
+}
+
+/**
  * Write the record, hold its slot, then call `launch` under its token; a
  * launch the runtime answered it did not start gives the slot back.
  */
@@ -457,12 +532,6 @@ export async function startRecord(
   record: LaunchRecord,
   slots: Slots,
 ): Promise<LaunchOutcome> {
-  writeRecord(record, state.root);
-  if (!sharesSlot(state, record)) slots.held += 1;
-  state.records.push({ record, state: { kind: "pending" }, result: null });
-  state.last = slots.account.name;
-  const attempt = await callLaunch(state, record);
-  if (attempt.outcome === "failed" && releasable(record))
-    release(state, record);
-  return outcome(record, attempt, false);
+  holdRecord(state, record, slots);
+  return launchHeld(state, record);
 }
