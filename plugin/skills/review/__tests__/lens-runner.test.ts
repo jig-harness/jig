@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -73,6 +74,25 @@ test("a selected lens's brief holds the lens, the diff, the touched files and th
   expect(brief).toContain("Tier 1: src/a.ts:1 default-returning catch");
   expect(brief).toContain('"lens": "jig.swallowed-failure@1"');
   expect(brief).toContain("<absorbed-failures:");
+});
+
+test("a brief does not list a touched file whose link leads outside the reviewed tree", () => {
+  const root = catchChange();
+  const secret = join(root, "..", `secret-${Date.now()}.txt`);
+  writeFileSync(secret, "private\n");
+  roots.push(secret);
+  symlinkSync(secret, join(root, "src/private.ts"));
+  const state = setup(root);
+  expectSpawnExit(review(root, ["lenses", state.session]), 0);
+  const written = review(root, [
+    "brief",
+    state.session,
+    "jig.swallowed-failure",
+  ]);
+  expectSpawnExit(written, 0);
+  const brief = readFileSync(written.stdout.trim(), "utf8");
+  expect(brief).toContain(`- ${join(root, "src/a.ts")}\n`);
+  expect(brief).not.toContain(`- ${join(root, "src/private.ts")}\n`);
 });
 
 test("a brief is refused for a lens the selection does not run, or before any selection", () => {

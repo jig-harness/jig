@@ -714,7 +714,7 @@ function writeBrief(state: Session, args: string[]): void {
     reviewedRoot: state.root,
     touched: list
       .map((file) => join(state.root, file))
-      .filter((path) => existsSync(path)),
+      .filter((path) => existsSync(path) && realInside(state.root, path)),
     instructions: instructionFiles(state.baseTree, list),
     diff: readFileSync(state.diff, "utf8"),
     earlier: args[1] === undefined ? null : readFileSync(args[1], "utf8"),
