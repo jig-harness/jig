@@ -583,20 +583,27 @@ routing below remain **exact**.
    Exit `2` is an `issue.json` that is missing or not an issue: stop the
    pickup and report the input error.
 
-2. **exact** — **Mark the issue started** (if not already active): transition
-   it to `in_progress` and assign it to yourself.
+2. **exact** — **Claim the issue**: assign it to yourself (the identity
+   the tracker's credential acts as) and transition it to `in_progress`,
+   unless someone already holds it.
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" in_progress
+   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" claim "<KEY>"
    ```
 
-   (**judgment** — native, Linear:
-   `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`.
-   Jira: the script form is the whole step. The tracker interface has no
-   assignment write, so the issue keeps the assignee it reached you with:
-   the dispatcher starts a pickup only for an issue already assigned to the
-   factory account, and a person who hands an issue over assigns it in Jira
-   first.)
+   Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
+   is already `in_progress` or assigned to someone else. Exit `4` is a
+   stand-down: the claim was written, and reading the issue back showed
+   another claim landed first. On `3` or `4`, stop the pickup and report the
+   reason it printed; never start the item beside another session. A person
+   resuming their own interrupted pickup of an `in_progress` item tells you
+   so, and you go on from here without the claim.
+
+   (**judgment** — native, Linear: read the issue and stop on the same two
+   refusals, then
+   `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`,
+   then read it again and stop, as on exit `4`, when it shows another
+   assignee, or when the issue is gone or no longer in the mapped state.)
 
    Then show the start on Orca's workspace board. In a worktree of
    [Orca](https://www.onorca.dev) this moves the worktree's card to In
@@ -1259,8 +1266,9 @@ snapshot mapping are **exact**.
    before item 5 starts it. The route derived for this issue in Step 4a is
    this issue's, never the sub-issue's.
 
-5. **exact** — **Start the selected sub-issue**: transition it to
-   `in_progress` and assign it to yourself, as in Step 4a item 2.
+5. **exact** — **Start the selected sub-issue**: claim it as in Step 4a
+   item 2, and on a refusal or a stand-down choose another eligible
+   sub-issue or stop.
 
 6. **judgment** — **Delegate** as in Step 4a. When the selected
    sub-issue builds on a sibling whose pull request is still open, the

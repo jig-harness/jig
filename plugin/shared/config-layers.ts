@@ -69,6 +69,8 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "dispatch.identity",
   "dispatch.states",
   "dispatch.followup_command",
+  "dispatch.stalled_after",
+  "dispatch.blocked_after",
   "repository.base_branch",
   "issue_tracker.team",
   "issue_tracker.github.repository",

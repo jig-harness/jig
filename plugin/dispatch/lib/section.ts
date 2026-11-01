@@ -6,10 +6,19 @@
  */
 import { isMapping, parseConfigText } from "../../shared/config-layers.ts";
 import { CANONICAL_STATES } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import { duration } from "./machine-config.ts";
 import type { DispatchSection } from "./types.ts";
 
 const DEFAULT_STATES = ["todo"];
-const KEYS = ["identity", "states", "followup_command"];
+/** `stalled_after` and `blocked_after`'s default. */
+const DEFAULT_WAIT_MS = 30 * 60_000;
+const KEYS = [
+  "identity",
+  "states",
+  "followup_command",
+  "stalled_after",
+  "blocked_after",
+];
 
 class SectionError extends Error {}
 
@@ -32,7 +41,21 @@ function states(value: unknown): string[] {
     );
   if (new Set(value).size !== value.length)
     throw new SectionError("dispatch.states lists a state twice");
+  // `do-item`'s claim moves an item there: a claimed item is never a pickup.
+  if (value.includes("in_progress"))
+    throw new SectionError(
+      "dispatch.states cannot list in_progress, the state do-item's claim moves an item to",
+    );
   return value as string[];
+}
+
+function wait(value: unknown, field: string): number {
+  if (value === undefined || value === null) return DEFAULT_WAIT_MS;
+  try {
+    return duration(value, `dispatch.${field}`);
+  } catch (error) {
+    throw new SectionError((error as Error).message);
+  }
 }
 
 /** The `dispatch` section of parsed configuration values, with defaults. */
@@ -52,6 +75,8 @@ export function dispatchSection(
     identity: text(section.identity, "identity"),
     states: states(section.states),
     followupCommand: text(section.followup_command, "followup_command"),
+    stalledAfterMs: wait(section.stalled_after, "stalled_after"),
+    blockedAfterMs: wait(section.blocked_after, "blocked_after"),
   };
 }
 

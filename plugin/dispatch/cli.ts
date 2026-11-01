@@ -4,9 +4,11 @@
  * records for each repository and prints every stage it would start, with
  * the record that wants it and the evidence. With `--apply` it starts the
  * stages the machine file (`~/.jig/dispatch.yaml`) enables for each
- * repository; today that is the drives' re-arms and takeovers.
+ * repository: the drives' re-arms and takeovers, and the pickups where the
+ * session runtime binds an interactive session to its account.
  * `jig dispatch install` writes the timer that runs `--apply` every
- * interval.
+ * interval; `jig dispatch result` is how a dispatched interactive session
+ * records how it ended.
  */
 import { consumerRoot } from "../shared/consumer.ts";
 import { ExitError } from "../shared/cli.ts";
@@ -38,6 +40,7 @@ import {
 } from "./lib/machine-config.ts";
 import { formatReceipt } from "./lib/report.ts";
 import { readReceipt, receiptPaths } from "./receipts.ts";
+import { resultMain } from "./result.ts";
 import { runTick } from "./tick.ts";
 
 /** Exit when another tick holds the lock. */
@@ -145,11 +148,28 @@ const receipts = command(
   { brief: message`List the receipts of earlier runs, or print one.` },
 );
 
-/** `jig dispatch`: one tick by default, `install` and `receipts` as its subcommands. */
+const result = command(
+  "result",
+  object({
+    action: constant("result"),
+    record: argument(string({ metavar: "RECORD" }), {
+      description: message`The launch record the session was started under.`,
+    }),
+    token: argument(string({ metavar: "TOKEN" }), {
+      description: message`The record's token, named in the session's prompt.`,
+    }),
+    outcome: argument(string({ metavar: "done|failed" }), {
+      description: message`How the session ended.`,
+    }),
+  }),
+  { brief: message`Record how a dispatched interactive session ended.` },
+);
+
+/** `jig dispatch`: one tick by default, `install`, `receipts` and `result` as its subcommands. */
 const dispatch = (wholeMinutes: boolean) =>
   command(
     "dispatch",
-    withDefault(or(installation(wholeMinutes), receipts, tick), {
+    withDefault(or(installation(wholeMinutes), receipts, result, tick), {
       action: "tick",
       apply: false,
       repos: [],
@@ -230,6 +250,9 @@ export async function dispatchMain(
   args: DispatchArguments,
   script = "",
 ): Promise<number> {
+  if (args.action === "result")
+    // An interactive session's own answer, under its launch record's token.
+    return resultMain([args.record, args.token, args.outcome]);
   if (args.action === "receipts") return showReceipts(args.runId);
   if (args.action === "install")
     // A removal needs no machine file: a broken one must not keep the timer installed.
