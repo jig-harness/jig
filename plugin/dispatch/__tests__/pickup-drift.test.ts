@@ -51,7 +51,13 @@ function input(created: Map<number, string>) {
 describe("a pickup's pull request", () => {
   it("is drifting when its workspace carries only a pull request older than the launch", () => {
     const older = planDrift(input(new Map([[3, "2026-10-01T00:00:00.000Z"]])));
-    expect(older.actions.length + older.running.length).toBeGreaterThan(0);
+    expect(older.running).toEqual([]);
+    expect(older.actions).toHaveLength(1);
+    expect(older.actions[0]).toMatchObject({
+      stage: "notify",
+      target: "#5",
+      cause: "drifting",
+    });
   });
 
   it("meets the expectation when the pull request was created after the launch", () => {

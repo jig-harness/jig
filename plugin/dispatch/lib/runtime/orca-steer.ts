@@ -57,21 +57,26 @@ async function call(args: string[], timeoutMs: number): Promise<Answer> {
   };
 }
 
-/** A prompt line: the agent's input marker, alone or inside the input box's border. */
-const PROMPT = /^\s*[│|]?\s*[>❯](?:\s|$)/;
-/** An unbordered prompt's underline: three or more box-drawing rule characters and nothing else (a draft's own `---` is not one). */
-const UNDERLINE = /^\s*[─━═]{3,}\s*$/;
-/** A bordered input box's bottom border, from its corner to its corner. */
-const BOTTOM = /^\s*[╰└][^╯┘]*[╯┘]\s*$/;
+/** An input box's top or bottom boundary: a rule of box-drawing characters, with or without corners, and nothing else (a draft's own `---` is not one). */
+const BOUNDARY = /^\s*[╭┌╰└]?[─━═]{3,}[╮┐╯┘]?\s*$/;
+/** The agent's input marker alone on its line. */
+const MARKER = /^[>❯]$/;
 /** What a menu or a question looks like on an agent's screen. */
 const MENU =
   /^\s*[❯>]\s*\d+[.)]\s|\(y\/n\)|\[y\/n\]|esc to cancel|enter to (confirm|select)|do you want|would you like/i;
-/** How many of the screen's last lines the input prompt must be among. */
+/** How many of the screen's last lines the input box must be among. */
 const PROMPT_ZONE = 10;
 
 /**
  * Why a rendered screen is not an agent waiting at an empty input line;
  * `null` when it is.
+ *
+ * The input box is what lies between the last two boundary lines on the
+ * screen. It is ready only when its one non-empty line is the bare input
+ * marker. Whatever else the box holds is draft text, and a draft line that
+ * looks like a boundary moves the last two boundaries off the marker, so
+ * the box then shows no marker and nothing is sent: the check refuses
+ * every layout it cannot read as exactly an empty box.
  */
 export function screenNotReady(lines: readonly string[]): string | null {
   const shown = lines.map((l) => l.replace(/\s+$/, ""));
@@ -79,28 +84,24 @@ export function screenNotReady(lines: readonly string[]): string | null {
   if (shown.some((l) => MENU.test(l)))
     return "a menu or a question is on the screen";
   const zone = shown.slice(-PROMPT_ZONE);
-  const at = zone.findLastIndex((l) => PROMPT.test(l));
-  if (at === -1) return "the screen shows no input prompt";
-  const input = (zone[at] as string)
-    .replace(/^\s*[│|]?\s*[>❯]/, "")
-    .replace(/[│|]\s*$/, "")
-    .trim();
-  if (input !== "") return "the input line holds text";
-  // The input continues below its prompt line when the text wraps or has several lines, bordered or not;
-  // a bordered box ends at its bottom border, whatever its text looks like, and an unbordered prompt
-  // at the rule line under it.
-  const below = zone.slice(at + 1);
-  const bordered = /^\s*[│|]/.test(zone[at] as string);
-  const end = below.findIndex((l) => (bordered ? BOTTOM : UNDERLINE).test(l));
-  const region = end === -1 ? below : below.slice(0, end);
-  const continued = region.some(
-    (l) =>
+  const edges = zone.flatMap((l, i) => (BOUNDARY.test(l) ? [i] : []));
+  if (edges.length < 2) return "the screen shows no input prompt";
+  const box = zone
+    .slice((edges.at(-2) as number) + 1, edges.at(-1))
+    .map((l) =>
       l
         .replace(/^\s*[│|]/, "")
         .replace(/[│|]\s*$/, "")
-        .trim() !== "",
-  );
-  return continued ? "the input box holds text below its first line" : null;
+        .trim(),
+    )
+    .filter((l) => l !== "");
+  if (box.length === 0) return "the screen shows no input prompt";
+  if (box.length > 1) return "the input box holds text below its first line";
+  const only = box[0] as string;
+  if (MARKER.test(only)) return null;
+  return /^[>❯]\s/.test(only)
+    ? "the input line holds text"
+    : "the screen shows no input prompt";
 }
 
 /** The terminal whose tab and pane make the agent id `session`. */

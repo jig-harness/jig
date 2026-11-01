@@ -291,5 +291,24 @@ describe("the screen check before a nudge", () => {
       ]),
     ).toBe("a menu or a question is on the screen");
     expect(screenNotReady(["$ "])).toBe("the screen shows no input prompt");
+    // A draft whose first line is text and whose second is a prompt-shaped line is still a draft.
+    expect(
+      screenNotReady([
+        "╭────╮",
+        "│ > delete the old records │",
+        "│ >  │",
+        "╰────╯",
+      ]),
+    ).toBe("the input box holds text below its first line");
+    // A draft line shaped like a rule moves the box off the marker; nothing is sent.
+    expect(
+      screenNotReady([
+        "────────",
+        "> ",
+        "────────",
+        "  delete the old records",
+        "────────",
+      ]),
+    ).toBe("the screen shows no input prompt");
   });
 });
