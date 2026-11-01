@@ -19,6 +19,17 @@ const MAP = "docs/LIFECYCLE.md";
 const HISTORY = ["CHANGELOG.md", "changes", "calibration"];
 const PLANS = ["design/", "ROADMAP.md"];
 
+/** The command lines `jig` registers (`plugin/jig.ts`, `plugin/runtime/verbs.ts`). */
+const JIG_COMMANDS = [
+  "jig gc",
+  "jig dispatch",
+  "jig install",
+  "jig uninstall",
+  "jig status",
+  "jig receipts",
+  "jig run",
+];
+
 export function checkLifecycleMap(root = "."): number {
   const scan = markdownFiles(root, [
     "templates",
@@ -38,7 +49,7 @@ export function checkLifecycleMap(root = "."): number {
         { namespace: "jig", dir: join(root, "plugin/skills") },
         { namespace: "", dir: join(root, ".claude/skills") },
       ],
-      external: ["jig"],
+      external: JIG_COMMANDS,
       cover: [join(root, "plugin/skills"), join(root, ".claude/skills")],
       scan,
       linkedFrom: join(root, "AGENTS.md"),

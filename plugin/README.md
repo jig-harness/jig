@@ -111,7 +111,8 @@ bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts install --yes
 ```
 
 Replace `<plugin>` with the absolute installed plugin path (`claude plugin
-list --json` names it). After that, from any repository:
+list --json` names it). Run it from the repository to register, or add
+`--repo <path>`. After that, from any repository:
 
 ```sh
 jig install   [COMPONENT...] [--repo <path>] [--yes]
@@ -130,6 +131,9 @@ jig run       [COMPONENT...]
   Named (`jig install dispatch`), a component without its machine file is
   refused. It also writes the `jig` command, `~/.local/bin/jig`
   (`jig.cmd` on Windows), and says so when that directory is not on `PATH`.
+  Windows has no scheduler for the jobs, so there `jig install` with no
+  component named writes only `jig.cmd`: it registers no repository and
+  schedules nothing.
 - **`jig uninstall`** removes this repository's entry in resource
   collection; the jobs stay while they serve other repositories. Resource
   collection's job goes with its last registration, unless receipts are
