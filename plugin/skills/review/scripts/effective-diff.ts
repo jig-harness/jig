@@ -4,8 +4,8 @@
  * the command line, so neither the caller's git configuration nor the
  * change's own attributes file can hide an edit.
  */
-import { lstatSync } from "node:fs";
-import { join } from "node:path";
+import { lstatSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
 /** One git call's outcome. */
 export interface GitResult {
@@ -124,13 +124,26 @@ export async function changedPaths(
   return { tracked, untracked };
 }
 
-/** Refuse a named path the reviewed tree does not hold: it cannot be reviewed as it is. */
+/**
+ * Refuse a named path the reviewed tree does not hold, or one whose folder
+ * leads outside it through a link: a comparison with nothing reads such a
+ * file's contents into the diff. A link as the last component is compared as
+ * a link, never followed.
+ */
 export function requireExisting(root: string, paths: readonly string[]): void {
-  for (const path of paths)
-    if (lstatSync(join(root, path), { throwIfNoEntry: false }) === undefined)
+  const realRoot = realpathSync(root);
+  for (const path of paths) {
+    const full = join(root, path);
+    if (lstatSync(full, { throwIfNoEntry: false }) === undefined)
       throw new EffectiveDiffError(
         `--files names a path that does not exist in the reviewed tree: ${path}`,
       );
+    const part = relative(realRoot, realpathSync(dirname(full)));
+    if (part === ".." || part.startsWith(`..${sep}`) || isAbsolute(part))
+      throw new EffectiveDiffError(
+        `--files names a path that leaves the reviewed tree through a link: ${path}`,
+      );
+  }
 }
 
 /**

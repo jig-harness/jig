@@ -402,21 +402,20 @@ test("policy checks do not run when all selected files have been deleted", () =>
   expect(result.stderr).toBe("");
 });
 
-test("policy checks skip a file reached through a link that leaves the repository", () => {
+test("setup refuses a file reached through a link that leaves the repository", () => {
   const root = fixture();
   const outside = mkdtempSync(join(tmpdir(), "review outside "));
   roots.push(outside);
-  writeFileSync(join(outside, "outside.ts"), "outside\n");
+  writeFileSync(join(outside, "outside.ts"), "private\n");
   // "junction" lets Windows make a directory link without privileges.
   symlinkSync(outside, join(root, "linkdir"), "junction");
-  const state = setup(root, "linkdir/outside.ts", "kept.ts");
   const result = run(root, process.execPath, [
     ...launch,
-    "check",
-    state.session,
-    "check.ts",
-    "rules.yaml",
+    "setup",
+    "--files",
+    "linkdir/outside.ts",
   ]);
-  expectSpawnExit(result, 0);
-  expect(JSON.parse(result.stdout).args).toEqual(["kept.ts"]);
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("leaves the reviewed tree through a link");
+  expect(result.stdout).not.toContain("private");
 });
