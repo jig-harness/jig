@@ -169,13 +169,13 @@ directory; run the commands from the consuming repository's root.
 
 ```sh
 # explicit files (what hooks/CI pass)
-bun exec "SCHEMA=docs/.frontmatter-schema.yaml bun <skill-dir>/scripts/frontmatter-check/frontmatter-check.ts docs/a.md docs/b.md"
+bun exec 'SCHEMA=docs/.frontmatter-schema.yaml bun "<skill-dir>/scripts/frontmatter-check/frontmatter-check.ts" docs/a.md docs/b.md'
 
 # new docs also require `description`
-bun exec "NEW_DOCS=docs/new.md bun <skill-dir>/scripts/frontmatter-check/frontmatter-check.ts docs/new.md"
+bun exec 'NEW_DOCS=docs/new.md bun "<skill-dir>/scripts/frontmatter-check/frontmatter-check.ts" docs/new.md'
 
 # no args: scan the whole tree
-bun exec "DOCS_DIR=docs bun <skill-dir>/scripts/frontmatter-check/frontmatter-check.ts"
+bun exec 'DOCS_DIR=docs bun "<skill-dir>/scripts/frontmatter-check/frontmatter-check.ts"'
 ```
 
 Wire it into a pre-commit hook over staged `docs/**/*.md` for fast feedback and
