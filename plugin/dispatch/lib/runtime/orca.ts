@@ -8,6 +8,10 @@
  *
  * Orca's command is the shared resolver's (`ORCA_CLI_COMMAND`, else the
  * command in `ORCA_CLI_BIN_DIR`), else `orca` on `PATH`.
+ *
+ * Orca cannot yet start an interactive session billed to a chosen account
+ * (`ORCA_BINDING`): `orca agent launch` starts its agent on the account the
+ * host has active, and takes no account or environment of its own.
  */
 import { realpathSync } from "node:fs";
 import { orcaCommand, orcaFailure, orcaResult } from "../../../shared/orca.ts";
@@ -16,15 +20,33 @@ import { run } from "../../../shared/proc.ts";
 import { keyFromBranch } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { RepoTarget } from "../types.ts";
 import { orcaLaunch } from "./orca-launch.ts";
-import { openPullRequestWorkspace } from "./orca-open.ts";
+import { openItemWorkspace, openPullRequestWorkspace } from "./orca-open.ts";
 import {
   type AgentSession,
+  type Binding,
   type JoinTargets,
   notYet,
   type SessionRuntime,
   type SessionsReport,
   type Workspace,
 } from "./port.ts";
+
+/**
+ * Whether Orca binds an interactive session to its account. `orca agent
+ * launch` has no account selection for Claude Code (`orca account select`
+ * covers OpenCode and Devin only), and Orca starts the agent with the
+ * configuration directory of the account the host has active, which a
+ * person can switch at any moment. The wrapper in a terminal tab binds the
+ * session through the account's directory, as it does a headless pass, but
+ * that Orca reports such a session as an agent, under the id its launch
+ * receipt names, is not shown yet. Until it is, pickups are reported and
+ * none is started.
+ */
+const ORCA_BINDING: Binding = {
+  ok: false,
+  reason:
+    "an Orca agent launch cannot bind its session to a chosen account yet (it runs on the host's active account), so pickups are reported and none is started",
+};
 
 /** Seconds one Orca call may take: `runtime_timeout`'s default. */
 const ORCA_TIMEOUT_SEC = 60;
@@ -163,6 +185,10 @@ function agents(row: Record<string, unknown>): AgentSession[] | null {
     id: typeof a.paneKey === "string" ? a.paneKey : "",
     state: String(a.state),
     agentType: typeof a.agentType === "string" ? a.agentType : null,
+    since:
+      typeof a.stateStartedAt === "number" && Number.isFinite(a.stateStartedAt)
+        ? a.stateStartedAt
+        : null,
   }));
 }
 
@@ -260,11 +286,14 @@ export function orcaRuntime(
     runtimeTimeoutMs: ORCA_TIMEOUT_SEC * 1000,
     workspaceTimeoutMs: ORCA_TIMEOUT_SEC * 1000,
   },
+  /** Whether interactive launches bind their account; tests pass `{ ok: true }`. */
+  binding: Binding = ORCA_BINDING,
 ): SessionRuntime {
   const timeoutSec = Math.max(1, Math.ceil(deadlines.runtimeTimeoutMs / 1000));
   const orcaCall = (args: string[]) => orca(args, timeoutSec);
   return {
     name: "orca",
+    interactiveBinding: binding,
     async sessions(repo, join): Promise<SessionsReport> {
       const source = "orca worktree ps";
       const listing = await orcaCall(["repo", "list"]);
@@ -309,18 +338,17 @@ export function orcaRuntime(
       return { ok: true, source, workspaces };
     },
     async openWorkspace(repo, target) {
-      if (!("pr" in target))
-        return notYet("openWorkspace for an item", "build step 4");
       const found = await orcaRepo(repo, timeoutSec);
       if (typeof found === "string") return { ok: false, detail: found };
-      return openPullRequestWorkspace(
-        found,
-        target,
-        deadlines.workspaceTimeoutMs,
-      );
+      return "pr" in target
+        ? openPullRequestWorkspace(found, target, deadlines.workspaceTimeoutMs)
+        : openItemWorkspace(found, target, deadlines.workspaceTimeoutMs);
     },
-    launch: (workspace, stage, _account, key) =>
-      orcaLaunch(workspace, stage, key, deadlines.runtimeTimeoutMs),
+    async launch(workspace, stage, _account, key) {
+      if (stage.kind === "interactive" && !binding.ok)
+        return { ok: false, detail: binding.reason };
+      return orcaLaunch(workspace, stage, key, deadlines.runtimeTimeoutMs);
+    },
     notify: () => notYet("notify", "build step 5"),
     steer: () => notYet("steer", "build step 6"),
   };
