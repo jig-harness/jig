@@ -320,13 +320,12 @@ function reclaim(path: string, seen: number | null): boolean {
   }
 }
 
-/** The tick lock: one tick per machine. Returns its release, or the holder. */
 /**
  * The index of this tick among the ticks that applied launches, kept in the
  * state directory and advanced by one per call, so rotation does not depend
  * on the timer's interval or on when a tick happens to start. Call it only
- * while holding the tick lock. A counter that cannot be read starts over; one
- * that cannot be written returns `null`, for an index that is not recorded
+ * while holding the tick lock. A counter that is missing or malformed starts
+ * over; one that cannot be read or written returns `null`, for an index that is not recorded
  * would repeat and the tick must launch nothing rather than retry the same
  * targets forever.
  */
@@ -337,7 +336,11 @@ export function nextTickIndex(root = stateRoot()): number | null {
     const value = Number(readFileSync(path, "utf8").trim());
     if (Number.isSafeInteger(value) && value >= 0) last = value;
   } catch (err) {
-    swallow(err, `${path} cannot be read`);
+    // A counter that does not exist yet starts the count; one that cannot be read is an I/O fault.
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      swallow(err, `${path} cannot be read`);
+      return null;
+    }
   }
   const index = last + 1;
   try {
@@ -350,6 +353,7 @@ export function nextTickIndex(root = stateRoot()): number | null {
   return index;
 }
 
+/** The tick lock: one tick per machine. Returns its release, or the holder. */
 export function takeTickLock(
   root = stateRoot(),
 ): { release: () => void } | { heldBy: string } {

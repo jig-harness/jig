@@ -174,7 +174,7 @@ describe("the tick index", () => {
     expect(nextTickIndex(dir)).toBe(0);
   });
 
-  it("returns nothing when the index cannot be recorded", () => {
+  it("returns nothing when the index cannot be read or recorded", () => {
     const dir = root();
     mkdirSync(join(dir, "tick-index"));
     expect(nextTickIndex(dir)).toBeNull();
