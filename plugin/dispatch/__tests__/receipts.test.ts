@@ -174,9 +174,14 @@ describe("the tick index", () => {
     expect(nextTickIndex(dir)).toBe(0);
   });
 
-  it("returns nothing when the index cannot be read or recorded", () => {
+  it("names why the index cannot be read or recorded", () => {
     const dir = root();
     mkdirSync(join(dir, "tick-index"));
-    expect(nextTickIndex(dir)).toBeNull();
+    const result = nextTickIndex(dir);
+    expect(result).toEqual({
+      failed: expect.stringContaining(
+        `${join(dir, "tick-index")} cannot be read`,
+      ),
+    });
   });
 });

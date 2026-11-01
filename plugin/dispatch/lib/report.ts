@@ -45,6 +45,12 @@ export function formatReceipt(receipt: TickReceipt, path: string): string {
   return [
     head,
     "",
+    ...(receipt.applyWithheld === undefined
+      ? []
+      : [
+          `--apply withheld, nothing was started: ${receipt.applyWithheld}`,
+          "",
+        ]),
     ...(receipt.unreadableLaunches ?? []).map(
       (p) => `launch record that does not read, left out: ${p}`,
     ),

@@ -6,10 +6,11 @@
  * Stalled pickups and double claims are reported, never launched.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { readRecordFile } from "../lib/launches.ts";
+import type { TickReceipt } from "../receipts.ts";
 import { updateIdle } from "../lib/idle.ts";
 import { assignedIssue, SLUG, type World, world } from "./fixtures.ts";
 import {
@@ -108,6 +109,19 @@ describe("jig dispatch --apply picks up assigned items", () => {
     expect(orcaCalls(w, "terminal", "create")).toHaveLength(1);
     expect(claudeRuns(w)).toHaveLength(1);
     expect(recordIds(w)).toEqual([id]);
+  });
+
+  it("says why nothing was started when the rotation cursor cannot be kept", async () => {
+    const w = fixture();
+    mkdirSync(join(dispatchState(w), "tick-index"), { recursive: true });
+    const r = await w.dispatch(["--apply", "--json"]);
+    expectSpawnExit(r, 1);
+    const receipt = JSON.parse(r.stdout) as TickReceipt;
+    expect(receipt.apply).toBe(false);
+    expect(receipt.applyWithheld).toContain("rotation cursor cannot be kept");
+    expect(launches(receipt)).toEqual([]);
+    const text = await w.dispatch(["--apply"]);
+    expect(text.stdout).toContain("--apply withheld, nothing was started");
   });
 
   it("does not pick an item up again once its session ended without claiming it", async () => {

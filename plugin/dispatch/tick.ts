@@ -400,15 +400,19 @@ function applyState(
   records: ReadRecord[],
   nowMs: number,
   unreadable: string[],
-): ApplyState | null {
+): ApplyState | { withheld: string } | null {
   const machine = options.machine ?? null;
   if (!options.apply || machine === null) return null;
   // A record that cannot be read may belong to a live wrapper, so its slot and
   // pull request cannot be told apart from a free one: launch nothing.
-  if (unreadable.length > 0) return null;
+  if (unreadable.length > 0)
+    return {
+      withheld: `${unreadable.length} launch record(s) do not read, so no slot can be told free`,
+    };
   // A rotation cursor that cannot be recorded would repeat: launch nothing.
   const tick = nextTickIndex();
-  if (tick === null) return null;
+  if (typeof tick !== "number")
+    return { withheld: `the rotation cursor cannot be kept: ${tick.failed}` };
   return {
     machine,
     runtime,
@@ -430,11 +434,6 @@ function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
       });
 }
 
-/** Whether `--apply` was asked for with a machine file and then withheld. */
-function refusedApply(options: TickOptions, apply: ApplyState | null): boolean {
-  return options.apply === true && options.machine != null && apply === null;
-}
-
 export async function runTick(options: TickOptions): Promise<TickResult> {
   const lock = takeTickLock();
   if ("heldBy" in lock) return { held: lock.heldBy };
@@ -445,13 +444,17 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     const read = await readLaunches();
     const days = machine?.receiptsDays;
     pruneLaunches(read.records, now.getTime(), days ?? 30);
-    const apply = applyState(
+    const attempt = applyState(
       options,
       runtime,
       read.records,
       now.getTime(),
       read.unreadable,
     );
+    // `--apply` with a machine file that was then withheld says why.
+    const withheld =
+      attempt !== null && "withheld" in attempt ? attempt.withheld : undefined;
+    const apply = attempt !== null && "tick" in attempt ? attempt : null;
     const receipt: TickReceipt = {
       version: 1,
       runId: newRunId(now),
@@ -460,6 +463,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       completed: false,
       apply: apply !== null,
       exitStatus: 0,
+      ...(withheld === undefined ? {} : { applyWithheld: withheld }),
       unreadableLaunches: read.unreadable,
       repos: [],
     };
@@ -477,7 +481,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     const failed = receipt.repos.some(
       (r) => r.refused !== null || r.records.some((x) => !x.ok),
     );
-    receipt.exitStatus = failed || refusedApply(options, apply) ? 1 : 0;
+    receipt.exitStatus = failed || withheld !== undefined ? 1 : 0;
     receipt.completed = true;
     receipt.finishedAt = new Date().toISOString();
     const path = writeReceipt(receipt);
