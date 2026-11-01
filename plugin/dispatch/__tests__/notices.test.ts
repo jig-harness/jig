@@ -54,7 +54,7 @@ test("a posted marker edited to another body is not the claim", () => {
   expect(readBack([edited], 7, TICK).kind).toBe("altered");
 });
 
-test("a manual claim marked done between the post and the read-back is not the claim", () => {
+test("a manual claim marked done between the post and the read-back is kept, not altered", () => {
   const running = {
     id: 7,
     trusted: true,
@@ -66,7 +66,8 @@ test("a manual claim marked done between the post and the read-back is not the c
     run: { kind: "manual", done: true },
   } as FollowupMarker;
   expect(readBack([running], 7, { kind: "manual" }).kind).toBe("stands");
-  expect(readBack([done], 7, { kind: "manual" }).kind).toBe("altered");
+  expect(readBack([done], 7, { kind: "manual" }).kind).toBe("done");
+  expect(readBack([done], 7, TICK).kind).toBe("altered");
 });
 
 test("a notice key longer than its bound is cut and still tells two keys apart", () => {

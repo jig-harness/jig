@@ -154,7 +154,7 @@ async function claim(
       ? `the markers could not be read back after posting: ${seen.reason}`
       : seen.kind === "missing"
         ? `the read-back does not list the posted marker (comment ${posted})`
-        : seen.kind === "altered"
+        : seen.kind === "altered" || seen.kind === "done"
           ? `the posted marker (comment ${posted}) no longer names this record`
           : `an earlier marker (comment ${seen.marker.id} by ${seen.marker.login}) claimed it first; this one stands down`;
   return relinquish(state, repo, record, posted, why);

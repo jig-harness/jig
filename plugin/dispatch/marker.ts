@@ -63,6 +63,11 @@ async function claim(slug: string, pr: number): Promise<number> {
     console.log(JSON.stringify({ pr, comment: posted }));
     return 0;
   }
+  if (seen.kind === "done")
+    return stop(
+      1,
+      `the posted marker (comment ${posted}) was marked done before the read-back finished; it is kept as the completion record, so do not act`,
+    );
   const deleted = await deleteMarker(slug, posted);
   const kept =
     deleted === ""

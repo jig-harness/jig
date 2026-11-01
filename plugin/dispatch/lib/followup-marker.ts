@@ -203,12 +203,13 @@ export function listsOwn(
   );
 }
 
-/** What the read-back after posting marker `own` shows: it stands, or why not. */
+/** What the read-back after posting marker `own` shows: it stands, or why not. `done` is a manual claim already marked done, which is kept. */
 export type ReadBack =
   | { kind: "stands" }
   | { kind: "unreadable"; reason: string }
   | { kind: "missing" }
   | { kind: "altered" }
+  | { kind: "done" }
   | { kind: "earlier"; marker: FollowupMarker };
 
 export function readBack(
@@ -221,6 +222,15 @@ export function readBack(
   const earlier = earlierThan(markers, own);
   if (earlier !== null) return { kind: "earlier", marker: earlier };
   if (listsOwn(markers, own, expected)) return { kind: "stands" };
-  const listed = trustedMarkers(markers).some((m) => m.id === own);
-  return { kind: listed ? "altered" : "missing" };
+  const listed = trustedMarkers(markers).find((m) => m.id === own);
+  if (listed === undefined) return { kind: "missing" };
+  // A person finished the manual run between the post and the read-back: the
+  // completion stands, so the claimant stops without deleting it.
+  if (
+    expected.kind === "manual" &&
+    listed.run.kind === "manual" &&
+    listed.run.done
+  )
+    return { kind: "done" };
+  return { kind: "altered" };
 }
