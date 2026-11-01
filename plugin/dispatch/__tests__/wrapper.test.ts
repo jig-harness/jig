@@ -109,7 +109,25 @@ describe("jig dispatch install", () => {
       "10m",
     ]);
     expectSpawnExit(r, 0);
-    expect(r.stdout).toContain("10");
+    expect(r.stdout).toContain("every 10 minutes");
+  });
+
+  it("checks whole minutes on the interval that wins, not on each one given", async () => {
+    const w = world();
+    current = w;
+    machineFile(w, [account(w, "a", "a@example.com")]);
+    const kept = await w.dispatch([
+      "install",
+      "--interval",
+      "90s",
+      "--interval",
+      "10m",
+    ]);
+    expectSpawnExit(kept, 0);
+    expect(kept.stdout).toContain("every 10 minutes");
+    const refused = await w.dispatch(["install", "--interval", "90s"]);
+    expectSpawnExit(refused, 2);
+    expect(refused.stderr).toContain("whole minutes");
   });
 
   it("previews the tick's job, every interval, and writes nothing without --yes", async () => {

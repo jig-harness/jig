@@ -80,6 +80,11 @@ export async function installDispatch(
   script: string,
   machine: MachineConfig | null,
 ): Promise<number> {
+  if (options.intervalMs !== null && options.intervalMs % 60_000 !== 0)
+    throw new ExitError(
+      2,
+      `the interval must be whole minutes; --interval is ${options.intervalMs / 1000}s`,
+    );
   if (machine === null && !options.uninstall)
     throw new ExitError(
       2,
@@ -89,7 +94,7 @@ export async function installDispatch(
   if (ms % 60_000 !== 0)
     throw new ExitError(
       2,
-      `the interval must be whole minutes; ${options.intervalMs === null ? "the machine file's interval" : "--interval"} is ${ms / 1000}s`,
+      `the interval must be whole minutes; the machine file's interval is ${ms / 1000}s`,
     );
   const minutes = ms / 60_000;
   const spec = dispatchJobSpec(minutes, machine);

@@ -55,25 +55,18 @@ const dateValue: ValueParser<"sync", string> = {
   format: (value) => value,
 };
 
-/** A whole number of minutes, written as a duration (`5m`, `1h`), in milliseconds. */
+/** A duration (`90s`, `5m`, `1h`) in milliseconds; `install` requires whole minutes of the interval that wins. */
 const intervalValue: ValueParser<"sync", number> = {
   mode: "sync",
   metavar: "DURATION",
   placeholder: 60_000,
   parse: (input) => {
-    let ms: number;
     try {
-      ms = duration(input, "The interval");
+      return { success: true, value: duration(input, "The interval") };
     } catch (error) {
       if (!(error instanceof MachineConfigError)) throw error;
       return { success: false, error: [text(`${error.message}.`)] };
     }
-    return ms % 60_000 === 0
-      ? { success: true, value: ms }
-      : {
-          success: false,
-          error: message`Expected whole minutes, but got ${input}.`,
-        };
   },
   format: (ms) => `${ms / 60_000}m`,
 };
