@@ -144,10 +144,11 @@ other than GitHub.
 
 ### 23. Seed review lenses
 
-[`review`](plugin/skills/review/SKILL.md) gains a set of
-[review lenses](GLOSSARY.md), each the review form of one rule a module
-states: no swallowed failure ([M15](modules/M15-contracts-errors/README.md)),
-a test for each changed behaviour ([M14](modules/M14-testing-strategy/README.md)),
+[`review`](plugin/skills/review/SKILL.md) runs [review lenses](GLOSSARY.md)
+from one file each, and ships the lens for no swallowed failure
+([M15](modules/M15-contracts-errors/README.md)); the other rules Jig's
+modules state that no gate can judge have none yet. Still to come: a test for
+each changed behaviour ([M14](modules/M14-testing-strategy/README.md)),
 comments that say what the code does now ([M4](modules/M4-docs-governance/README.md)),
 and types that admit no invalid value (M15). Each runs only when the diff
 gives it something to check, comments until measurement shows it may block,
