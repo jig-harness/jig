@@ -27,6 +27,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { isMapping } from "../shared/config-layers.ts";
 import { swallow } from "../shared/errors.ts";
+import { failureText } from "./lib/text.ts";
 import type { RepoReport } from "./lib/types.ts";
 
 /** Days a receipt is kept unless the machine file's `receipts_days` says otherwise. */
@@ -41,6 +42,8 @@ export interface TickReceipt {
   /** Whether the tick launched what the machine file enables. */
   apply: boolean;
   exitStatus: number;
+  /** Why `--apply` was asked for with a machine file and nothing was started. */
+  applyWithheld?: string;
   /** Launch record files that do not read, left out of every count. */
   unreadableLaunches?: string[];
   repos: RepoReport[];
@@ -318,6 +321,39 @@ function reclaim(path: string, seen: number | null): boolean {
     writeFileSync(guard, FINISHED);
     sweepGuards(path);
   }
+}
+
+/**
+ * The index of this tick among the ticks that applied launches, kept in the
+ * state directory and advanced by one per call, so rotation does not depend
+ * on the timer's interval or on when a tick happens to start. Call it only
+ * while holding the tick lock. A counter that is missing or malformed starts
+ * over; one that cannot be read or written returns the reason, for an index that
+ * is not recorded would repeat and the tick must launch nothing rather than
+ * retry the same targets forever.
+ */
+export function nextTickIndex(root = stateRoot()): number | { failed: string } {
+  const path = join(root, "tick-index");
+  let last = -1;
+  try {
+    const value = Number(readFileSync(path, "utf8").trim());
+    if (Number.isSafeInteger(value) && value >= 0) last = value;
+  } catch (err) {
+    // A counter that does not exist yet starts the count; one that cannot be read is an I/O fault.
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      swallow(err, `${path} cannot be read`);
+      return { failed: `${path} cannot be read: ${failureText(err)}` };
+    }
+  }
+  const index = last + 1;
+  try {
+    mkdirSync(root, { recursive: true, mode: 0o700 });
+    writeFileSync(path, `${index}\n`, { mode: 0o600 });
+  } catch (err) {
+    swallow(err, `${path} cannot be written`);
+    return { failed: `${path} cannot be written: ${failureText(err)}` };
+  }
+  return index;
 }
 
 /** The tick lock: one tick per machine. Returns its release, or the holder. */

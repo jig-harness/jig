@@ -20,6 +20,12 @@
  * process's environment; the tick runs it in the wrapper's environment
  * before a launch.
  *
+ * A pickup's record starts Claude Code instead, interactively, on
+ * `/jig:do-item <key>` with its route's model and effort, and a follow-up's
+ * on the repository's follow-up command and the pull request
+ * (`lib/session.ts`), bound to its account the same way; its exit is
+ * recorded, and no wall is written for it.
+ *
  * Exit codes: the drive's own; 2 usage or a token that is not the record's;
  * 3 the record was already claimed, so nothing started.
  */
@@ -35,11 +41,13 @@ import {
 import { passEnvironment } from "./lib/accounts.ts";
 import {
   claimRecord,
+  isDrive,
   type LaunchRecord,
   ownIdentity,
   readRecordFile,
   recordExit,
 } from "./lib/launches.ts";
+import { sessionArgv } from "./lib/session.ts";
 import { writeWall } from "./lib/walls.ts";
 
 /** `drive.ts`'s exit for a usage-limit wall it cannot wait out. */
@@ -131,7 +139,9 @@ async function recordedReset(
   return reset !== null && Date.parse(reset) > nowMs ? reset : null;
 }
 
-async function writeAccountWall(record: LaunchRecord): Promise<void> {
+async function writeAccountWall(
+  record: LaunchRecord & { pr: number },
+): Promise<void> {
   const now = Date.now();
   const reset = await recordedReset(record.pr, now);
   const path = writeWall({
@@ -148,7 +158,9 @@ async function writeAccountWall(record: LaunchRecord): Promise<void> {
 }
 
 /** Whether the account's wall was recorded; a failure is the exit's to carry, not a reason to lose the exit. */
-async function tryWriteWall(record: LaunchRecord): Promise<boolean> {
+async function tryWriteWall(
+  record: LaunchRecord & { pr: number },
+): Promise<boolean> {
   try {
     await writeAccountWall(record);
     return true;
@@ -156,6 +168,23 @@ async function tryWriteWall(record: LaunchRecord): Promise<boolean> {
     swallow(error, `the wall of ${record.account} could not be recorded`);
     return false;
   }
+}
+
+/** What a record starts: a drive's pass, or an interactive session. */
+function stageArgv(record: LaunchRecord): string[] {
+  return isDrive(record)
+    ? driveCommand(record, driveScript())
+    : sessionArgv(record);
+}
+
+/** Whether a drive that stopped on its account's wall had that wall recorded; true when there was none to record. */
+async function wallRecorded(
+  record: LaunchRecord,
+  code: number | null,
+): Promise<boolean> {
+  if (!isDrive(record) || record.pr === null || code !== QUOTA_PARKED)
+    return true;
+  return tryWriteWall({ ...record, pr: record.pr });
 }
 
 async function wrap(id: string, token: string): Promise<number> {
@@ -185,13 +214,13 @@ async function wrap(id: string, token: string): Promise<number> {
   }
   process.chdir(record.workspace.path);
   const { code, signal } = await runDrive(
-    driveCommand(record, driveScript()),
+    stageArgv(record),
     record.workspace.path,
     passEnvironment(process.env, record),
   );
   // The wall first: once the exit is published the record no longer holds its
   // slot, and a tick in between would admit the walled account.
-  const wallUnrecorded = code === QUOTA_PARKED && !(await tryWriteWall(record));
+  const wallUnrecorded = !(await wallRecorded(record, code));
   recordExit(id, {
     at: new Date().toISOString(),
     code,

@@ -34,7 +34,7 @@ import { isMapping, jigHome } from "../../shared/config-layers.ts";
 import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { load } from "../../shared/yaml.ts";
 
-/** The stages a machine file can enable; only `rearm` starts anything yet. */
+/** The stages a machine file can enable; `steer` is accepted and reported only. */
 const MACHINE_STAGES = [
   "rearm",
   "pickup",
@@ -250,12 +250,31 @@ function distinct<T>(items: T[], key: (t: T) => string, what: string): T[] {
 /** The longest a timer holds: the tick's overall deadline is armed with it. */
 const MAX_TIMER_MS = 2_147_483_647;
 
-/** What one tick may spend at the file's limits: two workspace opens and eight runtime calls, in milliseconds. */
+/** The workspaces one tick may open: its budget covers this many opens, and a launch that needs another waits for the next tick. */
+export const OPENS_PER_TICK = 2;
+
+/** What one tick may spend at the file's limits: its workspace opens and eight runtime calls, in milliseconds. */
 export function tickBudgetMs(limits: {
   workspaceTimeoutMs: number;
   runtimeTimeoutMs: number;
 }): number {
-  return 2 * limits.workspaceTimeoutMs + 8 * limits.runtimeTimeoutMs;
+  return (
+    OPENS_PER_TICK * limits.workspaceTimeoutMs + 8 * limits.runtimeTimeoutMs
+  );
+}
+
+/** The least a tick may run before the launcher stops it: several repositories' workspace opens and launches. */
+export const MIN_TICK_DEADLINE_MS = 6 * 3600 * 1000;
+
+/**
+ * How long the installed launcher lets a tick run: its planning and its
+ * launches together, never less than `MIN_TICK_DEADLINE_MS`.
+ */
+export function tickDeadlineMs(limits: {
+  workspaceTimeoutMs: number;
+  runtimeTimeoutMs: number;
+}): number {
+  return Math.max(MIN_TICK_DEADLINE_MS, tickBudgetMs(limits));
 }
 
 /** The machine file's values, with defaults. */

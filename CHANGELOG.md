@@ -349,6 +349,98 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.115.0] - 2026-11-01
+
+### Added
+
+- `jig dispatch` follows up a merge: with the `followup` stage enabled in the
+  machine file, each pull request merged since the stage started gets one
+  session running the repository's `dispatch.followup_command` on it, in its
+  workspace. A hidden-marker comment on the merged pull request claims the
+  follow-up before the session starts, and an earlier marker makes a later
+  run stand down. A follow-up whose session failed, or whose marker names a
+  launch record the machine no longer has, is notified once and never started
+  again; deleting its marker makes it wanted again. The session is an
+  interactive one, so with Orca, which cannot yet bind one to a chosen
+  account, each follow-up is reported and nothing is posted or started, as a
+  pickup is.
+- `jig dispatch marker claim|check|done <PR>`: how a follow-up command a
+  person runs by hand claims the merge with a marker of its own, checks before
+  each act outside the pull request that no earlier marker appeared (exit
+  `3` when one did), and marks its marker done once it succeeded.
+- `jig dispatch` reaches a person: with the `notify` stage enabled, each stop
+  only a person settles is notified once per cause, through the session
+  runtime: a drive parked with a decision unanswered (carrying the drive's
+  framed decision and how to answer it, `answer <key>: …` on the pull
+  request, which the next tick re-arms on), a drive stopped on an exit only a
+  person settles or with no exit, a failed follow-up, a stalled pickup, a
+  double claim and a session waiting past `dispatch.blocked_after`. With Orca
+  the message becomes the workspace's comment and the workspace is marked
+  unread, which Orca's phone app shows; a target with no workspace that can
+  take it goes to the repository's notices workspace
+  (`jig-dispatch-notices`). A message counts as sent only once the comment,
+  read back, carries it, and is appended rather than written over while the
+  workspace is still unread.
+- `drives.ts --report`, the morning report, lists what the dispatcher
+  launched, refused and notified on the machine since the last report, beside
+  the drives.
+
+### Changed
+
+- A drive's notification is planned whatever session runs in its pull
+  request's workspace: telling a person never competes with a session.
+
+## [0.114.0] - 2026-11-01
+
+### Added
+
+- `do-item` claims the issue it picks up: `tracker.ts claim <key>` assigns
+  it to the identity the tracker's credential acts as and moves it to
+  `in_progress`, refuses an issue already in progress or assigned to anyone
+  else (exit `3`, nothing written), and stands down when reading it back
+  shows another claim landed first (exit `4`). `do-item` and `work-batch`
+  stop on either instead of starting beside another session. The tracker
+  interface gains `viewer`, `assignees` and `assign` on GitHub Issues,
+  Linear and Jira.
+- `jig dispatch` plans pickups with the stage's whole guard: an item a
+  launch record or a running session holds is reported as running, one
+  whose last session ended without claiming it waits until it leaves the
+  dispatch states and comes back, an item more than one running session
+  joins to is reported as a double claim, a claimed item idle past
+  `dispatch.stalled_after` is reported as a stalled pickup and never
+  relaunched, and a session it started that waits past
+  `dispatch.blocked_after` is reported (both `30m` by default; see
+  [CONFIGURATION.md](plugin/CONFIGURATION.md#dispatch)).
+- The machine file's `pickup` stage starts a `do-item` session per pickup,
+  once, where the session runtime binds the session to the account it
+  bills: the fresh read just before the launch, admission and the identity
+  check, a workspace on the item's own branch with its issue linked, the
+  route's model and effort, and a launch record holding its slot while the
+  agent works or waits. The session records how it ended with
+  `jig dispatch result <record> <token> done|failed`. Orca cannot bind an
+  agent launch to a chosen account yet, so with Orca each pickup is
+  reported with that reason and nothing is started
+  ([the dispatcher](plugin/README.md#the-dispatcher)).
+
+### Changed
+
+- **Breaking:** `dispatch.states` no longer accepts `in_progress`, the state
+  `do-item`'s claim moves an item to, so a claimed item is never a pickup. A
+  repository whose `dispatch` section lists it must remove it first: the
+  section is refused with an error, and the tick plans nothing for that
+  repository, re-arms included.
+- A tick's launches stop at the deadline the installed launcher gives the
+  whole tick (planning included, less the time its receipt needs), not at the
+  smaller budget of its launches.
+- A dispatch tick opens at most two workspaces, the opens its timer's
+  deadline covers; a launch that needs another waits for the next tick.
+  Which repository, stage and target comes first rotates by one each
+  applying tick, counted in the state directory rather than read off the
+  clock, so a target whose open fails every time cannot keep the others
+  waiting whatever interval the timer was installed with.
+- An agent Orca reports as `blocked` (on a permission prompt) now holds its
+  stage, as a working or waiting one does.
+
 ## [0.113.0] - 2026-11-01
 
 A repository can let a drive decide more during the hours nobody is there to ask, and a person reads one report in the morning. Both are built behind the opt-in and documented as not yet validated.
@@ -4364,7 +4456,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.113.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.115.0...HEAD
+[0.115.0]: https://github.com/jig-harness/jig/compare/v0.114.0...v0.115.0
+[0.114.0]: https://github.com/jig-harness/jig/compare/v0.113.0...v0.114.0
 [0.113.0]: https://github.com/jig-harness/jig/compare/v0.112.0...v0.113.0
 [0.112.0]: https://github.com/jig-harness/jig/compare/v0.111.0...v0.112.0
 [0.111.0]: https://github.com/jig-harness/jig/compare/v0.110.0...v0.111.0

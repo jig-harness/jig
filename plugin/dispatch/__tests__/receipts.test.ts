@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   newRunId,
+  nextTickIndex,
   previousFollowupSince,
   pruneReceipts,
   readReceipt,
@@ -55,6 +56,7 @@ function receipt(day: string, repoPath: string, since: string): TickReceipt {
         running: [],
         unplaced: [],
         launches: [],
+        notifications: [],
         quiet: [],
       },
     ],
@@ -158,5 +160,29 @@ describe("takeTickLock", () => {
         `tick.lock.reclaim.${round}`,
       ]);
     }
+  });
+});
+
+describe("the tick index", () => {
+  it("advances by one a call and starts over when unreadable", () => {
+    const dir = root();
+    expect([
+      nextTickIndex(dir),
+      nextTickIndex(dir),
+      nextTickIndex(dir),
+    ]).toEqual([0, 1, 2]);
+    writeFileSync(join(dir, "tick-index"), "not a number\n");
+    expect(nextTickIndex(dir)).toBe(0);
+  });
+
+  it("names why the index cannot be read or recorded", () => {
+    const dir = root();
+    mkdirSync(join(dir, "tick-index"));
+    const result = nextTickIndex(dir);
+    expect(result).toEqual({
+      failed: expect.stringContaining(
+        `${join(dir, "tick-index")} cannot be read`,
+      ),
+    });
   });
 });

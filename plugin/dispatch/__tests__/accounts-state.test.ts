@@ -52,7 +52,15 @@ function read(accountName: string, state: ReadRecord["state"]): ReadRecord {
       createdAt: "2026-01-01T00:00:00.000Z",
       workspace: null,
       attempts: [],
+      item: null,
+      agentId: null,
+      model: null,
+      effort: null,
+      released: false,
+      command: null,
+      marker: null,
     },
+    result: null,
   };
 }
 

@@ -81,8 +81,9 @@ open-ended prompt, then the re-drive of a converged pull request the
 forge reports conflicting or whose head moved after the drive verified
 it, then Codex accounts admitted beside Claude Code's, the account's
 vendor choosing the agent a session runs in; the re-arm step waits on the drive
-running in a session of its own, and the pickups on `do-item` refusing an
-item already claimed. A park's notification carries the park's framed
+running in a session of its own, and the pickups' launches on an Orca
+session that can be bound to a chosen account (until then the pickups are
+reported, not started). A park's notification carries the park's framed
 decision.
 
 Done when, on a host running Orca, an item assigned to the factory

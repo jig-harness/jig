@@ -54,13 +54,24 @@ function record(id: string, over: Partial<LaunchRecord> = {}): LaunchRecord {
     createdAt: "2026-01-01T00:00:00.000Z",
     workspace: null,
     attempts: [],
+    item: null,
+    agentId: null,
+    model: null,
+    effort: null,
+    released: false,
+    command: null,
+    marker: null,
     ...over,
   };
 }
 
 function ended(r: LaunchRecord, code: number, at: string): ReadRecord {
   const exit: LaunchExit = { at, code, signal: null };
-  return { record: r, state: { kind: "ended", exit, process: WHO } };
+  return {
+    record: r,
+    state: { kind: "ended", exit, process: WHO },
+    result: null,
+  };
 }
 
 const silent = (started: string): DrivenPr => ({
@@ -113,6 +124,26 @@ describe("retention", () => {
       "2026-01-02T00:00:00.000Z",
     );
     expect(pruneLaunches([a, b], Date.parse("2027-01-01"), 7, dir)).toEqual([]);
+  });
+
+  it("keeps an unreleased pickup until it is released", () => {
+    const dir = root();
+    const pickup = (released: boolean) =>
+      ended(
+        record("20260101T000000Z-aaaaaaaa", {
+          action: "pickup",
+          pr: null,
+          item: "#12",
+          released,
+        }),
+        1,
+        "2026-01-01T00:00:00.000Z",
+      );
+    const now = Date.parse("2027-01-01");
+    expect(pruneLaunches([pickup(false)], now, 7, dir)).toEqual([]);
+    expect(pruneLaunches([pickup(true)], now, 7, dir)).toEqual([
+      "20260101T000000Z-aaaaaaaa",
+    ]);
   });
 });
 

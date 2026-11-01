@@ -4,9 +4,13 @@
  * records for each repository and prints every stage it would start, with
  * the record that wants it and the evidence. With `--apply` it starts the
  * stages the machine file (`~/.jig/dispatch.yaml`) enables for each
- * repository; today that is the drives' re-arms and takeovers.
+ * repository: the drives' re-arms and takeovers, and the pickups where the
+ * session runtime binds an interactive session to its account.
  * `jig dispatch install` writes the timer that runs `--apply` every
- * interval.
+ * interval; `jig dispatch result` is how a dispatched interactive session
+ * records how it ended; `jig dispatch marker` is how a follow-up command
+ * claims a merged pull request's follow-up, checks its claim and marks it
+ * done.
  */
 import { basename, dirname } from "node:path";
 import { consumerRoot } from "../shared/consumer.ts";
@@ -14,6 +18,7 @@ import { ExitError } from "../shared/cli.ts";
 import { pathValue } from "../shared/command-line.ts";
 import {
   argument,
+  choice,
   command,
   constant,
   type InferValue,
@@ -38,7 +43,9 @@ import {
   readMachineConfig,
 } from "./lib/machine-config.ts";
 import { formatReceipt } from "./lib/report.ts";
+import { markerMain } from "./marker.ts";
 import { readReceipt, receiptPaths } from "./receipts.ts";
+import { resultMain } from "./result.ts";
 import { runTick } from "./tick.ts";
 
 /** Exit when another tick holds the lock. */
@@ -55,6 +62,21 @@ const dateValue: ValueParser<"sync", string> = {
       : { success: false, error: message`Expected a date, but got ${input}.` },
   format: (value) => value,
 };
+
+/** A positive whole number: a pull request's, or a comment's id. */
+const countValue = (metavar: "PR" | "ID"): ValueParser<"sync", number> => ({
+  mode: "sync",
+  metavar,
+  placeholder: 1,
+  parse: (input) =>
+    /^[1-9][0-9]*$/.test(input) && Number.isSafeInteger(Number(input))
+      ? { success: true, value: Number(input) }
+      : {
+          success: false,
+          error: message`Expected a positive whole number, but got ${input}.`,
+        },
+  format: (value) => String(value),
+});
 
 /**
  * A duration (`90s`, `5m`, `1h`) in milliseconds. `install` requires whole
@@ -151,22 +173,68 @@ const receipts = command(
   },
 );
 
+const result = command(
+  "result",
+  object({
+    action: constant("result"),
+    record: argument(string({ metavar: "RECORD" }), {
+      description: message`The launch record the session was started under.`,
+    }),
+    token: argument(string({ metavar: "TOKEN" }), {
+      description: message`The record's token, named in the session's prompt.`,
+    }),
+    outcome: argument(string({ metavar: "done|failed" }), {
+      description: message`How the session ended.`,
+    }),
+  }),
+  { brief: message`Record how a dispatched interactive session ended.` },
+);
+
+const marker = command(
+  "marker",
+  object({
+    action: constant("marker"),
+    verb: argument(choice(["claim", "check", "done"] as const), {
+      description: message`claim posts a manual run's marker; check stops a run an earlier marker holds; done marks a manual run's marker done.`,
+    }),
+    pr: argument(countValue("PR"), {
+      description: message`The merged pull request.`,
+    }),
+    comment: optional(
+      option("--comment", countValue("ID"), {
+        description: message`The marker's comment id, as claim printed it or the session's prompt names it (check and done).`,
+      }),
+    ),
+    repo: optional(
+      option("--repo", string({ metavar: "OWNER/NAME" }), {
+        description: message`The repository. Without it, the current checkout's.`,
+      }),
+    ),
+  }),
+  {
+    brief: message`Claim a merged pull request's follow-up, check the claim, or mark it done.`,
+  },
+);
+
 /**
- * `jig dispatch`: one tick by default. Its `install` and `receipts`
- * subcommands do what the lifecycle verbs `jig install dispatch` and
- * `jig receipts dispatch` do, and stay for the command lines that use them,
- * hidden from help.
+ * `jig dispatch`: one tick by default, with `result` and `marker` as its
+ * subcommands. Its `install` and `receipts` subcommands do what the
+ * lifecycle verbs `jig install dispatch` and `jig receipts dispatch` do, and
+ * stay for the command lines that use them, hidden from help.
  */
 const dispatch = (wholeMinutes: boolean) =>
   command(
     "dispatch",
-    withDefault(or(installation(wholeMinutes), receipts, tick), {
-      action: "tick",
-      apply: false,
-      repos: [],
-      followupSince: undefined,
-      json: false,
-    } as const),
+    withDefault(
+      or(installation(wholeMinutes), receipts, result, marker, tick),
+      {
+        action: "tick",
+        apply: false,
+        repos: [],
+        followupSince: undefined,
+        json: false,
+      } as const,
+    ),
     {
       brief: message`Say which stages of the delivery loop should be running, and start them.`,
       description: message`Reads the tracker, the pull requests' drive ledgers, the running sessions and this machine's launch records for each repository, and prints every action it would take, with the record that wants it and the evidence. Each run writes a receipt.`,
@@ -252,7 +320,17 @@ export async function dispatchMain(
   args: DispatchArguments,
   script = "",
 ): Promise<number> {
+  if (args.action === "result")
+    // An interactive session's own answer, under its launch record's token.
+    return resultMain([args.record, args.token, args.outcome]);
   if (args.action === "receipts") return showReceipts(args.runId);
+  if (args.action === "marker")
+    return markerMain({
+      verb: args.verb,
+      pr: args.pr,
+      comment: args.comment ?? null,
+      repo: args.repo ?? null,
+    });
   if (args.action === "install")
     // A removal needs no machine file: a broken one must not keep the timer installed.
     return installDispatch(

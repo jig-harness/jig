@@ -13,7 +13,10 @@
  *   under (host, boot id, process id and the process's start time),
  *   published whole by a hard link, so exactly one wrapper ever claims a
  *   record;
- * - `<id>.exit`, the wrapper's again: the stage's exit, once it ended.
+ * - `<id>.exit`, the wrapper's again: the stage's exit, once it ended;
+ * - `<id>.result`, an interactive session's own answer (`done` or
+ *   `failed`), written once by `jig dispatch result` under the record's
+ *   token.
  *
  * A record's state is read from those files and the process table:
  *
@@ -27,7 +30,10 @@
  *
  * Pending, alive and unknown records hold their stage and their account's
  * slot; an unknown or a pending record whose launch cannot be retried
- * holds them until a person removes its files.
+ * holds them until a person removes its files. An interactive session's
+ * record is also read beside its agent (`actions/pickup-hold.ts`): while
+ * its wrapper is alive, the record ends when the runtime reports the agent
+ * finished.
  */
 import {
   closeSync,
@@ -47,8 +53,21 @@ import { swallow } from "../../shared/errors.ts";
 import { type ProcessRow, processTable } from "../../shared/process-table.ts";
 import { publishOnce, stateRoot } from "../receipts.ts";
 
-/** What a launch starts: a re-arm of a stopped drive, or a takeover of a wedged one. */
-export type LaunchAction = "rearm" | "takeover";
+/** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up session. */
+export type LaunchAction = "rearm" | "takeover" | "pickup" | "followup";
+
+/** Whether a record starts a drive's headless pass, whose exit is its answer. */
+export function isDrive(record: Pick<LaunchRecord, "action">): boolean {
+  return record.action === "rearm" || record.action === "takeover";
+}
+
+/** Whether a record starts an interactive session (a pickup's, a follow-up's), whose agent ends it. */
+export function isInteractive(record: Pick<LaunchRecord, "action">): boolean {
+  return !isDrive(record);
+}
+
+/** An interactive session's own answer, recorded through `jig dispatch result`. */
+export type SessionResult = "done" | "failed";
 
 /** The runtime's answer to one `launch` call for the record. */
 export interface LaunchAttempt {
@@ -67,7 +86,10 @@ export interface LaunchRecord {
   /** The repository's `owner/name` and its local checkout. */
   repo: string;
   repoPath: string;
-  pr: number;
+  /** The pull request a drive or a follow-up acts on; `null` for a pickup. */
+  pr: number | null;
+  /** The item a pickup starts; `null` for a drive or a follow-up. */
+  item: string | null;
   account: string;
   vendor: "claude" | "codex";
   configDir: string;
@@ -80,6 +102,17 @@ export interface LaunchRecord {
   createdAt: string;
   workspace: { id: string; path: string } | null;
   attempts: LaunchAttempt[];
+  /** An interactive session's agent, by the id the runtime reports it under, from the launch's receipt. */
+  agentId: string | null;
+  /** The model and effort a pickup was launched with; `null` when the route named none. */
+  model: string | null;
+  effort: string | null;
+  /** A pickup's ended record no longer holds its item: the item left the dispatch states since. */
+  released: boolean;
+  /** The command a follow-up's session starts (the repository's `dispatch.followup_command`); `null` for any other record. */
+  command: string | null;
+  /** The id of the follow-up marker comment the tick posted for it; `null` until posted, and for any other record. */
+  marker: number | null;
 }
 
 /** The wrapper's process identity, as `drives.ts` captures a driver's. */
@@ -112,11 +145,19 @@ export type LaunchState =
       wallUnrecorded?: true;
     }
   | { kind: "died"; process: ProcessIdentity }
-  | { kind: "ended"; exit: LaunchExit; process: ProcessIdentity | null };
+  | {
+      kind: "ended";
+      exit: LaunchExit;
+      process: ProcessIdentity | null;
+      /** An interactive session whose wrapper still runs: the state its agent finished in. */
+      agent?: string;
+    };
 
 export interface ReadRecord {
   record: LaunchRecord;
   state: LaunchState;
+  /** An interactive session's recorded answer; `null` when none. */
+  result: SessionResult | null;
 }
 
 function launchesRoot(root = stateRoot()): string {
@@ -124,6 +165,11 @@ function launchesRoot(root = stateRoot()): string {
 }
 
 const ID = /^\d{8}T\d{6}Z-[a-f\d]{8}$/;
+
+/** Whether `id` has a launch record id's shape, and so names no other path. */
+export function isRecordId(id: string): boolean {
+  return ID.test(id);
+}
 
 export function newRecordId(now: Date): string {
   const stamp = now
@@ -137,12 +183,15 @@ export function newToken(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
 
-function file(id: string, kind: "json" | "claim" | "exit", root: string) {
+type RecordFile = "json" | "claim" | "exit" | "result";
+const RECORD_FILES: readonly RecordFile[] = ["json", "claim", "exit", "result"];
+
+function file(id: string, kind: RecordFile, root: string) {
   return join(launchesRoot(root), `${id}.${kind}`);
 }
 
 /** Write `text` to `path` whole: a reader sees the old file or the new one. */
-function writeWhole(path: string, text: string): void {
+export function writeWhole(path: string, text: string): void {
   const temporary = `${path}.${crypto.randomUUID()}.tmp`;
   const fd = openSync(temporary, "wx", 0o600);
   try {
@@ -186,6 +235,22 @@ function hasStrings(value: Record<string, unknown>, keys: string[]): boolean {
   return keys.every((k) => typeof value[k] === "string");
 }
 
+function optionalText(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+/** What a record names: a pull request for a drive or a follow-up, an item for a pickup. */
+function namesTarget(value: Record<string, unknown>): boolean {
+  if (value.action === "pickup")
+    return typeof value.item === "string" && value.item !== "";
+  return (
+    (value.action === "rearm" ||
+      value.action === "takeover" ||
+      value.action === "followup") &&
+    typeof value.pr === "number"
+  );
+}
+
 function isLaunchRecord(value: unknown): value is LaunchRecord {
   return (
     isMapping(value) &&
@@ -200,16 +265,56 @@ function isLaunchRecord(value: unknown): value is LaunchRecord {
       "facts",
       "createdAt",
     ]) &&
-    (value.action === "rearm" || value.action === "takeover") &&
+    namesTarget(value) &&
     (value.vendor === "claude" || value.vendor === "codex") &&
-    typeof value.pr === "number" &&
     typeof value.wallBackoffMs === "number" &&
     (value.replaces === null || typeof value.replaces === "string") &&
     Number.isFinite(Date.parse(value.createdAt as string)) &&
     isWorkspace(value.workspace) &&
     Array.isArray(value.attempts) &&
-    value.attempts.every(isAttempt)
+    value.attempts.every(isAttempt) &&
+    optionalFields(value)
   );
+}
+
+/** The fields a later version added, each absent or of its type. */
+function optionalFields(value: Record<string, unknown>): boolean {
+  return (
+    ["agentId", "model", "effort", "command"].every((k) =>
+      optionalText(value[k]),
+    ) &&
+    (value.marker === undefined ||
+      value.marker === null ||
+      typeof value.marker === "number")
+  );
+}
+
+/** A record as this version reads it: the fields an earlier version did not write, at their defaults. */
+function normalized(value: LaunchRecord): LaunchRecord {
+  const pickup = value.action === "pickup";
+  return {
+    ...value,
+    pr: pickup ? null : value.pr,
+    item: pickup ? value.item : null,
+    agentId: value.agentId ?? null,
+    model: value.model ?? null,
+    effort: value.effort ?? null,
+    released: value.released === true,
+    ...followupFields(value),
+  };
+}
+
+/** A follow-up's command and marker; `null` for any other record. */
+function followupFields(
+  value: LaunchRecord,
+): Pick<LaunchRecord, "command" | "marker"> {
+  if (value.action !== "followup") return { command: null, marker: null };
+  return { command: value.command ?? null, marker: value.marker ?? null };
+}
+
+/** What a record acts on, as the plan names it: the item, else `PR #<n>`. */
+export function targetOf(record: Pick<LaunchRecord, "item" | "pr">): string {
+  return record.item ?? `PR #${String(record.pr)}`;
 }
 
 function isAttempt(value: unknown): value is LaunchAttempt {
@@ -248,7 +353,35 @@ export function readRecordFile(
 ): LaunchRecord | null {
   const value = readJson(file(id, "json", root));
   // A record whose embedded id names another file would read that file's claim and exit.
-  return isLaunchRecord(value) && value.id === id ? value : null;
+  return isLaunchRecord(value) && value.id === id ? normalized(value) : null;
+}
+
+/**
+ * Record an interactive session's answer: true when this call wrote it,
+ * false when the record already had one, which stands.
+ */
+export function recordResult(
+  id: string,
+  result: SessionResult,
+  root = stateRoot(),
+): boolean {
+  mkdirSync(launchesRoot(root), { recursive: true, mode: 0o700 });
+  return publishOnce(
+    file(id, "result", root),
+    `${JSON.stringify({ at: new Date().toISOString(), result }, null, 2)}\n`,
+  );
+}
+
+/** A record's recorded answer; `null` when none, or when it does not read. */
+export function readResult(
+  id: string,
+  root = stateRoot(),
+): SessionResult | null {
+  const value = readJson(file(id, "result", root));
+  if (!isMapping(value)) return null;
+  return value.result === "done" || value.result === "failed"
+    ? value.result
+    : null;
 }
 
 /** The claim a wrapper published for a record: `undefined` when none, `null` when it does not read. */
@@ -417,7 +550,11 @@ export async function readLaunches(root = stateRoot()): Promise<{
       unreadable.push(file(id, "json", root));
       continue;
     }
-    records.push({ record, state: stateOf(record, rows, root, boot) });
+    records.push({
+      record,
+      state: stateOf(record, rows, root, boot),
+      result: readResult(id, root),
+    });
   }
   return { records, unreadable };
 }
@@ -442,6 +579,7 @@ function latestRefusals(records: ReadRecord[]): Set<string> {
   // Pull request numbers repeat across repositories: key by both.
   const latest = new Map<string, ReadRecord>();
   for (const r of records) {
+    if (!isDrive(r.record)) continue;
     const key = `${r.record.repo}#${String(r.record.pr)}`;
     const seen = latest.get(key);
     if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
@@ -455,6 +593,26 @@ function latestRefusals(records: ReadRecord[]): Set<string> {
       DRIVER_REFUSALS.has(state.exit.code)
     )
       ids.add(record.id);
+  return ids;
+}
+
+/**
+ * The ids of each item's latest pickup record: while it is unreleased it is
+ * the only thing that keeps the item from being picked up again, so it stays
+ * until `releaseEnded` has seen the item leave the dispatch states.
+ */
+function latestPickups(records: ReadRecord[]): Set<string> {
+  const latest = new Map<string, ReadRecord>();
+  for (const r of records) {
+    if (r.record.action !== "pickup") continue;
+    const key = `${r.record.repo}\0${String(r.record.item)}`;
+    const seen = latest.get(key);
+    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
+      latest.set(key, r);
+  }
+  const ids = new Set<string>();
+  for (const { record } of latest.values())
+    if (!record.released) ids.add(record.id);
   return ids;
 }
 
@@ -474,10 +632,11 @@ export function pruneLaunches(
   const cutoff = nowMs - days * 86_400_000;
   const removed: string[] = [];
   const kept = latestRefusals(records);
+  for (const id of latestPickups(records)) kept.add(id);
   for (const { record, state } of records) {
     const at = kept.has(record.id) ? null : finishedAt(record, state);
     if (at === null || !Number.isFinite(at) || at > cutoff) continue;
-    for (const kind of ["json", "claim", "exit"] as const)
+    for (const kind of RECORD_FILES)
       rmSync(file(record.id, kind, root), { force: true });
     removed.push(record.id);
   }
@@ -486,6 +645,6 @@ export function pruneLaunches(
 
 /** Remove a record the runtime answered it started nothing for. */
 export function removeRecord(id: string, root = stateRoot()): void {
-  for (const kind of ["json", "claim", "exit"] as const)
+  for (const kind of RECORD_FILES)
     rmSync(file(id, kind, root), { force: true });
 }

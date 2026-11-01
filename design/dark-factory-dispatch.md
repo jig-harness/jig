@@ -381,9 +381,8 @@ that promise for a kind of session does not retry it: a pending record of
 that kind stays the reported unknown. Orca is the first
 implementation:
 
-- `sessions` from `orca worktree ps --json`; that it carries a workspace's
-  comment and unread mark is checked when the notifications are built, and
-  until it does, notifications are reported in the receipts and not sent;
+- `sessions` from `orca worktree ps --json`, which carries each
+  workspace's comment and unread mark (`comment`, `unread`);
   that `orca agent launch`'s answer names the agent by the id `orca
   worktree ps --json` reports it under is checked when the pickup stage is
   built, and until it does, interactive sessions are not launched, since
@@ -416,9 +415,10 @@ implementation:
   agent launch --retry-launch` retries by a key the adapter passes it,
   rather than starting a second agent, is checked when the pickup stage is
   built, and until it does, a lost interactive launch is not retried;
-- `notify` as a workspace marked unread with the message as its comment,
-  appended to the comment while the workspace is still unread (see
-  Notifications), which Orca's phone app shows. A workspace's comment carries a kickoff
+- `notify` as a workspace marked unread with the message as its comment
+  (`orca worktree set --comment <message> --unread`, the comment read back
+  with `orca worktree show`), appended to the comment while the workspace
+  is still unread (see Notifications), which Orca's phone app shows. A workspace's comment carries a kickoff
   prompt until its agent starts, so the tick never writes one on a
   workspace that may yet start an agent with it. The target is the item's
   or pull request's workspace when its agent has started; otherwise

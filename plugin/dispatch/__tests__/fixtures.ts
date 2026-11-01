@@ -2,8 +2,11 @@
  * A world for one tick: the drive suite's fake forge (a `gh` that keeps
  * each pull request's comments in a file), wrapped by a `gh` that also
  * answers the calls the tick adds (the repository view, the configuration
- * file on the default branch, the pull request listings); a fake `orca`
- * answering `repo list` and `worktree ps` from files; and the GitHub
+ * file on the default branch, the pull request listings, and a comment's
+ * update or removal on whichever pull request holds it); a fake `orca`
+ * answering `repo list` and `worktree ps` from files, listing the worktrees
+ * it creates there, and keeping a workspace's comment and unread mark
+ * (`worktree set`, `worktree show`) in that file; and the GitHub
  * tracker adapter's issue nodes served as a GraphQL endpoint the adapter
  * reaches through `JIG_GITHUB_GRAPHQL_URL`. The tick runs as a child with
  * its own home, so its receipts and lock never touch the real ones.
@@ -43,6 +46,23 @@ if (args[0] === "pr" && args[1] === "list") {
   const state = args[args.indexOf("--state") + 1];
   out(fs.readFileSync(F + "/prs-" + state + ".json", "utf8"));
 }
+const single = args[0] === "api" && args.includes("-X") ? /issues\\/comments\\/(\\d+)$/.exec(args.find((a) => /issues\\/comments\\/\\d+$/.test(a)) ?? "") : null;
+if (single !== null) {
+  // A comment's update or removal, on whichever pull request's file holds it.
+  const id = Number(single[1]);
+  const method = args[args.indexOf("-X") + 1];
+  const input = method === "PATCH" ? JSON.parse(fs.readFileSync(0, "utf8")) : null;
+  for (const name of fs.readdirSync(F).filter((n) => /^comments-\\d+\\.json$/.test(n))) {
+    const all = JSON.parse(fs.readFileSync(F + "/" + name, "utf8"));
+    const at = all.findIndex((c) => c.id === id);
+    if (at < 0) continue;
+    if (method === "DELETE") all.splice(at, 1); else all[at].body = input.body;
+    fs.writeFileSync(F + "/" + name, JSON.stringify(all));
+    out("{}");
+  }
+  process.stderr.write("gh: Not Found (HTTP 404)\\n");
+  process.exit(1);
+}
 if (args[0] === "api" && /\\/contents\\/\\.config\\/jig\\.yaml\\?ref=main$/.test(args[1] ?? "")) {
   if (!fs.existsSync(F + "/jig.yaml")) { process.stderr.write("gh: Not Found (HTTP 404)\\n"); process.exit(1); }
   out({ encoding: "base64", content: fs.readFileSync(F + "/jig.yaml").toString("base64") });
@@ -68,6 +88,46 @@ if (args[0] === "terminal" && args[1] === "create") {
   }
   answer({ terminal: { handle: "term-1" } });
 }
+if (args[0] === "terminal" && args[1] === "show")
+  answer({ terminal: { handle: args[args.indexOf("--terminal") + 1], tabId: "tab-1", leafId: "leaf-1" } });
+if (args[0] === "worktree" && args[1] === "create") {
+  // A real worktree of the clone, on a branch Orca names after the worktree.
+  const name = args[args.indexOf("--name") + 1];
+  const base = args[args.indexOf("--base-branch") + 1];
+  const clone = JSON.parse(fs.readFileSync(F + "/orca-repos.json", "utf8")).repos[0].path;
+  const path = require("node:path").join(F, "..", "worktrees", name.replace(/[^A-Za-z0-9.-]/g, "-"));
+  const made = Bun.spawnSync(["git", "-C", clone, "worktree", "add", "-q", "-b", "orca/" + name, path, base], { stderr: "pipe" });
+  if (made.exitCode !== 0) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "git", message: made.stderr.toString() } })); process.exit(1); }
+  // Listed by worktree ps from then on, on the branch git says it holds.
+  const ps = JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8"));
+  ps.worktrees.push({ worktreeId: "repo-1::" + path, repoId: "repo-1", path, branch: "", gitBranch: true, isArchived: false, linkedPR: null, linkedIssue: null, linkedLinearIssue: null, linkedItems: [], comment: "", unread: false, unverifiableTerminalCount: 0, agents: [] });
+  ps.totalCount = ps.worktrees.length;
+  fs.writeFileSync(F + "/orca-ps.json", JSON.stringify(ps));
+  answer({ worktree: { id: "repo-1::" + path, path, branch: "refs/heads/orca/" + name } });
+}
+if (args[0] === "worktree" && (args[1] === "set" || args[1] === "show")) {
+  // A workspace's comment and unread mark, kept in its worktree ps row.
+  const path = args[args.indexOf("--worktree") + 1].replace(/^path:/, "");
+  const ps = JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8"));
+  const row = ps.worktrees.find((w) => w.path === path);
+  if (!row) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "not_found" } })); process.exit(1); }
+  if (args[1] === "set" && !fs.existsSync(F + "/orca-set-noop")) {
+    if (args.includes("--comment")) row.comment = args[args.indexOf("--comment") + 1];
+    if (args.includes("--unread")) row.unread = true;
+    fs.writeFileSync(F + "/orca-ps.json", JSON.stringify(ps));
+  }
+  answer({ worktree: { id: row.worktreeId, path: row.path, comment: row.comment } });
+}
+if (args[0] === "worktree" && args[1] === "ps") {
+  const ps = JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8"));
+  for (const row of ps.worktrees.filter((w) => w.gitBranch)) {
+    const head = Bun.spawnSync(["git", "-C", row.path, "symbolic-ref", "--short", "HEAD"], { stderr: "pipe" });
+    row.branch = "refs/heads/" + head.stdout.toString().trim();
+  }
+  answer(ps);
+}
+if (args[0] === "worktree" && args[1] === "list")
+  answer({ worktrees: JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8")).worktrees.map((w) => ({ id: w.worktreeId, path: w.path, branch: w.branch })) });
 const file = args[0] === "repo" && args[1] === "list" ? "orca-repos.json"
   : args[0] === "worktree" && args[1] === "ps" ? "orca-ps.json" : null;
 if (file === null) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "unhandled" } })); process.exit(1); }
@@ -86,9 +146,26 @@ fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
 process.exit(fs.existsSync(F + "/drive-exit") ? Number(fs.readFileSync(F + "/drive-exit", "utf8")) : 0);
 `;
 
+/** The Claude Code a pickup's wrapper starts in tests: it records how it was started and runs until \`claude-exit\` appears. */
+const FAKE_CLAUDE = `#!/usr/bin/env bun
+const fs = require("node:fs");
+const F = process.env.DISPATCH_FAKE_DIR;
+fs.appendFileSync(F + "/claude-runs.jsonl", JSON.stringify({
+  argv: process.argv.slice(2),
+  cwd: process.cwd(),
+  configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
+  token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
+}) + "\\n");
+const until = Date.now() + 60000;
+while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(50);
+process.exit(0);
+`;
+
 export interface OrcaAgent {
   state: string;
   paneKey?: string;
+  /** When it entered its state, in milliseconds (`stateStartedAt`). */
+  since?: number;
 }
 
 export interface OrcaRow {
@@ -98,6 +175,8 @@ export interface OrcaRow {
   linkedPR?: number;
   agents?: OrcaAgent[];
   unverifiableTerminalCount?: number;
+  comment?: string;
+  unread?: boolean;
 }
 
 /** An open pull request as `gh pr list --json` returns it. */
@@ -149,14 +228,19 @@ export interface World {
   env: Record<string, string>;
   /** The tracker's issues assigned to the identity, as GitHub nodes. */
   setIssues(nodes: Array<Record<string, unknown>>): void;
+  /** From the issue listing after the `n`th on, the tracker answers with `nodes` instead: a change between a tick's reads. */
+  setIssuesAfter(n: number, nodes: Array<Record<string, unknown>>): void;
   /** Who made each issue's assignment, by issue number. */
   setAssigner(number: number, login: string, permission: string): void;
   setPrs(state: "open" | "merged", prs: unknown[]): void;
   setComments(pr: number, comments: unknown[]): void;
   setWorkspaces(rows: OrcaRow[]): void;
   setConfig(yaml: string | null): void;
-  /** Run `jig dispatch` with `args`; resolves to its exit and output. */
-  dispatch(args: string[]): Promise<{
+  /** Run `jig dispatch` with `args` (or the script `entry` in its place); resolves to its exit and output. */
+  dispatch(
+    args: string[],
+    entry?: string,
+  ): Promise<{
     exitCode: number | null;
     stdout: string;
     stderr: string;
@@ -174,6 +258,7 @@ export function world(): World {
   mkdirSync(bin, { recursive: true });
   writeFakeProgram(join(bin, "gh"), WRAPPER(join(dir, "..", "bin", "gh")));
   writeFakeProgram(join(bin, "orca"), FAKE_ORCA);
+  writeFakeProgram(join(bin, "claude"), FAKE_CLAUDE);
   writeFileSync(join(root, "fake-drive.js"), FAKE_DRIVE);
   const write = (name: string, value: unknown) =>
     writeFileSync(
@@ -217,8 +302,13 @@ export function world(): World {
       );
     },
   });
+  let listings = 0;
+  let later: { after: number; nodes: Array<Record<string, unknown>> } | null =
+    null;
   function answer(op: string | undefined, v: Record<string, unknown>): unknown {
     if (op === "TrackerIssues") {
+      listings += 1;
+      if (later !== null && listings > later.after) issues = later.nodes;
       const filter = v.filterBy as Record<string, unknown>;
       return {
         repository: {
@@ -298,6 +388,9 @@ export function world(): World {
     setIssues: (nodes) => {
       issues = nodes;
     },
+    setIssuesAfter: (after, nodes) => {
+      later = { after: listings + after, nodes };
+    },
     setAssigner: (number, login, permission) => {
       assigners.set(number, { login, permission });
     },
@@ -318,13 +411,14 @@ export function world(): World {
           linkedIssue: null,
           linkedLinearIssue: null,
           linkedItems: [],
-          comment: "",
-          unread: false,
+          comment: r.comment ?? "",
+          unread: r.unread ?? false,
           unverifiableTerminalCount: r.unverifiableTerminalCount ?? 0,
           agents: (r.agents ?? []).map((a, j) => ({
             paneKey: a.paneKey ?? `pane-${i}-${j}`,
             state: a.state,
             agentType: "claude",
+            ...(a.since === undefined ? {} : { stateStartedAt: a.since }),
           })),
         })),
         hostScope: { hostIds: ["local"], omittedHostIds: [] },
@@ -335,14 +429,13 @@ export function world(): World {
       if (yaml === null) rmSync(join(dir, "jig.yaml"), { force: true });
       else write("jig.yaml", yaml);
     },
-    async dispatch(args) {
+    async dispatch(args, entry) {
       const child = Bun.spawn(
         [
           process.execPath,
           "--no-env-file",
           `--config=${BUNFIG}`,
-          JIG,
-          "dispatch",
+          ...(entry === undefined ? [JIG, "dispatch"] : [entry]),
           ...args,
         ],
         { cwd: forge.repo, env, stdout: "pipe", stderr: "pipe" },

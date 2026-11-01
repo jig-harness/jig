@@ -31,7 +31,7 @@ import {
 const WRITE_ATTEMPTS = 3;
 
 /** One forge call's output, or why it failed: its exit and last error line. */
-async function forge(
+export async function forge(
   args: string[],
   stdin?: string,
 ): Promise<{ ok: true; stdout: string } | { ok: false; why: string }> {

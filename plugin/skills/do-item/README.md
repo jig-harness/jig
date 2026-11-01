@@ -51,6 +51,18 @@ the route is reported and the implementer runs on the model it ran on
 before. A `routing` section the rules refuse stops the pickup, naming the
 field at fault, until the repository corrects it.
 
+## The claim
+
+Before it starts the work, the skill claims the item: it assigns it to
+itself (the user its tracker credentials act as) and moves it to the
+in-progress state. It refuses an item already in progress or assigned to
+someone else, and stops when reading the item back shows another claim
+landed first, so a manual pickup and a dispatched one rarely work on one
+item side by side. A tracker has no conditional write, so two claims
+racing inside that re-read can both pass; the
+[dispatcher](../../README.md#the-dispatcher) reports an item two running
+sessions work on.
+
 ## Requirements and platforms
 
 Install the [plugin requirements](../../README.md#requirements), and name the
@@ -100,7 +112,10 @@ decision gets the command only.
 
 Invoke the same skill with the issue key again. It refreshes tracker state,
 checks whether prior findings can be reused and writes this session's intent
-snapshot. An issue with children selects one eligible child at a time; human
+snapshot. If the earlier pickup of an issue was interrupted, the issue is
+already in progress and assigned to you, so the claim refuses it: say in
+your request that you are resuming your own pickup, and the skill goes on
+without the claim. An issue held by another session stays refused. An issue with children selects one eligible child at a time; human
 checkpoints remain in force. Once a pull request exists, the drive owns its
 review rounds. See [the drive's README](../drive-pr/README.md) for inspecting
 or stopping it.

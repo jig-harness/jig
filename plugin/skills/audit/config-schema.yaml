@@ -123,7 +123,7 @@ fields:
     since: 0.105.0
   dispatch.states:
     type: list
-    items: { type: enum, values: [triage, backlog, todo, in_progress, in_review, ops_pending, done, canceled, duplicate] }
+    items: { type: enum, values: [triage, backlog, todo, in_review, ops_pending, done, canceled, duplicate] }
     distinct: true
     nonempty: true
     read_by: [dispatch]
@@ -134,6 +134,18 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.105.0
+  dispatch.stalled_after:
+    type: string
+    pattern: "^\\d+\\s*[smh]$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.114.0
+  dispatch.blocked_after:
+    type: string
+    pattern: "^\\d+\\s*[smh]$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.114.0
 
   gates.command:
     type: command

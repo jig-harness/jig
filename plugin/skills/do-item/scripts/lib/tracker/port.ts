@@ -217,6 +217,12 @@ export interface Assigner {
   trusted: boolean;
 }
 
+/** A user of the tracker: its own id, and the name it shows (a GitHub login, a Linear or Jira display name). */
+export interface TrackerUser {
+  id: string;
+  name: string;
+}
+
 /** Which open issues a pool holds, by label. */
 export interface PoolQuery {
   /** Each list must match: the issue carries at least one label of each. */
@@ -399,6 +405,14 @@ export interface Tracker {
    * assignment, so an unknown assigner is never read as a trusted one.
    */
   assignedBy(key: string, assignee?: string): Promise<Assigner>;
+
+  // ── Claiming ──
+  /** The user this tracker's credential acts as: who "yourself" is. */
+  viewer(): Promise<TrackerUser>;
+  /** Every user the issue is assigned to; empty when nobody. */
+  assignees(key: string): Promise<TrackerUser[]>;
+  /** Assign the issue to `user` alone, replacing any other assignee. */
+  assign(key: string, user: TrackerUser): Promise<void>;
 
   // ── Filing and planning ──
   /**
