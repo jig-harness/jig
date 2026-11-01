@@ -46,7 +46,8 @@ Done when a drive reads its ceiling and park classes from the base branch.
 Every stage of the execution line starts only when a person types it: an
 assigned item waits for someone to open a `do-item` session, a drive
 stopped by a usage limit or an answered park waits for someone to re-arm
-it, a merge waits for someone to run its follow-up. Nothing watches the
+it, a converged pull request that its base later conflicts waits for
+someone to notice, a merge waits for someone to run its follow-up. Nothing watches the
 tracker or the pull requests for the next thing to start, so with nobody at
 the keyboard the line stops at the first stage boundary.
 [design/dark-factory-dispatch.md](dark-factory-dispatch.md) has how it
@@ -76,7 +77,10 @@ closed list, a dashboard that filters it (`jig dispatch dashboard`, no
 report files), drift from each stage's expectation reported and notified
 but never acted on, recurring classes routed to `reflect`, and one
 mechanical nudge (`steer`, "continue" after a usage limit resets) with no
-open-ended prompt; the re-arm step waits on the drive
+open-ended prompt, then the re-drive of a converged pull request the
+forge reports conflicting or whose head moved after the drive verified
+it, then Codex accounts admitted beside Claude Code's, the account's
+vendor choosing the agent a session runs in; the re-arm step waits on the drive
 running in a session of its own, and the pickups on `do-item` refusing an
 item already claimed. A park's notification carries the park's framed
 decision.
@@ -90,8 +94,17 @@ drive, every launch, refusal and notification is in the tick's
 receipts, every ended launch has a row with its outcome class in the
 outcome log, `jig dispatch dashboard` filtered to yesterday shows only
 yesterday's rows, a drive whose open threads rise across rounds is
-reported as drifting and notified once, and a session waiting after its
-account's wall reopened gets exactly one "continue" nudge.
+reported as drifting and notified once, a session waiting after its
+account's wall reopened gets exactly one "continue" nudge, a converged pull
+request that now conflicts with its base or whose head moved past the one
+the drive verified is re-armed once, one still at the verified head and
+mergeable is left alone, and one whose mergeability the forge is still
+computing is reported unplaced with no launch, a drive stopped on a Claude
+account's wall is re-armed on a Codex account with `CODEX_HOME` bound and
+the Claude variables absent, and an account of a vendor with no documented
+pass command is reported and never launched, a Codex pass that outruns a
+positive `DRIVE_PR_PASS_TIMEOUT` is terminated, and a Codex account is
+reported and never launched while that deadline is `0`.
 
 ### 35. One jig command line
 
