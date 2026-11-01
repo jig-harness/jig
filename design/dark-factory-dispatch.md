@@ -210,7 +210,7 @@ which the driver writes into its ledger as it stops, not the status
 reporter's: `drive.ts` maps convergence to `0`, where `drive-status.ts`
 reports `3`
 ([terminal states](../plugin/skills/drive-pr/references/terminal-states.md)).
-A converged drive is read beside two facts its stop does not fix: the
+A converged drive is read beside what its stop does not fix: the
 pull request's mergeability as the forge reports it, read with the pull
 request, and its head against the head the ledger says the drive
 verified. Main moving under a converged pull request can make it
@@ -529,7 +529,7 @@ visible in every report rather than silent.
 - **Re-arm a drive a person may have stopped** (a mailbox stop or pause,
   or a stop with no exit), or relaunch a stalled pickup.
 - **Keep a converged pull request current with its base.** It re-drives a
-  converged pull request on two mechanical facts only: the forge reports
+  converged pull request on mechanical facts only: the forge reports
   it conflicting with its base, or its head moved past the head the drive
   verified. A pull request its base merely moved past, still mergeable,
   is left as it is: merging the base in on every move is a round and a

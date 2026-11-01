@@ -109,8 +109,11 @@ drive, every launch, refusal and notification is in the tick's
 receipts, every ended launch has a row with its outcome class in the
 outcome log, `jig dispatch dashboard` filtered to yesterday shows only
 yesterday's rows, a drive whose open threads rise across rounds is
-reported as drifting and notified once, and a session waiting after its
-account's wall reopened gets exactly one "continue" nudge.
+reported as drifting and notified once, a session waiting after its
+account's wall reopened gets exactly one "continue" nudge, a converged pull
+request that now conflicts with its base or whose head moved past the one
+the drive verified is re-armed once, and one still at the verified head and
+mergeable is left alone.
 
 ### 3. The kickoff family
 
