@@ -859,10 +859,10 @@ routing below remain **exact**.
    diff, against the pull request's base:
 
    ```bash
-   bun --no-env-file --config="${CLAUDE_SKILL_DIR}/../review/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/../review/scripts/review.ts" setup --base "<base branch>"
+   bun --no-env-file --config="${CLAUDE_SKILL_DIR}/../review/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/../review/scripts/review.ts" setup --remote "<remote>" --base "<base branch>"
    ```
 
-   `<base branch>` is `<base>` without its `origin/` prefix. Then follow
+   `<base branch>` is `<base>` without its `<remote>/` prefix. Then follow
    [review's lens step](../review/references/lenses.md) with the printed
    `session`: select the lenses (`lenses`), write each selected lens's
    brief (`brief`, with Tier 1's and Tier 2's findings), run each with fresh

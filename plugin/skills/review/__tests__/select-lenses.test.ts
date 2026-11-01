@@ -155,6 +155,12 @@ test("a removed throw selects the lens; a catch in a test file does not", () => 
   expect(lens(removal, "jig.swallowed-failure")?.reason).toBe(
     "src/a.ts:3 removed line matches \\bthrow\\b",
   );
+  const argument = selected(
+    root,
+    ["src/a.ts"],
+    removed("src/a.ts", "    error,"),
+  );
+  expect(lens(argument, "jig.swallowed-failure")?.runs).toBe(true);
   const test = selected(
     root,
     ["src/__tests__/a.test.ts"],

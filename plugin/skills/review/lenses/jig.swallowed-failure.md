@@ -52,6 +52,8 @@ trigger:
     - '\breject\('
     - '\.(error|warn)\('
     - '\bawait\b'
+    # A log call that loses only its error argument keeps its opener.
+    - '(^|[\s,{(])(error|err|exc|exception|cause)\s*(,|\}|\)|$)'
 evidence: absorbed-failures
 ---
 

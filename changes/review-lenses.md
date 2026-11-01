@@ -10,7 +10,8 @@ release: minor
 - **`jig.swallowed-failure`**, the first [seed lens](../GLOSSARY.md): a failure turned into a value or silence, a fallback that hides the fault, a wrapper that drops the cause, work nobody waits for, a removed check, and a branch on an error's message text ([M15](../modules/M15-contracts-errors/README.md) pieces 1 and 3). Its eval fixtures, a diff it must flag and one it must stay quiet on, passed live.
 - **`review.lenses`** in `.config/jig.yaml` ([CONFIGURATION.md](../plugin/CONFIGURATION.md)): `dir` for the repository's own lens files, `off` for lenses not to run, `triggers` for patterns appended to a lens's trigger. Read from the base branch; an id that names no lens, a pattern that is not a regular expression or a repository lens with the `jig.` prefix stops the review and is named.
 - **The lens step in `/jig:do-item`'s pre-PR gate**, from a base snapshot of its own, skipped with the other tiers under the small-change threshold; lens warnings go under Review Notes.
-- **`review.ts setup --base <branch>`** names the base branch directly.
+- **`review.ts setup --base <branch>`** names the base branch directly, and **`--remote <name>`** the git remote it fetches and compares with (default `origin`).
+- **`/jig:audit` checks `review.lenses`** the way review reads it: an `off` or `triggers` entry that names no seed or repository lens is reported as a refusal.
 
 ### Changed
 

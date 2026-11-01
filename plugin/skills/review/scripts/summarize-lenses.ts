@@ -148,7 +148,7 @@ function outcomeOf(input: Record<string, unknown>): LensOutcome {
   if ((skippedBy === null) === (input.selection === undefined))
     throw new InputError("give either selection or skipped_by");
   const lenses = skippedBy === null ? selection(input.selection) : [];
-  const supplied: unknown = input.findings ?? [];
+  const supplied: unknown = input.findings === undefined ? [] : input.findings;
   if (!Array.isArray(supplied)) throw new InputError("findings must be a list");
   const findings = supplied.map((entry: unknown, i: number) =>
     finding(entry, i),

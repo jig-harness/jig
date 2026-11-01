@@ -103,6 +103,11 @@ describe("selection", () => {
     ).toThrow("review.lenses.off names jig.none");
     expect(() => parseLensConfig({ promoted: {} })).toThrow(LensConfigError);
     expect(() => parseLensConfig({ dir: "" })).toThrow(LensConfigError);
+    expect(parseLensConfig({ dir: null, off: null, triggers: null })).toEqual({
+      dir: null,
+      off: [],
+      triggers: {},
+    });
     expect(() => parseLensConfig({ triggers: [] })).toThrow(LensConfigError);
     expect(parseLensConfig(undefined)).toEqual({
       dir: null,
@@ -253,6 +258,9 @@ describe("the command lines", () => {
     expect(() =>
       decode(JSON.stringify({ ...base, findings: { severity: "CRITICAL" } })),
     ).toThrow("findings must be a list");
+    expect(() => decode(JSON.stringify({ ...base, findings: null }))).toThrow(
+      "findings must be a list",
+    );
     expect(() =>
       decode(
         JSON.stringify({

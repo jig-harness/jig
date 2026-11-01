@@ -46,6 +46,7 @@ class ReviewError extends Error {
 
 interface Session {
   root: string;
+  remote: string;
   base: string;
   baseTree: string;
   files: string;
@@ -218,6 +219,8 @@ function readState(file: string): Session {
   const value = decodeJson(readFileSync(file, "utf8"), isRecord, file);
   return {
     root: field(value, "root", isString),
+    remote:
+      value.remote === undefined ? "origin" : field(value, "remote", isString),
     base: field(value, "base", isString),
     baseTree: field(value, "baseTree", isString),
     files: field(value, "files", isString),
@@ -271,6 +274,7 @@ async function policy(
 interface SetupOptions {
   pr: string | undefined;
   base: string | undefined;
+  remote: string | undefined;
   files: string[] | undefined;
 }
 interface SessionFiles {
@@ -281,10 +285,11 @@ interface SessionFiles {
   emptyConfig: string;
 }
 const SETUP_USAGE =
-  "setup accepts --pr <number> or --base <branch>, then --files <paths...>";
-const SETUP_FLAGS: Record<string, "pr" | "base"> = {
+  "setup accepts --pr <number> or --base <branch>, optionally --remote <name>, then --files <paths...>";
+const SETUP_FLAGS: Record<string, "pr" | "base" | "remote"> = {
   "--pr": "pr",
   "--base": "base",
+  "--remote": "remote",
 };
 /** The flags before `--files`, and the paths after it. */
 function splitFiles(args: string[]): {
@@ -299,7 +304,7 @@ function splitFiles(args: string[]): {
 function setupFlag(
   flag: string | undefined,
   given: string | undefined,
-): ["pr" | "base", string] {
+): ["pr" | "base" | "remote", string] {
   const key = SETUP_FLAGS[String(flag)];
   const value = required(given, `${flag} value`);
   if (key === undefined || value.startsWith("-"))
@@ -308,7 +313,12 @@ function setupFlag(
 }
 function setupOptions(args: string[]): SetupOptions {
   const { flags, files } = splitFiles(args);
-  const options: SetupOptions = { pr: undefined, base: undefined, files };
+  const options: SetupOptions = {
+    pr: undefined,
+    base: undefined,
+    remote: undefined,
+    files,
+  };
   for (let i = 0; i < flags.length; i += 2) {
     const [key, value] = setupFlag(flags[i], flags[i + 1]);
     options[key] = value;
@@ -339,7 +349,7 @@ async function gh(root: string, ...args: string[]): Promise<string> {
     env: toolEnvironment(root),
   });
 }
-async function defaultBranch(root: string): Promise<string> {
+async function defaultBranch(root: string, remote: string): Promise<string> {
   let branch: string;
   try {
     branch = (
@@ -348,11 +358,11 @@ async function defaultBranch(root: string): Promise<string> {
         "symbolic-ref",
         "--quiet",
         "--short",
-        "refs/remotes/origin/HEAD",
+        `refs/remotes/${remote}/HEAD`,
       )
     )
       .trim()
-      .replace(/^origin\//, "");
+      .replace(`${remote}/`, "");
   } catch {
     branch = (
       await gh(
@@ -378,23 +388,24 @@ function configuredBase(
 }
 async function resolveBase(
   root: string,
+  remote: string,
   pr: string | undefined,
 ): Promise<string> {
-  const branch = await defaultBranch(root);
-  await git(root, "fetch", "origin", branch);
+  const branch = await defaultBranch(root, remote);
+  await git(root, "fetch", remote, branch);
   const overlayPath = ".config/jig.yaml";
   const exists = (
     await git(
       root,
       "ls-tree",
       "--name-only",
-      `origin/${branch}`,
+      `${remote}/${branch}`,
       "--",
       overlayPath,
     )
   ).trim();
   const overlay = exists
-    ? await git(root, "show", `origin/${branch}:${overlayPath}`)
+    ? await git(root, "show", `${remote}/${branch}:${overlayPath}`)
     : null;
   const config = layeredConfig(root, { JIG_USER_LAYER: "off" }, overlay).values;
   return pr
@@ -426,11 +437,12 @@ function distinctSorted(paths: readonly string[]): string[] {
  */
 async function collectChange(
   root: string,
+  remote: string,
   base: string,
   explicit: string[] | undefined,
 ): Promise<EffectiveChange> {
   const mergeBase = (
-    await git(root, "merge-base", `origin/${base}`, "HEAD")
+    await git(root, "merge-base", `${remote}/${base}`, "HEAD")
   ).trim();
   if (explicit) {
     for (const path of explicit) validatePath(root, path);
@@ -450,6 +462,7 @@ async function collectChange(
 }
 function saveSession(
   root: string,
+  remote: string,
   base: string,
   files: SessionFiles,
   change: EffectiveChange,
@@ -459,6 +472,7 @@ function saveSession(
   writeFileSync(files.diff, change.diff);
   const state: Session = {
     root,
+    remote,
     base,
     baseTree: files.baseTree,
     files: files.files,
@@ -485,22 +499,24 @@ async function setup(args: string[]): Promise<void> {
   const files = createSessionFiles(root);
   let attached = false;
   try {
-    const base = options.base ?? (await resolveBase(root, options.pr));
-    await git(root, "fetch", "origin", base);
+    const remote = options.remote ?? "origin";
+    const base = options.base ?? (await resolveBase(root, remote, options.pr));
+    await git(root, "fetch", remote, base);
     await git(
       root,
       "worktree",
       "add",
       "--detach",
       files.baseTree,
-      `origin/${base}`,
+      `${remote}/${base}`,
     );
     attached = true;
     saveSession(
       root,
+      remote,
       base,
       files,
-      await collectChange(root, base, options.files),
+      await collectChange(root, remote, base, options.files),
     );
   } catch (error) {
     if (attached)
@@ -640,7 +656,7 @@ async function printTrailers(state: Session): Promise<void> {
     state.root,
     "log",
     "--format=%h %(trailers:key=Ratchet-Loosen,valueonly,separator=%x2C )",
-    `origin/${state.base}..HEAD`,
+    `${state.remote}/${state.base}..HEAD`,
   );
   for (const line of output.split("\n"))
     if (line && !/^[0-9a-f]+\s*$/.test(line)) console.log(line);

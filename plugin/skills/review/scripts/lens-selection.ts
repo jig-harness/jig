@@ -31,10 +31,9 @@ export function parseLensConfig(value: unknown): LensConfig {
   const where = "review.lenses";
   if (!isRecord(value)) throw new LensConfigError(`${where} must be a mapping`);
   onlyKeys(value, ["dir", "off", "triggers"], where);
-  if (
-    value.dir !== undefined &&
-    (typeof value.dir !== "string" || value.dir.trim() === "")
-  )
+  // A null reads as not set, as everywhere else in the configuration.
+  const dir = value.dir ?? undefined;
+  if (dir !== undefined && (typeof dir !== "string" || dir.trim() === ""))
     throw new LensConfigError(`${where}.dir must be a path`);
   const triggers = value.triggers ?? {};
   if (!isRecord(triggers))
@@ -42,8 +41,8 @@ export function parseLensConfig(value: unknown): LensConfig {
       `${where}.triggers must map lens ids to triggers`,
     );
   return {
-    dir: typeof value.dir === "string" ? value.dir : null,
-    off: stringList(value.off, `${where}.off`),
+    dir: typeof dir === "string" ? dir : null,
+    off: stringList(value.off ?? undefined, `${where}.off`),
     triggers: Object.fromEntries(
       Object.entries(triggers).map(([id, trigger]) => [
         id,

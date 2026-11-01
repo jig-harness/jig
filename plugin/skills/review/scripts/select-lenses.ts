@@ -115,6 +115,15 @@ function allLenses(root: string, config: LensConfig): Lens[] {
   return lenses;
 }
 
+/**
+ * Refuse a `review.lenses` section that review would stop on: a malformed
+ * entry, an unreadable lens file, or an id that names no lens.
+ */
+export function checkLensConfig(root: string, review: unknown): void {
+  const config = parseLensConfig(isRecord(review) ? review.lenses : undefined);
+  requireKnownIds(allLenses(root, config), config, []);
+}
+
 export function select(opts: Options): Selection {
   const files = nulSeparated(readFileSync(opts.files, "utf8"));
   const diff = diffLines(readFileSync(opts.diff, "utf8"), new Set(files));
