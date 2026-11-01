@@ -4,12 +4,12 @@
  * the first implementation (`orca.ts`); a second is a second implementation
  * of these methods, with nothing in the tick changed.
  *
- * `sessions`, `openWorkspace` and `launch` are built; an interactive
- * launch runs only on a runtime that reports it can bind the session to
- * its account (`interactiveBinding`). `notify` and `steer` are declared
- * with their contracts and refuse until the build step that needs them
- * implements them. Every method runs under a deadline, and an answer past
- * it counts as lost.
+ * `sessions`, `openWorkspace`, `launch` and `notify` are built; an
+ * interactive launch runs only on a runtime that reports it can bind the
+ * session to its account (`interactiveBinding`). `steer` is declared with
+ * its contract and refuses until the build step that needs it implements
+ * it. Every method runs under a deadline, and an answer past it counts as
+ * lost.
  */
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { RepoTarget } from "../types.ts";
@@ -81,6 +81,8 @@ export interface RuntimeReceipt {
   workspace?: { id: string; path: string };
   /** The call ran past its deadline: its answer is lost, not a refusal. */
   lost?: boolean;
+  /** For `notify`: the target's comment as the runtime reads it back after the write. */
+  comment?: string;
 }
 
 /** What `launch` starts. */
@@ -88,9 +90,10 @@ export type LaunchStage =
   /** A headless pass: the wrapper (`run.ts`) under its launch record, in a terminal titled `title`. */
   | { kind: "headless"; title: string; record: string }
   /**
-   * An interactive session (a pickup's `do-item`): `skill` on `target`, with
-   * the route's model and effort, under its launch record. Its receipt names
-   * the agent by the id `sessions` reports it under.
+   * An interactive session (a pickup's `do-item`, a merge's follow-up):
+   * `skill` on `target`, with the route's model and effort, under its
+   * launch record. Its receipt names the agent by the id `sessions` reports
+   * it under.
    */
   | {
       kind: "interactive";
@@ -112,6 +115,15 @@ export interface ItemTarget {
   tracker: string;
 }
 
+/**
+ * The workspace a repository's notifications go to when their target has
+ * no workspace of its own that can take one: a branch of the default
+ * branch, into which the dispatcher never launches an agent.
+ */
+export interface NoticesTarget {
+  notices: string;
+}
+
 /** Whether a runtime can start an interactive session billed to a chosen account. */
 export type Binding = { ok: true } | { ok: false; reason: string };
 
@@ -129,10 +141,10 @@ export interface SessionRuntime {
    * not covered, a page cut short), so nothing is read as "no session".
    */
   sessions(repo: RepoTarget, join: JoinTargets): Promise<SessionsReport>;
-  /** A workspace for an item (a new branch, its issue linked) or a pull request (its head), reused when one exists. */
+  /** A workspace for an item (a new branch, its issue linked), a pull request (its head) or the repository's notifications, reused when one exists. */
   openWorkspace(
     repo: RepoTarget,
-    target: ItemTarget | { pr: number; head: string },
+    target: ItemTarget | { pr: number; head: string } | NoticesTarget,
   ): Promise<RuntimeReceipt>;
   /**
    * A session in the workspace that runs the stage, billed to `account`.
@@ -147,8 +159,16 @@ export interface SessionRuntime {
     key: string,
     sessionId?: string,
   ): Promise<RuntimeReceipt>;
-  /** A message that reaches a person; its receipt carries the target's comment as written. */
-  notify(target: string, message: string): Promise<RuntimeReceipt>;
+  /**
+   * A message that reaches a person through the workspace `target`: in
+   * Orca, the workspace's comment set to `message` and the workspace marked
+   * unread, which Orca's phone app shows. Its receipt carries the target's
+   * comment as the runtime reads it back after the write.
+   */
+  notify(
+    target: { id: string; path: string },
+    message: string,
+  ): Promise<RuntimeReceipt>;
   /** One of the closed set of nudges, sent to a session the runtime reports waiting. */
   steer(session: string, nudge: string): Promise<RuntimeReceipt>;
 }

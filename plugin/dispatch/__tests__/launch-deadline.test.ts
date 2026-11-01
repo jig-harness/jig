@@ -56,10 +56,10 @@ describe("a tick's targets and deadline", () => {
     const state = (tick: number) => ({ machine, tick, repos: 2 }) as ApplyState;
     // Two repositories: the first leads on even ticks and must still lead with each stage in turn.
     const stageLeads = [0, 2, 4, 6].map(
-      (n) => rotated(state(n), ["rearm", "pickup"], "stages")[0],
+      (n) => rotated(state(n), ["rearm", "pickup", "followup"], "stages")[0],
     );
-    expect(stageLeads).toEqual(["rearm", "pickup", "rearm", "pickup"]);
-    const targetLeads = [0, 4, 8, 12].map(
+    expect(stageLeads).toEqual(["rearm", "pickup", "followup", "rearm"]);
+    const targetLeads = [0, 6, 12, 18].map(
       (n) => rotated(state(n), ["a", "b"], "targets")[0],
     );
     expect(targetLeads).toEqual(["a", "b", "a", "b"]);

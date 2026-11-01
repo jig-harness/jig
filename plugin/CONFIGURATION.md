@@ -991,7 +991,7 @@ repository. What a run may start is the machine's to say, in
 |-------|------|-------------------|---------|
 | `dispatch.identity` | string: a GitHub login; a Linear user's email or display name; or, on Jira, an Atlassian account id, or an email or display name that matches exactly one user (more or fewer matches are refused) | None: the repository has no pickups | dispatch |
 | `dispatch.states` | nonempty list of [canonical states](#issue_tracker), without `in_progress` (the state `do-item`'s claim moves an item to) | `[todo]` | dispatch |
-| `dispatch.followup_command` | string | None: no follow-ups. Jig's own is `/followup`; a consumer repository names its own post-merge command | dispatch |
+| `dispatch.followup_command` | string | None: no follow-ups. Jig's own is `/followup`; a consumer repository names its own post-merge command, which claims the follow-up with `jig dispatch marker` as [the plugin's README](README.md#the-dispatcher) says | dispatch |
 | `dispatch.stalled_after` | duration (`90s`, `30m`, `1h`) | `30m`: a claimed item (assigned to `identity` in `in_progress`) with no running session for longer is reported as a stalled pickup, never relaunched | dispatch |
 | `dispatch.blocked_after` | duration | `30m`: a session the dispatcher started that its runtime reports waiting (on a question or a permission prompt) for longer is reported; it keeps its slot | dispatch |
 
@@ -1049,7 +1049,7 @@ receipts_days: 30
 | Setting | Default / meaning |
 |---------|-------------------|
 | `repositories[].path` | Required; the repository's local checkout. List a repository in one machine's file only |
-| `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` starts re-arms and takeovers of drives. `pickup` starts a `do-item` session per item the repository's `dispatch` section makes a pickup, only where the session runtime can bind an interactive session to its account: Orca cannot yet, so each pickup is reported with that reason and nothing is started. The others are accepted and their actions reported |
+| `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` starts re-arms and takeovers of drives. `pickup` starts a `do-item` session per item the repository's `dispatch` section makes a pickup, and `followup` a session running `dispatch.followup_command` per merged pull request, each only where the session runtime can bind an interactive session to its account: Orca cannot yet, so each is reported with that reason and nothing is started. `notify` sends each notification once (with Orca, the workspace's comment, marked unread). `steer` is accepted and its actions reported |
 | `repositories[].followup_since` | None; when the follow-up stage started for it. Without it, the previous run's receipt keeps the start |
 | `accounts[].name` | Required; the account's name here, which launch records and walls are kept under |
 | `accounts[].vendor` | Required; `claude` or `codex`. A headless drive pass runs on `claude` accounts only in this version |
@@ -1066,8 +1066,11 @@ Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`: `receipts/`, `launches/` (one record
 per launch, written before it, with a pickup session's own result beside
 it), `walls/` (each account's usage-limit wall, which lifts at its latest
-recorded reset) and `idle/` (since when each claimed item has had no
-running session, for `stalled_after`). A launch record a run
+recorded reset), `idle/` (since when each claimed item has had no
+running session, for `stalled_after`), `followups/` (each dispatched
+follow-up's outcome, done or failed, kept whatever `receipts_days` says)
+and `notices/` (a record per notification sent, dropped once its cause
+is gone). A launch record a run
 cannot check (claimed on another host or before a reboot) holds its
 account's slot until a person removes its files from `launches/`.
 

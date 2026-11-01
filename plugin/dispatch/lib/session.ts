@@ -1,10 +1,11 @@
 /**
- * What a pickup's interactive session runs: Claude Code started on
- * `/jig:do-item <key>`, with the model and effort of the item's route, and
- * a prompt that ends by asking the session to record how it ended through
- * `jig dispatch result`, under its launch record's token. The token binds
- * the session to its record; it does not guard the state directory against
- * another process of the same user.
+ * What a dispatched interactive session runs: Claude Code started on
+ * `/jig:do-item <key>` for a pickup, with the model and effort of the
+ * item's route, or on the repository's follow-up command and the pull
+ * request for a merge's follow-up. Its prompt ends by asking the session to
+ * record how it ended through `jig dispatch result`, under its launch
+ * record's token. The token binds the session to its record; it does not
+ * guard the state directory against another process of the same user.
  */
 import { resolve } from "node:path";
 import { shellQuote } from "../../shared/cli.ts";
@@ -16,24 +17,26 @@ export const PICKUP_SKILL = "/jig:do-item";
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
 const JIG = resolve(import.meta.dir, "../../jig.ts");
 
-/** The command a session runs to record its answer. */
-function resultCommand(
-  record: Pick<LaunchRecord, "id" | "token">,
-  result: SessionResult,
-): string {
+/** `jig dispatch <args>`, under the same trusted startup as the tick. */
+function jigCommand(args: string[]): string {
   return [
     process.execPath,
     "--no-env-file",
     `--config=${BUNFIG}`,
     JIG,
     "dispatch",
-    "result",
-    record.id,
-    record.token,
-    result,
+    ...args,
   ]
     .map(shellQuote)
     .join(" ");
+}
+
+/** The command a session runs to record its answer. */
+function resultCommand(
+  record: Pick<LaunchRecord, "id" | "token">,
+  result: SessionResult,
+): string {
+  return jigCommand(["result", record.id, record.token, result]);
 }
 
 /** The prompt a pickup's session starts with. */
@@ -50,12 +53,29 @@ function pickupPrompt(
   ].join("\n");
 }
 
+/** The prompt a follow-up's session starts with. */
+function followupPrompt(record: LaunchRecord): string {
+  const pr = String(record.pr);
+  const marker = String(record.marker);
+  return [
+    `${record.command} ${pr}`,
+    "",
+    "jig dispatch started this session for the follow-up of a merged pull request; nobody is at the keyboard.",
+    `It claimed the follow-up with the marker comment ${marker} on the pull request. That claim is this session's: post no marker of your own. Before each act that writes outside the pull request (an issue closed, a tag pushed), check that no earlier marker has appeared, and stop if one has: ${jigCommand(["marker", "check", pr, "--comment", marker, "--repo", record.repo])}`,
+    "When you stop, record how the follow-up ended, once:",
+    `- every arm is settled, what you may carry out carried out and the rest reported: ${resultCommand(record, "done")}`,
+    `- you stopped short of that (a question, a failure, an earlier marker): ${resultCommand(record, "failed")}`,
+  ].join("\n");
+}
+
 /** The session's command line: Claude Code with the route's model and effort, on the prompt. */
 export function sessionArgv(record: LaunchRecord): string[] {
   return [
     "claude",
     ...(record.model === null ? [] : ["--model", record.model]),
     ...(record.effort === null ? [] : ["--effort", record.effort]),
-    pickupPrompt(record),
+    record.action === "followup"
+      ? followupPrompt(record)
+      : pickupPrompt(record),
   ];
 }

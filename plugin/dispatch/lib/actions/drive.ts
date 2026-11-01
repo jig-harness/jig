@@ -157,6 +157,8 @@ async function launchOne(
       model: null,
       effort: null,
       released: false,
+      command: null,
+      marker: null,
     },
     slots,
   );

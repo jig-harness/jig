@@ -1762,9 +1762,10 @@ make, use the entry's term instead.
   *factory identity*, a restart of a stopped review drive, the follow-up
   after a merge. It runs as a *tick* on a timer, starts sessions through a
   *session runtime*, and never merges or answers a parked question. It
-  reports every stage and restarts stopped drives today, and starts
-  pickups where its *session runtime* can bind a session to the account it
-  bills; the rest is [ROADMAP.md](ROADMAP.md) item 33. It is Jig's first
+  reports every stage, restarts stopped drives and tells a person about
+  each stop only a person settles today, and starts pickups and follow-ups
+  where its *session runtime* can bind a session to the account it bills;
+  the rest is [ROADMAP.md](ROADMAP.md) item 33. It is Jig's first
   *control plane*.
 - **Tick** — one run of the *dispatcher*: read the tracker, the pull
   requests' drive ledgers and the running sessions, work out which stages
@@ -1808,6 +1809,18 @@ make, use the entry's term instead.
   once: two workspaces, or a workspace beside a launch the *dispatcher*
   still holds for another one. The dispatcher reports it and starts
   nothing for it.
+- **Follow-up marker** — a hidden-marker comment on a merged pull request
+  that claims its follow-up, so one run settles the merge: the
+  *dispatcher* posts one before it starts the follow-up's session, and a
+  follow-up a person runs by hand posts one too and marks it done when it
+  succeeds. Of two, the earlier comment wins, and the later run stands
+  down. Only a marker from the dispatcher's own account or from someone
+  with write access counts.
+- **Notices workspace** — the workspace the *dispatcher* keeps per
+  repository, on a branch of the default branch, for the notifications whose
+  pull request or item has no workspace that can take one. It never
+  launches an agent into it; it only writes its comment and marks it
+  unread for a person to read.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
   it started ended: one row per session with its stage, repository,
   account, duration and an outcome class from the closed list the

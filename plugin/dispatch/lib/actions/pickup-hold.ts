@@ -15,6 +15,7 @@
  */
 import {
   holds,
+  isInteractive,
   type LaunchState,
   type ReadRecord,
   writeRecord,
@@ -37,9 +38,9 @@ export function agentOf(sessions: SessionsReport, id: string) {
 }
 
 /**
- * End, in memory, each alive pickup record of `repo` whose agent the
- * runtime reports finished: its slot and its item are free again. Returns
- * whether any record changed.
+ * End, in memory, each alive interactive record of `repo` (a pickup's, a
+ * follow-up's) whose agent the runtime reports finished: its slot and its
+ * target are free again. Returns whether any record changed.
  */
 export function settleAgents(
   records: ReadRecord[],
@@ -50,7 +51,7 @@ export function settleAgents(
   let changed = false;
   for (const r of records) {
     const { record, state } = r;
-    if (record.action !== "pickup" || record.repo !== repo) continue;
+    if (!isInteractive(record) || record.repo !== repo) continue;
     if (state.kind !== "alive" || record.agentId === null) continue;
     const found = agentOf(sessions, record.agentId);
     if (found === undefined || RUNNING_STATES.has(found.agent.state)) continue;

@@ -56,6 +56,43 @@ gh pr view "$PR" --json number,title,state,mergedAt,mergeCommit,baseRefName,head
   ("would clobber existing tag"), and [B](#b-tagging-the-release) reads
   origin's tags, not this clone's.
 
+### Claim the follow-up
+
+The dispatcher (`jig dispatch`, [the plugin's README](../../../plugin/README.md#the-dispatcher))
+starts this pass by itself for a merged pull request, and a marker comment
+on the pull request is what keeps two runs from settling the same merge.
+Before any arm acts, claim it:
+
+```bash
+jig dispatch marker claim "$PR"     # prints {"pr": …, "comment": <id>}
+MARKER=<id>
+```
+
+Exit `3` means an earlier marker holds the follow-up: another run has it,
+so stop here and say so. When the dispatcher started this session, its
+prompt names the marker it posted: that claim is this session's, so use
+that id as `MARKER` and post none of your own.
+
+Before each act that writes outside the pull request (an issue closed, a
+release workflow run, a tag pushed), check the claim again, and stop on exit
+`3`:
+
+```bash
+jig dispatch marker check "$PR" --comment "$MARKER"
+```
+
+When the pass ends with every arm settled, a claim you posted is marked
+done, so the dispatcher never starts the follow-up again:
+
+```bash
+jig dispatch marker done "$PR" --comment "$MARKER"
+```
+
+A session the dispatcher started records its result with the
+`jig dispatch result` command its prompt names instead. A run that stops
+short leaves its marker as it is: the dispatcher reports it, and a person
+marks it done or deletes it to have the follow-up run again.
+
 ## Step 1: the arms
 
 Each arm ends **OWED** (with the concrete item) or **NOT OWED** (with the
@@ -315,7 +352,10 @@ act:
 | Anything in another repository, or anything near the origin-reference boundary | a person decides |
 
 Close with what is left for a person, by name. When every arm is NOT OWED,
-say so in one line: an honest "nothing is owed" is a result.
+say so in one line: an honest "nothing is owed" is a result. Then settle the
+claim ([Claim the follow-up](#claim-the-follow-up)): mark your marker done,
+or, in a session the dispatcher started, record the result its prompt
+names.
 
 ## Before the merge: preview
 

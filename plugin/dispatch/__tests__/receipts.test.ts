@@ -56,6 +56,7 @@ function receipt(day: string, repoPath: string, since: string): TickReceipt {
         running: [],
         unplaced: [],
         launches: [],
+        notifications: [],
         quiet: [],
       },
     ],

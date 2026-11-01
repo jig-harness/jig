@@ -8,13 +8,16 @@
  * session runtime binds an interactive session to its account.
  * `jig dispatch install` writes the timer that runs `--apply` every
  * interval; `jig dispatch result` is how a dispatched interactive session
- * records how it ended.
+ * records how it ended; `jig dispatch marker` is how a follow-up command
+ * claims a merged pull request's follow-up, checks its claim and marks it
+ * done.
  */
 import { consumerRoot } from "../shared/consumer.ts";
 import { ExitError } from "../shared/cli.ts";
 import { pathValue } from "../shared/command-line.ts";
 import {
   argument,
+  choice,
   command,
   constant,
   type InferValue,
@@ -39,6 +42,7 @@ import {
   readMachineConfig,
 } from "./lib/machine-config.ts";
 import { formatReceipt } from "./lib/report.ts";
+import { markerMain } from "./marker.ts";
 import { readReceipt, receiptPaths } from "./receipts.ts";
 import { resultMain } from "./result.ts";
 import { runTick } from "./tick.ts";
@@ -57,6 +61,21 @@ const dateValue: ValueParser<"sync", string> = {
       : { success: false, error: message`Expected a date, but got ${input}.` },
   format: (value) => value,
 };
+
+/** A positive whole number: a pull request's, or a comment's id. */
+const countValue = (metavar: "PR" | "ID"): ValueParser<"sync", number> => ({
+  mode: "sync",
+  metavar,
+  placeholder: 1,
+  parse: (input) =>
+    /^[1-9][0-9]*$/.test(input) && Number.isSafeInteger(Number(input))
+      ? { success: true, value: Number(input) }
+      : {
+          success: false,
+          error: message`Expected a positive whole number, but got ${input}.`,
+        },
+  format: (value) => String(value),
+});
 
 /**
  * A duration (`90s`, `5m`, `1h`) in milliseconds. `install` requires whole
@@ -165,17 +184,46 @@ const result = command(
   { brief: message`Record how a dispatched interactive session ended.` },
 );
 
-/** `jig dispatch`: one tick by default, `install`, `receipts` and `result` as its subcommands. */
+const marker = command(
+  "marker",
+  object({
+    action: constant("marker"),
+    verb: argument(choice(["claim", "check", "done"] as const), {
+      description: message`claim posts a manual run's marker; check stops a run an earlier marker holds; done marks a manual run's marker done.`,
+    }),
+    pr: argument(countValue("PR"), {
+      description: message`The merged pull request.`,
+    }),
+    comment: optional(
+      option("--comment", countValue("ID"), {
+        description: message`The marker's comment id, as claim printed it or the session's prompt names it (check and done).`,
+      }),
+    ),
+    repo: optional(
+      option("--repo", string({ metavar: "OWNER/NAME" }), {
+        description: message`The repository. Without it, the current checkout's.`,
+      }),
+    ),
+  }),
+  {
+    brief: message`Claim a merged pull request's follow-up, check the claim, or mark it done.`,
+  },
+);
+
+/** `jig dispatch`: one tick by default, `install`, `receipts`, `result` and `marker` as its subcommands. */
 const dispatch = (wholeMinutes: boolean) =>
   command(
     "dispatch",
-    withDefault(or(installation(wholeMinutes), receipts, result, tick), {
-      action: "tick",
-      apply: false,
-      repos: [],
-      followupSince: undefined,
-      json: false,
-    } as const),
+    withDefault(
+      or(installation(wholeMinutes), receipts, result, marker, tick),
+      {
+        action: "tick",
+        apply: false,
+        repos: [],
+        followupSince: undefined,
+        json: false,
+      } as const,
+    ),
     {
       brief: message`Say which stages of the delivery loop should be running, and start them.`,
       description: message`Reads the tracker, the pull requests' drive ledgers, the running sessions and this machine's launch records for each repository, and prints every action it would take, with the record that wants it and the evidence. Each run writes a receipt.`,
@@ -254,6 +302,13 @@ export async function dispatchMain(
     // An interactive session's own answer, under its launch record's token.
     return resultMain([args.record, args.token, args.outcome]);
   if (args.action === "receipts") return showReceipts(args.runId);
+  if (args.action === "marker")
+    return markerMain({
+      verb: args.verb,
+      pr: args.pr,
+      comment: args.comment ?? null,
+      repo: args.repo ?? null,
+    });
   if (args.action === "install")
     // A removal needs no machine file: a broken one must not keep the timer installed.
     return installDispatch(

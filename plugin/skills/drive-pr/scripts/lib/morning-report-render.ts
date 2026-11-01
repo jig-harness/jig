@@ -4,7 +4,8 @@
  * may still want to reverse before the merge, then each pull request with
  * its terminal state and what it means, its takeovers and re-arms, its
  * parked decisions in their framed form, the issues filed and the deferred
- * entries not yet filed. `--json` prints the gathered report instead.
+ * entries not yet filed; then what the dispatcher launched, refused and
+ * notified on this machine. `--json` prints the gathered report instead.
  */
 import { join } from "node:path";
 import { framedDecisionLines } from "./state/park-frame.ts";
@@ -106,6 +107,15 @@ export function renderMorningReport(r: MorningReport): string {
   if (r.pullRequests.length === 0)
     lines.push("", "No pull request has anything to report.");
   for (const p of r.pullRequests) lines.push("", ...pullRequestLines(p));
+  if (r.dispatch.length > 0)
+    lines.push(
+      "",
+      "Dispatched on this machine (jig dispatch: launches, refusals, notifications):",
+      ...r.dispatch.map(
+        (d) =>
+          `  ${d.at} ${d.repo} ${d.kind} ${d.what} ${d.target}: ${d.detail}`,
+      ),
+    );
   if (r.unread.length > 0)
     lines.push(
       "",

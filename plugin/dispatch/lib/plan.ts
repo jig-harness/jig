@@ -4,11 +4,18 @@
  * that wants it and its evidence. A target the tick cannot place (a record
  * it could not read, a runtime answer it cannot trust, a workspace whose
  * terminals the runtime cannot read) is reported and never planned. The
- * pickups' part is `plan-pickups.ts`.
+ * pickups' part is `plan-pickups.ts`, the follow-ups' `plan-followups.ts`.
+ *
+ * A notification is planned whatever sessions run for its target: telling
+ * a person never competes with a session, so only a runtime answer it
+ * cannot trust leaves it out.
  */
 import { driveHold, factsOf } from "./actions/drive-hold.ts";
 import { holding, liveAgents } from "./holding.ts";
+import type { FollowupOutcome } from "./followup-outcomes.ts";
 import type { ReadRecord } from "./launches.ts";
+import { parkNotice, stopNotice } from "./notices.ts";
+import { planFollowups } from "./plan-followups.ts";
 import { planPickups } from "./plan-pickups.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type {
@@ -17,7 +24,8 @@ import type {
   DispatchSection,
   DrivenPr,
   LedgerClass,
-  MergedPr,
+  MarkedPr,
+  NotifyCause,
   RepoReport,
   Running,
   Stage,
@@ -25,12 +33,16 @@ import type {
 } from "./types.ts";
 
 export interface PlanInput {
+  /** The repository's `owner/name`. */
+  slug: string;
   section: DispatchSection;
   pickups: WantedItem[];
   /** The items the factory identity claimed; `null` when they could not be read. */
   claimed: ClaimedItem[] | null;
   drives: DrivenPr[];
-  merged: MergedPr[];
+  merged: MarkedPr[];
+  /** The follow-ups' outcome records, by pull request. */
+  outcomes: ReadonlyMap<number, FollowupOutcome>;
   sessions: SessionsReport;
   /** This machine's launch records for the repository. */
   launches: ReadRecord[];
@@ -56,11 +68,11 @@ const QUIET: ReadonlySet<LedgerClass> = new Set([
 ]);
 
 /** The ledger classes a person must settle: notified, never re-armed. */
-const NOTIFY: ReadonlySet<LedgerClass> = new Set([
-  "stopped-unknown",
-  "parked",
-  "needs-person",
-]);
+const NOTIFY: ReadonlyMap<LedgerClass, NotifyCause> = new Map([
+  ["stopped-unknown", "stopped-unknown"],
+  ["parked", "parked"],
+  ["needs-person", "needs-person"],
+] as const);
 
 export function planTick(input: PlanInput): Plan {
   const { sessions } = input;
@@ -77,7 +89,7 @@ export function planTick(input: PlanInput): Plan {
       });
       return;
     }
-    if (held.kind === "running") {
+    if (held.kind === "running" && action.stage !== "notify") {
       plan.running.push({
         target: action.target,
         stage: action.stage,
@@ -86,13 +98,16 @@ export function planTick(input: PlanInput): Plan {
       } satisfies Running);
       return;
     }
+    const evidence =
+      held.kind === "running"
+        ? { runningSessions: liveAgents(held.workspaces) }
+        : held.evidence === null
+          ? null
+          : { finishedSessions: held.evidence };
     plan.actions.push(
-      held.evidence === null
+      evidence === null
         ? action
-        : {
-            ...action,
-            evidence: { ...action.evidence, finishedSessions: held.evidence },
-          },
+        : { ...action, evidence: { ...action.evidence, ...evidence } },
     );
   }
 
@@ -100,27 +115,43 @@ export function planTick(input: PlanInput): Plan {
   // merged state wins, so it gets its follow-up and no re-arm.
   const mergedNumbers = new Set(input.merged.map((m) => m.number));
   for (const pr of input.drives.filter((d) => !mergedNumbers.has(d.number)))
-    planDrive(pr, input.launches, plan, want);
+    planDrive(input.slug, pr, input.launches, plan, want);
 
-  if (input.section.followupCommand !== null)
-    for (const pr of input.merged)
-      want(
-        {
-          stage: "followup",
-          target: `PR #${pr.number}`,
-          record: "forge",
-          reason: `merged ${pr.mergedAt}; run ${input.section.followupCommand} ${pr.number}`,
-          evidence: { url: pr.url, head: pr.head, mergedAt: pr.mergedAt },
-        },
-        (w) => w.prs.includes(pr.number),
-      );
+  const command = input.section.followupCommand;
+  if (command !== null)
+    planFollowups(
+      {
+        slug: input.slug,
+        command,
+        merged: input.merged,
+        launches: input.launches,
+        outcomes: input.outcomes,
+        nowMs: input.nowMs,
+      },
+      plan,
+      want,
+    );
   return plan;
 }
 
 type Want = (action: Action, joined: (w: Workspace) => boolean) => void;
 
+/** A re-arm's ledger facts, or a notification's cause and message. */
+function stageFields(
+  slug: string,
+  pr: DrivenPr,
+  cause: NotifyCause | undefined,
+): Pick<Action, "facts" | "cause" | "notice"> {
+  if (cause === undefined) return { facts: factsOf(pr) };
+  return {
+    cause,
+    notice: cause === "parked" ? parkNotice(slug, pr) : stopNotice(slug, pr),
+  };
+}
+
 /** One driven pull request: quiet, unplaced, held by a launch record, or wanted. */
 function planDrive(
+  slug: string,
   pr: DrivenPr,
   launches: ReadRecord[],
   plan: Plan,
@@ -150,7 +181,8 @@ function planDrive(
     plan.unplaced.push({ target, record: "forge", reason: pr.why });
     return;
   }
-  const stage: Stage = NOTIFY.has(pr.class) ? "notify" : "rearm";
+  const cause = NOTIFY.get(pr.class);
+  const stage: Stage = cause === undefined ? "rearm" : "notify";
   want(
     {
       stage,
@@ -161,7 +193,7 @@ function planDrive(
           ? `drive ledger ${pr.class}: ${pr.why}`
           : `drive ledger silent, and this machine's launch record ${takeover} started its driver: take it over (drive.ts --take-over decides)`,
       evidence: { url: pr.url, head: pr.head, ...pr.evidence },
-      ...(stage === "rearm" ? { facts: factsOf(pr) } : {}),
+      ...stageFields(slug, pr, cause),
       ...(takeover === null ? {} : { takeover }),
     },
     (w) => w.prs.includes(pr.number),
