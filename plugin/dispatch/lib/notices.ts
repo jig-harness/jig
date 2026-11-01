@@ -11,6 +11,7 @@
  * request with a line `answer <key>: …`, which the drive reads and the next
  * tick re-arms on.
  */
+import { createHash } from "node:crypto";
 import type { DrivenPr, Notice } from "./types.ts";
 
 const TAG = "[jig dispatch: ";
@@ -33,8 +34,19 @@ export function holdsNotice(comment: string): boolean {
   return comment.includes(TAG);
 }
 
+/** The longest key a message carries whole; a longer one is cut and ends in a digest of all of it, so two keys stay two. */
+const MAX_KEY = 200;
+
+/** The key as the message names it: whole when short, else its start and a digest of the whole. */
+function boundedKey(key: string): string {
+  if (key.length <= MAX_KEY) return key;
+  const digest = createHash("sha256").update(key).digest("hex").slice(0, 16);
+  return `${key.slice(0, MAX_KEY - digest.length - 2)}… ${digest}`;
+}
+
 /** A message: its key line, then its lines, cut to `MAX_TEXT`; the `tail` lines are never cut. */
-function notice(key: string, lines: string[], tail: string[] = []): Notice {
+function notice(fullKey: string, lines: string[], tail: string[] = []): Notice {
+  const key = boundedKey(fullKey);
   const head = keyLine(key);
   const body = lines.join("\n");
   const end = tail.length === 0 ? "" : `\n${tail.join("\n")}`;

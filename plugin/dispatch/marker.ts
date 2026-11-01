@@ -56,7 +56,9 @@ async function claim(slug: string, pr: number): Promise<number> {
   const posted = await postMarker(slug, pr, manualMarker(false));
   if (typeof posted === "string")
     return stop(1, `the marker could not be posted: ${posted}`);
-  const seen = readBack(await readMarkers(slug, pr, login), posted);
+  const seen = readBack(await readMarkers(slug, pr, login), posted, {
+    kind: "manual",
+  });
   if (seen.kind === "stands") {
     console.log(JSON.stringify({ pr, comment: posted }));
     return 0;
@@ -72,6 +74,11 @@ async function claim(slug: string, pr: number): Promise<number> {
     return stop(
       1,
       `the read-back does not list the posted marker (comment ${posted}); retry${kept}`,
+    );
+  if (seen.kind === "altered")
+    return stop(
+      1,
+      `the posted marker (comment ${posted}) no longer reads as a manual run's marker${kept}`,
     );
   return stop(
     EARLIER,
@@ -91,6 +98,11 @@ async function checkOrDone(
     return stop(
       2,
       `comment ${args.comment} is not a trusted follow-up marker of PR #${args.pr}`,
+    );
+  if (own.run.kind === "unreadable")
+    return stop(
+      2,
+      `comment ${args.comment} no longer reads as a follow-up marker: ${own.run.reason}`,
     );
   const earlier = earlierThan(markers, args.comment);
   if (earlier !== null)

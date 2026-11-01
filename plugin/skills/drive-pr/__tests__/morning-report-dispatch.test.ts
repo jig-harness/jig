@@ -167,4 +167,15 @@ describe("drives.ts --report: what the dispatcher did", () => {
     expectSpawnExit(r, 0);
     expect(JSON.parse(r.stdout).unread).toHaveLength(1);
   });
+
+  it("reports an entry whose outcome is not one a receipt records as unread", async () => {
+    const bad = repo({
+      launches: [
+        launch("PR #9", "followup", "launchd" as LaunchOutcome["outcome"], "x"),
+      ],
+    });
+    const r = await report(setUp([bad]), ["--json"]);
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).unread).toHaveLength(1);
+  });
 });

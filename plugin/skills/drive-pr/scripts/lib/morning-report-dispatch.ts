@@ -31,6 +31,9 @@ export interface DispatchSince {
 
 const LAUNCHED = new Set(["launched", "retried", "failed", "lost"]);
 const NOTIFIED = new Set(["sent", "already"]);
+/** Every outcome a receipt may record: an entry outside them is unreadable, not skipped. */
+const LAUNCH_OUTCOMES = new Set([...LAUNCHED, "waits", "refused", "reported"]);
+const NOTICE_OUTCOMES = new Set([...NOTIFIED, "suppressed", "lost", "waits"]);
 
 type Receipt = NonNullable<ReturnType<typeof readReceipt>>;
 type Repo = Receipt["repos"][number];
@@ -90,19 +93,36 @@ function hasText(item: unknown, fields: readonly string[]): boolean {
 
 /** Whether the lists this report reads are lists of entries with the fields it reads. A receipt written before notifications were sent has no `notifications`. */
 function readable(repo: Repo): boolean {
-  const ok = (list: unknown, fields: readonly string[]) =>
+  const ok = (
+    list: unknown,
+    fields: readonly string[],
+    outcomes: ReadonlySet<string>,
+  ) =>
     list === undefined ||
-    (Array.isArray(list) && list.every((item) => hasText(item, fields)));
+    (Array.isArray(list) &&
+      list.every(
+        (item) =>
+          hasText(item, fields) &&
+          outcomes.has((item as { outcome: string }).outcome),
+      ));
   const orNull = (field: "account" | "record") => (l: unknown) => {
     const v = (l as Record<string, unknown>)[field];
     return v === null || isText(v);
   };
   return (
     Array.isArray(repo.launches) &&
-    ok(repo.launches, ["target", "action", "outcome", "detail"]) &&
+    ok(
+      repo.launches,
+      ["target", "action", "outcome", "detail"],
+      LAUNCH_OUTCOMES,
+    ) &&
     repo.launches.every(orNull("account")) &&
     repo.launches.every(orNull("record")) &&
-    ok(repo.notifications, ["target", "cause", "key", "outcome"])
+    ok(
+      repo.notifications,
+      ["target", "cause", "key", "outcome"],
+      NOTICE_OUTCOMES,
+    )
   );
 }
 

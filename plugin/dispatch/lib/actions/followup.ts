@@ -146,6 +146,7 @@ async function claim(
   const seen = readBack(
     await readMarkers(repo.slug, record.pr, ctx.login),
     posted,
+    { kind: "tick", record: record.id },
   );
   if (seen.kind === "stands") return null;
   const why =
@@ -153,7 +154,9 @@ async function claim(
       ? `the markers could not be read back after posting: ${seen.reason}`
       : seen.kind === "missing"
         ? `the read-back does not list the posted marker (comment ${posted})`
-        : `an earlier marker (comment ${seen.marker.id} by ${seen.marker.login}) claimed it first; this one stands down`;
+        : seen.kind === "altered"
+          ? `the posted marker (comment ${posted}) no longer names this record`
+          : `an earlier marker (comment ${seen.marker.id} by ${seen.marker.login}) claimed it first; this one stands down`;
   return relinquish(state, repo, record, posted, why);
 }
 
@@ -297,7 +300,8 @@ async function dropUnmarked(
   state: ApplyState,
   repo: RepoTarget,
   ctx: FollowupContext,
-): Promise<void> {
+): Promise<Set<number>> {
+  const unsettled = new Set<number>();
   const unmarked = state.records.filter(
     (r) =>
       r.record.action === "followup" &&
@@ -313,7 +317,10 @@ async function dropUnmarked(
       continue;
     }
     const markers = await readMarkers(repo.slug, pr, ctx.login);
-    if ("unreadable" in markers) continue;
+    if ("unreadable" in markers) {
+      unsettled.add(pr);
+      continue;
+    }
     const own = markers.find(
       (m) => m.run.kind === "tick" && m.run.record === r.record.id,
     );
@@ -327,6 +334,7 @@ async function dropUnmarked(
         "a marker posted before the record was written down",
       );
   }
+  return unsettled;
 }
 
 /** `--apply` for one repository's follow-ups. */
@@ -338,7 +346,16 @@ export async function applyFollowups(
 ): Promise<void> {
   const wanted = report.actions.filter((a) => a.stage === "followup");
   if (reportedUnbound(state, wanted, report)) return;
-  await dropUnmarked(state, repo, ctx);
-  for (const action of rotated(state, wanted, "targets"))
-    report.launches.push(await launchOne(state, repo, action, ctx));
+  const unsettled = await dropUnmarked(state, repo, ctx);
+  for (const action of rotated(state, wanted, "targets")) {
+    const held = unsettled.has(Number(action.target.replace(/\D/g, "")));
+    report.launches.push(
+      held
+        ? waits(
+            action,
+            "an unmarked record's marker could not be read; it is reconciled first",
+          )
+        : await launchOne(state, repo, action, ctx),
+    );
+  }
 }

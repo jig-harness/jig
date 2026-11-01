@@ -183,12 +183,24 @@ export function earlierThan(
   return trustedMarkers(markers).find((m) => m.id < own) ?? null;
 }
 
-/** Whether the read-back lists marker `id` as a trusted marker: a listing that lags behind the post does not. */
+/** The run a posted marker must still read as: the tick's own record, or a manual run. */
+export type ExpectedRun = { kind: "tick"; record: string } | { kind: "manual" };
+
+/** Whether a marker's body still says what its poster wrote. */
+function readsAs(run: FollowupMarker["run"], expected: ExpectedRun) {
+  if (expected.kind === "manual") return run.kind === "manual";
+  return run.kind === "tick" && run.record === expected.record;
+}
+
+/** Whether the read-back lists marker `id` as a trusted marker that still reads as `expected`: a listing that lags behind the post does not, and an edited body is not the claim. */
 export function listsOwn(
   markers: readonly FollowupMarker[],
   id: number,
+  expected: ExpectedRun,
 ): boolean {
-  return trustedMarkers(markers).some((m) => m.id === id);
+  return trustedMarkers(markers).some(
+    (m) => m.id === id && readsAs(m.run, expected),
+  );
 }
 
 /** What the read-back after posting marker `own` shows: it stands, or why not. */
@@ -196,15 +208,19 @@ export type ReadBack =
   | { kind: "stands" }
   | { kind: "unreadable"; reason: string }
   | { kind: "missing" }
+  | { kind: "altered" }
   | { kind: "earlier"; marker: FollowupMarker };
 
 export function readBack(
   markers: FollowupMarker[] | { unreadable: string },
   own: number,
+  expected: ExpectedRun,
 ): ReadBack {
   if ("unreadable" in markers)
     return { kind: "unreadable", reason: markers.unreadable };
   const earlier = earlierThan(markers, own);
   if (earlier !== null) return { kind: "earlier", marker: earlier };
-  return listsOwn(markers, own) ? { kind: "stands" } : { kind: "missing" };
+  if (listsOwn(markers, own, expected)) return { kind: "stands" };
+  const listed = trustedMarkers(markers).some((m) => m.id === own);
+  return { kind: listed ? "altered" : "missing" };
 }
