@@ -112,8 +112,9 @@ yesterday's rows, a drive whose open threads rise across rounds is
 reported as drifting and notified once, a session waiting after its
 account's wall reopened gets exactly one "continue" nudge, a converged pull
 request that now conflicts with its base or whose head moved past the one
-the drive verified is re-armed once, and one still at the verified head and
-mergeable is left alone.
+the drive verified is re-armed once, one still at the verified head and
+mergeable is left alone, and one whose mergeability the forge is still
+computing is reported unplaced with no launch.
 
 ### 3. The kickoff family
 
