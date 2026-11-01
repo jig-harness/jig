@@ -23,7 +23,7 @@ import { isRecord } from "../../../../shared/guards.ts";
 export const CODE_SCANNING_LOGIN = "github-advanced-security";
 
 /** A login compared the way GitHub does: case-insensitively, `[bot]` optional. */
-function isCodeScanningLogin(login: string | null | undefined): boolean {
+export function isCodeScanningLogin(login: string | null | undefined): boolean {
   return (
     typeof login === "string" &&
     login

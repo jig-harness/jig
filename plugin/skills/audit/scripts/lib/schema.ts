@@ -35,24 +35,34 @@ export type TypeSpec =
       items?: Items;
       values_type?: TypeSpec;
       pattern?: string;
+      /** enum: the allowed values. */
+      values?: string[];
     };
 
-/** A list's entries: one type for all, or mappings with a type per key. */
-export type Items = TypeSpec | { fields: Record<string, TypeSpec> };
+/**
+ * A list's entries: one type for all, or mappings with a type per key, the
+ * keys in `optional` allowed to be absent, and an entry of the `or` type
+ * accepted instead of a mapping (a login, or `{login, …}`).
+ */
+export type Items =
+  | TypeSpec
+  | { fields: Record<string, TypeSpec>; optional?: string[]; or?: TypeSpec };
 
 export interface Field {
   path: string;
   type: FieldType;
   values?: string[];
   min?: number;
+  max?: number;
   pattern?: string;
   nullable?: boolean;
+  allow_empty?: boolean;
   items?: Items;
   distinct?: boolean;
   nonempty?: boolean;
   keys?: string[];
   values_type?: TypeSpec;
-  exists?: "required" | "expected";
+  exists?: "required" | "expected" | "machine";
   read_by: string[];
   repository_only?: boolean;
   default?: unknown;
@@ -62,6 +72,8 @@ export interface Field {
 
 export interface Schema {
   strict: string[];
+  /** Sections and fields whose `null` the skills refuse rather than read as not set. */
+  null_refused: string[];
   refused: Record<string, string>;
   fields: Field[];
 }
@@ -82,8 +94,10 @@ const FIELD_KEYS = new Set([
   "type",
   "values",
   "min",
+  "max",
   "pattern",
   "nullable",
+  "allow_empty",
   "items",
   "distinct",
   "nonempty",
@@ -107,15 +121,29 @@ function stringList(v: unknown): v is string[] {
 
 type Entry = Record<string, unknown>;
 
-const SPEC_KEYS = new Set(["type", "items", "values_type", "pattern"]);
+const SPEC_KEYS = new Set([
+  "type",
+  "items",
+  "values_type",
+  "pattern",
+  "values",
+]);
+
+/** Whether a nested spec's `items` and `values` fit its type: a list's items, an enum's values. */
+function validNested(spec: Record<string, unknown>): boolean {
+  const items =
+    spec.type === "list" ? validItems(spec.items) : spec.items === undefined;
+  const values =
+    spec.type === "enum" ? stringList(spec.values) : spec.values === undefined;
+  return items && values;
+}
 
 /** Whether `spec` is a type name, or a list or map spec with typed entries. */
 function validSpec(spec: unknown): boolean {
   if (isType(spec)) return true;
   if (!isRecord(spec) || !isType(spec.type)) return false;
   if (Object.keys(spec).some((k) => !SPEC_KEYS.has(k))) return false;
-  if (spec.type === "list" ? !validItems(spec.items) : spec.items !== undefined)
-    return false;
+  if (!validNested(spec)) return false;
   if (!validSpecPattern(spec.type, spec.pattern)) return false;
   return spec.values_type === undefined
     ? true
@@ -152,11 +180,15 @@ function validSpecPattern(type: unknown, pattern: unknown): boolean {
 /** Whether a list field's `items` is a type spec or maps keys to type specs. */
 function validItems(items: unknown): boolean {
   if (validSpec(items)) return true;
+  if (!isRecord(items) || !isRecord(items.fields)) return false;
+  const fields = items.fields;
   return (
-    isRecord(items) &&
-    Object.keys(items).length === 1 &&
-    isRecord(items.fields) &&
-    Object.values(items.fields).every(validSpec)
+    Object.keys(items).every((k) => ["fields", "optional", "or"].includes(k)) &&
+    Object.values(fields).every(validSpec) &&
+    (items.optional === undefined ||
+      (stringList(items.optional) &&
+        items.optional.every((k) => Object.hasOwn(fields, k)))) &&
+    (items.or === undefined || validSpec(items.or))
   );
 }
 
@@ -189,6 +221,10 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
     e.min !== undefined && typeof e.min !== "number"
       ? "min must be a number"
       : null,
+  (e) =>
+    e.max !== undefined && typeof e.max !== "number"
+      ? "max must be a number"
+      : null,
   (e) => patternProblem(e.type, e.pattern),
   (e) =>
     e.keys !== undefined && !stringList(e.keys) ? "keys must be a list" : null,
@@ -199,8 +235,11 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
   (e) =>
     e.type === "list" && !validItems(e.items) ? "a list needs items" : null,
   (e) =>
-    e.exists !== undefined && e.exists !== "required" && e.exists !== "expected"
-      ? "exists is required or expected"
+    e.exists !== undefined &&
+    e.exists !== "required" &&
+    e.exists !== "expected" &&
+    e.exists !== "machine"
+      ? "exists is required, expected or machine"
       : null,
   flag("repository_only"),
   (e) =>
@@ -209,6 +248,7 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
       ? "default must be a value the field accepts"
       : null,
   flag("nullable"),
+  flag("allow_empty"),
   flag("distinct"),
   flag("nonempty"),
   (e) =>
@@ -249,13 +289,37 @@ export function parseSchema(raw: unknown): Schema {
     throw new Error("config schema: refused must map a section to a message");
   if (!isRecord(raw.fields))
     throw new Error("config schema: fields must be a mapping");
-  return {
+  const nullRefused = raw.null_refused ?? [];
+  if (!stringList(nullRefused))
+    throw new SchemaNullRefusedError(
+      "config schema: null_refused must be a list of section or field paths",
+    );
+  const schema: Schema = {
     strict: raw.strict,
+    null_refused: nullRefused,
     refused: raw.refused as Record<string, string>,
     fields: Object.entries(raw.fields).map(([path, entry]) =>
       parseField(path, entry),
     ),
   };
+  const index = indexSchema(schema);
+  for (const path of schema.null_refused) {
+    const field = index.byPath.get(path);
+    if (!field && !index.prefixes.has(path))
+      throw new SchemaNullRefusedError(
+        `config schema: null_refused names ${path}, which is not a section or field`,
+      );
+    if (field?.nullable)
+      throw new SchemaNullRefusedError(
+        `config schema: null_refused names ${path}, which is nullable`,
+      );
+  }
+  return schema;
+}
+
+/** A `null_refused` list that does not name the schema's own refusable paths. */
+class SchemaNullRefusedError extends Error {
+  override readonly name = "SchemaNullRefusedError";
 }
 
 export const SCHEMA_PATH = join(skillDir(), "config-schema.yaml");
@@ -309,6 +373,7 @@ const isText = (v: unknown): v is string =>
   typeof v === "string" && v.trim() !== "";
 
 function textProblem(value: unknown, field?: Field): string | null {
+  if (field?.allow_empty && value === "") return null;
   if (!isText(value)) return "must be a nonempty string";
   if (field?.pattern && !new RegExp(field.pattern).test(value))
     return `must match ${field.pattern}`;
@@ -329,10 +394,19 @@ function integerProblem(value: unknown, field?: Field): string | null {
   const words = field?.values ?? [];
   if (typeof value === "string" && words.includes(value)) return null;
   const min = field?.min ?? Number.NEGATIVE_INFINITY;
-  if (typeof value === "number" && Number.isSafeInteger(value) && value >= min)
+  const max = field?.max ?? Number.POSITIVE_INFINITY;
+  if (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= min &&
+    value <= max
+  )
     return null;
-  const bound =
-    field?.min === undefined ? "a whole number" : `a whole number ≥ ${min}`;
+  const limits = [
+    field?.min === undefined ? null : `≥ ${min}`,
+    field?.max === undefined ? null : `≤ ${max}`,
+  ].filter((l) => l !== null);
+  const bound = ["a whole number", limits.join(" and ")].join(" ").trim();
   return `must be ${[bound, ...words].join(" or ")}`;
 }
 
@@ -360,11 +434,29 @@ function listEntryProblem(
     const problem = specProblem(entry, items);
     return problem ? `${label} ${problem}` : null;
   }
+  if (items.or !== undefined && !isRecord(entry)) {
+    const problem = specProblem(entry, items.or);
+    return problem ? `${label} ${problem}, or a mapping` : null;
+  }
   if (!isRecord(entry)) return `${label} must be a mapping`;
+  const problem = mappingEntryProblem(entry, items, label);
+  // A mapping the fields refuse may still satisfy the alternative.
+  if (problem !== null && items.or !== undefined)
+    return specProblem(entry, items.or) === null ? null : problem;
+  return problem;
+}
+
+/** What is wrong with a mapping entry of a list whose items have `fields`. */
+function mappingEntryProblem(
+  entry: Record<string, unknown>,
+  items: { fields: Record<string, TypeSpec>; optional?: string[] },
+  label: string,
+): string | null {
   for (const key of Object.keys(entry))
     if (!Object.hasOwn(items.fields, key))
       return `${label} has unknown key ${key} (known: ${Object.keys(items.fields).join(", ")})`;
   for (const [key, keyType] of Object.entries(items.fields)) {
+    if (entry[key] === undefined && items.optional?.includes(key)) continue;
     const problem =
       entry[key] === undefined
         ? "is missing"
@@ -454,15 +546,27 @@ function knownKeys(index: SchemaIndex, prefix: string): string[] {
     .map((p) => p.slice(prefix.length + 1).split(".")[0] ?? "");
 }
 
+/** The error for a `null` the skills refuse at `path`. */
+function refusedNullFinding(path: string): Finding {
+  return {
+    id: `null:${path}`,
+    severity: "error",
+    message: `${path} is null, which the skills refuse rather than read as not set; remove it or give it a value`,
+  };
+}
+
 /** A known field's value: null where it is not nullable, the wrong shape, an older name. */
 function knownFieldFindings(
+  index: SchemaIndex,
   path: string,
   value: unknown,
   field: Field,
 ): Finding[] {
   const findings: Finding[] = [];
   const problem = value === null ? null : typeProblem(value, field.type, field);
-  if (value === null && !field.nullable)
+  if (value === null && index.schema.null_refused.includes(path))
+    findings.push(refusedNullFinding(path));
+  else if (value === null && !field.nullable)
     findings.push({
       id: `null:${path}`,
       severity: "info",
@@ -501,13 +605,19 @@ function unknownKeyFinding(
   };
 }
 
-/** A section's findings: none when null, an error when not a mapping, else its keys'. */
+/**
+ * A section's findings: none when null (an error where the skills refuse a
+ * null section), an error when not a mapping, else its keys'.
+ */
 function sectionFindings(
   index: SchemaIndex,
   path: string,
   value: unknown,
 ): Finding[] {
-  if (value === null) return [];
+  if (value === null)
+    return index.schema.null_refused.includes(path)
+      ? [refusedNullFinding(path)]
+      : [];
   if (!isRecord(value))
     return [
       {
@@ -536,7 +646,7 @@ function keyFindings(
       },
     ];
   const field = index.byPath.get(path);
-  if (field) return knownFieldFindings(path, value, field);
+  if (field) return knownFieldFindings(index, path, value, field);
   if (index.prefixes.has(path)) return sectionFindings(index, path, value);
   return [unknownKeyFinding(index, prefix, key, path)];
 }

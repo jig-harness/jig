@@ -44,13 +44,16 @@ import {
 } from "../../../../shared/trace.ts";
 import { readdirSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
+import { resolve } from "node:path";
 import {
   ghCallTimeoutSeconds,
+  gitIdentityEnv,
   lastBytes,
   readTimeoutEnv,
   registerRunCancellation,
   writeChildInput,
 } from "../../../../shared/proc.ts";
+import { detachedTreeRecord } from "../../../../shared/driven-tree.ts";
 import { fail, testPacing } from "./cli.ts";
 
 // Shared timeout readers and the process-wide cancellation registry serve
@@ -58,6 +61,8 @@ import { fail, testPacing } from "./cli.ts";
 // group termination witnesses and deadlines for its orchestration steps.
 export {
   ghCallTimeoutSeconds,
+  GIT_LOCATION_VARS,
+  gitIdentityEnv,
   readTimeoutEnv,
   tsArgv,
 } from "../../../../shared/proc.ts";
@@ -996,23 +1001,11 @@ export function git(args: string[], opts: RunOptions = {}): Promise<RunResult> {
  * index/worktree while `rebase-merge`/`rebase-apply` remain — both checked here
  * too.
  *
- * The git-dir resolution runs through `git()` itself (already bounded, already
- * cross-platform — the same `git rev-parse` every other call in this file
- * uses). The marker CHECK is where a synchronous `existsSync()` in THIS process
- * would have no deadline or cancellation of its own — on a stalled filesystem
- * it would hang indefinitely regardless of `GIT_CALL_TIMEOUT`, and the caller's
- * documented fail-closed refusal would never be reached. An earlier version
- * folded the whole probe (git-dir resolution AND marker check) into one `sh -c`
- * script to get both under `run()`'s timeout-and-kill machinery in a single
- * subprocess — but that reintroduces exactly the POSIX-shell dependency this
- * file's own header explains this port exists to avoid: on Windows with no `sh`
- * on PATH, every converged `drive.ts` run would exit 12 and every announcement
- * would refuse, even over a clean repository. The marker check instead runs as
- * a SEPARATE bounded subprocess — `process.execPath` (bun under bun, node under
- * node, same convention `tsArgv()` uses) with an inline `-e` script that does
- * nothing but `existsSync()` in a CHILD process, so `run()`'s existing
- * timeout-and-kill can bound it exactly like every other call here, without a
- * shell of any kind.
+ * The git-dir resolution runs through the bounded `git()`. A synchronous
+ * `existsSync()` in THIS process would have no deadline: on a stalled
+ * filesystem it would hang past `GIT_CALL_TIMEOUT` and the caller's fail-closed
+ * refusal would never be reached. So the marker check runs as an inline probe
+ * (`runInlineProbe`) bounded by `run()`'s deadline, with no shell.
  *
  * `ok: false` means either probe could not complete (an unresolvable
  * git-dir, a timeout, an unreadable filesystem) — fail-closed, the same
@@ -1025,13 +1018,9 @@ export function git(args: string[], opts: RunOptions = {}): Promise<RunResult> {
  * `GIT_DIR` overrides repository discovery regardless of cwd, so the
  * `--git-dir` read needs the same sanitized env every other call in that
  * caller gets) and needs THIS probe to answer for that same checkout rather
- * than the ambient one. `opts.cwd` is forwarded to the marker-probe
- * subprocess too, not just the `rev-parse` call: `--git-dir` can answer with
- * a path RELATIVE to the directory it was run in, and the probe subprocess
- * would otherwise resolve that relative path against ITS OWN default cwd —
- * this process's, not the caller's — silently checking the wrong directory
- * whenever the two differ. Every existing caller omits both and keeps
- * reading the ambient cwd/env exactly as before.
+ * than the ambient one. `--git-dir` can answer with a path relative to the
+ * directory it ran in, so it is made absolute against that directory before
+ * it reaches the probe. Without them the ambient cwd/env are read.
  */
 const UNCONCLUDED_GIT_OP_MARKERS = [
   "MERGE_HEAD",
@@ -1059,6 +1048,28 @@ for (const m of markers) {
 process.exit(0);
 `;
 
+const PROBE_FLAGS = [
+  "--no-env-file",
+  `--config=${resolve(import.meta.dir, "probe-bunfig.toml")}`,
+];
+
+/**
+ * Run `script` as an inline `-e` probe of this runtime under the plugin's own
+ * empty configuration, without `.env` files: Bun otherwise reads `bunfig.toml`
+ * (a `preload` included) from its working directory, and no directory outside
+ * the plugin is known to hold none. Paths in `args` and `stdin` are absolute.
+ */
+export function runInlineProbe(
+  script: string,
+  args: string[],
+  opts: Omit<RunOptions, "cwd">,
+): Promise<RunResult> {
+  return run([process.execPath, ...PROBE_FLAGS, "-e", script, ...args], {
+    ...opts,
+    cwd: import.meta.dir,
+  });
+}
+
 export async function unconcludedGitOpMarker(
   timeoutSec: number,
   opts?: { cwd?: string; env?: Record<string, string | undefined> },
@@ -1072,19 +1083,13 @@ export async function unconcludedGitOpMarker(
   const gitDir = dirRes.stdout.trim();
   if (gitDir === "") return { ok: false };
 
-  const probe = await run(
+  const probe = await runInlineProbe(
+    MARKER_PROBE_SCRIPT,
     [
-      process.execPath,
-      "-e",
-      MARKER_PROBE_SCRIPT,
-      gitDir,
+      resolve(opts?.cwd ?? process.cwd(), gitDir),
       ...UNCONCLUDED_GIT_OP_MARKERS,
     ],
-    {
-      stderr: "ignore",
-      timeoutSec,
-      ...(opts?.cwd === undefined ? {} : { cwd: opts.cwd }),
-    },
+    { stderr: "ignore", timeoutSec },
   );
   if (probe.code !== 0) return { ok: false };
   const marker = probe.stdout.trim();
@@ -1092,32 +1097,33 @@ export async function unconcludedGitOpMarker(
 }
 
 /**
- * Resolve the PR number: an explicit argument wins; otherwise ask `gh` for
- * the current branch's PR. Returns '' when neither yields one — each caller
- * owns its own refusal message, as the bash scripts did.
+ * Resolve the PR number: an explicit argument wins; then, on a detached head,
+ * the pull request a drive attached the tree to (`driven-tree.ts`);
+ * otherwise ask `gh` for the current branch's PR. Returns '' when none yields
+ * one — each caller owns its own refusal message, as the bash scripts did.
  *
- * `cwd` is optional and defaults to unset (the process's own ambient cwd) —
- * correct for every caller here but one. `self-inflicted.ts` is the
- * exception: it accepts a `--repo`/`$DRIVE_PR_WORKTREE` naming a DIFFERENT
- * checkout than the process cwd, and `gh pr view` with no cwd override reads
- * the branch and remote of whichever repository the process happens to be
- * running in, not `repo` — leaving an omitted PR unresolvable, or worse,
- * resolving one that also exists in the ambient repository against the
- * WRONG base.
- *
- * `cwd` alone is not sufficient to anchor `gh` there: `gh` gives `GH_REPO`
- * precedence over local repository discovery even when `cwd` names a
- * perfectly good checkout, so an inherited `GH_REPO` from the ambient
- * environment can resolve this call against a THIRD repository — neither the
- * process's ambient one nor the one at `cwd`. A
- * `cwd`-bound call therefore also runs with `ghRepoEnv()`, mirroring
- * `gitIdentityEnv()`'s reasoning for `git`.
+ * `cwd` defaults to the process's own. `self-inflicted.ts` passes a
+ * `--repo`/`$DRIVE_PR_WORKTREE` naming another checkout: `gh pr view` with no
+ * cwd reads the branch and remote of the process's repository, not `repo`.
+ * `cwd` alone does not anchor `gh` there (`GH_REPO` outranks local
+ * discovery), so a `cwd`-bound call also runs with `ghRepoEnv()`. The record
+ * lookup's `git` runs with `gitIdentityEnv()` whether or not `cwd` is given:
+ * an inherited GIT_DIR would read another checkout's record.
  */
 export async function resolvePr(
   explicit: string,
   cwd?: string,
 ): Promise<string> {
   if (explicit !== "") return explicit;
+  const attached = await detachedTreeRecord((args) =>
+    git(args, {
+      stderr: "pipe",
+      timeoutSec: gitCallTimeoutSeconds(),
+      env: gitIdentityEnv(),
+      ...(cwd === undefined ? {} : { cwd }),
+    }),
+  );
+  if (attached !== null) return String(attached.pr);
   const r = await ghCall(["pr", "view", "--json", "number", "-q", ".number"], {
     stderr: "ignore",
     ...(cwd === undefined ? {} : { cwd, env: ghRepoEnv() }),
@@ -1195,64 +1201,6 @@ export function pidCheckCommand(
       ? `powershell.exe -NoProfile -Command "Get-Process -Id ${pid}"`
       : `ps -p ${pid}`;
   return remote ? `ssh ${host} ${check}` : check;
-}
-
-/**
- * Every environment variable that overrides git's own `cwd`-based repository
- * discovery. Any of these exported into this process — a lefthook hook exports
- * `GIT_DIR` and `GIT_WORK_TREE` together, but nothing guarantees only that
- * shape reaches here — silently redirects a `cwd`-anchored `git` call at a
- * DIFFERENT repository than the caller is reasoning about.
- *
- * `GIT_DIR` alone, with no `GIT_WORK_TREE`, is the sharpest case: git then
- * treats the CURRENT DIRECTORY as the work tree while resolving refs from the
- * leaked dir, so `rev-parse --show-toplevel` reports `cwd` — matching whatever
- * anchor a caller checks it against — while `rev-parse HEAD` answers for
- * another repository entirely. `cwd` alone was never sufficient against any of
- * these. `GIT_NAMESPACE` is the same hazard through ref resolution
- * (`refs/namespaces/<ns>/…`) without touching which worktree is reported.
- *
- * ONE list and ONE scrubber, here, rather than a copy per entrypoint. Three
- * copies existed and had already drifted: only drive-status.ts's carried
- * `GIT_NAMESPACE` and the Windows case-folding below, so the other two were
- * strictly weaker against hazards that had been found and fixed once. A
- * measured-and-fixed leak that survives in a sibling copy is the defect, not
- * the duplication.
- */
-export const GIT_LOCATION_VARS = [
-  "GIT_DIR",
-  "GIT_WORK_TREE",
-  "GIT_INDEX_FILE",
-  "GIT_OBJECT_DIRECTORY",
-  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-  "GIT_COMMON_DIR",
-  "GIT_PREFIX",
-  "GIT_NAMESPACE",
-];
-
-/**
- * `process.env` with every entry in `GIT_LOCATION_VARS` removed — pass as
- * `env:` to any `cwd`-anchored `git` call whose answer must be about the
- * repository at that `cwd`.
- *
- * Windows environment-variable names are case-INSENSITIVE, but a JS object's
- * property deletion is not: an inherited spelling like `Git_Dir` survives an
- * exact-match delete and is still read by git as `GIT_DIR`, reopening the leak
- * this exists to close. POSIX
- * names ARE case-sensitive, so the exact-match form stays correct and cheaper
- * there.
- */
-export function gitIdentityEnv(): Record<string, string | undefined> {
-  const env = { ...process.env };
-  if (process.platform === "win32") {
-    const targets = new Set(GIT_LOCATION_VARS.map((k) => k.toLowerCase()));
-    for (const key of Object.keys(env)) {
-      if (targets.has(key.toLowerCase())) delete env[key];
-    }
-  } else {
-    for (const key of GIT_LOCATION_VARS) delete env[key];
-  }
-  return env;
 }
 
 /**

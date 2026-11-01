@@ -98,10 +98,12 @@ describe("tracker configuration", () => {
   });
 
   it("refuses an unknown adapter at open time", () => {
-    expect(knownAdapters()).toEqual(["linear", "github"]);
+    expect(knownAdapters()).toEqual(["linear", "github", "jira"]);
     expect(() =>
       openTracker(
-        parseTrackerConfig({ issue_tracker: { adapter: "jira", team: "ENG" } }),
+        parseTrackerConfig({
+          issue_tracker: { adapter: "nonesuch", team: "ENG" },
+        }),
       ),
     ).toThrow("not supported");
   });

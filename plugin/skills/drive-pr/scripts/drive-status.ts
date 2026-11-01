@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { consumerRoot, readRemoteName } from "../../../shared/consumer.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Decide, mechanically, which state a PR-review drive is in — and in particular
@@ -46,6 +47,10 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                        when driving from outside the PR's worktree.
  *   --no-head-sync       skip the replication-lag guard entirely (only correct
  *                        when you know the local tree is not the PR branch).
+ *   --inherited-head SHA let the guard pass a local HEAD that is exactly SHA
+ *                        and descends from the API head: the commits a pass
+ *                        left unpushed, or the drive was armed over (the
+ *                        driver's notice names it). Any other mismatch lags.
  *   --no-count           do not count this evaluation as a worked round. Also
  *                        suppresses the replied-thread reconciliation sweep
  *                        below — a mid-round re-read is not a pass entry.
@@ -200,17 +205,17 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *  14  —  [drive.ts only, no report] the loop stalled — see
  *         `references/terminal-states.md` row 14
  *  15  PASS_DEADLINE    [drive.ts only, no report] `$DRIVE_PR_PASS_TIMEOUT`
- *                       expired mid-round. Named (`PASS_DEADLINE_EXIT`), but
- *                       never reaches this script's `--json` report — see
+ *                       expired mid-round (`PASS_DEADLINE_EXIT`) — see
  *                       `references/terminal-states.md` row 15
  *  16  QUOTA_PARKED     [drive.ts only, no report] the pass died on a
- *                       subscription usage wall. Named (`QUOTA_PARKED_EXIT`),
- *                       never reaches this script's `--json` report — see
+ *                       subscription usage wall (`QUOTA_PARKED_EXIT`) — see
  *                       `references/terminal-states.md` row 16
  *  18  MAILBOX_STOPPED [drive.ts only, no report] a stop directive ended the
  *                       drive at a safe round boundary
  *  19  MAILBOX_PAUSE_TIMEOUT [drive.ts only, no report] a pause remained
  *                       active beyond the driver's bounded wait
+ *  20  TAKEN_OVER       [drive.ts only, no report] another clone's newer
+ *                       takeover claim is on the pull request
  *   6  —  [drive.ts only, no report] hit `--max-rounds` without converging
  *
  * The JSON report carries `state` (the name above) plus the evidence behind
@@ -219,7 +224,7 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  * `<skill-dir>/scripts/lib/status/terminal-states.ts`.
  */
 
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type BaseDrift,
@@ -227,7 +232,7 @@ import {
   fetchTimeoutSeconds,
   probeBaseDrift,
   verifyCheckoutIsPrHead,
-  verifyOriginIsPrRepo,
+  verifyRemoteIsPrRepo,
 } from "./lib/base-drift.ts";
 import { fail, isDigits, runMain, sleep, testPacing } from "./lib/cli.ts";
 import {
@@ -246,6 +251,7 @@ import {
   gitIdentityEnv,
   readTimeoutEnv,
   run,
+  runInlineProbe,
   tsArgv,
 } from "./lib/proc.ts";
 import { reviewerApp } from "./lib/overlay.ts";
@@ -269,6 +275,7 @@ import {
   evaluate,
   type StatusReport,
 } from "./lib/status/evaluate.ts";
+import { takeInheritedHead } from "./lib/status/inherited-head.ts";
 // `report.state` and the emitted/returned exit code for these two
 // out-of-band states are derived from ONE lookup — see
 // `outOfBand()`'s own doc comment for the pairing-drift bug this closes.
@@ -289,12 +296,9 @@ const MAX_QUERY_ERRORS = 3;
 
 /**
  * `realpathSync`, bounded — a stalled FUSE/NFS mount can block this SYNCHRONOUS
- * call indefinitely in THIS process, and `GIT_CALL_TIMEOUT` bounding the
- * local-HEAD measurement's `git()` subprocess calls (further down this file)
- * does nothing for it. Runs as a separate bounded subprocess — same convention
- * `unconcludedGitOpMarker`'s marker probe in `lib/proc.ts` uses — so `run()`'s
- * existing timeout-and-kill can bound it exactly like every other call here,
- * without a shell of any kind.
+ * call indefinitely in THIS process, which `GIT_CALL_TIMEOUT` does nothing
+ * for. So it runs as a bounded inline probe (`runInlineProbe`, from a neutral
+ * directory: the path is made absolute against this process's cwd first).
  */
 const REALPATH_PROBE_SCRIPT = `
 const { realpathSync } = require('node:fs');
@@ -314,7 +318,7 @@ async function boundedRealpath(
   // string as "nothing to resolve", never as "resolve my cwd", so this must
   // refuse before ever reaching the probe subprocess.
   if (p === "") return null;
-  const probe = await run([process.execPath, "-e", REALPATH_PROBE_SCRIPT, p], {
+  const probe = await runInlineProbe(REALPATH_PROBE_SCRIPT, [resolve(p)], {
     stderr: "ignore",
     ...definedFields({ timeoutSec }),
   });
@@ -345,6 +349,7 @@ async function main(): Promise<number> {
   let bumpAttempt = false;
 
   const argv = process.argv.slice(2);
+  const inheritedHead = takeInheritedHead(argv);
   const take = (flag: string, i: number): string => {
     const value = argv[i + 1];
     if (value === undefined) fail(2, `${flag} requires a value`);
@@ -480,21 +485,16 @@ async function main(): Promise<number> {
     });
     localHead = r.code === 0 ? r.stdout.trim() : "";
     // Verify the IDENTITY of the tree the read answered for, not the shape of
-    // its cwd. The earlier version asked "is cwd inside a git DIRECTORY" — true
-    // only when cwd sits inside `.git` itself — but the cwd that actually
-    // poisons a pass is the MAIN WORKTREE (a normal, non-bare worktree one
-    // level up), and a leaked git-hook env (lefthook exports both `GIT_DIR` and
-    // `GIT_WORK_TREE`) makes `git rev-parse HEAD` answer for that tree even
-    // with an explicit `cwd: anchor` — `--is-inside-git-dir` there answers
-    // `false` (it IS a real worktree, just the wrong one), so the old guard
-    // never fired (measured more than once). Comparing `--show-toplevel`
-    // against the driven tree's own identity catches both shapes with one
-    // predicate: a leaked `GIT_DIR`+`GIT_WORK_TREE` makes THIS call answer for
-    // the wrong tree too (same leaked env, same process), so it disagrees with
-    // `anchor`; reading from inside `.git` with no anchor set makes it fail
-    // outright (git refuses `--show-toplevel` there). Unreadable beats wrong
-    // either way: `unavailable` disarms the head-sync guard and produces no
-    // stall fingerprint, where a confidently wrong SHA wedges the drive.
+    // its cwd. "Is cwd inside a git DIRECTORY" misses the cwd that actually
+    // poisons a pass, the MAIN WORKTREE (a real worktree, just the wrong one),
+    // and a leaked git-hook env (`GIT_DIR` and `GIT_WORK_TREE`) makes `git
+    // rev-parse HEAD` answer for that tree even with `cwd: anchor`. Comparing
+    // `--show-toplevel` against the driven tree catches both shapes: the
+    // leaked env makes THIS call answer for the wrong tree too, so it
+    // disagrees with `anchor`; reading from inside `.git` with no anchor set
+    // fails outright (git refuses `--show-toplevel` there). Unreadable beats
+    // wrong: `unavailable` disarms the head-sync guard and produces no stall
+    // fingerprint, where a confidently wrong SHA wedges the drive.
     if (localHead !== "") {
       const topRes = await git(["rev-parse", "--show-toplevel"], {
         stderr: "ignore",
@@ -503,25 +503,18 @@ async function main(): Promise<number> {
         ...(anchor ? { cwd: anchor } : {}),
       });
       const top = topRes.code === 0 ? topRes.stdout.trim() : "";
-      // Neither side is guaranteed comparable as a raw string: `anchor` is
-      // untrusted env input, not necessarily symlink-resolved the way git's own
-      // `--show-toplevel` always is (e.g. macOS's `/var` → `/private/var`), and
-      // on Windows the two can differ in separators AND per-component casing
-      // (Git may preserve caller casing while the filesystem's own canonical
-      // name differs) — a manual case-fold heuristic (drive-letter- only, or
-      // blanket) is unsound either way: it either misses a real difference or
-      // conflates two genuinely distinct directories on a case-sensitive NTFS
-      // volume. Resolving BOTH sides through the same canonicalization (Node's
-      // `realpathSync`, which on Windows returns the actual on-disk
-      // name/casing) and then comparing the results verbatim sidesteps
-      // case-folding entirely — identity is decided by the filesystem, not by a
-      // heuristic. A resolution failure on either side (path no longer exists,
-      // or the bounded read timed out) is itself grounds to refuse. `top ===
-      // ''` (the `--show-toplevel` call itself already failed or timed out)
-      // must short-circuit rather than reach `boundedRealpath`: Node's
-      // `realpathSync('')` resolves to `process.cwd()` instead of throwing, and
-      // that cwd is this whole process's own — routinely identical to `anchor`
-      // — which would launder a git-call FAILURE into a spurious MATCH.
+      // Neither side compares as a raw string: `anchor` is untrusted env input,
+      // not symlink-resolved as `--show-toplevel` is (macOS's `/var` →
+      // `/private/var`), and on Windows separators and per-component casing can
+      // differ, where any case-fold heuristic either misses a real difference
+      // or conflates distinct directories on a case-sensitive volume. Both
+      // sides go through the same canonicalization (`realpathSync`, which
+      // returns the on-disk name and casing) and compare verbatim, so the
+      // filesystem decides identity. A resolution failure on either side is
+      // grounds to refuse. `top === ''` (the `--show-toplevel` call failed)
+      // short-circuits before `boundedRealpath`: `realpathSync('')` resolves to
+      // this process's cwd, routinely `anchor` itself, which would turn a
+      // git-call failure into a match.
       const [topReal, anchorReal] =
         anchor && top !== ""
           ? await Promise.all([
@@ -589,6 +582,7 @@ async function main(): Promise<number> {
     botsOnly,
     headSync,
     localHead,
+    inheritedHead,
     driveStateScript: join(here, "drive-state.ts"),
     listThreadsScript: join(
       here,
@@ -814,20 +808,22 @@ async function main(): Promise<number> {
     if (rootRes.code !== 0 || rootRes.stdout.trim() === "") return driftMemo;
     const root = rootRes.stdout.trim();
     // Same precondition base-sync.ts fails closed on before its own fetch:
-    // `probeBaseDrift` always fetches through `origin`, which is wrong
-    // whenever `origin` is not the PR's own repository (a fork clone, or a
-    // `gh`/git disagreement). This read is best-effort like the rest of
-    // `baseDrift()`, so a mismatch just degrades to `null` rather than
-    // failing the gate — but it must not silently measure drift off the
-    // wrong repository's history.
-    const originCheck = await verifyOriginIsPrRepo(
+    // `probeBaseDrift` always fetches through the drive's remote
+    // (`repository.remote`), which is wrong whenever it is not the PR's own
+    // repository (a fork clone, or a `gh`/git disagreement). This read is
+    // best-effort like the rest of `baseDrift()`, so a mismatch, or an
+    // unreadable setting, degrades to `null` rather than failing the gate.
+    const remote = readRemoteName(consumerRoot(root));
+    if ("error" in remote) return driftMemo;
+    const remoteCheck = await verifyRemoteIsPrRepo(
       git,
       root,
       `${owner}/${repo}`,
       identityEnv,
+      remote.remote,
     );
-    if (!originCheck.ok) return driftMemo;
-    // `origin` being the right REPOSITORY does not prove this WORKTREE is
+    if (!remoteCheck.ok) return driftMemo;
+    // The remote being the right REPOSITORY does not prove this WORKTREE is
     // checked out on THIS PR's branch — invoked with an explicit PR from an
     // unrelated branch or worktree (`DRIVE_PR_WORKTREE` unset or pointed
     // elsewhere), this call would otherwise happily measure and publish
@@ -857,6 +853,7 @@ async function main(): Promise<number> {
       baseBranch,
       seconds.seconds,
       identityEnv,
+      remote.remote,
     );
     if (probe.ok) driftMemo = probe.drift;
     return driftMemo;

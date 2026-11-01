@@ -6,6 +6,7 @@
  * value sets they accept).
  */
 import { REPOSITORY_ONLY_FIELDS } from "../../../shared/config-layers.ts";
+import { AUTONOMY_LEVELS, DEFAULT_LEVEL } from "../../../shared/autonomy.ts";
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,20 +25,50 @@ import {
   parseTrackerConfig,
 } from "../../do-item/scripts/lib/tracker/config.ts";
 import {
+  DEFAULT_ISSUE_TYPE,
+  LINKED_RELATIONS,
+  RESOLVED_STATES,
+} from "../../do-item/scripts/lib/tracker/jira/settings.ts";
+import {
   DEFAULT_STATES_FROM,
   DEFAULT_STATUS_FIELD,
   GITHUB_STATE_SOURCES,
   PRIORITY_NAMES,
 } from "../../do-item/scripts/lib/tracker/github/settings.ts";
-import { DEFAULT_MAX_ROUNDS } from "../../drive-pr/scripts/lib/overlay.ts";
+import {
+  ARM_DRIVE_MODES,
+  DEFAULT_ARM_DRIVE,
+  DEFAULT_MAX_ROUNDS,
+  DEFAULT_PASS_DEADLINE_RETRIES,
+  DEFAULT_PASS_ARGS,
+  DEFAULT_PASS_MODEL,
+  PASS_ARG_PATTERN,
+  refusedPassArgs,
+  PASS_MODEL_PATTERN,
+} from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
+import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
 import { DEFAULT_SCANNER_APPS } from "../../resolve-review-comments/scripts/lib/scanner-annotations.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
+import { parseWorkTypes } from "../../do-item/scripts/lib/work-types.ts";
+import { DEFAULT_TEMPLATE as DEFAULT_WORKSPACE_TEMPLATE } from "../../do-item/scripts/workspace-name.ts";
+import {
+  parseRouting,
+  RAISE_FIELDS,
+  ROUTING_FIELDS,
+} from "../../do-item/scripts/lib/routing.ts";
 import {
   CANONICAL_STATES,
   knownAdapters,
 } from "../../do-item/scripts/lib/tracker/index.ts";
 import { checkConfig, loadSchema, parseSchema } from "../scripts/lib/schema.ts";
+import {
+  DEFAULT_OUTPUT_LINES,
+  DEFAULT_RETENTION_DAYS,
+  DEFAULT_TIMEOUT_MINUTES,
+  MAX_TIMEOUT_MINUTES,
+  verifySettings,
+} from "../../../shared/evidence-record.ts";
 import {
   MODES,
   parseReflection,
@@ -65,6 +96,16 @@ import {
   WORK_BATCH_FIELDS,
   parseWorkBatchSection,
 } from "../../work-batch/scripts/lib/policy.ts";
+import {
+  DEFAULT_STALE_AFTER_DAYS,
+  FIELDS as DOCS_FIELDS,
+} from "../../docs/scripts/lib/settings.ts";
+import {
+  DEFAULT_BODY_SECTION,
+  parseSpecsConfig,
+  SPECS_FIELDS,
+} from "../../../shared/spec/config.ts";
+import { ADAPTERS } from "../../../shared/spec/registry.ts";
 import { runScript } from "./helpers.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
@@ -160,8 +201,16 @@ describe("CONFIGURATION.md", () => {
     expect(findings.filter((f) => !f.id.startsWith("deprecated:"))).toEqual([]);
     expect(() => parsePrPolicy(example)).not.toThrow();
     expect(() => parseTrackerConfig(example)).not.toThrow();
+    expect(() => parseWorkTypes(example)).not.toThrow();
+    expect(() => parseRouting(example, parseWorkTypes(example))).not.toThrow();
     expect(() => parseReflection(example.reflection, repoRoot)).not.toThrow();
     expect(parseChangelogSection(example.changelog)).not.toBeNull();
+    expect(() =>
+      parseSpecsConfig(
+        example.specs,
+        ADAPTERS.map((a) => a.name),
+      ),
+    ).not.toThrow();
     const set = (path: string) =>
       path
         .split(".")
@@ -180,6 +229,12 @@ test("its complete example's code_stats section passes the skill", () => {
   ).not.toThrow();
 });
 
+test("its complete example's verify section passes the evidence record", () => {
+  expect(() =>
+    verifySettings(completeExample().verify, repoRoot),
+  ).not.toThrow();
+});
+
 test("its complete example's work_batch section passes the skill", () => {
   const example = completeExample();
   const { batchSizes } = parseTrackerConfig(example).labels;
@@ -192,6 +247,12 @@ describe("the reading skills", () => {
       ...STACKING_MODES,
     ]);
     expect(field("pull_requests.open_as")?.values).toEqual([...OPEN_AS]);
+    expect(field("do_item.arm_drive")?.values).toEqual([...ARM_DRIVE_MODES]);
+    expect(field("drive.pass_model")?.pattern).toBe(PASS_MODEL_PATTERN.source);
+    expect(field("drive.pass_args")?.items).toEqual({
+      type: "string",
+      pattern: PASS_ARG_PATTERN.source,
+    });
     expect(field("pull_requests.issue_link")?.values).toEqual([...ISSUE_LINKS]);
     expect(field("pull_requests.title_format")?.values).toEqual([
       ...TITLE_FORMATS,
@@ -203,12 +264,39 @@ describe("the reading skills", () => {
     expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
   });
 
+  test("accept the spec adapters the resolver has", () => {
+    expect(field("specs.adapters")?.items).toEqual({
+      type: "enum",
+      values: ADAPTERS.map((a) => a.name),
+    });
+  });
+
+  test("read the routing section's fields", () => {
+    expect(under("routing").sort()).toEqual(
+      ROUTING_FIELDS.flatMap((f) =>
+        f === "raise" ? RAISE_FIELDS.map((r) => `raise.${r}`) : [f],
+      ).sort(),
+    );
+  });
+
   test("accept the GitHub adapter's value sets the schema lists", () => {
     expect(field("issue_tracker.github.states_from")?.values).toEqual([
       ...GITHUB_STATE_SOURCES,
     ]);
     expect(field("issue_tracker.github.priority_labels")?.keys).toEqual([
       ...PRIORITY_NAMES,
+    ]);
+  });
+
+  test("accept the Jira adapter's value sets the schema lists", () => {
+    expect(field("issue_tracker.jira.priorities")?.keys).toEqual([
+      ...PRIORITY_NAMES,
+    ]);
+    expect(field("issue_tracker.jira.resolutions")?.keys).toEqual([
+      ...RESOLVED_STATES,
+    ]);
+    expect(field("issue_tracker.jira.link_types")?.keys).toEqual([
+      ...LINKED_RELATIONS,
     ]);
   });
 
@@ -219,6 +307,10 @@ describe("the reading skills", () => {
       f.path.startsWith("code_stats."),
     ))
       expect([f.path, f.repository_only]).toEqual([f.path, true]);
+  });
+
+  test("read the docs section's fields", () => {
+    expect(under("docs").sort()).toEqual([...DOCS_FIELDS].sort());
   });
 
   test("read the changelog section's fields, all of them repository-only", () => {
@@ -248,9 +340,14 @@ describe("the reading skills", () => {
       "pull_requests.branch_name": policy.branchName,
       "pull_requests.issue_link": policy.issueLink,
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
+      "drive.pass_deadline_retries": DEFAULT_PASS_DEADLINE_RETRIES,
+      "drive.pass_model": DEFAULT_PASS_MODEL,
+      "drive.pass_args": DEFAULT_PASS_ARGS,
+      "do_item.arm_drive": DEFAULT_ARM_DRIVE,
       "issue_tracker.adapter": DEFAULT_ADAPTER,
       "issue_tracker.github.states_from": DEFAULT_STATES_FROM,
       "issue_tracker.github.status_field": DEFAULT_STATUS_FIELD,
+      "issue_tracker.jira.issue_type": DEFAULT_ISSUE_TYPE,
       "issue_tracker.taxonomy": DEFAULT_TAXONOMY,
       "do_item.execution_plan_block": DEFAULT_BLOCK,
       "changelog.notes_dir": CHANGELOG_DEFAULTS.notesDir,
@@ -259,13 +356,40 @@ describe("the reading skills", () => {
       "changelog.release.push": CHANGELOG_DEFAULTS.push,
       "changelog.release.branch": CHANGELOG_DEFAULTS.branch,
       "code_stats.default_area": CODE_STATS_DEFAULT_AREA,
+      "docs.stale_after_days": DEFAULT_STALE_AFTER_DAYS,
       "work_batch.point_budget": DEFAULT_POINT_BUDGET,
       "work_batch.max_items": DEFAULT_MAX_ITEMS,
       "work_batch.ranking.provenance": DEFAULT_RANKING.provenance,
       "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
       "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
+      "repository.remote": DEFAULT_REMOTE,
       "review.scanner_apps": DEFAULT_SCANNER_APPS,
+      "specs.body_section": DEFAULT_BODY_SECTION,
+      "routing.raise.reviews": parseRouting({}, parseWorkTypes({})).raise
+        .reviews,
+      "workspace_name.template": DEFAULT_WORKSPACE_TEMPLATE,
+      "verify.output_lines": DEFAULT_OUTPUT_LINES,
+      "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
+      "verify.retention_days": DEFAULT_RETENTION_DAYS,
+      "autonomy.level": DEFAULT_LEVEL,
     });
+  });
+
+  test("accept a review bot as a login or a mapping with its markers", () => {
+    const problems = (bots: unknown[]) =>
+      checkConfig({ review: { bots } }, schema).map((f) => f.message);
+    expect(
+      problems(["a[bot]", { login: "b[bot]", chat_marker: "<!-- c -->" }]),
+    ).toEqual([]);
+    expect(problems([{ login: "b", override: true }]).join()).toContain(
+      "unknown key override",
+    );
+    expect(problems([5]).join()).toContain("or a mapping");
+  });
+
+  test("accept the autonomy levels the resolver reads", () => {
+    for (const path of ["autonomy.level", "autonomy.max_level"])
+      expect(field(path)?.values).toEqual([...AUTONOMY_LEVELS]);
   });
 
   test("accept only integers the skills read exactly", () => {
@@ -276,6 +400,58 @@ describe("the reading skills", () => {
     expect(problems(Number.MAX_SAFE_INTEGER)).toEqual([]);
     expect(problems(2 ** 53)).toEqual([
       "drive.max_rounds must be a whole number ≥ 1",
+    ]);
+  });
+
+  test("reject the drive.pass_args words the reading skill refuses, and accept the rest", () => {
+    const problems = (words: string[]) =>
+      checkConfig({ drive: { pass_args: words } }, schema).length;
+    for (const refused of [
+      ["--model", "opus"],
+      ["--model=opus"],
+      ["-p", "text"],
+      ["--print"],
+      ["--"],
+    ]) {
+      expect(refusedPassArgs(refused)).toBeDefined();
+      expect(problems(refused)).toBeGreaterThan(0);
+    }
+    // The schema cannot see an operand missing at the end of the list; the reading skill refuses it.
+    expect(refusedPassArgs(["--permission-mode"])).toBeDefined();
+    for (const accepted of [
+      ["--permission-mode", "bypassPermissions"],
+      ["--permission-mode=auto"],
+      ["--modelish"],
+    ]) {
+      expect(refusedPassArgs(accepted)).toBeUndefined();
+      expect(problems(accepted)).toBe(0);
+    }
+  });
+
+  test("report as errors the nulls remoteName refuses, and other nulls as not set", () => {
+    const severities = (config: Record<string, unknown>) =>
+      checkConfig(config, schema).map((f) => [f.id, f.severity]);
+    expect(severities({ repository: null })).toEqual([
+      ["null:repository", "error"],
+    ]);
+    expect(severities({ repository: { remote: null } })).toEqual([
+      ["null:repository.remote", "error"],
+    ]);
+    expect(severities({ repository: { base_branch: null } })).toEqual([
+      ["null:repository.base_branch", "info"],
+    ]);
+    expect(severities({ drive: null })).toEqual([]);
+  });
+
+  test("bound an integer from above where its reader does", () => {
+    const problems = (value: number) =>
+      checkConfig({ verify: { timeout_minutes: value } }, schema).map(
+        (f) => f.message,
+      );
+    expect(field("verify.timeout_minutes")?.max).toBe(MAX_TIMEOUT_MINUTES);
+    expect(problems(MAX_TIMEOUT_MINUTES)).toEqual([]);
+    expect(problems(MAX_TIMEOUT_MINUTES + 1)).toEqual([
+      `verify.timeout_minutes must be a whole number ≥ 1 and ≤ ${MAX_TIMEOUT_MINUTES}`,
     ]);
   });
 
@@ -318,6 +494,7 @@ describe("the reading skills", () => {
     expect(under("issue_tracker.labels").sort()).toEqual(
       [...LABEL_ROLES].sort(),
     );
+    expect(under("specs").sort()).toEqual([...SPECS_FIELDS].sort());
     expect(under("work_batch.ranking").sort()).toEqual(
       [...RANKING_FIELDS].sort(),
     );
@@ -342,9 +519,11 @@ describe("the reading skills", () => {
           f.path,
           skill,
           existsSync(
-            skill === "gc"
+            skill === "gc" || skill === "dispatch"
               ? join(plugin, "jig.ts")
-              : join(plugin, "skills", skill, "SKILL.md"),
+              : skill === "evidence"
+                ? join(plugin, "shared", "evidence.ts")
+                : join(plugin, "skills", skill, "SKILL.md"),
           ),
         ]).toEqual([f.path, skill, true]);
   });
@@ -424,6 +603,23 @@ describe("the schema's own format", () => {
     );
     expect(checkConfig({ a: { b: ["1"] } }, nested)).toEqual([]);
     expect(checkConfig({ a: { b: ["2"] } }, nested).map((f) => f.id)).toEqual([
+      "type:a.b",
+    ]);
+  });
+  test("a nested enum lists its values, and only an enum does", () => {
+    expect(() =>
+      parseSchema(withField({ type: "list", items: { type: "enum" } })),
+    ).toThrow("a list needs items");
+    expect(() =>
+      parseSchema(
+        withField({ type: "list", items: { type: "string", values: ["a"] } }),
+      ),
+    ).toThrow("a list needs items");
+    const nested = parseSchema(
+      withField({ type: "list", items: { type: "enum", values: ["a"] } }),
+    );
+    expect(checkConfig({ a: { b: ["a"] } }, nested)).toEqual([]);
+    expect(checkConfig({ a: { b: ["z"] } }, nested).map((f) => f.id)).toEqual([
       "type:a.b",
     ]);
   });

@@ -38,6 +38,14 @@
 
 import { isGitSha } from "../cli.ts";
 import { isActorId } from "./actor.ts";
+import { type DrivenBranch, isOptionalDrivenBranch } from "./driven-branch.ts";
+import { isAccountHash } from "../identity.ts";
+import { type TakeoverRecord, isOptionalTakeovers } from "./takeover.ts";
+import { isOptionalRetryCount } from "./deadline-retries.ts";
+import { isOptionalFrame } from "./park-frame.ts";
+import { type UnattendedDecision, isOptionalDecisions } from "./decisions.ts";
+import { type DriveEvent, isOptionalEvents } from "./events.ts";
+import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
 
 /**
  * The persisted shape of a recorded quota park — what
@@ -65,13 +73,21 @@ export interface QuotaParkRecord {
   resetAt: string | null;
   /** When THIS park was recorded — not when the wall was first observed. */
   at: string;
+  /** The billing account the wall belongs to, hashed (`accountHash`); absent when unknown. */
+  account?: string;
 }
 
 export interface ParkedItem {
   key: string;
   kind: "thread" | "finding";
+  /** The decision's question; a park from before framing holds its reason. */
   reason: string;
   round: number;
+  /** When it was parked; an answer must be later. Absent on an older park. */
+  at?: string;
+  /** The decision class and the decision record (`framed-park.ts`). */
+  class?: string;
+  record?: string;
 }
 
 /**
@@ -313,31 +329,10 @@ export interface DriveState {
    * the same thing if the field cannot have existed at all, which is exactly
    * what refusing an older file (rather than defaulting) preserves.
    *
-   * TWO KNOWN, ACCEPTED RESIDUALS, neither closed
-   * by additional machinery — both are consequences of this field being
-   * best-effort-written and PR-GLOBAL, the same trade-offs the rest of this
-   * feature already makes:
-   *
-   *   - A LOST STAMP LEAVES A STALE PARK. If the best-effort progress call
-   *     that would clear this (`drive-state.ts progress`, or any of
-   *     `bump-round`/`stamp-held`/`set-verified`/`release-held`) itself
-   *     fails to run, `withProgress` never executes, and this field is left
-   *     set even though the drive genuinely resumed. The cost is a
-   *     `--doctor` verdict staying `QUOTA_PARKED` one sweep longer than
-   *     reality — never a false `HEALTHY`, and never the drive itself,
-   *     which is the same bound every other best-effort call in this
-   *     feature already accepts.
-   *   - A DIFFERENT DRIVER'S PROGRESS CLEARS THIS ONE'S PARK. Being
-   *     PR-global (not per-driver), a second worktree that takes over this
-   *     PR and genuinely progresses clears whatever park the FIRST driver
-   *     recorded, same as `verifiedSha`'s own PR-global pointer can be
-   *     moved by a concurrent driver (see that field's comment). Building
-   *     a per-driver park record to close this would need the same
-   *     actor-scoping `HeldItem.actor`/`verifiedSha` already carry for the
-   *     held batch — deliberately not done here, since two drivers
-   *     legitimately racing this one PR is already the rarer, more
-   *     supervised case the lease mechanism (not this field) is meant to
-   *     prevent in the first place.
+   * Best-effort and PR-global, so two residuals are accepted: a lost progress
+   * stamp leaves a stale park (`--doctor` reads `QUOTA_PARKED` one sweep
+   * longer, never a false `HEALTHY`), and any driver's progress clears it,
+   * which is what a re-arm from another account relies on.
    */
   quotaPark: QuotaParkRecord | null;
   /**
@@ -394,15 +389,26 @@ export interface DriveState {
    * mutation and a 40-round drive on a wide diff would otherwise grow it
    * without limit; the window is far past the two consecutive rounds the
    * predicate reads, so the bound can never change an answer it would
-   * otherwise have given FOR AN ACKNOWLEDGED ENTRY.
-   *
-   * NOT unconditionally bounded: an entry more recent than `lastEscalatedRound`
-   * survives past the window regardless, so a drive that never acknowledges a
-   * standing escalation can retain more than `ROUND_PATHS_WINDOW` entries
-   * indefinitely — accepted, and bounded in practice by the reviewer's own
-   * round ceiling instead (`pruneRoundPaths`'s own header).
+   * otherwise have given FOR AN ACKNOWLEDGED ENTRY. An entry newer than
+   * `lastEscalatedRound` survives the window, so a drive that never
+   * acknowledges keeps more than `ROUND_PATHS_WINDOW` entries, bounded only by
+   * the reviewer's own round ceiling (`pruneRoundPaths`'s own header).
    */
   roundPaths: RoundPaths[];
+  /** The tree the last attach prepared, `null` before one (`driven-branch.ts`). */
+  drivenBranch?: DrivenBranch | null;
+  /** Every `drive.ts --take-over` of this drive, oldest first (`takeover.ts`). */
+  takeovers?: TakeoverRecord[];
+  /** The drive ledger's generation this state was last written or seeded at (`ledger.ts`). */
+  ledgerGeneration?: number;
+  /** Passes killed at their deadline this drive restarted from (`deadline-retries.ts`). */
+  deadlineRetries?: number;
+  /** Decisions the agent took and recorded, oldest first (`decisions.ts`). */
+  decisions?: UnattendedDecision[];
+  /** The drive's self-restarts and re-arms, oldest first (`events.ts`). */
+  events?: DriveEvent[];
+  /** The review arbiter's ruling per thread (`rulings.ts`). */
+  rulings?: ArbiterRuling[];
   [extra: string]: unknown;
 }
 
@@ -493,21 +499,67 @@ export function normalizeRoundPathsUncapped(raw: readonly string[]): string[] {
  * Tolerating them is not neutral, because the consumers treat these fields as
  * positions and sentinels rather than as arbitrary numbers. A persisted
  * `readyMarkedRound: 0.5` is non-zero, so every consumer reads it as "already
- * marked" and the draft→Ready transition is suppressed forever — while
- * `mark-ready.ts`'s own `isDigits` check rejects the same value's decimal
- * point and exits 1, wedging the drive rather than the field. A negative round
- * is the same shape pointed the other way. Fail closed here instead: an
- * unusable state is the store's documented, recoverable refusal
- * (`drive-state.ts reset`), where a silently-accepted malformed counter is
- * neither.
- *
- * Applied to the whole CLASS rather than the one field a review found it on:
- * `rounds`, `attempts`, both reflect
- * positions, `readyMarkedRound`, and the `round` on every parked and held
- * item are the same construct with the same invariant.
+ * marked" and the draft→Ready transition is suppressed forever. Fail closed
+ * instead: an unusable state is the store's documented, recoverable refusal
+ * (`drive-state.ts reset`). Every counter and every item `round` here is
+ * held to it.
  */
 function isCount(v: unknown): boolean {
   return typeof v === "number" && Number.isInteger(v) && v >= 0;
+}
+
+/** A parked item every reader can match and render (`ParkedItem`). */
+export function isParkedItem(p: unknown): boolean {
+  if (typeof p !== "object" || p === null) return false;
+  const e = p as Record<string, unknown>;
+  return (
+    typeof e.key === "string" &&
+    e.key.length > 0 &&
+    !/[\n\r]/.test(e.key) &&
+    (e.kind === "thread" || e.kind === "finding") &&
+    typeof e.reason === "string" &&
+    e.reason.length > 0 &&
+    isOptionalFrame(e) &&
+    isCount(e.round) &&
+    (e.at === undefined ||
+      (typeof e.at === "string" && Number.isFinite(Date.parse(e.at))))
+  );
+}
+
+/**
+ * A recorded quota park (`QuotaParkRecord`). `vendor`/`window` are
+ * newline-free for the same reason every other free-text field here is: the
+ * record round-trips through `console.error` lines in `drive.ts`, and a
+ * hand-edited value containing one could make a single park read, on a
+ * terminal, as two.
+ */
+function isQuotaParkRecord(v: unknown): boolean {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  const park = v as Record<string, unknown>;
+  const text = (f: unknown) =>
+    typeof f === "string" && f.length > 0 && !/[\n\r]/.test(f);
+  const instant = (f: unknown) =>
+    typeof f === "string" && Number.isFinite(Date.parse(f));
+  return (
+    text(park.vendor) &&
+    text(park.window) &&
+    (park.resetAt === null || instant(park.resetAt)) &&
+    instant(park.at) &&
+    (park.account === undefined || isAccountHash(park.account))
+  );
+}
+
+/** The fields a stored state may lack: absent, or well-formed. */
+function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
+  return [
+    isOptionalDrivenBranch(s.drivenBranch),
+    isOptionalTakeovers(s.takeovers),
+    isOptionalRetryCount(s.deadlineRetries),
+    isOptionalDecisions(s.decisions),
+    isOptionalEvents(s.events),
+    isOptionalRulings(s.rulings),
+    s.ledgerGeneration === undefined || isCount(s.ledgerGeneration),
+  ].every(Boolean);
 }
 
 export function isUsableState(v: unknown, pr: number): v is DriveState {
@@ -518,16 +570,9 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   if (typeof s.lastCountedHead !== "string") return false;
   if (typeof s.verifiedSha !== "string") return false;
   if (typeof s.phase !== "string") return false;
+  if (!hasUsableOptionalFields(s)) return false;
   if (!Array.isArray(s.parked)) return false;
-  for (const p of s.parked as unknown[]) {
-    if (typeof p !== "object" || p === null) return false;
-    const e = p as Record<string, unknown>;
-    if (typeof e.key !== "string" || e.key.length === 0) return false;
-    if (/[\n\r]/.test(e.key)) return false;
-    if (e.kind !== "thread" && e.kind !== "finding") return false;
-    if (typeof e.reason !== "string" || e.reason.length === 0) return false;
-    if (!isCount(e.round)) return false;
-  }
+  if (!(s.parked as unknown[]).every(isParkedItem)) return false;
   // Present AND well-typed, not "well-typed if present" — see `DriveState`.
   if (!isCount(s.attempts)) return false;
   if (typeof s.attemptsHead !== "string") return false;
@@ -663,38 +708,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
     (s.lastProgressAt !== "" && !Number.isFinite(Date.parse(s.lastProgressAt)))
   )
     return false;
-  if (s.quotaPark !== null) {
-    if (typeof s.quotaPark !== "object" || Array.isArray(s.quotaPark)) {
-      return false;
-    }
-    const park = s.quotaPark as Record<string, unknown>;
-    // `vendor`/`window` newline-free for the same reason every other
-    // free-text field here is (`actor`, `lastEscalatedInvariant`): this
-    // record round-trips through `console.error` lines in `drive.ts` and a
-    // hand-edited value containing one could make a single park read, on a
-    // terminal, as two.
-    if (
-      typeof park.vendor !== "string" ||
-      park.vendor.length === 0 ||
-      /[\n\r]/.test(park.vendor)
-    )
-      return false;
-    if (
-      typeof park.window !== "string" ||
-      park.window.length === 0 ||
-      /[\n\r]/.test(park.window)
-    )
-      return false;
-    if (
-      park.resetAt !== null &&
-      (typeof park.resetAt !== "string" ||
-        !Number.isFinite(Date.parse(park.resetAt)))
-    )
-      return false;
-    if (typeof park.at !== "string" || !Number.isFinite(Date.parse(park.at))) {
-      return false;
-    }
-  }
+  if (s.quotaPark !== null && !isQuotaParkRecord(s.quotaPark)) return false;
   if (!Array.isArray(s.roundPaths)) return false;
   // Collection-level invariants, restating `foldRoundPaths`'s own writer
   // contract rather than a weaker one the validator could drift from — the
@@ -836,6 +850,7 @@ export function freshState(pr: number): DriveState {
     roundPaths: [],
     lastProgressAt: "",
     quotaPark: null,
+    drivenBranch: null,
   };
 }
 

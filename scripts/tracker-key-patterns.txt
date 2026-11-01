@@ -4,8 +4,9 @@
 # line case-insensitive. See check-no-tracker-refs.ts.
 #
 # Those values come from the scanned repository itself, so this file spells
-# out neither: `{{team}}` stands for `issue_tracker.team` in
-# `.config/jig.yaml` and `{{licensor}}` for the name on NOTICE's copyright
+# out neither: `{{team}}` stands for `tracker_team` in
+# `.config/origin-references.yaml` (else `issue_tracker.team` in
+# `.config/jig.yaml`) and `{{licensor}}` for the name on NOTICE's copyright
 # line, the organization that holds Jig's copyright. Changing either changes
 # what the gate forbids, so a test pins both by digest. The gate does not
 # scan the pattern file it reads, and a test checks that this one contains

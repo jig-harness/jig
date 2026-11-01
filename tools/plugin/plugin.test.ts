@@ -92,7 +92,7 @@ test("change-note commands run from the plugin cache and read the repository's c
       env,
     });
   // Without the field in the repository's own file nothing is asked of it.
-  for (const command of ["check.ts", "release.ts", "status.ts"]) {
+  for (const command of ["check.ts", "lint.ts", "release.ts", "status.ts"]) {
     const off = run(command, []);
     expectSpawnExit({ ...off, exitCode: off.status }, 0);
     expect(off.stdout).toContain("not configured");
@@ -115,7 +115,7 @@ test("change-note commands run from the plugin cache and read the repository's c
   const status = run("status.ts", ["--json"]);
   expectSpawnExit({ ...status, exitCode: status.status }, 0);
   expect(JSON.parse(status.stdout).next).toBe("1.0.1");
-  for (const command of ["check.ts", "release.ts", "status.ts"]) {
+  for (const command of ["check.ts", "lint.ts", "release.ts", "status.ts"]) {
     const unknown = run(command, ["--unknown"]);
     expectSpawnExit({ ...unknown, exitCode: unknown.status }, 2);
   }
@@ -222,7 +222,9 @@ test("every relative import in the copied plugin resolves inside the copy", () =
  * Type-checks `dir/shared` with no `skills/` beside it. The include names no
  * extension, so the compiler takes every file kind it reads (`.ts`, `.mts`,
  * `.cts`, declaration files), and declaration files are checked rather than
- * skipped, so an import in any of them must resolve.
+ * skipped, so an import in any of them must resolve. The one package name it
+ * resolves is Optique's: the vendored bundle's declarations are the pinned
+ * package's own types, which only the repository holds and nothing run reads.
  */
 function compileSharedAlone(dir: string): {
   status: number | null;
@@ -235,6 +237,9 @@ function compileSharedAlone(dir: string): {
       compilerOptions: {
         typeRoots: [join(root, "node_modules", "@types")],
         skipLibCheck: false,
+        paths: {
+          "@optique/core": [join(root, "node_modules", "@optique", "core")],
+        },
       },
       include: ["shared/**/*"],
       exclude: [],
@@ -829,9 +834,7 @@ test("an unconfigured repository is refused, not run with guessed values", () =>
     { cwd: partial, env, encoding: "utf8" },
   );
   expectSpawnExit({ ...refused, exitCode: refused.status }, 2);
-  expect(refused.stderr).toContain(
-    "lacks required values: gates.command, review.bots, review.deferral_team",
-  );
+  expect(refused.stderr).toContain("lacks required values: gates.command\n");
   // Reviewer selection the wait step would refuse is refused up front, with
   // the wait step's own message (one shared validator).
   for (const [name, edit, message] of [
@@ -1192,7 +1195,7 @@ test("one change-area catalog reader serves the skills from the plugin copy", ()
   const consumer = consumerRepo(
     "catalog",
     `issue_tracker:
-  team: TASK
+  adapter: github
 do_item:
   agents:
     codearea_areas: { "codearea:api": api }
@@ -1213,19 +1216,21 @@ drive:
 `,
   );
   const cache = join(scratch, "cache", "skills");
-  const agent = spawnSync(
-    process.execPath,
-    [join(cache, "do-item", "scripts", "determine_agent.ts"), "-"],
-    {
-      cwd: consumer,
-      env,
-      encoding: "utf8",
-      input: '{"labels":["codearea:api"],"title":"x"}',
-    },
-  );
-  expectSpawnExit({ ...agent, exitCode: agent.status }, 0);
-  expect(JSON.parse(agent.stdout)).toMatchObject({
-    primary_agent: "Backend Agent",
+  const inConsumer = { cwd: consumer, env, encoding: "utf8" } as const;
+  const doItem = (script: string, input: string): unknown => {
+    const run = spawnSync(
+      process.execPath,
+      [join(cache, "do-item", "scripts", script), "-"],
+      { ...inConsumer, input },
+    );
+    expectSpawnExit({ ...run, exitCode: run.status }, 0);
+    return JSON.parse(run.stdout);
+  };
+  expect(
+    doItem("determine_agent.ts", '{"labels":["codearea:api"],"title":"x"}'),
+  ).toMatchObject({ primary_agent: "Backend Agent" });
+  expect(doItem("determine_type.ts", '{"labels":["type:bug"]}')).toMatchObject({
+    type: "bug",
   });
 
   const probe = join(consumer, "catalog-probe.ts");
@@ -1236,11 +1241,7 @@ const c = loadCatalogFile(".config/change-areas.yaml");
 console.log(JSON.stringify({ areas: areasOf("src/rpc/x.ts", c), flags: c.get("api")?.flags }));
 `,
   );
-  const read = spawnSync(process.execPath, [probe], {
-    cwd: consumer,
-    env,
-    encoding: "utf8",
-  });
+  const read = spawnSync(process.execPath, [probe], inConsumer);
   expectSpawnExit({ ...read, exitCode: read.status }, 0);
   expect(JSON.parse(read.stdout)).toEqual({
     areas: ["api"],
@@ -1539,20 +1540,6 @@ if (query.includes("node(id:$threadId)")) {
   },
   30_000,
 );
-
-test("the vendored YAML parser is the pinned js-yaml build", () => {
-  // The plugin cache has no node_modules, so the plugin ships js-yaml's own
-  // ESM build with its licence. CONTRIBUTING.md § Derived files says how to
-  // refresh both when the dependency is updated.
-  const vendor = join(root, "plugin", "shared", "vendor");
-  const pinned = join(root, "node_modules/js-yaml");
-  expect(readFileSync(join(vendor, "js-yaml.mjs"), "utf8")).toBe(
-    readFileSync(join(pinned, "dist/js-yaml.mjs"), "utf8"),
-  );
-  expect(readFileSync(join(vendor, "js-yaml.LICENSE"), "utf8")).toBe(
-    readFileSync(join(pinned, "LICENSE"), "utf8"),
-  );
-});
 
 test("plugin cancellation registrations release only their own ownership", () => {
   const probe = join(scratch, "ownership-probe.ts");

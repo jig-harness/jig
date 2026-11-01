@@ -37,8 +37,7 @@ how much it could not classify, and names the rule behind any file.
   [`code-stats`](plugin/skills/code-stats/README.md)
 - **Practice:** every module's criteria, as
   [principle 6](principles/06-audit-first.md) asks
-- **On the roadmap:** test-runner configuration for `code-stats`, and its
-  figures as audit evidence (item 20)
+- **On the roadmap:** `code-stats` figures as audit evidence (item 20)
 
 ## A work item carried from pickup to merge
 
@@ -55,7 +54,10 @@ walks every unresolved thread to an explicit outcome and `resolve-conflicts`
 settles a stopped merge or rebase so both sides' intent survives; when
 continuous integration ([CI](GLOSSARY.md)) turns red, the drive runs a repair round of its own, within a budget. A person
 merges. Outside a drive, `fix-ci` fixes a failed run from its log.
-`work-batch` carries several small items from one area of the code the same
+Before it delegates, `do-item` reports the [route](GLOSSARY.md) the
+implementer would run on: the model tier and effort the item's type, flag
+labels and size call for, from rules the repository keeps as data, with the
+rule behind each part. `work-batch` carries several small items from one area of the code the same
 way, in one pull request with one commit each, so their review is paid once.
 
 - **Skills:** [`file-issue`](plugin/skills/file-issue/README.md),
@@ -68,7 +70,9 @@ way, in one pull request with one commit each, so their review is paid once.
 - **Practice:** [M7](modules/M7-pr-lifecycle-review/),
   [M9](modules/M9-tasks-memory/)
 - **On the roadmap:** a converged drive arming the merge it certified
-  (roadmap item 9); the drive's CI-repair round running `fix-ci` (Later)
+  (roadmap item 9); the route applied to the implementer and recorded on the
+  pull request (roadmap item 31); the drive's CI-repair round running
+  `fix-ci` (Later)
 
 ## Review in tiers, with an arbiter for contested findings
 
@@ -141,16 +145,21 @@ The feature pipeline runs from research through requirements and
 architecture to a design loop and an [epic](GLOSSARY.md) of planned work
 items, with a template for each stage
 ([PIPELINE.md](modules/M6-feature-delivery-pipeline/templates/PIPELINE.md)).
+`red-team` reviews a requirements or architecture document adversarially:
+personas, from a critical chief technology officer to a reader who knows no
+engineering terms, each read it in fresh context and report the passage, the
+risk and the question the author must answer, in one report.
 `design-brief-builder` assembles the brief bundle for an external design
 session from the repository's real schema and code, and audits it for
 prescriptions before it leaves. `review` checks each stage's plan or document
 against the repository's decisions.
 
-- **Skills:** [`design-brief-builder`](plugin/skills/design-brief-builder/SKILL.md),
+- **Skills:** [`red-team`](plugin/skills/red-team/SKILL.md),
+  [`design-brief-builder`](plugin/skills/design-brief-builder/SKILL.md),
   [`review`](plugin/skills/review/SKILL.md)
 - **Practice:** [M6](modules/M6-feature-delivery-pipeline/)
-- **On the roadmap:** the greenfield kickoff as skills and an adversarial
-  reviewer (roadmap item 3); epic planning on the tracker (Later)
+- **On the roadmap:** the greenfield kickoff as skills (roadmap item 3); epic
+  planning on the tracker (Later)
 
 ## Gates that ship with their tests, each on a named rung
 
@@ -167,7 +176,6 @@ changes a merge decision, and the testing strategy sets tiers with budgets.
   [M2](modules/M2-generated-artifact-freshness/),
   [M13](modules/M13-pipeline-economy/),
   [M14](modules/M14-testing-strategy/)
-- **On the roadmap:** the rest of M14 (roadmap item 15)
 
 ## Change notes, and a changelog nobody fights over
 
@@ -248,13 +256,13 @@ the single run, every field is documented with its default and the skills
 that read it, and the audit checks the configuration against the repository.
 Bindings to a named tool stand behind an interface: the skills reach the
 issue tracker through a small [tracker interface](GLOSSARY.md) with adapters
-for Linear and GitHub Issues, so another tracker is a new adapter, not a
+for Linear, GitHub Issues and Jira, so another tracker is a new adapter, not a
 change to the skills. [EXTENDING.md](plugin/EXTENDING.md) lists every point where an
 organization plugs in its own commands, skills, reviewers and stores.
 
 - **Practice:** [M0](modules/M0-instruction-architecture/),
   [M9](modules/M9-tasks-memory/)
-- **On the roadmap:** Jira and plan-file tracker adapters (roadmap item 12); the
+- **On the roadmap:** a plan-file tracker adapter (roadmap item 12); the
   values the skills still assume (roadmap item 10)
 
 ## Documents that say what is true now
@@ -263,12 +271,16 @@ Instruction files are layered so a rule loads only where it applies, with a
 glossary so parallel agents use one word for one thing. The docs tree is
 governed: a schema, a generated index, and [de-scarring](GLOSSARY.md), which
 `descar` performs by removing review traces, struck corrections and
-superseded statements from a promoted page. `programmatic-execution` runs a
+superseded statements from a promoted page. `docs` checks the whole tree in
+one pass (frontmatter, index, dates, scars and deferrals), flags drafts left
+stale and lists the documents the project's type calls for and the tree
+lacks; its gates run the same way in a repository's hooks and CI. `programmatic-execution` runs a
 bulk read-only check (cross-references, links, a search across many files)
 as one script whose findings are a compact list, instead of reading every
 file into the conversation.
 
-- **Skills:** [`descar`](plugin/skills/descar/SKILL.md),
+- **Skills:** [`docs`](plugin/skills/docs/README.md),
+  [`descar`](plugin/skills/descar/SKILL.md),
   [`programmatic-execution`](plugin/skills/programmatic-execution/SKILL.md)
 - **Practice:** [M0](modules/M0-instruction-architecture/),
   [M4](modules/M4-docs-governance/)

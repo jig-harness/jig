@@ -91,8 +91,8 @@ gate](reference/required-phases/) before a transition to `done`.
 
 Jig's [`do-item`](../../plugin/skills/do-item/SKILL.md) skill honours
 the `hitl` and `manual-ops` flags through its
-[tracker adapter](../../GLOSSARY.md) (Linear's and GitHub Issues' are
-built; Jira and a plan file kept in the repository are planned,
+[tracker adapter](../../GLOSSARY.md) (Linear's, GitHub Issues' and
+Jira's are built; a plan file kept in the repository is planned,
 [ROADMAP.md](../../ROADMAP.md) item 12), with the label names taken from `issue_tracker.labels` in the
 repository's [configuration](../../plugin/CONFIGURATION.md#issue_tracker).
 Its [`file-issue`](../../plugin/skills/file-issue/README.md) skill applies

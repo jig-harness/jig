@@ -93,7 +93,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>" [--budget N] [--limit
 | An epic's key | The epic's open children |
 | One issue's key | Open issues sharing its area-naming label; the issue is kept first. An issue that may not join a batch itself ends the run with a recommendation to work it alone |
 
-An issue key is `ENG-123` on Linear and `#123` on GitHub Issues, an issue of
+An issue key is `ENG-123` on Linear and Jira and `#123` on GitHub Issues, an issue of
 the configured repository; this document writes it as `<KEY>`. Quote a key,
 and an anchor, on a command line: an unquoted `#` starts a shell comment.
 
@@ -160,16 +160,21 @@ holds the issue back, and a changed assignee means someone else took it.
 Record, for each issue you keep, its state and assignee ids from that line:
 the release in step 4 restores them. Then, for each:
 
-1. Move it to `in_progress` and assign it to yourself, as `/jig:do-item`
-   Step 4a item 1 does:
+1. Claim it (assign it to yourself and move it to `in_progress`), as
+   `/jig:do-item` Step 4a item 2 does:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" transition "<KEY>" in_progress
+   bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" claim "<KEY>"
    ```
 
-   (**judgment** — the assignee through the harness's tracker tool, the one
-   that saves an issue's state and assignee: the mapped state name, assignee
-   "me".)
+   On exit `3` (someone already holds it) or `4` (another claim landed
+   first), drop the issue from the batch as a changed line is dropped.
+
+   (**judgment** — native: read the issue and stop on the same refusals,
+   save its state and assignee through the harness's tracker tool (the
+   mapped state name, assignee "me"), then read it again and drop the
+   issue when it shows another assignee, or is gone or no longer in the
+   mapped state.)
 
 2. Comment on it, naming the anchor and every other issue in the batch, so a
    second agent sees it is spoken for and by which batch
@@ -199,11 +204,13 @@ file so the worktree stays clean. Keep the `pickupId` the first prints: the pull
 Name the branch with the pull-request policy, after the highest-priority
 issue in the batch. The `branch` operation of `pr-plan.ts` only prints the
 name; create the
-branch from the planned base and switch to it before the first commit:
+branch from the planned base and switch to it before the first commit
+(`<remote>` is the repository's git remote: `repository.remote`, else
+`origin`):
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" branch --issue "<highest-priority KEY>" --title "<that issue's title>"
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git switch -c <printed-branch-name> origin/<base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git switch -c <printed-branch-name> <remote>/<base>
 ```
 
 When a branch of that name already exists for this batch, switch to it
@@ -304,13 +311,15 @@ requires, for every issue.
 
 Capture the intent chain with the `pickupId` from step 3 (or step 4's
 rewrite), then arm the drive exactly as `/jig:do-item`'s "Arm the drive"
-(Step 4a) says: emit the command, spawn it under Claude Code, never a second
-driver, and post the tracker comment with the arm outcome on every issue in
-the batch. One drive covers every issue.
+(Step 4a) says: run drive-pr's arm script, emit its `command`, act on its
+`status` as do-item's step 2 lists (a terminal tab, a background spawn
+under Claude Code, or the command only), never a second driver, and post
+the tracker comment with the arm outcome on every issue in the batch. One
+drive covers every issue.
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/capture-intent-chain.ts" <PR> --pickup <pickupId>
-bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
+bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/arm-drive.ts" <PR>
 ```
 
 ## After the merge

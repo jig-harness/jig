@@ -26,6 +26,7 @@ import type {
   WindowSpec,
 } from "../port.ts";
 import { TrackerRequestError } from "../port.ts";
+import { checkPoolQuery, inWindow } from "../requests.ts";
 import type { Client } from "./client.ts";
 import { STATE_TYPES } from "./model.ts";
 import {
@@ -55,6 +56,7 @@ type ReportOps = Pick<
   | "openIssues"
   | "openChildren"
   | "poolIssue"
+  | "assignedIssues"
 >;
 
 /** What the reports borrow from the pickup operations. */
@@ -77,13 +79,16 @@ const ANCESTORS = ancestorFields(PARENT_DEPTH + 1);
 /** Whether each sub-issue is open, for `hasOpenChildren`. */
 const OPEN_CHILDREN = `subIssues(first: ${PAGE}) { pageInfo { hasNextPage } nodes { state } }`;
 
+/** The canonical states that only a closed issue is in. */
+const CLOSED_STATES: ReadonlySet<string> = new Set([
+  "done",
+  "canceled",
+  "duplicate",
+]);
+
 const LABELED_EVENTS = `timelineItems(itemTypes: [LABELED_EVENT], last: ${PAGE}) {
   nodes { ... on LabeledEvent { createdAt label { name } } }
 }`;
-
-const inWindow = (at: string | null, w: WindowSpec | undefined) =>
-  w === undefined ||
-  (at !== null && Date.parse(at) >= w.sinceMs && Date.parse(at) < w.untilMs);
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
@@ -370,14 +375,7 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
     },
 
     async openIssues(query) {
-      if (
-        query.withSomeOf.length === 0 ||
-        query.withSomeOf.some((l) => l.length === 0)
-      )
-        throw new TrackerRequestError(
-          "invalid",
-          "a pool query needs at least one non-empty label list; an empty one would read every open issue",
-        );
+      checkPoolQuery(query);
       // GitHub's label filter requires every listed label, so each
       // alternative of the first group is read on its own and the union is
       // deduplicated; every group is then applied locally.
@@ -422,6 +420,36 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
     async poolIssue(key) {
       const found = await client.issue(client.ref(key), OPEN_CHILDREN);
       return found === null ? null : pool(found.issue, found.raw);
+    },
+
+    async assignedIssues(identity, states) {
+      if (states.length === 0)
+        throw new TrackerRequestError(
+          "invalid",
+          "an assigned-issues query needs at least one state",
+        );
+      // The state is a label or a board column, so it is applied locally;
+      // the listing is open-only unless a closed state is asked for.
+      const closed = states.some((s) => CLOSED_STATES.has(s));
+      const open = states.some((s) => !CLOSED_STATES.has(s));
+      return (
+        await client.list(
+          {
+            states: [
+              ...(open ? ["OPEN" as const] : []),
+              ...(closed ? ["CLOSED" as const] : []),
+            ],
+            assignee: identity,
+          },
+          OPEN_CHILDREN,
+        )
+      )
+        .filter(({ issue }) =>
+          states.includes(
+            model.stateOf({ ...issue, labels: wholeLabels(issue) }),
+          ),
+        )
+        .map(({ issue, raw }) => pool(issue, raw));
     },
   };
 }

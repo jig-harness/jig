@@ -45,10 +45,18 @@ not `src/ts.test.ts`.
 | `--exemptions <file>` | lines of `<glob> <reason>`; blank lines and `#` comments are ignored, and a line without a reason is an error |
 | `--require-changed` | the test must change with the source, not merely exist |
 
-Exit codes: `0` every changed source has a test or an exemption, `1` at
-least one has neither (each is listed with the paths that were looked for),
-`2` a usage error (including an empty glob or template), an exemption without a reason, or git failing. A change
-the gate could not read never passes.
+Then, whatever the change touched:
+
+4. every exemption must match at least one file in the tree the gate reads:
+   `HEAD` with `--base`, the `--root` directory on disk with `--changed`.
+   A symbolic link counts as a file here, since an exemption excuses a path.
+
+Exit codes: `0` every changed source has a test or an exemption, and every
+exemption matches a file; `1` at least one changed source has neither (each
+is listed with the paths that were looked for), or an exemption matches no
+file (each is listed as `<file>:<line>: <glob>`); `2` a usage error
+(including an empty glob or template), an exemption without a reason, or git
+failing. A change the gate could not read never passes.
 
 Deleted files need no test. A pure move is a rename, so the moved file is
 checked at its new path.
@@ -93,11 +101,19 @@ exemption file is a registered escape hatch in the sense of
 [M1](../../../M1-gates-enforcement-ladder/README.md), so list it in the
 suppression-token registry beside the inline tokens.
 
-The gate checks that every exemption has a reason. It does not check that an
-exemption still matches anything: one left behind by deleted code passes, and
-it would exempt new code later created at that path. Until the gate prunes
-stale exemptions (future work in [M14](../../README.md#future)), remove an
-exemption in the same change that removes what it excused.
+The gate checks that every exemption has a reason, and that it still matches
+a file. An exemption left behind by deleted code would otherwise go
+unnoticed and exempt new code later created at that path, so the gate fails
+on it and names the line to delete. The check runs on every change, not only
+on one that touches the exemption's files, so a stale line already on the
+base branch fails the next change too: delete it there. An exemption whose
+only file the change deletes fails in that same change, which is where it
+should leave. With `--base`, an untracked file on disk does not keep an
+exemption alive: the gate reads `HEAD`.
+
+It checks that an exemption matches a file, not that the file is a source:
+one exemptions file may serve several runs with different `--source` globs
+(one per language), and an exemption for another run's sources is not stale.
 
 ## What it does not judge
 
@@ -110,8 +126,8 @@ pass is trusted, and test files are type-checked.
 | File | Role |
 |------|------|
 | `check-tests-with-changes.ts` | the gate |
-| `check-tests-with-changes.test.ts` | self-test: list and git modes, exemptions, `--require-changed`, usage errors, template expansion including a swapped directory, the shape of `{ext}`, a directory or link at the test path or a linked directory above it, and a link replaced by a source file |
-| `fixtures/` | a small source tree with tested, untested and generated files, and two exemption files |
+| `check-tests-with-changes.test.ts` | self-test: list and git modes, exemptions, an exemption matching no file (in the tree, in `HEAD` though present on disk, after the change deletes its only file), `--require-changed`, usage errors, template expansion including a swapped directory, the shape of `{ext}`, a directory or link at the test path or a linked directory above it, and a link replaced by a source file |
+| `fixtures/` | a small source tree with tested, untested and generated files, and exemption files: one that passes, one with a line missing its reason, one with a line that matches no file |
 
 Run the self-test with `bun test ./check-tests-with-changes.test.ts`. The gate
 imports `lib/cli.ts` from Jig's root (`../../../../lib/cli.ts`), so run it from

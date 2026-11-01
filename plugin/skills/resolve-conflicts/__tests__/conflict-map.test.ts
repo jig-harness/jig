@@ -128,6 +128,30 @@ describe("a merge", () => {
     mergeConflict(s);
     expect(map("--integration", "ours").sides.integration).toBe("ours");
   });
+
+  it("takes the default branch from a configured remote whose name holds a slash", () => {
+    s.commit("Add the service configuration", { "src/config.ts": CONFIG_BASE });
+    s.git("branch", "-m", "trunk");
+    s.git("checkout", "-q", "-b", "feature");
+    s.commit("Feature side", {
+      "src/config.ts": CONFIG_BASE.replace("retries: 3", "retries: 4"),
+    });
+    s.git("checkout", "-q", "trunk");
+    s.commit("Trunk side", {
+      "src/config.ts": CONFIG_BASE.replace("retries: 3", "retries: 5"),
+    });
+    s.git("update-ref", "refs/remotes/team/upstream/trunk", "trunk");
+    s.git(
+      "symbolic-ref",
+      "refs/remotes/team/upstream/HEAD",
+      "refs/remotes/team/upstream/trunk",
+    );
+    s.overlay("repository:\n  remote: team/upstream\n");
+    expect(s.gitTry("merge", "feature").code).not.toBe(0);
+    const m = map();
+    expect(m.sides.ours.ref).toBe("trunk");
+    expect(m.sides.integration).toBe("ours");
+  });
 });
 
 describe("a rebase", () => {

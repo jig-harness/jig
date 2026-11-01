@@ -22,6 +22,8 @@
  * papering over either.
  */
 
+import { framedDecisionLines } from "./park-frame.ts";
+import { decisionsSection } from "./decisions.ts";
 import {
   existsSync,
   lstatSync,
@@ -39,6 +41,7 @@ import {
   keyFromBranch,
 } from "../../../../do-item/scripts/lib/tracker/keys.ts";
 import { DEFAULT_BRANCH_PATTERN, prPolicy } from "../pr-policy.ts";
+import { drivenBranchName } from "../driven-branch.ts";
 import { git, gitIdentityEnv } from "../proc.ts";
 import { atomicWrite } from "./fsutil.ts";
 import type { DriveState } from "./schema.ts";
@@ -80,6 +83,48 @@ async function handoffDir(): Promise<string> {
 
 export async function handoffPath(pr: string): Promise<string> {
   return join(await handoffDir(), `pr-drive-${pr}.md`);
+}
+
+/**
+ * The agent-authored narrative of the handoff file at `file`, without the
+ * resume line: what the drive ledger carries the tail of. Empty when the
+ * file or its marker is missing.
+ */
+export function narrativeOf(file: string): string[] {
+  if (!existsSync(file)) return [];
+  const lines = readFileSync(file, "utf8").split("\n");
+  const idx = lines.indexOf(NARRATIVE_MARKER);
+  if (idx === -1) return [];
+  const narrative = lines
+    .slice(idx + 1)
+    .filter((line) => !/^\*\*Resume:\*\* `\/drive-pr \d+`$/.test(line));
+  while (narrative.length > 0 && narrative[0]?.trim() === "") narrative.shift();
+  while (narrative.length > 0 && narrative.at(-1)?.trim() === "")
+    narrative.pop();
+  return narrative;
+}
+
+/**
+ * Replace the handoff file's narrative with `narrative`: a seed from a newer
+ * drive ledger carries the last driver's notes, which are newer than this
+ * clone's. An empty narrative replaces this clone's notes too (the ledger's
+ * size cut can drop them). Returns false, writing nothing, when there is no
+ * file or it has no marker: a seed that cannot install the notes must not
+ * advance its generation.
+ */
+export async function installNarrative(
+  pr: string,
+  narrative: readonly string[],
+): Promise<boolean> {
+  const file = await handoffPath(pr);
+  if (!existsSync(file)) return false;
+  const lines = readFileSync(file, "utf8").split("\n");
+  const idx = lines.indexOf(NARRATIVE_MARKER);
+  if (idx === -1) return false;
+  const machine = lines.slice(0, idx + 1).join("\n");
+  const notes = narrative.length === 0 ? "" : `${narrative.join("\n")}\n\n`;
+  atomicWrite(file, `${machine}\n\n${notes}**Resume:** \`/drive-pr ${pr}\`\n`);
+  return true;
 }
 
 export async function removeHandoff(pr: string): Promise<void> {
@@ -223,14 +268,13 @@ async function identifierFromBranch(
   dir: string,
   keys: IssueKeys | null,
 ): Promise<string | null> {
-  const r = await git(["rev-parse", "--abbrev-ref", "HEAD"], {
-    cwd: dir,
-    stderr: "ignore",
+  // A detached tree an attach prepared drives the branch its record names.
+  const branch = await drivenBranchName(git, dir, {
     timeoutSec: 10,
     env: gitIdentityEnv(),
   });
-  if (r.code !== 0) return null;
-  return identifierFromBranchName(r.stdout, keys);
+  if (branch === null) return null;
+  return identifierFromBranchName(branch, keys);
 }
 
 /** A snapshot is a regular file the writer created. `existsSync`/`readFileSync`
@@ -415,6 +459,37 @@ export async function intentChainSection(
   ];
 }
 
+/** Which tree the last attach prepared, when one did (`drivenBranch`). */
+function drivenFromLine(s: DriveState): string[] {
+  const d = s.drivenBranch;
+  if (!d) return [];
+  const how = d.detached ? "detached at the head of" : "on";
+  const made = d.created ? "; the drive created this tree" : "";
+  return [
+    `- **Driven from**: ${d.worktree}, ${how} \`${d.branch}\` (pushed to \`${d.remote}\`)${made}`,
+  ];
+}
+
+/**
+ * The parked items: a table to scan, then each decision in full, so the
+ * person who reads this decides from it.
+ */
+function parkedSection(parked: DriveState["parked"]): string[] {
+  const lines = ["", "## Parked — awaiting a human decision", ""];
+  if (parked.length === 0) return [...lines, "_None._"];
+  lines.push(
+    "| Key | Kind | Class | Round | Decision needed |",
+    "|---|---|---|---|---|",
+  );
+  for (const p of parked)
+    lines.push(
+      `| \`${p.key}\` | ${p.kind} | ${p.class ?? "(none)"} | ${p.round} | ${cell(p.reason)} |`,
+    );
+  for (const p of parked)
+    lines.push("", "```text", ...framedDecisionLines(p), "```");
+  return lines;
+}
+
 export async function renderHandoff(
   pr: string,
   s: DriveState,
@@ -479,6 +554,7 @@ export async function renderHandoff(
     }
   })();
   lines.push(`- **CI hold**: ${ciHoldSummary}`);
+  lines.push(...drivenFromLine(s));
   lines.push(
     ...(await intentChainSection(
       await intentChainDir(dir),
@@ -486,17 +562,8 @@ export async function renderHandoff(
       pr,
     )),
   );
-  lines.push("", "## Parked — awaiting a human decision", "");
-  if (s.parked.length === 0) {
-    lines.push("_None._");
-  } else {
-    lines.push("| Key | Kind | Round | Decision needed |", "|---|---|---|---|");
-    for (const p of s.parked) {
-      lines.push(
-        `| \`${p.key}\` | ${p.kind} | ${p.round} | ${cell(p.reason)} |`,
-      );
-    }
-  }
+  lines.push(...parkedSection(s.parked));
+  lines.push("", ...decisionsSection(s.decisions ?? []));
   // The held batch: replied to, deliberately not yet resolved. This is the
   // half of the round that used to exist only in the agent's context, so it
   // is the half a compaction dropped — and dropping it is silent either way

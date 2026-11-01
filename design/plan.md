@@ -17,6 +17,151 @@ here have a design in this folder ([README.md](README.md)).
 
 ## Now
 
+### 32. Driving any pull request from anywhere, with autonomy that fits the hour
+
+Most of [the design](dark-factory-driving.md) is built, in
+[`drive-pr`](../plugin/skills/drive-pr/README.md) and
+[CONFIGURATION.md § `autonomy`](../plugin/CONFIGURATION.md#autonomy): a pull
+request is driven from any checkout, a stopped drive restarts itself or is
+re-armed, a wedged or dead driver is taken over through the drive ledger on
+the pull request, the `attended` and `unattended` levels say what an agent
+decides and records instead of asking, and a park is reserved for the
+configured human decision classes and carries a framed decision. What the
+design still holds:
+
+- **The policy from the base branch**: `autonomy.max_level` and
+  `autonomy.park_classes` read from the pull request's base branch, failing
+  closed when it cannot be read. Today they come from the working tree, so a
+  pull request that edits them changes what its own drive may decide.
+
+The policy from the base branch ships on its own. `wide` and `off_hours`
+ship opt-in and documented as not yet validated, a maintainer's recorded
+exception to the dark-by-default rule, revisited once a working repository
+has run them for a month against the design's validation measure.
+
+Done when a drive reads its ceiling and park classes from the base branch.
+
+### 33. The dispatcher: a tick that starts the execution line's stages
+
+Every stage of the execution line starts only when a person types it: an
+assigned item waits for someone to open a `do-item` session, a drive
+stopped by a usage limit or an answered park waits for someone to re-arm
+it, a converged pull request that its base later conflicts waits for
+someone to notice, a merge waits for someone to run its follow-up. Nothing watches the
+tracker or the pull requests for the next thing to start, so with nobody at
+the keyboard the line stops at the first stage boundary.
+[design/dark-factory-dispatch.md](dark-factory-dispatch.md) has how it
+works: `jig dispatch` in `plugin/dispatch/`, a stateless tick on a timer
+`jig dispatch install` writes, reads the items assigned to the repository's
+factory identity in a dispatch state (through a new tracker-interface read,
+`assignedIssues(identity, states)`, and `assignedBy(key)` for who made the assignment, beside the unchanged pool query), the drive ledger on each
+pull request and the session runtime's list of running sessions; it
+reports every stage it would start with its evidence, and with `--apply`
+starts each one through a session runtime interface whose first
+implementation is Orca
+([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
+within a cap per account, round-robin among the accounts without a usage
+wall, binding a headless pass to its account through the Orca profile's
+configuration directory. Each launch leaves a launch record that brings the
+stage's answer back to the next tick, and a merged pull request's
+follow-up is guarded by a marker comment on it. A stop only a person can
+settle (a park, a drive stopped on a failure, a stalled pickup) is notified
+once. It never merges, answers a park, re-arms a drive a person stopped,
+takes over a driver another machine started or passes a flag reserved for
+a person, and writes a receipt per tick. Machine values in `~/.jig/dispatch.yaml`, a repository's
+in a `dispatch` section of `.config/jig.yaml`. Built in the design's order:
+the report, then re-arms within account caps with the timer, then pickups,
+then follow-ups and notifications, then control: a permanent outcome
+log, one row per ended launch with an outcome class from a
+closed list, a dashboard that filters it (`jig dispatch dashboard`, no
+report files), drift from each stage's expectation reported and notified
+but never acted on, recurring classes routed to `reflect`, and one
+mechanical nudge (`steer`, "continue" after a usage limit resets) with no
+open-ended prompt, then the re-drive of a converged pull request the
+forge reports conflicting or whose head moved after the drive verified
+it, then Codex accounts admitted beside Claude Code's, the account's
+vendor choosing the agent a session runs in; the re-arm step waits on the drive
+running in a session of its own, and the pickups' launches on an Orca
+session that can be bound to a chosen account (until then the pickups are
+reported, not started). A park's notification carries the park's framed
+decision.
+
+Done when, on a host running Orca, an item assigned to the factory
+identity gets one workspace and one `do-item` session within one interval,
+a drive stopped on one account's usage limit is re-armed on another account
+by the next tick, a merged pull request gets one follow-up session, a park
+reaches a person's phone and its answer on the pull request re-arms the
+drive, every launch, refusal and notification is in the tick's
+receipts, every ended launch has a row with its outcome class in the
+outcome log, `jig dispatch dashboard` filtered to yesterday shows only
+yesterday's rows, a drive whose open threads rise across rounds is
+reported as drifting and notified once, a session waiting after its
+account's wall reopened gets exactly one "continue" nudge, a converged pull
+request that now conflicts with its base or whose head moved past the one
+the drive verified is re-armed once, one still at the verified head and
+mergeable is left alone, and one whose mergeability the forge is still
+computing is reported unplaced with no launch, a drive stopped on a Claude
+account's wall is re-armed on a Codex account with `CODEX_HOME` bound and
+the Claude variables absent, and an account of a vendor with no documented
+pass command is reported and never launched, a Codex pass that outruns a
+positive `DRIVE_PR_PASS_TIMEOUT` is terminated, and a Codex account is
+reported and never launched while that deadline is `0`.
+
+### 35. One jig command line
+
+The plugin's machine-level tools are separate commands with no shared
+shape: `jig gc` and `jig dispatch` each install, remove and report on their
+own job in their own words, and installing, updating and checking the
+plugin itself is a script in this repository (`tools/plugin/setup.ts`), not
+a command the plugin ships. This item makes `jig` one command line, parsed
+with [Optique](https://optique.dev) (vendored as a bundle Jig builds,
+[ADR-0001](../docs/adr/ADR-0001-bun-typescript-toolchain.md)), with
+resource collection and the dispatcher as its components: each component
+defines its command beside its code (`plugin/gc/cli.ts`,
+`plugin/dispatch/cli.ts`) and `plugin/jig.ts` combines them, so `--help`,
+`jig help <command>` and `jig completion <shell>` come from the
+definitions that parse. Across the components come the lifecycle verbs
+`install`, `uninstall`, `upgrade`, `doctor`, `status`, `receipts` and `run`
+(`jig install dispatch`, `jig status`), through one component interface a
+third component joins without touching the verbs, while each component's
+own work stays under its name (`jig gc --collect`, `jig dispatch --apply`).
+`jig` reaches `PATH` through the launcher the installed jobs already run,
+which finds the installed plugin copy at each run, so a plugin update
+reaches it without a new install. The audit stays a skill; `jig doctor`
+runs its configuration-fit check beside its own.
+
+What must keep working through every step, because jobs already installed
+on machines run it: each timer's launcher, copied under the gc state
+directory, calls `<plugin copy>/jig.ts` with
+`--config=<plugin copy>/gc/bunfig.toml` and `gc --scheduled` or
+`dispatch --apply`. So `plugin/jig.ts` stays where it is,
+`plugin/gc/bunfig.toml` and `plugin/dispatch/bunfig.toml` stay (the
+dispatcher's pass wrapper and launches use the second), those two command
+lines keep their meaning, the heavy-run lock's re-run of
+`jig.ts gc … --collect` keeps working, and `jig dispatch run` stays the
+pass wrapper's passthrough.
+
+Built in this order:
+
+1. **Optique, behaviour unchanged**: one parser with a `gc` and a
+   `dispatch` command replaces the hand-written ones, every current form
+   keeping its meaning and exit code, with generated help and completion.
+2. **Lifecycle verbs over one component interface, `jig` on `PATH`**: the
+   verbs above for both components, each component's `install` and
+   `receipts` reached through them with the old forms still working, and
+   the launcher installing a `jig` command that runs the installed copy.
+3. **`doctor` and `upgrade`**: `tools/plugin/setup.ts`'s install, update
+   and check move into the plugin as `jig upgrade` and `jig doctor`, moved
+   and not copied: `tools/plugin/setup.ts` keeps only a call into the
+   plugin's code, so a first install from a checkout still works. `doctor`
+   also runs the audit's configuration-fit check.
+
+Done when `jig` on `PATH` installs, upgrades, checks and removes both
+components through the same verbs, `jig doctor` reports the plugin's
+installation and the repository's configuration fit, `tools/plugin/setup.ts`
+holds no logic of its own, and a job installed before the first step still
+runs on a machine that took every release since.
+
 ### 3. The kickoff family
 
 The greenfield kickoff becomes a living skill instead of a frozen seed, with
@@ -29,30 +174,16 @@ rollout:
   documentation, scaffolding, agent hierarchy, implementation plans, tracker).
   It replaces `seeds/project-kickoff/`, which is an older copy. M6's PRD and
   architecture templates and the kickoff's own are merged into one of each.
-  The opinions M6 leaves out (personas, tiers, model routing) belong in the
-  skill, not the module. M6's PRD and architecture templates move into the
+  The opinions M6 leaves out (tiers, model routing) belong in the skill, not
+  the module; its red-team phase runs
+  [`red-team`](../plugin/skills/red-team/SKILL.md), which holds the
+  personas. M6's PRD and architecture templates move into the
   skill (`templates/`), moved and not copied, and M6's README links them there
   ([the module contract](../modules/AGENTS.md#the-module-contract)); the
   NOTICE entries move with them.
-- **`red-team`**: adversarial review of a requirements or architecture
-  document by persona, in a fresh session; the runnable form of M6's
-  per-stage adversarial review. The engineering personas (critical chief
-  technology officer, security auditor, performance engineer, cost
-  optimizer) read both documents; a requirements document is also read by
-  personas standing for the people who will use and approve it: a reader
-  who knows no engineering terms, one who cuts the scope to the smallest
-  release that still delivers the outcome, one who asks of each outcome how
-  it would be tested, and one who walks the user's day and names the
-  moments the document leaves out.
 - **Plan review**, folded into `review`, which already accepts a plan
   document: dependencies and critical path, completeness, simplification and
   effort checks.
-- **`docs`**: the runnable form of M4: runs the repository's frontmatter,
-  index and scar checks, flags stale drafts, and plans missing documentation by
-  project type. M4's gates (`modules/M4-docs-governance/reference/`) and their
-  self-tests move into the skill's `scripts/` and `__tests__/`, moved and not
-  copied, and M4's README links them there. The repository's M4 schema wins
-  over the source skill's own frontmatter rules.
 - **`upgrade-deps`**: grouped, changelog-driven dependency upgrades (the
   majors an update bot cannot do alone), opened through `do-item`'s
   pull-request policy and driven by `drive-pr`; the runnable side of M1's
@@ -149,15 +280,16 @@ Move into configuration when a consumer needs them:
   findings at once. Done when a deferral round files and appends its
   findings on both adapters, with the fake-tracker tests both adapters'
   tests use;
-- the drive pushes to and fetches from a remote named `origin`;
+- the git remote: the delivery skills read it from `repository.remote`
+  (default `origin`), but `review`, `review-reflections`, `reflect`,
+  `code-stats`, `changelog` and the audit's `config-fit.ts` still read
+  `origin` directly; they move onto the same setting, through
+  `remoteName()` in `shared/consumer.ts`;
 - the markers of Jig's own finding format (`ai-review-backlog`,
   `ai-review-round`, the leading `ai-review-*` comments) are fixed, and the
   summary-comment markers default to `<!-- ai-code-review -->` and
   `ai-reviewed-sha`: they become settings with neutral defaults, set to the
-  current names first in the repositories whose reviewer writes them;
-- fields named after Linear: the review-triage file's
-  `severity_mapping.<severity>.linear_priority` and
-  `fractal-metrics.ts --skip-linear`, renamed with the old names still read.
+  current names first in the repositories whose reviewer writes them.
 
 ### 11. Jig's own Simplified Technical English linter
 
@@ -171,8 +303,8 @@ golden files from the Python linter then retire with the translation.
 
 ### 12. More tracker adapters
 
-Jira, and a plan file kept in the repository, beside Linear and GitHub
-Issues. Both wait on the open decisions below. For every adapter to work end
+A plan file kept in the repository, beside Linear, GitHub Issues and Jira.
+It waits on the open decisions below. For every adapter to work end
 to end, the [tracker interface](../GLOSSARY.md) gains attaching a file,
 which `decide` and `explain` now do through the Linear MCP tools or the
 `linear` command. The deferral step (item 10), `decide`, `explain` and
@@ -184,19 +316,6 @@ launcher tracker for GitHub Issues and the key's file name (`issue-123`)
 where they name a cache file or a claim.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
-
-### 15. M14 Testing strategy: the rest
-
-[M14](../modules/M14-testing-strategy/README.md) states test tiers with budgets,
-honest doubles, the injected clock, polling, predicates proven where they
-execute, typed builders, tests with every change, coverage as a trend, a skip
-tripwire, stale-test triage, behaviour pins and a runtime canary. Still open:
-
-- exceptions that prune themselves: the tests-with-changes gate failing on an
-  exemption that matches no file, and a `fixed-delay:` token gate that fails
-  on a token with no delay beside it.
-
-Done when both gates are in M14's reference with their criteria.
 
 ### 17. Corrected designs for the existing modules
 
@@ -231,18 +350,13 @@ how it works and what is left. Done when:
   time;
 - the home and adoption pages show an audit sheet of Jig's own audit.
 
-### 20. `code-stats`: test-runner configuration and audit evidence
+### 20. `code-stats`: a reference set and audit evidence
 
 The [code-stats skill](../plugin/skills/code-stats/README.md) classifies a
-repository's files from conventions, attributes, its `code_stats`
-configuration and a classify command. What is left:
+repository's files from conventions, attributes, its test runners'
+configuration, its `code_stats` configuration and a classify command. What
+is left:
 
-- **Test-runner configuration** as the classification layer between
-  built-in detection and `code_stats` (the seam is marked in
-  `classify.ts`): jest and vitest `testMatch` and `include`, pytest
-  `testpaths` and `python_files`, Gradle and Maven test source sets. Each
-  reader states what it cannot read (a computed configuration) rather than
-  guessing.
 - **A reference set** of public repositories (a Python service, a Go
   module, a Rust workspace, a Java build, a JavaScript monorepo), each run
   recorded with its commit and its results beside it, as
@@ -253,12 +367,10 @@ configuration and a classify command. What is left:
   generated share, the scaffolding size, and a large unclassified share as a
   finding about the configuration.
 
-Done when a repository whose tests only its test runner names is classified
-correctly with no `code_stats` section, the reference set's recorded results
-are checked by a test, and an audit sheet cites code-stats figures as
-evidence.
+Done when the reference set's recorded results are checked by a test, and
+an audit sheet cites code-stats figures as evidence.
 
-### 21. `changelog` skill: several artifacts, and the whole file checked
+### 21. `changelog` skill: several artifacts
 
 The [`changelog` skill](../plugin/skills/changelog/README.md) is the
 runnable form of [M16](../modules/M16-releases-versions/README.md) for a
@@ -273,30 +385,25 @@ repository with one released artifact. What is left:
   choice (Unreleased, or none). Done when a monorepo with two packages
   releases them independently through the action, and the single-artifact
   configuration keeps working unchanged.
-- **A whole-changelog check**, against the rules of the detected format
-  rather than a union of both: structure, category names and order, dates
-  written year-month-day, link references, and release coverage. Each rule,
-  its conditions and its exemptions are taken from the format's own
-  specification, cited where the check enforces them. Of the whole file,
-  Jig's own `scripts/check-changelog.ts` checks only that the version files
-  agree and that the current version has a heading.
 - **Other CI providers' templates** beside GitHub's workflow template, when
   a repository needs one.
 
 ### 22. Merge conflicts, measured
 
 The replay, live record and [M11/M12 practice](merge-conflicts.md) measure
-where parallel work conflicts and expose the result in the audit and
-cross-PR scoreboard. What is left:
+where parallel work conflicts, expose the result in the audit and cross-PR
+scoreboard, and feed each hotspot into the reflection store as a finding
+whose class is its cause. What is left concerns only how Jig keeps its own
+plan:
 
-- **Into the learning loop**: turn conflict hotspots into findings in the
-  reflection store, with each cause as the finding's class, so the existing
-  review and escalation loop turns a recurring cause into a change.
 - **One file per roadmap item** follows only if the report shows the plan
-  or the roadmap conflicting where items are added or removed side by side.
+  or the roadmap conflicting where items are added or removed side by side
+  (`append` or `adjacent` hotspots, which now also arrive as reflection
+  findings of those classes).
 
-Done when measured hotspots enter the existing reflection loop without a
-second escalation path.
+Done when a history report over a window of parallel work on Jig has shown
+whether the plan or the roadmap has such hotspots, and one file per item has
+then become a plan item of its own or been dropped.
 
 ### 23. Seed review lenses
 
@@ -395,14 +502,17 @@ overlay with its evidence, enables the plugin for everyone who clones, and
 checks the result the way the audit will; the audit measures, init writes.
 What it will build, one pull request per step:
 
-- **The shared detector**: `config-fit.ts`'s detection and draft move to
-  `plugin/shared/detect.ts` with their tests, the audit unchanged.
 - **The skill**: `plugin/skills/init/` with `init.ts` (derive, ask, write,
-  check), refresh mode after a plugin release, tests from a plugin copy
-  against fixture repositories with and without a configuration, the
-  lifecycle-map row and the README table row.
+  check) on the shared detector (`plugin/shared/detect.ts`), which learns the
+  changelog file, the label taxonomy and the title convention, the `fields` on
+  the configuration fit's findings so init can sort them, refresh mode
+  after a plugin release, tests from a plugin copy against fixture
+  repositories with and without a configuration, the lifecycle-map row and
+  the README table row.
 - **The pointers**: the adoption pages, setup's next step, the audit's
-  `remedy: init` marker and the sheet's command.
+  `remedy: init` marker and the sheet's command, and the configuration
+  fit's finding for a file written under an older plugin than the last
+  field-adding release.
 - **Project-level enablement** in the host settings files.
 
 Done when a fresh clone with no configuration runs `/jig:init`, commits
@@ -423,9 +533,6 @@ defaults a repository overrides field by field; a type lowering depth only
 where no flag, catalog review or gate raises it; an unknown type getting
 the strictest value of every field. What it will build, one pull request per step:
 
-- **The derivation**: `determine_type.ts`, `issue_tracker.types`, the
-  defaults table as data with its tests, in CONFIGURATION.md; `do-item`
-  prints the type and changes nothing yet.
 - **`do-item` reads the row**: the pattern pre-scout, the review tiers and
   skip threshold, the change note, the body sections and the spike's `hitl`
   default move to the table, with a `task` fixture showing the lighter path.
@@ -453,8 +560,11 @@ attributes on a fresh base, narrows, keeps a hypothesis ledger, fixes, and
 stops after a budget with the ledger posted where the work is tracked.
 What it will build, one pull request per step:
 
-- **The record**: `shared/evidence.ts` with its tests, run from a plugin copy.
 - **`verify`**: the skill, its README, the lifecycle row, the M14 link.
+- **Evidence collection**: a resource collection kind that removes records,
+  their output and moved-aside reports past `verify.retention_days`, with
+  receipts; until it lands, `verify.retention_days` is read and nothing is
+  removed.
 - **`do-item` and `fix-ci` record and require**: the policy refusal, the
   body's evidence section, the seen-to-fail requirement by work type (item 27).
 - **`debug`**: the skill, the ledger, the budget, the hand-off from
@@ -482,9 +592,6 @@ filed item, or not applicable. The delivery loop writes no spec and
 dictates no format.
 What it will build, one pull request per step:
 
-- **The resolver and the `body` adapter**, with the conformance test every
-  adapter passes and the pull-request section; `do-item` prints the result
-  and changes nothing else.
 - **The repository adapters**, two or three layouts per pull request, each
   with its fixture folder; M6's audit criterion with the last of them.
 - **`do-item` reads and requires**: the `spec` pre-scout by work type
@@ -511,7 +618,8 @@ item links its requirements; the delivery loop writes no spec) is a decision rec
 `resolve-review-comments` lists the findings a static-analysis app reports as
 check-run annotations (`review.scanner_apps`), and `drive-pr` tells the agent
 to work them, but the drive's verdict reads threads and summary comments
-only, so a drive can still end `CONVERGED` over an annotation. What it will
+only, so a drive with annotations as its only findings can end `CONVERGED`
+without starting a round. What it will
 build: the annotation listing as a third source of open work beside threads
 and summary findings, read by `drive-status`, `round-plan` and `converge`,
 so the verdict withholds `CONVERGED` while a scanner check is running on the
@@ -540,12 +648,11 @@ conflict; a pinned agent keeping its pin; the reason, the source and
 whether it was applied on the pull request, where the drive's loop-cost
 report joins them to the outcome; a person's choice always winning; opt-in
 until a repository declares its rules; no model asked to route. The design
-is written and decided, so what stays open under this item is the build,
-its own epic, one pull request per step, after item 27's type derivation:
+is written and decided, and its first step is built: `determine_route.ts`
+derives the route from the `routing` section and its defaults, and
+`do-item` prints it and forwards nothing. What stays open is the rest of
+the build, its own epic, one pull request per step:
 
-- **The derivation**: `determine_route.ts`, the `routing` section and its
-  defaults as data with their tests, in CONFIGURATION.md; `do-item` prints
-  the route and changes nothing yet.
 - **The record**: the `## Route` section written and parsed from
   `plugin/shared/`, and the loop-cost report reading it.
 - **M0's declaration point**: the policy, the criterion and the loader's

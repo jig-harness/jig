@@ -3,7 +3,7 @@
  * issue tracker, independent of which tracker answers.
  *
  * Callers depend on this interface only. An adapter (one per tracker: Linear
- * in `linear.ts`, GitHub Issues in `github/`) implements it, and `index.ts`
+ * in `linear.ts`, GitHub Issues in `github/`, Jira Cloud in `jira/`) implements it, and `index.ts`
  * picks the adapter the consumer names in `issue_tracker.adapter`. Adding a tracker means adding an
  * adapter and registering it; no caller changes.
  *
@@ -70,6 +70,12 @@ export interface Issue {
   updatedAt?: string;
   state: IssueState;
   labels: string[];
+  /**
+   * The tracker's own type for the issue (GitHub's issue types: `Bug`,
+   * `Feature`, `Task`, or an organization's own), or `null` when the issue
+   * has none or the tracker has no issue types (Linear).
+   */
+  nativeType: string | null;
   parent: { identifier: string; title?: string } | null;
   children: IssueSummary[];
   assignee: string | null;
@@ -197,6 +203,24 @@ export interface PoolIssue {
    * `labels` here means a label the caller tests for may be missing.
    */
   truncated: string[];
+}
+
+/**
+ * Who made an issue's current assignment, as `assignedBy` reads it from the
+ * tracker's history. `trusted` is set when that user may start work on the
+ * team's issues: a non-guest member of the team (Linear), or someone with
+ * write access to the repository (GitHub).
+ */
+export interface Assigner {
+  id: string;
+  name: string;
+  trusted: boolean;
+}
+
+/** A user of the tracker: its own id, and the name it shows (a GitHub login, a Linear or Jira display name). */
+export interface TrackerUser {
+  id: string;
+  name: string;
 }
 
 /** Which open issues a pool holds, by label. */
@@ -365,6 +389,30 @@ export interface Tracker {
   openChildren(key: string): Promise<PoolIssue[]>;
   /** One issue in pool form, whatever its state; `null` when it does not exist. */
   poolIssue(key: string): Promise<PoolIssue | null>;
+  /**
+   * This team's issues assigned to `identity` (a GitHub login; a Linear
+   * user's email or display name) in one of `states`. An empty `states`
+   * throws, since it would read no state the caller meant.
+   */
+  assignedIssues(
+    identity: string,
+    states: ReadonlyArray<CanonicalState>,
+  ): Promise<PoolIssue[]>;
+  /**
+   * Who made the assignment of `assignee` (default: the issue's current
+   * assignee) to the issue, from the tracker's history. Throws with the
+   * reason when the history cannot be read in full or holds no such
+   * assignment, so an unknown assigner is never read as a trusted one.
+   */
+  assignedBy(key: string, assignee?: string): Promise<Assigner>;
+
+  // ── Claiming ──
+  /** The user this tracker's credential acts as: who "yourself" is. */
+  viewer(): Promise<TrackerUser>;
+  /** Every user the issue is assigned to; empty when nobody. */
+  assignees(key: string): Promise<TrackerUser[]>;
+  /** Assign the issue to `user` alone, replacing any other assignee. */
+  assign(key: string, user: TrackerUser): Promise<void>;
 
   // ── Filing and planning ──
   /**

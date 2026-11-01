@@ -71,7 +71,7 @@ Every field is optional. Read them from the base branch's copy of
 | `review.lenses.dir` | Path, from the repository root, to the folder of the repository's own lens files | Only the seed lenses run |
 | `review.lenses.off` | Lens ids not to run | Every lens whose trigger matches runs |
 | `review.lenses.triggers` | Per lens id, patterns appended to that lens's trigger (`paths`, `exclude`, `added_lines`, `removed_lines`) | Each lens's own trigger |
-| `issue_tracker.team` | Linear only: the prefix its issue keys carry (`ENG` for `ENG-123`), used to recognise the issue a deferral names; on GitHub Issues a key is `#123` | A deferral must still name its issue; any issue key or link counts |
+| `issue_tracker.team` | Linear and Jira: the prefix its issue keys carry (`ENG` for `ENG-123`), used to recognise the issue a deferral names; on GitHub Issues a key is `#123` | A deferral must still name its issue; any issue key or link counts |
 
 ### Policy comes from the base branch, not the change under review
 

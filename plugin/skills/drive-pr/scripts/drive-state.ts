@@ -46,9 +46,14 @@
  *   drive-state.ts set-verified [PR] --sha SHA       # record final full-CI proof
  *   drive-state.ts reflected    [PR]                 # round a /reflect was last recorded at
  *   drive-state.ts set-reflected [PR]                # record a completed /reflect at the current round
- *   drive-state.ts park         [PR] --key K --kind thread|finding --reason R
- *   drive-state.ts unpark       [PR] --key K
- *   drive-state.ts parked-keys  [PR]                 # newline-delimited keys
+ *   drive-state.ts park         [PR] --key K --kind thread|finding --class C  < record.md
+ *   drive-state.ts record-decision [PR]  < {"class","what","reverse","record"?,"key"?,"outcome"?}
+ *   drive-state.ts reverse-decision [PR] < {"key","by","url","at"}
+ *   drive-state.ts record-event [PR]     < {"kind","cause"}
+ *   drive-state.ts rule         [PR]  < {"key","verdict","class"?,"humanDecision"?}
+ *                                     # the review arbiter's ruling on a thread
+ *   drive-state.ts unpark       [PR] --key K [--key K …]   # all, or none
+ *   drive-state.ts parked-keys  [PR]  # newline-delimited keys (reversal-parked-keys: reversed provisional decisions')
  *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome accepted|moot
  *                                     [--comment-url URL] [--unconfirmed]
  *                                     (--kind finding also requires the reason body on stdin)
@@ -124,12 +129,15 @@
  *                                     #: lastProgressAt + phase, clears any
  *                                     # recorded quota park. NOT the same as 'phase'
  *                                     # above — that one carries no progress semantics.
- *   drive-state.ts quota-park   [PR] --vendor V --window W [--reset-at ISO]
+ *   drive-state.ts quota-park   [PR] --vendor V --window W [--reset-at ISO] [--account HASH]
  *                                     # record the quota wall this drive parked on
  *                                     #, called by drive.ts immediately
  *                                     # before its QUOTA_PARKED_EXIT return. Does NOT
  *                                     # stamp progress — parking is its opposite.
- *   drive-state.ts handoff      [PR]                 # (re)write the handoff file
+ *   drive-state.ts takeover     [PR]                 # record a drive.ts --take-over (JSON on stdin)
+ *   drive-state.ts deadline-retries [PR] --set bump|clear  # the drive's pass-deadline restarts
+ *   drive-state.ts handoff      [PR]                 # (re)write the handoff file, and the ledger under a driver
+ *   drive-state.ts seed-ledger  [PR]                 # lay a newer ledger over this state (its body on stdin)
  *   drive-state.ts lease        [PR]                 # who is driving this PR from this
  *                                     # tree, as JSON ('' if nobody)
  *   drive-state.ts lease        [PR] --all           # every LIVE lease on this PR from
@@ -213,6 +221,22 @@ import {
   resolvePr,
 } from "./lib/proc.ts";
 import { isActorId, resolveActor } from "./lib/state/actor.ts";
+import { recordTakeover } from "./lib/state/takeover.ts";
+import {
+  LEDGER_NOT_WRITTEN_EXIT,
+  mirrorLedger,
+  removeStateKeepingLedgerGeneration,
+  seedLedgerCommand,
+} from "./lib/state/ledger-mirror.ts";
+import { quotaPark } from "./lib/state/quota-park.ts";
+import { framedPark } from "./lib/state/framed-park.ts";
+import * as decisions from "./lib/state/decisions.ts";
+import { recordEvent } from "./lib/state/events.ts";
+import { recordRuling } from "./lib/state/rulings.ts";
+import { setReflected } from "./lib/state/reflected.ts";
+import { deadlineRetries } from "./lib/state/deadline-retries.ts";
+import { unpark } from "./lib/state/unpark.ts";
+import { clearPendingVerdicts } from "./lib/state/pass-handoff.ts";
 import {
   breakStaleClaimLocked,
   claimCreate,
@@ -260,7 +284,7 @@ import {
   structuralEscalationArmed,
   withProgress,
 } from "./lib/state/schema.ts";
-import { openStore } from "./lib/state/store.ts";
+import { openStore, type StateStore } from "./lib/state/store.ts";
 import {
   attributeStatuses,
   checkRunsFor,
@@ -325,10 +349,14 @@ function usage(): void {
                                     claim back instead of re-deriving it
 . Omitting it clears any prior
                                     claim rather than preserving it.
-  park         [PR] --key K --kind thread|finding --reason R
-  unpark       [PR] --key K
-  parked-keys  [PR]                 newline-delimited keys
-  hold         [PR] --key K --kind thread|finding --outcome accepted|moot
+  park         [PR] --key K --kind thread|finding --class C  (decision record on stdin)
+  record-decision [PR]              a decision the agent took, JSON on stdin
+  reverse-decision [PR]             a person's reversal of a provisional decision, JSON on stdin
+  record-event [PR]                 a self-restart or re-arm, JSON on stdin
+  rule         [PR]                 the arbiter's ruling on a thread, JSON on stdin
+  unpark       [PR] --key K [--key K …]  every key, or none when one is not parked
+  parked-keys  [PR]                 newline-delimited keys (reversal-parked-keys: reversed provisional decisions')
+  hold        [PR] --key K --kind thread|finding --outcome accepted|moot
                [--comment-url URL] [--unconfirmed]
                     (--kind finding also requires the reason body on stdin)
                     (--comment-url: REQUIRED for --kind thread — the qualifying comment's url)
@@ -355,12 +383,18 @@ function usage(): void {
                                     sets lastProgressAt and phase, clears any
                                     recorded quota park. Distinct from 'phase'
                                     above, which has no progress semantics
-  quota-park   [PR] --vendor V --window W [--reset-at ISO]
-                                    record the quota wall this drive parked on
+  quota-park   [PR] --vendor V --window W [--reset-at ISO] [--account HASH]
+                                    record the quota wall this drive parked on,
+                                    and the hashed account it belongs to
 ; does NOT stamp progress —
                                     parking is the opposite of it. Cleared by
                                     the next progress event
-  handoff      [PR]                 (re)write the handoff file
+  takeover     [PR]                 record a drive.ts --take-over (JSON on stdin)
+  deadline-retries [PR] --set bump|clear
+                                    count a pass-deadline restart (prints the
+                                    count), or clear it when the drive ends
+  handoff      [PR]                 (re)write the handoff file, and the ledger under a driver
+  seed-ledger  [PR]                 lay a newer ledger over this state (its body on stdin)
   admit        [PR]                 exit 0 if this tree may act on this PR, 13 if
                                     another working tree is driving it. Takes no
                                     lease and mutates nothing — for callers whose
@@ -391,6 +425,12 @@ interface Args {
   cmd: string;
   pr: string;
   key: string;
+  /** Every `--key`, in argv order (`unpark` takes several). */
+  keys: string[];
+  /** Every `--parked-at`, in argv order: `unpark`'s park timestamps, one per `--key`. */
+  parkedAts: string[];
+  /** `unpark --every`: the named keys must be every park there is. */
+  every: boolean;
   kind: string;
   reason: string;
   sha: string;
@@ -431,40 +471,88 @@ interface Args {
   window: string;
   /** `quota-park --reset-at ISO`; `''` when the adapter could not resolve one. */
   resetAt: string;
+  /** `quota-park --account HASH`: whose wall it is; `''` when unknown. */
+  account: string;
+  /** `park --class C`: the decision class (`lib/state/framed-park.ts`). */
+  parkClass: string;
 }
+
+/** The `Args` fields a flag sets to its one value. */
+type ValueField = Exclude<
+  { [K in keyof Args]: Args[K] extends string ? K : never }[keyof Args],
+  "cmd" | "pr"
+>;
+
+/** Every flag that takes one value, and the field it sets. */
+const VALUE_FLAGS: Readonly<Record<string, ValueField>> = {
+  "--kind": "kind",
+  "--reason": "reason",
+  "--head": "sha",
+  "--sha": "sha",
+  "--pushed-sha": "pushedSha",
+  "--round": "restoreRound",
+  "--token": "token",
+  "--set": "phaseName",
+  "--outcome": "outcome",
+  "--comment-url": "commentUrl",
+  "--if-comment-url": "ifCommentUrl",
+  "--actor": "actor",
+  "--actor-name": "actorName",
+  "--event-id": "eventId",
+  "--created-at": "createdAt",
+  "--check-run-watermark": "checkRunWatermark",
+  "--verified-sha": "verifiedSha",
+  "--invariant": "invariant",
+  "--phase": "phaseArg",
+  "--vendor": "vendor",
+  "--window": "window",
+  "--reset-at": "resetAt",
+  "--account": "account",
+  "--class": "parkClass",
+};
+
+/** Every flag's value before the command line sets it. */
+const ARG_DEFAULTS: Omit<Args, "cmd" | "paths" | "keys" | "parkedAts"> = {
+  pr: "",
+  key: "",
+  every: false,
+  kind: "",
+  reason: "",
+  sha: "",
+  phaseName: "",
+  outcome: "",
+  unconfirmed: false,
+  commentUrl: "",
+  all: false,
+  pushedSha: "",
+  restoreRound: "",
+  ifPresent: false,
+  token: "",
+  ifCommentUrl: "",
+  actor: "",
+  verifiedSha: "",
+  eventId: "",
+  actorName: "",
+  createdAt: "",
+  checkRunWatermark: "",
+  stdin: false,
+  invariant: "",
+  phaseArg: "",
+  vendor: "",
+  window: "",
+  resetAt: "",
+  account: "",
+  parkClass: "",
+};
 
 function parseArgs(argv: string[]): Args {
   const cmd = argv.shift() ?? "";
   const a: Args = {
+    ...ARG_DEFAULTS,
     cmd,
-    pr: "",
-    key: "",
-    kind: "",
-    reason: "",
-    sha: "",
-    phaseName: "",
-    outcome: "",
-    unconfirmed: false,
-    commentUrl: "",
-    all: false,
-    pushedSha: "",
-    restoreRound: "",
-    ifPresent: false,
-    token: "",
-    ifCommentUrl: "",
-    actor: "",
-    verifiedSha: "",
-    eventId: "",
-    actorName: "",
-    createdAt: "",
-    checkRunWatermark: "",
+    keys: [],
+    parkedAts: [],
     paths: [],
-    stdin: false,
-    invariant: "",
-    phaseArg: "",
-    vendor: "",
-    window: "",
-    resetAt: "",
   };
   const take = (flag: string, i: number): string => {
     const value = argv[i + 1];
@@ -474,64 +562,28 @@ function parseArgs(argv: string[]): Args {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === undefined) continue;
+    const field = Object.hasOwn(VALUE_FLAGS, arg)
+      ? VALUE_FLAGS[arg]
+      : undefined;
+    if (field !== undefined) {
+      a[field] = take(arg, i++);
+      continue;
+    }
     switch (arg) {
+      // Every `--key` the parser consumed, in order, for `unpark`'s set: a
+      // value that merely reads `--key` is a value, not another flag.
       case "--key":
         a.key = take(arg, i++);
-        break;
-      case "--kind":
-        a.kind = take(arg, i++);
-        break;
-      case "--reason":
-        a.reason = take(arg, i++);
-        break;
-      case "--head":
-      case "--sha":
-        a.sha = take(arg, i++);
-        break;
-      case "--pushed-sha":
-        a.pushedSha = take(arg, i++);
-        break;
-      case "--round":
-        a.restoreRound = take(arg, i++);
-        break;
-      case "--token":
-        a.token = take(arg, i++);
-        break;
-      case "--set":
-        a.phaseName = take(arg, i++);
-        break;
-      case "--outcome":
-        a.outcome = take(arg, i++);
+        a.keys.push(a.key);
         break;
       case "--unconfirmed":
         a.unconfirmed = true;
         break;
-      case "--comment-url":
-        a.commentUrl = take(arg, i++);
-        break;
       case "--if-present":
         a.ifPresent = true;
         break;
-      case "--if-comment-url":
-        a.ifCommentUrl = take(arg, i++);
-        break;
-      case "--actor":
-        a.actor = take(arg, i++);
-        break;
-      case "--actor-name":
-        a.actorName = take(arg, i++);
-        break;
-      case "--event-id":
-        a.eventId = take(arg, i++);
-        break;
-      case "--created-at":
-        a.createdAt = take(arg, i++);
-        break;
-      case "--check-run-watermark":
-        a.checkRunWatermark = take(arg, i++);
-        break;
-      case "--verified-sha":
-        a.verifiedSha = take(arg, i++);
+      case "--every":
+        a.every = true;
         break;
       // Repeatable rather than a delimited list: an anchor path is an
       // arbitrary repository path, and every delimiter a list could use is a
@@ -542,26 +594,14 @@ function parseArgs(argv: string[]): Args {
       case "--path":
         a.paths.push(take(arg, i++));
         break;
+      case "--parked-at":
+        a.parkedAts.push(take(arg, i++));
+        break;
       case "--stdin":
         a.stdin = true;
         break;
       case "--all":
         a.all = true;
-        break;
-      case "--invariant":
-        a.invariant = take(arg, i++);
-        break;
-      case "--phase":
-        a.phaseArg = take(arg, i++);
-        break;
-      case "--vendor":
-        a.vendor = take(arg, i++);
-        break;
-      case "--window":
-        a.window = take(arg, i++);
-        break;
-      case "--reset-at":
-        a.resetAt = take(arg, i++);
         break;
       default:
         if (arg.startsWith("--")) fail(2, `unknown flag: ${arg}`);
@@ -575,24 +615,12 @@ function parseArgs(argv: string[]): Args {
  * Does an otherwise-unparseable JSON text still contain a string-literal
  * property KEY that DECODES to `target`, anywhere in the text?
  *
- * A raw byte-substring check (`text.includes('"' + target + '"')`) is defeated
- * the moment the key is escaped: JSON permits `ciHold` as a byte-for-byte
- * different spelling of the identical `ciHold` property name, so a
- * corrupt-but-escaped file names the key without ever containing the literal
- * bytes `"ciHold"`. Following the "parse the construct, don't pattern-match it"
- * rule, this scans the text as a sequence of JSON STRING LITERALS — respecting
- * `\`-escapes so a `"` or `\` inside an escape sequence is never mistaken for
- * the literal's own boundary — and hands each complete candidate to
- * `JSON.parse` itself to decode, rather than hand-rolling escape decoding. The
- * whole surrounding document need not be valid JSON; only the one
- * string-literal construct that matters here is parsed, precisely.
- *
- * A literal matching `target` in VALUE position — `{"reason":"ciHold"}` — is
- * not evidence of a `ciHold` property at all; only a literal immediately
- * followed by (optional whitespace, then) `:` is a property key. Treating
- * either position as a match refuses `reset` over corruption that never named
- * the key, over-blocking the exact recovery path this function exists to
- * preserve.
+ * A byte-substring check misses an escaped spelling of the same key, so this
+ * scans the text as JSON string literals (respecting `\`-escapes) and lets
+ * `JSON.parse` decode each candidate; the document need not be valid JSON. Only
+ * a literal followed by `:` is a key: a match in value position
+ * (`{"reason":"ciHold"}`) would refuse `reset` over corruption that never named
+ * the key.
  */
 function rawTextMentionsJsonKey(text: string, target: string): boolean {
   let i = 0;
@@ -681,6 +709,22 @@ async function readCiHoldTimeline(
   }
 }
 
+/** The commands whose record arrives on standard input. */
+const STDIN_COMMANDS = new Map<
+  string,
+  (store: StateStore, raw: string) => Promise<number>
+>([
+  [
+    "takeover",
+    async (store, raw) => recordTakeover(store, raw, await resolveActor()),
+  ],
+  ["seed-ledger", seedLedgerCommand],
+  ["record-decision", decisions.recordDecision],
+  ["reverse-decision", decisions.reverseDecision],
+  ["record-event", recordEvent],
+  ["rule", recordRuling],
+]);
+
 async function main(): Promise<number> {
   const a = parseArgs(process.argv.slice(2));
   if (a.cmd === "") {
@@ -747,19 +791,23 @@ async function main(): Promise<number> {
     "set-escalated",
     "park",
     "unpark",
+    "record-decision",
+    "reverse-decision",
+    "record-event",
+    "rule",
     "hold",
     "claim-held",
     "unclaim-held",
     "restore-held",
     "release-held",
     "phase",
-    // Both mutate durable state (`lastProgressAt`/`quotaPark`), so
-    // both are leased on the same terms as `phase` immediately above — a
-    // second concurrent session stamping progress or a park behind the
-    // first's back is the identical corruption this list exists to prevent
-    // for every other writer here.
+    // Mutators of `lastProgressAt`, `quotaPark` and `takeovers`, leased on
+    // the same terms as `phase` above.
     "progress",
     "quota-park",
+    "takeover",
+    "seed-ledger",
+    "deadline-retries",
     "reset",
     "claim-ready-mark",
     "renew-ready-mark",
@@ -1090,53 +1138,8 @@ async function main(): Promise<number> {
       return 0;
     }
 
-    case "set-reflected": {
-      // Stamp "a /reflect happened at this point" inside one update, so the
-      // reads of .rounds/.attempts and the writes of their baselines cannot
-      // straddle a concurrent bump. Recording a POSITION rather than a boolean
-      // is what lets the duty re-arm: reflectDepthPastLast measures forward
-      // from here, so a drive that runs long enough past the last reflect owes
-      // another one (SKILL.md § 3).
-      //
-      // BOTH counters are stamped because they are independent axes —
-      // `reflectDepthPastLast` documents why one stamp cannot serve them.
-      //
-      // `lastEscalatedRound` is stamped HERE TOO, in the same update: a
-      // `/reflect` is the step-back a structural escalation asks for, and the
-      // deeper one — it names the class across PRs, where `set-escalated` only
-      // records that this PR's recurrence was addressed. Leaving the escalation
-      // armed after a reflect would make the very next round demand a second
-      // step-back for a pattern that had just been examined, which is how an
-      // advisory signal gets learned as noise and then ignored when it is real.
-      // The reverse does NOT hold: `set-escalated` discharges only itself,
-      // because a narrow "I generalized the fix" is not a reflect.
-      //
-      // `lastEscalatedInvariant` is CLEARED here too, not carried
-      // forward: a `/reflect` is a step back from the whole class, not a
-      // restatement of whatever one file's prior `set-escalated --invariant`
-      // claimed. Leaving that text in place would let a later recurrence echo
-      // a narrow sentence as if the reflect had re-examined and re-affirmed
-      // it, when the reflect may never have touched that specific claim at
-      // all.
-      //
-      // `roundPaths` is re-pruned in this SAME update against the NEW
-      // `lastEscalatedRound` — see `pruneRoundPaths`'s own header for why
-      // advancing the acknowledgment without doing so writes a state
-      // `isUsableState` immediately rejects on the very next read.
-      await store.update((s) => {
-        const lastEscalatedRound = s.rounds;
-        return {
-          ...s,
-          lastEscalatedRound,
-          lastEscalatedInvariant: "",
-          lastReflectedRound: s.rounds,
-          lastReflectedAttempts: s.attempts,
-          roundPaths: pruneRoundPaths(s.roundPaths, lastEscalatedRound),
-        };
-      });
-      process.stdout.write(`${store.read().state.lastReflectedRound}\n`);
-      return 0;
-    }
+    case "set-reflected":
+      return setReflected(store);
 
     // The three commands below are the durable half of
     // `structuralEscalationDue`: one writes each round's finding anchors, one
@@ -1288,8 +1291,9 @@ async function main(): Promise<number> {
       // `lastEscalatedRound` that a LATER, genuine arming then echoes back as
       // though it were that arming's own acknowledgment.
       //
-      // `roundPaths` is re-pruned in this SAME update — see
-      // `set-reflected`'s identical comment and `pruneRoundPaths`'s header.
+      // `roundPaths` is re-pruned in this SAME update — see `set-reflected`'s
+      // identical comment (`lib/state/reflected.ts`) and `pruneRoundPaths`'s
+      // header.
       await store.update((s) => {
         if (s.rounds < 1) {
           fail(
@@ -2110,58 +2114,20 @@ async function main(): Promise<number> {
     }
 
     case "park": {
-      if (a.key === "")
-        fail(
-          2,
-          "park requires --key (a thread node id or finding fingerprint)",
-        );
-      // A key carrying CR or LF is not one key. `parked-keys` emits keys
-      // newline-delimited and drive-status splits that output on LF, so
-      // `PRRT_x<LF>PRRT_unrelated` parks ONE item and yields TWO match tokens
-      // — the second suppressing live work nobody parked, which is the
-      // opposite of what parking is for and is invisible in the state file's
-      // own shape. The channel is line-delimited, so the constraint belongs on
-      // what may enter it.
-      if (/[\n\r]/.test(a.key)) {
-        fail(
-          2,
-          "park: --key may not contain a newline or carriage return.",
-          "parked-keys is a line-delimited channel, so such a key becomes TWO",
-          "match tokens and the extra one suppresses work nobody parked.",
-        );
-      }
-      if (a.kind !== "thread" && a.kind !== "finding")
-        fail(2, `park requires --kind thread|finding (got '${a.kind}')`);
-      if (a.reason === "")
-        fail(
-          2,
-          "park requires --reason — a parked item with no framed decision is not a checkpoint, it is a dropped finding",
-        );
-      const kind = a.kind;
-      await store.update((s) => ({
-        ...s,
-        parked: [
-          ...s.parked.filter((p) => p.key !== a.key),
-          { key: a.key, kind, reason: a.reason, round: s.rounds },
-        ],
-      }));
-      return 0;
+      const parked = await framedPark(store, a);
+      await mirrorLedger(pr, store);
+      return parked;
     }
 
-    case "unpark": {
-      if (a.key === "") fail(2, "unpark requires --key");
-      await store.update((s) => ({
-        ...s,
-        parked: s.parked.filter((p) => p.key !== a.key),
-      }));
-      return 0;
-    }
+    case "unpark":
+      return unpark(store, a.keys, a.parkedAts, a.every);
 
-    case "parked-keys": {
-      for (const p of store.read().state.parked)
-        process.stdout.write(`${p.key}\n`);
-      return 0;
-    }
+    case "parked-keys":
+    case "reversal-parked-keys":
+      return decisions.printParkedKeys(
+        store.read().state,
+        a.cmd === "reversal-parked-keys",
+      );
 
     case "hold": {
       if (a.key === "")
@@ -2169,11 +2135,10 @@ async function main(): Promise<number> {
           2,
           "hold requires --key (a thread node id or finding fingerprint)",
         );
-      // The SAME newline ban `park` applies, and for the same mechanical
-      // reason: `held-keys` is a line-delimited channel too, so an embedded LF
-      // holds ONE item and emits TWO tokens, the second of which resolves a
-      // thread nobody held. The validator in
-      // schema.ts restates this rather than inventing a weaker one.
+      // The SAME newline ban `park` applies, for the same mechanical reason:
+      // `held-keys` is a line-delimited channel too, so an embedded LF holds
+      // ONE item and emits TWO tokens, the second resolving a thread nobody
+      // held. schema.ts's validator restates this rather than a weaker one.
       if (/[\n\r]/.test(a.key)) {
         fail(
           2,
@@ -2219,14 +2184,10 @@ async function main(): Promise<number> {
       // exists to survive) would leave a successor an outcome with nothing to
       // explain it.
       //
-      // Read from STDIN, not a `--reason` argument like `park` uses: this text
-      // is the verbatim reply body headed for `answer-summary-finding.ts`'s
-      // own stdin, i.e. the same class of arbitrary reviewer-adjacent prose
-      // (quotes, backticks, `$(...)`) that hardened that script's
-      // body handling against — a shell argument would let a caller's OWN
-      // quoting evaluate those before this script ever saw them. `park`'s
-      // reason is short, agent-authored decision framing, not reply prose; the
-      // two are not the same risk class.
+      // Read from STDIN, as `park`'s decision record is: this text is the
+      // verbatim reply body headed for `answer-summary-finding.ts`'s own
+      // stdin, arbitrary reviewer-adjacent prose (quotes, backticks, `$(...)`)
+      // that a shell argument would let a caller's own quoting evaluate.
       let heldReason: string | undefined;
       if (a.kind === "finding") {
         const body = await readStdinAll();
@@ -3096,17 +3057,9 @@ async function main(): Promise<number> {
           `progress: --phase must be one of ${PROGRESS_PHASES.join(", ")} (got '${a.phaseArg}')`,
         );
       }
-      // Test-only hook, unset (no-op) by default — same shape as
-      // `DRIVE_PR_QUOTA_PARK_TEST_DELAY`. `drive.ts` fires the `pass-spawned`
-      // stamp fire-and-forget from `onSpawn` and now `await`s this exact
-      // subprocess before interpreting the pass result or writing state again:
-      // a delayed stamp that completed AFTER a later `recordQuotaPark()` write
-      // used to clobber `quotaPark` back to `null` via `withProgress`'s own
-      // unconditional clear, since neither write knew about the other. Proving
-      // the join actually orders them — rather than hoping real
-      // subprocess-spawn jitter happens to resolve this stamp first — needs a
-      // way to hold this write open deterministically while a quota wall lands
-      // on the same round.
+      // Test-only hook, unset (no-op) by default: holds this write open so a
+      // test can prove `drive.ts` joins the `pass-spawned` stamp before a
+      // later `recordQuotaPark()` write, which the stamp would otherwise clear.
       const delaySec = testDelaySeconds(
         "DRIVE_PR_PROGRESS_TEST_DELAY",
         "progress",
@@ -3127,52 +3080,14 @@ async function main(): Promise<number> {
     // through `withProgress` — parking is progress's opposite, and
     // `quotaPark`'s own comment on `DriveState` explains why the next genuine
     // progress event (not this call) is what clears it.
-    case "quota-park": {
-      if (a.vendor === "") fail(2, "quota-park requires --vendor V");
-      if (/[\n\r]/.test(a.vendor)) {
-        fail(2, "quota-park: --vendor must not contain a newline");
-      }
-      if (a.window === "") fail(2, "quota-park requires --window W");
-      if (/[\n\r]/.test(a.window)) {
-        fail(2, "quota-park: --window must not contain a newline");
-      }
-      if (a.resetAt !== "" && !Number.isFinite(Date.parse(a.resetAt))) {
-        fail(
-          2,
-          `quota-park: --reset-at must be a string Date.parse can read (got '${a.resetAt}')`,
-        );
-      }
-      // Test-only hook, unset (no-op) by default — same shape as
-      // `DRIVE_PR_CLAIM_HELD_TEST_DELAY` et al. `drive.ts`'s own
-      // `recordQuotaPark` awaits this exact subprocess; proving its caller
-      // handles a lock takeover that lands WHILE this await is still in
-      // flight needs a way to force that overlap deterministically, not
-      // hope real subprocess-spawn jitter happens to be slow enough.
-      const delaySec = testDelaySeconds(
-        "DRIVE_PR_QUOTA_PARK_TEST_DELAY",
-        "quota-park",
-      );
-      if (delaySec > 0) await sleep(delaySec);
-      await store.update((s) => ({
-        ...s,
-        quotaPark: {
-          vendor: a.vendor,
-          window: a.window,
-          resetAt: a.resetAt === "" ? null : a.resetAt,
-          at: new Date().toISOString(),
-        },
-      }));
-      return 0;
-    }
+    case "quota-park":
+      return quotaPark(store, a);
 
-    case "handoff": {
-      return store.locked(async () => {
-        const { state } = store.read();
-        const out = await renderHandoff(pr, state);
-        process.stdout.write(`${out}\n`);
-        return 0;
-      });
-    }
+    case "deadline-retries":
+      return deadlineRetries(store, a.phaseName);
+
+    case "handoff":
+      return handoff(pr, store);
 
     case "lease": {
       // Read-only, and ungated: asking who is driving must work FROM the
@@ -3567,8 +3482,9 @@ async function main(): Promise<number> {
           return 9;
         }
 
-        rmSync(store.file, { force: true });
+        removeStateKeepingLedgerGeneration(store, Number(pr));
         rmSync(orphanMarkerPath(store.stateDir, pr), { force: true });
+        clearPendingVerdicts(store.stateDir, pr);
         await removeHandoff(pr);
         // Every claim file for this PR too — live, or an abandoned
         // `.released.` leftover. Without this, "forget everything for this PR"
@@ -3619,10 +3535,30 @@ async function main(): Promise<number> {
     }
 
     default:
-      console.error(`unknown command: ${a.cmd}`);
-      usage();
-      return 2;
+      return stdinOrUnknown(a.cmd, store);
   }
+}
+
+/** `handoff`: (re)write the handoff file, and the ledger under a driver. */
+async function handoff(pr: string, store: StateStore): Promise<number> {
+  await store.locked(async () => {
+    const out = await renderHandoff(pr, store.read().state);
+    process.stdout.write(`${out}\n`);
+  });
+  // A ledger write that was attempted and did not land is told apart
+  // from success: a stop's last write keeps its recovery record on it.
+  return (await mirrorLedger(pr, store)) === "failed"
+    ? LEDGER_NOT_WRITTEN_EXIT
+    : 0;
+}
+
+/** A command whose record arrives on standard input, or the usage refusal. */
+async function stdinOrUnknown(cmd: string, store: StateStore): Promise<number> {
+  const fromStdin = STDIN_COMMANDS.get(cmd);
+  if (fromStdin !== undefined) return fromStdin(store, await readStdinAll());
+  console.error(`unknown command: ${cmd}`);
+  usage();
+  return 2;
 }
 
 runMain("drive-state.ts", main);

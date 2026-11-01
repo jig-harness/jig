@@ -27,7 +27,7 @@ as you go.
 |---------------|----------|------------------------------|
 | 1. Requirements discovery | first PRD draft | [M6](../modules/M6-feature-delivery-pipeline/) — [`prd-template.md`](../modules/M6-feature-delivery-pipeline/templates/prd-template.md) (*what* for users) |
 | 2. Technical architecture | first architecture draft | [M6](../modules/M6-feature-delivery-pipeline/) — [`architecture-template.md`](../modules/M6-feature-delivery-pipeline/templates/architecture-template.md) (*how*) |
-| 3. Critical analysis (**fresh session**, red-team) | critique of 1–2 | [M6](../modules/M6-feature-delivery-pipeline/)'s per-stage **adversarial review** — the fresh-context reviewer *is* this phase, made routine |
+| 3. Critical analysis (**fresh session**, red-team) | critique of 1–2 | [M6](../modules/M6-feature-delivery-pipeline/)'s per-stage **adversarial review** — the fresh-context reviewer *is* this phase, made routine; [`/jig:red-team`](../plugin/skills/red-team/README.md) runs it by persona, once on the PRD and once on the architecture, into one findings report each |
 | 4. Synthesis | accepted PRD + architecture | [M6](../modules/M6-feature-delivery-pipeline/) — de-scar and mark `accepted` (the [stage-review-record gate](../modules/M6-feature-delivery-pipeline/reference/stage-review-record/)) |
 | 5. Repo bootstrap (instruction file, gates, plan) | the scaffolding spine | [M0](../modules/M0-instruction-architecture/) (instruction file + [glossary](../GLOSSARY.md)), [M1](../modules/M1-gates-enforcement-ladder/) (gate set + [CI](../GLOSSARY.md)), [M2](../modules/M2-generated-artifact-freshness/) (derived-file inventory) |
 | 6. Plan review | validated master plan | [M6](../modules/M6-feature-delivery-pipeline/) adversarial review, applied to the plan |
@@ -48,7 +48,8 @@ at their target maturity from the start.
    (PRD, architecture) come from [M6](../modules/M6-feature-delivery-pipeline/)'s
    templates, and the phase-3 red-team pass is M6's per-stage adversarial review
    done in a **fresh session** — an agent that just wrote a doc will defend it,
-   so the reviewer starts clean.
+   so the reviewer starts clean. `/jig:red-team` runs that pass, one persona
+   per fresh session or subagent.
 2. **Pick a profile and adopt its modules at target maturity** during the
    repo-bootstrap phase: instruction file + glossary ([M0](../modules/M0-instruction-architecture/)),
    gate set + CI ([M1](../modules/M1-gates-enforcement-ladder/)), derived-file

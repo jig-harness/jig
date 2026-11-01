@@ -60,12 +60,12 @@ hook or the interface instead.
 | --- | --- | --- | --- |
 | Local checks, generators, lints | Any command | [A command](#commands-a-repository-supplies) | — |
 | Review skills, implementing agents, scouts | The repository's own | [Configuration](#the-repositorys-own-skills-and-agents) | — |
-| Issue tracker | GitHub Issues (the default); Linear | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
+| Issue tracker | GitHub Issues (the default); Linear; Jira Cloud | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
 | Reflection store | A folder of files, a Notion database, a GitHub repository's issues, or any command | [A store command](#reflection-stores), no change to Jig | Jira: roadmap, later |
 | AI reviewer | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats); GitHub code scanning alerts from any tool, SonarQube Cloud's included | [Configuration](#ai-reviewers) | — |
 | Forge (where pull requests live) | GitHub, through the `gh` command | — | [No forge interface yet](#forge-github): roadmap, later |
 | CI system | Any CI that reports checks to GitHub | `ci.required_checks`; `fix-ci --log` | [Log download and workflow review](#ci-system) are GitHub Actions only |
-| Git remote | `origin` | — | Roadmap item 10 |
+| Git remote | Any name, `origin` by default | [`repository.remote`](CONFIGURATION.md#repository) | [`review`, `review-reflections`, `reflect`, `code-stats`, `changelog` and the audit](#forge-github) still read `origin` |
 | Agent tool | Claude Code, Codex | [Copying the skills](#agent-tools) for any other | — |
 | Workspace launcher | Linear; Herdr (the primary target) on macOS and Linux, locally or on a host over SSH; Orca on macOS and Linux, locally or on a paired Orca server; Conductor on macOS | [A provider](#workspace-launcher) in Jig | — |
 | Workspace runtime | Herdr, through the [workspace tool](https://github.com/jig-harness/jig/blob/main/tools/herdr/README.md) and its plugin; Orca, through [its workspace tool](https://github.com/jig-harness/jig/blob/main/tools/orca/README.md); any runtime that creates worktrees and starts sessions, for the skills | M12's [hook points](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md) | — |
@@ -128,7 +128,7 @@ reachability probe, which reads no issue), read an issue with its comments and c
 comment, file an issue, change its fields and labels, search this team's
 issues, read and add relations between issues, list the labels an issue can
 carry, read whether an item is open (`tracker.ts issue-states`, which M4's
-scheduled [deferral check](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/reference/deferral-references/README.md)
+scheduled [deferral check](https://github.com/jig-harness/jig/blob/main/plugin/skills/docs/scripts/deferral-references/README.md)
 uses), and the reads that delivery metrics and batch proposals need. Labels
 and projects are given by name and a parent by its key; the adapter resolves
 each to exactly one tracker resource or refuses before writing. A skill's
@@ -142,7 +142,7 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
 - **GitHub Issues** (`github`, the default for `issue_tracker.adapter`;
   [`github/`](skills/do-item/scripts/lib/tracker/github/tracker.ts)), the
   issues of one repository (`issue_tracker.github.repository`, else the
-  `origin` remote's). It uses the signed-in `gh` command-line client. Keys
+  git remote's, `repository.remote`). It uses the signed-in `gh` command-line client. Keys
   are `#<n>`; a key of another repository (a sub-issue or a blocker may live
   elsewhere) is `owner/name#<n>`. How the interface's vocabulary maps onto
   GitHub:
@@ -169,6 +169,48 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
   the adapter `issue_tracker.adapter: linear` selects. It reads `LINEAR_API_KEY` or
   `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client.
   Keys are `<TEAM>-<n>`, with the team from `issue_tracker.team`.
+
+- **Jira Cloud** ([`jira/`](skills/do-item/scripts/lib/tracker/jira/tracker.ts)),
+  the adapter `issue_tracker.adapter: jira` selects: the issues of one
+  project on one site (`issue_tracker.team` is the project key,
+  `issue_tracker.jira.site` the site). It uses Jira's REST API version 3
+  with `JIRA_EMAIL` and `JIRA_API_TOKEN`, an Atlassian account's email
+  address and an API token made for it, and converts text between Markdown
+  and ADF (Atlassian Document Format), the rich-text form Jira stores. Keys
+  are `<PROJECT>-<n>`. How the interface's vocabulary maps onto Jira:
+  - a state is the status whose name `issue_tracker.states` gives, matched
+    ignoring case; a status no name matches is read by its status category
+    (To Do: not started, In Progress: started, Done: completed). `done`,
+    `canceled` and `duplicate` are told apart by their status, or, where
+    they share one, by the resolution `issue_tracker.jira.resolutions` names,
+    which the adapter sets on the transition into it when the transition's
+    screen has a resolution field. A move takes one transition, the one out
+    of the current status into a status of the state's name, and is refused,
+    naming the transitions there are, when none or several match. A
+    workflow suits this with a status per state the repository uses,
+    transitions into In Progress, In Review and Done that any status can
+    take, and a resolution field on the Done transition's screen;
+  - priority is a Jira priority (`issue_tracker.jira.priorities`); a Jira
+    issue always has one, so moving an issue to no priority is refused, and
+    one with another priority reads as none;
+  - the issue type is the tracker's own type, so an issue of type Bug or
+    Task is typed without a label; a new issue gets
+    `issue_tracker.jira.issue_type`, or under a standard issue the sub-task
+    type (`issue_tracker.jira.subtask_type`), and an issue cannot be created
+    under a sub-task;
+  - a project is the issue's first fix version, and labels are Jira labels:
+    they hold no whitespace, are shared by the whole site and are written as
+    given; `file-issue` checks every proposed label against the site's labels
+    before writing, so each taxonomy label and the debt ledger's label
+    (`ledger.label` in the
+    [fleet-health file](CONFIGURATION.md#the-fleet-health-file)) must
+    already exist on the site;
+  - parent and children are Jira's parent field, for sub-tasks and an
+    Epic's issues alike, and relations are issue links of the types
+    `issue_tracker.jira.link_types` names; links of other types are ignored;
+  - a comment, or an assignment, is trusted when a person's Atlassian
+    account made it, not a guest, that can be assigned issues in the
+    project; an app's account, Jira Automation's own included, never is.
 
 **To add one.** Implement the `Tracker` interface in a module beside
 `linear.ts`, register it in `ADAPTERS` in
@@ -209,9 +251,10 @@ second adapter does not yet reach them:
 - **Response shapes.** `do-item`'s parent-status reconciliation, on its
   native path, reads the shape of Linear's own answers; its script path
   works on every adapter.
-- **Names.** The review-triage file's `severity_mapping.<severity>.linear_priority`;
-  `fractal-metrics.ts --skip-linear`; the change-area catalog still accepts
-  the older `linear:` block beside `tracker:`.
+- **Names.** The change-area catalog still accepts the older `linear:` block
+  beside `tracker:`. The review-triage file's
+  `severity_mapping.<severity>.priority` also accepts `linear_priority`, and
+  `fractal-metrics.ts --skip-tracker` also accepts `--skip-linear`.
 - **The launcher**, which has a tracker interface of its own
   ([below](#workspace-launcher)), and opens Linear issues only.
 
@@ -220,13 +263,11 @@ repository) keeps the rest of the plugin's code, and the planning skills'
 procedures, from reaching Linear except through the interface; the deferral
 step is the one file it still allows.
 
-Fixing it means adding file attachment to the interface, moving the
-deferral step and the skills' instructions onto it, and renaming the
-Linear-named fields with their old names still read. Roadmap item 10 holds
-the deferral step and the names; item 12 holds the next
-adapters (Jira, and a plan file kept in the repository), behind open
-decisions: the plan file's format, and whether an adapter may leave out the
-reporting operations.
+Fixing it means adding file attachment to the interface, and moving the
+deferral step and the skills' instructions onto it. Roadmap item 10 holds
+the deferral step; item 12 holds the next adapter, a plan file kept in the
+repository, behind open decisions: the plan file's format, and whether an
+adapter may leave out the reporting operations.
 
 ## Reflection stores
 
@@ -348,10 +389,13 @@ local diff, `fix-ci` on a saved log (`--log <file>`), and the audit with
 arguments, and [M7's mappings](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/mappings.md)
 state the review practice for GitLab and Gitea as well.
 
-**The git remote** is `origin`: the drive pushes to it, fetches from it and
-derives the integration branch from `origin/HEAD`. It refuses rather than
-pushes when `origin` is not the pull request's repository. Roadmap item 10
-makes the name configurable.
+**The git remote** is the one `repository.remote` names, `origin` by
+default ([CONFIGURATION.md](CONFIGURATION.md#repository)): the drive pushes to
+it, fetches the base from it and derives the integration branch from its
+`HEAD`, and `do-item`, `fix-ci`, `resolve-conflicts` and `work-batch` fetch
+and push through it. The drive refuses rather than pushes when that remote
+is not the pull request's repository. `review`, `review-reflections`,
+`reflect`, `code-stats`, `changelog` and the audit still read `origin`.
 
 **What a second forge needs.** A forge interface on the model of the tracker
 interface: the operations above, a GitHub implementation that the skills'

@@ -63,11 +63,18 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { consumerRoot } from "../../../shared/consumer.ts";
+import { consumerRoot, readRemoteName } from "../../../shared/consumer.ts";
 import { loadCatalogFile } from "./lib/change-areas-catalog.ts";
 import { readStdinAll } from "./lib/cli.ts";
 import { changeAreasCatalogPath } from "./lib/overlay.ts";
-import { gitIdentityEnv, run, tsArgv } from "./lib/proc.ts";
+import { attachedTree } from "./lib/driven-branch.ts";
+import {
+  git,
+  gitCallTimeoutSeconds,
+  gitIdentityEnv,
+  run,
+  tsArgv,
+} from "./lib/proc.ts";
 import { isRecord as isPlainObject } from "../../../shared/guards.ts";
 
 const VERDICTS = ["over-strict", "proportionate", "under-strict"] as const;
@@ -134,7 +141,7 @@ async function commandSucceeds(cmd: string[]): Promise<boolean> {
 
 // Git permits an HTTPS remote with embedded userinfo
 // (`https://x-access-token:ghp_xxx@github.com/...`), and `git config --get
-// remote.origin.url` returns it verbatim — copying a live credential into a
+// remote.<remote>.url` returns it verbatim — copying a live credential into a
 // long-lived file outside the worktree. SSH/scp-like
 // remotes (`git@host:owner/repo.git`) don't carry credentials in the address
 // itself, so they pass through unchanged; `new URL()` throws on that syntax,
@@ -351,10 +358,30 @@ const planExtract = {
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const headSha = await capture(["git", "rev-parse", "HEAD"]);
-const branch = await capture(["git", "branch", "--show-current"]);
-const originUrl = sanitizeGitRemoteUrl(
-  await capture(["git", "config", "--get", "remote.origin.url"]),
-);
+// A detached tree an attach prepared records the branch it drives.
+const branch =
+  (await capture(["git", "branch", "--show-current"])) ??
+  (
+    await attachedTree(git, process.cwd(), {
+      timeoutSec: gitCallTimeoutSeconds(),
+      env: gitIdentityEnv(),
+    })
+  )?.branch ??
+  null;
+// The drive's remote (`repository.remote`, else `origin`); an unreadable
+// setting records no address, like an unreadable one.
+const remote = readRemoteName();
+const originUrl =
+  "error" in remote
+    ? null
+    : sanitizeGitRemoteUrl(
+        await capture([
+          "git",
+          "config",
+          "--get",
+          `remote.${remote.remote}.url`,
+        ]),
+      );
 // Best-effort: outside a drive (or with no state yet) this is simply null.
 const round = await capture(
   tsArgv(join(scriptsDir, "drive-state.ts"), ["rounds", pr]),

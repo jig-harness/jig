@@ -47,10 +47,8 @@ const trackerPatterns = join(fixtures, "tracker-key-patterns.txt");
 // placeholders: the tracker team whose keys they reject and the licensor
 // whose name they reject.
 const jigConfig = readFileSync(join(root, ".config/jig.yaml"), "utf8");
-const { issue_tracker } = loadYaml(jigConfig) as {
-  issue_tracker: { team: string };
-};
-const team = issue_tracker.team;
+const origin = readFileSync(`${root}/.config/origin-references.yaml`, "utf8");
+const { tracker_team: team } = loadYaml(origin) as { tracker_team: string };
 const jigNotice = readFileSync(join(root, "NOTICE"), "utf8");
 const licensor =
   jigNotice
@@ -777,6 +775,7 @@ test.skipIf(!unixPermissions)(
     expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
     mkdirSync(join(dir, ".config"));
     writeFileSync(join(dir, ".config/jig.yaml"), jigConfig);
+    writeFileSync(join(dir, ".config/origin-references.yaml"), origin);
     mkdirSync(join(dir, "locked"));
     writeFileSync(join(dir, "locked/notes.md"), `See ${team}-1 for why.\n`);
     expectSpawnExit(safeSpawn(["git", "-C", dir, "add", "locked/notes.md"]), 0);
@@ -825,6 +824,7 @@ test("the real patterns reject the original tracker keys and organization name, 
     `{\n  "owner": { "name": "${name}" }\n}\n`,
   );
   write(".config/jig.yaml", jigConfig);
+  write(".config/origin-references.yaml", origin);
   // The record of who holds the copyright names the licensor.
   write(
     "docs/adr/ADR-0006-home-copyright-and-brand-held-apart.md",

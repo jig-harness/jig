@@ -1,0 +1,12 @@
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>shop</groupId>
+  <artifactId>props</artifactId>
+  <version>1</version>
+  <properties>
+    <checks.dir>checks</checks.dir>
+  </properties>
+  <build>
+    <testSourceDirectory>${checks.dir}</testSourceDirectory>
+  </build>
+</project>

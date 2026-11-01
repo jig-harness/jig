@@ -18,7 +18,12 @@ jig gc --repo <repository> --kind scratch --json
 jig gc --collect
 jig gc receipts
 jig gc install --repo <repository>
+jig gc --help
 ```
+
+`jig gc --help`, `jig gc install --help` and `jig gc receipts --help` list
+each form's options, and `jig completion <shell>` prints a completion script
+for bash, zsh, fish, PowerShell (`pwsh`) or Nushell (`nu`).
 
 The install command prints a preview. Repeat with `--yes` to confirm the
 bounds and write the machine entry and daily scheduler job. `install

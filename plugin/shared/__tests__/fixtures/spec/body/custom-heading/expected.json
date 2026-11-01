@@ -1,0 +1,31 @@
+{
+  "sources": [
+    {
+      "adapter": "body",
+      "ref": "#body/What done means",
+      "evidence": [
+        "section"
+      ]
+    }
+  ],
+  "requirements": [],
+  "acceptance": [
+    {
+      "id": "AC-1",
+      "key": "#body/What done means#AC-1",
+      "text": "Invoices older than a year move to the archive",
+      "requirement": null,
+      "source": 0
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1",
+      "key": "#body/What done means#1",
+      "text": "Write the archive job",
+      "done": true,
+      "source": 0
+    }
+  ],
+  "unresolved": []
+}

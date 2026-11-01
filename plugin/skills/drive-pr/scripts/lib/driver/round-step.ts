@@ -1,9 +1,11 @@
 /** Order one round boundary, status gate, pass and Ready transition without bypassing admission checks. */
 import type { DriveRoundContext } from "./round-context.ts";
 
-import { run, tsArgv } from "./../proc.ts";
+import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 
-import { driveState } from "./paths.ts";
+import { driveState, driveTs } from "./paths.ts";
+
+import { armCommand, passBotsOnly } from "./rearm.ts";
 
 import { runConvergencePhase } from "./convergence.ts";
 
@@ -34,16 +36,26 @@ import { preparePassBoundary, markReadyAfterRound } from "./round-ready.ts";
 
 import { runReviewPassPhase } from "./review-pass.ts";
 
+import { standDownOnNewerClaim } from "./ledger.ts";
+
+import { sweepProvisional } from "./provisional-sweep.ts";
+
+import { parkedFromStateJson } from "./../state/framed-park.ts";
+
+import { framedDecisionLines } from "./../state/park-frame.ts";
+
 async function gateRoundStatus(
   context: DriveRoundContext,
   code: number,
   status: Record<string, unknown>,
   reasonLine: string,
 ): Promise<number | "continue" | null> {
-  // Keep the resumable trail current even if the pass below dies mid-round.
+  // Keep the resumable trail current even if the pass below dies mid-round:
+  // the handoff file, and under a driver the pull request's drive ledger.
   await run(tsArgv(driveState, ["handoff", context.pr]), {
     stdout: "ignore",
-    stderr: "ignore",
+    stderr: "inherit",
+    timeoutSec: helperTimeoutSeconds(),
   });
 
   switch (code) {
@@ -56,22 +68,31 @@ async function gateRoundStatus(
       // Deliberately terminal. Re-arming here is a measured failure: the loop
       // wakes, re-reads the same undeferrable threads, learns nothing it may
       // act on, and burns turns until something external stops it.
+      // Only these remain: the drive worked everything they do not block.
       console.error(
-        "HITL-parked — the decisions below need a human; not re-arming.",
+        "HITL-parked — only the decisions below remain, and each is a person's; not re-arming.",
       );
       const get = await run(tsArgv(driveState, ["get", context.pr]), {
         stderr: "ignore",
       });
       try {
-        const state = JSON.parse(get.stdout) as {
-          parked?: Array<{ kind: string; key: string; reason: string }>;
-        };
-        for (const p of state.parked ?? []) {
-          console.error(`  [${p.kind}] ${p.key}\n    ${p.reason}`);
-        }
+        for (const p of parkedFromStateJson(get.stdout))
+          console.error(`\n${framedDecisionLines(p).join("\n")}`);
       } catch {
-        // best-effort listing, like the bash `|| true`
+        // Best-effort listing: the handoff file and the ledger carry them too.
       }
+      console.error("");
+      // What picks it up again: answers, not a wake-up (`rearm.ts`).
+      console.error(
+        "  Answer each one on its thread, or in a pull-request comment with a line `answer <key>: …`, as an",
+      );
+      console.error(
+        "  owner, member or collaborator. Once every one is answered, re-arm: the re-arm unparks",
+      );
+      console.error("  them and hands the answers to the first round:");
+      console.error(
+        `    ${armCommand(driveTs, context.pr, passBotsOnly(context.agent), "", context.agent)}`,
+      );
       // A park is a finished drive too, and the one whose cost a human is
       // about to weigh by hand — so it gets the same economy block the
       // converged and exhausted exits do.
@@ -129,6 +150,15 @@ async function waitForRoundBoundary(
     );
     return SINGLE_INSTANCE_LOCK_EXIT;
   }
+  // Another clone's takeover claim, newer than this driver's own, ends the
+  // drive here, before another pass could reply beside its successor.
+  const takenOver = await standDownOnNewerClaim(context.pr);
+  if (takenOver !== null) return takenOver;
+  // A person's comment on a provisional decision is parked for them before
+  // the gate counts the round's work (`provisional-sweep.ts`). A dry run
+  // previews and never sweeps: the sweep unresolves threads and parks.
+  const reversed = context.dryRun ? null : await sweepProvisional(context.pr);
+  if (reversed !== null) return reversed;
   const mailboxAtRoundStart = await context.mailboxCheckpoint();
   if (typeof mailboxAtRoundStart === "number") return mailboxAtRoundStart;
   if (mailboxAtRoundStart === "resumed") context.finalCiWait.clear();
@@ -208,6 +238,10 @@ export async function runRoundIteration(
     );
     if (stage !== null) return stage;
   }
+  // The boundary's claim check can be minutes old by the spawn (a mailbox
+  // pause, a status wait): every pass, review or repair, is spawned behind a
+  // `beforePass` checkpoint that reads the claims again.
+  //
   // A pass that discovers the PR merged mid-round exits 5 —
   // `guarded-push.ts` refuses on a merged or closed PR and the pass
   // propagates it. That is the documented terminal `PR_NOT_OPEN`, not a

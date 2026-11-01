@@ -104,11 +104,12 @@ If an operation has already stopped on conflicts, go to Step 2.
 and let the changelog skill say whether the branch edited the changelog's
 Unreleased or release sections or a version file. It reads the repository's
 configuration as the base holds it, so a branch forked before the repository
-adopted the skill is covered too:
+adopted the skill is covered too (`<remote>` here and below is the
+repository's git remote: `repository.remote`, else `origin`):
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch origin <base>
-bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base origin/<base> --dry-run
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch <remote> <base>
+bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base <remote>/<base> --dry-run
 ```
 
 When it prints `not configured` (the base did not turn the skill on) or
@@ -118,7 +119,7 @@ before merging, so those files cannot conflict and no resolution made to
 another file is thrown away:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base origin/<base>
+bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base <remote>/<base>
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git add -A
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git commit -m "chore(changelog): move the branch's changelog edits into a change note"
 ```
@@ -132,8 +133,8 @@ To bring a branch up to date with its base (the `conflict-resolve` round of
 in, with a base section in the markers:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch origin <base>
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git -c merge.conflictStyle=zdiff3 merge origin/<base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch <remote> <base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git -c merge.conflictStyle=zdiff3 merge <remote>/<base>
 ```
 
 Never rebase or force-push a branch that has an open pull request under a
@@ -727,6 +728,43 @@ its `Conflicts resolved:` section recorded).
 | 0 | the report was printed |
 | 1 | a git call failed |
 | 2 | usage error, not inside a git repository, invalid configuration, git older than 2.43, or a partial clone with git older than 2.45 |
+
+### Hotspots into the learning loop
+
+When the person asks for the hotspots to be acted on, and
+[reflection](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is on,
+turn each hotspot into a finding of the [`reflect`](../reflect/SKILL.md)
+skill, its cause as the finding's class. Write the report to a file outside
+the repository's tracked files (`<scratch>`), then pass it on:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file <scratch>/merge-conflicts.json -- bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --json
+bun "${CLAUDE_SKILL_DIR}/../reflect/scripts/reflect.ts" hotspots <scratch>/merge-conflicts.json
+```
+
+Each hotspot becomes one finding in the worktree's reflection journal: the
+path as its `target`, its most frequent cause as its `class`, its count,
+range and causes in its title and description with what the measurement
+could not see (skipped merges, the cause's hand-checked accuracy, and the
+report's own `limits`, a shallow clone included, so the finding still says
+them once the report file is gone), and the report's remedy as its `suggested_fix`. The output lists each hotspot with what happened to it:
+`noted`, `updated` (the journal held it, and it now has the new count),
+`unchanged`, `sending` (a cut-off send may have stored it), or `stored` (the
+store already records it, with its status). A stored hotspot gets a new
+finding only once its fix is `implemented` and the report's range starts
+after that decision, so every merge measured came after the fix. With
+reflection off it prints `{"on": false}` and writes nothing. Exit 2 means
+the file is not a `merge-conflicts/v1` report, or one this version of
+`history.ts` could not have written: a time without its offset, a merge
+outside the range, or totals, paths, hotspots or limits other than the ones
+its merges give; exit 3, that the store is
+unavailable; exit 1, that the store answered with something that is not its
+events. On exit 2, 3 or 1 nothing was noted.
+
+Then run [`/jig:reflect`](../reflect/SKILL.md): its plan escalates a cause
+that recurs across hotspots to one tracker issue like any other class, and
+[`/jig:review-reflections`](../review-reflections/SKILL.md) proposes the
+change. Keep each hotspot finding's class: it is the measured cause.
 
 ## Related skills
 

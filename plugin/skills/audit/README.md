@@ -141,7 +141,7 @@ compares their committed records instead of auditing each again
 | [references/report-sheet.md](references/report-sheet.md) | The report source an audit writes, and the sheet rendered from it |
 | [references/portfolio-methodology.md](references/portfolio-methodology.md), [portfolio-report-template.md](references/portfolio-report-template.md) | The comparison pass over several repositories |
 | [calibration/](calibration/) | Audit runs against real repositories, kept as worked examples |
-| `scripts/config-fit.ts` | Configuration fit (`--offline`, `--json`, `--draft` for a starter configuration) |
+| `scripts/config-fit.ts` | Configuration fit (`--offline`, `--json`, `--draft` for a starter configuration); the values it suggests, and the starter itself, come from the plugin's shared detector (`shared/detect.ts`) |
 | `scripts/report.ts` | `validate`, `render` and `extract` of the audit sheet |
 | `scripts/report/lucide/` | The icons the sheet draws, vendored from [Lucide](https://lucide.dev) under the ISC licence (its `LICENSE` beside them) |
 | `scripts/score.ts` | The scoring checklist, the draft record (`--profile` to leave criteria beyond the target unexamined, `--declare` to record that profile as the team's choice, `--at <rev>` to score a commit while the checkout has changes), and `--check` of the criteria |
@@ -156,5 +156,9 @@ compares their committed records instead of auditing each again
   sets differ from the reading skills' own.
 - A new or changed criterion follows [criteria/README.md](criteria/README.md);
   a new one carries `since:`.
+- A value the configuration fit should derive from the repository goes into
+  the shared detector (`shared/detect.ts`, beside `skills/`) with its tests,
+  so every skill that reads the repository's values finds it; what the audit
+  says about it stays in `scripts/config-fit.ts`.
 - A run that exposes a gap in the method updates the survey prompts or the
   methodology, and the run is kept under [calibration/](calibration/).

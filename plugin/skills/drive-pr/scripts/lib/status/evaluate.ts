@@ -49,12 +49,18 @@
 // set, so this reader and that one cannot disagree about who counts as
 // trusted.
 import { TRUSTED_ASSOCIATIONS } from "../../summary-findings.ts";
+import { isTransparentFollowUp } from "../bot-confirmation.ts";
 import {
   hasLeaveOpenMarker,
   hasNoOutcomeMarker,
   qualifyingOutcome,
 } from "../outcome.ts";
 import { readPrState } from "../pr-state.ts";
+import {
+  readParkedSets,
+  standingProvisionalKeys,
+  unlistedReversals,
+} from "../provisional.ts";
 import { reviewerExpected, reviewerLabel, reviewsDrafts } from "../overlay.ts";
 import { ghCall, git, run, tsArgv } from "../proc.ts";
 import {
@@ -73,6 +79,11 @@ import {
   type UnresolvedThread,
   unresolvedThreads,
 } from "./evidence.ts";
+import {
+  headSyncState,
+  inheritedReason,
+  mayEndWithoutWork,
+} from "./inherited-head.ts";
 import { terminal } from "./terminal-states.ts";
 import type { WaitingEvaluationCache } from "./waiting-cache.ts";
 
@@ -195,6 +206,8 @@ export interface EvaluateContext {
   botsOnly: boolean;
   headSync: boolean;
   localHead: string;
+  /** The witnessed head a pass left work on, unpushed (`inherited-head.ts`). */
+  inheritedHead?: string;
   /** Absolute paths to the sibling scripts this decision spawns. */
   driveStateScript: string;
   listThreadsScript: string;
@@ -435,33 +448,32 @@ export function isLeftOpenThread(t: UnresolvedThread): boolean {
 }
 
 /**
- * The comment url of this thread's MOST RECENT comment, from anyone — not
- * merely the most recent QUALIFYING reply. This is what a thread hold's own
- * `commentUrl` is compared against in the caller below: the reviewer's own
- * example of the bug this closes is itself unqualified — "the reviewer posts
- * a NEW FINDING in the same unresolved thread" is a bot comment with no
- * outcome token, so a comparison scoped to qualifying replies would still
- * read the thread's last comment as the earlier, now-superseded held reply
- * and keep excluding the path. Comparing
- * against the literal last comment catches that: any comment posted after
- * the held one — qualifying or not, from any author — moves the thread's
- * last-comment url off the held value, so the hold no longer describes what
- * is currently on GitHub.
+ * The url of this thread's most recent comment that is not a transparent
+ * follow-up (`lib/bot-confirmation.ts`: a listed bot's confirmation or
+ * finding-free chat acknowledgement), from anyone: what a thread hold's own
+ * `commentUrl` is compared against below. A reviewer's new finding in the
+ * same thread carries no outcome token, so comparing against the last
+ * qualifying reply would miss it; any other comment after the held one moves
+ * this url off the held value, so the hold no longer describes the thread.
  *
- * `null` on a truncated thread, an empty or unreadable comment array — every
- * one of those is NOT MEASURED, and the caller's own doc states which
- * direction that degrades: never toward silently excluding a thread whose
- * current state could not be checked.
+ * `null` on a truncated thread or an empty or unreadable comment array: NOT
+ * MEASURED, which the caller never reads as a thread it may exclude.
  */
 function latestCommentUrl(t: UnresolvedThread): string | null {
   if ((t as { commentsTruncated?: unknown }).commentsTruncated === true)
     return null;
   const comments = (t as { comments?: unknown }).comments;
   if (!Array.isArray(comments) || comments.length === 0) return null;
-  const last = asCommentRecord(comments[comments.length - 1]);
-  if (last === null) return null;
-  const url = last.url;
-  return typeof url === "string" && url !== "" ? url : null;
+  for (const raw of [...comments].reverse()) {
+    const c = asCommentRecord(raw);
+    if (c === null) return null;
+    const author = typeof c.author === "string" ? c.author : null;
+    const body = typeof c.body === "string" ? c.body : null;
+    if (isTransparentFollowUp({ authorLogin: author, body }, qualifyingOutcome))
+      continue;
+    return typeof c.url === "string" && c.url !== "" ? c.url : null;
+  }
+  return null;
 }
 
 /**
@@ -903,20 +915,11 @@ async function evaluateFresh(
     );
   }
 
-  // Draftness is MEASURED AND PUBLISHED here, and gates nothing. It was a
-  // terminal state (`PR_IS_DRAFT`, exit 10) on the premise that no reviewer arm
-  // looks at a draft; the module header records the measurement that killed
-  // that premise for the arm `CONVERGED` is defined against. A drive on a draft
-  // now proceeds exactly as it would on a Ready PR.
-  //
-  // Still validated as a BOOLEAN rather than read for truthiness, and still
-  // INDETERMINATE when it is neither. It stopped being a gate but it did not
-  // stop being DECISION evidence — `mark-ready.ts` reads this field to decide
-  // whether the draft→Ready transition is owed, and `false` is the answer that
-  // says "already Ready, nothing to do". An absent or null `isDraft` coerces to
-  // exactly that, so accepting a partial response here would silently skip the
-  // transition on the one PR that needs it rather than trip. The rule the
-  // `mergeable` block below states therefore still applies.
+  // Draftness is MEASURED AND PUBLISHED here, and gates nothing: a drive on a
+  // draft proceeds as on a Ready PR (the module header says why exit 10 is
+  // retired). It is still validated as a BOOLEAN, because `mark-ready.ts`
+  // decides from it whether the draft→Ready transition is owed, and an absent
+  // or null value read as `false` would skip it on the one PR that needs it.
   const draft = prJson.isDraft;
   if (typeof draft !== "boolean") {
     return terminal(
@@ -927,7 +930,15 @@ async function evaluateFresh(
   }
   report.isDraft = draft;
 
-  if (ctx.headSync && report.apiHead !== ctx.localHead) {
+  // The witnessed inherited head passes; the round is judged on the API head.
+  const sync = await headSyncState(
+    ctx.headSync,
+    report.apiHead,
+    ctx.localHead,
+    ctx.inheritedHead ?? "",
+    str(prJson, "headRefName"),
+  );
+  if (sync === "lagging") {
     return terminal(
       report,
       "HEAD_LAG",
@@ -936,28 +947,21 @@ async function evaluateFresh(
   }
 
   // A nominally SUCCESSFUL read is validated, not trusted. A partial or
-  // malformed response — `mergeable` null/absent/an unhandled enum, or an
-  // empty `baseRefOid` — otherwise collapses to `''` and falls through
-  // exactly as though the PR were mergeable, or silently disarms the
-  // base-race guard.
+  // malformed response (`mergeable` null, absent or unhandled, or an empty
+  // `baseRefOid`) otherwise collapses to `''` and reads as mergeable, or
+  // silently disarms the base-race guard.
   //
-  // Validation is scoped to the fields a STATE IS DECIDED FROM, and that scope
-  // is deliberate rather than an oversight. `mergeable` picks the branch and
-  // `baseRefOid` arms the base-race guard, so a bad value in either is a wrong
-  // decision and must be INDETERMINATE. `baseRefName`, `headRefName` and
-  // `mergeStateStatus` are REPORTED, never branched on HERE: an absent one
-  // costs a branch name in a `git merge` hint and a parenthetical in the
-  // reason, both of which degrade to a named "unavailable" at the point of use.
-  // `headRefName` is additionally consumed by `drive-status.ts`'s own
-  // best-effort drift measurement (the branch-identity check beside its
-  // ancestor check), which already degrades to "no drift published" on an empty
-  // value — a second, narrower branch, not a reason to hard-fail the whole
-  // snapshot on it here. Hard-failing on any of the three instead would block
-  // PR_CONFLICTING from ever being reported over evidence that path does not
-  // use — which is precisely the regression the check-runs read below already
-  // had to undo. Requiring the fields OF THE CLI (above) and validating the
-  // decision evidence (here) are therefore two different rules, and the prose
-  // says so in both places rather than implying one blanket one.
+  // Validation is scoped to the fields a STATE IS DECIDED FROM, deliberately.
+  // `mergeable` picks the branch and `baseRefOid` arms the base-race guard, so
+  // a bad value in either is a wrong decision and must be INDETERMINATE.
+  // `baseRefName`, `headRefName` and `mergeStateStatus` are REPORTED, never
+  // branched on HERE: an absent one costs a branch name in a `git merge` hint
+  // or a parenthetical in the reason, each degrading to a named "unavailable"
+  // where used, and `drive-status.ts`'s best-effort drift measurement already
+  // degrades to "no drift published" on an empty `headRefName`. Hard-failing
+  // on any of the three would block PR_CONFLICTING over evidence that path
+  // does not use. Requiring the fields OF THE CLI (above) and validating the
+  // decision evidence (here) are two different rules.
   report.mergeable = str(prJson, "mergeable").toUpperCase();
   report.mergeStateStatus = str(prJson, "mergeStateStatus").toUpperCase();
   if (!["MERGEABLE", "CONFLICTING", "UNKNOWN"].includes(report.mergeable)) {
@@ -1434,48 +1438,35 @@ async function evaluateFresh(
   // re-arms exactly what a human parked. The empty set is a real answer only
   // when the state says so.
   //
-  // drive-state's stderr is PASSED THROUGH, not discarded. It writes there
-  // only to say something a human has to act on — a malformed state file, or
-  // a worktree-private state file orphaned by the git-dir migration — and
-  // that second one is a ONE-TIME warning guarded by a durable marker.
-  // Swallowing it here consumed the single showing invisibly and left the
-  // marker claimed, so every later human-visible `rounds`/`get` stayed silent
-  // about state holding parked human decisions. This is the FIRST
-  // drive-state call of an evaluation, so it is the one that reliably ate it.
-  const parkedRes = await run(
-    tsArgv(ctx.driveStateScript, ["parked-keys", ctx.pr]),
-    {
-      stderr: "inherit",
-    },
-  );
-  if (parkedRes.code !== 0) {
+  // drive-state's stderr is PASSED THROUGH: it writes there only what a human
+  // must act on (a malformed state file, or the ONE-TIME warning about a
+  // worktree-private state file the git-dir migration orphaned, guarded by a
+  // durable marker). This first drive-state call of an evaluation would
+  // otherwise consume that single showing invisibly.
+  const parked = await readParkedSets(ctx);
+  if (parked === null) {
     return terminal(
       report,
       "INDETERMINATE",
       `cannot read the parked set for #${ctx.pr} — an unreadable parked set would re-arm work a human parked`,
     );
   }
-  const parkedKeys = new Set(
-    parkedRes.stdout.split("\n").filter((k) => k.length > 0),
-  );
+  const parkedKeys = parked.keys;
   report.parkedItemKeys = [...parkedKeys].sort();
   report.threadsParked = threads.filter((t) =>
     parkedKeys.has(String(t.threadId)),
   ).length;
-  // Computed here, AFTER parkedKeys is known, and not alongside the other
-  // thread-derived fields above: a parked thread is a human decision, not a
-  // recurring root cause the fix keeps missing, and structuralEscalationDue's
-  // whole premise is "a finding LANDED on this file again" — not "an item a
-  // human already triaged is still sitting on GitHub, un-resolved because
-  // resolving it is not this signal's job". Left
-  // out, a single old thread parked on `a.ts` would arm every consecutive
-  // round pair for as long as it stays parked, with nothing new for the pass
-  // to have caused or to fix.
+  const provisionalKeys = standingProvisionalKeys(threads, parkedKeys);
+  // Computed AFTER parkedKeys: a parked thread is a human decision, not a
+  // finding that LANDED on its file again (structuralEscalationDue's premise),
+  // so one old parked thread on `a.ts` must not arm every consecutive round
+  // pair while it stays parked.
   const summaryLive = summary.unaddressed.filter(
     (f) => !parkedKeys.has(f.fingerprint),
   );
   const summaryParked = summary.unaddressed.length - summaryLive.length;
   report.summaryParked = summaryParked;
+  const reversalParked = unlistedReversals(parked.reversals, threads, summary);
 
   // A thread/finding held for `resolve-held-thread.ts` /
   // `answer-summary-finding.ts` to dispatch (an `accepted` or `moot`
@@ -1581,6 +1572,7 @@ async function evaluateFresh(
         .filter((t) => !parkedKeys.has(String(t.threadId)))
         .filter((t) => !isThreadHoldCurrent(t))
         .filter((t) => !isLeftOpenThread(t))
+        .filter((t) => !provisionalKeys.has(String(t.threadId)))
         .map((t) => (t as { path?: unknown }).path)
         .filter((p): p is string => typeof p === "string" && p.trim() !== ""),
       ...summaryLive
@@ -1593,10 +1585,13 @@ async function evaluateFresh(
     ]),
   ].sort();
 
-  const liveThreads = report.threadsOpen - report.threadsParked;
+  const liveThreads =
+    report.threadsOpen - report.threadsParked - provisionalKeys.size;
   const liveSummary = report.summaryUnaddressed - summaryParked;
 
-  if (liveThreads <= 0 && liveSummary <= 0) {
+  // Over unpushed inherited commits only a conflict stops; else push them.
+  const liveWork = Math.max(liveThreads, 0) + Math.max(liveSummary, 0);
+  if (mayEndWithoutWork(liveWork, sync, conflicting)) {
     // A conflict with NOTHING left to work is unconvergeable: no round can be
     // reviewed, and no amount of waiting changes that. Checked before
     // HITL_PARKED because a merge is a concrete command and a parked item is a
@@ -1612,10 +1607,10 @@ async function evaluateFresh(
         `PR #${ctx.pr} conflicts with its base (mergeable=${report.mergeable}${report.mergeStateStatus !== "" ? `, mergeStateStatus=${report.mergeStateStatus}` : ""}) and has no workable findings on ${report.apiHead} (${report.threadsParked} parked thread(s), ${summaryParked} parked summary finding(s)). Merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} into this one, push, and re-run; nothing here becomes judgeable with time`,
       );
     }
-    if (report.threadsParked > 0 || summaryParked > 0) {
+    if (report.threadsParked + summaryParked + reversalParked > 0) {
       const rc = await stillOnHead();
       if (rc !== 0) return rc;
-      let hitlReason = `every remaining item awaits a human decision (${report.threadsParked} thread(s), ${summaryParked} summary finding(s)) — handing back rather than re-arming`;
+      let hitlReason = `every remaining item awaits a human decision (${report.threadsParked} thread(s), ${summaryParked} summary finding(s), ${reversalParked} other reversed provisional decision(s)) — handing back rather than re-arming`;
       if (stalledCheckRunNote !== "") hitlReason += ` — ${stalledCheckRunNote}`;
       return terminal(report, "HITL_PARKED", hitlReason);
     }
@@ -1659,6 +1654,7 @@ async function evaluateFresh(
   let roundReadyReason = `${liveThreads} unresolved thread(s) and ${liveSummary} unaddressed summary finding(s) on ${report.apiHead}`;
   if (stalledCheckRunNote !== "")
     roundReadyReason += ` — ${stalledCheckRunNote}`;
+  roundReadyReason += inheritedReason(sync, ctx.localHead, ctx.inheritedHead);
   if (conflicting) {
     roundReadyReason += ` — NOTE: PR #${ctx.pr} conflicts with its base, so no pull_request CI will run on what this round pushes; merge ${report.baseRefName !== "" ? report.baseRefName : "the base branch"} in as part of the round`;
     // Say, in the reason itself, how current these findings are. The reviewer

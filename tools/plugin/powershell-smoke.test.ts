@@ -63,6 +63,7 @@ else if(a[0]==='pr'&&a[1]==='view'){
  if(endpoint.includes('/pulls/999'))data={state:'open',head:{sha:f.head},base:{sha:f.head},draft:true};
  else if(endpoint.includes('/check-runs'))data={check_runs:[]};
  else if(endpoint.includes('/status'))data={statuses:[]};
+ else if(endpoint.includes('/comments')&&a.includes('--input'))data={id:Date.now()};
  else if(endpoint.includes('/comments')||endpoint.includes('/reviews')||endpoint.includes('/timeline'))data=[];
  else throw new Error('unhandled endpoint '+endpoint);
  if(a.includes('--slurp'))data=[data];
@@ -127,6 +128,8 @@ function fixtureEnvironment(
     JIG_GH_CACHE: "0",
     DRIVE_PR_MAILBOX_POLL_MS: "50",
     DRIVE_PR_STALL_ROUNDS: "0",
+    // The fake forge's PR has no head branch on a remote to attach.
+    DRIVE_PR_ATTACH: "off",
     GH_CALL_TIMEOUT: "20",
     DRIVE_PR_HELPER_TIMEOUT: "60",
   };

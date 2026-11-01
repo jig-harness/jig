@@ -59,20 +59,24 @@ configuration from the working directory.
 
 ### Consumer configuration
 
-Every field is optional except `issue_tracker.team` on the Linear adapter (`issue_tracker.adapter: linear`).
+Every field is optional except `issue_tracker.team` on the Linear and Jira adapters (`issue_tracker.adapter: linear` or `jira`) and `issue_tracker.jira.site` on Jira.
 The skill reads them at run time from `.config/jig.yaml`:
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
-| `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) or `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client). Jira and a plan file kept in the repository are planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
-| `issue_tracker.team` | Linear only: the team the repository files into, as the prefix its issue keys carry (`ENG` for `ENG-123`) | Required on Linear: the tracker scripts stop with a message naming this field. Not used on GitHub Issues. A file that sets it without naming `issue_tracker.adapter` is refused, since the default adapter has no team: add `adapter: linear` |
+| `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client), or `jira` for Jira Cloud (credentials from `JIRA_EMAIL` and `JIRA_API_TOKEN`; its settings are under `issue_tracker.jira`, `site` required). A plan file kept in the repository is planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
+| `issue_tracker.team` | Linear and Jira: the team (Linear) or project (Jira) the repository files into, as the prefix its issue keys carry (`ENG` for `ENG-123`) | Required on Linear and Jira: the tracker scripts stop with a message naming this field. Not used on GitHub Issues. A file that sets it without naming `issue_tracker.adapter` is refused, since the default adapter has no team: add `adapter: linear` or `adapter: jira` |
 | `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress" |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
 | `issue_tracker.labels` | The repository's label for each role the skill acts on (see the table below) | The default names below |
+| `issue_tracker.types` | The repository's work types and the labels that mark each (see [Step 1](#step-1-fetch-the-issue)) | `bug`, `feature`, `improvement`, `task`, `spike`; `bug` marked by `issue_tracker.labels.bug`, the others by `<type>` and `type:<type>` |
+| `do_item.work_types` | Fields of the depth table a type overrides | The table's defaults ([configuration reference](../../CONFIGURATION.md#the-depth-table)) |
 | `do_item.agents` | Routing from issue to implementing agent (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Every issue goes to `general-purpose` |
+| `routing` | The model tier and effort the implementer runs on, as rules (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Routes are derived and printed, none applied |
 | `do_item.scouts` | Pre-flight [scouts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) per agent, `{agent: [scouts]}` | No scouts |
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
 | `do_item.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
+| `specs.adapters`, `specs.body_section` | Which spec adapters the resolver runs, in order, and the heading of the body section that names the item's spec ([Step 1](#step-1-fetch-the-issue)) | Every adapter whose layout the repository holds, then `body`; the heading `Spec` |
 | `drive.change_areas_catalog` | Path to the repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (areas, their agents, validation plan and mandatory review skills) | No catalog: validate with the repository's gate command |
 | `repository.base_branch` | The integration branch pull requests land on | The repository's default branch |
 | `drive.reviews_drafts` | `false` makes new pull requests open Ready, since the reviewer would not review a draft | Pull requests open as drafts |
@@ -118,11 +122,15 @@ bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<is
 bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" [--stack-on <branch>] [--accept-oversize "<reason>"] [--json]
 ```
 
-- `branch` prints the branch name for the issue. Create the working branch
-  with it from the planned base before the implementing agent writes
-  anything. When the harness has already created the working branch and its
-  instructions forbid renaming it, keep that branch and say so in the status
-  message; the issue-link line in the body still links the pull request.
+- `branch` prints the branch name for the issue, for a **new** pull request.
+  Create the working branch with it from the planned base before the
+  implementing agent writes anything. When the harness has already created
+  the working branch and its instructions forbid renaming it, keep that
+  branch and say so in the status message; the issue-link line in the body
+  still links the pull request. An item that already has an open pull
+  request gets no branch and no second pull request: its work continues on
+  that pull request, driven with `/jig:drive-pr <PR>`, which places the
+  drive in a working tree on the pull request's head (Step 4).
 - `open` prints the plan for the current branch, after validation and the
   pre-PR review gate pass: the `base`, the `gh pr create` arguments the policy
   fixes (`createArgs`: base, `--draft` or not, labels), commands to run after
@@ -168,25 +176,26 @@ deleted (GitHub then does not retarget the layer above).
 
 The scripts reach the tracker through the tracker port in
 `${CLAUDE_SKILL_DIR}/scripts/lib/tracker/`, whose adapter the overlay's
-`issue_tracker.adapter` selects (`linear` or `github`). Use the script
+`issue_tracker.adapter` selects (`linear`, `github` or `jira`). Use the script
 forms: they work on every adapter and map the workflow states for you. A
 harness with a native integration for the same tracker may use it instead;
 the native forms are given per adapter: Linear's Model Context Protocol
 ([MCP](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) tools, and
-the `gh` command line for GitHub Issues. Where a later step names only a
-Linear tool, the GitHub form is the row of this table it belongs to.
+the `gh` command line for GitHub Issues. Jira has no native form here: use
+the script forms. Where a later step names only a Linear tool, the GitHub
+form is the row of this table it belongs to, and on Jira its script form.
 
 | Operation | Script form | Native: Linear (MCP) | Native: GitHub Issues (`gh`) |
 |-----------|-------------|----------------------|------------------------------|
-| Get issue (labels, state, parent, children, sub-issue analysis) | `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<KEY>"` | `mcp__linear__get_issue` (no children field) | `gh issue view` with its JSON fields `number`, `title`, `body`, `labels`, `state`, `stateReason` and `url` (no sub-issues field) |
+| Get issue (labels, state, parent, children, sub-issue analysis) | `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<KEY>"` | `mcp__linear__get_issue` (no children field) | `gh issue view` with its JSON fields `number`, `title`, `body`, `labels`, `state`, `stateReason`, `url` and, where the `gh` client offers it, `issueType` (no sub-issues field; `issueType.name` is the `nativeType`, `null` when the issue has none or the client lacks the field) |
 | List comments | `bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" "<KEY>"` | `mcp__linear__list_comments` | `gh issue view` with the JSON field `comments` |
 | List children | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" children "<KEY>"` | `mcp__linear__list_issues` with a parent filter | `gh api` on the issue's `sub_issues` endpoint |
 | Transition state | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state>` | `mcp__linear__save_issue` with `state: <mapped name>` | The script form: a state is a label or a board option plus open or closed, which only the script maps |
 | Post comment | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment "<KEY>" --body-file body.md` | `mcp__linear__save_comment` | `gh issue comment` with the body from a file |
 | File a new issue | The consumer's `issue_tracker.file_command` | — | — |
 
-An issue key is `ENG-123` on Linear, where `issue_tracker.team` names the
-prefix, and `#123` on GitHub Issues, an issue of the configured repository;
+An issue key is `ENG-123` on Linear and Jira, where `issue_tracker.team`
+names the prefix, and `#123` on GitHub Issues, an issue of the configured repository;
 a person may also give a GitHub issue as `123` or as its web address, which
 the scripts read as `#123`. This document writes a key as `<KEY>`. Quote it
 on a command line (`"<KEY>"`): an unquoted `#` starts a shell comment. A file
@@ -263,6 +272,46 @@ native integration, or the reverse.
 
 **If not found**: display the error with the script's suggestions.
 
+**exact** — **Type the item.** Write the issue JSON to `issue.json` with the
+file-writing tool (from the native transport: its `title`, its label names
+as `labels`, and its own issue type's name as `nativeType`, or `null` when
+it reports none), then derive its
+[work type](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/determine_type.ts" issue.json
+```
+
+It prints `{ type, evidence, depth }`: the type, from the first of a type
+label (`issue_tracker.types`), the tracker's own issue type and the title's
+Conventional Commits prefix that names one, else `unknown`; which step
+decided (`evidence.step`: `label`, `tracker_type`, `title_prefix`, or `none`)
+with `evidence.summary`; and the type's row of the
+[depth table](../../CONFIGURATION.md#the-depth-table). Put the type and
+`evidence.summary` in the status message, e.g.
+`Type: bug (label type:bug)`; an `unknown` type is reported the same way.
+Exit `1` is a configuration the loading rules refuse: stop the pickup and
+report its message. The route (Step 4a item 1) reads the same settings, so
+going on would start and assign the item only for the route to refuse it.
+
+**Resolve the spec it links** (**exact**). Write the issue JSON the fetch
+returned (on the native transport, the issue as the integration returned it)
+to `spec-issue.json` with the file-writing tool, then run:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/spec/resolve.ts" --input spec-issue.json --summary
+```
+
+Show the user what it prints: the number of requirements, acceptance
+criteria and tasks the item carries or links, each of them with its key and
+text, each source, and every reference it did not read with the reason. It reads the body's
+`specs.body_section` section (`## Spec` by default), `## Requirements` and
+`## Acceptance criteria`, and a path only inside the repository that Git does
+not ignore; it fetches no web link and writes nothing. Nothing later in this
+procedure depends on the result: an empty one, or an exit other than `0` (a
+`specs` configuration it cannot use, which it names), is shown and the
+pickup goes on.
+
 ### Step 2: Check for prior scout findings
 
 **exact** — Fetch the complete comment context and use the selector result;
@@ -304,9 +353,10 @@ whose body opens with `## Scout Findings` and returns
 Freshness fails closed: a timestamp counts as fresh only when it parses to a
 finite, non-negative age under 24 hours.
 
-### Step 3: Determine issue type
+### Step 3: Choose the path
 
-**exact** — Route solely on whether the issue has sub-issues.
+**exact** — Route solely on whether the issue has sub-issues, whatever its
+work type.
 
 - **No sub-issues** → Step 4a.
 - **Has sub-issues** → Step 4b.
@@ -472,25 +522,7 @@ routing below remain **exact**.
 > from convention; fix the plan in the issue body first. The repository's
 > commit hook may catch it too, but pre-flighting saves a round trip.
 
-1. **exact** — **Mark the issue started** (if not already active): transition
-   it to `in_progress` and assign it to yourself.
-
-   ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" in_progress
-   ```
-
-   (**judgment** — native, Linear:
-   `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`.)
-
-   Then show the start on Orca's workspace board. In a worktree of
-   [Orca](https://www.onorca.dev) this moves the worktree's card to In
-   progress; anywhere else it does nothing, and it never fails the step:
-
-   ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/orca-board.ts" in-progress
-   ```
-
-2. **exact** — **Determine the agent and scouts**:
+1. **exact** — **Determine the agent and scouts**:
 
    ```bash
    bun "${CLAUDE_SKILL_DIR}/scripts/determine_agent.ts" issue.json
@@ -523,7 +555,76 @@ routing below remain **exact**.
 
    For example, a repository might route `agent:backend` to a "Backend Agent"
    whose scouts are a schema scout and a constraint validator. Unless Step 2
-   returned `reuse`, spawn the scouts it names.
+   returned `reuse`, spawn the scouts it names once item 2 has started the
+   issue.
+
+   **exact** — **Derive the route**, the model tier and effort the
+   implementer would run on:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/determine_route.ts" issue.json
+   ```
+
+   It prints `{ agent, type, tier, effort, model, runtime_effort, runtime,
+   declared, fields, reasons }`: the agent as above, the type's row of
+   `routing.types` raised one step each by a flag label, an area's mandatory
+   review, a size too large to batch and the `hitl` label, capped at `max`,
+   and the tier's family alias for the runtime; `reasons` names the rule
+   behind each part ([configuration reference](../../CONFIGURATION.md#routing)).
+   Put the tier, the effort, the model and the effort's reasons (its base
+   row and every raise in `reasons`) in the status message, e.g.
+   `Route: execution, high, sonnet (type bug: medium; flag has-migration raised medium)`.
+   The route is not forwarded: the delegation below runs on the model and
+   effort it would run on without one, whatever `declared` says. Exit `1` is a
+   configuration the loading rules refuse: stop the pickup and report its
+   message, which names the field at fault. A refused `routing` section is
+   never read as absent; the repository corrects it before the item is
+   picked up, which is why the route is derived before item 2 starts it.
+   Exit `2` is an `issue.json` that is missing or not an issue: stop the
+   pickup and report the input error.
+
+2. **exact** — **Claim the issue**: assign it to yourself (the identity
+   the tracker's credential acts as) and transition it to `in_progress`,
+   unless someone already holds it.
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" claim "<KEY>"
+   ```
+
+   Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
+   is already `in_progress` or assigned to someone else. Exit `4` is a
+   stand-down: the claim was written, and reading the issue back showed
+   another claim landed first. On `3` or `4`, stop the pickup and report the
+   reason it printed; never start the item beside another session. A person
+   resuming their own interrupted pickup of an `in_progress` item tells you
+   so, and you go on from here without the claim.
+
+   (**judgment** — native, Linear: read the issue and stop on the same two
+   refusals, then
+   `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`,
+   then read it again and stop, as on exit `4`, when it shows another
+   assignee, or when the issue is gone or no longer in the mapped state.)
+
+   Then show the start on Orca's workspace board. In a worktree of
+   [Orca](https://www.onorca.dev) this moves the worktree's card to In
+   progress; anywhere else it does nothing, and it never fails the step:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/orca-board.ts" in-progress
+   ```
+
+   Then name the workspace for the stage. With a runtime that can rename its workspaces (Orca), this renames it, for
+   example to `JIG-12 [I] Rename workspaces` (the default `workspace_name.template`);
+   with the template set to `""`, or anywhere else, it does nothing; a failed Orca rename only warns and exits `0`,
+   while a malformed argument, an invalid `workspace_name` field or an unreadable title
+   file exits `2`, and a configuration file that cannot be parsed exits `1`. The issue title is
+   tracker text, so write it alone to `.context/workspace-title.md` with the
+   file editor and pass the file, never the title inside the command; quote
+   the key, since a GitHub key (`#123`) starts a shell comment unquoted:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id "<KEY>" --title-file .context/workspace-title.md
+   ```
 
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
    first line is exactly `## Scout Findings (<hash>)`, where `<hash>` is
@@ -556,7 +657,14 @@ routing below remain **exact**.
    branch named by `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch` (**exact**; see
    [Pull-request policy](#pull-request-policy)), from the integration branch,
    or from the predecessor's branch when this change builds on an unmerged
-   pull request and `pull_requests.stacking` allows it.
+   pull request and `pull_requests.stacking` allows it. When the item already
+   has an open pull request, do not delegate: stop here, create no branch
+   and open no pull request, remove the scratch files this procedure wrote
+   (`issue.json`, `spec-issue.json`, `comments.json`,
+   `intent-chain-input.json` and `scout-findings.md`, whichever exist; an
+   attach refuses a tree it would move while they are in it), and hand the item to that pull request's drive with
+   `/jig:drive-pr <PR>`. Its placement chooses or creates the working tree
+   on the pull request's head, so nothing here is pushed or attached.
 
    **Review gates — MANDATORY when declared.** Each entry of the overlay's
    `do_item.gates` is `{labels: [...], paths: [...], skill: <name>}`. A gate
@@ -641,9 +749,10 @@ routing below remain **exact**.
    humans gate *merges*, not *pushes*.
 
    **Change note — only where the repository has opted in.** Run
-   `bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/check.ts" --base origin/<base>`
+   `bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/check.ts" --base <remote>/<base>`
    from the repository root, `<base>` being the branch the pull request
-   merges into. It reads the configuration the base holds, not the branch's
+   merges into and `<remote>` the repository's git remote (`repository.remote`,
+   else `origin`). It reads the configuration the base holds, not the branch's
    own, so a branch that predates the adoption or drops `changelog.file` is
    still asked. When it prints `not configured`, the repository keeps no
    changelog from change notes: write no note, run nothing else of the
@@ -654,7 +763,7 @@ routing below remain **exact**.
    one, never edit the changelog or a version file, and run the same check
    with the other gates, so that a finding is fixed before the push. A branch that already
    edited the changelog or the version is converted first
-   (`bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base origin/<base>`,
+   (`bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base <remote>/<base>`,
    the same base as the check, so a stacked branch moves only its own
    edits), and the result reviewed.
 
@@ -665,9 +774,10 @@ routing below remain **exact**.
    the one the change-area catalog emits for the complete workspace change
    when `drive.change_areas_catalog` is declared, and the repository's gate
    command otherwise; do not substitute a fixed command list. `<base>` below
-   is the branch the PR will target, as `origin/<base>`: the integration
+   is the branch the PR will target, as `<remote>/<base>`: the integration
    branch, or the predecessor's branch for a stacked PR (the `base` that
-   `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` prints).
+   `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` prints), and `<remote>`
+   the git remote it prints (`remote:`: `repository.remote`, else `origin`).
 
    **Skip condition — fewer than 20 non-test lines changed (Tiers 1–3 only):**
 
@@ -798,7 +908,7 @@ routing below remain **exact**.
    - **`APPROVED WITH WARNINGS`**: put the Tier 2 warnings and the lens
      warnings (Tier 3 `⚠️ WARNINGS`) verbatim under `## Review Notes` in the
      PR body, then push.
-   - **`APPROVED`**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push -u origin "<branch>"`.
+   - **`APPROVED`**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push -u <remote> "<branch>"`.
 
    Then run `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` and open the PR exactly as it plans
    ([Pull-request policy](#pull-request-policy)). An exit `3` is a policy
@@ -859,7 +969,7 @@ routing below remain **exact**.
    a stated reason when the label turns out over-applied (then remove the
    label with a comment explaining why).
 
-   **Show the pull request on Orca's board** (exact), as in item 1: in an
+   **Show the pull request on Orca's board** (exact), as in item 2: in an
    Orca worktree the card moves to In review and links the pull request;
    elsewhere nothing happens.
 
@@ -883,25 +993,54 @@ routing below remain **exact**.
    memory, and most of the loop's calendar time is lost in exactly that
    seam. Arming is part of opening the PR:
 
-   1. **exact** — **Always emit the exact unattended drive command** — in the
-      end-of-run status message **and** in the tracker comment that links the PR,
-      with the real PR number substituted. Prepare the comment now; post it
-      after step 3's arm check so it can report the observed outcome. Use the
-      portable `bun` form on **one line** (a `\` continuation is POSIX-shell
-      only and breaks on PowerShell and `cmd.exe`):
+   1. **exact** — **Decide how the drive starts** with drive-pr's arm script,
+      run in this tree, on **one line** with the real PR number substituted
+      (a `\` continuation is POSIX-shell only and breaks on PowerShell and
+      `cmd.exe`). Add `--mode print` when an uncleared `hitl` checkpoint
+      remains: the issue carries `hitl` **and** this run did not receive
+      explicit clearance.
 
       ```bash
-      bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
+      bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/arm-drive.ts" <PR>
       ```
 
-      The pass command (`claude -p "..."`) is Claude Code's, and today it is
-      the one documented pass command. Do not guess one for another agent
+      It reads `do_item.arm_drive` (default `auto`: a terminal tab of this
+      workspace where the session can open one, in Orca on a macOS or Linux
+      host; the session's background execution elsewhere, Windows hosts
+      included), `drive.pass_model` (default `sonnet`) and
+      `drive.pass_args` (default none), and prints one
+      JSON object: `command`, the drive's start command on one line
+      (`bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model
+      <model> -p "/jig:drive-pr --bots-only <PR>"`, the `drive.pass_args`
+      words before `-p` when it is set); `status`, what to do
+      next (step 2); `way`, `reason` and `fallback`, why; `model`; `tab`,
+      `tail` and `drive` for a tab; and `handles`. A tab is a fresh login
+      shell of the user's: `bun`, `claude` and the Claude account or profile
+      the drive uses come from that shell, not from this session. Every
+      failure prints the same JSON with `status: failed` and `reason`, with
+      `command` built where the tree is known (on the default model when
+      the configured one cannot be read). Exit `1`: the setting cannot be
+      honoured here (`tab` outside Orca, on a Windows host, or a tab Orca
+      refused) or a setting, the model or the working tree cannot be read;
+      exit `2`: a malformed command line. Report `reason` with `command`, and
+      spawn nothing. The pass command (`claude --model <model> -p "..."`) is
+      Claude Code's, today the one documented pass command; in another agent
+      tool the script answers `print`. Do not guess one for another agent
       tool.
 
+      **Always emit `command`**, the exact unattended drive command, in the
+      end-of-run status message **and** in the tracker comment that links the
+      PR, with the pass model (`model`) and the permission mode
+      (`permissionMode`). Prepare the comment now; post it
+      after step 3's arm check so it can report the observed outcome.
+
       Include the drive's **observability handles** in the same comment. Take
-      the candidate log path from `drive.ts: driver log → ...` in the arm
-      output (a `drive.ts: driver log unavailable: <reason>` line instead
-      means this driver keeps none: say so and include the reason), or, when the arm was refused, from the refusing driver's
+      the candidate log path from `drive.log` when the script found the drive
+      listed (`armed`, `already-live`); otherwise from
+      `drive.ts: driver log → ...` in the arm output, the spawned task's or
+      the tab's `tail` (a `drive.ts: driver log unavailable: <reason>` line
+      instead means this driver keeps none: say so and include the reason),
+      or, when the arm was refused, from the refusing driver's
       diagnostics or its row in
       `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts" --json`. A
       per-PR lock refusal always names this PR's own driver; a worktree lock
@@ -914,36 +1053,49 @@ routing below remain **exact**.
       path before acquiring either lock and writes the log best effort, so
       neither the arm outcome nor the printed path proves the log exists.
       Never post a template such as `<state dir>` as a path. Include the
-      fleet commands too: `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts"` lists live drives, and
-      `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts" --stop <PR>` stops this one (the process probe uses `ps` on POSIX and
+      fleet commands too: `handles.list` lists live drives, and
+      `handles.stop` stops this one (the process probe uses `ps` on POSIX and
       PowerShell on Windows). These are what a human reaches for when the
-      background drive is an agent they have no window into.
+      drive runs where they have no window into it.
 
-   2. **exact** — **Spawn that command in the background** (the harness's
-      background execution; do not block the session on it) when **both**
-      hold: no uncleared `hitl` checkpoint remains (the issue carries `hitl`
-      **and** this run did not receive explicit clearance), **and** the harness
-      is Claude Code, whose `claude -p` is today the one documented pass
-      command. Spawning
-      is then mandatory: an emitted but unspawned command reintroduces the
-      human-memory delay this step removes, and a `hitl` issue cleared this
-      run is no reason to withhold it. Pass the Bash call's `timeout` of
-      `28800000` (8 hours) with `run_in_background`: in an unattended session
-      Claude Code stops a background command after 30 minutes without it (10
-      in a `claude -p` run whose prompt is passed as text), and
-      after 2 hours unless `BASH_MAX_TIMEOUT_MS` is raised (see
-      [drive-pr's README](../drive-pr/README.md#the-background-time-limit)).
-      Report the task handle. The drive
-      works the draft immediately (some review bots review drafts, others
-      skip them) and marks the PR Ready at the point
+   2. **exact** — **Act on the script's `status`:**
+      - `armed` → the drive runs in a terminal tab of its own (`tab.title`)
+        in the PR's workspace, and `drives.ts` lists it (`drive`). Report the
+        tab, the pass model and the handles. Spawn nothing: the session ends
+        without a background drive task, and step 3 has nothing to check.
+      - `already-live` → a drive already holds the PR (`drive`, with its
+        `doctor` verdict) and no tab was opened: report it as step 3 reports
+        a per-PR lock refusal.
+      - `unconfirmed` (only under `arm_drive: tab`) → the tab opened, but
+        `drives.ts` did not list the drive in time; `tail` is what the tab
+        printed. Read it once as step 3 reads a spawned task's output, and
+        report what it shows; do not open another tab or spawn the command
+        as well.
+      - `spawn` → **spawn `command` in the background** (the harness's
+        background execution; do not block the session on it). Spawning is
+        then mandatory: an emitted but unspawned command reintroduces the
+        human-memory delay this step removes, and a `hitl` issue cleared
+        this run is no reason to withhold it. Pass the Bash call's `timeout`
+        of `28800000` (8 hours) with `run_in_background`: in an unattended
+        session Claude Code stops a background command after 30 minutes
+        without it (10 in a `claude -p` run whose prompt is passed as text),
+        and after 2 hours unless `BASH_MAX_TIMEOUT_MS` is raised (see
+        [drive-pr's README](../drive-pr/README.md#the-background-time-limit)).
+        Report the task handle. When `fallback` is set, `auto` meant a tab
+        and the drive goes to the background instead: say why (Orca refused
+        the tab, a Windows host, or a tab whose drive `drives.ts` did not list
+        in time, whose `tail` to report too; a drive that tab did start holds
+        the PR's lock, so this spawn then meets step 3's exit `11`).
+      - `print` → emit the command only, with `reason`: for an uncleared
+        `hitl` checkpoint, starting review rounds would pre-empt the human
+        judgment; for another agent tool (Codex, for one), which has no
+        documented pass command today, a guessed command is worse than one
+        left for a human to run.
+
+      The drive works the draft immediately (some review bots review
+      drafts, others skip them) and marks the PR Ready at the point
       `pull_requests.mark_ready` declares (after the first completed round
-      by default), so
-      one human decision is left: the merge. For an uncleared `hitl`
-      checkpoint, or another agent tool (Codex, for one), which has no
-      documented pass command today, emit the
-      command only: starting review rounds would pre-empt the human
-      judgment, and a guessed command is worse than one left for a human to
-      run.
+      by default), so one human decision is left: the merge.
 
    3. **exact** — **Never start a second driver; the refusal is mechanical.**
       `drive.ts` holds two single-instance locks for the life of a drive — a
@@ -953,16 +1105,20 @@ routing below remain **exact**.
       driving, its worktree and its log. Only a claim written by an older
       driver is pid/hostname-only (see
       `${CLAUDE_SKILL_DIR}/../drive-pr/references/terminal-states.md`
-      § The single-instance locks). Check the spawned task's output **once**,
-      a few seconds after issuing it — not immediately, and not in a poll
-      loop:
+      § The single-instance locks). Check the spawned task's output (or an
+      `unconfirmed` tab's `tail`) **once**, a few seconds after issuing it —
+      not immediately, and not in a poll loop:
       - Exit `11` on the **per-PR** lock → this PR is already being driven:
-        report "a drive is already live on #<PR>" with the holder's details;
-        do not retry and do not kill the other driver.
+        report "a drive is already live on #<PR>" with the holder's details
+        and the doctor verdict the refusal names; do not retry. Do not stop a
+        driver that is making progress; when the refusal says it is `WEDGED`
+        and prints the `--take-over` command, run that command instead
+        (`${CLAUDE_SKILL_DIR}/../drive-pr/SKILL.md` § Picking up a stopped
+        drive).
       - Exit `11` on the **worktree** lock → read the diagnostics. The same
         PR means already armed (report as above); a different PR means this
         worktree is busy with other work (report the conflict; do not retry
-        or kill). Only when the claim predates diagnostics is the case
+        or stop it). Only when the claim predates diagnostics is the case
         **ambiguous**: because the worktree lock comes first, a re-invocation
         for this same PR from the same worktree also fails here. Report the
         ambiguity itself, with the holder's pid and hostname (`drives.ts`
@@ -974,6 +1130,13 @@ routing below remain **exact**.
       - Exit `0` → the drive already reached a terminal state within the
         window: report its outcome rather than assuming it is running.
       - Still running → armed; move on without further polling.
+
+      Once armed, name the workspace for the driving stage (same rules as at
+      pickup, with `.context/workspace-title.md` still holding the title):
+
+      ```bash
+      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id "<KEY>" --title-file .context/workspace-title.md --pr <PR>
+      ```
 
       Post the prepared tracker comment with the arm outcome and the
       observability handles. Report the log path's verified, unavailable or
@@ -1087,7 +1250,7 @@ snapshot mapping are **exact**.
       back to `sub_issue_analysis.next_issue`.
 
    **Epic-level snapshot fallback.** Whenever this issue carries the `epic`
-   label and this invocation ends without reaching item 4 with a selected
+   label and this invocation ends without reaching item 3 with a selected
    child — item 1 routing to Step 5a, every candidate ineligible, a pause for
    the user's choice, or any other return without a `nextSubIssue` — rewrite
    the intent-chain snapshot before returning: pass this issue as **both**
@@ -1098,21 +1261,18 @@ snapshot mapping are **exact**.
    issue-scope section has a protected floor under truncation that the epic
    scope lacks, so this is the only way the epic's scope is guaranteed to
    survive. (Acceptance criteria get no such protection in either slot.)
-   Step 3.5 skipped its write because item 4 was expected to cover it;
+   Step 3.5 skipped its write because item 3 was expected to cover it;
    leaving both unwritten would present whatever an earlier child selection
    wrote as current.
 
    Let this write compute its arm normally from the epic's identifier. Do
    not try to preserve a child's arm or work around a `JIG_REFOCUS`
    override: the arm is a pure function of the identifier, so the next
-   selected child re-derives its own arm when item 4 (or Step 3.5) writes
+   selected child re-derives its own arm when item 3 (or Step 3.5) writes
    for it. This fallback's arm only governs injection while no child is
    selected.
 
-3. **exact** — **Start the selected sub-issue**: transition it to
-   `in_progress` and assign it to yourself, as in Step 4a item 1.
-
-4. **exact** — **Fetch the selected sub-issue in full, then rewrite the
+3. **exact** — **Fetch the selected sub-issue in full, then rewrite the
    intent-chain snapshot** per Step 3.5's split. `nextSubIssue` (from
    `sub_issue_analysis.next_issue`, or chosen in the second step above) may
    carry only key, title and state — a children listing does not include
@@ -1126,7 +1286,17 @@ snapshot mapping are **exact**.
    from a just-completed sub-issue to the next, so the snapshot always names
    the sub-issue actually being worked.
 
-5. **judgment** — **Delegate** as in Step 4a. When the selected
+4. **exact** — **Derive the sub-issue's route**: write the fetched
+   sub-issue to `issue.json` and run `determine_route.ts` on it as Step 4a
+   item 1 does, reporting its route and stopping on exit `1` or `2` the same way,
+   before item 5 starts it. The route derived for this issue in Step 4a is
+   this issue's, never the sub-issue's.
+
+5. **exact** — **Start the selected sub-issue**: claim it as in Step 4a
+   item 2, and on a refusal or a stand-down choose another eligible
+   sub-issue or stop.
+
+6. **judgment** — **Delegate** as in Step 4a. When the selected
    sub-issue builds on a sibling whose pull request is still open, the
    pull-request policy decides what happens: with `pull_requests.stacking:
    none` (the default), do not start it on top of that branch; wait for the
@@ -1365,9 +1535,12 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 | `get_issue.ts` | Fetch an issue | Issue key | JSON with details and sub-issue analysis |
 | `list_comments.ts` | Fetch an issue's comments | Issue key | JSON array of `{ body, createdAt }` |
 | `tracker.ts` | Tracker operations: `children`, `transition`, `comment`, and the configured `states` and `labels` | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
+| `determine_type.ts` | Derive an issue's work type and its depth-table row | Issue JSON (path or `-`) | JSON `{ type, evidence, depth }` |
 | `determine_agent.ts` | Route an issue to an agent and its scouts | Issue JSON (path or `-`) | JSON with agent and scouts |
+| `determine_route.ts` | Derive the implementer's route: agent, model tier, effort, the runtime's model, and the reasons | Issue JSON (path or `-`) | JSON `{ agent, type, tier, effort, model, runtime_effort, runtime, declared, fields, reasons }` |
 | `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (`--input` or stdin), `--git-head` or `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (`--input` or stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
 | `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (`--input` or stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |
 | `pr-plan.ts` | Apply the pull-request policy: a branch name, or the plan for opening the current branch's PR | `branch --issue "<KEY>" --title <title>`, or `open [--issue "<KEY>"] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name, or the plan (text or `--json`); exit `3` when the policy refuses |
 | `intent-chain.ts` | Write the Refocus intent-chain snapshot (Step 3.5); `--clear-session` removes this session's copy | `IntentChainInput` JSON (stdin or `--input`); nothing with `--clear-session` | Snapshot files and a JSON summary (`path`, `sessionPath`, `pickupId`, `chars`, `arm`, `truncated`, `pointerErrors`); with `--clear-session`, `{ sessionPath, removed }` |
+| `${CLAUDE_SKILL_DIR}/../../shared/spec/resolve.ts` | Resolve the requirements, acceptance criteria and tasks the issue carries or links (Step 1) | Issue JSON (`--input` or stdin), optional `--summary` | JSON `{ sources, requirements, acceptance, tasks, unresolved }`, or with `--summary` as text: the counts, every requirement, criterion and task with its key and text, the sources and the unresolved references |

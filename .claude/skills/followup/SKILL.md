@@ -1,6 +1,6 @@
 ---
 name: followup
-description: "After a Jig pull request merges, settle what the merge still owes: the tracker item and deferred findings, the release tags, the website, status pages, consumer repositories and cleanup; or, before the merge, list what it will owe."
+description: "After a Jig pull request merges, settle what the merge still owes: the tracker item and deferred findings, the release tags, the website, status pages, consumer repositories and live drivers and cleanup; or, before the merge, list what it will owe."
 argument-hint: "<PR number>"
 allowed-tools:
   - Read
@@ -9,10 +9,6 @@ allowed-tools:
   - Edit
   - Write
   - Bash
-  - mcp__linear__get_issue
-  - mcp__linear__list_issues
-  - mcp__linear__save_issue
-  - mcp__linear__save_comment
 ---
 
 # Followup: what a merged Jig pull request still owes
@@ -51,8 +47,10 @@ gh pr view "$PR" --json number,title,state,mergedAt,mergeCommit,baseRefName,head
   nothing.
 - `SHA` is `mergeCommit.oid`. Jig squash-merges, so `SHA^1` is `main` just
   before the merge, and `git diff --name-only SHA^1 SHA` is the change.
-- The tracker item: `Closes <KEY>-<n>` in the body, else the key in the
-  branch name. Leave it empty when neither names one.
+- The tracker item: `Closes #<n>` in the body, else the issue number the
+  branch name carries (`<n>-<slug>`). Leave it empty when neither names one.
+  `Part of #<n>` names the epic a step belongs to, not the item the merge
+  closes.
 - Fetch first: `git fetch --no-tags origin main`. Leave this clone's tags
   alone: a fetch that updates them refuses a tag origin holds elsewhere
   ("would clobber existing tag"), and [B](#b-tagging-the-release) reads
@@ -67,7 +65,9 @@ is.
 ### A. The tracker item and deferred findings
 
 1. **Status and closing comment**: `do-item`'s post-merge status rule decides
-   between done and ops-pending. The closing comment carries the pull
+   between done and ops-pending. An item that is itself a roadmap epic
+   (the `roadmap` flag), worked directly, stays open while its plan item is
+   still in `design/plan.md`, as in step 3. The closing comment carries the pull
    request's `## Out-of-tree follow-ups` section as unchecked boxes, and the
    merge commit.
 2. **Deferred findings**: every `**deferred**` reply was meant to become a
@@ -86,7 +86,11 @@ is.
 
    File what is missing with `defer-batch.ts`, as the deferral protocol says.
 3. **The epic**: when the item has a parent, `do-item`'s parent-status rule
-   (`reconcile_parent_status.ts`) decides its status.
+   (`reconcile_parent_status.ts`) decides its status. It sees only the
+   children's states, so for an epic that also carries the `roadmap` flag
+   check first that its plan item has left `design/plan.md`
+   ([label-taxonomy.yaml](../../../label-taxonomy.yaml)). While the item is
+   still there, the epic stays open whatever its children say.
 
 Without a tracker item, 1 and 3 are NOT OWED; 2 still applies.
 
@@ -270,10 +274,14 @@ decision for a person (AGENTS.md, HITL decisions): flag it.
 
 ### F. Cleanup
 
+`jig gc` ([resource GC](../../../design/resource-gc.md)) reports worktrees
+and drive state and does not yet delete them or inventory local branches; this
+repository's `gc.kinds` registers no scratch prefixes, so it does not see
+`.context/` notes. Until a collector covers a leftover, it stays owed here.
+
 | Thing | Check | Teardown |
 |---|---|---|
 | A live driver on this pull request | `bun plugin/skills/drive-pr/scripts/drives.ts` | `drives.ts --stop <PR>` |
-| The driver's log | listed by `drives.ts` | keep it; it is the record |
 | The local branch | `git branch --list <headRefName>` (Step 0). A squash merge leaves it out of `git branch --merged`, so Step 0's `MERGED` state shows only that the pull request's head merged; `git rev-parse <headRefName>` must equal Step 0's `headRefOid` for the branch to hold nothing else | delete it, only when its tip is `headRefOid` and no driver is live in this worktree. Any other tip holds commits the merge does not have: push them to a branch of their own, or ask, before deleting |
 | The workspace's `.context/` notes | what this work wrote there | remove what no later work needs |
 | Scaffolding in the merged diff | a disabled check, a `.only(`, a loosened timeout, a suppression | a follow-up change |
@@ -307,7 +315,7 @@ act:
 | Read-only checks: `status.ts`, `tag.ts` (without `--rerun`), `site-diff.ts`, `drives.ts`, `gh run` | on its own |
 | Running the release workflow, creating or replacing a release tag | ask first |
 | Re-running a failed deploy | ask first |
-| Stopping a live driver, deleting a branch or a worktree | ask first |
+| Stopping a live driver, deleting a branch | ask first |
 | Anything in another repository, or anything near the origin-reference boundary | a person decides |
 
 Close with what is left for a person, by name. When every arm is NOT OWED,
@@ -320,7 +328,22 @@ request's diff (`origin/main` and its head instead of `SHA^1` and `SHA`) and
 records what the merge will owe, carrying out nothing: the
 `## Out-of-tree follow-ups` section of the description, the deferred
 findings still to file, the site pages the change will reach, the cleanup
-inventory. The post-merge pass then checks a list instead of rebuilding it.
+inventory, and first of all the pull request's **provisional decisions**: the
+calls a drive took at the `wide` autonomy level that a person may still
+reverse before the merge. List them from the morning report
+(`bun plugin/skills/drive-pr/scripts/drives.ts --report --since <when the
+pull request opened> --json`, its `provisional` entries for this pull
+request), each with its thread or record and whether it stands or was
+reversed, so the person merging reads them before they merge. The report
+lists only the pull requests the signed-in account authored or wrote a drive
+ledger on, so a pull request someone else opened and drives from another
+clone may be missing: when its entry is absent, read that pull request's
+drive ledger comment (`<!-- drive-pr-ledger -->`) and its provisional replies
+directly rather than listing none. A provisional entry whose status is
+`unread`, or a report that exits 0 with errors in its top-level `unread`
+field, is not a complete inventory: say which part is unread and retry before
+the merge, never present the list as complete. The post-merge pass then
+checks a list instead of rebuilding it.
 
 Building the head for `site-diff.ts` runs the pull request's code (its
 install and the site's build scripts) with your credentials. Run it only on a

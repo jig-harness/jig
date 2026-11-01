@@ -12,15 +12,21 @@
 #             | list | map | any
 #               command: a shell command line; its program must resolve
 #               path:    relative to the repository root unless absolute
-#   values    enum: the allowed values; integer: words allowed besides a number
+#   values    enum: the allowed values, also in a nested type spec of an
+#             enum (a list's `items`); integer: words allowed besides a number
 #   min       integer: the least allowed number
+#   max       integer: the greatest allowed number
 #   pattern   string, command, path: a regular expression the value must
 #             match; also allowed in a nested type spec of one of those types
 #             (a list's `items`), applying to each entry; refused on any other
 #             type
+#   allow_empty  string: true when the empty string is a value the skill reads
+#             (an off-switch), not a missing one
 #   nullable  true when `null` is accepted and means "not set"
 #   items     list: the type of each entry: a type name; `fields:` for a
-#             list of mappings, each field typed; or, for a nested list or map,
+#             list of mappings, each field typed, with `optional:` naming the
+#             fields an entry may leave out and `or:` a type an entry may take
+#             instead of a mapping; or, for a nested list or map,
 #             `{ type: list, items: … }` or `{ type: map, values_type: … }`
 #   distinct  list: entries must be distinct
 #   nonempty  list: at least one entry
@@ -28,8 +34,12 @@
 #   values_type  map: the type of each value (default string)
 #   exists    path: `required` when the reading skill refuses a configured path
 #             that does not exist; `expected` when a missing one only makes
-#             the field useless
-#   read_by   the skills that read the field (CONFIGURATION.md's "Read by")
+#             the field useless; `machine` when the path names a place that
+#             exists on some machines only (a worktree root), so a missing one
+#             is not a finding
+#   read_by   the skills that read the field (CONFIGURATION.md's "Read by");
+#             `gc` names the collector (`jig.ts gc`) and `evidence` the
+#             shared evidence record (`shared/evidence.ts`)
 #   repository_only  true for a field that describes one repository: the user
 #             file refuses it (CONFIGURATION.md § Configuration layers)
 #   default   the value a skill uses when the field is absent, where that is
@@ -52,12 +62,31 @@ strict:
   - issue_tracker.labels
   - issue_tracker.github
   - issue_tracker.github.priority_labels
+  - issue_tracker.jira
+  - issue_tracker.jira.priorities
+  - issue_tracker.jira.resolutions
+  - issue_tracker.jira.link_types
   - resolve_conflicts
   - review.lenses
   - reflection
   - code_stats
+  - docs
+  - dispatch
+  - specs
   - work_batch
   - work_batch.ranking
+  - workspace_name
+  - workspace_name.statuses
+  - routing
+  - routing.raise
+  - verify
+
+# Sections and fields whose `null` a skill refuses rather than reading it as
+# not set: a higher layer's `null` there would otherwise put a lower layer's
+# value back to its default unnoticed. Elsewhere a `null` reads as not set.
+null_refused:
+  - repository
+  - repository.remote
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
@@ -74,17 +103,50 @@ fields:
   gc.worktree_roots:
     type: list
     items: path
+    exists: machine
     distinct: true
-    read_by: [audit, gc]
+    read_by: [audit, gc, drive-pr]
     repository_only: true
     since: 0.83.0
   gc.scratch_prefixes:
     type: list
     items: path
+    exists: machine
     distinct: true
     read_by: [audit, gc]
     repository_only: true
     since: 0.83.0
+
+  dispatch.identity:
+    type: string
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.105.0
+  dispatch.states:
+    type: list
+    items: { type: enum, values: [triage, backlog, todo, in_review, ops_pending, done, canceled, duplicate] }
+    distinct: true
+    nonempty: true
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.105.0
+  dispatch.followup_command:
+    type: string
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.105.0
+  dispatch.stalled_after:
+    type: string
+    pattern: "^\\d+\\s*[smh]$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.114.0
+  dispatch.blocked_after:
+    type: string
+    pattern: "^\\d+\\s*[smh]$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.114.0
 
   gates.command:
     type: command
@@ -93,7 +155,10 @@ fields:
 
   review.bots:
     type: list
-    items: string
+    items:
+      or: string
+      fields: { login: string, confirmation_marker: string, chat_marker: string }
+      optional: [confirmation_marker, chat_marker]
     read_by: [resolve-review-comments, drive-pr, review]
   review.job_pattern:
     type: regex
@@ -212,8 +277,15 @@ fields:
   repository.base_branch:
     type: string
     pattern: "^(?!origin/)[^\\s~^:?*\\[\\\\]+$"
-    read_by: [drive-pr, do-item, review, descar, changelog]
+    read_by: [drive-pr, do-item, review, descar, changelog, docs]
     repository_only: true
+
+  repository.remote:
+    type: string
+    pattern: "^(?!-)(?!.*\\.\\.)(?!.*//)(?!/)(?!.*/$)(?!.*\\.$)(?!(?:.*/)?\\.)(?!.*\\.lock(?:/|$))[A-Za-z0-9._/-]+$"
+    default: origin
+    read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc]
+    since: 0.94.0
 
   pull_requests.stacking:
     type: enum
@@ -238,7 +310,7 @@ fields:
     type: string
     pattern: "\\{key(_lower)?\\}"
     default: "{key_lower}-{slug}"
-    read_by: [do-item]
+    read_by: [do-item, dispatch]
   pull_requests.issue_link:
     type: enum
     values: [closes, refs, none]
@@ -277,10 +349,62 @@ fields:
     default: 10
     since: 0.33.0
     read_by: [drive-pr]
+  drive.pass_deadline_retries:
+    type: integer
+    min: 0
+    default: 2
+    since: 0.98.0
+    read_by: [drive-pr]
+  drive.pass_model:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._:/@[\\]-]*$"
+    default: sonnet
+    since: 0.102.0
+    read_by: [drive-pr, do-item]
+  drive.pass_args:
+    type: list
+    items:
+      type: string
+      pattern: "^(?!(?:--|-p|--print|--model)$)(?!--model=)\\S+$"
+    default: []
+    since: 0.109.0
+    read_by: [drive-pr, do-item]
   drive.escape_baseline_doc:
     type: path
     exists: expected
     read_by: [drive-pr]
+
+  autonomy.level:
+    type: enum
+    values: [attended, unattended, wide]
+    default: attended
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    since: 0.103.0
+  autonomy.max_level:
+    type: enum
+    values: [attended, unattended, wide]
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    repository_only: true
+    since: 0.103.0
+  autonomy.off_hours.level:
+    type: enum
+    values: [attended, unattended, wide]
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    since: 0.113.0
+  autonomy.off_hours.schedule:
+    type: list
+    items: string
+    nonempty: true
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    since: 0.113.0
+  autonomy.park_classes:
+    type: list
+    items: { type: string, pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" }
+    distinct: true
+    nonempty: true
+    read_by: [drive-pr]
+    repository_only: true
+    since: 0.103.0
 
   ci.required_checks:
     type: list
@@ -294,46 +418,76 @@ fields:
 
   issue_tracker.adapter:
     type: enum
-    values: [linear, github]
+    values: [linear, github, jira]
     default: github
-    read_by: [do-item, drive-pr, decide, work-batch]
+    read_by: [do-item, drive-pr, decide, work-batch, dispatch]
   issue_tracker.team:
     type: string
     pattern: "^[A-Z][A-Z0-9]*$"
-    read_by: [do-item, drive-pr, review, work-batch]
+    read_by: [do-item, drive-pr, review, work-batch, dispatch]
     repository_only: true
   issue_tracker.states:
     type: map
     keys: [triage, backlog, todo, in_progress, in_review, ops_pending, done, canceled, duplicate]
-    read_by: [do-item, work-batch]
+    read_by: [do-item, work-batch, dispatch]
   issue_tracker.github.repository:
     type: string
     pattern: "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     repository_only: true
     since: 0.82.0
   issue_tracker.github.states_from:
     type: enum
     values: [labels, project]
     default: labels
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.82.0
   issue_tracker.github.project:
     type: string
     pattern: "^https://github\\.com/(orgs|users)/[A-Za-z0-9-]+/projects/[1-9][0-9]*/?$"
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     repository_only: true
     since: 0.82.0
   issue_tracker.github.status_field:
     type: string
     default: Status
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.82.0
   issue_tracker.github.priority_labels:
     type: map
     keys: [urgent, high, medium, low]
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.82.0
+  issue_tracker.jira.site:
+    type: string
+    pattern: "^https://[A-Za-z0-9.-]+/?$"
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    repository_only: true
+    since: 0.111.0
+  issue_tracker.jira.issue_type:
+    type: string
+    default: Task
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
+  issue_tracker.jira.subtask_type:
+    type: string
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
+  issue_tracker.jira.priorities:
+    type: map
+    keys: [urgent, high, medium, low]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
+  issue_tracker.jira.resolutions:
+    type: map
+    keys: [done, canceled, duplicate]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
+  issue_tracker.jira.link_types:
+    type: map
+    keys: [blocks, related, duplicate]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch]
@@ -365,6 +519,11 @@ fields:
     items: string
     distinct: true
     read_by: [do-item]
+  issue_tracker.types:
+    type: map
+    values_type: { type: list, items: string }
+    read_by: [do-item]
+    since: 0.89.0
   issue_tracker.file_command:
     type: string
     read_by: [do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections]
@@ -409,6 +568,46 @@ fields:
     type: string
     default: execution-plan-v1
     read_by: [do-item]
+  do_item.work_types:
+    type: map
+    values_type: { type: map, values_type: any }
+    read_by: [do-item]
+    since: 0.89.0
+  do_item.arm_drive:
+    type: enum
+    values: [auto, tab, background, print]
+    default: auto
+    since: 0.102.0
+    read_by: [do-item, drive-pr]
+
+  specs.adapters:
+    type: list
+    items: { type: enum, values: [body] }
+    distinct: true
+    nonempty: true
+    read_by: [do-item]
+    repository_only: true
+    since: 0.100.0
+  specs.body_section:
+    type: string
+    pattern: "^[ \\t]*[^#\\s][^\\r\\n]*$"
+    default: Spec
+    read_by: [do-item]
+    repository_only: true
+    since: 0.100.0
+
+  workspace_name.template:
+    type: string
+    pattern: "^(?:[^{}]|\\{(?:id|status|title|pr)\\})*$"
+    allow_empty: true
+    default: "{id} {status} {title} {pr}"
+    read_by: [do-item, drive-pr]
+    since: 0.104.0
+  workspace_name.statuses:
+    type: map
+    keys: [implementing, driving, ready, done]
+    read_by: [do-item, drive-pr]
+    since: 0.104.0
 
   work_batch.point_budget:
     type: integer
@@ -458,6 +657,37 @@ fields:
     read_by: [work-batch]
     since: 0.57.0
 
+  routing.types:
+    type: map
+    values_type: { type: map, values_type: string }
+    read_by: [do-item]
+    since: 0.92.0
+  routing.raise.flags:
+    type: any
+    read_by: [do-item]
+    since: 0.92.0
+  routing.raise.sizes:
+    type: list
+    items: string
+    distinct: true
+    read_by: [do-item]
+    since: 0.92.0
+  routing.raise.reviews:
+    type: boolean
+    default: true
+    read_by: [do-item]
+    since: 0.92.0
+  routing.models:
+    type: map
+    values_type: { type: map, values_type: string }
+    read_by: [do-item, drive-pr]
+    since: 0.92.0
+  routing.efforts:
+    type: map
+    values_type: { type: map, values_type: string }
+    read_by: [do-item]
+    since: 0.92.0
+
   fleet_health.config:
     type: path
     exists: expected
@@ -466,10 +696,34 @@ fields:
     type: path
     read_by: [drive-pr]
 
+  verify.store:
+    type: path
+    read_by: [evidence]
+    since: 0.90.0
+  verify.output_lines:
+    type: integer
+    min: 1
+    default: 60
+    read_by: [evidence]
+    since: 0.90.0
+  verify.timeout_minutes:
+    type: integer
+    min: 1
+    max: 35791
+    default: 30
+    read_by: [evidence]
+    since: 0.90.0
+  verify.retention_days:
+    type: integer
+    min: 1
+    default: 30
+    read_by: [evidence]
+    since: 0.90.0
+
   adr.directory:
     type: path
     exists: required
-    read_by: [adr, review, decide, explain]
+    read_by: [adr, review, decide, explain, docs]
   adr.rules_file:
     type: path
     exists: required
@@ -482,6 +736,24 @@ fields:
   descar.lint_command:
     type: command
     read_by: [descar]
+  docs.root:
+    type: path
+    exists: required
+    read_by: [docs]
+    repository_only: true
+    since: 0.95.0
+  docs.schema:
+    type: path
+    exists: required
+    read_by: [docs]
+    repository_only: true
+    since: 0.95.0
+  docs.stale_after_days:
+    type: integer
+    min: 1
+    default: 180
+    read_by: [docs]
+    since: 0.95.0
   promote_memory.lint_command:
     type: command
     read_by: [promote-memory]

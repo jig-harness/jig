@@ -10,6 +10,7 @@ import { existsSync, lstatSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   fieldInMessage,
+  isMapping,
   type LayeredConfig,
   loadLayeredConfig,
   OVERLAY_RELPATH,
@@ -23,8 +24,26 @@ export { OVERLAY_RELPATH };
 const ADOPTION_DOC =
   "https://github.com/jig-harness/jig/blob/main/plugin/README.md#configure-a-repository";
 
+/**
+ * One `review.bots` entry written as a mapping: the login, and the markers
+ * that make its follow-up after a held reply transparent (drive-pr's
+ * `lib/bot-confirmation.ts`).
+ */
+export interface ReviewBot {
+  login: string;
+  confirmation_marker?: string;
+  chat_marker?: string;
+}
+
+const REVIEW_BOT_KEYS = ["login", "confirmation_marker", "chat_marker"];
+
+/** Every `review.bots` entry as a mapping; a plain login names no markers. */
+export function botEntries(bots: readonly (string | ReviewBot)[]): ReviewBot[] {
+  return bots.map((b) => (typeof b === "string" ? { login: b } : b));
+}
+
 export interface ReviewConfig {
-  bots?: string[];
+  bots?: (string | ReviewBot)[];
   job_pattern?: string;
   required_checks?: string[];
   scanner_apps?: string[];
@@ -46,10 +65,15 @@ export interface ReviewConfig {
 /**
  * The repository the agent is working in: `JIG_CONSUMER_ROOT` when
  * set, else the nearest ancestor of `cwd` holding `.git` (a directory in a
- * clone, a file in a linked worktree), else `cwd` itself.
+ * clone, a file in a linked worktree), else `cwd` itself. `env` is the
+ * environment the answer is for: a caller resolving the repository of a
+ * process it is about to start passes that process's environment.
  */
-export function consumerRoot(cwd = process.cwd()): string {
-  const explicit = process.env.JIG_CONSUMER_ROOT;
+export function consumerRoot(
+  cwd = process.cwd(),
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const explicit = env.JIG_CONSUMER_ROOT;
   if (explicit !== undefined && explicit.trim() !== "")
     return resolve(explicit);
   let current = resolve(cwd);
@@ -233,6 +257,74 @@ export function configSource(field: string): string {
   return sourceOf(layeredConfig(), field);
 }
 
+/** The git remote a clone is assumed to have when `repository.remote` is unset. */
+export const DEFAULT_REMOTE = "origin";
+
+/**
+ * A git remote name the skills can pass as one argument and print in a
+ * command a person may paste: ASCII letters, digits, `.`, `_`, `-` and `/`
+ * only, so no shell metacharacter can reach a suggested command; no leading
+ * `-` (git would read it as an option); and no sequence a ref name refuses,
+ * since the remote prefixes every remote-tracking ref
+ * (`refs/remotes/<remote>/<branch>`): no `..`, no empty component (`//`, a
+ * leading or trailing `/`), no component starting with `.` or ending in
+ * `.lock`, no trailing `.`.
+ */
+const REMOTE_NAME =
+  /^(?!-)(?!.*\.\.)(?!.*\/\/)(?!\/)(?!.*\/$)(?!.*\.$)(?!(?:.*\/)?\.)(?!.*\.lock(?:\/|$))[A-Za-z0-9._/-]+$/;
+
+/**
+ * The git remote the delivery skills push to and fetch from:
+ * `repository.remote` in the configuration layers of the repository at
+ * `root`, else `origin`. A value that is not a usable remote name is an
+ * error naming where it was set, never a silent fallback to `origin`, which
+ * could be another repository's remote; so is an explicit `null`, for the
+ * setting or for its whole `repository` section, which a higher layer
+ * (`JIG__REPOSITORY__REMOTE=null`, `JIG__REPOSITORY=null`) would otherwise
+ * use to turn a lower layer's remote back into `origin` unnoticed, and so is
+ * any `repository` section that is not a mapping (a list, a scalar, a YAML
+ * timestamp), which replaces the lower layers' section whole. Only a
+ * setting no layer names is `origin`.
+ */
+export function remoteName(
+  root = consumerRoot(),
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const config = layeredConfig(root, env);
+  const repository = config.values.repository;
+  if (repository === undefined) return DEFAULT_REMOTE;
+  if (!isMapping(repository))
+    throw new RemoteSettingError(
+      `repository must be a mapping: ${sourceOf(config, "repository")}`,
+    );
+  const value = repository.remote;
+  if (value === undefined) return DEFAULT_REMOTE;
+  if (typeof value !== "string" || !REMOTE_NAME.test(value))
+    throw new RemoteSettingError(
+      `repository.remote must be a git remote name (letters, digits, '.', '_', '-', '/'; no leading '-', no '..', '//', '.lock' or leading '.' component), got ${JSON.stringify(value)}: ${sourceOf(config, "repository.remote")}`,
+    );
+  return value;
+}
+
+/** A `repository` section or `repository.remote` the skills cannot use. */
+class RemoteSettingError extends Error {
+  override readonly name = "RemoteSettingError";
+}
+
+/**
+ * `remoteName`, or why it cannot be read (the setting, or a configuration
+ * file that does not parse), for a caller that reports instead of throwing.
+ */
+export function readRemoteName(
+  root = consumerRoot(),
+): { remote: string } | { error: string } {
+  try {
+    return { remote: remoteName(root) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export function reviewConfig(): ReviewConfig {
   const overlay = readOverlay();
   try {
@@ -284,13 +376,28 @@ const DISTINCT_LISTS: Record<string, string> = {
   scanner_apps: "GitHub App slugs",
 };
 
+/** A `review.bots` entry: a nonempty login, or `{login, …markers}`. */
+function isBotEntry(x: unknown): boolean {
+  if (typeof x === "string") return x.trim() !== "";
+  if (!x || typeof x !== "object" || Array.isArray(x)) return false;
+  const entry = x as Record<string, unknown>;
+  return (
+    Object.keys(entry).every((k) => REVIEW_BOT_KEYS.includes(k)) &&
+    typeof entry.login === "string" &&
+    entry.login.trim() !== "" &&
+    ["confirmation_marker", "chat_marker"].every(
+      (k) =>
+        entry[k] === undefined ||
+        (typeof entry[k] === "string" && (entry[k] as string).trim() !== ""),
+    )
+  );
+}
+
 function checkReviewField(key: string, value: unknown): void {
-  if (
-    key === "bots" &&
-    (!Array.isArray(value) ||
-      value.some((x) => typeof x !== "string" || x.trim() === ""))
-  )
-    throw new Error("review.bots must be a list of nonempty reviewer names");
+  if (key === "bots" && (!Array.isArray(value) || !value.every(isBotEntry)))
+    throw new Error(
+      "review.bots must be a list of nonempty reviewer names, or of {login, confirmation_marker, chat_marker} entries",
+    );
   if (
     ["job_pattern", "deferral_team", "repo_label", "repo_slug"].includes(key) &&
     typeof value !== "string"

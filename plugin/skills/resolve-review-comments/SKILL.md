@@ -47,9 +47,12 @@ bun "${CLAUDE_SKILL_DIR}/scripts/consumer-config.ts"
 It prints the repository's values: the gate command (`gates.command`), the
 expected reviewer identities (`review.bots`), the reviewer check pattern
 (`review.job_pattern`) and its required checks, and the deferral team
-(`review.deferral_team`). Use them wherever this procedure names them. A
-non-zero exit means the repository has not configured the skill or its
-configuration is invalid: report the message and stop. Do not guess values.
+(`review.deferral_team`). Use them wherever this procedure names them. Only
+`gates.command` is required: without `review.bots` every reviewer's threads
+are worked, and without `review.deferral_team` a deferral names its team with
+`--team`. A non-zero exit means the repository has not configured the skill
+or its configuration is invalid: report the message and stop. Do not guess
+values.
 
 ## Arguments
 
@@ -249,7 +252,18 @@ no synonyms. Materiality and scope calls follow the
 decide goes to the [**Review Arbiter**](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) agent
 (`jig:review-arbiter`, shipped with the plugin; in Codex, see the
 [Codex notes](../../README.md#codex-notes)), and only an arbiter escalation
-interrupts the user. When that escalation turns out to be an **architectural**
+interrupts the user. An `escalate` ruling carries a `class:`, the decision
+class of the repository's human-in-the-loop registry that keeps the call a
+person's (`human-decision` for a value the pull request records as a person's
+decision, else the registry row, else `escalated`); under a drive it is the
+class the item is parked under (drive-pr § 4). At the `wide` autonomy level a
+drive answers an `escalate` with the class `escalated` and no human decision
+behind it **provisionally** instead: a reply outcome (`rejected`, `wont-fix`
+or `deferred`, never a fix) posted with `**provisional**` after its token by
+drive-pr's `provisional-reply.ts`, resolved, and recorded where a person can
+reverse it with a comment (drive-pr § Autonomy). A thread standing on a
+provisional reply is never triaged again. A run outside a drive has no drive
+state to record one in, and escalates as at any other level. When that escalation turns out to be an **architectural**
 question rather than a product/scope one — which pattern, which contract
 shape, which boundary — route it through the `decide` skill (`/jig:decide`)
 before interrupting: it checks the question against the repository's
@@ -503,7 +517,11 @@ not being made. It scores as a true positive carrying a materiality signal.
 decides only on arbiter escalation. File the issue — by default an entry in
 the per-PR+Type **batch** issue via `scripts/defer-batch.ts`; an individual
 issue (using the consumer's issue-creation workflow) only when the round report justifies one —
-then reply with its link, then resolve. Follow
+then reply with its link, then resolve. Where no adapter can file
+(`bun "${CLAUDE_SKILL_DIR}/scripts/defer-in-pr.ts" route` prints `pr-body`),
+record the finding in the pull request's own `## Deferred` section with
+`scripts/defer-in-pr.ts` instead and reply with the section's link: a
+deferral is never a park. Follow
 [deferral-protocol.md](references/deferral-protocol.md) exactly — it specifies
 the `pr-followup` label, the epic-parenting rule, and the batch-by-default
 contract (it, not this line, owns the batch key — restating it here is how the
@@ -707,9 +725,13 @@ an open alert hides a finding nobody answered.
 Under `/jig:drive-pr`, `triage-thread.ts` resolves a merit outcome in the
 same call that posts it, which leaves no point to dismiss in between. Post the
 reply with `reply-to-thread.ts`, dismiss, then dispatch with `triage-thread.ts`,
-which finds the posted reply and resolves. The drive's replied-thread sweep
-does not read alerts, so a thread left open after a refused dismissal is
-resolved by the next sweep: report that alert in the round's summary.
+which finds the posted reply and resolves. Both `triage-thread.ts` and the
+drive's replied-thread sweep leave a declined finding open until they can
+confirm the alert is dismissed (`triage-thread.ts` exits `4` while dismissal
+remains unconfirmed); a `moot` closes once the alert is fixed, closed or
+dismissed, and is never held for a push, `--moot-pending-push` included,
+since the alert's state is its proof. A thread GitHub's code scanning account
+opened whose alert cannot be identified stays open as well. Report an alert that could not be dismissed in the round's summary.
 
 A dismissal reaches the tool: SonarQube Cloud, for one, records a false
 positive as False Positive and the other reasons as Accept. A security
@@ -1007,7 +1029,12 @@ invocation and reported — see below.
 
 Resolving another person's thread is a social act:
 
-- **Bot threads** — address, reject, or defer and resolve freely. The expected identities come from `review.bots`; `--bots-only` uses
+- **A bot's transparent follow-up** — a confirmation carrying the bot's
+  confirmation marker, or an acknowledgement with no outcome token and no
+  finding from a bot `review.bots` lists, posted after your reply — is not a new comment: never triage it or answer
+  it ([`review.bots`](../../CONFIGURATION.md#review)). Anything the
+  predicate cannot classify is a new comment.
+- **Bot threads** — address, reject, or defer and resolve freely. The expected identities come from `review.bots`, when set; `--bots-only` uses
   GitHub App authorship rather than a consumer-specific hard-coded list.
 - **Human threads** — address or reply, but prefer to leave the *resolution* to
   the author unless it is an unambiguous nit you fixed. When in doubt, reply

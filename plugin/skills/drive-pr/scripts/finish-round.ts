@@ -145,9 +145,13 @@ import { retryAttempts } from "../../../shared/retry.ts";
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isTrustedBotConfirmation } from "./lib/bot-confirmation.ts";
+import { isTransparentFollowUp } from "./lib/bot-confirmation.ts";
 import { fail, isDigits, isGitSha, runMain, short } from "./lib/cli.ts";
 import { hasLeaveOpenMarker, qualifyingOutcome } from "./lib/outcome.ts";
+import {
+  drainedThreadResult,
+  threadAwaitsAlert,
+} from "./lib/scanner-sweep-guard.ts";
 import {
   ciHoldTimeoutSeconds,
   ghCall,
@@ -217,7 +221,7 @@ interface HeldRecord {
   commentUrl?: string;
 }
 
-type ItemAction = "resolved" | "answered" | "refused";
+type ItemAction = "resolved" | "left-open" | "answered" | "refused";
 
 interface ItemResult {
   key: string;
@@ -828,7 +832,7 @@ async function checkUntriagedThreads(
     return later.every(
       (c) =>
         typeof c.url === "string" &&
-        isTrustedBotConfirmation(
+        isTransparentFollowUp(
           { authorLogin: c.author, body: c.body },
           qualifyingOutcome,
         ),
@@ -842,7 +846,7 @@ async function checkUntriagedThreads(
    * confirmation. `currentReplyOutcome` cannot be reused here:
    * once a confirmation follows the held reply, the literal latest comment
    * IS that confirmation, which carries no outcome token by construction
-   * (`isTrustedBotConfirmation` requires exactly that) — comparing THAT
+   * (`isTransparentFollowUp` requires exactly that) — comparing THAT
    * against the held outcome would always read `null`, defeating the
    * tolerance above at the very next check. This performs the identical
    * "edited in place" catch `currentReplyOutcome` performs for the
@@ -922,11 +926,9 @@ async function checkUntriagedThreads(
   // legitimately-finished dispatch — a finished one would have resolved the
   // thread and it would not be in this list at all. It can only be
   // triage-thread.ts crashing between posting the reply and calling
-  // `resolve-thread.ts`. The one way a merit reply (or an unmarked moot)
-  // legitimately stays unresolved forever is the LEAVE_OPEN marker —
-  // `triage-thread.ts --leave-open` works identically across every non-hold
-  // outcome (its own header), so this check does too rather than
-  // special-casing `moot`.
+  // `resolve-thread.ts`. A merit reply (or an unmarked moot) stays unresolved
+  // legitimately under the LEAVE_OPEN marker, on any non-hold outcome, or on a
+  // code-scanning thread until its alert settles (`awaitsAlert`).
   function isThreadTriaged(t: UntriagedThreadLine): boolean {
     const key = t.threadId;
     const outcome = currentReplyOutcome(t);
@@ -958,6 +960,7 @@ async function checkUntriagedThreads(
         heldReplyOutcome(t, heldUrl) === heldOutcomeByKey.get(key)
       );
     }
+    if (threadAwaitsAlert(t)) return true;
     if (outcome === null) return false; // never triaged at all
     const latest = t.comments[t.comments.length - 1];
     // Marked leave-open: a deliberate choice to leave THIS thread unresolved,
@@ -1097,7 +1100,7 @@ async function checkUntriagedThreads(
       // `triage-thread.ts` — is just as broken for a truncated thread as plain
       // `triage-thread.ts` is. The one remedy that actually works is the
       // documented one.
-      return "this thread is comment-truncated (>100 comments) — triage-thread.ts refuses it unconditionally, so the only working remedy is drive-state.ts park [PR] --key <id> --reason '...' (SKILL.md § 4)";
+      return "this thread is comment-truncated (>100 comments) — triage-thread.ts refuses it unconditionally, so the only working remedy is drive-state.ts park [PR] --key <id> --kind thread --class human-thread with its decision record on stdin (SKILL.md § 4)";
     }
     const key = t.threadId;
     const outcome = currentReplyOutcome(t);
@@ -1822,9 +1825,7 @@ async function resolveThreadItem(
       stale: res.code === 4,
     };
   }
-  return {
-    result: { key: item.key, kind: item.kind, action: "resolved", code: 0 },
-  };
+  return { result: drainedThreadResult(item.key, item.kind, res) };
 }
 
 /**

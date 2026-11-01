@@ -8,10 +8,10 @@ under `plugin/`.
 
 **Contributing from outside the maintainers?** Read
 [Outside contributions](#outside-contributions) first: it says what is
-welcome and where to raise it. Work is reported on GitHub Issues, which
-anyone can use. The maintainers also track their own work in an issue tracker
-that outside contributors cannot see; the steps below that depend on it are
-marked "maintainers", and a contributor can skip them.
+welcome and where to raise it. Work is tracked on
+[GitHub Issues](https://github.com/jig-harness/jig/issues), which anyone can
+read and file into; the steps below marked "maintainers" need write access to
+the repository, and a contributor can skip them.
 
 ## Commits and pull requests
 
@@ -128,56 +128,35 @@ bun modules/M0-instruction-architecture/reference/sync-skills-mirror.ts
 
 ### Filing issues from this repository (maintainers)
 
-This section is for Jig's maintainers, who file their work in a tracker
-(Linear) that outside contributors cannot reach. A contributor opens a
-[GitHub issue](https://github.com/jig-harness/jig/issues/new/choose) with the
-bug or "Proposed change" template, or a
-[discussion](https://github.com/jig-harness/jig/discussions) for a question or
-an idea ([Outside contributions](#outside-contributions)), and needs nothing
-below. A maintainer who accepts such an issue files the tracked work from it
-and links the two.
+Jig's work is the repository's own
+[GitHub Issues](https://github.com/jig-harness/jig/issues), named in
+[`.config/jig.yaml`](.config/jig.yaml) (`issue_tracker.adapter: github`): an
+issue's open state is a `state:` label, its priority a `priority:` label,
+and every other label comes from the [label taxonomy](label-taxonomy.yaml)
+at the root. A roadmap item has an `epic` issue labelled `roadmap`; the
+item's steps are its sub-issues, and a pull request that builds one says
+`Part of #<epic>` or `Closes #<sub-issue>`.
 
-`/jig:file-issue` needs a [label taxonomy](GLOSSARY.md) to check the labels
-before it writes an issue. Jig's maintainers use the taxonomy in their
-maintained external standards checkout; the organization's label names and
-other tracker values stay outside this repository.
+A maintainer files with `/jig:file-issue`, which checks the labels against
+the taxonomy before it writes, and picks work up with `/jig:do-item #<n>`.
+A contributor opens an issue with the bug or "Proposed change" template, or
+a [discussion](https://github.com/jig-harness/jig/discussions) for a question
+or an idea ([Outside contributions](#outside-contributions)); a maintainer
+who accepts it labels it from the taxonomy and, when it is a step of a
+roadmap item, makes it a sub-issue of that item's epic.
 
-On each machine, make that checkout available and merge this setting into
-the existing `issue_tracker` section of `$HOME/.jig/jig.yaml` (or
-`$JIG_HOME/jig.yaml` when `JIG_HOME` is set):
-
-```yaml
-issue_tracker:
-  taxonomy: /absolute/path/to/standards-checkout/policies/label-taxonomy.yaml
-```
-
-Use an absolute path: relative paths resolve against the repository being
-worked on, and `~` in the setting is not expanded. This user setting applies
-to every repository on the machine unless repository or environment
-configuration overrides it. Keep the path and the organization's taxonomy
-out of tracked files.
-
-From a Jig checkout, set `plugin_dir` to the installed Jig plugin's absolute
-path and check the resolved setting, the taxonomy, and the proposed labels:
+From a checkout, with `plugin_dir` the installed Jig plugin's absolute path,
+check the taxonomy and a set of proposed labels:
 
 ```sh
 plugin_dir=/absolute/path/to/installed/jig/plugin
-bun "$plugin_dir/skills/resolve-review-comments/scripts/jig-config.ts" issue_tracker.taxonomy
 bun "$plugin_dir/skills/file-issue/scripts/check-label-taxonomy.ts"
 bun "$plugin_dir/skills/file-issue/scripts/validate-labels.ts" --check-tracker "<label>" "<another-label>"
 ```
 
-Replace the label placeholders with the intended labels, quoting names that
-contain spaces. The first command reports which configuration layer supplies the
-path; the second checks the taxonomy without tracker access. The last also
-needs credentials that can read labels in the configured tracker team.
-With the Linear adapter, provide `LINEAR_API_KEY` or `LINEAR_API_TOKEN` to
-the shell running the command, or sign in to the `linear` command-line
-client. An agent's MCP connection alone does not authenticate this script.
-
-On a fresh machine, finish this setup before filing. A missing or unreadable
-taxonomy stops the skill before it writes; a path in user configuration
-does not fetch the external checkout.
+Replace the label placeholders with the intended labels. The first checks
+the taxonomy alone; the second also reads the repository's labels through
+the signed-in `gh` command-line client.
 
 ## Toolchain
 
@@ -421,8 +400,10 @@ bun modules/M2-generated-artifact-freshness/reference/inventory/run-generated-ch
 ```
 
 The example indexes open with a "generated" header naming their generator.
-The lockfiles and the vendored parsers cannot carry one, since each must stay
-byte for byte what its generator writes, so their entry is their marker.
+The lockfiles and the vendored js-yaml builds cannot carry one, since each
+must stay byte for byte what its generator writes, so their entry is their
+marker; the bundle `tools/plugin/vendor-optique.ts` builds opens with a line
+naming that command.
 
 A new derived file gets its entry in the pull request that adds it; the
 runner refuses an entry without a check.
@@ -563,9 +544,17 @@ work as part of the plugin:
   missing, and accept older files. Never bake a repository's values into
   `SKILL.md`.
 - **Dependencies:** the plugin cache has no `node_modules`. Use Bun's
-  built-ins (its own APIs and the `node:` modules it provides), or vendor a dependency's own single-file build beside the script
-  with its licence and a test that keeps it identical to the pinned package
-  (as `plugin/shared/vendor/js-yaml.mjs` is).
+  built-ins (its own APIs and the `node:` modules it provides), or vendor a
+  library beside the code that uses it, with its licence, its line in
+  `NOTICE` and a test that keeps it identical to the pinned package
+  ([ADR-0001](docs/adr/ADR-0001-bun-typescript-toolchain.md)). A library that
+  ships a single-file build is vendored as that file
+  (`plugin/shared/vendor/js-yaml.mjs`). One that ships none is vendored as an
+  unminified bundle Jig builds from the pinned package, which the test
+  rebuilds and compares byte for byte: `plugin/shared/vendor/optique.mjs` is
+  Optique, the command-line parser, built by `bun tools/plugin/vendor-optique.ts`
+  from the names `tools/plugin/optique-entry.ts` lists, so a script that
+  needs another of its functions adds the name there and runs that command.
 - **Windows cancellation:** follow the scope and reconsideration conditions
   in [ADR-0008](docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md)
   when changing process launch, cancellation or the evidence that a

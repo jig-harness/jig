@@ -377,6 +377,33 @@ export function resolveAccountIdentity(
   );
 }
 
+/** The labels `tokenFingerprint` identities carry. */
+const CREDENTIAL_FINGERPRINT = /^(token|api-key):/;
+
+/**
+ * The account a pass bills, as a stable hash: what a quota park records and a
+ * re-arm compares, so the state file names whose wall it is without carrying
+ * an email address in clear. `null` when the identity did not resolve, and
+ * when it is only a credential's fingerprint (`token:`, `api-key:`): two
+ * credentials can bill one account, and one account can switch between a
+ * token and a file-backed login, so a fingerprint is a display label and
+ * never proves which account a wall belongs to. An unknown account is never
+ * equal to another.
+ */
+export function accountHash(identity: AccountIdentity): string | null {
+  if (identity.account === null || identity.vendor === null) return null;
+  if (CREDENTIAL_FINGERPRINT.test(identity.account)) return null;
+  const digest = createHash("sha256")
+    .update(`${identity.vendor}:${identity.account}`)
+    .digest("hex");
+  return `acct-${digest.slice(0, 16)}`;
+}
+
+/** The shape `accountHash` produces, for the readers of a stored hash. */
+export function isAccountHash(value: unknown): value is string {
+  return typeof value === "string" && /^acct-[0-9a-f]{16}$/.test(value);
+}
+
 /**
  * One-line, log-shaped rendering of an identity — shared by `drive.ts`'s
  * exit-11 refusal message and `drives.ts`'s human listing, so writer and
