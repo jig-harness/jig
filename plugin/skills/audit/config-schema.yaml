@@ -423,31 +423,31 @@ fields:
     pattern: "^https://[A-Za-z0-9.-]+/?$"
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     repository_only: true
-    since: next
+    since: 0.111.0
   issue_tracker.jira.issue_type:
     type: string
     default: Task
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
-    since: next
+    since: 0.111.0
   issue_tracker.jira.subtask_type:
     type: string
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
-    since: next
+    since: 0.111.0
   issue_tracker.jira.priorities:
     type: map
     keys: [urgent, high, medium, low]
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
-    since: next
+    since: 0.111.0
   issue_tracker.jira.resolutions:
     type: map
     keys: [done, canceled, duplicate]
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
-    since: next
+    since: 0.111.0
   issue_tracker.jira.link_types:
     type: map
     keys: [blocks, related, duplicate]
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
-    since: next
+    since: 0.111.0
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch]
