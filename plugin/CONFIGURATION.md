@@ -994,6 +994,9 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.followup_command` | string | None: no follow-ups. Jig's own is `/followup`; a consumer repository names its own post-merge command, which claims the follow-up with `jig dispatch marker` as [the plugin's README](README.md#the-dispatcher) says | dispatch |
 | `dispatch.stalled_after` | duration (`90s`, `30m`, `1h`) | `30m`: a claimed item (assigned to `identity` in `in_progress`) with no running session for longer is reported as a stalled pickup, never relaunched | dispatch |
 | `dispatch.blocked_after` | duration | `30m`: a session the dispatcher started that its runtime reports waiting (on a question or a permission prompt) for longer is reported; it keeps its slot | dispatch |
+| `dispatch.drive_rounds_flat` | positive whole number | `3`: a drive the dispatcher launched drifts when its unresolved review threads at the latest round the dispatcher recorded are not below the count this many recorded rounds earlier | dispatch |
+| `dispatch.pickup_within` | duration | `2h`: a pickup the dispatcher launched that has opened no pull request by then drifts | dispatch |
+| `dispatch.followup_within` | duration | `1h`: a follow-up the dispatcher launched that has not ended by then drifts | dispatch |
 
 An item is a pickup when it is assigned to `identity` and in one of
 `states`, and the person who made that assignment can write to the
@@ -1018,6 +1021,13 @@ since the follow-up stage's start wants `followup_command`. That start
 the start the previous run's receipt recorded (the first run starts it at
 its own time), unless the machine file's entry for the repository names
 one.
+
+The last three fields are the stages' expectations. A stage outside its
+expectation is reported as drifting, written to the outcome log and
+notified once; the dispatcher never acts on drift, and never changes these
+values itself: when a class keeps recurring on the dashboard, the change is
+a person's, through `reflect` and `review-reflections` (see
+[the plugin's README](README.md#the-dispatcher)).
 
 ### The machine's dispatch file
 
@@ -1044,12 +1054,14 @@ interval: 5m
 wall_backoff: 1h
 runtime_timeout: 1m
 receipts_days: 30
+dashboard:
+  listen: 100.64.0.7:8765           # jig dispatch dashboard; private or loopback only
 ```
 
 | Setting | Default / meaning |
 |---------|-------------------|
 | `repositories[].path` | Required; the repository's local checkout. List a repository in one machine's file only |
-| `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` starts re-arms and takeovers of drives. `pickup` starts a `do-item` session per item the repository's `dispatch` section makes a pickup, and `followup` a session running `dispatch.followup_command` per merged pull request, each only where the session runtime can bind an interactive session to its account: Orca cannot yet, so each is reported with that reason and nothing is started. `notify` sends each notification once (with Orca, the workspace's comment, marked unread). `steer` is accepted and its actions reported |
+| `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` starts re-arms and takeovers of drives. `pickup` starts a `do-item` session per item the repository's `dispatch` section makes a pickup, and `followup` a session running `dispatch.followup_command` per merged pull request, each only where the session runtime can bind an interactive session to its account: Orca cannot yet, so each is reported with that reason and nothing is started. `notify` sends each notification once (with Orca, the workspace's comment, marked unread). `steer` sends the one nudge, `Your usage limit has reset. Continue`, once to an interactive session the runtime reports waiting after its account's wall reset; no other stage implies it |
 | `repositories[].followup_since` | None; when the follow-up stage started for it. Without it, the previous run's receipt keeps the start |
 | `accounts[].name` | Required; the account's name here, which launch records and walls are kept under |
 | `accounts[].vendor` | Required; `claude` or `codex`. A headless drive pass runs on `claude` accounts only in this version |
@@ -1060,7 +1072,8 @@ receipts_days: 30
 | `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on its usage limit (exit `16`) when the drive recorded no reset |
 | `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
 | `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's or an item's workspace. Twice this plus eight times `runtime_timeout` is one tick's budget, and the dispatch configuration is refused when that budget exceeds 2,147,483,647 milliseconds (about 24.86 days, the longest a timer holds; each duration alone may be at most 24 days); a tick opens at most two workspaces, one of them kept for the notices workspace when the machine file enables `notify` for any repository, and a launch that needs a workspace beyond that waits for the next tick |
-| `receipts_days` | 30; days receipts and ended launch records are kept |
+| `receipts_days` | 30; days receipts and ended launch records are kept. The outcome log is never removed |
+| `dashboard.listen` | None; the address `jig dispatch dashboard` listens on: a numeric address in the loopback or private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7`, `fe80::/10`) with an optional port (`8765` when none is named; `--port` overrides it). A host name or any other address is refused. Without it, the dashboard does not start |
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`: `receipts/`, `launches/` (one record
@@ -1068,9 +1081,11 @@ per launch, written before it, with a pickup session's own result beside
 it), `walls/` (each account's usage-limit wall, which lifts at its latest
 recorded reset), `idle/` (since when each claimed item has had no
 running session, for `stalled_after`), `followups/` (each dispatched
-follow-up's outcome, done or failed, kept whatever `receipts_days` says)
-and `notices/` (a record per notification sent, dropped once its cause
-is gone). A launch record a run
+follow-up's outcome, done or failed, kept whatever `receipts_days` says),
+`notices/` (a record per notification sent, dropped once its cause
+is gone), `nudges/` (a record per nudge attempted, with whether it
+arrived) and the outcome log, `log-<year>-<month>.jsonl` (a row per launch
+that ended and per cause observed, which nothing removes). A launch record a run
 cannot check (claimed on another host or before a reboot) holds its
 account's slot until a person removes its files from `launches/`.
 
@@ -1090,6 +1105,9 @@ dispatch:
   followup_command: /post-merge
   stalled_after: 30m
   blocked_after: 30m
+  drive_rounds_flat: 3
+  pickup_within: 2h
+  followup_within: 1h
 gates:
   command: make check                    # required by resolve-review-comments
 review:

@@ -404,8 +404,10 @@ implementation:
   --prompt "<skill> <key>"`, with the model and effort from the item's
   route where the repository declares `routing`, bound to the account as a
   headless pass is (below), and with `sessionId` passed to the agent where
-  `orca agent launch` can carry it, which is checked when the control step
-  is built; that `orca agent launch` can bind its agent to
+  the launch can carry it: `orca agent launch` takes no session id, so the
+  interactive launch the pickup step built (the wrapper in a terminal tab,
+  starting Claude Code itself) passes it as Claude Code's `--session-id`;
+  that `orca agent launch` can bind its agent to
   an account so is checked when the pickup stage is built, and until it
   does, interactive sessions are not launched. The key is kept by the
   record itself for a headless pass: the wrapper claims the record
@@ -428,10 +430,17 @@ implementation:
   default branch, into which it never launches an agent, its comment
   naming the item or pull request the message is about;
 - `steer` as the nudge's text sent to the session's terminal, after the
-  terminal's screen is read for the checks in Control; that Orca can read
-  a running agent's terminal and send it text by the id `orca worktree ps
-  --json` reports is checked when the control step is built, and until it
-  does, the nudge is reported and not sent.
+  terminal's screen is read for the checks in Control. Orca reaches a
+  running agent's terminal by the id `orca worktree ps --json` reports:
+  that id is the terminal's tab and pane (`<tabId>:<leafId>`), which `orca
+  terminal list --json` names beside each terminal's handle; `orca terminal
+  read --screen --json` returns the rendered screen (its `source` says
+  whether it is the screen, and `draft` holds text in Orca's composer), and
+  `orca terminal send --text <nudge> --enter` types it. Orca reports no
+  person attached to a terminal; the nearest it reports is the workspace a
+  person has open (`isActive` in `orca worktree ps`), and a nudge is not
+  sent into one. A live send on an Orca host has not been made, since Orca
+  starts no interactive session until it binds one to an account.
 
 A second runtime is a second implementation of the same methods, with
 nothing in the tick changed.
@@ -768,8 +777,8 @@ mechanically, so it rests on a wall record for interactive sessions:
   wall record, which admission reads, and as a waiting episode (the wall
   and its reset) on that session's own launch record, so every session
   behind one account's wall has its own. A launch that cannot carry the session
-  id records no wall and gets no nudge; that an Orca agent launch can pass
-  it through is checked when the control step is built.
+  id records no wall and gets no nudge; on Orca the wrapper's launch
+  carries it (see The session runtime interface).
 - **Sending the nudge.** The tick sends **continue** only with `--apply`
   and only for a repository whose machine-file stages include `steer`,
   which no other stage implies. It sends it to a session only when all of

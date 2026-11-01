@@ -219,6 +219,7 @@ function newFollowupRecord(
     released: false,
     command: ctx.section.followupCommand,
     marker: null,
+    sessionId: crypto.randomUUID(),
   };
 }
 

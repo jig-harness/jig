@@ -5,6 +5,7 @@ import type {
   LaunchOutcome,
   NotifyOutcome,
   RepoReport,
+  SteerOutcome,
 } from "./types.ts";
 
 function evidence(e: Evidence): string {
@@ -25,11 +26,19 @@ function noticeLine(n: NotifyOutcome): string {
   return `  ${n.outcome.padEnd(10)} notify ${n.target} (${n.cause})${to}: ${n.detail}`;
 }
 
-/** What `--apply` launched and notified. */
+function steerLine(s: SteerOutcome): string {
+  return `  ${s.outcome.padEnd(10)} steer  ${s.target} (record ${s.record}, wall ${s.episode}): ${s.detail}`;
+}
+
+/** What `--apply` launched, nudged and notified. */
 function outcomeLines(r: RepoReport): string[] {
-  // A receipt written before notifications were sent has none.
+  // A receipt written before notifications or nudges were sent has none.
   const notified = r.notifications ?? [];
-  return [...r.launches.map(launchLine), ...notified.map(noticeLine)];
+  return [
+    ...r.launches.map(launchLine),
+    ...(r.steers ?? []).map(steerLine),
+    ...notified.map(noticeLine),
+  ];
 }
 
 function repoLines(r: RepoReport, apply: boolean): string[] {

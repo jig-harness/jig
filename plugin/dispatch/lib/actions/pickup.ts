@@ -184,6 +184,7 @@ async function launchOne(
     released: false,
     command: null,
     marker: null,
+    sessionId: crypto.randomUUID(),
   };
   const launched = await startRecord(state, record, slots);
   return { ...launched, detail: `${launched.detail}; ${route.detail}` };

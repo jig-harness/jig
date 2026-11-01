@@ -1826,8 +1826,10 @@ make, use the entry's term instead.
   account, duration and an outcome class from the closed list the
   dispatcher's design defines, among them converged, quota wall, parked
   for a person, stalled and died; a stop no class in that list fits is
-  logged as `unknown` with its last state, never dropped. One dashboard filters it; it is
-  never rendered into a report file.
+  logged as `unknown` with its last state, never dropped. Beside those
+  rows it holds one event row per cause the dispatcher observed (a stalled
+  pickup, a double claim, a stage drift, a nudge). One dashboard filters
+  it; it is never rendered into a report file.
 - **Stage drift** — a running stage falling short of what it is expected to
   achieve: a review drive whose open threads do not fall across rounds, a
   pickup that has not opened a pull request in time. The *dispatcher*

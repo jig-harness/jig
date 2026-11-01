@@ -13,7 +13,8 @@
 import { driveHold, factsOf } from "./actions/drive-hold.ts";
 import { holding, liveAgents } from "./holding.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
-import type { ReadRecord } from "./launches.ts";
+import { planDrift } from "./expectations.ts";
+import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice } from "./notices.ts";
 import { planFollowups } from "./plan-followups.ts";
 import { planPickups } from "./plan-pickups.ts";
@@ -136,6 +137,27 @@ export function planTick(input: PlanInput): Plan {
       plan,
       want,
     );
+
+  // The running stages that drift from their expectation, once the waiting
+  // notifications are known: one stands in for the other.
+  const drift = planDrift({
+    slug: input.slug,
+    section: input.section,
+    launches: input.launches,
+    sessions,
+    itemStates: new Map([
+      ...input.pickups.map((p) => [p.key, p.state] as const),
+      ...(input.claimed ?? []).map((c) => [c.key, c.state] as const),
+    ]),
+    waiting: new Set(
+      plan.actions
+        .filter((a) => a.cause === "waiting")
+        .map((a) => String(a.evidence.record)),
+    ),
+    nowMs: input.nowMs,
+  });
+  plan.actions.push(...drift.actions);
+  plan.running.push(...drift.running);
   return plan;
 }
 
@@ -146,12 +168,27 @@ function stageFields(
   slug: string,
   pr: DrivenPr,
   cause: NotifyCause | undefined,
-): Pick<Action, "facts" | "cause" | "notice"> {
+  launches: ReadRecord[],
+): Pick<Action, "facts" | "cause" | "notice" | "launched"> {
   if (cause === undefined) return { facts: factsOf(pr) };
   return {
     cause,
     notice: cause === "parked" ? parkNotice(slug, pr) : stopNotice(slug, pr),
+    ...(stoppedOurs(pr, launches) ? { launched: true as const } : {}),
   };
+}
+
+/** Whether this machine's latest drive of the pull request is the stop its ledger shows: its ended row holds the stop. */
+function stoppedOurs(pr: DrivenPr, launches: ReadRecord[]): boolean {
+  const latest = launches
+    .filter((r) => isDrive(r.record) && r.record.pr === pr.number)
+    .sort((a, b) => a.record.createdAt.localeCompare(b.record.createdAt))
+    .at(-1);
+  return (
+    latest !== undefined &&
+    latest.state.kind === "ended" &&
+    latest.state.exit.code === (pr.evidence.exit ?? null)
+  );
 }
 
 /** One driven pull request: quiet, unplaced, held by a launch record, or wanted. */
@@ -198,7 +235,7 @@ function planDrive(
           ? `drive ledger ${pr.class}: ${pr.why}`
           : `drive ledger silent, and this machine's launch record ${takeover} started its driver: take it over (drive.ts --take-over decides)`,
       evidence: { url: pr.url, head: pr.head, ...pr.evidence },
-      ...stageFields(slug, pr, cause),
+      ...stageFields(slug, pr, cause, launches),
       ...(takeover === null ? {} : { takeover }),
     },
     (w) => w.prs.includes(pr.number),

@@ -226,6 +226,7 @@ async function callLaunch(
       stageOf(record),
       record.account,
       record.token,
+      record.sessionId ?? undefined,
     );
   } catch (error) {
     receipt = { ok: false, lost: true, detail: failureText(error) };

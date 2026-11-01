@@ -146,6 +146,24 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.114.0
+  dispatch.drive_rounds_flat:
+    type: integer
+    min: 1
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.116.0
+  dispatch.pickup_within:
+    type: string
+    pattern: "^\\d+\\s*[smh]$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.116.0
+  dispatch.followup_within:
+    type: string
+    pattern: "^\\d+\\s*[smh]$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.116.0
 
   gates.command:
     type: command

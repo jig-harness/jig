@@ -63,6 +63,8 @@ function failed(
     evidence: { url: pr.url, marker: marker.id, by: marker.login },
     cause: "followup-failed",
     notice: followupFailedNotice(input.slug, pr, marker.id, why),
+    // A tick's marker: the follow-up is one this machine launched, whose ended row holds the failure.
+    launched: true,
   };
 }
 

@@ -105,6 +105,12 @@ async function workspaceFor(
   return openWithinBudget(state, repo, { pr, head });
 }
 
+/** The ledger's round, which the launch's outcome row counts its rounds from; `null` when the ledger does not say. */
+function roundOf(pr: DrivenPr): number | null {
+  const round = pr.evidence.round;
+  return typeof round === "number" ? round : null;
+}
+
 /** One planned re-arm or takeover, through its fresh read, admission, workspace and launch. */
 async function launchOne(
   state: ApplyState,
@@ -159,6 +165,7 @@ async function launchOne(
       released: false,
       command: null,
       marker: null,
+      round: roundOf(pr),
     },
     slots,
   );
