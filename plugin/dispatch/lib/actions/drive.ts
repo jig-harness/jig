@@ -34,6 +34,7 @@ import {
   changedWhileOpening,
   type Opened,
   openWithinBudget,
+  outOfTime,
   replay,
   replayable,
   rotated,
@@ -112,6 +113,8 @@ async function launchOne(
   fresh: DrivenPr | null,
   sessions: SessionsReport,
 ): Promise<LaunchOutcome> {
+  const late = outOfTime(state);
+  if (late !== null) return waits(action, late);
   const changed = stillWanted(action, fresh);
   if (changed !== null) return waits(action, changed);
   const admitted = await admitAccount(state, action);
@@ -127,6 +130,9 @@ async function launchOne(
   const { workspace } = opened;
   const stale = await changedWhileOpening(state, action, slots);
   if (stale !== null) return stale;
+  const pastDeadline = outOfTime(state);
+  if (pastDeadline !== null)
+    return waits(action, pastDeadline, slots.account.name);
   return startRecord(
     state,
     {
@@ -167,6 +173,11 @@ export async function applyDrives(
   await retryPending(state, repo, report, fresh);
   const rearms = report.actions.filter((a) => a.stage === "rearm");
   for (const action of rotated(state, rearms)) {
+    const late = outOfTime(state);
+    if (late !== null) {
+      report.launches.push(waits(action, late));
+      continue;
+    }
     const pr = Number(action.target.replace(/^PR #/, ""));
     let read: DrivenPr | null;
     try {

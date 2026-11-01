@@ -67,12 +67,15 @@ export function outOfTime(state: ApplyState): string | null {
 }
 
 /**
- * The targets in this tick's order: rotated by the tick's start, so a
+ * The targets in this tick's order: rotated by the index of the timer tick
+ * (the start time over the timer's interval), so the first target advances
+ * by one each tick whatever the interval and the number of targets, and a
  * target whose open fails every time cannot keep every later one waiting.
  */
 export function rotated<T>(state: ApplyState, items: T[]): T[] {
   if (items.length < 2 || state.startedAt === undefined) return items;
-  const start = Math.floor(state.startedAt / 60_000) % items.length;
+  const tick = Math.floor(state.startedAt / state.machine.intervalMs);
+  const start = tick % items.length;
   return [...items.slice(start), ...items.slice(0, start)];
 }
 
