@@ -104,7 +104,7 @@ function allLenses(root: string, config: LensConfig): Lens[] {
     ...readLensDir(SEED_DIR, "seed"),
     ...(config.dir === null
       ? []
-      : readLensDir(lensDir(root, config.dir), "repository")),
+      : readLensDir(lensDir(root, config.dir), "repository", root)),
   ];
   const seen = new Set<string>();
   for (const lens of lenses) {

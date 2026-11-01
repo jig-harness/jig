@@ -6,7 +6,7 @@
  */
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { byCodeUnit } from "./lens-file.ts";
+import { byCodeUnit, realInside } from "./lens-file.ts";
 
 export interface BriefInput {
   /** `id@version`, as every finding names its lens. */
@@ -43,15 +43,14 @@ export function instructionFiles(
     .flatMap((dir) =>
       INSTRUCTION_FILES.map((name) => join(baseTree, dir, name)),
     )
-    .filter((file) => existsSync(file));
+    .filter((file) => existsSync(file) && realInside(baseTree, file));
 }
 
 /** A code fence longer than any run of backticks in `text`. */
 function fence(text: string): string {
-  const longest = Math.max(
-    0,
-    ...(text.match(/`+/g) ?? []).map((run) => run.length),
-  );
+  let longest = 0;
+  for (const run of text.match(/`+/g) ?? [])
+    longest = Math.max(longest, run.length);
   return "`".repeat(Math.max(3, longest + 1));
 }
 

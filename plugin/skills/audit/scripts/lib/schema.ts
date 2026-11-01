@@ -12,6 +12,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { load } from "../../../../shared/yaml.ts";
 import { skillDir, isSince } from "./repo.ts";
+import {
+  LensConfigError,
+  triggerOf,
+} from "../../../review/scripts/lens-file.ts";
 
 export const FIELD_TYPES = [
   "string",
@@ -479,8 +483,25 @@ function listProblem(value: unknown, field?: Field): string | null {
   return null;
 }
 
+/** What review refuses in the additions to lens triggers: an unknown key or a pattern that does not compile. */
+function lensTriggersProblem(value: Record<string, unknown>): string | null {
+  for (const [id, additions] of Object.entries(value)) {
+    try {
+      triggerOf(additions, id);
+    } catch (error) {
+      if (error instanceof LensConfigError) return error.message;
+      throw error;
+    }
+  }
+  return null;
+}
+
 function mapProblem(value: unknown, field?: Field): string | null {
   if (!isRecord(value)) return "must be a mapping";
+  if (field?.path === "review.lenses.triggers") {
+    const lens = lensTriggersProblem(value);
+    if (lens) return lens;
+  }
   for (const [key, entry] of Object.entries(value)) {
     if (field?.keys && !field.keys.includes(key))
       return `has unknown key ${key} (known: ${field.keys.join(", ")})`;

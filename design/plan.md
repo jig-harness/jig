@@ -408,7 +408,7 @@ then become a plan item of its own or been dropped.
 ### 23. Seed review lenses
 
 `review` runs [review lenses](../GLOSSARY.md) from one file each, and
-ships one seed lens, `jig.swallowed-failure` for M15; the other rules Jig's
+ships the seed lens `jig.swallowed-failure` for M15; the other rules Jig's
 modules state that no gate can judge have none yet.
 [design/review-lenses.md](review-lenses.md) has how it works. What is left:
 

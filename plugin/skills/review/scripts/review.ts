@@ -37,7 +37,7 @@ import {
   requireExisting,
 } from "./effective-diff.ts";
 import { instructionFiles, lensBrief } from "./lens-brief.ts";
-import { parseLens } from "./lens-file.ts";
+import { parseLens, realInside } from "./lens-file.ts";
 import { renderSelection, type Selection } from "./lens-selection.ts";
 
 class ReviewError extends Error {
@@ -683,6 +683,11 @@ function writeBrief(state: Session, args: string[]): void {
   );
   const chosen = selection.lenses.find((lens) => lens.id === id && lens.runs);
   if (!chosen) throw new ReviewError(`${id} is not a lens this selection runs`);
+  if (
+    chosen.source === "repository" &&
+    !realInside(state.baseTree, chosen.file)
+  )
+    throw new ReviewError(`lens file leaves the base snapshot: ${chosen.file}`);
   const lensText = readFileSync(chosen.file, "utf8");
   const lens = parseLens(lensText, chosen.file, chosen.source);
   const list = fileList(state);

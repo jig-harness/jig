@@ -41,7 +41,13 @@ export function gitVersionProblem(output: string): string | null {
 /** Options every patch takes: no colour, no external diff or textconv, every file as text. */
 const PATCH = ["--no-color", "--no-ext-diff", "--no-textconv", "--text"];
 /** Paths from the tree's root, with the standard prefixes, and no context lines. */
-const LAYOUT = ["--no-relative", "--src-prefix=a/", "--dst-prefix=b/", "-U0"];
+const LAYOUT = [
+  "--no-relative",
+  "--src-prefix=a/",
+  "--dst-prefix=b/",
+  "-U0",
+  "--inter-hunk-context=0",
+];
 /** How many paths one tracked diff names, as `xargs` would split them. */
 const PATHS_PER_CALL = 200;
 

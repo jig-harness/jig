@@ -245,9 +245,31 @@ describe("the command lines", () => {
       }),
     );
     expect(renderText(summarize(input))).toBe(
-      "Tier 3 (Semantic):      ✅ APPROVED\nLenses:  1 run, 0 skipped  (jig.swallowed-failure@1: 1 INFO)\nVERDICT: APPROVED\n\nLens findings:\n- INFO  jig.swallowed-failure@1  a.ts (non-inline)  (unverified: its evidence field is empty)\n  s\n  Evidence: (empty)\n  Fix: f\n",
+      "Tier 3 (Semantic):      ✅ APPROVED\nLenses:  1 run, 0 skipped  (jig.swallowed-failure@1: 1 INFO)\nVERDICT: APPROVED\n\nLens findings:\n- INFO  jig.swallowed-failure@1  a.ts (non-inline)  (unverified: its evidence field is empty; reported WARNING)\n  s\n  Impact: i\n  Confidence: low\n  Evidence: (empty)\n  Fix: f\n",
     );
     expect(() => decode("[")).toThrow("the input is not JSON");
     expect(() => decode("{}")).toThrow("give either selection or skipped_by");
+    const base = { semantic: "NONE", skipped_by: "--quick" };
+    expect(() =>
+      decode(JSON.stringify({ ...base, findings: { severity: "CRITICAL" } })),
+    ).toThrow("findings must be a list");
+    expect(() =>
+      decode(
+        JSON.stringify({
+          semantic: "NONE",
+          selection: { lenses: [{ runs: true, reason: "x" }] },
+        }),
+      ),
+    ).toThrow("without a valid id and version");
+  });
+
+  test("a repository lens's id is LENS-NNN", () => {
+    expect(unquote('"a😀\\tb"')).toBe("a😀\tb");
+    const text = `---\nid: foo\nversion: 1\nrules: []\nlever: ~\ntrigger:\n  paths: ["**"]\nevidence: e\n---\n\n## Look for\n## Not a finding\n## Evidence\n`;
+    expect(() => parseLens(text, "f.md", "repository")).toThrow("LENS-NNN");
+    expect(
+      parseLens(text.replace("id: foo", "id: LENS-004"), "f.md", "repository")
+        .id,
+    ).toBe("LENS-004");
   });
 });

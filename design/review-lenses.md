@@ -3,17 +3,16 @@
 **What problem this solves.** A
 [review lens](../GLOSSARY.md) is one check taught to a reviewer. Jig's
 [M7](../modules/M7-pr-lifecycle-review/README.md) specifies how lenses are
-held (numbered, additive, comment-only until measured), but ships none: each
-repository starts from an empty list and grows its own from its misses
-([M8](../modules/M8-learning-loop/README.md)). Until it has, the
+held (numbered, additive, comment-only until measured). Jig ships seed
+lenses, each the review form of one module rule, and each repository grows
+its own from its misses ([M8](../modules/M8-learning-loop/README.md)). The
 [`review`](../plugin/skills/review/SKILL.md) skill's semantic tier checks a
 change against the repository's decision records and specialist skills, and
-nothing checks it against the rules Jig's own modules state: that no failure
-is swallowed (M15), that a changed behaviour comes with a test that would
-catch its regression (M14). With this built, `review` runs a small set of
-[seed lenses](../GLOSSARY.md), each the review form of one module rule,
-on every change whose diff gives it something to check, says why it skipped
-the others, and a repository's own reviewer can load the same lenses.
+runs the [seed lenses](../GLOSSARY.md) on every change whose diff gives one
+something to check: that no failure is swallowed (M15) is the first. It says
+why it skipped the others, and a repository's own reviewer can load the same
+lenses. The rule that a changed behaviour comes with a test that would catch
+its regression (M14) has no lens yet.
 
 This is the design of [plan.md](plan.md) item 23. The lens contract and
 the first lens (step 1 of the build order) are built: the lens file format,

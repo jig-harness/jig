@@ -50,6 +50,8 @@ trigger:
     - '\bassert'
     - '\bcause\b'
     - '\breject\('
+    - '\.(error|warn)\('
+    - '\bawait\b'
 evidence: absorbed-failures
 ---
 

@@ -36,9 +36,10 @@ export function unquote(quoted: string): string {
   const bytes: number[] = [];
   const encoder = new TextEncoder();
   for (let i = 1; i < quoted.length - 1; i++) {
-    const char = quoted[i] ?? "";
+    const char = String.fromCodePoint(quoted.codePointAt(i) ?? 0);
     if (char !== "\\") {
       bytes.push(...encoder.encode(char));
+      i += char.length - 1;
       continue;
     }
     const next = quoted[i + 1] ?? "";

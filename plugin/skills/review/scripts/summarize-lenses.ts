@@ -104,7 +104,7 @@ function selection(entry: unknown): LensResult[] {
       : entry;
   if (!isRecord(value) || !Array.isArray(value.lenses))
     throw new InputError("selection must be select-lenses's --json output");
-  for (const lens of value.lenses)
+  for (const lens of value.lenses) {
     if (
       !isRecord(lens) ||
       typeof lens.runs !== "boolean" ||
@@ -113,6 +113,20 @@ function selection(entry: unknown): LensResult[] {
       throw new InputError(
         "selection.lenses holds an entry without runs and reason",
       );
+    if (
+      lens.runs &&
+      !(
+        typeof lens.id === "string" &&
+        lens.id !== "" &&
+        typeof lens.version === "number" &&
+        Number.isSafeInteger(lens.version) &&
+        lens.version > 0
+      )
+    )
+      throw new InputError(
+        "selection.lenses holds a running entry without a valid id and version",
+      );
+  }
   return value.lenses as LensResult[];
 }
 
@@ -134,8 +148,10 @@ function outcomeOf(input: Record<string, unknown>): LensOutcome {
   if ((skippedBy === null) === (input.selection === undefined))
     throw new InputError("give either selection or skipped_by");
   const lenses = skippedBy === null ? selection(input.selection) : [];
-  const findings = (Array.isArray(input.findings) ? input.findings : []).map(
-    (entry, i) => finding(entry, i),
+  const supplied: unknown = input.findings ?? [];
+  if (!Array.isArray(supplied)) throw new InputError("findings must be a list");
+  const findings = supplied.map((entry: unknown, i: number) =>
+    finding(entry, i),
   );
   const ran = new Set(
     lenses.filter((l) => l.runs).map((l) => `${l.id}@${l.version}`),
@@ -181,12 +197,14 @@ function findingLine(f: RatedFinding): string {
   const where =
     f.line === null ? `${f.file} (non-inline)` : `${f.file}:${f.line}`;
   const notes = [
-    f.unverified ? "unverified: its evidence field is empty" : "",
+    f.unverified
+      ? `unverified: its evidence field is empty; reported ${f.severity}`
+      : "",
     f.effective !== f.severity && !f.unverified
       ? `reported ${f.severity}; capped, the lens is not promoted`
       : "",
   ].filter(Boolean);
-  return `- ${f.effective}  ${f.lens}  ${where}${notes.length ? `  (${notes.join("; ")})` : ""}\n  ${f.scenario}\n  Evidence: ${f.evidence || "(empty)"}\n  Fix: ${f.fix}\n`;
+  return `- ${f.effective}  ${f.lens}  ${where}${notes.length ? `  (${notes.join("; ")})` : ""}\n  ${f.scenario}\n  Impact: ${f.impact}\n  Confidence: ${f.confidence}\n  Evidence: ${f.evidence || "(empty)"}\n  Fix: ${f.fix}\n`;
 }
 
 export interface Summary {

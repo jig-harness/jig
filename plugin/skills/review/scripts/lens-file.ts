@@ -3,8 +3,8 @@
  * checked here, read by `review` and by any reviewer that loads the same
  * file.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { isRecord } from "../../../shared/guards.ts";
 import { load } from "../../../shared/yaml.ts";
 
@@ -43,6 +43,16 @@ const KEYS = ["id", "version", "rules", "lever", "trigger", "evidence"];
 const SECTIONS = ["## Look for", "## Not a finding", "## Evidence"];
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const REPOSITORY_ID = /^LENS-[0-9]{3,}$/;
+
+/** Whether `path`, with every symbolic link followed, lies inside `root`'s real path. */
+export function realInside(root: string, path: string): boolean {
+  const part = relative(realpathSync(root), realpathSync(path));
+  return (
+    part === "" ||
+    (part !== ".." && !part.startsWith(`..${sep}`) && !isAbsolute(part))
+  );
+}
 
 function problem(where: string, detail: string): LensConfigError {
   return new LensConfigError(`${where}: ${detail}`);
@@ -121,6 +131,11 @@ function lensId(value: unknown, file: string, source: LensSource): string {
         ? `a seed lens's id starts with ${SEED_PREFIX}`
         : `the ${SEED_PREFIX} prefix is for seed lenses; a repository lens keeps its own numbering (LENS-NNN)`,
     );
+  if (source === "repository" && !REPOSITORY_ID.test(value))
+    throw problem(
+      file,
+      `a repository lens's id is LENS-NNN (three or more digits), not ${value}`,
+    );
   return value;
 }
 
@@ -190,14 +205,24 @@ export function isLensFileName(name: string): boolean {
   return name.endsWith(".md") && name !== "README.md";
 }
 
-/** Every lens directly inside `dir`, in name order; none when it does not exist. */
-export function readLensDir(dir: string, source: LensSource): Lens[] {
+/**
+ * Every lens directly inside `dir`, in name order; none when it does not
+ * exist. With `within`, a lens file whose real path leaves that folder is
+ * refused: a link would otherwise load a file the snapshot does not hold.
+ */
+export function readLensDir(
+  dir: string,
+  source: LensSource,
+  within?: string,
+): Lens[] {
   if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) return [];
   return readdirSync(dir)
     .filter(isLensFileName)
     .sort(byCodeUnit)
     .map((name) => {
       const file = join(dir, name);
+      if (within !== undefined && !realInside(within, file))
+        throw problem(file, "is a link that leaves the base snapshot");
       return parseLens(readFileSync(file, "utf8"), file, source);
     });
 }

@@ -93,7 +93,7 @@ Write a JSON file with the path of the selection the helper saved
 lenses ran, and the other tiers' results, then run:
 
 ```sh
-bun "<skill-dir>/scripts/summarize-lenses.ts" "<summary input>"
+bun --no-env-file --config="<skill-dir>/scripts/bunfig.toml" "<skill-dir>/scripts/summarize-lenses.ts" "<summary input>"
 ```
 
 ```json
