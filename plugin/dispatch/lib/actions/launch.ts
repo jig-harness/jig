@@ -90,7 +90,7 @@ export function outOfTime(state: ApplyState): string | null {
 }
 
 /** The stages a repository's tick applies (rearm, pickup), for the targets' radix. */
-export const STAGES_PER_REPO = 2;
+const STAGES_PER_REPO = 2;
 
 /** The level of the hierarchy a rotation orders; each is a digit of the tick index, the repositories the lowest. */
 export type RotationLevel = "repositories" | "stages" | "targets";

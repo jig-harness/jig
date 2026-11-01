@@ -53,8 +53,7 @@ describe("a tick's targets and deadline", () => {
   });
 
   it("turns each level once per turn of the levels above it", () => {
-    const state = (tick: number) =>
-      ({ machine, tick, repos: 2 }) as ApplyState;
+    const state = (tick: number) => ({ machine, tick, repos: 2 }) as ApplyState;
     // Two repositories: the first leads on even ticks and must still lead with each stage in turn.
     const stageLeads = [0, 2, 4, 6].map(
       (n) => rotated(state(n), ["rearm", "pickup"], "stages")[0],
@@ -72,8 +71,8 @@ describe("a tick's targets and deadline", () => {
     expect(
       enforcedDeadlineMs(machine, { JIG_LAUNCHER_DEADLINE_SEC: "7200" }),
     ).toBe(7_200_000);
-    expect(enforcedDeadlineMs(machine, { JIG_LAUNCHER_DEADLINE_SEC: "x" })).toBe(
-      calculated,
-    );
+    expect(
+      enforcedDeadlineMs(machine, { JIG_LAUNCHER_DEADLINE_SEC: "x" }),
+    ).toBe(calculated);
   });
 });
