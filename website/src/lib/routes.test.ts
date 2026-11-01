@@ -163,6 +163,14 @@ describe("glossary", () => {
     expect(entries.find((e) => e.term.startsWith("SSoT"))?.anchor).toBe("ssot");
   });
 
+  test("names an entry by its term's text, without code-span backticks", () => {
+    const [entry] = parseGlossary(
+      "## Tooling\n\n- **Shared code (`plugin/shared/`)** — the shared code.\n",
+    );
+    expect(entry?.term).toBe("Shared code (plugin/shared/)");
+    expect(entry?.anchor).toBe("shared-code");
+  });
+
   test("finds the entry a link text names", () => {
     expect(anchorFor(entries, "SSoT")).toBe("ssot");
     expect(anchorFor(entries, "single source of truth")).toBe("ssot");
