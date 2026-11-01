@@ -48,8 +48,10 @@ export interface ApplyState {
   last: string | null;
   /** The workspaces this tick has opened so far, within `OPENS_PER_TICK`. */
   opened?: number;
-  /** When the tick began, for its overall deadline and the rotation of its targets. */
+  /** When the tick began, for its overall deadline. */
   startedAt?: number;
+  /** The index of this tick among the applying ticks, which rotates the order of everything that shares the allowance. */
+  tick?: number;
   root?: string;
 }
 
@@ -67,15 +69,16 @@ export function outOfTime(state: ApplyState): string | null {
 }
 
 /**
- * The targets in this tick's order: rotated by the index of the timer tick
- * (the start time over the timer's interval), so the first target advances
- * by one each tick whatever the interval and the number of targets, and a
- * target whose open fails every time cannot keep every later one waiting.
+ * `items` in this tick's order: rotated by the tick's own index, a counter
+ * that advances once per applying tick whatever the timer's interval, so the
+ * first item advances by one each tick and an item whose open fails every
+ * time cannot keep every later one waiting. The repositories, the stages
+ * within one and the targets within a stage all use it, for they share the
+ * tick's allowance of opens.
  */
 export function rotated<T>(state: ApplyState, items: T[]): T[] {
-  if (items.length < 2 || state.startedAt === undefined) return items;
-  const tick = Math.floor(state.startedAt / state.machine.intervalMs);
-  const start = tick % items.length;
+  if (items.length < 2 || state.tick === undefined) return items;
+  const start = state.tick % items.length;
   return [...items.slice(start), ...items.slice(0, start)];
 }
 

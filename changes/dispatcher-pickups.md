@@ -36,5 +36,9 @@ release: minor
 
 - A dispatch tick opens at most two workspaces, the opens its timer's
   deadline covers; a launch that needs another waits for the next tick.
+  Which repository, stage and target comes first rotates by one each
+  applying tick, counted in the state directory rather than read off the
+  clock, so a target whose open fails every time cannot keep the others
+  waiting whatever interval the timer was installed with.
 - An agent Orca reports as `blocked` (on a permission prompt) now holds its
   stage, as a working or waiting one does.

@@ -321,6 +321,31 @@ function reclaim(path: string, seen: number | null): boolean {
 }
 
 /** The tick lock: one tick per machine. Returns its release, or the holder. */
+/**
+ * The index of this tick among the ticks that applied launches, kept in the
+ * state directory and advanced by one per call, so rotation does not depend
+ * on the timer's interval or on when a tick happens to start. Call it only
+ * while holding the tick lock. A counter that cannot be read starts over.
+ */
+export function nextTickIndex(root = stateRoot()): number {
+  const path = join(root, "tick-index");
+  let last = -1;
+  try {
+    const value = Number(readFileSync(path, "utf8").trim());
+    if (Number.isSafeInteger(value) && value >= 0) last = value;
+  } catch (err) {
+    swallow(err, `${path} cannot be read`);
+  }
+  const index = last + 1;
+  try {
+    mkdirSync(root, { recursive: true, mode: 0o700 });
+    writeFileSync(path, `${index}\n`, { mode: 0o600 });
+  } catch (err) {
+    swallow(err, `${path} cannot be written`);
+  }
+  return index;
+}
+
 export function takeTickLock(
   root = stateRoot(),
 ): { release: () => void } | { heldBy: string } {

@@ -24,6 +24,7 @@ import {
 } from "./lib/forge.ts";
 import type { Tracker } from "../skills/do-item/scripts/lib/tracker/port.ts";
 import { type ApplyState, applyDrives } from "./lib/actions/drive.ts";
+import { rotated } from "./lib/actions/launch.ts";
 import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
 import { lastAccount, slotTable } from "./lib/accounts.ts";
@@ -58,6 +59,7 @@ import {
   previousFollowupSince,
   pruneReceipts,
   type TickReceipt,
+  nextTickIndex,
   takeTickLock,
   writeReceipt,
 } from "./receipts.ts";
@@ -220,20 +222,32 @@ async function gatherRepo(
   });
   const apply = context.apply;
   if (apply === null) return report;
-  if (entry?.stages.includes("rearm"))
-    await applyDrives(apply, repo, report, sessions, async (pr) => {
-      const listed = open.filter((p) => p.number === pr);
-      const [again] = await readDrives(repo.slug, login, listed, Date.now());
-      return again ?? null;
-    });
-  if (entry?.stages.includes("pickup") && tracked.tracker !== null && keys)
-    await applyPickups(apply, repo, report, {
-      section,
-      tracker: tracked.tracker,
-      keys,
-      branchPattern: join.branchPattern,
-      sessions: () => readSessions(runtime, repo, join),
-    });
+  const stages = [
+    async () => {
+      if (entry?.stages.includes("rearm"))
+        await applyDrives(apply, repo, report, sessions, async (pr) => {
+          const listed = open.filter((p) => p.number === pr);
+          const [again] = await readDrives(
+            repo.slug,
+            login,
+            listed,
+            Date.now(),
+          );
+          return again ?? null;
+        });
+    },
+    async () => {
+      if (entry?.stages.includes("pickup") && tracked.tracker !== null && keys)
+        await applyPickups(apply, repo, report, {
+          section,
+          tracker: tracked.tracker,
+          keys,
+          branchPattern: join.branchPattern,
+          sessions: () => readSessions(runtime, repo, join),
+        });
+    },
+  ];
+  for (const stage of rotated(apply, stages)) await stage();
   return report;
 }
 
@@ -399,6 +413,7 @@ function applyState(
     table: slotTable(machine.accounts, records, nowMs),
     last: lastAccount(records),
     startedAt: Date.now(),
+    tick: nextTickIndex(),
   };
 }
 
@@ -451,7 +466,9 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       launches: apply?.records ?? read.records,
       apply,
     };
-    for (const path of options.repos)
+    const order =
+      apply === null ? options.repos : rotated(apply, options.repos);
+    for (const path of order)
       receipt.repos.push(await gatherRepo(path, context));
     const failed = receipt.repos.some(
       (r) => r.refused !== null || r.records.some((x) => !x.ok),

@@ -12,17 +12,27 @@ function stateAt(startedAt: number | undefined): ApplyState {
   return { machine, startedAt } as ApplyState;
 }
 
+function stateOnTick(tick: number | undefined): ApplyState {
+  return { machine, tick } as ApplyState;
+}
+
 describe("a tick's targets and deadline", () => {
   it("starts at a different target each tick, for any number of targets", () => {
     const items = ["a", "b", "c", "d", "e"];
     const firsts = [0, 1, 2, 3, 4].map(
-      (n) => rotated(stateAt(n * machine.intervalMs), items)[0],
+      (n) => rotated(stateOnTick(n), items)[0],
     );
     expect(firsts).toEqual(items);
   });
 
-  it("keeps the order when the tick has no start", () => {
-    expect(rotated(stateAt(undefined), ["a", "b"])).toEqual(["a", "b"]);
+  it("advances by one target a tick however far apart the ticks start", () => {
+    const items = ["a", "b", "c"];
+    expect(rotated(stateOnTick(1), items)[0]).toBe("b");
+    expect(rotated(stateOnTick(2), items)[0]).toBe("c");
+  });
+
+  it("keeps the order when the tick has no index", () => {
+    expect(rotated(stateOnTick(undefined), ["a", "b"])).toEqual(["a", "b"]);
   });
 
   it("has no time left once the budget has passed", () => {

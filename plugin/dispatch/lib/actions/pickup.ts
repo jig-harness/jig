@@ -147,14 +147,18 @@ async function launchOne(
   if (stale !== null) return stale;
   const after = await changed(state, repo, ctx, action.target);
   if ("why" in after) return waits(action, after.why, slots.account.name);
-  const pastDeadline = outOfTime(state);
-  if (pastDeadline !== null)
-    return waits(action, pastDeadline, slots.account.name);
+  const beforeRoute = outOfTime(state);
+  if (beforeRoute !== null)
+    return waits(action, beforeRoute, slots.account.name);
   const route = await pickupRoute(
     after.issue,
     workspace.path,
     Math.ceil(state.machine.runtimeTimeoutMs / 1000),
   );
+  // Deriving the route runs a child for up to the runtime timeout.
+  const pastDeadline = outOfTime(state);
+  if (pastDeadline !== null)
+    return waits(action, pastDeadline, slots.account.name);
   const record: LaunchRecord = {
     version: 1,
     id: newRecordId(new Date()),
