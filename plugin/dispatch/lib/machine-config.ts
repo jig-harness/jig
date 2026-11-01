@@ -34,7 +34,7 @@ import { isMapping, jigHome } from "../../shared/config-layers.ts";
 import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { load } from "../../shared/yaml.ts";
 
-/** The stages a machine file can enable; only `rearm` starts anything yet. */
+/** The stages a machine file can enable; `steer` is accepted and reported only. */
 const MACHINE_STAGES = [
   "rearm",
   "pickup",

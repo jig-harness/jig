@@ -57,6 +57,8 @@ function read(accountName: string, state: ReadRecord["state"]): ReadRecord {
       model: null,
       effort: null,
       released: false,
+      command: null,
+      marker: null,
     },
     result: null,
   };

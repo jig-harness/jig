@@ -5,9 +5,11 @@
  * wanted minus running, and report; then write the tick's receipt. Without
  * `--apply` a tick starts nothing: it reports what it would start, and why.
  * With it, the re-arms and takeovers a repository's machine-file entry
- * enables are launched within each account's cap (actions/drive.ts), and
- * its pickups too where the runtime binds an interactive session to its
- * account (actions/pickup.ts); everything else is still reported.
+ * enables are launched within each account's cap (actions/drive.ts), its
+ * pickups and follow-ups too where the runtime binds an interactive session
+ * to its account (actions/pickup.ts, actions/followup.ts), and its
+ * notifications are sent once per cause (actions/notify.ts); everything
+ * else is still reported.
  */
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { parseTrackerConfig } from "../skills/do-item/scripts/lib/tracker/config.ts";
@@ -24,10 +26,18 @@ import {
 } from "./lib/forge.ts";
 import type { Tracker } from "../skills/do-item/scripts/lib/tracker/port.ts";
 import { type ApplyState, applyDrives } from "./lib/actions/drive.ts";
+import { applyFollowups } from "./lib/actions/followup.ts";
 import { rotated } from "./lib/actions/launch.ts";
+import { applyNotices } from "./lib/actions/notify.ts";
 import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
 import { lastAccount, slotTable } from "./lib/accounts.ts";
+import { readMarkers } from "./lib/followup-marker.ts";
+import {
+  readOutcomes,
+  settleFollowups,
+  unreadableOutcomes,
+} from "./lib/followup-outcomes.ts";
 import { readIdle, updateIdle } from "./lib/idle.ts";
 import {
   pruneLaunches,
@@ -49,6 +59,7 @@ import { failureText } from "./lib/text.ts";
 import type {
   ClaimedItem,
   DispatchSection,
+  MarkedPr,
   MergedPr,
   RepoReport,
   RepoTarget,
@@ -99,6 +110,7 @@ function emptyReport(path: string, refused: string): RepoReport {
     running: [],
     unplaced: [],
     launches: [],
+    notifications: [],
     quiet: [],
   };
 }
@@ -161,7 +173,7 @@ async function gatherRepo(
   // The forge: the open pull requests and their ledgers, and the merges.
   let open: Awaited<ReturnType<typeof openPullRequests>> = [];
   let drives: Awaited<ReturnType<typeof readDrives>> = [];
-  let merged: MergedPr[] = [];
+  let merged: MarkedPr[] = [];
   let login: string | null = null;
   try {
     open = await openPullRequests(repo.slug);
@@ -169,7 +181,11 @@ async function gatherRepo(
     drives = await readDrives(repo.slug, login, open, nowMs);
     const since = report.followupSince as string;
     if (section.followupCommand !== null)
-      merged = await mergedSince(repo.slug, since);
+      merged = await withMarkers(
+        repo.slug,
+        login,
+        await mergedSince(repo.slug, since),
+      );
     report.records.push({
       record: "forge",
       source: `gh ${repo.slug}`,
@@ -213,6 +229,7 @@ async function gatherRepo(
   });
 
   planRepo(context, repo.slug, report, {
+    slug: repo.slug,
     section,
     pickups: tracked.pickups,
     claimed: tracked.claimed,
@@ -220,13 +237,52 @@ async function gatherRepo(
     merged,
     sessions,
   });
-  const apply = context.apply;
-  if (apply === null) return report;
+  if (context.apply !== null)
+    await applyStages(context.apply, new Set(entry?.stages ?? []), report, {
+      repo,
+      runtime,
+      section,
+      tracked,
+      open,
+      login,
+      merged,
+      join,
+      sessions,
+    });
+  return report;
+}
+
+/** What `--apply` acts on for one repository, as its tick read it. */
+interface ApplyInputs {
+  repo: RepoTarget;
+  runtime: SessionRuntime;
+  section: DispatchSection;
+  tracked: Tracked;
+  open: Awaited<ReturnType<typeof openPullRequests>>;
+  login: string | null;
+  merged: MarkedPr[];
+  join: JoinTargets;
+  sessions: SessionsReport;
+}
+
+/**
+ * `--apply` for one repository: the launch stages its machine-file entry
+ * enables, in this tick's turn, then its notifications, which open no
+ * session and so share no turn.
+ */
+async function applyStages(
+  apply: ApplyState,
+  enabled: ReadonlySet<string>,
+  report: RepoReport,
+  inputs: ApplyInputs,
+): Promise<void> {
+  const { repo, runtime, section, tracked, login, join } = inputs;
+  const fresh = () => readSessions(runtime, repo, join);
   const stages = [
     async () => {
-      if (entry?.stages.includes("rearm"))
-        await applyDrives(apply, repo, report, sessions, async (pr) => {
-          const listed = open.filter((p) => p.number === pr);
+      if (enabled.has("rearm"))
+        await applyDrives(apply, repo, report, inputs.sessions, async (pr) => {
+          const listed = inputs.open.filter((p) => p.number === pr);
           const [again] = await readDrives(
             repo.slug,
             login,
@@ -237,18 +293,41 @@ async function gatherRepo(
         });
     },
     async () => {
-      if (entry?.stages.includes("pickup") && tracked.tracker !== null && keys)
+      const { tracker, keys } = tracked;
+      if (enabled.has("pickup") && tracker !== null && keys)
         await applyPickups(apply, repo, report, {
           section,
-          tracker: tracked.tracker,
+          tracker,
           keys,
           branchPattern: join.branchPattern,
-          sessions: () => readSessions(runtime, repo, join),
+          sessions: fresh,
+        });
+    },
+    async () => {
+      if (enabled.has("followup"))
+        await applyFollowups(apply, repo, report, {
+          section,
+          login,
+          merged: inputs.merged,
+          sessions: fresh,
         });
     },
   ];
   for (const stage of rotated(apply, stages, "stages")) await stage();
-  return report;
+  if (enabled.has("notify"))
+    await applyNotices(apply, repo, report, inputs.sessions);
+}
+
+/** Each merged pull request with its follow-up markers; a pull request whose comments do not read carries why. */
+async function withMarkers(
+  slug: string,
+  login: string | null,
+  merged: MergedPr[],
+): Promise<MarkedPr[]> {
+  const out: MarkedPr[] = [];
+  for (const pr of merged)
+    out.push({ ...pr, markers: await readMarkers(slug, pr.number, login) });
+  return out;
 }
 
 /** What the tracker gives one repository's tick. */
@@ -312,12 +391,16 @@ function planRepo(
   context: TickContext,
   repo: string,
   report: RepoReport,
-  input: Omit<PlanInput, "launches" | "idleSince" | "nowMs">,
+  input: Omit<PlanInput, "launches" | "idleSince" | "nowMs" | "outcomes">,
 ): void {
   const { nowMs } = context;
   const records = settleRecords(context, repo, input.sessions, nowMs);
+  // A follow-up whose agent finished this tick keeps its outcome past its record.
+  settleFollowups(records);
   const plan = planTick({
     ...input,
+    outcomes: readOutcomes(repo),
+    unreadableOutcomes: unreadableOutcomes(repo),
     launches: records,
     idleSince: readIdle(repo),
     nowMs,
@@ -443,6 +526,8 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     const runtime = options.runtime ?? defaultRuntime(machine);
     const read = await readLaunches();
     const days = machine?.receiptsDays;
+    // An ended follow-up's outcome is written before its record can expire.
+    settleFollowups(read.records);
     pruneLaunches(read.records, now.getTime(), days ?? 30);
     const attempt = applyState(
       options,
