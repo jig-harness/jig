@@ -134,15 +134,162 @@ describe("the effective level and its source", () => {
     expect(a.ceilingSource).toContain("autonomy.max_level");
   });
 
-  test("wide is accepted and acts as unattended until it is built", () => {
+  test("wide is a level of its own where the ceiling allows it", () => {
     const a = resolve({
       driver: true,
       repository: "autonomy:\n  level: wide\n",
     });
     expect(a.chosen).toBe("wide");
+    expect(a.level).toBe("wide");
+    expect(a.offHours).toBeNull();
+    expect(describeAutonomy(a)).toStartWith("autonomy: wide (wide from ");
+  });
+});
+
+describe("off-hours", () => {
+  // Local-time constructors, so each instant is the stated wall-clock time
+  // whatever time zone the suite runs in. 2026-10-26 is a Monday.
+  const mondayNoon = new Date(2026, 9, 26, 12, 0);
+  const mondayNight = new Date(2026, 9, 26, 22, 30);
+  const saturdayNoon = new Date(2026, 9, 31, 12, 0);
+  const offHours = [
+    "autonomy:",
+    "  level: unattended",
+    "  max_level: wide",
+    "  off_hours:",
+    "    level: wide",
+    "",
+  ].join("\n");
+
+  function at(c: Case, now: Date) {
+    const { root, env } = setup(c);
+    return resolveAutonomy(loadLayeredConfig(root, env), env, now);
+  }
+
+  test("inside a window of the default schedule a driver pass runs at the off-hours level", () => {
+    for (const now of [mondayNight, saturdayNoon]) {
+      const a = at({ driver: true, repository: offHours }, now);
+      expect(a.level).toBe("wide");
+      expect(a.offHours).not.toBeNull();
+      expect(describeAutonomy(a)).toStartWith("autonomy: wide (off_hours) (");
+      expect(a.source).toContain(join(".config", "jig.yaml"));
+    }
+    expect(
+      at({ driver: true, repository: offHours }, mondayNight).offHours,
+    ).toEqual({ window: "Mon-Fri 20:00-07:00" });
+  });
+
+  test("outside every window the base level stands", () => {
+    const a = at({ driver: true, repository: offHours }, mondayNoon);
     expect(a.level).toBe("unattended");
-    expect(a.wideActsAsUnattended).toBe(true);
-    expect(describeAutonomy(a)).toContain("acts as unattended");
+    expect(a.offHours).toBeNull();
+    expect(describeAutonomy(a)).toStartWith(
+      "autonomy: unattended (unattended from ",
+    );
+    expect(describeAutonomy(a)).not.toContain("off_hours");
+  });
+
+  test("the off-hours level is capped by max_level, and the line says so", () => {
+    const a = at(
+      {
+        driver: true,
+        repository:
+          "autonomy:\n  max_level: unattended\n  off_hours:\n    level: wide\n",
+      },
+      mondayNight,
+    );
+    expect(a.chosen).toBe("wide");
+    expect(a.level).toBe("unattended");
+    expect(a.capped).toBe(true);
+    expect(describeAutonomy(a)).toStartWith(
+      "autonomy: unattended (off_hours) (wide from ",
+    );
+    expect(describeAutonomy(a)).toContain("capped at unattended");
+  });
+
+  test("a schedule of the repository's own replaces the default", () => {
+    const repository = `${offHours.trimEnd()}\n    schedule:\n      - "Mon 12:00-13:00"\n`;
+    expect(at({ driver: true, repository }, mondayNoon).level).toBe("wide");
+    expect(at({ driver: true, repository }, saturdayNoon).level).toBe(
+      "unattended",
+    );
+  });
+
+  test("an off-hours level from the user layer is capped by the repository's ceiling", () => {
+    const a = at(
+      {
+        driver: true,
+        repository: "autonomy:\n  max_level: unattended\n",
+        user: "autonomy:\n  off_hours:\n    level: wide\n",
+      },
+      mondayNight,
+    );
+    expect(a.chosen).toBe("wide");
+    expect(a.level).toBe("unattended");
+    expect(a.capped).toBe(true);
+    expect(a.source).toContain("home");
+  });
+
+  test("an off-hours level from the environment applies up to the ceiling", () => {
+    const a = at(
+      {
+        driver: true,
+        repository: "autonomy:\n  level: attended\n  max_level: wide\n",
+        env: { JIG__AUTONOMY__OFF_HOURS__LEVEL: "wide" },
+      },
+      saturdayNoon,
+    );
+    expect(a.level).toBe("wide");
+    expect(a.source).toBe("$JIG__AUTONOMY__OFF_HOURS__LEVEL");
+    expect(
+      at(
+        {
+          driver: true,
+          repository: "autonomy:\n  level: attended\n  max_level: wide\n",
+          env: { JIG__AUTONOMY__OFF_HOURS__LEVEL: "wide" },
+        },
+        mondayNoon,
+      ).level,
+    ).toBe("attended");
+  });
+
+  test("a person's session never runs at the off-hours level", () => {
+    const a = at({ repository: offHours }, mondayNight);
+    expect(a.level).toBe("attended");
+    expect(a.offHours).toBeNull();
+  });
+
+  test("an unset off-hours level leaves off-hours off", () => {
+    const a = at(
+      {
+        driver: true,
+        repository: "autonomy:\n  level: unattended\n  max_level: wide\n",
+      },
+      saturdayNoon,
+    );
+    expect(a.level).toBe("unattended");
+    expect(a.offHours).toBeNull();
+  });
+
+  test("a schedule without a level, and an unreadable window, are refused", () => {
+    expect(() =>
+      at(
+        {
+          driver: true,
+          repository: 'autonomy:\n  off_hours:\n    schedule: ["Sat-Sun"]\n',
+        },
+        saturdayNoon,
+      ),
+    ).toThrow(/off_hours.level is not/);
+    expect(() =>
+      at(
+        {
+          driver: true,
+          repository: `${offHours.trimEnd()}\n    schedule: ["Someday"]\n`,
+        },
+        mondayNoon,
+      ),
+    ).toThrow(AutonomyConfigError);
   });
 });
 
@@ -221,7 +368,13 @@ describe("the park classes", () => {
       classes({
         repository: "autonomy:\n  park_classes: [merge, data-retention]\n",
       }),
-    ).toEqual(["merge", "data-retention", "escalated", "human-decision"]);
+    ).toEqual([
+      "merge",
+      "data-retention",
+      "escalated",
+      "human-decision",
+      "human-thread",
+    ]);
   });
 
   test("a malformed list is refused", () => {
@@ -269,6 +422,57 @@ describe("the command line", () => {
     const stdout = await new Response(proc.stdout).text();
     await expectSpawnExited(proc, 0);
     expect(stdout).toStartWith("autonomy: unattended (unattended from ");
+  });
+
+  test("a window keeps to the local clock across a daylight-saving change", async () => {
+    const level = async (schedule: string, instant: string) => {
+      const proc = await cli(
+        {
+          driver: true,
+          repository: `autonomy:\n  max_level: wide\n  off_hours:\n    level: wide\n    schedule: ["${schedule}"]\n`,
+          env: { TZ: "Europe/Berlin" },
+        },
+        ["--at", instant],
+      );
+      const stdout = await new Response(proc.stdout).text();
+      await expectSpawnExited(proc, 0);
+      return stdout.startsWith("autonomy: wide (off_hours)");
+    };
+    // 2026-10-25: 03:00 summer time becomes 02:00 winter time, so 02:30 comes twice.
+    expect(await level("Sun 02:00-03:00", "2026-10-25T00:30:00Z")).toBe(true);
+    expect(await level("Sun 02:00-03:00", "2026-10-25T01:30:00Z")).toBe(true);
+    expect(await level("Sun 02:00-03:00", "2026-10-25T02:30:00Z")).toBe(false);
+    // 2026-03-29: 02:00 winter time becomes 03:00 summer time.
+    expect(await level("Sun 01:00-04:00", "2026-03-29T00:30:00Z")).toBe(true);
+    expect(await level("Sun 01:00-04:00", "2026-03-29T01:30:00Z")).toBe(true);
+    expect(await level("Sun 01:00-04:00", "2026-03-29T02:30:00Z")).toBe(false);
+    expect(await level("Sun 01:00-04:00", "2026-03-28T23:30:00Z")).toBe(false);
+  });
+
+  test("--at reads the windows in the machine's local time zone", async () => {
+    // 2026-10-26T21:30Z is Monday 21:30 in UTC, inside the weekday-night
+    // window, and Tuesday 06:30 in Tokyo, inside it too; 13:30Z is Monday
+    // afternoon in UTC and Monday 22:30 in Tokyo.
+    const repository =
+      "autonomy:\n  level: unattended\n  max_level: wide\n  off_hours:\n    level: wide\n";
+    const level = async (tz: string, instant: string) => {
+      const proc = await cli({ driver: true, repository, env: { TZ: tz } }, [
+        "--at",
+        instant,
+      ]);
+      const stdout = await new Response(proc.stdout).text();
+      await expectSpawnExited(proc, 0);
+      return stdout;
+    };
+    expect(await level("UTC", "2026-10-26T13:30:00Z")).toStartWith(
+      "autonomy: unattended (",
+    );
+    expect(await level("Asia/Tokyo", "2026-10-26T13:30:00Z")).toStartWith(
+      "autonomy: wide (off_hours) (",
+    );
+    expect(await level("UTC", "2026-10-26T21:30:00Z")).toStartWith(
+      "autonomy: wide (off_hours) (",
+    );
   });
 
   test("an invalid level exits 1 naming the field", async () => {

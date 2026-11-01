@@ -15,13 +15,12 @@ The review drive already runs from any checkout, restarts itself, is taken
 over through a ledger on the pull request when its driver dies or stops
 making progress, and stops for a person only on a configured human decision
 class, with the decision framed
-([drive-pr](plugin/skills/drive-pr/README.md)). What is left: a repository
-may raise how far an agent decides on its own during the hours nobody is
-there to ask; every decision taken that way is recorded on the pull request
-where a person can reverse it, and a morning report lists them. It ships
-once a working repository has validated it. Before that, the policy that
+([drive-pr](plugin/skills/drive-pr/README.md)). What is left: the policy that
 bounds what an agent may decide is read from the pull request's base branch,
-so a pull request cannot widen what its own drive may decide.
+so a pull request cannot widen what its own drive may decide. A repository
+may already raise how far an agent decides during the hours nobody is there
+to ask (opt-in, not yet validated); every such decision is recorded on the
+pull request where a person can reverse it, and a morning report lists them.
 
 ### 33. The dispatcher: a tick that starts the execution line's stages
 
@@ -30,9 +29,12 @@ stage of the execution line that should be running and is not: a session
 that picks up an item assigned to the team's
 [factory identity](GLOSSARY.md), a restart of a review drive stopped by a
 usage limit (on another account) or by a question a person has answered,
-and the follow-up after a merge. It runs every few minutes, reports what it
+a review drive restarted on a converged pull request that has since come
+to conflict with its base or been pushed to, and the follow-up after a
+merge. It runs every few minutes, reports what it
 would start and why before it is allowed to start anything, caps the
-sessions per subscription account, and reaches a person on their phone for
+sessions per subscription account (Claude Code's or Codex's, the account
+choosing the agent a session runs in), and reaches a person on their phone for
 the decisions that are theirs. It never merges. Every finished session
 leaves a row in an [outcome log](GLOSSARY.md) that one dashboard filters
 by time, repository, stage, account and outcome; a session that falls
@@ -42,6 +44,18 @@ it sends a session by itself is "continue", once a usage limit has reset.
 Orca is its first session runtime
 ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
 with others through the same interface.
+
+### 35. One jig command line
+
+The plugin's machine-level tools become one `jig` command on `PATH`, with
+resource collection (`jig gc`) and the dispatcher (`jig dispatch`) as its
+[components](GLOSSARY.md) and the same verbs for each: `install`, `uninstall`, `upgrade`,
+`doctor`, `status` and `receipts`. `jig doctor` checks the plugin's
+installation and runs the audit's check that a repository's configuration
+fits it, and `jig upgrade` replaces the setup script a machine runs from a
+Jig checkout. Help for every command and shell completion come from the
+same definitions that parse the command line, and the jobs a machine
+already installed keep running unchanged.
 
 ### 3. The kickoff family
 

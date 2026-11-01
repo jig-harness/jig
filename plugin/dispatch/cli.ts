@@ -10,12 +10,29 @@
  * interval; `jig dispatch result` is how a dispatched interactive session
  * records how it ended.
  */
-import { resolve } from "node:path";
 import { consumerRoot } from "../shared/consumer.ts";
 import { ExitError } from "../shared/cli.ts";
-import { installDispatch } from "./install.ts";
-import { runMain } from "./run.ts";
+import { pathValue } from "../shared/command-line.ts";
 import {
+  argument,
+  command,
+  constant,
+  type InferValue,
+  map,
+  message,
+  multiple,
+  object,
+  option,
+  optional,
+  or,
+  string,
+  text,
+  type ValueParser,
+  withDefault,
+} from "../shared/vendor/optique.mjs";
+import { installDispatch } from "./install.ts";
+import {
+  duration,
   type MachineConfig,
   MachineConfigError,
   machineConfigPath,
@@ -26,63 +43,171 @@ import { readReceipt, receiptPaths } from "./receipts.ts";
 import { resultMain } from "./result.ts";
 import { runTick } from "./tick.ts";
 
-const USAGE = `jig dispatch [--apply] [--repo <path>]... [--followup-since <date>] [--json]
-jig dispatch install [--interval <5m>] [--yes] [--uninstall]
-jig dispatch receipts [<run-id>]
-jig dispatch result <record> <token> done|failed`;
-
 /** Exit when another tick holds the lock. */
 const LOCK_HELD_EXIT = 3;
 
-interface Options {
-  repos: string[];
-  json: boolean;
-  apply: boolean;
-  followupSince?: string;
-}
-
-/** Take a flag's value into `options`. */
-function takeValue(
-  options: Options,
-  flag: string,
-  value: string | undefined,
-): void {
-  if (value === undefined || value.startsWith("--"))
-    throw new ExitError(2, `Missing value for ${flag}`);
-  if (flag === "--repo") {
-    options.repos.push(resolve(value));
-    return;
-  }
-  if (!Number.isFinite(Date.parse(value)))
-    throw new ExitError(2, `--followup-since is not a date: ${value}`);
-  options.followupSince = new Date(value).toISOString();
-}
-
-const SWITCHES: Record<string, "json" | "apply"> = {
-  "--json": "json",
-  "--apply": "apply",
+/** A date `Date.parse` reads, as the ISO timestamp the tick compares with. */
+const dateValue: ValueParser<"sync", string> = {
+  mode: "sync",
+  metavar: "DATE",
+  placeholder: "",
+  parse: (input) =>
+    Number.isFinite(Date.parse(input))
+      ? { success: true, value: new Date(input).toISOString() }
+      : { success: false, error: message`Expected a date, but got ${input}.` },
+  format: (value) => value,
 };
 
-function parseArguments(argv: string[]): Options {
-  const options: Options = { repos: [], json: false, apply: false };
-  for (let i = 0; i < argv.length; i++) {
-    const flag = argv[i] as string;
-    if (flag === "--repo" || flag === "--followup-since") {
-      takeValue(options, flag, argv[++i]);
-      continue;
+/**
+ * A duration (`90s`, `5m`, `1h`) in milliseconds. `install` requires whole
+ * minutes of the interval that wins, so the lenient form takes any duration
+ * and `winningIntervalArguments` feeds the strict one the winner alone.
+ */
+const intervalValue = (wholeMinutes: boolean): ValueParser<"sync", number> => ({
+  mode: "sync",
+  metavar: "DURATION",
+  placeholder: 60_000,
+  parse: (input) => {
+    try {
+      const ms = duration(input, "The interval");
+      if (wholeMinutes && ms % 60_000 !== 0)
+        return {
+          success: false,
+          error: [
+            text(`The interval must be whole minutes, but got ${input}.`),
+          ],
+        };
+      return { success: true, value: ms };
+    } catch (error) {
+      if (!(error instanceof MachineConfigError)) throw error;
+      return { success: false, error: [text(`${error.message}.`)] };
     }
-    const field = SWITCHES[flag];
-    if (field === undefined)
-      throw new ExitError(2, `Unknown argument: ${flag}\n${USAGE}`);
-    options[field] = true;
-  }
-  return options;
-}
+  },
+  format: (ms) => `${ms / 60_000}m`,
+});
 
-function showReceipts(argv: string[]): number {
-  if (argv.length > 1) throw new ExitError(2, "receipts accepts one run id");
+const tick = object({
+  action: constant("tick"),
+  apply: option("--apply", {
+    description: message`Start what the machine file (~/.jig/dispatch.yaml) enables for each repository. Without it, the run only reports.`,
+  }),
+  repos: multiple(
+    option("--repo", pathValue, {
+      description: message`A repository to read; repeat it for more. Without it, the machine file's repositories, else the current checkout.`,
+    }),
+  ),
+  followupSince: map(
+    multiple(
+      option("--followup-since", dateValue, {
+        description: message`Start the window that merges owe follow-ups from at this date, for every repository. The last one given wins.`,
+      }),
+    ),
+    (values) => values.at(-1),
+  ),
+  json: option("--json", {
+    description: message`Print the receipt as JSON.`,
+  }),
+});
+
+const installation = (wholeMinutes: boolean) =>
+  command(
+    "install",
+    object({
+      action: constant("install"),
+      intervalMs: map(
+        multiple(
+          option("--interval", intervalValue(wholeMinutes), {
+            description: message`How often the timer runs, in whole minutes (5m, 1h). Without it, the machine file's interval, else five minutes. The last one given wins.`,
+          }),
+        ),
+        (values) => values.at(-1),
+      ),
+      confirm: option("--yes", {
+        description: message`Write the job the preview shows.`,
+      }),
+      uninstall: option("--uninstall", {
+        description: message`Remove the job instead.`,
+      }),
+    }),
+    {
+      brief: message`Install the timer that runs dispatch --apply.`,
+      description: message`Previews the scheduler job that runs jig dispatch --apply every interval; --yes writes it.`,
+    },
+  );
+
+const receipts = command(
+  "receipts",
+  object({
+    action: constant("receipts"),
+    runId: optional(
+      argument(string({ metavar: "RUN-ID" }), {
+        description: message`Print the run with that id. Without it, list every run.`,
+      }),
+    ),
+  }),
+  { brief: message`List the receipts of earlier runs, or print one.` },
+);
+
+const result = command(
+  "result",
+  object({
+    action: constant("result"),
+    record: argument(string({ metavar: "RECORD" }), {
+      description: message`The launch record the session was started under.`,
+    }),
+    token: argument(string({ metavar: "TOKEN" }), {
+      description: message`The record's token, named in the session's prompt.`,
+    }),
+    outcome: argument(string({ metavar: "done|failed" }), {
+      description: message`How the session ended.`,
+    }),
+  }),
+  { brief: message`Record how a dispatched interactive session ended.` },
+);
+
+/** `jig dispatch`: one tick by default, `install`, `receipts` and `result` as its subcommands. */
+const dispatch = (wholeMinutes: boolean) =>
+  command(
+    "dispatch",
+    withDefault(or(installation(wholeMinutes), receipts, result, tick), {
+      action: "tick",
+      apply: false,
+      repos: [],
+      followupSince: undefined,
+      json: false,
+    } as const),
+    {
+      brief: message`Say which stages of the delivery loop should be running, and start them.`,
+      description: message`Reads the tracker, the pull requests' drive ledgers, the running sessions and this machine's launch records for each repository, and prints every action it would take, with the record that wants it and the evidence. Each run writes a receipt.`,
+    },
+  );
+
+export const dispatchCommand = dispatch(false);
+/** The same command with `install --interval` held to whole minutes. */
+export const strictDispatchCommand = dispatch(true);
+
+export type DispatchArguments = InferValue<typeof dispatchCommand>;
+
+/**
+ * `argv` with every `--interval` but the last removed: the one that wins,
+ * which `strictDispatchCommand` then validates alone.
+ */
+export function winningIntervalArguments(argv: readonly string[]): string[] {
+  const starts: number[] = [];
+  argv.forEach((arg, i) => {
+    if (arg === "--interval" || arg.startsWith("--interval=")) starts.push(i);
+  });
+  const drop = new Set<number>();
+  for (const i of starts.slice(0, -1)) {
+    drop.add(i);
+    if (argv[i] === "--interval") drop.add(i + 1);
+  }
+  return argv.filter((_, i) => !drop.has(i));
+}
+type Tick = Extract<DispatchArguments, { action: "tick" }>;
+
+function showReceipts(id: string | undefined): number {
   const paths = receiptPaths();
-  const id = argv[0];
   if (id === undefined) {
     for (const path of paths) {
       const r = readReceipt(path);
@@ -114,57 +239,52 @@ function machineFile(): MachineConfig | null {
 }
 
 /** The repositories a tick reads: `--repo`, else the machine file's, else this checkout. */
-function repositories(
-  options: Options,
-  machine: MachineConfig | null,
-): string[] {
-  if (options.repos.length > 0) return options.repos;
+function repositories(options: Tick, machine: MachineConfig | null): string[] {
+  if (options.repos.length > 0) return [...options.repos];
   if (machine !== null && machine.repositories.length > 0)
     return machine.repositories.map((r) => r.path);
   return [consumerRoot()];
 }
 
 export async function dispatchMain(
-  argv: string[],
+  args: DispatchArguments,
   script = "",
 ): Promise<number> {
-  if (argv[0] === "--help" && argv.length === 1) {
-    console.log(USAGE);
-    return 0;
-  }
-  if (argv[0] === "receipts") return showReceipts(argv.slice(1));
-  // The wrapper a dispatched pass's terminal runs (run.ts), under its launch record.
-  if (argv[0] === "run") return runMain(argv.slice(1));
-  // An interactive session's own answer, under its launch record's token.
-  if (argv[0] === "result") return resultMain(argv.slice(1));
-  if (argv[0] === "install")
+  if (args.action === "result")
+    // An interactive session's own answer, under its launch record's token.
+    return resultMain([args.record, args.token, args.outcome]);
+  if (args.action === "receipts") return showReceipts(args.runId);
+  if (args.action === "install")
     // A removal needs no machine file: a broken one must not keep the timer installed.
     return installDispatch(
-      argv.slice(1),
+      {
+        intervalMs: args.intervalMs ?? null,
+        confirm: args.confirm,
+        uninstall: args.uninstall,
+      },
       script,
-      argv.includes("--uninstall") ? null : machineFile(),
+      args.uninstall ? null : machineFile(),
     );
-  const options = parseArguments(argv);
   const machine = machineFile();
-  if (options.apply && machine === null)
+  if (args.apply && machine === null)
     throw new ExitError(
       2,
       `jig dispatch --apply needs the machine file ${machineConfigPath()}: the repositories, the stages enabled for each and the accounts it may bill (see CONFIGURATION.md § The machine's dispatch file). Run without --apply for the report.`,
     );
   const result = await runTick({
-    repos: repositories(options, machine),
-    apply: options.apply,
+    repos: repositories(args, machine),
+    apply: args.apply,
     machine,
-    ...(options.followupSince === undefined
+    ...(args.followupSince === undefined
       ? {}
-      : { followupSince: options.followupSince }),
+      : { followupSince: args.followupSince }),
   });
   if ("held" in result) {
     console.error(`jig dispatch: another tick holds the lock: ${result.held}`);
     return LOCK_HELD_EXIT;
   }
   console.log(
-    options.json
+    args.json
       ? JSON.stringify(result.receipt, null, 2)
       : formatReceipt(result.receipt, result.path),
   );

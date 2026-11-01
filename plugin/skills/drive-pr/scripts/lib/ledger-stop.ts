@@ -256,16 +256,33 @@ async function markGuarded(
     // a successor can publish between this read and that write.
     recovering: true,
   };
+  const env = {
+    ...process.env,
+    DRIVE_PR_STATE_DIR: stateDir,
+    DRIVE_PR_WORKTREE: diag.worktree,
+  };
+  // The stop goes into the local state first, so the report reads this run's
+  // end there (an earlier run's recorded exit would otherwise speak for it),
+  // and the ledger built from that state carries it. A retry appends it
+  // again, which changes nothing a report reads.
+  const event = await run(tsArgv(driveState, ["record-event", pr]), {
+    stdin: JSON.stringify({ kind: "stop", cause: String(exit ?? "unknown") }),
+    stdout: "ignore",
+    stderr: "inherit",
+    timeoutSec: helperTimeoutSeconds(),
+    env,
+  });
+  if (event.code !== 0) {
+    console.error(
+      `ledger: PR #${pr}'s stop was not recorded (drive-state.ts record-event exited ${event.code}).`,
+    );
+    return "retry";
+  }
   const res = await run(tsArgv(driveState, ["handoff", pr]), {
     stdout: "ignore",
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
-    env: {
-      ...process.env,
-      [LEDGER_DRIVER_ENV]: JSON.stringify(driver),
-      DRIVE_PR_STATE_DIR: stateDir,
-      DRIVE_PR_WORKTREE: diag.worktree,
-    },
+    env: { ...env, [LEDGER_DRIVER_ENV]: JSON.stringify(driver) },
   });
   if (res.code === 0) return "done";
   console.error(

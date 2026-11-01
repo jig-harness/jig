@@ -21,7 +21,6 @@ import {
   updateJob,
 } from "../gc/scheduler.ts";
 import {
-  duration,
   type MachineConfig,
   machineConfigPath,
   MIN_TICK_DEADLINE_MS,
@@ -29,33 +28,12 @@ import {
 } from "./lib/machine-config.ts";
 import { stateRoot } from "./receipts.ts";
 
+/** `jig dispatch install`'s options, as dispatch/cli.ts parses them. */
 interface InstallOptions {
+  /** `--interval`, whole minutes in milliseconds; null takes the machine file's. */
   intervalMs: number | null;
   confirm: boolean;
   uninstall: boolean;
-}
-
-function parse(argv: string[]): InstallOptions {
-  const options: InstallOptions = {
-    intervalMs: null,
-    confirm: false,
-    uninstall: false,
-  };
-  for (let i = 0; i < argv.length; i++) {
-    const flag = argv[i];
-    if (flag === "--yes") options.confirm = true;
-    else if (flag === "--uninstall") options.uninstall = true;
-    else if (flag === "--interval") {
-      try {
-        options.intervalMs = duration(argv[++i], "--interval");
-      } catch (error) {
-        throw new ExitError(2, (error as Error).message);
-      }
-    } else throw new ExitError(2, `Unknown argument to install: ${flag}`);
-  }
-  if (options.intervalMs !== null && options.intervalMs % 60_000 !== 0)
-    throw new ExitError(2, "--interval must be whole minutes");
-  return options;
 }
 
 /**
@@ -97,11 +75,15 @@ export function dispatchJobSpec(
 }
 
 export async function installDispatch(
-  argv: string[],
+  options: InstallOptions,
   script: string,
   machine: MachineConfig | null,
 ): Promise<number> {
-  const options = parse(argv);
+  if (options.intervalMs !== null && options.intervalMs % 60_000 !== 0)
+    throw new ExitError(
+      2,
+      `the interval must be whole minutes; --interval is ${options.intervalMs / 1000}s`,
+    );
   if (machine === null && !options.uninstall)
     throw new ExitError(
       2,
@@ -111,7 +93,7 @@ export async function installDispatch(
   if (ms % 60_000 !== 0)
     throw new ExitError(
       2,
-      `the interval must be whole minutes; ${options.intervalMs === null ? "the machine file's interval" : "--interval"} is ${ms / 1000}s`,
+      `the interval must be whole minutes; the machine file's interval is ${ms / 1000}s`,
     );
   const minutes = ms / 60_000;
   const spec = dispatchJobSpec(minutes, machine);

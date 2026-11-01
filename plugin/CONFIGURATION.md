@@ -343,11 +343,55 @@ says by what. A session with a person in it, rather than a drive's pass
 (`$DRIVE_PR_TARGET` unset), reads `attended` unless that person set a level
 in their own file or the environment.
 
+`off_hours` widens the level during the hours nobody is there to ask: inside
+one of its schedule's windows, a drive's pass runs at `off_hours.level`
+instead, capped by `max_level` like any other choice, and the printed line
+names the effective level and records the off-hours choice and the cap; outside every window the base level
+stands. A person's session never runs at the off-hours level.
+
+```yaml
+autonomy:
+  level: unattended
+  max_level: wide
+  off_hours:
+    level: wide
+    schedule:              # the default once off_hours.level is set
+      - "Mon-Fri 20:00-07:00"
+      - "Sat-Sun"
+      - "Mon 00:00-07:00"
+```
+
+What each level permits:
+
+| Decision | `attended` | `unattended` | `wide` |
+|---|---|---|---|
+| File a tracker issue a skill needs | Confirm first | File it; the body says which skill filed it, from which pull request and why | Same |
+| Defer a finding no tracker adapter can file | The pull request's `## Deferred` section | Same | Same |
+| A choice `decide` rules reversible inside one pull request | Decide and record | Same | Same |
+| A choice `decide` would rule underdetermined | Rule it `underdetermined`, naming the missing evidence in a spike issue (or a comment on the existing issue) | Gather the missing evidence, then apply the ladder, escalating a call it still cannot settle | Same |
+| A choice `decide`'s last row would escalate, with no sensitivity flag, no stakeholder category and no persisted-data or published-contract consequence | Escalate | Escalate | Decide it, marked provisional |
+| A review thread the arbiter rules `escalate` with the class `escalated` and no recorded human decision behind it | Park it | Same | Reply with a provisional `rejected`, `wont-fix` or `deferred`, never a fix; resolve it; list it in the morning report |
+| Re-arm after `HITL_PARKED` with items unanswered | Never | Never | Once every unanswered item is of the class `escalated`, handed on to be decided provisionally |
+
+No level decides a class the registry reserves. A person reverses a
+provisional decision by commenting on its thread (or on the pull request
+with a line `answer <key>: …`) as an owner, member or collaborator; the drive
+then parks it under `human-thread`. An unresolve alone reverses nothing.
+
+**`wide` and `off_hours` are not yet validated.** They ship opt-in as a
+recorded exception to Jig's rule against shipping unvalidated dials, to be
+revisited once a working repository has run them for a month with at least ten counted
+provisional decisions and fewer than one in ten of them reversed before the merge (`loop-metrics.ts`
+reports the share per pull request). Until then, opt in only to take part in
+that measurement.
+
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `autonomy.level` | `attended`, `unattended` or `wide` | `attended`, today's behaviour | drive-pr, resolve-review-comments, file-issue, decide | `attended`: a skill confirms an issue before filing it, and `decide` rules an underdetermined call `underdetermined`, naming the missing evidence in a spike issue (or a comment on the existing issue). `unattended`: `file-issue` files without the confirmation, its body saying which skill filed it, from which pull request and why; `decide` gathers the evidence an underdetermined call lacks within the round's budget, then applies its ladder, escalating a call it still cannot settle. Under both, a deferral no tracker adapter can file goes into the pull request's `## Deferred` section. `wide` is accepted and acts as `unattended`: its column (provisional decisions and off-hours windows) is not built yet |
+| `autonomy.level` | `attended`, `unattended` or `wide` | `attended`, today's behaviour | drive-pr, resolve-review-comments, file-issue, decide | The level a drive's pass decides at outside the off-hours windows, per the table above. `wide` is not yet validated (above) |
 | `autonomy.max_level` | `attended`, `unattended` or `wide` | The repository's own `level`, else `attended` | drive-pr, resolve-review-comments, file-issue, decide | The highest level any layer may choose. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error |
-| `autonomy.park_classes` | list of distinct class names (lower-case words joined by hyphens) | `ready`, `merge`, `release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`, `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`, `escalated`, `human-decision` | drive-pr | The decision classes a drive may park on: the rows of the repository's [human-in-the-loop registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md), by default the template's. Set, it replaces the default list; `escalated` and `human-decision`, which the review arbiter emits, are kept whatever it lists. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error |
+| `autonomy.off_hours.level` | `attended`, `unattended` or `wide` | Off-hours is off | drive-pr, resolve-review-comments, file-issue, decide | The level a drive's pass decides at inside a window of `off_hours.schedule`, capped by `max_level`. Any layer may set it; the repository's ceiling still bounds it. Not yet validated (above) |
+| `autonomy.off_hours.schedule` | nonempty list of windows | `Mon-Fri 20:00-07:00`, `Sat-Sun` and `Mon 00:00-07:00`, once `off_hours.level` is set | drive-pr, resolve-review-comments, file-issue, decide | When off-hours applies, in the machine's local time zone. A window is `<days> [HH:MM-HH:MM]`: a day (`Mon`), a range (`Mon-Fri`; `Fri-Mon` wraps across the end of the week) or a comma list of those, then optionally times; without times it is those days whole; times alone (`22:00-06:00`) mean every day. An end at or before the start closes the next day, so a window crosses midnight; the days name the day it opens, which is why the default names Sunday night's end, `Mon 00:00-07:00`, on its own. A schedule without a level is an error |
+| `autonomy.park_classes` | list of distinct class names (lower-case words joined by hyphens) | `ready`, `merge`, `release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`, `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`, `escalated`, `human-decision` | drive-pr | The decision classes a drive may park on: the rows of the repository's [human-in-the-loop registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md), by default the template's. Set, it replaces the default list; `escalated` and `human-decision`, which the review arbiter emits, and `human-thread`, which a reversed provisional decision is parked under, are kept whatever it lists. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error |
 
 ## `ci`
 
@@ -1100,6 +1144,9 @@ drive:
 autonomy:
   level: attended                        # attended | unattended | wide
   max_level: unattended                  # the ceiling a person's layer may choose up to
+  off_hours:
+    level: unattended                    # inside a window; capped by max_level
+    schedule: ["Mon-Fri 20:00-07:00", "Sat-Sun", "Mon 00:00-07:00"]   # machine local time
   park_classes: [ready, merge, release, scope, human-thread, reviewer-posture, next-item, reopen-or-waive, dark-dial, rules, destructive, legal, copy]
 ci:
   required_checks: [build, test]

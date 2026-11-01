@@ -105,8 +105,29 @@ areas:
           The plugin runs from a copy without node_modules, so the plugin ships
           js-yaml's own build, byte for byte (no generated header: the file
           must stay what its generator writes). After updating js-yaml, copy
-          it again. tools/plugin/plugin.test.ts compares both files with the
+          it again. tools/plugin/vendored.test.ts compares both files with the
           installed js-yaml as well.
+      - outputs:
+          - "plugin/shared/vendor/optique.mjs"
+          - "plugin/shared/vendor/optique.d.mts"
+          - "plugin/shared/vendor/optique.LICENSE"
+        source:
+          - "package.json"
+          - "bun.lock"
+          - "mise.toml"
+          - "tools/plugin/optique-entry.ts"
+          - "tools/plugin/vendor-optique.ts"
+        command: "bun tools/plugin/vendor-optique.ts"
+        check: "bun tools/plugin/vendor-optique.ts --check"
+        notes: >-
+          Optique, the parser the jig command line is written with, ships no
+          single-file build, so the plugin carries Bun's unminified bundle of
+          the parts the command imports (tools/plugin/optique-entry.ts), the
+          declarations that name the package's own types, and its licence.
+          The bundle is what the pinned Bun writes for the pinned package, so
+          an update of either (mise.toml, package.json) is followed by a run
+          of the command. tools/plugin/vendored.test.ts rebuilds and compares
+          the three files as well.
 
   plugin-manifests:
     title: "The plugin manifests: name, version and description"

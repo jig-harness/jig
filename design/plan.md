@@ -33,36 +33,21 @@ design still holds:
   `autonomy.park_classes` read from the pull request's base branch, failing
   closed when it cannot be read. Today they come from the working tree, so a
   pull request that edits them changes what its own drive may decide.
-- **`wide` and off-hours windows**: `autonomy.off_hours` raising the level on
-  a schedule, unless the environment chose a level for the run, and `wide`'s
-  own column, where a decision outside the registry's classes is taken
-  provisionally and recorded as such, and a parked drive re-arms once every
-  unanswered item is provisionally decided where its class allows it.
-  `wide` is accepted today and acts as `unattended`.
-- **The morning report**: `drives.ts --report`, run by a person or a
-  scheduler the repository sets up. It covers every pull request this clone
-  knows, plus every open pull request the account authored or drove, and
-  lists for each its terminal state, the provisional decisions first, the
-  takeovers and re-arms, the parked decisions in their framed form and the
-  deferred findings not yet filed; with the loop-metrics counters.
 
-The policy from the base branch ships first and on its own. `wide` and
-`off_hours` are dark-by-default dials: they come into Jig once a working
-repository has run them and the design's validation measure holds.
+The policy from the base branch ships on its own. `wide` and `off_hours`
+ship opt-in and documented as not yet validated, a maintainer's recorded
+exception to the dark-by-default rule, revisited once a working repository
+has run them for a month against the design's validation measure.
 
-Done when a drive reads its ceiling and park classes from the base branch;
-a `wide` run records a provisional decision where a person can reverse it
-and re-arms a parked drive once every unanswered item is provisionally
-decided; and a repository with `off_hours` on wakes to a morning report, run
-on request, whose provisional decisions a person can reverse from the pull
-request.
+Done when a drive reads its ceiling and park classes from the base branch.
 
 ### 33. The dispatcher: a tick that starts the execution line's stages
 
 Every stage of the execution line starts only when a person types it: an
 assigned item waits for someone to open a `do-item` session, a drive
 stopped by a usage limit or an answered park waits for someone to re-arm
-it, a merge waits for someone to run its follow-up. Nothing watches the
+it, a converged pull request that its base later conflicts waits for
+someone to notice, a merge waits for someone to run its follow-up. Nothing watches the
 tracker or the pull requests for the next thing to start, so with nobody at
 the keyboard the line stops at the first stage boundary.
 [design/dark-factory-dispatch.md](dark-factory-dispatch.md) has how it
@@ -92,7 +77,10 @@ closed list, a dashboard that filters it (`jig dispatch dashboard`, no
 report files), drift from each stage's expectation reported and notified
 but never acted on, recurring classes routed to `reflect`, and one
 mechanical nudge (`steer`, "continue" after a usage limit resets) with no
-open-ended prompt; the re-arm step waits on the drive
+open-ended prompt, then the re-drive of a converged pull request the
+forge reports conflicting or whose head moved after the drive verified
+it, then Codex accounts admitted beside Claude Code's, the account's
+vendor choosing the agent a session runs in; the re-arm step waits on the drive
 running in a session of its own, and the pickups' launches on an Orca
 session that can be bound to a chosen account (until then the pickups are
 reported, not started). A park's notification carries the park's framed
@@ -107,8 +95,72 @@ drive, every launch, refusal and notification is in the tick's
 receipts, every ended launch has a row with its outcome class in the
 outcome log, `jig dispatch dashboard` filtered to yesterday shows only
 yesterday's rows, a drive whose open threads rise across rounds is
-reported as drifting and notified once, and a session waiting after its
-account's wall reopened gets exactly one "continue" nudge.
+reported as drifting and notified once, a session waiting after its
+account's wall reopened gets exactly one "continue" nudge, a converged pull
+request that now conflicts with its base or whose head moved past the one
+the drive verified is re-armed once, one still at the verified head and
+mergeable is left alone, and one whose mergeability the forge is still
+computing is reported unplaced with no launch, a drive stopped on a Claude
+account's wall is re-armed on a Codex account with `CODEX_HOME` bound and
+the Claude variables absent, and an account of a vendor with no documented
+pass command is reported and never launched, a Codex pass that outruns a
+positive `DRIVE_PR_PASS_TIMEOUT` is terminated, and a Codex account is
+reported and never launched while that deadline is `0`.
+
+### 35. One jig command line
+
+The plugin's machine-level tools are separate commands with no shared
+shape: `jig gc` and `jig dispatch` each install, remove and report on their
+own job in their own words, and installing, updating and checking the
+plugin itself is a script in this repository (`tools/plugin/setup.ts`), not
+a command the plugin ships. This item makes `jig` one command line, parsed
+with [Optique](https://optique.dev) (vendored as a bundle Jig builds,
+[ADR-0001](../docs/adr/ADR-0001-bun-typescript-toolchain.md)), with
+resource collection and the dispatcher as its components: each component
+defines its command beside its code (`plugin/gc/cli.ts`,
+`plugin/dispatch/cli.ts`) and `plugin/jig.ts` combines them, so `--help`,
+`jig help <command>` and `jig completion <shell>` come from the
+definitions that parse. Across the components come the lifecycle verbs
+`install`, `uninstall`, `upgrade`, `doctor`, `status`, `receipts` and `run`
+(`jig install dispatch`, `jig status`), through one component interface a
+third component joins without touching the verbs, while each component's
+own work stays under its name (`jig gc --collect`, `jig dispatch --apply`).
+`jig` reaches `PATH` through the launcher the installed jobs already run,
+which finds the installed plugin copy at each run, so a plugin update
+reaches it without a new install. The audit stays a skill; `jig doctor`
+runs its configuration-fit check beside its own.
+
+What must keep working through every step, because jobs already installed
+on machines run it: each timer's launcher, copied under the gc state
+directory, calls `<plugin copy>/jig.ts` with
+`--config=<plugin copy>/gc/bunfig.toml` and `gc --scheduled` or
+`dispatch --apply`. So `plugin/jig.ts` stays where it is,
+`plugin/gc/bunfig.toml` and `plugin/dispatch/bunfig.toml` stay (the
+dispatcher's pass wrapper and launches use the second), those two command
+lines keep their meaning, the heavy-run lock's re-run of
+`jig.ts gc … --collect` keeps working, and `jig dispatch run` stays the
+pass wrapper's passthrough.
+
+Built in this order:
+
+1. **Optique, behaviour unchanged**: one parser with a `gc` and a
+   `dispatch` command replaces the hand-written ones, every current form
+   keeping its meaning and exit code, with generated help and completion.
+2. **Lifecycle verbs over one component interface, `jig` on `PATH`**: the
+   verbs above for both components, each component's `install` and
+   `receipts` reached through them with the old forms still working, and
+   the launcher installing a `jig` command that runs the installed copy.
+3. **`doctor` and `upgrade`**: `tools/plugin/setup.ts`'s install, update
+   and check move into the plugin as `jig upgrade` and `jig doctor`, moved
+   and not copied: `tools/plugin/setup.ts` keeps only a call into the
+   plugin's code, so a first install from a checkout still works. `doctor`
+   also runs the audit's configuration-fit check.
+
+Done when `jig` on `PATH` installs, upgrades, checks and removes both
+components through the same verbs, `jig doctor` reports the plugin's
+installation and the repository's configuration fit, `tools/plugin/setup.ts`
+holds no logic of its own, and a job installed before the first step still
+runs on a machine that took every release since.
 
 ### 3. The kickoff family
 

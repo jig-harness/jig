@@ -31,6 +31,7 @@ import {
   type HeldItem,
   type ParkedItem,
   type QuotaParkRecord,
+  isParkedItem,
   isUsableState,
 } from "./schema.ts";
 import { type TakeoverRecord, isTakeoverRecord } from "./takeover.ts";
@@ -39,6 +40,7 @@ import {
   decisionsSection,
   isUnattendedDecision,
 } from "./decisions.ts";
+import { type DriveEvent, isOptionalEvents } from "./events.ts";
 import { type ArbiterRuling, isOptionalRulings } from "./rulings.ts";
 
 export const LEDGER_MARKER = "<!-- drive-pr-ledger -->";
@@ -114,6 +116,8 @@ export interface Ledger {
   claims: LedgerClaimRef[];
   /** The decisions the agent took and recorded (`decisions.ts`). */
   decisions: UnattendedDecision[];
+  /** Self-restarts and re-arms (`events.ts`); absent in a ledger written before them. */
+  events?: DriveEvent[];
   /**
    * The review arbiter's rulings (`rulings.ts`), so a drive recovered in
    * another clone parks under the same boundary. Absent in a ledger written
@@ -182,6 +186,7 @@ export function ledgerFromState(
       record: redact(d.record),
       reverse: redact(d.reverse),
     })),
+    events: s.events ?? [],
     rulings: s.rulings ?? [],
     driver: opts.driver,
     narrative: opts.narrative.slice(-NARRATIVE_LINES).map(redact),
@@ -361,7 +366,8 @@ function isLedgerDriver(v: unknown): v is LedgerDriver {
     Number.isFinite(Date.parse(v.heartbeat)) &&
     (v.state === "running" || v.state === "stopped") &&
     (v.exit === undefined || isCount(v.exit)) &&
-    (v.started === undefined || isText(v.started)) &&
+    (v.started === undefined ||
+      (isText(v.started) && Number.isFinite(Date.parse(v.started)))) &&
     (v.position === undefined || isCount(v.position))
   );
 }
@@ -373,6 +379,10 @@ function isClaimRef(v: unknown): v is LedgerClaimRef {
 }
 
 /** The fields of a version-1 ledger, each checked; `''` when all hold. */
+function isParkedList(v: unknown): boolean {
+  return Array.isArray(v) && v.every(isParkedItem);
+}
+
 function ledgerFault(v: Record<string, unknown>): string {
   const checks: Array<[string, boolean]> = [
     ["generation", isCount(v.generation) && v.generation > 0],
@@ -385,7 +395,7 @@ function ledgerFault(v: Record<string, unknown>): string {
     ["lastCountedHead", isText(v.lastCountedHead)],
     ["verifiedSha", isText(v.verifiedSha)],
     ["readyMarkedRound", isCount(v.readyMarkedRound)],
-    ["parked", Array.isArray(v.parked)],
+    ["parked", isParkedList(v.parked)],
     ["held", Array.isArray(v.held) && v.held.every(isLedgerHeld)],
     ["quotaPark", v.quotaPark === null || isRecord(v.quotaPark)],
     [
@@ -402,6 +412,7 @@ function ledgerFault(v: Record<string, unknown>): string {
       "decisions",
       Array.isArray(v.decisions) && v.decisions.every(isUnattendedDecision),
     ],
+    ["events", isOptionalEvents(v.events)],
     ["rulings", isOptionalRulings(v.rulings)],
     ["driver", isLedgerDriver(v.driver)],
     ["narrative", Array.isArray(v.narrative) && v.narrative.every(isText)],
@@ -779,6 +790,7 @@ export function seedFromLedger(
       toAccount: null,
     })),
     decisions: l.decisions,
+    events: l.events ?? local.events ?? [],
     ...(l.rulings === undefined ? {} : { rulings: l.rulings }),
     ledgerGeneration: l.generation,
   };

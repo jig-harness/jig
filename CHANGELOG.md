@@ -349,6 +349,30 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.113.0] - 2026-11-01
+
+A repository can let a drive decide more during the hours nobody is there to ask, and a person reads one report in the morning. Both are built behind the opt-in and documented as not yet validated.
+
+### Added
+
+- `autonomy.off_hours`: `level`, the level a drive's pass decides at inside one of the windows of `schedule` (in the machine's local time zone, such as `Mon-Fri 20:00-07:00` and `Sat-Sun`; a window may cross midnight. Once the level is set the default schedule is `Mon-Fri 20:00-07:00`, `Sat-Sun` and `Mon 00:00-07:00`, so Sunday night is covered), capped by `max_level`. Unset, off-hours is off. The round header and `bun <plugin>/shared/autonomy.ts [--at <instant>]` print `wide (off_hours)` inside a window and the base level outside. See [`autonomy`](plugin/CONFIGURATION.md#autonomy).
+- The `wide` level, which until now acted as `unattended`: a review thread the arbiter rules `escalate` with the class `escalated` and no recorded human decision behind it gets a **provisional** reply outcome (`rejected`, `wont-fix` or `deferred`, never a fix) through drive-pr's `provisional-reply.ts`, which checks the level and the recorded ruling, posts, resolves and records it in one call; `decide`'s last-row escalation, with no sensitivity flag, stakeholder category, persisted-data or published-contract consequence, is decided and recorded as `decide-provisional`. A re-arm after `HITL_PARKED` with items unanswered hands the `escalated` ones to the first round to decide provisionally, and refuses when one is any other class. `wide` and `off_hours` are documented as available only once a working repository has run them for a month with fewer than one in ten provisional decisions reversed before the merge.
+- A provisional reply carries `**provisional**` after its outcome token and a hidden marker only `provisional-reply.ts` may post. `reconcile-replied-threads.ts` and `triage-thread.ts` skip a thread that stands on one, and the round gate does not count it as work even when a person unresolved it. A comment from an owner, member or collaborator on the thread (or `answer <key>: …` on the pull request for a `decide` ruling) reverses it: at the next round boundary the drive records the reversal and parks the item under `human-thread`. An unresolve alone reverses nothing. `human-thread` is kept among the park classes whatever `autonomy.park_classes` lists, beside `escalated` and `human-decision`.
+- `drives.ts --report [--since <time>] [--json]`, the morning report: for every pull request this clone's state has news of and every open one the signed-in account authored or drove (through the drive ledger, which falls back for `loop-metrics.ts` too when this clone holds no state), since the last report (remembered in the state directory) or `--since`: the terminal state and what it means, provisional decisions first and whether a person reversed them, takeovers and re-arms, parked decisions framed in full, issues filed and deferred entries not yet filed.
+- The drive state records the driver's exit, and the self-restarts and re-arms, as events the ledger carries, so the morning report reads how a drive ended from this clone's state or from the ledger.
+- `loop-metrics.ts` counts, per pull request, the self-restarts by cause, the re-arms by cause and the takeovers (from this clone's drive state, which now records them), the provisional decisions and how many a person reversed before the merge, with that share, and the review bots' transparent chat acknowledgements.
+- The drive ledger's `## Decisions taken unattended` lists provisional decisions first, with their key, outcome and reversal, and the ledger carries the drive's self-restarts and re-arms.
+
+## [0.112.0] - 2026-11-01
+
+### Added
+
+- `jig --help`, `jig help <command>` and `--help` after any command (`jig gc --help`, `jig dispatch install --help`) print help generated from the command line's own definitions, with a plain description of every option; `jig completion bash`, `zsh`, `fish`, `pwsh` or `nu` prints a shell completion script for the `jig` command. The command line is parsed with [Optique](https://optique.dev), vendored in the plugin (`shared/vendor/optique.mjs`, MIT License). Every existing form of `jig gc` and `jig dispatch`, and the jobs `install` wrote, keeps its meaning and exit code: there is nothing a consumer must change.
+
+### Changed
+
+- A refused `jig gc` or `jig dispatch` command line prints Optique's error with the command's usage on standard error, still with exit 2. A repeated value option (`--interval`, `--followup-since`) still takes the last one given. A switch given twice (`jig dispatch --json --json`) is now refused there as it already was for `jig gc`, and `jig --help` exits 0 with the help instead of 2.
+
 ## [0.111.0] - 2026-11-01
 
 The skills can work on a Jira Cloud project as their issue tracker, beside
@@ -4340,7 +4364,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.111.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.113.0...HEAD
+[0.113.0]: https://github.com/jig-harness/jig/compare/v0.112.0...v0.113.0
+[0.112.0]: https://github.com/jig-harness/jig/compare/v0.111.0...v0.112.0
 [0.111.0]: https://github.com/jig-harness/jig/compare/v0.110.0...v0.111.0
 [0.110.0]: https://github.com/jig-harness/jig/compare/v0.109.0...v0.110.0
 [0.109.0]: https://github.com/jig-harness/jig/compare/v0.108.0...v0.109.0

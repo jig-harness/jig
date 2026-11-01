@@ -210,6 +210,15 @@ which the driver writes into its ledger as it stops, not the status
 reporter's: `drive.ts` maps convergence to `0`, where `drive-status.ts`
 reports `3`
 ([terminal states](../plugin/skills/drive-pr/references/terminal-states.md)).
+A converged drive is read beside what its stop does not fix: the
+pull request's mergeability as the forge reports it, read with the pull
+request, and its head against the head the ledger says the drive
+verified. Main moving under a converged pull request can make it
+conflict, and a person's push after the drive stopped leaves the new
+head unreviewed; either makes the drive stale, and the drive itself
+already knows what to do on a re-arm (a conflict-resolve round for the
+first, its ordinary rounds for the second). A mergeability the forge is
+still computing leaves the pull request unplaced for that tick.
 A stopped ledger with no exit has no known origin: `drives.ts --stop`
 records one, and so does the driver's own recovery after a crash, a thrown
 refusal or a signal, so the tick cannot read a person's decision into it.
@@ -218,7 +227,8 @@ refusal or a signal, so the tick cannot read a person's decision into it.
 | --- | --- | --- |
 | running, heartbeat inside the lease window | driven | nothing |
 | running, heartbeat past the lease window | silent | takes it over only when this machine's launch record started that driver; otherwise reports it |
-| stopped `0` (converged), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
+| stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified | stale | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head |
+| stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
 | stopped `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
 | stopped with no exit | stopped, origin unknown | never re-armed, since it may be a person's stop; notifies once per stop, with the drive's handoff |
 | stopped `16` (quota-parked) | re-armable | re-arms on an admitted account other than the one its launch record names, when one does, or after the wall's reset |
@@ -505,6 +515,38 @@ does without a person. An agent the runtime reports waiting for longer than
 until it ends or a person ends it, so a cap full of waiting sessions is
 visible in every report rather than silent.
 
+### The agent behind a session
+
+The agent a launched session runs in (Claude Code or Codex today) is the
+admitted account's vendor, and nothing else chooses it: admission picks the
+account, the account's `vendor` names the agent, and the launch is bound
+to that account through its configuration directory (`CLAUDE_CONFIG_DIR`,
+`CODEX_HOME`). A repository never names an agent; it names a model per
+runtime in `routing.models`, which the launch reads for the vendor it got,
+so one repository is picked up by whichever account has a free slot. The
+skills are the same text in both agents, and the prompts the tick composes
+and the `jig dispatch result` instruction name no agent. A headless pass
+runs the drive's documented pass command for the vendor; the dispatcher
+admits an account only for a vendor whose pass command the drive
+documents, and reports an account of any other vendor as accepted and not
+admitted. An interactive session is launched as that vendor's Orca agent.
+These differences travel with the session, not the dispatcher: the
+review-arbiter agent exists only in Claude Code, and a Codex session uses
+the substitute the plugin documents; the turn-budget hook counts nothing
+under Codex, so a Codex pass has no turn cap of its own; a pass that
+runs on without finishing is bounded by the drive's pass deadline
+(`DRIVE_PR_PASS_TIMEOUT`), which kills it whatever its vendor, and
+Control's drive expectation, which compares rounds, sees the passes that
+do finish. The deadline can be switched off (`0`), and a Codex pass then
+has no bound at all, so the dispatcher admits a Codex account for an
+unattended pass only when the deadline in force for that launch is
+positive, and reports the account as accepted and not admitted
+otherwise. A Codex wall is recorded as a
+Claude one is, by the drive's quota adapter for the vendor, keyed by the
+account; binding the pass through the account's own configuration
+directory is what lets the adapter attribute the wall to that account,
+which a directory shared between accounts could not.
+
 ### What it never does
 
 - **Merge**, or arm a merge: a person merges
@@ -518,6 +560,12 @@ visible in every report rather than silent.
   reported, never taken over.
 - **Re-arm a drive a person may have stopped** (a mailbox stop or pause,
   or a stop with no exit), or relaunch a stalled pickup.
+- **Keep a converged pull request current with its base.** It re-drives a
+  converged pull request on mechanical facts only: the forge reports
+  it conflicting with its base, or its head moved past the head the drive
+  verified. A pull request its base merely moved past, still mergeable,
+  is left as it is: merging the base in on every move is a round and a
+  CI run for a pull request the merge would take cleanly.
 - **Pass the flags the skills reserve for a person**: `--window-reopened`
   and `clear-lease`.
 - **Write to the tracker.** The item's own state is the claim, and `do-item`
@@ -854,6 +902,32 @@ One pull request each, in this order; each is usable on its own.
    pickup and follow-up expectations on steps 4 and 5; the nudge on
    interactive launches (step 4, itself waiting on an agent launch that
    binds its account) and on a launch that carries the vendor session id.
+7. **Re-drive a stale converged pull request.** The forge read gains each
+   open pull request's mergeability and current head commit (the listing
+   carries neither today), compared with the ledger's `verifiedSha`; the
+   ledger classification the
+   `stale` class (converged, and conflicting or past the verified head),
+   and the plan re-arms it through step 3's launch, on any admitted
+   account. Tests: a converged ledger on a conflicting pull request is
+   re-armed once; one whose head moved is re-armed once; one still at the
+   verified head and mergeable is left alone; a mergeability still being
+   computed leaves it unplaced. Waits on step 3 only. Usable alone: a
+   pull request that converged and then conflicted no longer waits for a
+   person to notice.
+8. **Admit Codex accounts.** The drive skill documents the Codex pass
+   command beside Claude Code's, with the pass model read per vendor from
+   `routing.models`; the dispatcher admits `vendor: codex` accounts for
+   headless passes bound through `CODEX_HOME`, launches interactive
+   sessions with Orca's Codex agent, and the live checks made for Claude
+   (the launch binds the agent to the account; the runtime reports the
+   agent's state) are made for Codex on the host. Tests: a re-arm admitted
+   on a Codex account runs the Codex pass command with `CODEX_HOME` set and
+   the Claude variables absent; an account of a vendor with no documented
+   pass command is reported, never launched; a Codex account is reported,
+   never launched, while the inherited pass deadline is `0`; a Codex pass
+   that outruns a positive deadline is terminated. Waits on step 3 and on
+   step 4 for the interactive launch. Usable alone: a drive stopped on a Claude
+   wall restarts on a Codex account.
 
 ## Left out
 
