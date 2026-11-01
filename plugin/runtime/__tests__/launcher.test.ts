@@ -202,6 +202,14 @@ test("a deadline too large to be finite falls back to the default", () => {
   expect(collectionDeadlineMs({ LOCK_TIMEOUT: huge })).toBe(
     (3600 + 7200) * 1000,
   );
+  // Finite seconds whose millisecond conversion overflows.
+  const overflowing = `1${"0".repeat(306)}`;
+  expect(collectionDeadlineMs({ LOCK_TIMEOUT: overflowing })).toBe(
+    (3600 + 7200) * 1000,
+  );
+  expect(collectionDeadlineMs({ JIG_LAUNCHER_DEADLINE_SEC: overflowing })).toBe(
+    (3600 + 7200) * 1000,
+  );
 });
 
 test.skipIf(

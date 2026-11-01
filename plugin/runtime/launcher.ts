@@ -353,10 +353,10 @@ export function collectionDeadlineMs(
   const named = Number(own) * 1000;
   if (/^[1-9][0-9]*$/.test(own) && Number.isFinite(named)) return named;
   const timeout = env.LOCK_TIMEOUT ?? "";
-  const given = Number(timeout);
-  const wait =
-    /^[0-9]+$/.test(timeout) && Number.isFinite(given) ? given : 3600;
-  return (wait + 7200) * 1000;
+  const given = /^[0-9]+$/.test(timeout)
+    ? (Number(timeout) + 7200) * 1000
+    : NaN;
+  return Number.isFinite(given) ? given : (3600 + 7200) * 1000;
 }
 
 /**
