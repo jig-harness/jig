@@ -210,6 +210,12 @@ function isReviewedRelativePath(root: string, path: string): boolean {
 function validatePath(root: string, path: string): void {
   if (/[\r\n\0]/.test(path))
     throw new ReviewError("a review path contains a newline or NUL");
+  // `join` and `resolve` collapse `..` before a link in front of it is
+  // followed, while git follows the link first.
+  if (path.split(/[\\/]/).includes(".."))
+    throw new ReviewError(
+      `review path must not contain ".." segments: ${path}`,
+    );
   if (!isReviewedRelativePath(root, path))
     throw new ReviewError(
       `review path must stay relative to the repository: ${path}`,

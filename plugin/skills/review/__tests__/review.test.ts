@@ -419,3 +419,22 @@ test("setup refuses a file reached through a link that leaves the repository", (
   expect(result.stderr).toContain("leaves the reviewed tree through a link");
   expect(result.stdout).not.toContain("private");
 });
+
+test("setup refuses a path with a parent segment behind a link", () => {
+  const root = fixture();
+  const outside = mkdtempSync(join(tmpdir(), "review outside "));
+  roots.push(outside);
+  mkdirSync(join(outside, "child"));
+  writeFileSync(join(outside, "secret.txt"), "private\n");
+  writeFileSync(join(root, "secret.txt"), "inside\n");
+  symlinkSync(join(outside, "child"), join(root, "linkdir"), "junction");
+  const result = run(root, process.execPath, [
+    ...launch,
+    "setup",
+    "--files",
+    "linkdir/../secret.txt",
+  ]);
+  expectSpawnExit(result, 1);
+  expect(result.stderr).toContain('must not contain ".." segments');
+  expect(result.stdout).not.toContain("private");
+});

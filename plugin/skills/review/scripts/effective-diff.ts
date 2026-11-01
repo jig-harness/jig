@@ -38,8 +38,19 @@ export function gitVersionProblem(output: string): string | null {
     : `review needs git 2.41 or later (for --attr-source); this git is ${major}.${minor}`;
 }
 
-/** Options every patch takes: no colour, no external diff or textconv, every file as text. */
-const PATCH = ["--no-color", "--no-ext-diff", "--no-textconv", "--text"];
+/**
+ * Options every patch takes: no colour, no external diff or textconv, every
+ * file as text, and the default algorithm and indent heuristic, so
+ * `diff.algorithm` and `diff.indentHeuristic` cannot change the hunks.
+ */
+const PATCH = [
+  "--no-color",
+  "--no-ext-diff",
+  "--no-textconv",
+  "--text",
+  "--diff-algorithm=myers",
+  "--indent-heuristic",
+];
 /** Paths from the tree's root, with the standard prefixes, and no context lines. */
 const LAYOUT = [
   "--no-relative",
