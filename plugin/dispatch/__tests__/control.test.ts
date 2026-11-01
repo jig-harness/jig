@@ -300,7 +300,7 @@ describe("the screen check before a nudge", () => {
         "╰────╯",
       ]),
     ).toBe("the input box holds text below its first line");
-    // A draft line shaped like a rule moves the box off the marker; nothing is sent.
+    // A draft line shaped like a rule makes the boundaries ambiguous; nothing is sent.
     expect(
       screenNotReady([
         "────────",
@@ -309,6 +309,24 @@ describe("the screen check before a nudge", () => {
         "  delete the old records",
         "────────",
       ]),
-    ).toBe("the screen shows no input prompt");
+    ).toBe("the screen shows more than one input box boundary pair");
+    // A draft that holds a rule and a prompt-shaped line cannot redefine where the box begins.
+    expect(
+      screenNotReady([
+        "────────",
+        "> delete the old records",
+        "────────",
+        ">",
+        "────────",
+      ]),
+    ).toBe("the screen shows more than one input box boundary pair");
+    // A lone vertical bar is draft text unless the line is framed at both ends.
+    expect(screenNotReady([rule, "> |", rule])).toBe(
+      "the input line holds text",
+    );
+    expect(screenNotReady([rule, "> │", rule])).toBe(
+      "the input line holds text",
+    );
+    expect(screenNotReady(["╭────╮", "│ > │", "╰────╯"])).toBeNull();
   });
 });

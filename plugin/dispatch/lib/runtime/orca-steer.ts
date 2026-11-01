@@ -67,16 +67,23 @@ const MENU =
 /** How many of the screen's last lines the input box must be among. */
 const PROMPT_ZONE = 10;
 
+/** One input line without its box border: a border is a `│` at both ends, and a lone `│` or `|` is the person's text. */
+function unframed(line: string): string {
+  const t = line.trim();
+  return t.length >= 2 && t.startsWith("│") && t.endsWith("│")
+    ? t.slice(1, -1).trim()
+    : t;
+}
+
 /**
  * Why a rendered screen is not an agent waiting at an empty input line;
  * `null` when it is.
  *
- * The input box is what lies between the last two boundary lines on the
- * screen. It is ready only when its one non-empty line is the bare input
- * marker. Whatever else the box holds is draft text, and a draft line that
- * looks like a boundary moves the last two boundaries off the marker, so
- * the box then shows no marker and nothing is sent: the check refuses
- * every layout it cannot read as exactly an empty box.
+ * The input box is what lies between the screen's two boundary lines, and
+ * the check needs exactly two among the last lines: draft text can look like
+ * a boundary, so a screen with more cannot say where the box begins and is
+ * refused, not guessed at. The box is ready only when its one non-empty line
+ * is the bare input marker; whatever else it holds is draft text.
  */
 export function screenNotReady(lines: readonly string[]): string | null {
   const shown = lines.map((l) => l.replace(/\s+$/, ""));
@@ -86,14 +93,11 @@ export function screenNotReady(lines: readonly string[]): string | null {
   const zone = shown.slice(-PROMPT_ZONE);
   const edges = zone.flatMap((l, i) => (BOUNDARY.test(l) ? [i] : []));
   if (edges.length < 2) return "the screen shows no input prompt";
+  if (edges.length > 2)
+    return "the screen shows more than one input box boundary pair";
   const box = zone
-    .slice((edges.at(-2) as number) + 1, edges.at(-1))
-    .map((l) =>
-      l
-        .replace(/^\s*[│|]/, "")
-        .replace(/[│|]\s*$/, "")
-        .trim(),
-    )
+    .slice((edges[0] as number) + 1, edges[1])
+    .map(unframed)
     .filter((l) => l !== "");
   if (box.length === 0) return "the screen shows no input prompt";
   if (box.length > 1) return "the input box holds text below its first line";
