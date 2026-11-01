@@ -24,6 +24,7 @@ import {
   duration,
   type MachineConfig,
   machineConfigPath,
+  MIN_TICK_DEADLINE_MS,
   tickBudgetMs,
 } from "./lib/machine-config.ts";
 import { stateRoot } from "./receipts.ts";
@@ -57,9 +58,6 @@ function parse(argv: string[]): InstallOptions {
   return options;
 }
 
-/** The least a tick may run before the launcher stops it: several repositories' workspace opens and launches. */
-const MIN_TICK_BUDGET_SEC = 6 * 3600;
-
 /**
  * The Orca command configuration the tick resolves at run time, kept in the
  * installed job: a timer's environment holds none of a login shell's.
@@ -76,7 +74,7 @@ function orcaEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
 /**
  * The tick's job, every `minutes`. Its overall budget covers the workspace
  * opens one tick makes (`OPENS_PER_TICK`) and the runtime calls around them
- * at the machine file's limits, and never less than `MIN_TICK_BUDGET_SEC`.
+ * at the machine file's limits, and never less than `MIN_TICK_DEADLINE_MS`.
  */
 export function dispatchJobSpec(
   minutes: number,
@@ -84,6 +82,7 @@ export function dispatchJobSpec(
   env: NodeJS.ProcessEnv = process.env,
 ): JobSpec {
   const needed = machine === null ? 0 : Math.ceil(tickBudgetMs(machine) / 1000);
+  const minimum = MIN_TICK_DEADLINE_MS / 1000;
   return {
     name: "jig-dispatch",
     label: "dev.jig.dispatch",
@@ -92,7 +91,7 @@ export function dispatchJobSpec(
     stateRoot: stateRoot(),
     args: ["dispatch", "--apply"],
     schedule: { everyMinutes: minutes },
-    deadlineSec: Math.max(MIN_TICK_BUDGET_SEC, needed),
+    deadlineSec: Math.max(minimum, needed),
     env: orcaEnvironment(env),
   };
 }

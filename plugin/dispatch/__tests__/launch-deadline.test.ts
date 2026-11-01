@@ -35,10 +35,15 @@ describe("a tick's targets and deadline", () => {
     expect(rotated(stateOnTick(undefined), ["a", "b"])).toEqual(["a", "b"]);
   });
 
-  it("has no time left once the budget has passed", () => {
+  it("has no time left once the installed deadline has passed", () => {
     expect(outOfTime(stateAt(Date.now()))).toBeNull();
-    expect(outOfTime(stateAt(Date.now() - 3_600_000))).toContain(
+    expect(outOfTime(stateAt(Date.now() - 7 * 3_600_000))).toContain(
       "timer allows",
     );
+  });
+
+  it("counts a slow planning phase against the launcher's deadline, not the launches' budget", () => {
+    // More than the 3s the launches' budget covers here, well within the six hours the launcher allows.
+    expect(outOfTime(stateAt(Date.now() - 600_000))).toBeNull();
   });
 });

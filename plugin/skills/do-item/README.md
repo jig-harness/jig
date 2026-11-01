@@ -112,7 +112,10 @@ decision gets the command only.
 
 Invoke the same skill with the issue key again. It refreshes tracker state,
 checks whether prior findings can be reused and writes this session's intent
-snapshot. An issue with children selects one eligible child at a time; human
+snapshot. If the earlier pickup of an issue was interrupted, the issue is
+already in progress and assigned to you, so the claim refuses it: say in
+your request that you are resuming your own pickup, and the skill goes on
+without the claim. An issue held by another session stays refused. An issue with children selects one eligible child at a time; human
 checkpoints remain in force. Once a pull request exists, the drive owns its
 review rounds. See [the drive's README](../drive-pr/README.md) for inspecting
 or stopping it.

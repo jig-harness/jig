@@ -263,6 +263,20 @@ export function tickBudgetMs(limits: {
   );
 }
 
+/** The least a tick may run before the launcher stops it: several repositories' workspace opens and launches. */
+export const MIN_TICK_DEADLINE_MS = 6 * 3600 * 1000;
+
+/**
+ * How long the installed launcher lets a tick run: its planning and its
+ * launches together, never less than `MIN_TICK_DEADLINE_MS`.
+ */
+export function tickDeadlineMs(limits: {
+  workspaceTimeoutMs: number;
+  runtimeTimeoutMs: number;
+}): number {
+  return Math.max(MIN_TICK_DEADLINE_MS, tickBudgetMs(limits));
+}
+
 /** The machine file's values, with defaults. */
 function parseMachineConfig(values: unknown, where: string): MachineConfig {
   const config = parseValues(values, where);

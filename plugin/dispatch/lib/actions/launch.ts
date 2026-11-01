@@ -25,7 +25,7 @@ import {
 import {
   type MachineConfig,
   OPENS_PER_TICK,
-  tickBudgetMs,
+  tickDeadlineMs,
 } from "../machine-config.ts";
 import type {
   ItemTarget,
@@ -57,14 +57,17 @@ export interface ApplyState {
 
 /**
  * Why the tick has no time left to start another launch: the runtime calls
- * of a tick are not bounded by a count, so the budget its timer was armed
- * with is also checked as a deadline. `null` while time remains.
+ * of a tick are not bounded by a count, so the deadline its launcher was
+ * installed with is also checked, less the time its receipt needs. The
+ * deadline covers the tick's planning as well, so it is the installed one,
+ * not the smaller budget of its launches. `null` while time remains.
  */
 export function outOfTime(state: ApplyState): string | null {
   if (state.startedAt === undefined) return null;
-  const budget = tickBudgetMs(state.machine);
-  return Date.now() - state.startedAt >= budget
-    ? `this tick has used the ${Math.ceil(budget / 1000)}s its timer allows; a later tick starts this one`
+  const allowed =
+    tickDeadlineMs(state.machine) - state.machine.runtimeTimeoutMs;
+  return Date.now() - state.startedAt >= allowed
+    ? `this tick has used the ${Math.ceil(allowed / 1000)}s its timer allows; a later tick starts this one`
     : null;
 }
 

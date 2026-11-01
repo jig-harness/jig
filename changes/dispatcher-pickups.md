@@ -34,6 +34,15 @@ release: minor
 
 ### Changed
 
+- **Breaking:** `dispatch.states` no longer accepts `in_progress`, the state
+  `do-item`'s claim moves an item to, so a claimed item is never a pickup. A
+  repository whose `dispatch` section lists it must remove it first: the
+  section is refused with an error, and the tick plans nothing for that
+  repository, re-arms included.
+- A tick's launches stop at the deadline the installed launcher gives the
+  whole tick (planning included, less the time its receipt needs), not at the
+  smaller budget of its launches.
+
 - A dispatch tick opens at most two workspaces, the opens its timer's
   deadline covers; a launch that needs another waits for the next tick.
   Which repository, stage and target comes first rotates by one each
