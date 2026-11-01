@@ -151,10 +151,14 @@ export async function openWithinBudget(
   if (late !== null) return { waits: late };
   const done = state.opened ?? 0;
   // One open is kept for the notices workspace, so a queue of launches never starves the notifications that reach a person.
-  const cap = "notices" in target ? OPENS_PER_TICK : OPENS_PER_TICK - 1;
+  const keeps = state.machine.repositories.some((r) =>
+    r.stages.includes("notify"),
+  );
+  const cap =
+    "notices" in target || !keeps ? OPENS_PER_TICK : OPENS_PER_TICK - 1;
   if (done >= cap)
     return {
-      waits: `this tick has opened the ${cap} workspaces its budget covers${"notices" in target ? "" : " for launches (one is kept for notifications)"}; a later tick opens this one`,
+      waits: `this tick has opened the ${cap} workspaces its budget covers${"notices" in target || !keeps ? "" : " for launches (one is kept for notifications)"}; a later tick opens this one`,
     };
   state.opened = done + 1;
   let opened: RuntimeReceipt;

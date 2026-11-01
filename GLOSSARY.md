@@ -1814,8 +1814,8 @@ make, use the entry's term instead.
   *dispatcher* posts one before it starts the follow-up's session, and a
   follow-up a person runs by hand posts one too and marks it done when it
   succeeds. Of two, the earlier comment wins, and the later run stands
-  down. Only a marker from the dispatcher's own account or from someone
-  with write access counts.
+  down. Only a marker from the dispatcher's own account or from an owner,
+  member or collaborator of the repository counts.
 - **Notices workspace** — the workspace the *dispatcher* keeps per
   repository, on a branch of the default branch, for the notifications whose
   pull request or item has no workspace that can take one. It never

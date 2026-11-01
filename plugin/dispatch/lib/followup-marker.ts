@@ -72,7 +72,7 @@ function authorOf(
 
 function markerOf(c: unknown, self: string | null): FollowupMarker | null {
   if (!isRecord(c) || typeof c.id !== "number") return null;
-  const body = text(c.body);
+  const body = text(c.body).replace(/\r\n/g, "\n");
   if (!body.startsWith(`${MARKER}\n`) && body !== MARKER) return null;
   return {
     id: c.id,

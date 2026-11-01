@@ -198,6 +198,18 @@ describe("jig dispatch --apply follows up a merge", () => {
     );
   });
 
+  it("reads a marker whose comment was saved with CRLF line endings", async () => {
+    const { w } = fixture();
+    w.setComments(9, [
+      forgeComment(905, manualMarker(false).replace(/\n/g, "\r\n")),
+    ]);
+    const held = await report(w);
+    expect(held.repos[0]?.actions).toEqual([]);
+    expect(quiet(held)).toContainEqual(
+      expect.objectContaining({ target: "PR #9", class: "followup-held" }),
+    );
+  });
+
   it("notifies a failed follow-up when the tick's marker names a record this machine no longer has", async () => {
     const { w } = fixture();
     w.setComments(9, [
