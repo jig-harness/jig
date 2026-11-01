@@ -120,6 +120,13 @@ describe("render and parse", () => {
     expect(parseLedger(`${LEDGER_MARKER}\nno data`)?.kind).toBe("malformed");
   });
 
+  it("reads a ledger with an ill-formed parked entry as damage, never as a ledger", () => {
+    const rendered = renderLedger(ledger());
+    if ("error" in rendered) throw new Error(rendered.error);
+    const bad = rendered.body.replace(/"reason":"[^"]*"/, '"reason":""');
+    expect(parseLedger(bad)?.kind).toBe("malformed");
+  });
+
   it("reads a data block without a version number as damage, never a future ledger", () => {
     for (const data of ["{}", '{"ledgerVersion":"2"}', '{"ledgerVersion":0}'])
       expect(
@@ -127,6 +134,20 @@ describe("render and parse", () => {
           `${LEDGER_MARKER}\n<!-- drive-pr-ledger-data\n${data}\n-->\n`,
         )?.kind,
       ).toBe("malformed");
+  });
+
+  it("reads a driver run start that is not a date as damage, never a ledger", () => {
+    const l = ledger();
+    l.driver = { ...l.driver, started: "2026-10-01T09:00:00.000Z" };
+    const rendered = renderLedger(l);
+    if ("error" in rendered) throw new Error(rendered.error);
+    expect(parseLedger(rendered.body)?.kind).toBe("ledger");
+    const bad = rendered.body.replace(
+      '"started":"2026-10-01T09:00:00.000Z"',
+      '"started":"not-a-date"',
+    );
+    expect(bad).not.toBe(rendered.body);
+    expect(parseLedger(bad)?.kind).toBe("malformed");
   });
 
   it("round-trips an unconfirmed hold's round", () => {

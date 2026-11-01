@@ -33,29 +33,13 @@ design still holds:
   `autonomy.park_classes` read from the pull request's base branch, failing
   closed when it cannot be read. Today they come from the working tree, so a
   pull request that edits them changes what its own drive may decide.
-- **`wide` and off-hours windows**: `autonomy.off_hours` raising the level on
-  a schedule, unless the environment chose a level for the run, and `wide`'s
-  own column, where a decision outside the registry's classes is taken
-  provisionally and recorded as such, and a parked drive re-arms once every
-  unanswered item is provisionally decided where its class allows it.
-  `wide` is accepted today and acts as `unattended`.
-- **The morning report**: `drives.ts --report`, run by a person or a
-  scheduler the repository sets up. It covers every pull request this clone
-  knows, plus every open pull request the account authored or drove, and
-  lists for each its terminal state, the provisional decisions first, the
-  takeovers and re-arms, the parked decisions in their framed form and the
-  deferred findings not yet filed; with the loop-metrics counters.
 
-The policy from the base branch ships first and on its own. `wide` and
-`off_hours` are dark-by-default dials: they come into Jig once a working
-repository has run them and the design's validation measure holds.
+The policy from the base branch ships on its own. `wide` and `off_hours`
+ship opt-in and documented as not yet validated, a maintainer's recorded
+exception to the dark-by-default rule, revisited once a working repository
+has run them for a month against the design's validation measure.
 
-Done when a drive reads its ceiling and park classes from the base branch;
-a `wide` run records a provisional decision where a person can reverse it
-and re-arms a parked drive once every unanswered item is provisionally
-decided; and a repository with `off_hours` on wakes to a morning report, run
-on request, whose provisional decisions a person can reverse from the pull
-request.
+Done when a drive reads its ceiling and park classes from the base branch.
 
 ### 33. The dispatcher: a tick that starts the execution line's stages
 

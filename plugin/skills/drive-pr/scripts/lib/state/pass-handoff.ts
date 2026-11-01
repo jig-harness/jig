@@ -30,12 +30,17 @@ export interface PendingAnswer {
   body: string;
 }
 
-/** A parked item a re-arm unparked, with the answers that admitted it. */
+/**
+ * A parked item a re-arm unparked, with the answers that admitted it; or,
+ * at the `wide` level, with none and `provisional`, to be decided
+ * provisionally (`driver/rearm-provisional.ts`).
+ */
 export interface PendingVerdict {
   kind: "thread" | "finding";
   key: string;
   reason: string;
   answers: PendingAnswer[];
+  provisional?: true;
 }
 
 export function answersFile(stateDir: string, pr: string): string {
@@ -59,7 +64,8 @@ function isVerdict(v: unknown): v is PendingVerdict {
     str(v.key) &&
     str(v.reason) &&
     Array.isArray(v.answers) &&
-    v.answers.every(isAnswer)
+    v.answers.every(isAnswer) &&
+    (v.provisional === undefined || v.provisional === true)
   );
 }
 

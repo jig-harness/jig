@@ -42,10 +42,10 @@ done, and the documents that describe it are the current truth:
 - deferral without a tracker, in the
   [deferral protocol](../plugin/skills/resolve-review-comments/references/deferral-protocol.md#deferral-without-a-tracker).
 
-This design holds what is not built: the policy read from the base branch,
+This design holds what is not built: the policy read from the base branch.
 `wide`'s column with its provisional decisions, the off-hours windows and the
-morning report. When they are built, this design leaves the folder
-([README.md](README.md)).
+morning report are built and ship opt-in, unvalidated (see below). When the
+policy step is built, this design leaves the folder ([README.md](README.md)).
 
 ## How it works
 
@@ -96,14 +96,15 @@ inside a window. Precedence between the other layers is the configuration's
 usual one, the higher layer overriding the lower. The line the drive prints
 at the start of every round says when a window raised the level.
 
-`wide` and `off_hours` are dark-by-default dials. Jig keeps such dials out
-until a working repository has validated them: this design specifies them,
-and step 5 comes into Jig once a working repository has run them and the
-measure below holds. Until then `wide` is accepted and acts as `unattended`.
+`wide` and `off_hours` are dials no working repository has validated yet.
+Jig's rule keeps such dials out until one has; a maintainer decided to ship
+these two now, opt-in and documented as not yet validated, as a recorded
+exception to that rule. The exception is revisited once a working repository
+has run them for a month against the measure below.
 
 What `wide` adds, per decision. The decision classes the human-in-the-loop
 (HITL) registry reserves are not on this table, and no level changes them.
-The `attended` and `unattended` columns are what is built, as
+All three columns are built, as
 [CONFIGURATION.md § `autonomy`](../plugin/CONFIGURATION.md#autonomy) states.
 
 | Decision | `attended` | `unattended` | `wide` |
@@ -168,20 +169,13 @@ reader failing closed, with the fake forge the drive suite already uses.
 
 ## Build order
 
-Steps 1 to 4 are built, save the base-branch policy step 4 named. The
-pull requests left are serial, since each changes the shared autonomy reader.
+Steps 2 to 5 are built, save the base-branch policy step 4 named; that is
+what remains.
 
 1. **The policy from the base branch.** `max_level` and `park_classes` read
    from the pull request's base-branch snapshot at every decision point a
    driver pass reaches, the fail-closed fallback, and the tests for both. It
    ships on its own, as the part of step 4 not yet built.
-2. **Off-hours and the morning report** (step 5). The schedule, the `wide`
-   column with the provisional outcome and its reconciliation skip,
-   re-arming after a park once every unanswered item is provisionally
-   decided, the provisional entries in the ledger's decisions section,
-   `drives.ts --report` and the loop-metrics counters. It comes into Jig only
-   after the validation measure holds in a working repository that has run
-   it.
 
 ## Left out
 
