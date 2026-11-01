@@ -1,0 +1,26 @@
+diff --git a/src/orders/load-orders.ts b/src/orders/load-orders.ts
+index 3b1f0a2..9c4d7e1 100644
+--- a/src/orders/load-orders.ts
++++ b/src/orders/load-orders.ts
+@@ -8,2 +8,6 @@ export async function loadOrders(
+-  const response = await client.get(`/customers/${customerId}/orders`);
+-  return parseOrders(response.body);
++  try {
++    const response = await client.get(`/customers/${customerId}/orders`);
++    return parseOrders(response.body);
++  } catch {
++    return [];
++  }
+@@ -20,0 +25,12 @@ export async function loadOrders(
++
++export async function findCustomer(
++  client: Client,
++  customerId: string,
++): Promise<Customer | null> {
++  try {
++    return await client.getCustomer(customerId);
++  } catch (err) {
++    if (err instanceof Error && err.message.includes("not found")) return null;
++    throw new Error("customer lookup failed");
++  }
++}

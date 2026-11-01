@@ -787,7 +787,7 @@ routing below remain **exact**.
 
    Pass additional excluded git pathspecs after the base to replace the default
    TypeScript test patterns for the repository's languages. If the count
-   is under 20 (or zero), skip Tiers 1–3 and log
+   is under 20 (or zero), skip Tiers 1–3, the lens step with them, and log
    `"Pre-PR review skipped: N non-test lines changed (threshold: 20)."` The
    skip does **not** extend to the catalog's `reviewSkills` or the runbook pass
    below: a one-line change can still touch an area with a mandatory
@@ -852,6 +852,30 @@ routing below remain **exact**.
    reviewer references its result but does not re-run it. Tier 3 `REJECT`
    findings **block** the PR.
 
+   **Lens step — part of Tier 3:** run the
+   [review lenses](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+   the diff triggers, as [`/jig:review`](../review/SKILL.md) does, from a
+   base snapshot of its own. Create it, with the effective file list and
+   diff, against the pull request's base:
+
+   ```bash
+   bun --no-env-file --config="${CLAUDE_SKILL_DIR}/../review/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/../review/scripts/review.ts" setup --remote "<remote>" --base "<base branch>"
+   ```
+
+   `<base branch>` is `<base>` without its `<remote>/` prefix. Then follow
+   [review's lens step](../review/references/lenses.md) with the printed
+   `session`: select the lenses (`lenses`), write each selected lens's
+   brief (`brief`, with Tier 1's and Tier 2's findings), run each with fresh
+   context (one subagent per lens; otherwise the harness's agent command
+   through `agent`, inside the snapshot with its enumerated environment;
+   otherwise this session, saying so), and summarize with
+   `summarize-lenses.ts`, which prints Tier 3's state and the `Lenses:`
+   line for the summary below. Run `cleanup` on the session when the gate
+   ends, blocked or not. A configuration error in the lenses blocks like a
+   `CRITICAL` finding, with the error as the helper names it. Lens findings
+   are at most warnings: no lens is promoted to blocking, and one whose
+   evidence field is empty is `INFO`.
+
    **Verdict summary format** (**exact** — keep the structure; fill the
    values from this run):
 
@@ -863,7 +887,8 @@ routing below remain **exact**.
 
    Tier 1 (Patterns):  ✅ PASSED | ❌ BLOCKED   (rules checked: N, violations: N)
    Tier 2 (Contracts): ✅ PASSED | ⚠️ WARNINGS  (per-check status)
-   Tier 3 (Semantic):  ✅ APPROVED | ❌ REJECTED
+   Tier 3 (Semantic):  ✅ APPROVED | ⚠️ WARNINGS | ⏭️ N/A | ❌ REJECTED
+   Lenses:             N run, N skipped  (per-lens findings, or why skipped)
    reviewSkills:       ✅ APPROVED | ❌ BLOCKED  (per-skill status; N/A if empty)
    Runbook pass:       ✅ APPROVED | ❌ BLOCKED  (shellcheck: N findings; N/A if no runbook command changed)
 
@@ -880,8 +905,9 @@ routing below remain **exact**.
    `reviewSkills` entry under the reuse rule above. Loop until the verdict is
    `APPROVED` or `APPROVED WITH WARNINGS`.
 
-   - **`APPROVED WITH WARNINGS`**: put the Tier 2 warnings verbatim under
-     `## Review Notes` in the PR body, then push.
+   - **`APPROVED WITH WARNINGS`**: put the Tier 2 warnings and the lens
+     warnings (Tier 3 `⚠️ WARNINGS`) verbatim under `## Review Notes` in the
+     PR body, then push.
    - **`APPROVED`**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push -u <remote> "<branch>"`.
 
    Then run `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` and open the PR exactly as it plans
