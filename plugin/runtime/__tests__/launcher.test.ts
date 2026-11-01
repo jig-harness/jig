@@ -194,6 +194,16 @@ test("a collection's deadline covers the lock wait it may spend first", () => {
   );
 });
 
+test("a deadline too large to be finite falls back to the default", () => {
+  const huge = "9".repeat(309);
+  expect(collectionDeadlineMs({ JIG_LAUNCHER_DEADLINE_SEC: huge })).toBe(
+    (3600 + 7200) * 1000,
+  );
+  expect(collectionDeadlineMs({ LOCK_TIMEOUT: huge })).toBe(
+    (3600 + 7200) * 1000,
+  );
+});
+
 test.skipIf(
   skipsOnWindows("powershell", "process groups and signals are POSIX"),
 )(

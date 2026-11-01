@@ -343,15 +343,19 @@ export function parseLauncherArguments(argv: string[]): {
  * How long one collection may run: the machine heavy-run lock's wait
  * (`LOCK_TIMEOUT`, whole seconds, zero included; an hour unless set) and two
  * hours of work after it. A job that sets `JIG_LAUNCHER_DEADLINE_SEC` (whole
- * seconds) names its own bound instead.
+ * seconds) names its own bound instead. A value too large to represent as a
+ * finite number is not a bound and falls back to the default.
  */
 export function collectionDeadlineMs(
   env: NodeJS.ProcessEnv = process.env,
 ): number {
   const own = env.JIG_LAUNCHER_DEADLINE_SEC ?? "";
-  if (/^[1-9][0-9]*$/.test(own)) return Number(own) * 1000;
+  const named = Number(own) * 1000;
+  if (/^[1-9][0-9]*$/.test(own) && Number.isFinite(named)) return named;
   const timeout = env.LOCK_TIMEOUT ?? "";
-  const wait = /^[0-9]+$/.test(timeout) ? Number(timeout) : 3600;
+  const given = Number(timeout);
+  const wait =
+    /^[0-9]+$/.test(timeout) && Number.isFinite(given) ? given : 3600;
   return (wait + 7200) * 1000;
 }
 
