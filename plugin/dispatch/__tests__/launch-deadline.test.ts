@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { type ApplyState, outOfTime, rotated } from "../lib/actions/launch.ts";
+import {
+  type ApplyState,
+  enforcedDeadlineMs,
+  outOfTime,
+  rotated,
+} from "../lib/actions/launch.ts";
 import type { MachineConfig } from "../lib/machine-config.ts";
 
 const machine = {
@@ -45,5 +50,30 @@ describe("a tick's targets and deadline", () => {
   it("counts a slow planning phase against the launcher's deadline, not the launches' budget", () => {
     // More than the 3s the launches' budget covers here, well within the six hours the launcher allows.
     expect(outOfTime(stateAt(Date.now() - 600_000))).toBeNull();
+  });
+
+  it("turns each level once per turn of the levels above it", () => {
+    const state = (tick: number) =>
+      ({ machine, tick, repos: 2 }) as ApplyState;
+    // Two repositories: the first leads on even ticks and must still lead with each stage in turn.
+    const stageLeads = [0, 2, 4, 6].map(
+      (n) => rotated(state(n), ["rearm", "pickup"], "stages")[0],
+    );
+    expect(stageLeads).toEqual(["rearm", "pickup", "rearm", "pickup"]);
+    const targetLeads = [0, 4, 8, 12].map(
+      (n) => rotated(state(n), ["a", "b"], "targets")[0],
+    );
+    expect(targetLeads).toEqual(["a", "b", "a", "b"]);
+  });
+
+  it("reserves time against the deadline the launcher was installed with", () => {
+    const calculated = enforcedDeadlineMs(machine, {});
+    expect(calculated).toBe(6 * 3_600_000);
+    expect(
+      enforcedDeadlineMs(machine, { JIG_LAUNCHER_DEADLINE_SEC: "7200" }),
+    ).toBe(7_200_000);
+    expect(enforcedDeadlineMs(machine, { JIG_LAUNCHER_DEADLINE_SEC: "x" })).toBe(
+      calculated,
+    );
   });
 });

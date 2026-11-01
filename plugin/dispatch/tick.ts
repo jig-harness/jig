@@ -247,7 +247,7 @@ async function gatherRepo(
         });
     },
   ];
-  for (const stage of rotated(apply, stages)) await stage();
+  for (const stage of rotated(apply, stages, "stages")) await stage();
   return report;
 }
 
@@ -406,6 +406,9 @@ function applyState(
   // A record that cannot be read may belong to a live wrapper, so its slot and
   // pull request cannot be told apart from a free one: launch nothing.
   if (unreadable.length > 0) return null;
+  // A rotation cursor that cannot be recorded would repeat: launch nothing.
+  const tick = nextTickIndex();
+  if (tick === null) return null;
   return {
     machine,
     runtime,
@@ -413,7 +416,8 @@ function applyState(
     table: slotTable(machine.accounts, records, nowMs),
     last: lastAccount(records),
     startedAt: Date.now(),
-    tick: nextTickIndex(),
+    tick,
+    repos: options.repos.length,
   };
 }
 

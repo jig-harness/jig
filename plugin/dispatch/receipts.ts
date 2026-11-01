@@ -325,9 +325,12 @@ function reclaim(path: string, seen: number | null): boolean {
  * The index of this tick among the ticks that applied launches, kept in the
  * state directory and advanced by one per call, so rotation does not depend
  * on the timer's interval or on when a tick happens to start. Call it only
- * while holding the tick lock. A counter that cannot be read starts over.
+ * while holding the tick lock. A counter that cannot be read starts over; one
+ * that cannot be written returns `null`, for an index that is not recorded
+ * would repeat and the tick must launch nothing rather than retry the same
+ * targets forever.
  */
-export function nextTickIndex(root = stateRoot()): number {
+export function nextTickIndex(root = stateRoot()): number | null {
   const path = join(root, "tick-index");
   let last = -1;
   try {
@@ -342,6 +345,7 @@ export function nextTickIndex(root = stateRoot()): number {
     writeFileSync(path, `${index}\n`, { mode: 0o600 });
   } catch (err) {
     swallow(err, `${path} cannot be written`);
+    return null;
   }
   return index;
 }

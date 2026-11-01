@@ -52,36 +52,73 @@ export interface ApplyState {
   startedAt?: number;
   /** The index of this tick among the applying ticks, which rotates the order of everything that shares the allowance. */
   tick?: number;
+  /** How many repositories the tick walks, the radix the stages' and targets' turns count in. */
+  repos?: number;
   root?: string;
 }
 
 /**
+ * The deadline the installed launcher enforces on the tick, in milliseconds:
+ * the one it was installed with (`JIG_LAUNCHER_DEADLINE_SEC`, whole seconds,
+ * which the launcher passes on to the tick), else the one the machine file's
+ * limits calculate for a tick run outside a launcher.
+ */
+export function enforcedDeadlineMs(
+  machine: MachineConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const installed = env.JIG_LAUNCHER_DEADLINE_SEC ?? "";
+  return /^[1-9][0-9]*$/.test(installed)
+    ? Number(installed) * 1000
+    : tickDeadlineMs(machine);
+}
+
+/**
  * Why the tick has no time left to start another launch: the runtime calls
- * of a tick are not bounded by a count, so the deadline its launcher was
- * installed with is also checked, less the time its receipt needs. The
- * deadline covers the tick's planning as well, so it is the installed one,
- * not the smaller budget of its launches. `null` while time remains.
+ * of a tick are not bounded by a count, so the deadline its launcher enforces
+ * is also checked, less the time its receipt needs. The deadline covers the
+ * tick's planning as well, so it is the launcher's, not the smaller budget of
+ * its launches. `null` while time remains.
  */
 export function outOfTime(state: ApplyState): string | null {
   if (state.startedAt === undefined) return null;
   const allowed =
-    tickDeadlineMs(state.machine) - state.machine.runtimeTimeoutMs;
+    enforcedDeadlineMs(state.machine) - state.machine.runtimeTimeoutMs;
   return Date.now() - state.startedAt >= allowed
     ? `this tick has used the ${Math.ceil(allowed / 1000)}s its timer allows; a later tick starts this one`
     : null;
 }
 
+/** The stages a repository's tick applies (rearm, pickup), for the targets' radix. */
+export const STAGES_PER_REPO = 2;
+
+/** The level of the hierarchy a rotation orders; each is a digit of the tick index, the repositories the lowest. */
+export type RotationLevel = "repositories" | "stages" | "targets";
+
 /**
- * `items` in this tick's order: rotated by the tick's own index, a counter
- * that advances once per applying tick whatever the timer's interval, so the
- * first item advances by one each tick and an item whose open fails every
- * time cannot keep every later one waiting. The repositories, the stages
- * within one and the targets within a stage all use it, for they share the
- * tick's allowance of opens.
+ * `items` in this tick's order: rotated by a digit of the tick's own index, a
+ * counter that advances once per applying tick whatever the timer's interval.
+ * The repositories, the stages within one and the targets within a stage share
+ * the tick's allowance of opens, so each level turns once per full turn of
+ * the levels above it (the index counted in mixed radix: repositories, then
+ * stages, then targets). A repository that leads on every even tick then
+ * leads with each of its stages in turn, and an item whose open fails every
+ * time cannot keep every later one waiting.
  */
-export function rotated<T>(state: ApplyState, items: T[]): T[] {
+export function rotated<T>(
+  state: ApplyState,
+  items: T[],
+  level: RotationLevel = "repositories",
+): T[] {
   if (items.length < 2 || state.tick === undefined) return items;
-  const start = state.tick % items.length;
+  const repos = Math.max(1, state.repos ?? 1);
+  const divisor =
+    level === "repositories"
+      ? 1
+      : level === "stages"
+        ? repos
+        : repos * STAGES_PER_REPO;
+  const start = Math.floor(state.tick / divisor) % items.length;
   return [...items.slice(start), ...items.slice(0, start)];
 }
 

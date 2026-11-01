@@ -173,4 +173,10 @@ describe("the tick index", () => {
     writeFileSync(join(dir, "tick-index"), "not a number\n");
     expect(nextTickIndex(dir)).toBe(0);
   });
+
+  it("returns nothing when the index cannot be recorded", () => {
+    const dir = root();
+    mkdirSync(join(dir, "tick-index"));
+    expect(nextTickIndex(dir)).toBeNull();
+  });
 });

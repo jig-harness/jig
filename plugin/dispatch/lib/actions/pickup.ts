@@ -258,6 +258,6 @@ export async function applyPickups(
     return;
   }
   await retryPending(state, repo, report, ctx);
-  for (const action of rotated(state, wanted))
+  for (const action of rotated(state, wanted, "targets"))
     report.launches.push(await launchOne(state, repo, action, ctx));
 }

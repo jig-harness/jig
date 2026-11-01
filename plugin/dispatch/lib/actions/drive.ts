@@ -172,7 +172,7 @@ export async function applyDrives(
 ): Promise<void> {
   await retryPending(state, repo, report, fresh);
   const rearms = report.actions.filter((a) => a.stage === "rearm");
-  for (const action of rotated(state, rearms)) {
+  for (const action of rotated(state, rearms, "targets")) {
     const late = outOfTime(state);
     if (late !== null) {
       report.launches.push(waits(action, late));
