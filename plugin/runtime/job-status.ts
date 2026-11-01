@@ -143,7 +143,8 @@ export async function scheduledStatus(
     job = installedJob(await snapshotScheduler(scheduler, spec));
   } catch (error) {
     // One component's unreadable scheduler must not hide the others' status.
-    return missing(`scheduler state unreadable: ${(error as Error).message}`);
+    const message = `scheduler state unreadable: ${(error as Error).message}`;
+    return { ...missing(message), error: message };
   }
   if (job === null) return missing(absent ?? "no job installed");
   const schedule = installedSchedule(scheduler, job.text);
@@ -170,7 +171,7 @@ function localMinute(iso: string): string {
 /** `jig status` for people: each component's job, schedule and last run. */
 export function formatStatus(status: ComponentStatus): string {
   const lines = [
-    `${status.component}: ${status.installed ? "installed" : "not installed"} (${status.detail})`,
+    `${status.component}: ${status.error !== undefined ? "unknown" : status.installed ? "installed" : "not installed"} (${status.detail})`,
   ];
   if (status.schedule !== null)
     lines.push(

@@ -244,6 +244,16 @@ test("a collector that finishes keeps its own exit status", async () => {
   ).toBe(3);
 });
 
+test("a deadline past the timer's range does not fire at once", async () => {
+  // 2,656,800,000 ms exceeds setTimeout's signed 32-bit limit.
+  expect(
+    await runCollector(
+      [process.execPath, "-e", "process.exit(0)"],
+      2_656_800_000,
+    ),
+  ).toBe(0);
+});
+
 test("no recorded tool, or a tool that cannot answer, is an error naming why", async () => {
   await expect(installedEntry({})).rejects.toThrow("no agent tool recorded");
   await expect(

@@ -132,6 +132,25 @@ interface Supervision {
   announce?: string;
 }
 
+/** The longest delay `setTimeout` takes; a longer one fires at once. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
+/**
+ * `setTimeout` for any delay: one past the timer's range waits in segments
+ * rather than firing at once. `clear` ends it.
+ */
+function longTimeout(run: () => void, ms: number): { clear(): void } {
+  let timer: ReturnType<typeof setTimeout>;
+  const arm = (left: number) => {
+    timer = setTimeout(
+      () => (left > MAX_TIMER_MS ? arm(left - MAX_TIMER_MS) : run()),
+      Math.min(left, MAX_TIMER_MS),
+    );
+  };
+  arm(ms);
+  return { clear: () => clearTimeout(timer) };
+}
+
 /**
  * Runs one child to its end under the launcher's ownership: every process the
  * launcher waits on starts here. The child leads its own process group, so a
@@ -165,7 +184,7 @@ function supervise(command: string[], options: Supervision): Promise<Outcome> {
     let done = false;
     const release = () => {
       done = true;
-      clearTimeout(deadline);
+      deadline.clear();
       clearTimeout(escalation);
       for (const name of STOP_SIGNALS) process.off(name, onSignal);
     };
@@ -200,7 +219,7 @@ function supervise(command: string[], options: Supervision): Promise<Outcome> {
       signal("SIGTERM");
       escalation = setTimeout(() => finish(null), graceMs);
     };
-    const deadline = setTimeout(
+    const deadline = longTimeout(
       () => stop("deadline", `ran past ${options.deadlineMs / 1000}s`),
       options.deadlineMs,
     );

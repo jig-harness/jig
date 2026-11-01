@@ -14,7 +14,7 @@ import { runVerb, type VerbArguments } from "../verbs.ts";
 function standIn(
   name: string,
   calls: string[],
-  options: { missingOptIn?: string; exit?: number } = {},
+  options: { missingOptIn?: string; exit?: number; unreadable?: string } = {},
 ): Component {
   return {
     name,
@@ -43,6 +43,9 @@ function standIn(
         schedule: null,
         nextRun: null,
         lastRun: null,
+        ...(options.unreadable === undefined
+          ? {}
+          : { error: options.unreadable }),
       };
     },
     receipts: (query) => {
@@ -144,6 +147,20 @@ test("status and receipts reach the components named, in registration order", as
     "status second",
     "receipts second 2026-10-31",
   ]);
+});
+
+test("status reports every component, then fails when a scheduler could not be read", async () => {
+  const calls: string[] = [];
+  const components = [
+    standIn("first", calls, { unreadable: "bus unreachable" }),
+    standIn("second", calls),
+  ];
+  const { code } = await verb(
+    { verb: "status", components: [], json: true },
+    components,
+  );
+  expect(code).toBe(1);
+  expect(calls).toEqual(["status first", "status second"]);
 });
 
 test("uninstall on Windows leaves out every component's job, which no scheduler holds there", async () => {

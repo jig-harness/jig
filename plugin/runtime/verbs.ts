@@ -175,10 +175,16 @@ async function each(
  * of work) where its job names none.
  */
 function commandDeadlineSec(components: readonly Component[]): number {
+  // Collection's own default, never the enclosing command's saved deadline:
+  // reinstalling through the installed command would otherwise add it again.
+  const own = Math.ceil(
+    collectionDeadlineMs({
+      ...process.env,
+      JIG_LAUNCHER_DEADLINE_SEC: undefined,
+    }) / 1000,
+  );
   return components.reduce(
-    (total, component) =>
-      total +
-      (component.job().deadlineSec ?? Math.ceil(collectionDeadlineMs() / 1000)),
+    (total, component) => total + (component.job().deadlineSec ?? own),
     0,
   );
 }
@@ -199,6 +205,23 @@ function withoutJobs(
     (context.platform ?? process.platform) === "win32" &&
     args.components.length === 0
   );
+}
+
+/** Prints each selected component's status; fails when a scheduler could not be read. */
+async function statusVerb(
+  args: { components: readonly string[]; json: boolean },
+  components: readonly Component[],
+): Promise<number> {
+  const statuses = [];
+  for (const component of selection(args.components, components))
+    statuses.push(await component.status());
+  console.log(
+    args.json
+      ? JSON.stringify(statuses, null, 2)
+      : statuses.map(formatStatus).join("\n"),
+  );
+  // An unreadable scheduler is not an absent job: report the rest, then fail.
+  return statuses.some((status) => status.error !== undefined) ? 1 : 0;
 }
 
 export async function runVerb(
@@ -257,17 +280,8 @@ export async function runVerb(
       console.log("== the jig command ==");
       return removeCommand({ confirm: args.confirm });
     }
-    case "status": {
-      const statuses = [];
-      for (const component of selection(args.components, components))
-        statuses.push(await component.status());
-      console.log(
-        args.json
-          ? JSON.stringify(statuses, null, 2)
-          : statuses.map(formatStatus).join("\n"),
-      );
-      return 0;
-    }
+    case "status":
+      return statusVerb(args, components);
     case "receipts":
       return (
         components.find(

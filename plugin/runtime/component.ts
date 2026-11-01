@@ -47,6 +47,8 @@ export interface ComponentStatus {
   installed: boolean;
   /** Where the job is, or why there is none. */
   detail: string;
+  /** Set when the scheduler could not be read: whether the job exists is then unknown. */
+  error?: string;
   /** The installed job's schedule in words (`daily at 04:00`, `every 5 minutes`). */
   schedule: string | null;
   /** When the installed job runs next (an ISO time), where the schedule alone tells. */
