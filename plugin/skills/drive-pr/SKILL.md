@@ -848,7 +848,7 @@ could forge or forget.
    issue key its head branch's name carries (its `headRefName`, which a
    detached tree does not have checked out) and every one a closing keyword names in
    its body (`Closes`/`Fixes`/`Resolves <KEY>`) — check each one, never a
-   chosen first. A key is `ENG-123` on Linear and `#123` on GitHub Issues; a
+   chosen first. A key is `ENG-123` on Linear and Jira and `#123` on GitHub Issues; a
    branch carries it as `pull_requests.branch_name` renders it (`eng-123-…`
    for `ENG-123`, `123-…` for `#123`). An issue the body merely cites
    (`References:`, `Related:`, a prose mention) is context the PR does not claim to deliver, so its gate is not

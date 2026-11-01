@@ -160,7 +160,7 @@ guards keep one stage from starting twice:
 
 | Record | Read through | What the tick takes from it |
 | --- | --- | --- |
-| The tracker | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear and GitHub Issues today | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
+| The tracker | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
 | The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers | the drives to re-arm, take over or report; the follow-ups wanted, running or failed |
 | The session runtime | in Orca, `orca worktree ps --json` | which workspace holds which item or pull request, and whether an agent in it is working or waiting |
 
@@ -177,8 +177,10 @@ the pickup out of the plan and names the failure.
 
 Only an assignment a person with write access made starts a pickup: for an
 item in a dispatch state, the tick reads who made its current assignment
-through `assignedBy` and requires a member of the team (Linear) or an
-owner, member or collaborator of the repository (GitHub), as the drive
+through `assignedBy` and requires a member of the team (Linear), an
+owner, member or collaborator of the repository (GitHub), or a person's
+Atlassian account, not a guest, that can be assigned issues in the project
+(Jira; an app's account, Jira Automation's included, never), as the drive
 requires of a ledger or an answer. The check gates pickups only. A claimed
 item's current assignment is the claim's own, made by the factory
 identity, so the stalled and double-claim reports below read claimed items

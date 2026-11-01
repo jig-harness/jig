@@ -65,7 +65,7 @@ Every field is optional. Read them from the base branch's copy of
 | `drive.validation_plan_command` | The command that reads the changed files (one per line) on stdin and prints the validation plan as JSON, including `reviewSkills` (mandatory specialist review skills) and optionally `postDeploy` | No plan command: resolve the catalog with the change-areas resolver (below), or there are no catalog-mandated specialist gates |
 | `drive.change_areas_catalog` | Path to the change-area catalog (YAML whose `areas:` map holds area key → `{paths, impliedBy, review: {skills}, postDeploy, …}`) | No catalog: skip the catalog steps and say so in the summary |
 | `review.bots` | The logins of the repository's AI reviewers | No AI reviewer is assumed |
-| `issue_tracker.team` | Linear only: the prefix its issue keys carry (`ENG` for `ENG-123`), used to recognise the issue a deferral names; on GitHub Issues a key is `#123` | A deferral must still name its issue; any issue key or link counts |
+| `issue_tracker.team` | Linear and Jira: the prefix its issue keys carry (`ENG` for `ENG-123`), used to recognise the issue a deferral names; on GitHub Issues a key is `#123` | A deferral must still name its issue; any issue key or link counts |
 
 ### Policy comes from the base branch, not the change under review
 

@@ -250,8 +250,8 @@ golden files from the Python linter then retire with the translation.
 
 ### 12. More tracker adapters
 
-Jira, and a plan file kept in the repository, beside Linear and GitHub
-Issues. Both wait on the open decisions below. For every adapter to work end
+A plan file kept in the repository, beside Linear, GitHub Issues and Jira.
+It waits on the open decisions below. For every adapter to work end
 to end, the [tracker interface](../GLOSSARY.md) gains attaching a file,
 which `decide` and `explain` now do through the Linear MCP tools or the
 `linear` command. The deferral step (item 10), `decide`, `explain` and

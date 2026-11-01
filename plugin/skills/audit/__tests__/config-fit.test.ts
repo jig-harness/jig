@@ -1563,7 +1563,7 @@ gates:
         /linear tracker .*fake linear/,
       ],
       [REACHED, { ADAPTER: "[x" }, /every skill here refuses to run/],
-      [REACHED, { ADAPTER: "jira" }, /'jira' is not supported/],
+      [REACHED, { ADAPTER: "nonesuch" }, /'nonesuch' is not supported/],
     ] as const)("%s with %o is an error: %p", (graphql, tracker, message) => {
       const layer = Object.fromEntries(
         Object.entries(tracker).map(([k, v]) => [

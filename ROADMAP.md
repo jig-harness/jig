@@ -100,8 +100,8 @@ files on every tracker Jig supports.
 
 ### 12. More tracker adapters
 
-Jira, and a plan file kept in the repository, beside Linear and GitHub
-Issues. The [tracker interface](GLOSSARY.md) first gains attaching a file,
+A plan file kept in the repository, beside Linear, GitHub Issues and
+Jira. The [tracker interface](GLOSSARY.md) first gains attaching a file,
 the one operation the skills need that the interface does not have yet, and
 the workspace launcher learns to open GitHub issues.
 

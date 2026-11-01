@@ -232,7 +232,7 @@ it could not classify. Per tracker:
 
 | Tracker | Provider |
 |---------|----------|
-| Jig's tracker interface (Linear or GitHub Issues: the adapter `issue_tracker.adapter` names) | `bun <jig>/plugin/skills/do-item/scripts/tracker.ts issue-states` with `issue_tracker` in `.config/jig.yaml` and the adapter's credential in the environment (`LINEAR_API_KEY` for Linear; a signed-in `gh` for GitHub Issues). It reads the state category of each item through the tracker interface: `completed`, `canceled` and `duplicate` are `closed`, a missing item is `not_found`, and an issue the tracker reports without a category fails the run. Keys are `ENG-123` or `#123` |
+| Jig's tracker interface (Linear, GitHub Issues or Jira: the adapter `issue_tracker.adapter` names) | `bun <jig>/plugin/skills/do-item/scripts/tracker.ts issue-states` with `issue_tracker` in `.config/jig.yaml` and the adapter's credential in the environment (`LINEAR_API_KEY` for Linear; a signed-in `gh` for GitHub Issues; `JIRA_EMAIL` and `JIRA_API_TOKEN` for Jira). It reads the state category of each item through the tracker interface: `completed`, `canceled` and `duplicate` are `closed`, a missing item is `not_found`, and an issue the tracker reports without a category fails the run. Keys are `ENG-123` or `#123` |
 | Jira | `GET /rest/api/3/issue/<key>?fields=status`, mapping `status.statusCategory.key` of `done` to `closed` and of `new` or `indeterminate` to `open`, and failing on any other category (an `undefined` one included); a 404 to `not_found`; every other status code fails the provider |
 | A plan file in the repository | A script that reads the item's status from the file; no credential, so it can run in the pull-request check beside the static half |
 

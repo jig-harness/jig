@@ -14,8 +14,10 @@ describe("trackerProbeable", () => {
     expect(probe({ adapter: "linear", team: "ENG" })).toBe(true);
     expect(probe({ adapter: "github" })).toBe(true);
     expect(probe({ adapter: "linear" })).toBe(false);
+    expect(probe({ adapter: "jira", team: "ENG" })).toBe(true);
+    expect(probe({ adapter: "jira" })).toBe(false);
     // An unknown adapter is probed, so the tracker refuses it.
-    expect(probe({ adapter: "jira" })).toBe(true);
+    expect(probe({ adapter: "nonesuch" })).toBe(true);
   });
 });
 

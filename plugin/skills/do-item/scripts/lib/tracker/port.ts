@@ -3,7 +3,7 @@
  * issue tracker, independent of which tracker answers.
  *
  * Callers depend on this interface only. An adapter (one per tracker: Linear
- * in `linear.ts`, GitHub Issues in `github/`) implements it, and `index.ts`
+ * in `linear.ts`, GitHub Issues in `github/`, Jira Cloud in `jira/`) implements it, and `index.ts`
  * picks the adapter the consumer names in `issue_tracker.adapter`. Adding a tracker means adding an
  * adapter and registering it; no caller changes.
  *

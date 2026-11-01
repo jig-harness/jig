@@ -66,7 +66,7 @@ time. Every one is optional.
 | `decide.glossary_file` | The canonical vocabulary, as `**Term**:` lines each followed by an `_Avoid_:` line of aliases | `CONTEXT.md` |
 | `decide.architect_agent` | The subagent that rules in phase 3; a name your agent tool does not know (for example a Claude Code agent under Codex) falls back to the default | A fresh general-purpose subagent, briefed with the [architect mandate](#the-architect-mandate) |
 | `decide.escalation_labels` | Labels added to an issue alongside `hitl` and its `hitl:<stakeholder>` facets when a call is escalated (for example the label that routes it to an architect) | None |
-| `issue_tracker.*` | The issue tracker, as `/jig:do-item` reads it (adapter, the team on Linear, `file_command`, and the `hitl` label in `labels.hitl`) | No tracker: outcomes land in the reply only |
+| `issue_tracker.*` | The issue tracker, as `/jig:do-item` reads it (adapter, the team on Linear and Jira, `file_command`, and the `hitl` label in `labels.hitl`) | No tracker: outcomes land in the reply only |
 
 ### Tracker operations
 
@@ -85,7 +85,7 @@ Linear forms are given as the adapter example.
 | File a new issue | The consumer's `issue_tracker.file_command` | — |
 | Attach a sheet | — | see [`references/decision-sheet.md`](references/decision-sheet.md#post-the-sheet) |
 
-An issue key is `ENG-123` on Linear and `#123` on GitHub Issues, an issue of
+An issue key is `ENG-123` on Linear and Jira and `#123` on GitHub Issues, an issue of
 the configured repository; this document writes it as `<KEY>`. Quote it on a
 command line: an unquoted `#` starts a shell comment.
 

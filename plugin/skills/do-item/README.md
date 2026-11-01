@@ -4,7 +4,7 @@ Picking up an issue should keep its context, validation and review together.
 Without a shared procedure, a started item can lose its findings between
 sessions or reach a pull request without the checks its changes need.
 `/jig:do-item <issue-key>` takes an issue from the configured tracker (its
-key is `ENG-123` on Linear, `#123` on GitHub Issues), checks its context and
+key is `ENG-123` on Linear and Jira, `#123` on GitHub Issues), checks its context and
 human checkpoints, delegates the work, validates it, opens a draft pull
 request under the repository's policy and arms
 [`drive-pr`](../drive-pr/README.md). A person merges.
