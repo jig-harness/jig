@@ -4,6 +4,8 @@
  * from, on every scheduler.
  */
 import { expect, test } from "bun:test";
+import { join } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { dispatchJobSpec } from "../../dispatch/install.ts";
 import { gcJobSpec } from "../../gc/job-spec.ts";
 import { describeSchedule, installedSchedule, nextRun } from "../job-status.ts";
@@ -63,8 +65,19 @@ test("schedules read in words", () => {
   expect(describeSchedule({ everyMinutes: 5 })).toBe("every 5 minutes");
 });
 
-test("tomorrow's hour is the configured one though today's was skipped by the clocks", () => {
-  const now = new Date(2026, 10, 1, 12, 0);
-  const next = nextRun({ hour: 2 }, now);
-  expect(next).toEqual(new Date(2026, 10, 2, 2, 0));
+test("tomorrow's hour is the configured one after the clocks skipped today's", () => {
+  // 2026-03-08 is the spring-forward day in New York: 02:00 does not exist,
+  // so today's setHours(2) lands at 03:00, which has passed by noon.
+  const script = `
+    import { nextRun } from ${JSON.stringify(join(import.meta.dir, "../job-status.ts"))};
+    const next = nextRun({ hour: 2 }, new Date(2026, 2, 8, 12, 0));
+    console.log(JSON.stringify([next.getDate(), next.getHours()]));
+  `;
+  const result = Bun.spawnSync(["bun", "-e", script], {
+    env: { ...process.env, TZ: "America/New_York" },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expectSpawnExit(result, 0);
+  expect(JSON.parse(result.stdout.toString())).toEqual([9, 2]);
 });

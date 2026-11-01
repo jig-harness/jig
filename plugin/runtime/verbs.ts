@@ -28,11 +28,13 @@ import {
 } from "../shared/vendor/optique.mjs";
 import type { Component } from "./component.ts";
 import { formatStatus } from "./job-status.ts";
+import { collectionDeadlineMs } from "./launcher.ts";
 import {
   checkCommandPath,
   installCommand,
   removeCommand,
 } from "./path-command.ts";
+import { checkLauncherResolves } from "./scheduler.ts";
 
 /** The verbs' commands, for the components named `names`. */
 export function verbCommands(names: readonly string[]) {
@@ -166,8 +168,38 @@ async function each(
   return 0;
 }
 
+/**
+ * The longest the jig command lets one invocation run: every component's
+ * budget added, since `jig run` works through the components in turn and
+ * `jig gc` is bounded by collection's own default (a lock wait and two hours
+ * of work) where its job names none.
+ */
+function commandDeadlineSec(components: readonly Component[]): number {
+  return components.reduce(
+    (total, component) =>
+      total +
+      (component.job().deadlineSec ?? Math.ceil(collectionDeadlineMs() / 1000)),
+    0,
+  );
+}
+
 const heading = (component: Component) =>
   console.log(`== ${component.name} ==`);
+
+/**
+ * Whether the verb leaves every component's job alone: jobs run on systemd,
+ * launchd or cron, so on Windows only the command is written or removed.
+ * Naming a component there is refused as the component refuses it.
+ */
+function withoutJobs(
+  args: { components: readonly string[] },
+  context: VerbContext,
+): boolean {
+  return (
+    (context.platform ?? process.platform) === "win32" &&
+    args.components.length === 0
+  );
+}
 
 export async function runVerb(
   args: VerbArguments,
@@ -177,15 +209,13 @@ export async function runVerb(
   switch (args.verb) {
     case "install": {
       checkCommandPath();
-      // Jobs run on systemd, launchd or cron; on Windows the command alone is
-      // written, and naming a component is refused as the component refuses it.
-      const jobless =
-        (context.platform ?? process.platform) === "win32" &&
-        args.components.length === 0;
-      if (jobless)
+      const jobless = withoutJobs(args, context);
+      if (jobless) {
         console.log(
           "Scheduled jobs need macOS or Linux: writing the jig command only.",
         );
+        await checkLauncherResolves();
+      }
       const code = jobless
         ? 0
         : await each(
@@ -203,10 +233,7 @@ export async function runVerb(
           );
       if (code !== 0) return code;
       console.log("== the jig command ==");
-      const deadlineSec = Math.max(
-        0,
-        ...components.map((component) => component.job().deadlineSec ?? 0),
-      );
+      const deadlineSec = commandDeadlineSec(components);
       return installCommand({
         confirm: args.confirm,
         script,
@@ -214,15 +241,17 @@ export async function runVerb(
       });
     }
     case "uninstall": {
-      const code = await each(args.components, components, (component) => {
-        heading(component);
-        return component.uninstall({
-          repository: args.repository,
-          confirm: args.confirm,
-          machine: args.machine,
-          script,
-        });
-      });
+      const code = withoutJobs(args, context)
+        ? 0
+        : await each(args.components, components, (component) => {
+            heading(component);
+            return component.uninstall({
+              repository: args.repository,
+              confirm: args.confirm,
+              machine: args.machine,
+              script,
+            });
+          });
       if (code !== 0 || !args.machine || args.components.length > 0)
         return code;
       console.log("== the jig command ==");

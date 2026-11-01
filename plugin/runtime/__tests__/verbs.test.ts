@@ -53,7 +53,11 @@ function standIn(
 }
 
 /** Runs `args` over `components`, recording each command line `run` starts. */
-async function verb(args: VerbArguments, components: Component[]) {
+async function verb(
+  args: VerbArguments,
+  components: Component[],
+  platform?: NodeJS.Platform,
+) {
   const started: string[][] = [];
   const quiet = [spyOn(console, "log"), spyOn(console, "error")];
   // The verbs' report is not what these tests check; it stays off the test output.
@@ -62,6 +66,7 @@ async function verb(args: VerbArguments, components: Component[]) {
     const code = await runVerb(args, {
       components,
       script: "/installed/jig.ts",
+      ...(platform === undefined ? {} : { platform }),
       run: async (argv) => {
         started.push([...argv]);
         return 0;
@@ -139,4 +144,22 @@ test("status and receipts reach the components named, in registration order", as
     "status second",
     "receipts second 2026-10-31",
   ]);
+});
+
+test("uninstall on Windows leaves out every component's job, which no scheduler holds there", async () => {
+  const calls: string[] = [];
+  const { code, said } = await verb(
+    {
+      verb: "uninstall",
+      components: [],
+      repository: undefined,
+      machine: true,
+      confirm: false,
+    } as VerbArguments,
+    [standIn("gc", calls), standIn("dispatch", calls)],
+    "win32",
+  );
+  expect(code).toBe(0);
+  expect(calls).toEqual([]);
+  expect(said.join("\n")).toContain("== the jig command ==");
 });

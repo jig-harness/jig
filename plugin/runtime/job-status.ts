@@ -45,7 +45,7 @@ function installedJob(
   return {
     text: text as string,
     where: `${snapshot.scheduler}: ${path}${states.length ? ` (${states.join(", ")})` : ""}`,
-    active: states.length === 0,
+    active: snapshot.active,
   };
 }
 
