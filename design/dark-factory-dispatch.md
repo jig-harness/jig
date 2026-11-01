@@ -530,7 +530,7 @@ runs the drive's documented pass command for the vendor; the dispatcher
 admits an account only for a vendor whose pass command the drive
 documents, and reports an account of any other vendor as accepted and not
 admitted. An interactive session is launched as that vendor's Orca agent.
-Two differences travel with the session, not the dispatcher: the
+These differences travel with the session, not the dispatcher: the
 review-arbiter agent exists only in Claude Code, and a Codex session uses
 the substitute the plugin documents; the turn-budget hook counts nothing
 under Codex, so a Codex pass has no turn cap of its own, and the
@@ -896,7 +896,9 @@ One pull request each, in this order; each is usable on its own.
    interactive launches (step 4, itself waiting on an agent launch that
    binds its account) and on a launch that carries the vendor session id.
 7. **Re-drive a stale converged pull request.** The forge read gains each
-   open pull request's mergeability, the ledger classification the
+   open pull request's mergeability and current head commit (the listing
+   carries neither today), compared with the ledger's `verifiedSha`; the
+   ledger classification the
    `stale` class (converged, and conflicting or past the verified head),
    and the plan re-arms it through step 3's launch, on any admitted
    account. Tests: a converged ledger on a conflicting pull request is
@@ -914,8 +916,9 @@ One pull request each, in this order; each is usable on its own.
    agent's state) are made for Codex on the host. Tests: a re-arm admitted
    on a Codex account runs the Codex pass command with `CODEX_HOME` set and
    the Claude variables absent; an account of a vendor with no documented
-   pass command is reported, never launched. Waits on step 3, and on step 4
-   for the interactive launch. Usable alone: a drive stopped on a Claude
+   pass command is reported, never launched. Waits on step 3, on step 4
+   for the interactive launch, and on step 6's expectations, the backstop
+   for a Codex pass's missing turn cap. Usable alone: a drive stopped on a Claude
    wall restarts on a Codex account.
 
 ## Left out
