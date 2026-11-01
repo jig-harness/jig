@@ -80,9 +80,10 @@ function unframed(line: string): string {
  * `null` when it is.
  *
  * The input box is what lies between the screen's two boundary lines, and
- * the check needs exactly two among the last lines: draft text can look like
- * a boundary, so a screen with more cannot say where the box begins and is
- * refused, not guessed at. The box is ready only when its one non-empty line
+ * the check needs exactly two on the whole screen, both among the last lines:
+ * draft text can look like a boundary, and a boundary above the last lines
+ * can be a draft's own opening, so a screen with more cannot say where the
+ * box begins and is refused, not guessed at. The box is ready only when its one non-empty line
  * is the bare input marker; whatever else it holds is draft text.
  */
 export function screenNotReady(lines: readonly string[]): string | null {
@@ -90,11 +91,14 @@ export function screenNotReady(lines: readonly string[]): string | null {
   while (shown.length > 0 && shown.at(-1) === "") shown.pop();
   if (shown.some((l) => MENU.test(l)))
     return "a menu or a question is on the screen";
-  const zone = shown.slice(-PROMPT_ZONE);
-  const edges = zone.flatMap((l, i) => (BOUNDARY.test(l) ? [i] : []));
-  if (edges.length < 2) return "the screen shows no input prompt";
-  if (edges.length > 2)
+  const all = shown.flatMap((l, i) => (BOUNDARY.test(l) ? [i] : []));
+  if (all.length > 2)
     return "the screen shows more than one input box boundary pair";
+  const offset = Math.max(0, shown.length - PROMPT_ZONE);
+  const zone = shown.slice(offset);
+  const edges = all.map((i) => i - offset);
+  if (edges.length < 2 || (edges[0] as number) < 0)
+    return "the screen shows no input prompt";
   const box = zone
     .slice((edges[0] as number) + 1, edges[1])
     .map(unframed)

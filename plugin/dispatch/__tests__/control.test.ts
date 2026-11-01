@@ -320,6 +320,17 @@ describe("the screen check before a nudge", () => {
         "────────",
       ]),
     ).toBe("the screen shows more than one input box boundary pair");
+    // A boundary above the last lines is not hidden by the proximity limit.
+    expect(
+      screenNotReady([
+        "────────",
+        "> delete the old records",
+        ...Array<string>(7).fill(""),
+        "────────",
+        ">",
+        "────────",
+      ]),
+    ).toBe("the screen shows more than one input box boundary pair");
     // A lone vertical bar is draft text unless the line is framed at both ends.
     expect(screenNotReady([rule, "> |", rule])).toBe(
       "the input line holds text",
