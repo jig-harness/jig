@@ -349,6 +349,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.116.1] - 2026-11-01
+
+### Fixed
+
+- The docs skill's frontmatter gate no longer checks every document against a schema section it has already rejected. When the schema cannot be used as written (a section of the wrong shape, or a path rule that cannot be evaluated), the gate reports only the schema's own errors and exits 2, so `/jig:docs` shows the `frontmatter` check as `failed` instead of listing thousands of invalid-value findings that bury the real ones.
+
 ## [0.116.0] - 2026-11-01
 
 `review` runs review lenses: single checks, one Markdown file each, selected by what the diff adds or removes and run with fresh context in its semantic tier. The first seed lens, `jig.swallowed-failure`, checks a change against M15's rules on failures.
@@ -4474,7 +4480,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.116.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.116.1...HEAD
+[0.116.1]: https://github.com/jig-harness/jig/compare/v0.116.0...v0.116.1
 [0.116.0]: https://github.com/jig-harness/jig/compare/v0.115.0...v0.116.0
 [0.115.0]: https://github.com/jig-harness/jig/compare/v0.114.0...v0.115.0
 [0.114.0]: https://github.com/jig-harness/jig/compare/v0.113.0...v0.114.0
