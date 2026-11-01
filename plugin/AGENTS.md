@@ -12,8 +12,9 @@ here reaches every repository at once.
   copy outside this repository with no `node_modules`: skill-relative paths
   (`${CLAUDE_SKILL_DIR}/…` in `SKILL.md`, `<skill-dir>/…` in reference files),
   the consumer repository as the working directory, Bun's built-ins (its own
-  APIs and the `node:` modules it provides) or a vendored single-file build
-  only. The details are in
+  APIs and the `node:` modules it provides) or vendored code only, such as a
+  library's own single-file build or a bundle Jig builds from the pinned
+  package. The details are in
   [CONTRIBUTING.md § Adding or changing a plugin skill](../CONTRIBUTING.md#adding-or-changing-a-plugin-skill);
   `tools/plugin/plugin.test.ts` checks the whole plugin from a copy built the
   way the channels ship it. That copy leaves out `__tests__/`, `AGENTS.md`

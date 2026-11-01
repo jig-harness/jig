@@ -46,6 +46,18 @@ Orca is its first session runtime
 ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
 with others through the same interface.
 
+### 35. One jig command line
+
+The plugin's machine-level tools become one `jig` command on `PATH`, with
+resource collection (`jig gc`) and the dispatcher (`jig dispatch`) as its
+[components](GLOSSARY.md) and the same verbs for each: `install`, `uninstall`, `upgrade`,
+`doctor`, `status` and `receipts`. `jig doctor` checks the plugin's
+installation and runs the audit's check that a repository's configuration
+fits it, and `jig upgrade` replaces the setup script a machine runs from a
+Jig checkout. Help for every command and shell completion come from the
+same definitions that parse the command line, and the jobs a machine
+already installed keep running unchanged.
+
 ### 3. The kickoff family
 
 A `kickoff` skill that starts a new repository from nothing: requirements,
