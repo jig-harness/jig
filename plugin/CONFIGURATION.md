@@ -1059,7 +1059,7 @@ receipts_days: 30
 | `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
 | `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on its usage limit (exit `16`) when the drive recorded no reset |
 | `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
-| `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's or an item's workspace. Twice this plus eight times `runtime_timeout` is one tick's budget, and a file whose budget passes 24 days is refused; a tick opens at most two workspaces, and a launch that needs a third waits for the next tick |
+| `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's or an item's workspace. Twice this plus eight times `runtime_timeout` is one tick's budget, and the dispatch configuration is refused when that budget exceeds 24 days; a tick opens at most two workspaces, and a launch that needs a third waits for the next tick |
 | `receipts_days` | 30; days receipts and ended launch records are kept |
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
