@@ -95,7 +95,8 @@ but never acted on, recurring classes routed to `reflect`, and one
 mechanical nudge (`steer`, "continue" after a usage limit resets) with no
 open-ended prompt, then the re-drive of a converged pull request the
 forge reports conflicting or whose head moved after the drive verified
-it; the re-arm step waits on the drive
+it, then Codex accounts admitted beside Claude Code's, the account's
+vendor choosing the agent a session runs in; the re-arm step waits on the drive
 running in a session of its own, and the pickups on `do-item` refusing an
 item already claimed. A park's notification carries the park's framed
 decision.

@@ -515,6 +515,31 @@ does without a person. An agent the runtime reports waiting for longer than
 until it ends or a person ends it, so a cap full of waiting sessions is
 visible in every report rather than silent.
 
+### The agent behind a session
+
+The agent a launched session runs in (Claude Code or Codex today) is the
+admitted account's vendor, and nothing else chooses it: admission picks the
+account, the account's `vendor` names the agent, and the launch is bound
+to that account through its configuration directory (`CLAUDE_CONFIG_DIR`,
+`CODEX_HOME`). A repository never names an agent; it names a model per
+runtime in `routing.models`, which the launch reads for the vendor it got,
+so one repository is picked up by whichever account has a free slot. The
+skills are the same text in both agents, and the prompts the tick composes
+and the `jig dispatch result` instruction name no agent. A headless pass
+runs the drive's documented pass command for the vendor; the dispatcher
+admits an account only for a vendor whose pass command the drive
+documents, and reports an account of any other vendor as accepted and not
+admitted. An interactive session is launched as that vendor's Orca agent.
+Two differences travel with the session, not the dispatcher: the
+review-arbiter agent exists only in Claude Code, and a Codex session uses
+the substitute the plugin documents; the turn-budget hook counts nothing
+under Codex, so a Codex pass has no turn cap of its own, and the
+expectations in Control are its backstop. A Codex wall is recorded as a
+Claude one is, by the drive's quota adapter for the vendor, keyed by the
+account; binding the pass through the account's own configuration
+directory is what lets the adapter attribute the wall to that account,
+which a directory shared between accounts could not.
+
 ### What it never does
 
 - **Merge**, or arm a merge: a person merges
@@ -880,6 +905,18 @@ One pull request each, in this order; each is usable on its own.
    computed leaves it unplaced. Waits on step 3 only. Usable alone: a
    pull request that converged and then conflicted no longer waits for a
    person to notice.
+8. **Admit Codex accounts.** The drive skill documents the Codex pass
+   command beside Claude Code's, with the pass model read per vendor from
+   `routing.models`; the dispatcher admits `vendor: codex` accounts for
+   headless passes bound through `CODEX_HOME`, launches interactive
+   sessions with Orca's Codex agent, and the live checks made for Claude
+   (the launch binds the agent to the account; the runtime reports the
+   agent's state) are made for Codex on the host. Tests: a re-arm admitted
+   on a Codex account runs the Codex pass command with `CODEX_HOME` set and
+   the Claude variables absent; an account of a vendor with no documented
+   pass command is reported, never launched. Waits on step 3, and on step 4
+   for the interactive launch. Usable alone: a drive stopped on a Claude
+   wall restarts on a Codex account.
 
 ## Left out
 

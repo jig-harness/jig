@@ -34,7 +34,8 @@ a review drive restarted on a converged pull request that has since come
 to conflict with its base or been pushed to, and the follow-up after a
 merge. It runs every few minutes, reports what it
 would start and why before it is allowed to start anything, caps the
-sessions per subscription account, and reaches a person on their phone for
+sessions per subscription account (Claude Code's or Codex's, the account
+choosing the agent a session runs in), and reaches a person on their phone for
 the decisions that are theirs. It never merges. Every finished session
 leaves a row in an [outcome log](GLOSSARY.md) that one dashboard filters
 by time, repository, stage, account and outcome; a session that falls
