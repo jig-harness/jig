@@ -55,9 +55,11 @@ const DIRECTORY_VARIABLE: Record<AccountVendor, string> = {
 
 /**
  * The environment a pass billed to `account` runs in: `base` with the
- * credential variables and every vendor's directory variable removed, and
- * the account's configuration directory set, so the drive's resolver and
- * quota adapters read that account and no other.
+ * credential variables, every vendor's directory variable and the harness
+ * markers (`CLAUDECODE`, `CODEX_…`) removed, and the account's configuration
+ * directory set, so the drive's resolver and quota adapters read that
+ * account and no other, and the session detects its own agent rather than
+ * the wrapper's.
  */
 export function passEnvironment(
   base: Env,
@@ -67,6 +69,8 @@ export function passEnvironment(
   for (const [key, value] of Object.entries(base))
     if (value !== undefined) env[key] = value;
   for (const name of CREDENTIAL_VARIABLES) delete env[name];
+  for (const name of Object.keys(env))
+    if (name === "CLAUDECODE" || name.startsWith("CODEX_")) delete env[name];
   for (const name of Object.values(DIRECTORY_VARIABLE)) delete env[name];
   env[DIRECTORY_VARIABLE[account.vendor]] = account.configDir;
   return env;

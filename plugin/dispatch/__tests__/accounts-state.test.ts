@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   admitRearm,
   admitTakeover,
+  passEnvironment,
   refreshWalls,
   slotsOf,
   slotTable,
@@ -163,5 +164,21 @@ describe("account admission state", () => {
     );
     refreshWalls(table, [record], Date.now(), root);
     expect(table[0]?.wallUnrecorded).toBe(true);
+  });
+});
+
+describe("passEnvironment", () => {
+  it("removes the wrapper's harness markers and binds the account's directory", () => {
+    const env = passEnvironment(
+      {
+        CLAUDECODE: "1",
+        CODEX_SANDBOX: "seatbelt",
+        CLAUDE_CONFIG_DIR: "/other",
+        OPENAI_API_KEY: "k",
+        PATH: "/bin",
+      },
+      { vendor: "codex", configDir: "/codex-home" },
+    );
+    expect(env).toEqual({ PATH: "/bin", CODEX_HOME: "/codex-home" });
   });
 });

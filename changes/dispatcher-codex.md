@@ -24,9 +24,10 @@ The dispatcher admits Codex accounts beside Claude Code's, and the drive documen
   `CODEX_HOME` set to the account's directory and `CLAUDE_CONFIG_DIR` and
   every credential variable removed, so a drive stopped on a Claude Code
   account's usage limit is re-armed on a Codex account at the next run. A
-  pickup or follow-up on a Codex account starts Codex on the route's
+  pickup on a Codex account starts Codex on the route's
   `routing.models.codex` model and `routing.efforts.codex` effort (where the
-  session runtime can bind it; on Orca these stay reported). A repository
+  session runtime can bind it; on Orca these stay reported); a follow-up
+  starts Codex on its own defaults. A repository
   names a model per runtime in `routing.models`, never an agent.
 - **A deadline for every dispatched drive.** Each drive the dispatcher
   launches runs under the pass deadline the run read (`DRIVE_PR_PASS_TIMEOUT`
