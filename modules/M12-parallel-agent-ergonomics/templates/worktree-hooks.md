@@ -86,7 +86,7 @@ EOF
 # still keeps findings noted while it was on. Leave it unset only where the
 # skill is not used, so there is no journal to lose.
 if [ -n "${JIG_REFLECT:-}" ]; then
-  bun "$JIG_REFLECT/scripts/journal.ts" park || {
+  bun --no-env-file "$JIG_REFLECT/scripts/journal.ts" park || {
     echo "could not park this worktree's reflection findings; not removing it" >&2
     exit 1
   }

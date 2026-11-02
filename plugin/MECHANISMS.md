@@ -256,7 +256,11 @@ development and shipped as a version.
   machine file names starts nothing (`dispatch/lib/accounts.ts`); a launch
   record already claimed is not started twice (exit 3). The tick writes
   nothing to the tracker: the session's own claim does
-  (`dispatch/lib/actions/pickup.ts`). Where a repository turns
+  (`dispatch/lib/actions/pickup.ts`). It names each workspace it creates
+  and each tab it opens as the dispatcher's, and keeps the
+  [dispatched mark](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  in the workspace's comment and on the launch record, by one convention
+  every runtime takes (`dispatch/lib/runtime/port.ts`). Where a repository turns
   [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   on, the tick reads the pull requests' labels with them, reads `drive`
   and `hold` as a person's commands, and last sets each managed pull

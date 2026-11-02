@@ -8,13 +8,19 @@
  * runs under the runtime's deadline; an answer past it is lost. The write
  * and the read-back hold the card's comment lock, shared with the skills'
  * board helper; a lock not taken in time sends nothing, and the receipt says
- * so (not lost: nothing was written).
+ * so (not lost: nothing was written). The dispatched marks the comment holds
+ * stay in the one written (`keepMarks`).
  */
 import { orcaCommand, orcaEnvelope } from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
 import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
-import { MAX_COMMENT, type RuntimeReceipt } from "./port.ts";
+import {
+  keepMarks,
+  MAX_COMMENT,
+  type RuntimeReceipt,
+  withoutMarks,
+} from "./port.ts";
 
 /** The remaining budget in seconds, fractional: a call never outlives the deadline. */
 function seconds(ms: number): number {
@@ -92,15 +98,19 @@ function argumentSafe(comment: string): string {
 /**
  * The comment to write over the card as it is now: the entries it does not
  * carry yet appended to a comment still unread, so nothing a person has not
- * read is replaced; the message alone otherwise. `null` when the unread
+ * read is replaced; the message otherwise, behind the dispatched marks. `null` when the unread
  * comment already carries every entry.
  */
 function merged(
   card: { comment: string | null; unread: boolean },
   message: string,
 ): string | null {
-  if (!card.unread || card.comment === null || card.comment.trim() === "")
-    return message;
+  if (
+    !card.unread ||
+    card.comment === null ||
+    withoutMarks(card.comment) === ""
+  )
+    return keepMarks(card.comment ?? "", message);
   const carried = card.comment;
   const missing = entriesOf(message).filter((entry) => {
     const key = keyLineOf(entry);

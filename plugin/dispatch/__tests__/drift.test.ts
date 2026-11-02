@@ -27,7 +27,7 @@ import {
   earlierRecord,
   machineFile,
 } from "./launch-fixtures.ts";
-import { orcaCalls } from "./pickup-fixtures.ts";
+import { notifyWrites } from "./pickup-fixtures.ts";
 
 const CONFIG = `issue_tracker:
   adapter: github
@@ -124,7 +124,7 @@ describe("stage drift", () => {
     expect(sent(fourth).map((n) => n.outcome)).toEqual(["suppressed"]);
 
     // One message, never an action on the drive.
-    expect(orcaCalls(w, "worktree", "set")).toHaveLength(1);
+    expect(notifyWrites(w)).toHaveLength(1);
     expect(fourth.repos[0]?.launches).toEqual([]);
     expect(
       readRecord(RECORD, dispatchState(w))?.samples?.map((s) => [
