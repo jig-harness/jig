@@ -159,7 +159,8 @@ jig run       [COMPONENT...]
   environment, schedule and programs its install recorded; only what the
   release writes differently changes, nothing is written where nothing
   differs, and a job that was enabled or running stays so. Every command
-  is printed before it runs, and `--json` prints what became of each
+  that changes state is printed before it runs (read-only queries, such as
+  a version or a plugin list, are not), and `--json` prints what became of each
   harness and job. `--jobs-only` refreshes the jobs and the command without
   updating the plugin, for after a tool updated it on its own. Each tool
   command is limited to `JIG_SETUP_TIMEOUT_SECONDS` (default 300).

@@ -410,25 +410,53 @@ export interface SchedulerSnapshot {
   enabled: boolean;
   active: boolean;
 }
-function launcherSnapshot(spec: JobSpec): Record<string, string | null> {
+/** The launcher files in `directory` as they are now, `null` for one that is missing. */
+export function launcherSnapshotIn(
+  directory: string,
+): Record<string, string | null> {
   return Object.fromEntries(
     LAUNCHER_FILES.map((name) => {
-      const path = join(launcherDirectory(spec), name);
+      const path = join(directory, name);
       return [path, readOptional(path)];
     }),
   );
 }
+function launcherSnapshot(spec: JobSpec): Record<string, string | null> {
+  return launcherSnapshotIn(launcherDirectory(spec));
+}
+/**
+ * Runs `write`, which replaces the launcher files in `directory`; a failure
+ * puts back `previous` (what `launcherSnapshotIn` saw before) and says so.
+ */
+export function guardLauncher(
+  directory: string,
+  previous: Record<string, string | null>,
+  write: () => void,
+): void {
+  try {
+    write();
+  } catch (error) {
+    try {
+      restoreLauncher(previous, directory);
+    } catch (restoring) {
+      throw new GcError(
+        `${(error as Error).message}; the previous launcher copy was not restored: ${(restoring as Error).message}`,
+      );
+    }
+    throw error;
+  }
+}
 /** Puts back the launcher files the snapshot saw, each staged then renamed. */
 function restoreLauncher(
   launcher: Record<string, string | null>,
-  spec: JobSpec,
+  directory: string,
 ): void {
   const entries = Object.entries(launcher);
   if (entries.every(([, text]) => text === null)) {
-    rmSync(launcherDirectory(spec), { recursive: true, force: true });
+    rmSync(directory, { recursive: true, force: true });
     return;
   }
-  mkdirSync(launcherDirectory(spec), { recursive: true, mode: 0o700 });
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
   const temporary = (path: string) => `${path}.${process.pid}.tmp`;
   try {
     for (const [path, text] of entries)
@@ -640,7 +668,7 @@ export async function restoreScheduler(
   snapshot: SchedulerSnapshot,
 ): Promise<void> {
   // In place before the restored job can start and run it.
-  restoreLauncher(snapshot.launcher, snapshot.spec);
+  restoreLauncher(snapshot.launcher, launcherDirectory(snapshot.spec));
   if (snapshot.scheduler === "cron") {
     await execute(["crontab", "-"], snapshot.files.crontab ?? "");
     return;

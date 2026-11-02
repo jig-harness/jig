@@ -114,6 +114,13 @@ async function doctor({ job }: DoctorContext): Promise<DoctorCheck[]> {
             detail: `no ${path}: the dispatcher is not set up on this machine`,
           }
         : { id, status: "pass", detail: `${path} reads` };
+    if (file.status === "skip" && job !== null)
+      file = {
+        id,
+        status: "fail",
+        detail: `no ${path}, but the dispatcher's timer is installed: every tick fails without it`,
+        fix: `write ${path} (CONFIGURATION.md's section on the machine's dispatch file), or remove the timer with jig uninstall dispatch --machine`,
+      };
   } catch (error) {
     file = {
       id,

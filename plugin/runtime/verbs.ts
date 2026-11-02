@@ -85,7 +85,7 @@ function upgradeCommand() {
     }),
     {
       brief: message`Update the plugin in each agent harness, then refresh the installed jobs.`,
-      description: message`Updates the plugin in Claude Code and Codex, whichever is on PATH, to the newest release of the channel each follows, and installs it where it is missing (following stable unless --channel says otherwise). Then the installed plugin copy refreshes each installed job's launcher copy and job, and the jig command, so a launcher change in the new release reaches them; what the install recorded (environment, schedule, programs) stays. Every command is printed before it runs.`,
+      description: message`Updates the plugin in Claude Code and Codex, whichever is on PATH, to the newest release of the channel each follows, and installs it where it is missing (following stable unless --channel says otherwise). Then the installed plugin copy refreshes each installed job's launcher copy and job, and the jig command, so a launcher change in the new release reaches them; what the install recorded (environment, schedule, programs) stays. Every command that changes state is printed before it runs.`,
     },
   );
 }

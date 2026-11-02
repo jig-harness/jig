@@ -7,7 +7,13 @@
  * machine and name the fix on a broken one.
  */
 import { expect, test } from "bun:test";
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../lib/test-helpers/fake-program.ts";
@@ -255,5 +261,34 @@ test.skipIf(onWindows).each(SCHEDULERS)(
     expectSpawnExit(again, 0);
     for (const target of [...jobs, "jig command"])
       expect(again.stdout.toString()).toContain(`${target}: unchanged`);
+  },
+);
+
+test.skipIf(onWindows)(
+  "jig doctor fails the dispatcher's missing machine file while its timer is installed",
+  () => {
+    const m = machine(SCHEDULERS[0]);
+    m.writeDispatchFile();
+    expectSpawnExit(m.jig(["install", "--yes"]), 0);
+    rmSync(join(m.home, ".jig", "dispatch.yaml"));
+    const result = m.jig(["doctor", "dispatch"]);
+    expectSpawnExit(result, 1);
+    expect(result.stdout.toString()).toContain("FAIL  dispatch:machine-file");
+  },
+);
+
+test.skipIf(onWindows)(
+  "jig upgrade fails an installed job it cannot read instead of skipping it as absent",
+  () => {
+    const m = machine("cron");
+    expectSpawnExit(m.jig(["install", "gc", "--yes"]), 0);
+    const crontab = join(m.state, "crontab");
+    writeFileSync(
+      crontab,
+      readFileSync(crontab, "utf8").replace("'env'", "'nv'"),
+    );
+    const result = m.jig(["upgrade"]);
+    expectSpawnExit(result, 1);
+    expect(result.stdout.toString()).toContain("jig-gc: failed");
   },
 );

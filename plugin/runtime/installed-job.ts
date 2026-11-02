@@ -168,7 +168,20 @@ function cronJob(crontab: string, name: string): InstalledJob | null {
   };
 }
 
-/** The job the snapshot found, as its install wrote it; null when none is installed. */
+/**
+ * Whether the snapshot holds any part of the job: a unit file, the plist or
+ * the marked crontab line. A job that is present but not readable
+ * (`readInstalledJob` null) is a broken installation, not an absent one.
+ */
+export function jobPresent(snapshot: SchedulerSnapshot): boolean {
+  if (snapshot.scheduler === "cron")
+    return (snapshot.files.crontab ?? "")
+      .split("\n")
+      .some((line) => line.endsWith(` # ${snapshot.spec.name}`));
+  return Object.values(snapshot.files).some((text) => text !== null);
+}
+
+/** The job the snapshot found, as its install wrote it; null when none is installed or it cannot be read. */
 export function readInstalledJob(
   snapshot: SchedulerSnapshot,
 ): InstalledJob | null {

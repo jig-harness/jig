@@ -39,7 +39,7 @@ import {
   launcherCall,
   readInstalledJob,
 } from "./installed-job.ts";
-import { installedEntry, outsideCheckout } from "./launcher.ts";
+import { installedEntry, listPlugins, outsideCheckout } from "./launcher.ts";
 import {
   commandLauncherDirectory,
   commandPrograms,
@@ -160,7 +160,11 @@ function pluginCheck(harness: Harness): DoctorCheck {
       `${PLUGIN_ID} ${state.version} enabled${registered === null ? "" : `, following ${describeSource(registered)}`}`,
     );
   } catch (error) {
-    return fail(id, message(error));
+    return fail(
+      id,
+      message(error),
+      `run ${harness} plugin list to see why it fails, then jig upgrade --${harness}`,
+    );
   }
 }
 
@@ -185,16 +189,41 @@ type Programs = { claude?: string; codex?: string };
  * name it (what a launcher that records them runs), or why it was not found;
  * each set of tools is asked once.
  */
-type Runtime = (programs: Programs) => Promise<string | Error>;
+type Runtime = (
+  programs: Programs,
+  env?: Record<string, string>,
+) => Promise<string | Error>;
+
+/** The variables the agent tools read their plugin registries from. */
+const REGISTRY_VARIABLES = ["CLAUDE_CONFIG_DIR", "CODEX_HOME"] as const;
 
 function installedRuntime(fallback: Programs): Runtime {
   const asked = new Map<string, Promise<string | Error>>();
-  return (programs) => {
+  return (programs, env) => {
     const tools = Object.keys(programs).length > 0 ? programs : fallback;
-    const key = JSON.stringify(tools);
+    // An installed job asks the registry its own environment names.
+    const registry =
+      env === undefined
+        ? undefined
+        : Object.fromEntries(
+            REGISTRY_VARIABLES.flatMap((name) =>
+              env[name] === undefined ? [] : [[name, env[name]]],
+            ),
+          );
+    const key = JSON.stringify([tools, registry ?? null]);
     let lookup = asked.get(key);
     if (lookup === undefined) {
-      lookup = installedEntry(tools).then(
+      lookup = installedEntry(
+        tools,
+        registry === undefined
+          ? undefined
+          : (program) =>
+              listPlugins(program, undefined, undefined, {
+                ...process.env,
+                ...registry,
+              }),
+        registry?.CODEX_HOME,
+      ).then(
         (entry) => join(dirname(entry), "runtime"),
         (error: Error) => error,
       );
@@ -216,7 +245,16 @@ function launcherCheck(
       `cannot find the installed plugin copy to compare ${directory} with: ${runtime.message}`,
       "jig upgrade",
     );
-  const stale = staleLauncherFiles(directory, runtime);
+  let stale: string[];
+  try {
+    stale = staleLauncherFiles(directory, runtime);
+  } catch (error) {
+    return fail(
+      id,
+      `cannot compare ${directory} with ${runtime}: ${message(error)}`,
+      "jig upgrade",
+    );
+  }
   return stale.length === 0
     ? pass(id, `${directory} matches ${runtime}`)
     : fail(
@@ -294,7 +332,13 @@ async function ownChecks(
   try {
     return (await component.doctor?.({ job })) ?? [];
   } catch (error) {
-    return [fail(`${component.name}:doctor`, message(error))];
+    return [
+      fail(
+        `${component.name}:doctor`,
+        message(error),
+        `jig status ${component.name} shows the component's state; fix what it names, then run jig doctor again`,
+      ),
+    ];
   }
 }
 
@@ -307,7 +351,13 @@ async function jobChecks(
 ): Promise<DoctorCheck[]> {
   const { name } = component;
   if (status.error !== undefined)
-    return [fail(`${name}:launcher`, status.error)];
+    return [
+      fail(
+        `${name}:launcher`,
+        status.error,
+        `fix what it names so the scheduler can be read, or jig install ${name} --yes`,
+      ),
+    ];
   if (!status.installed)
     return [skip(`${name}:launcher`, `no job installed (${status.detail})`)];
   const call = job === null ? null : launcherCall(job.command);
@@ -315,7 +365,7 @@ async function jobChecks(
     launcherCheck(
       `${name}:launcher`,
       launcherDirectory(component.job()),
-      await runtime(call?.programs ?? {}),
+      await runtime(call?.programs ?? {}, job?.env),
     ),
     job === null
       ? fail(

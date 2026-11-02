@@ -19,6 +19,7 @@ import type { Component } from "./component.ts";
 import {
   type InstalledJob,
   type LauncherCall,
+  jobPresent,
   launcherCall,
   readInstalledJob,
 } from "./installed-job.ts";
@@ -26,6 +27,7 @@ import type { JobSpec } from "./job-spec.ts";
 import { commandPrograms, refreshCommand } from "./path-command.ts";
 import {
   detectScheduler,
+  guardLauncher,
   installLauncher,
   jobChanged,
   jobFiles,
@@ -33,6 +35,7 @@ import {
   launcherDirectory,
   rewriteJob,
   type Scheduler,
+  type SchedulerSnapshot,
   snapshotScheduler,
   staleLauncherFiles,
 } from "./scheduler.ts";
@@ -85,6 +88,31 @@ function refreshed(parts: (string | false)[]): string {
 }
 
 /**
+ * The installed job as it can be refreshed from what it holds, or why it
+ * cannot, as the outcome and detail of its result. An absent job is skipped;
+ * a job that is present but unreadable, or whose schedule cannot be
+ * recovered, fails rather than being replaced by the default.
+ */
+function readableJob(
+  component: Component,
+  snapshot: SchedulerSnapshot,
+  scheduler: Scheduler,
+): InstalledJob | [RefreshResult["outcome"], string] {
+  const again = `jig install ${component.name} --yes writes it again`;
+  const installed = readInstalledJob(snapshot);
+  if (installed === null)
+    return jobPresent(snapshot)
+      ? ["failed", `the installed ${scheduler} job cannot be read; ${again}`]
+      : ["skipped", "not installed"];
+  if (installed.schedule === null)
+    return [
+      "failed",
+      `cannot read the installed schedule, which the default would replace; ${again}`,
+    ];
+  return installed;
+}
+
+/**
  * Refreshes one component's job, under the lock installs take, so a
  * concurrent `jig install` never interleaves with it.
  */
@@ -100,8 +128,8 @@ function refreshJob(
   ): RefreshResult => ({ target: spec.name, outcome, detail });
   return exclusiveGcLock("install", async () => {
     const snapshot = await snapshotScheduler(scheduler, spec);
-    const installed = readInstalledJob(snapshot);
-    if (installed === null) return result("skipped", "not installed");
+    const installed = readableJob(component, snapshot, scheduler);
+    if (Array.isArray(installed)) return result(...installed);
     const call = launcherCall(installed.command);
     if (call === null)
       return result(
@@ -115,7 +143,12 @@ function refreshJob(
     if (!stale && !changed)
       return result("unchanged", "its launcher copy and job are current");
     // The launcher first: a rewritten job may start at once and run it.
-    if (stale) installLauncher(directory);
+    // One transaction: a failed launcher copy puts the snapshot's files back,
+    // as a failed job rewrite does.
+    if (stale)
+      guardLauncher(directory, snapshot.launcher, () =>
+        installLauncher(directory),
+      );
     if (changed) await rewriteJob(snapshot, files, announce);
     return result(
       "refreshed",
@@ -185,7 +218,11 @@ export async function refreshInstalled(
     }
   }
   try {
-    results.push({ target: "jig command", ...refreshCommand() });
+    // Under the lock installs and removals take, as a job's refresh is.
+    results.push({
+      target: "jig command",
+      ...(await exclusiveGcLock("install", async () => refreshCommand())),
+    });
   } catch (error) {
     results.push({
       target: "jig command",

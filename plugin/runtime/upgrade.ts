@@ -75,6 +75,14 @@ function jobsReport(stdout: string): RefreshResult[] | null {
   }
 }
 
+/** The harness outcomes that leave the plugin at this upgrade's release. */
+const CURRENT: readonly string[] = [
+  "installed",
+  "updated",
+  "unchanged",
+  "present",
+];
+
 const OUTCOMES: readonly string[] = [
   "refreshed",
   "unchanged",
@@ -98,23 +106,52 @@ function isJobsReport(value: unknown): value is { jobs: RefreshResult[] } {
 }
 
 /**
+ * The agent tools to ask for the installed copy: the copy a harness that did
+ * not update names is not the release this upgrade brought, so look only
+ * where an upgrade succeeded, when one did.
+ */
+async function updatedPrograms(
+  options: UpgradeOptions,
+  harnesses: readonly HarnessResult[],
+): Promise<{ claude?: string; codex?: string }> {
+  const programs: { claude?: string; codex?: string } = {
+    ...(await recordedPrograms(options.components)),
+    ...pluginPrograms(),
+  };
+  const current = harnesses.filter((result) =>
+    CURRENT.includes(result.outcome),
+  );
+  if (current.length > 0)
+    for (const tool of ["claude", "codex"] as const)
+      if (!current.some((result) => result.harness === tool))
+        delete programs[tool];
+  return programs;
+}
+
+/**
  * The refresh, by the plugin copy a harness names now: in this process when
  * that is this copy, otherwise by running it.
  */
 async function refreshFromInstalled(
   options: UpgradeOptions,
+  harnesses: readonly HarnessResult[],
 ): Promise<RefreshResult[]> {
   let entry: string;
   try {
-    entry = await installedEntry({
-      ...(await recordedPrograms(options.components)),
-      ...pluginPrograms(),
-    });
+    entry = await installedEntry(await updatedPrograms(options, harnesses));
   } catch (error) {
     return failed((error as Error).message);
   }
-  if (entry === realpathSync(options.script))
-    return refreshInstalled(options.components, announcer(options.say));
+  return entry === realpathSync(options.script)
+    ? refreshInstalled(options.components, announcer(options.say))
+    : refreshByRunning(entry, options.say);
+}
+
+/** The installed copy's `jig upgrade --jobs-only --json`, run, and its report. */
+async function refreshByRunning(
+  entry: string,
+  say: Say,
+): Promise<RefreshResult[]> {
   const command = [
     process.execPath,
     "--no-env-file",
@@ -124,15 +161,20 @@ async function refreshFromInstalled(
     "--jobs-only",
     "--json",
   ];
-  options.say(`$ ${command.join(" ")}`);
+  say(`$ ${command.join(" ")}`);
   const timeoutSec = commandTimeoutMs() / 1000;
   const child = await run(command, { timeoutSec, stderr: "inherit" });
-  return (
-    jobsReport(child.stdout) ??
-    failed(
-      `${entry} ${child.timedOut ? `did not finish within ${timeoutSec}s` : `exited ${child.code}`} without a report of the installed jobs`,
-    )
-  );
+  const report = jobsReport(child.stdout);
+  const ended = child.timedOut
+    ? `did not finish within ${timeoutSec}s`
+    : `exited ${child.code}`;
+  if (report === null)
+    return failed(`${entry} ${ended} without a report of the installed jobs`);
+  // A report is not a completed run: a child that printed it and then failed
+  // or hung is a failure the report does not show.
+  return child.timedOut || child.code !== 0
+    ? [...report, ...failed(`${entry} ${ended} after printing its report`)]
+    : report;
 }
 
 /**
@@ -146,7 +188,7 @@ async function upgrade(options: UpgradeOptions): Promise<UpgradeResult> {
       jobs: await refreshInstalled(options.components, announcer(options.say)),
     };
   const harnesses = upgradeHarnesses(options.request, options.say);
-  return { harnesses, jobs: await refreshFromInstalled(options) };
+  return { harnesses, jobs: await refreshFromInstalled(options, harnesses) };
 }
 
 /** 0 when every harness on `PATH` has the plugin and no refresh failed; 1 otherwise. */

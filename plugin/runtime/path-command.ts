@@ -29,6 +29,8 @@ import {
   installedScript,
   installLauncher,
   launcherCommand,
+  guardLauncher,
+  launcherSnapshotIn,
   staleLauncherFiles,
 } from "./scheduler.ts";
 
@@ -230,8 +232,11 @@ export function refreshCommand(
       outcome: "unchanged",
       detail: "its launcher copy and script are current",
     };
-  if (stale.length > 0) installLauncher(directory);
-  if (changed) writeScript(path, text);
+  // One transaction: a failure in either write puts the launcher files back.
+  guardLauncher(directory, launcherSnapshotIn(directory), () => {
+    if (stale.length > 0) installLauncher(directory);
+    if (changed) writeScript(path, text);
+  });
   return {
     outcome: "refreshed",
     detail: [
