@@ -732,10 +732,11 @@ export async function readLaunches(root = stateRoot()): Promise<{
  * The records written at or after `since` (milliseconds) that carry a
  * dispatched mark and were launched, oldest first, for a reader that never
  * creates the database; a row that does not read is left out and named. A
- * record launched when it has a sent attempt, or a wrapper's claim or exit,
- * since a tick that died after the wrapper started but before the attempt
- * was saved still started a session; one that ended before any launch was
- * attempted started none, so it is not one. The window is read by the indexed
+ * record launched when it has a sent attempt or a wrapper's claim, since a
+ * tick that died after the wrapper started but before the attempt was saved
+ * still started a session (a wrapper records its exit only after claiming);
+ * one that ended before any launch was attempted, an exit written by a
+ * follow-up's failed cleanup included, started none, so it is not one. The window is read by the indexed
  * creation time, not by scanning the history.
  */
 export function markedSince(
@@ -759,8 +760,7 @@ export function markedSince(
       Date.parse(record.createdAt) >= since &&
       record.mark &&
       (record.attempts.some((a) => a.outcome !== "failed") ||
-        row.claim !== null ||
-        row.exit !== null)
+        row.claim !== null)
     )
       records.push(record);
   }

@@ -301,7 +301,7 @@ describe("the records a report counts as launched", () => {
     expect(records.map((r) => r.id)).toEqual(["20260101T000000Z-aaaaaaaa"]);
   });
 
-  it("holds a record with no saved attempt when the wrapper claimed it or recorded its exit", () => {
+  it("holds a record with no saved attempt when the wrapper claimed it, and not one whose cleanup failed before any launch", () => {
     const dir = root();
     writeRecord(record("20260101T000000Z-aaaaaaaa", { mark }), dir);
     writeRecord(record("20260101T000001Z-bbbbbbbb", { mark }), dir);
@@ -309,16 +309,13 @@ describe("the records a report counts as launched", () => {
     expect(claimRecord("20260101T000000Z-aaaaaaaa", WHO, dir)).toBe(true);
     recordExit(
       "20260101T000001Z-bbbbbbbb",
-      { at: "2026-01-01T00:00:00.000Z", code: 1, signal: null },
+      { at: "2026-01-01T00:00:00.000Z", code: null, signal: null },
       dir,
     );
     const { records } = markedSince(
       Date.parse("2026-01-01T00:00:00.000Z"),
       dir,
     );
-    expect(records.map((r) => r.id)).toEqual([
-      "20260101T000000Z-aaaaaaaa",
-      "20260101T000001Z-bbbbbbbb",
-    ]);
+    expect(records.map((r) => r.id)).toEqual(["20260101T000000Z-aaaaaaaa"]);
   });
 });
