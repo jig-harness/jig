@@ -699,6 +699,42 @@ than an unflagged one with the `## Route` section saying why, a `route: yours` p
 delegates with nothing forwarded, and a loop-cost report shows the route
 beside the rounds.
 
+### 34. Jig in the Orca ecosystem
+
+Jig's tooling reaches [Orca](https://www.onorca.dev) in places built
+on their own (the workspace tool behind the launcher, `do-item`'s board
+updates and workspace names, the dispatcher's session runtime), and the
+rest of the execution line does not meet it: a parked drive leaves its
+card where it was, `jig gc` cannot collect an Orca-managed worktree
+without leaving Orca's card and terminals behind, the dispatcher cannot
+read an account's usage from Orca's command line, and Orca's plugin
+system has no Jig in it. [design/orca-integration.md](orca-integration.md)
+has how it works, in classes built in order: what Jig does on its
+own side (every stage moves the workspace card and marks a park unread;
+the worktrees kind collects an Orca-managed checkout through Orca, after
+the remove hook and the reflection park, with Orca's registry in the idle
+proof, once every launch path is covered by admission), what Jig asks of Orca (usage per account from the command line;
+a phone push only when an agent needs input; filed by a person, each
+with its pull request offered), and a worker-only plugin in its own
+repository that runs a `jig dispatch --apply` tick when an agent's status
+changes, with no panel until a panel can receive data. One pull request
+per step, in the design's order; the board step waits on `drive-pr`
+linking the card to its pull request, and the plugin on item 33's tick.
+
+Done when a parked drive's card shows unread with the question as its
+comment and `/followup` moves it to completed, `jig gc --collect` on an
+idle Orca checkout, once every launch path is covered by admission or
+Orca refuses a removal atomically, leaves no card in `orca worktree list
+--json`, the dispatcher's account cap reads `orca account usage --json`
+where Orca has it, and an agent in a Jig repository reaching `waiting`, `blocked` or `done`
+under the plugin has a tick pending from the moment the event arrives, while the plugin's worker lives (a restart loses the pending flag and the machine's timer tick then processes the repository):
+the first event after a minute of quiet starts it at once, an event during
+a running tick or the minute after a start waits for one trailing tick
+that starts once the running tick has finished and a minute has passed
+since the last start, and either stays pending while the machine-wide
+tick lock refuses it and survives an event that arrives while that tick
+processes the repository.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the
