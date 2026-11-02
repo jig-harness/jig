@@ -57,8 +57,8 @@ export interface PlanInput {
   idleSince: ReadonlyMap<string, number>;
   /** The pull requests that carry a person's `hold` label. */
   held?: ReadonlySet<number>;
-  /** Open pull requests left out of the read by `only_labeled`: no action targets them. */
-  outOfScope?: ReadonlySet<number>;
+  /** Under `only_labeled`: the pull requests read and found labelled. An action on any other pull request is withheld. */
+  inScope?: ReadonlySet<number>;
   nowMs: number;
 }
 
@@ -69,6 +69,8 @@ type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
   idleKeep: string[];
   /** The actions a `hold` label kept off. */
   held: Array<{ target: string; stage: Stage; reason: string }>;
+  /** The targets `only_labeled` withheld actions from: their notice records stand. */
+  withheld: string[];
 };
 
 /** The ledger classes that need nothing from the tick but a line in the report. */
@@ -89,7 +91,7 @@ const NOTIFY: ReadonlyMap<LedgerClass, NotifyCause> = new Map([
 
 export function planTick(input: PlanInput): Plan {
   const { sessions } = input;
-  const plan: Plan = { ...planPickups(input), held: [] };
+  const plan: Plan = { ...planPickups(input), held: [], withheld: [] };
 
   /** One wanted stage for one target, minus what is running. */
   function want(action: Action, joined: (w: Workspace) => boolean): void {
@@ -166,33 +168,41 @@ export function planTick(input: PlanInput): Plan {
   });
   plan.actions.push(...drift.actions);
   plan.running.push(...drift.running);
-  holdBack(plan, input.held ?? new Set(), input.outOfScope ?? new Set());
+  holdBack(plan, input.held ?? new Set(), input.inScope);
   return plan;
 }
 
 /**
  * Move every action on a pull request a `hold` label carries out of the
- * plan, into its report; drop the ones on a pull request `only_labeled`
- * leaves out of scope.
+ * plan, into its report. Under `only_labeled` (`inScope` given) an action
+ * on a pull request not positively known to be labelled is withheld, so a
+ * listing that failed or never held the pull request leaves it alone.
  */
 export function holdBack(
-  plan: Pick<Plan, "actions" | "held">,
+  plan: Pick<Plan, "actions" | "held"> & { withheld?: string[] },
   held: ReadonlySet<number>,
-  outOfScope: ReadonlySet<number> = new Set(),
+  inScope?: ReadonlySet<number>,
 ): void {
-  if (held.size === 0 && outOfScope.size === 0) return;
+  if (held.size === 0 && inScope === undefined) return;
   const targets = new Set([...held].map((n) => `PR #${n}`));
-  const unscoped = new Set([...outOfScope].map((n) => `PR #${n}`));
+  const scoped =
+    inScope === undefined ? null : new Set([...inScope].map((n) => `PR #${n}`));
   const kept: Action[] = [];
   for (const action of plan.actions)
-    if (unscoped.has(action.target)) continue;
-    else if (targets.has(action.target))
+    if (
+      scoped !== null &&
+      /^PR #\d+$/.test(action.target) &&
+      !scoped.has(action.target)
+    )
+      plan.withheld?.push(action.target);
+    else if (targets.has(action.target)) {
       plan.held.push({
         target: action.target,
         stage: action.stage,
         reason: `a person's hold label stands the dispatcher down from it; without it the tick would ${action.stage}: ${action.reason}`,
       });
-    else kept.push(action);
+      plan.withheld?.push(action.target);
+    } else kept.push(action);
   plan.actions = kept;
 }
 

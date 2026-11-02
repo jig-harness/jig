@@ -246,7 +246,7 @@ async function gatherRepo(
     if (p.createdAt !== undefined) created.set(p.number, p.createdAt);
   await observeRunning(context, repo, report, drives, sessions, created);
   const held = heldPullRequests(labels, [...open, ...merged]);
-  const { outOfScope } = forge;
+  const { inScope } = forge;
   planRepo(context, repo.slug, report, {
     slug: repo.slug,
     section,
@@ -257,7 +257,7 @@ async function gatherRepo(
     sessions,
     created,
     held,
-    ...(labels?.onlyLabeled === true ? { outOfScope } : {}),
+    ...(labels?.onlyLabeled === true ? { inScope } : {}),
   });
   await logRepo(context, repo.slug, report, drives);
   if (context.apply !== null)
@@ -285,8 +285,8 @@ interface ForgeRead {
   open: Awaited<ReturnType<typeof openPullRequests>>;
   /** The open pull requests read for a ledger: under `only_labeled`, the labelled ones. */
   read: Set<number>;
-  /** The pull requests, open or merged, that `only_labeled` left out: nothing is done on them, whatever a launch record says. */
-  outOfScope: Set<number>;
+  /** The pull requests, open or merged, read and found in scope: under `only_labeled`, the only ones anything is done on, whatever a launch record says. */
+  inScope: Set<number>;
   drives: Awaited<ReturnType<typeof readDrives>>;
   merged: MarkedPr[];
   login: string | null;
@@ -315,7 +315,7 @@ async function readForge(
     ok: false,
     open: [],
     read: new Set(),
-    outOfScope: new Set(),
+    inScope: new Set(),
     drives: [],
     merged: [],
     login: null,
@@ -327,13 +327,11 @@ async function readForge(
     out.drives = await readDrives(repo.slug, out.login, toRead, nowMs, labels);
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));
-    for (const p of out.open)
-      if (!out.read.has(p.number)) out.outOfScope.add(p.number);
+    for (const n of out.read) out.inScope.add(n);
     if (section.followupCommand !== null) {
       const listed = await mergedSince(repo.slug, since, read);
       const inScope = managed(listed);
-      for (const p of listed)
-        if (!inScope.includes(p)) out.outOfScope.add(p.number);
+      for (const p of inScope) out.inScope.add(p.number);
       out.merged = await withMarkers(repo.slug, out.login, inScope);
     }
     out.ok = true;
@@ -356,6 +354,7 @@ async function readForge(
     });
     out.drives = [];
     out.merged = [];
+    out.inScope = new Set();
   }
   return out;
 }
@@ -662,10 +661,15 @@ function planRepo(
     nudges,
     nowMs,
   });
-  // The nudges stand down for a held or out-of-scope pull request like every other action.
-  const nudged = { actions: steers.actions, held: plan.held };
-  holdBack(nudged, input.held ?? new Set(), input.outOfScope ?? new Set());
+  // The nudges stand down for a held or not-known-labelled pull request like every other action.
+  const nudged = {
+    actions: steers.actions,
+    held: plan.held,
+    withheld: plan.withheld,
+  };
+  holdBack(nudged, input.held ?? new Set(), input.inScope);
   report.actions.push(...nudged.actions);
+  report.withheld = plan.withheld;
   report.running.push(...steers.running);
   report.unplaced.push(...plan.unplaced);
   report.quiet.push(...plan.quiet);

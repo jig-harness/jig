@@ -344,7 +344,10 @@ function prune(
   root: string,
 ): void {
   if (!report.records.every((r) => r.ok)) return;
-  const unplaced = new Set(report.unplaced.map((u) => u.target));
+  const unplaced = new Set([
+    ...report.unplaced.map((u) => u.target),
+    ...(report.withheld ?? []),
+  ]);
   const gone = [...sent.values()].filter(
     (s) => !keys.has(s.key) && !unplaced.has(s.target) && !s.lasting,
   );

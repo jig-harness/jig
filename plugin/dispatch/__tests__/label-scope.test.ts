@@ -13,11 +13,33 @@ const act = (n: number): Action =>
   ({ target: `PR #${n}`, stage: "steer", reason: "nudge" }) as Action;
 
 describe("holdBack", () => {
-  it("reports a held target and silently drops an out-of-scope one", () => {
-    const plan = { actions: [act(1), act(2), act(3)], held: [] as never[] };
-    holdBack(plan as never, new Set([1]), new Set([2]));
+  it("reports a held target and withholds one not known to be labelled", () => {
+    const plan = {
+      actions: [act(1), act(2), act(3)],
+      held: [] as never[],
+      withheld: [] as string[],
+    };
+    holdBack(plan as never, new Set([1]), new Set([1, 3]));
     expect(plan.actions.map((a) => a.target)).toEqual(["PR #3"]);
     expect(plan.held).toHaveLength(1);
+    expect(plan.withheld.sort()).toEqual(["PR #1", "PR #2"]);
+  });
+
+  it("withholds every pull request action when no listing established membership", () => {
+    const plan = {
+      actions: [act(4), { ...act(4), target: "ENG-1" }],
+      held: [] as never[],
+      withheld: [] as string[],
+    };
+    holdBack(plan as never, new Set(), new Set());
+    expect(plan.actions.map((a) => a.target)).toEqual(["ENG-1"]);
+    expect(plan.withheld).toEqual(["PR #4"]);
+  });
+
+  it("leaves everything alone when only_labeled is off", () => {
+    const plan = { actions: [act(9)], held: [] as never[] };
+    holdBack(plan as never, new Set());
+    expect(plan.actions).toHaveLength(1);
   });
 });
 
