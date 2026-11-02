@@ -722,7 +722,8 @@ Orca refuses a removal atomically, leaves no card in `orca worktree list
 --json`, the dispatcher's account cap reads `orca account usage --json`
 where Orca has it, and an agent in a Jig repository reaching `waiting`
 under the plugin has a trailing tick pending that starts once the running
-tick has finished and a minute has passed since the last start.
+tick has finished and a minute has passed since the last start, and stays
+pending while the machine-wide tick lock refuses it.
 
 ## Later
 

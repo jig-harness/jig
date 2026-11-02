@@ -129,8 +129,8 @@ dispatcher matches to the account in its machine file; a row it cannot
 match is ignored. An `unavailable` row is never read as free: the account
 takes no new launch and no re-arm until a later read succeeds, unless the
 dispatcher holds a recorded wall for it, which then stands. Until the
-command exists, the dispatcher reads usage walls from two sources: the
-drive ledger's quota parks, and the waiting interactive sessions it probes
+command exists, the dispatcher reads usage walls from the drive ledger's
+quota parks and from the waiting interactive sessions it probes
 through the drive's quota adapters (`detectQuotaBlock`), which read the
 vendor's session records under the account's configuration directory and
 record the account's wall.
@@ -166,9 +166,13 @@ without a change to the tick. Ticks for one repository run one at a time,
 and a tick starts no sooner than a minute after the last one started. An
 event that arrives while a tick runs or inside that minute sets a pending
 flag; one trailing tick starts once the running tick has finished and the
-minute has passed, so a status change after a tick read its state is never
-dropped, and the next tick processes it, later than a minute when a tick
-runs long. On `workspace.created` it logs
+minute has passed. The tick lock is machine-wide, so a timer tick or
+another repository's tick can refuse the invocation without reading this
+repository: the plugin clears the flag only after a tick has processed the
+repository, and on a refusal keeps it and retries after the same minute.
+A status change after a tick read its state is therefore never dropped,
+and the next tick that runs processes it, later than a minute when a tick
+runs long or the lock is busy. On `workspace.created` it logs
 the workspace and does nothing else; the table above says when the create
 hook joins. One setting names the `jig` command;
 the plugin calls the installed `jig` plugin and bundles nothing, so Jig's
