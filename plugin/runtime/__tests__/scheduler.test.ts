@@ -12,6 +12,7 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 
 const scheduler = resolve(import.meta.dir, "../scheduler.ts");
+const gcJob = resolve(import.meta.dir, "../../gc/job-spec.ts");
 
 interface Markers {
   enabled: string;
@@ -48,7 +49,8 @@ function driverSource(paths: Markers & { units: string }): string {
   const { units, enabled, active, failDisable } = paths;
   return `import { writeFileSync } from "node:fs";
 import { restoreScheduler, snapshotScheduler } from ${JSON.stringify(scheduler)};
-const snapshot = await snapshotScheduler("systemd");
+import { gcJobSpec } from ${JSON.stringify(gcJob)};
+const snapshot = await snapshotScheduler("systemd", gcJobSpec());
 writeFileSync(${JSON.stringify(join(units, "jig-gc.timer"))}, "replacement timer\\n");
 writeFileSync(${JSON.stringify(enabled)}, "");
 writeFileSync(${JSON.stringify(active)}, "");
