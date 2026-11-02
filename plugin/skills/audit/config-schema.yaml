@@ -652,7 +652,7 @@ fields:
     keys: [in_progress, in_review, completed]
     values_type: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" }
     read_by: [do-item, drive-pr]
-    since: next
+    since: 0.126.0
 
   work_batch.point_budget:
     type: integer
