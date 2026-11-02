@@ -27,7 +27,7 @@ import { stateRoot } from "../receipts.ts";
 import { logFile, monthOf, parseLine } from "./log.ts";
 import { existingStateDb } from "./state.ts";
 
-/** The most rows one export copies; the rest wait for the next tick. */
+/** The most rows one query copies; an export repeats until it has copied every row written before it began. */
 const BATCH = 5000;
 const CHUNK = 1 << 20;
 const TEMPORARY = /\.[0-9a-f-]{36}\.tmp$/;
@@ -126,27 +126,8 @@ function copyMonth(path: string, rows: Copied[]): number {
   return missing.length;
 }
 
-/**
- * Copy the rows written since the last copy (at most a batch a call) into
- * their months' files; returns how many lines it added. Nothing happens
- * before the database exists.
- */
-export function exportLog(root = stateRoot()): number {
-  const db = existingStateDb(root);
-  if (db === null) return 0;
-  reclaimTemporaries(root);
-  const mark =
-    (
-      db.query("SELECT seq FROM log_export WHERE id = 1").get() as {
-        seq: number;
-      } | null
-    )?.seq ?? 0;
-  const fresh = db
-    .query(
-      `SELECT seq, key, at, row FROM log WHERE seq > ? ORDER BY seq LIMIT ${BATCH}`,
-    )
-    .all(mark) as Copied[];
-  if (fresh.length === 0) return 0;
+/** Add `fresh` to its months' files; returns how many lines were added. */
+function copyBatch(fresh: Copied[], root: string): number {
   const months = new Map<string, Copied[]>();
   for (const row of fresh) {
     const month = monthOf(row.at);
@@ -157,8 +138,44 @@ export function exportLog(root = stateRoot()): number {
   let added = 0;
   for (const rows of months.values())
     added += copyMonth(logFile((rows[0] as Copied).at, root), rows);
-  db.query(
-    "INSERT INTO log_export (id, seq) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET seq = excluded.seq",
-  ).run((fresh.at(-1) as Copied).seq);
   return added;
+}
+
+/**
+ * Copy the rows written since the last copy into their months' files, in
+ * batches, up to the newest row there was when it began; returns how many
+ * lines it added. Nothing happens before the database exists.
+ */
+export function exportLog(root = stateRoot()): number {
+  const db = existingStateDb(root);
+  if (db === null) return 0;
+  reclaimTemporaries(root);
+  const high =
+    (
+      db.query("SELECT MAX(seq) AS seq FROM log").get() as {
+        seq: number | null;
+      } | null
+    )?.seq ?? 0;
+  let added = 0;
+  for (;;) {
+    const mark =
+      (
+        db.query("SELECT seq FROM log_export WHERE id = 1").get() as {
+          seq: number;
+        } | null
+      )?.seq ?? 0;
+    const fresh =
+      mark >= high
+        ? []
+        : (db
+            .query(
+              `SELECT seq, key, at, row FROM log WHERE seq > ? AND seq <= ? ORDER BY seq LIMIT ${BATCH}`,
+            )
+            .all(mark, high) as Copied[]);
+    if (fresh.length === 0) return added;
+    added += copyBatch(fresh, root);
+    db.query(
+      "INSERT INTO log_export (id, seq) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET seq = excluded.seq",
+    ).run((fresh.at(-1) as Copied).seq);
+  }
 }

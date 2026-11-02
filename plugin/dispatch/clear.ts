@@ -16,6 +16,7 @@
  * Exit codes: 0 cleared; 2 usage, no such record, a record that may not be
  * cleared or that changed while it was read; 3 a tick holds the lock.
  */
+import { retryable } from "./lib/actions/launch.ts";
 import {
   inspectRow,
   isRecordId,
@@ -37,8 +38,7 @@ function refusal(id: string, row: InspectedRow): string | null {
   if (record === null) return null;
   if (state.kind === "unknown") return null;
   if (state.kind === "pending") {
-    const last = record.attempts.at(-1);
-    if (last !== undefined && last.outcome !== "sent") return null;
+    if (!retryable(record)) return null;
     return `${id} is pending and its launch can still be retried`;
   }
   return `${id} is ${state.kind}: the tick settles it and its outcome row, and it keeps its protections until it is pruned`;

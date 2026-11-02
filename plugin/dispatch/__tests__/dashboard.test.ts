@@ -93,6 +93,17 @@ db.transaction(() => {
 `;
 
 describe("jig dispatch dashboard", () => {
+  it("reports the total and no truncation while the rows fit under the cap", () => {
+    const root = fixtureLog();
+    const data = dashboardData(new URLSearchParams(YESTERDAY), NOW, root) as {
+      rows: LogRow[];
+      total: number;
+      truncated: boolean;
+    };
+    expect(data.total).toBe(3);
+    expect(data.truncated).toBe(false);
+  });
+
   it("shows only yesterday's rows when filtered to yesterday, with each class counted", () => {
     const root = fixtureLog();
     const data = dashboardData(new URLSearchParams(YESTERDAY), NOW, root) as {

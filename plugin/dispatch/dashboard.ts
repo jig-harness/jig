@@ -66,21 +66,24 @@ function filterRows(
 ): { rows: LogRow[]; counts: Record<string, number> } {
   const db = existingStateDb(root);
   if (db === null) return { rows: [], counts: {} };
-  const rows = db
-    .query(
-      `SELECT row FROM log WHERE ${KEPT}
-       ORDER BY at_ms DESC, seq DESC LIMIT ${DASHBOARD_ROWS}`,
-    )
-    .all(...filterArgs(f)) as Array<{ row: string }>;
-  const counted = db
-    .query(
-      `SELECT bucket, COUNT(*) AS n FROM log WHERE ${KEPT} GROUP BY bucket`,
-    )
-    .all(...filterArgs(f)) as Array<{ bucket: string; n: number }>;
-  return {
-    rows: rowsOf(rows),
-    counts: Object.fromEntries(counted.map((c) => [c.bucket, c.n])),
-  };
+  // One read transaction: a tick committing between the two queries shows in neither.
+  return db.transaction(() => {
+    const rows = db
+      .query(
+        `SELECT row FROM log WHERE ${KEPT}
+         ORDER BY at_ms DESC, seq DESC LIMIT ${DASHBOARD_ROWS}`,
+      )
+      .all(...filterArgs(f)) as Array<{ row: string }>;
+    const counted = db
+      .query(
+        `SELECT bucket, COUNT(*) AS n FROM log WHERE ${KEPT} GROUP BY bucket`,
+      )
+      .all(...filterArgs(f)) as Array<{ bucket: string; n: number }>;
+    return {
+      rows: rowsOf(rows),
+      counts: Object.fromEntries(counted.map((c) => [c.bucket, c.n])),
+    };
+  })();
 }
 
 /** The values each field takes in the window, for the page's choices. */
@@ -143,11 +146,14 @@ export function dashboardData(
   const filter = parseFilter(params, nowMs);
   const { rows, counts } = filterRows(root, filter);
   const values = windowValues(root, filter);
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
   return {
     from: new Date(filter.fromMs).toISOString(),
     to: new Date(filter.toMs).toISOString(),
     counts,
     rows,
+    total,
+    truncated: total > rows.length,
     options: {
       repo: values.repo,
       stage: values.stage,
@@ -334,7 +340,7 @@ async function load() {
   for (const name of ["repo", "stage", "account", "class"]) fill(form[name], data.options[name]);
   const counts = document.getElementById("counts");
   counts.replaceChildren(...Object.entries(data.counts).sort((a, b) => b[1] - a[1]).map(([k, n]) => { const c = el("span", "count", k + " "); c.append(el("b", "", String(n))); return c; }));
-  document.getElementById("meta").textContent = data.rows.length + " row(s) from " + new Date(data.from).toLocaleString() + " to " + new Date(data.to).toLocaleString();
+  document.getElementById("meta").textContent = (data.truncated ? "newest " + data.rows.length + " of " + data.total + " rows (narrow the window or a filter to see the rest)" : data.rows.length + " row(s)") + " from " + new Date(data.from).toLocaleString() + " to " + new Date(data.to).toLocaleString();
   const rows = document.getElementById("rows");
   if (data.rows.length === 0) { rows.replaceChildren(el("p", "empty", "No rows in this window.")); return; }
   rows.replaceChildren(...data.rows.map((r) => {

@@ -81,23 +81,47 @@ describe("jig dispatch clear", () => {
     expect(present(dir)).toBe(true);
   });
 
+  const workspace = { id: "w", path: "/w" };
+  const failed = {
+    at: "2026-01-01T00:00:01.000Z",
+    outcome: "failed" as const,
+    detail: "x",
+  };
+
   it("keeps a pending record whose launch can still be retried", async () => {
     const dir = root();
-    writeRecord(record(), dir);
+    writeRecord(record({ workspace }), dir);
     expect(await clear(dir)).toBe(2);
     expect(present(dir)).toBe(true);
   });
 
-  it("clears a pending record whose last launch failed", async () => {
+  it("keeps a pending record after one lost attempt, which can still be replayed", async () => {
+    const dir = root();
+    writeRecord(record({ workspace, attempts: [failed] }), dir);
+    expect(await clear(dir)).toBe(2);
+    expect(present(dir)).toBe(true);
+  });
+
+  it("clears a pending record whose attempts are spent", async () => {
+    const dir = root();
+    writeRecord(record({ workspace, attempts: [failed, failed] }), dir);
+    expect(await clear(dir)).toBe(0);
+    expect(present(dir)).toBe(false);
+  });
+
+  it("clears a pending record whose last attempt was sent but never claimed", async () => {
     const dir = root();
     writeRecord(
-      record({
-        attempts: [
-          { at: "2026-01-01T00:00:01.000Z", outcome: "failed", detail: "x" },
-        ],
-      }),
+      record({ workspace, attempts: [{ ...failed, outcome: "sent" }] }),
       dir,
     );
+    expect(await clear(dir)).toBe(0);
+    expect(present(dir)).toBe(false);
+  });
+
+  it("clears a pending record that never got a workspace", async () => {
+    const dir = root();
+    writeRecord(record(), dir);
     expect(await clear(dir)).toBe(0);
     expect(present(dir)).toBe(false);
   });

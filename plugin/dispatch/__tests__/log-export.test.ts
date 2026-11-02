@@ -122,4 +122,14 @@ describe("the outcome log's text", () => {
     expect(exportLog(root)).toBe(1);
     expect(monthLines(root).map((l) => JSON.parse(l).key)).toEqual(["a"]);
   });
+
+  it("copies every row written before it began, across batches", () => {
+    const root = mkdtempSync(join(tmpdir(), "jig-log-"));
+    roots.push(root);
+    for (let i = 0; i < 5001; i++)
+      writeRow(row(`k${i}`, "2026-01-02T03:04:05.000Z"), root);
+    expect(exportLog(root)).toBe(5001);
+    expect(monthLines(root)).toHaveLength(5001);
+    expect(exportLog(root)).toBe(0);
+  });
 });
