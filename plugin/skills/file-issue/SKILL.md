@@ -54,7 +54,7 @@ reader; to read one value yourself, run
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
 | `issue_tracker.taxonomy` | The label taxonomy, relative to the repository root | `label-taxonomy.yaml`; without one the skill stops before writing |
-| `issue_tracker.team` | Linear only: the team the issues are filed in, the prefix of their keys (`ENG` in `ENG-123`) | Required on Linear: the tracker scripts stop with a message naming it. Not used on GitHub Issues |
+| `issue_tracker.team` | Linear and Jira: the team (Linear) or project (Jira) the issues are filed in, the prefix of their keys (`ENG` in `ENG-123`) | Required on Linear and Jira: the tracker scripts stop with a message naming it. Not used on GitHub Issues |
 | `issue_tracker.adapter` | Which tracker adapter the tracker scripts use | The default adapter |
 | `issue_tracker.labels` | The label each role names (`hitl`, `manual_ops`, `epic`, `followup`, `bug`, `pattern_prefix`); the `labels` operation of `tracker.ts` prints them | The defaults in the [configuration reference](../../CONFIGURATION.md#issue_tracker) |
 | `drive.change_areas_catalog` | The change-area catalog labels are derived from when a diff exists | No catalog: labels come from the description |
@@ -82,7 +82,7 @@ tracker by another route.
 | Change an issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update "<KEY>" --input patch.json` |
 | Relate two issues | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" relate "<KEY>" <blocks\|related\|duplicate> "<TARGET>"` |
 
-An issue key is `ENG-123` on Linear and `#123` on GitHub Issues, an issue
+An issue key is `ENG-123` on Linear and Jira and `#123` on GitHub Issues, an issue
 of the configured repository; this document writes it as `<KEY>` (or
 `<TARGET>` for the other issue of a relation). Quote a key on a command line:
 an unquoted `#` starts a shell comment.
@@ -101,7 +101,9 @@ Where this skill says "ask the user", use `AskUserQuestion` under Claude
 Code where the session can use it; in any interactive harness where it
 cannot (another harness, or a permission mode that denies the tool), ask a
 plain-text numbered question and end the turn. With nobody to answer, stop and state the question rather
-than write anything. Never pick on the user's behalf.
+than write anything. Never pick on the user's behalf. The one exception is
+the confirmation of [step 9](#9-confirm) under the `unattended` autonomy
+level, which the level itself answers.
 
 ## Modes
 
@@ -136,9 +138,12 @@ than write anything. Never pick on the user's behalf.
    `container` flag (an epic) goes on the container. When an issue is
    split, move such a flag from the parent to the children that carry the
    change.
-4. **Confirm before writing.** Show the user the complete plan (titles,
-   labels, priority, parent, relations, the body) and write only after they
-   accept it.
+4. **Confirm before writing, unless the autonomy level says nobody is
+   there.** Show the user the complete plan (titles, labels, priority,
+   parent, relations, the body) and write only after they accept it, under
+   the `attended` level. Under `unattended`, write without the confirmation,
+   and the body says which skill filed it, from which pull request and why
+   ([step 9](#9-confirm)).
 5. **No guessing a facet.** A facet the taxonomy marks optional (a category
    whose `requires` names an umbrella) is left off when unsure: the
    umbrella alone is a complete labelling, and a wrong facet is worse than
@@ -332,10 +337,29 @@ parent's set and on each child's. Every set passes before step 9.
 
 ### 9. Confirm
 
-**exact** — Show the user the plan: each issue's title, labels, priority,
-parent and relations, and each issue's body in full, children's included:
-the body is what step 10 writes. Write nothing until the user
-accepts; apply their changes and validate again.
+**exact** — Read whether this run confirms. Name the skill that asked for the
+issue (this one, or the one that called it), the pull request it came from,
+and why, in one line:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/confirm-step.ts" --skill <skill> --pr <pull-request-url> --why "<one line>"
+```
+
+It prints `confirm: <level>` or `skip: <level>`, then the filed-by line.
+
+- **`confirm`** (the `attended` level, and every interactive session unless
+  its person chose a level): show the user the plan, each issue's title,
+  labels, priority, parent and relations, and each issue's body in full,
+  children's included: the body is what step 10 writes. Write nothing until
+  the user accepts; apply their changes and validate again.
+- **`skip`** (the `unattended` level a driver pass reads where the repository
+  allows it): put the printed filed-by line at the end of each issue's body,
+  and go on to step 10. Under a drive, record the filing afterwards
+  (drive-pr § 8), so a person finds and can close it. With no pull request
+  behind the run, there is no `skip`: run the script with no options (it
+  prints `confirm`) and confirm. On exit `2` (an empty or invalid option) fix
+  the option and run it again; on exit `1` (an invalid autonomy
+  configuration) treat the run as `confirm`, never as `skip`.
 
 ### 10. Write
 
@@ -418,7 +442,8 @@ toward the split.
 **exact** — Validate the issue's resulting label set and every new child's
 ([rule 1](#the-rules-every-write-obeys)); show the user the change (labels
 added and removed, the new body if any, the children, the relations) and
-write only after they accept.
+write only after they accept. Planning an existing issue always confirms,
+whatever the autonomy level.
 
 Create the children first, with `"parent": "<KEY>"`, as in
 [File, step 10](#10-write), so each flag moving from the issue to a child

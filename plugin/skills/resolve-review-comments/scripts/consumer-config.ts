@@ -13,6 +13,7 @@
 
 import { fail, runMain } from "../../../shared/cli.ts";
 import {
+  botEntries,
   consumerRoot,
   overlayPath,
   readOverlay,
@@ -77,7 +78,11 @@ async function main(): Promise<number> {
     ["gates.command", gates ?? ""],
     [
       "review.bots",
-      review.bots?.length ? review.bots.join(", ") : "(not set: any reviewer)",
+      review.bots?.length
+        ? botEntries(review.bots)
+            .map((b) => b.login)
+            .join(", ")
+        : "(not set: any reviewer)",
     ],
     [
       "review.job_pattern",

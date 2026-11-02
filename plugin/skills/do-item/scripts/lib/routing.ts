@@ -373,6 +373,25 @@ export function parseRouting(
   };
 }
 
+/**
+ * The tier-to-model table alone (`routing.models`, every default applied),
+ * for a reader that resolves a tier without routing an item: the drive's
+ * pass model. Throws, naming the field, on a section or a row of the wrong
+ * shape, as `parseRouting` does.
+ */
+export function parseRoutingModels(
+  overlay: Record<string, unknown>,
+): RoutingRules["models"] {
+  const raw = overlay.routing;
+  if (raw === undefined || raw === null) return parseModels(undefined);
+  const section = mapping(
+    raw,
+    "routing",
+    "be a mapping; routing: {} accepts every default",
+  );
+  return parseModels(section.models);
+}
+
 /** The labels a declared raise list names that a label taxonomy does not declare. */
 export function undeclaredRaiseLabels(
   rules: RoutingRules,

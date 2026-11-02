@@ -11,6 +11,8 @@ import { run, tsArgv } from "./../proc.ts";
 
 import { driveStatus } from "./paths.ts";
 
+import { measureUnpushed } from "./unpushed.ts";
+
 async function previewConflictingRound(
   status: Record<string, unknown>,
   context: DriveRoundContext,
@@ -76,6 +78,10 @@ export async function readRoundStatus(
   | "continue"
   | { code: number; status: Record<string, unknown>; reasonLine: string }
 > {
+  // Commits a pass left unpushed, or the drive was armed over, go to the gate
+  // as an inherited head rather than to a HEAD_LAG poll that cannot end.
+  const stranded = await measureUnpushed(context);
+  if (stranded !== null) return stranded;
   const inherited =
     context.inheritedHead === ""
       ? []

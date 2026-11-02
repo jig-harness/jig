@@ -155,13 +155,21 @@ function familyLines(line: ReceiptLine): string[] {
       );
   });
 }
+/** The workspace runtime a line's resource is managed by, when one is. */
+function runtimeOf(line: ReceiptLine): string {
+  return isMapping(line.details) &&
+    typeof line.details.runtime === "string" &&
+    line.details.runtime !== "none"
+    ? ` (${line.details.runtime})`
+    : "";
+}
 export function formatReceipt(receipt: Receipt): string {
   const declarations = receipt.kinds.map(
     (kind) =>
       `${kind.name} ${kind.repository ?? "machine"}: declaration ${kind.declaration}`,
   );
   const lines = receipt.resources.flatMap((line) => [
-    `${line.kind} ${line.repository ?? "machine"} ${line.resource}: ${line.outcome} — ${line.reason}${line.bytes === undefined ? "" : ` (${line.bytes} bytes)`}`,
+    `${line.kind} ${line.repository ?? "machine"} ${line.resource}${runtimeOf(line)}: ${line.outcome} — ${line.reason}${line.bytes === undefined ? "" : ` (${line.bytes} bytes)`}`,
     ...familyLines(line),
   ]);
   return [

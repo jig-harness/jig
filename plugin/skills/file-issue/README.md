@@ -35,6 +35,16 @@ show you the whole plan, and only after you accept it create the issues and
 their relations. Planning reads the issue, its comments and its relations
 and proposes a change the same way.
 
+The confirmation follows the repository's
+[autonomy level](https://github.com/jig-harness/jig/blob/main/plugin/CONFIGURATION.md#autonomy).
+Under `attended`, the default and every session a person runs unless they
+chose otherwise, you see the plan first. Under `unattended`, which a drive's
+pass reads where the repository allows it, an issue another skill needs (a
+deferral, a follow-up, a reflection escalation) is filed without the
+confirmation, and its body ends with a line saying which skill filed it,
+from which pull request and why, so you can find it and close it. Planning
+an existing issue always asks.
+
 Every tracker read and write goes through the
 [do-item](https://github.com/jig-harness/jig/blob/main/plugin/skills/do-item/SKILL.md)
 skill's tracker scripts, so the skill works with whichever tracker adapter

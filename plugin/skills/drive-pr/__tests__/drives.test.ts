@@ -1403,7 +1403,7 @@ describe("drives.ts --json carries the doctor verdict", () => {
     writeFileSync(join(stateDir, `drive-pr-${pr}.json`), JSON.stringify(state));
   }
 
-  it("plain --json includes doctor.verdict = NEEDS_HUMAN for a row with a parked item", async () => {
+  it("plain --json includes doctor.verdict = NEEDS_HUMAN naming each parked question", async () => {
     const stateDir = freshStateDir();
     const claim = formatClaim(process.pid, hostname(), { ...DIAG, pr: "7001" });
     plantLock(stateDir, "pr-drive-7001.lock", { "claim.aaaa": claim });
@@ -1424,7 +1424,8 @@ describe("drives.ts --json carries the doctor verdict", () => {
     };
     const row = parsed.rows.find((x) => x.kind === "pr" && x.key === "7001");
     expect(row?.doctor?.verdict).toBe("NEEDS_HUMAN");
-    expect(row?.doctor?.reason).toContain("1 item");
+    expect(row?.doctor?.reason).toContain('"needs a human"');
+    expect(row?.doctor?.reason).not.toContain("1 item");
   });
 
   it("a worktree-kind row carries doctor: null — classification is per-PR only", async () => {

@@ -49,8 +49,8 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  *                        when you know the local tree is not the PR branch).
  *   --inherited-head SHA let the guard pass a local HEAD that is exactly SHA
  *                        and descends from the API head: the commits a pass
- *                        killed at its deadline left unpushed (the driver's
- *                        restart notice names it). Any other mismatch lags.
+ *                        left unpushed, or the drive was armed over (the
+ *                        driver's notice names it). Any other mismatch lags.
  *   --no-count           do not count this evaluation as a worked round. Also
  *                        suppresses the replied-thread reconciliation sweep
  *                        below — a mid-round re-read is not a pass entry.
@@ -224,7 +224,7 @@ import { definedFields } from "../../../shared/defined-fields.ts";
  * `<skill-dir>/scripts/lib/status/terminal-states.ts`.
  */
 
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type BaseDrift,
@@ -251,6 +251,7 @@ import {
   gitIdentityEnv,
   readTimeoutEnv,
   run,
+  runInlineProbe,
   tsArgv,
 } from "./lib/proc.ts";
 import { reviewerApp } from "./lib/overlay.ts";
@@ -295,12 +296,9 @@ const MAX_QUERY_ERRORS = 3;
 
 /**
  * `realpathSync`, bounded — a stalled FUSE/NFS mount can block this SYNCHRONOUS
- * call indefinitely in THIS process, and `GIT_CALL_TIMEOUT` bounding the
- * local-HEAD measurement's `git()` subprocess calls (further down this file)
- * does nothing for it. Runs as a separate bounded subprocess — same convention
- * `unconcludedGitOpMarker`'s marker probe in `lib/proc.ts` uses — so `run()`'s
- * existing timeout-and-kill can bound it exactly like every other call here,
- * without a shell of any kind.
+ * call indefinitely in THIS process, which `GIT_CALL_TIMEOUT` does nothing
+ * for. So it runs as a bounded inline probe (`runInlineProbe`, from a neutral
+ * directory: the path is made absolute against this process's cwd first).
  */
 const REALPATH_PROBE_SCRIPT = `
 const { realpathSync } = require('node:fs');
@@ -320,7 +318,7 @@ async function boundedRealpath(
   // string as "nothing to resolve", never as "resolve my cwd", so this must
   // refuse before ever reaching the probe subprocess.
   if (p === "") return null;
-  const probe = await run([process.execPath, "-e", REALPATH_PROBE_SCRIPT, p], {
+  const probe = await runInlineProbe(REALPATH_PROBE_SCRIPT, [resolve(p)], {
     stderr: "ignore",
     ...definedFields({ timeoutSec }),
   });

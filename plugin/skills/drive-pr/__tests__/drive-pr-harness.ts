@@ -1,3 +1,4 @@
+import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import {
   scopedStateDir,
   linkedScratchTree,
@@ -1099,7 +1100,7 @@ export DRIVE_PR_STUB_GH_NESTED=1
   if [[ "$requires_json" -eq 1 ]]; then
     case "$command:$json_fields" in
       'pr checks:name,bucket,state'|'repo view:owner,name'|\
-      'pr view:number'|'pr view:state'|'pr view:headRefOid'|\
+      'pr view:number'|'pr view:state'|'pr view:headRefOid'|'pr view:mergeable'|\
       'pr view:baseRefName'|'pr view:baseRefName,url'|'pr view:state,isDraft'|\
       'pr view:state,headRefOid,labels'|\
       'pr view:state,headRefOid,baseRefOid'|\
@@ -2613,17 +2614,7 @@ export async function park(
   kind: "thread" | "finding",
 ) {
   const proc = Bun.spawn(
-    scriptArgv(
-      join(SCRIPTS, "drive-state.ts"),
-      "park",
-      "999",
-      "--key",
-      key,
-      "--kind",
-      kind,
-      "--reason",
-      "arbiter escalated",
-    ),
+    scriptArgv(join(SCRIPTS, "drive-state.ts"), ...parkArgs(key, kind)),
     {
       cwd: fixtureStateTree(stateDir),
       env: {
@@ -2631,6 +2622,9 @@ export async function park(
         DRIVE_PR_STATE_DIR: stateDir,
         DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
       },
+      stdin: new TextEncoder().encode(
+        parkRecord("Did the arbiter escalate it"),
+      ),
       stdout: "pipe",
       stderr: "pipe",
     },

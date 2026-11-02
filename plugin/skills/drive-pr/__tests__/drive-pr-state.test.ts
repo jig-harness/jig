@@ -3,6 +3,7 @@
  * Shared fixtures and probes live in drive-pr-harness.ts.
  */
 
+import { parkArgs, parkRecord } from "./park-record-fixture.ts";
 import { describe, expect, it } from "bun:test";
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -261,16 +262,12 @@ describe("drive-state.ts durability", () => {
     // The other half: the tightened predicate must still accept what `park`
     // itself writes, or every real drive with a parked item fails closed.
     const d = stateDirFor("parked-entry-ok");
-    await state(d, [
-      "park",
-      "999",
-      "--key",
-      "PRRT_x",
-      "--kind",
-      "thread",
-      "--reason",
-      "needs a human",
-    ]);
+    await state(
+      d,
+      parkArgs("PRRT_x", "thread"),
+      {},
+      parkRecord("Does it need a human"),
+    );
     const r = await state(d, ["parked-keys", "999"]);
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toBe("PRRT_x");
@@ -328,12 +325,15 @@ describe("drive-state.ts durability", () => {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const run = (cwd: string, args: string[]) => {
+    const run = (cwd: string, args: string[], stdin?: string) => {
       const p = Bun.spawnSync(
         scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
         {
           cwd,
           env,
+          ...(stdin === undefined
+            ? {}
+            : { stdin: new TextEncoder().encode(stdin) }),
           stdout: "pipe",
           stderr: "pipe",
         },
@@ -341,16 +341,7 @@ describe("drive-state.ts durability", () => {
       return p.stdout.toString().trim();
     };
     // Park in the MAIN worktree…
-    run(dir, [
-      "park",
-      "999",
-      "--key",
-      "PRRT_x",
-      "--kind",
-      "thread",
-      "--reason",
-      "needs a human",
-    ]);
+    run(dir, parkArgs("PRRT_x", "thread"), parkRecord("Does it need a human"));
     run(dir, ["bump-round", "999", "--head", "aaaaaaa"]);
     // …and the LINKED one must see it, not a blank slate.
     expect(run(linked, ["parked-keys", "999"])).toBe("PRRT_x");
@@ -499,16 +490,12 @@ describe("drive-state.ts durability", () => {
     for (const bad of ["PRRT_x\nPRRT_unrelated", "PRRT_x\rPRRT_unrelated"]) {
       const d = stateDirFor("parked-key-newline");
       // Write side: `park` refuses it.
-      const w = await state(d, [
-        "park",
-        "999",
-        "--key",
-        bad,
-        "--kind",
-        "thread",
-        "--reason",
-        "a decision",
-      ]);
+      const w = await state(
+        d,
+        parkArgs(bad, "thread"),
+        {},
+        parkRecord("Is it a decision"),
+      );
       expect(w.exitCode).toBe(2);
       expect(w.stderr).toContain("may not contain a newline");
 

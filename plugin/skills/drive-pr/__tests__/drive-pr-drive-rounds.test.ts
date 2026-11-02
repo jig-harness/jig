@@ -630,7 +630,11 @@ describe("drive.ts loop control", () => {
     ]);
     expect(exitCode).toBe(8);
     expect(stderr).not.toContain("RAN_THE_PASS");
-    expect(stderr).toContain("arbiter escalated");
+    // Each parked decision in full: its class, question, options and steps.
+    expect(stderr).toContain("[thread] PRRT_parked · class escalated");
+    expect(stderr).toContain("Did the arbiter escalate it?");
+    expect(stderr).toContain("## Options");
+    expect(stderr).toContain("## Steps for a person");
   });
 
   it("exports its OWN pid as the drive-state session, so a whole drive is one session", async () => {

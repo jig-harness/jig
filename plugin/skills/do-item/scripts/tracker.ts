@@ -6,6 +6,7 @@
  * Usage:
  *     bun tracker.ts children <issue-key>
  *     bun tracker.ts transition <issue-key> <canonical-state>
+ *     bun tracker.ts claim <issue-key>
  *     bun tracker.ts comment <issue-key> --body-file body.md
  *     bun tracker.ts states                       # canonical → tracker names
  *     bun tracker.ts issue-states                 # item keys on stdin → open/closed
@@ -23,6 +24,13 @@
  * tracker answers without a state category, or with one that is neither open
  * (triage, backlog, unstarted, started) nor closed, is an error, never `open`.
  *
+ * `claim` starts an issue for the identity the tracker's credential acts
+ * as: it refuses an issue already in `in_progress` or assigned to anyone
+ * else (exit 3, nothing written), assigns it to that identity and moves it
+ * to `in_progress`, then reads it again and stands down (exit 4) when
+ * another claim landed first. The reason is printed on stderr and in the
+ * JSON on stdout.
+ *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
  * and where the consumer uses them triage, ops_pending, duplicate.
  *
@@ -39,10 +47,12 @@
  *
  * Output: JSON on stdout. Exit codes: 0 done, 2 usage (input the operation
  * cannot take), 1 the operation failed (the reason on stderr), a label,
- * project or issue that does not resolve to exactly one included.
+ * project or issue that does not resolve to exactly one included; for
+ * `claim`, 3 refused and 4 stood down.
  */
 
 import { readFile } from "node:fs/promises";
+import { claimIssue } from "./lib/claim.ts";
 import { runEntry } from "./lib/cli.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
 import { ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
@@ -66,6 +76,7 @@ import { labelsAsConfig } from "../../../shared/tracker-labels.ts";
 const USAGE = `usage:
   tracker.ts children <issue-key>
   tracker.ts transition <issue-key> <canonical-state>
+  tracker.ts claim <issue-key>
   tracker.ts comment <issue-key>   (body on stdin)
   tracker.ts states
   tracker.ts issue-states          (item keys on stdin, one per line)
@@ -250,7 +261,12 @@ interface Operation {
   /** Print the result indented, for a person reading a listing. */
   indent?: boolean;
   run: (args: string[], flags: Set<string>, input?: string) => Promise<unknown>;
+  /** The exit code for what `run` returned, when it is not always 0. */
+  exitOf?: (out: unknown) => number;
 }
+
+/** `claim`'s exit codes: refused before any write, stood down after the re-read. */
+const CLAIM_EXIT = { claimed: 0, refused: 3, stood_down: 4 } as const;
 
 const OPERATIONS: Record<string, Operation> = {
   states: {
@@ -295,6 +311,16 @@ const OPERATIONS: Record<string, Operation> = {
         state,
         name: tracker.stateName(state as CanonicalState),
       };
+    },
+  },
+  claim: {
+    arity: 1,
+    takes: "one issue key",
+    run: ([key]) => claimIssue(openTracker(), key as string),
+    exitOf: (out) => {
+      const result = out as Awaited<ReturnType<typeof claimIssue>>;
+      if (result.outcome !== "claimed") console.error(result.reason);
+      return CLAIM_EXIT[result.outcome];
     },
   },
   comment: {
@@ -446,7 +472,7 @@ export async function main(argv: string[]): Promise<number> {
     const { args, flags } = operationArguments(op, name as string, rest);
     const out = await op.run(args, flags, input);
     console.log(JSON.stringify(out, null, op.indent === true ? 2 : undefined));
-    return 0;
+    return op.exitOf?.(out) ?? 0;
   } catch (error) {
     return reportFailure(error);
   }

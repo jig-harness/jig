@@ -1502,7 +1502,7 @@ describe("worked example against this repository's own corpus", () => {
     expect(report.candidates[0]?.kind).toBe("adr");
     // Superseding the record keeps its file and wording and changes only its
     // status, which the ranking does not use: only this assertion notices.
-    expect(report.candidates[0]?.status).toBe("approved");
+    expect(report.candidates[0]?.status).toBe("amended");
     // A top hit that barely outscores the runner-up is a coin flip dressed as
     // a ruling; the margin is the part that makes `already-decided` safe.
     expect(report.candidates[0]?.score ?? 0).toBeGreaterThan(

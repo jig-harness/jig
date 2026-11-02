@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { definedFields } from "../../../shared/defined-fields.ts";
+import { TRUSTED_ASSOCIATIONS } from "../../../shared/trusted-authors.ts";
 /**
  * Enumerate the review findings that exist ONLY in the reviewer's summary
  * comment — the ones that create no diff-anchorable thread — and say which of
@@ -860,20 +861,14 @@ export function classify(input: ClassifyInput): SummaryReport {
  * `author_association` is the API's own answer to "who is this relative to the
  * repo", computed server-side; it cannot be spoofed by comment content.
  *
- * `announce-merge-ready.ts` and `reconcile-replied-threads.ts` apply the same
- * gate to their own announcement/reply sweeps, and import this constant
- * directly rather than keeping their own copy — every consumer decides the
- * same question about the same world-writable comment stream off this one
- * set, and a second copy would only drift. `--trusted-associations` below
- * stays as a read-only CLI surface for callers outside this module graph
- * (shell/jq tooling, ad-hoc inspection) that cannot `import` a TypeScript
- * constant.
+ * The set lives in `shared/trusted-authors.ts`, which every consumer reads
+ * (this module re-exports it for drive-pr's own scripts), so every script
+ * decides the same question about the same world-writable comment stream off
+ * one set. `--trusted-associations` below stays as a read-only CLI surface
+ * for callers outside this module graph (shell/jq tooling, ad-hoc
+ * inspection) that cannot `import` a TypeScript constant.
  */
-export const TRUSTED_ASSOCIATIONS = new Set([
-  "OWNER",
-  "MEMBER",
-  "COLLABORATOR",
-]);
+export { TRUSTED_ASSOCIATIONS };
 
 /**
  * The closed outcome vocabulary, as `answer-summary-finding.ts` composes it and

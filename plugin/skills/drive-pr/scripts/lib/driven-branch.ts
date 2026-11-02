@@ -75,9 +75,17 @@ export function setDrivenRemoteRef(remote: string, branch: string): void {
   drivenRemoteRef = `refs/remotes/${remote}/${branch}`;
 }
 
+/**
+ * The ref the tree's unpushed commits are counted against: the driven
+ * branch's remote ref once the attach has named it, else the upstream.
+ */
+export function unpushedBase(): string {
+  return drivenRemoteRef ?? "@{u}";
+}
+
 /** The revision range of the commits a stopped pass left unpushed. */
 export function unpushedRange(): string {
-  return `${drivenRemoteRef ?? "@{u}"}..HEAD`;
+  return `${unpushedBase()}..HEAD`;
 }
 
 /**

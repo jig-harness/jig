@@ -1,6 +1,7 @@
 # The changelog scripts
 
 The commands behind [`/jig:changelog`](../README.md): the branch check, the
+whole-changelog check, the
 release step, the conversion of a branch, the status report, the tag plan and
 the release-access check. They read the repository's `changelog:`
 section of `.config/jig.yaml` ([the configuration
@@ -210,6 +211,62 @@ the head of the pull request that started the CI job (from the event, then
 the merge base it was written on, so a move of the base does not fail the
 check; every push to the integration branch regenerates the release branch on
 the new tip, and the check runs again on it.
+
+## The whole-changelog check
+
+```sh
+bun lint.ts [--root <dir>] [--json]
+```
+
+The whole changelog against the rules of its format, and of no other: the
+format is `changelog.format`, else the one the file names (`formats.ts`), and
+`lint.ts` runs that format's rules alone. Modules beside it:
+
+- `markdown-tree.ts` reads a Markdown document through Bun's own CommonMark
+  parser (`Bun.markdown`) into the blocks it renders as, each heading,
+  paragraph and list item with the text, links and code it shows. A link is
+  one that renders, its destination resolved by the parser, so no rule reads
+  Markdown syntax from the source: a reference with no definition, a
+  definition inside an HTML block, a link in a code span are what they render
+  as.
+- `lint-structure.ts` reads the file into what the rules look at: the title,
+  the blocks above the first `##` section, each section with its `###` groups,
+  and the line each starts on. The parser reports no positions, so the lines
+  come from the `#` heading lines outside fenced code where those are the
+  rendered headings, level for level, and otherwise from a search over the
+  file's prefixes. It also holds the date rule (year-month-day, a day that exists)
+  and Semantic Versioning precedence.
+- `lint-keep-a-changelog.ts` holds Keep a Changelog 1.1.0's rules.
+- `lint-common-changelog.ts` holds Common Changelog's.
+
+Each rule is an entry `{ id, section, url }`, its id `<format>/<rule>`, with a
+comment quoting the specification where the rule is defined; the
+[skill's README](../README.md#checking-the-whole-changelog) lists them. A
+finding is `{ rule, file, line, problem, remedy }`, the remedy ending with the
+section and its address. Release coverage compares the release headings with
+the version the version files hold, where the version lives in files (a
+Common Changelog check only where it is stable), and with each tag
+`<tag_prefix><version>` that names a Semantic Versioning version and sits
+in the checkout's history (the tags git lists as merged into `HEAD`: a tag made after the
+branch forked names a release its changelog cannot have yet). A shallow
+clone's tags are not read as the whole history: a CI checkout needs
+`fetch-depth: 0`.
+
+Every file the configuration names (the changelog, the version files) is
+read through one reader that refuses a path a link leads outside the
+repository root, or one that is not a regular file, before reading it, so
+the check never reads what it refuses.
+
+Findings go to standard error as `<file>:<line>: [<rule>] <problem>` then
+`  fix: <remedy>`, and in a GitHub Actions job (`GITHUB_ACTIONS=true`) also as
+`::error` annotations on standard output. `--json` prints `{ "plugin",
+"configured", "format", "file", "findings", "unchecked" }`, `unchecked` saying
+why coverage could not be checked against the tags (a shallow clone, tags git
+cannot list) or the version files (they disagree), or null. Exit 0 clean or
+`not configured`; 1 findings; 2 a usage error, an invalid configuration, an
+unreadable changelog (or one a link leads outside the repository root, or
+that is not a regular file), a root that is not a git repository's top level,
+or `unchecked` with no finding.
 
 ## Converting a branch
 

@@ -9,6 +9,57 @@ and what changed is recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ## Now
 
+### 32. Driving any pull request from anywhere, with autonomy that fits the hour
+
+The review drive already runs from any checkout, restarts itself, is taken
+over through a ledger on the pull request when its driver dies or stops
+making progress, and stops for a person only on a configured human decision
+class, with the decision framed
+([drive-pr](plugin/skills/drive-pr/README.md)). What is left: the policy that
+bounds what an agent may decide is read from the pull request's base branch,
+so a pull request cannot widen what its own drive may decide. A repository
+may already raise how far an agent decides during the hours nobody is there
+to ask (opt-in, not yet validated); every such decision is recorded on the
+pull request where a person can reverse it, and a morning report lists them.
+
+### 33. The dispatcher: a tick that starts the execution line's stages
+
+A small program on the machine that runs the agent sessions starts each
+stage of the execution line that should be running and is not: a session
+that picks up an item assigned to the team's
+[factory identity](GLOSSARY.md), a restart of a review drive stopped by a
+usage limit (on another account) or by a question a person has answered,
+a review drive restarted on a converged pull request that has since come
+to conflict with its base or been pushed to, and the follow-up after a
+merge. It runs every few minutes, reports what it
+would start and why before it is allowed to start anything, caps the
+sessions per subscription account (Claude Code's or Codex's, the account
+choosing the agent a session runs in), and reaches a person on their phone for
+the decisions that are theirs. It never merges. Every finished session
+leaves a row in an [outcome log](GLOSSARY.md) that one dashboard filters
+by time, repository, stage, account and outcome; a session that falls
+behind what its stage should achieve is reported as
+[drifting](GLOSSARY.md), never corrected on its own; and the one prompt
+it sends a session by itself is "continue", once a usage limit has reset.
+Orca is its first session runtime
+([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
+with others through the same interface.
+
+### 35. One jig command line
+
+The plugin's machine-level tools become one `jig` command on `PATH`, with
+resource collection (`jig gc`) and the dispatcher (`jig dispatch`) as its
+[components](GLOSSARY.md) and the same verbs for each: `install`, `uninstall`, `upgrade`,
+`doctor`, `status` and `receipts`. `jig doctor` checks the plugin's
+installation and runs the audit's check that a repository's configuration
+fits it, and `jig upgrade` replaces the setup script a machine runs from a
+Jig checkout. The installed timers run that upgrade themselves, at most
+once an hour and on by default, so a machine that runs the dispatcher stays
+on its channel's newest version with nobody at the keyboard; a pinned
+machine receives nothing. Help for every command and shell completion come
+from the same definitions that parse the command line, and the jobs a
+machine already installed keep running unchanged.
+
 ### 3. The kickoff family
 
 A `kickoff` skill that starts a new repository from nothing: requirements,
@@ -66,8 +117,8 @@ files on every tracker Jig supports.
 
 ### 12. More tracker adapters
 
-Jira, and a plan file kept in the repository, beside Linear and GitHub
-Issues. The [tracker interface](GLOSSARY.md) first gains attaching a file,
+A plan file kept in the repository, beside Linear, GitHub Issues and
+Jira. The [tracker interface](GLOSSARY.md) first gains attaching a file,
 the one operation the skills need that the interface does not have yet, and
 the workspace launcher learns to open GitHub issues.
 
@@ -85,22 +136,22 @@ against a recorded set of public repositories in several languages, and gives
 [`jig:audit`](plugin/skills/audit/README.md) measured evidence: the test to
 code ratio, the generated share and the size of the agent scaffolding.
 
-### 21. `changelog` skill: several artifacts, and the whole file checked
+### 21. `changelog` skill: several artifacts
 
 A repository that releases several things at their own versions, such as a
 monorepo's packages, keeps a changelog and a version for each with the
 [`changelog` skill](plugin/skills/changelog/README.md), as
 [M16](modules/M16-releases-versions/README.md) asks; today the skill keeps
-one per repository. The skill also checks the whole changelog against the
-rules of its format, and gets workflow templates for CI providers other than
-GitHub.
+one per repository. The skill also gets workflow templates for CI providers
+other than GitHub.
 
 ### 23. Seed review lenses
 
-[`review`](plugin/skills/review/SKILL.md) gains a set of
-[review lenses](GLOSSARY.md), each the review form of one rule a module
-states: no swallowed failure ([M15](modules/M15-contracts-errors/README.md)),
-a test for each changed behaviour ([M14](modules/M14-testing-strategy/README.md)),
+[`review`](plugin/skills/review/SKILL.md) runs [review lenses](GLOSSARY.md)
+from one file each, and ships the lens for no swallowed failure
+([M15](modules/M15-contracts-errors/README.md)); the other rules Jig's
+modules state that no gate can judge have none yet. Still to come: a test for
+each changed behaviour ([M14](modules/M14-testing-strategy/README.md)),
 comments that say what the code does now ([M4](modules/M4-docs-governance/README.md)),
 and types that admit no invalid value (M15). Each runs only when the diff
 gives it something to check, comments until measurement shows it may block,
@@ -191,6 +242,20 @@ join it to the outcome, and a person's choice always able to override it.
 Until then, the workspace launcher's Orca provider hands the agent's start
 to the person; its Herdr provider starts the configured agent.
 
+### 34. Jig in the Orca ecosystem
+
+[Orca](https://www.onorca.dev) is one of the workspace runtimes Jig's
+tooling supports, beside Herdr, the runtime it targets first. On an Orca
+host every stage of the execution line will keep the workspace board true
+(a parked drive's card unread with the question as its comment, a merged
+item's card completed), `jig gc` will collect an Orca-managed worktree
+through Orca so its card and terminals go with it, the dispatcher will read
+each account's usage from Orca's command line once Orca offers it, and a
+small plugin Orca loads will run a dispatcher tick the moment an agent
+stops or waits. Collection goes through the worktrees kind's runtime
+column, which another runtime joins; the board helper and the plugin are
+Orca-bound.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** A reusable reconciler for
@@ -227,9 +292,7 @@ to the person; its Herdr provider starts the configured agent.
   on the server rather than on the launching machine, so two machines never
   start it twice; reflection findings parked on a server's host before a
   removal, which today refuses while unsent ones are there; hooks on a
-  server's host supervised as they are on a machine; the review and merge
-  stages shown on Orca's workspace board, beside the pickup and pull
-  request stages it shows today; the drive, pickup and
+  server's host supervised as they are on a machine; the drive, pickup and
   review skills checked inside Orca worktrees on a server, as item 19 does
   for Herdr; and the tool and the launcher's Orca provider on Windows, where
   the tool's host steps (`sh`, `test`, `mkdir`) need the host's own shell

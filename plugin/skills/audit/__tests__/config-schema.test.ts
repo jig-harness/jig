@@ -6,6 +6,7 @@
  * value sets they accept).
  */
 import { REPOSITORY_ONLY_FIELDS } from "../../../shared/config-layers.ts";
+import { AUTONOMY_LEVELS, DEFAULT_LEVEL } from "../../../shared/autonomy.ts";
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,20 +25,39 @@ import {
   parseTrackerConfig,
 } from "../../do-item/scripts/lib/tracker/config.ts";
 import {
+  DEFAULT_ISSUE_TYPE,
+  LINKED_RELATIONS,
+  RESOLVED_STATES,
+} from "../../do-item/scripts/lib/tracker/jira/settings.ts";
+import {
   DEFAULT_STATES_FROM,
   DEFAULT_STATUS_FIELD,
   GITHUB_STATE_SOURCES,
   PRIORITY_NAMES,
 } from "../../do-item/scripts/lib/tracker/github/settings.ts";
 import {
+  ARM_DRIVE_MODES,
+  DEFAULT_ARM_DRIVE,
   DEFAULT_MAX_ROUNDS,
   DEFAULT_PASS_DEADLINE_RETRIES,
+  DEFAULT_PASS_ARGS,
+  DEFAULT_PASS_MODEL,
+  PASS_ARG_PATTERN,
+  refusedPassArgs,
+  PASS_MODEL_PATTERN,
 } from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
+import {
+  BOARD_CONFIG_KEYS,
+  BOARD_STAGES,
+  COLUMN_ID,
+} from "../../../shared/orca-board.ts";
+import { DEFAULT_LABELS } from "../../../dispatch/lib/labels.ts";
 import { DEFAULT_SCANNER_APPS } from "../../resolve-review-comments/scripts/lib/scanner-annotations.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import { parseWorkTypes } from "../../do-item/scripts/lib/work-types.ts";
+import { DEFAULT_TEMPLATE as DEFAULT_WORKSPACE_TEMPLATE } from "../../do-item/scripts/workspace-name.ts";
 import {
   parseRouting,
   RAISE_FIELDS,
@@ -233,6 +253,12 @@ describe("the reading skills", () => {
       ...STACKING_MODES,
     ]);
     expect(field("pull_requests.open_as")?.values).toEqual([...OPEN_AS]);
+    expect(field("do_item.arm_drive")?.values).toEqual([...ARM_DRIVE_MODES]);
+    expect(field("drive.pass_model")?.pattern).toBe(PASS_MODEL_PATTERN.source);
+    expect(field("drive.pass_args")?.items).toEqual({
+      type: "string",
+      pattern: PASS_ARG_PATTERN.source,
+    });
     expect(field("pull_requests.issue_link")?.values).toEqual([...ISSUE_LINKS]);
     expect(field("pull_requests.title_format")?.values).toEqual([
       ...TITLE_FORMATS,
@@ -242,6 +268,16 @@ describe("the reading skills", () => {
     expect(field("reflection.store")?.values).toEqual([...STORE_KINDS]);
     expect(field("reflection.mode")?.values).toEqual([...MODES]);
     expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
+  });
+
+  test("map the board stages the Orca card moves through", () => {
+    expect(field("orca.board")?.keys).toEqual(
+      BOARD_STAGES.map((s) => BOARD_CONFIG_KEYS[s]),
+    );
+    expect(field("orca.board")?.values_type).toEqual({
+      type: "string",
+      pattern: COLUMN_ID.source,
+    });
   });
 
   test("accept the spec adapters the resolver has", () => {
@@ -265,6 +301,18 @@ describe("the reading skills", () => {
     ]);
     expect(field("issue_tracker.github.priority_labels")?.keys).toEqual([
       ...PRIORITY_NAMES,
+    ]);
+  });
+
+  test("accept the Jira adapter's value sets the schema lists", () => {
+    expect(field("issue_tracker.jira.priorities")?.keys).toEqual([
+      ...PRIORITY_NAMES,
+    ]);
+    expect(field("issue_tracker.jira.resolutions")?.keys).toEqual([
+      ...RESOLVED_STATES,
+    ]);
+    expect(field("issue_tracker.jira.link_types")?.keys).toEqual([
+      ...LINKED_RELATIONS,
     ]);
   });
 
@@ -309,9 +357,13 @@ describe("the reading skills", () => {
       "pull_requests.issue_link": policy.issueLink,
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
       "drive.pass_deadline_retries": DEFAULT_PASS_DEADLINE_RETRIES,
+      "drive.pass_model": DEFAULT_PASS_MODEL,
+      "drive.pass_args": DEFAULT_PASS_ARGS,
+      "do_item.arm_drive": DEFAULT_ARM_DRIVE,
       "issue_tracker.adapter": DEFAULT_ADAPTER,
       "issue_tracker.github.states_from": DEFAULT_STATES_FROM,
       "issue_tracker.github.status_field": DEFAULT_STATUS_FIELD,
+      "issue_tracker.jira.issue_type": DEFAULT_ISSUE_TYPE,
       "issue_tracker.taxonomy": DEFAULT_TAXONOMY,
       "do_item.execution_plan_block": DEFAULT_BLOCK,
       "changelog.notes_dir": CHANGELOG_DEFAULTS.notesDir,
@@ -331,10 +383,32 @@ describe("the reading skills", () => {
       "specs.body_section": DEFAULT_BODY_SECTION,
       "routing.raise.reviews": parseRouting({}, parseWorkTypes({})).raise
         .reviews,
+      "workspace_name.template": DEFAULT_WORKSPACE_TEMPLATE,
       "verify.output_lines": DEFAULT_OUTPUT_LINES,
       "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
       "verify.retention_days": DEFAULT_RETENTION_DAYS,
+      "autonomy.level": DEFAULT_LEVEL,
+      "dispatch.labels.enabled": DEFAULT_LABELS.enabled,
+      "dispatch.labels.prefix": DEFAULT_LABELS.prefix,
+      "dispatch.labels.only_labeled": DEFAULT_LABELS.onlyLabeled,
     });
+  });
+
+  test("accept a review bot as a login or a mapping with its markers", () => {
+    const problems = (bots: unknown[]) =>
+      checkConfig({ review: { bots } }, schema).map((f) => f.message);
+    expect(
+      problems(["a[bot]", { login: "b[bot]", chat_marker: "<!-- c -->" }]),
+    ).toEqual([]);
+    expect(problems([{ login: "b", override: true }]).join()).toContain(
+      "unknown key override",
+    );
+    expect(problems([5]).join()).toContain("or a mapping");
+  });
+
+  test("accept the autonomy levels the resolver reads", () => {
+    for (const path of ["autonomy.level", "autonomy.max_level"])
+      expect(field(path)?.values).toEqual([...AUTONOMY_LEVELS]);
   });
 
   test("accept only integers the skills read exactly", () => {
@@ -346,6 +420,31 @@ describe("the reading skills", () => {
     expect(problems(2 ** 53)).toEqual([
       "drive.max_rounds must be a whole number ≥ 1",
     ]);
+  });
+
+  test("reject the drive.pass_args words the reading skill refuses, and accept the rest", () => {
+    const problems = (words: string[]) =>
+      checkConfig({ drive: { pass_args: words } }, schema).length;
+    for (const refused of [
+      ["--model", "opus"],
+      ["--model=opus"],
+      ["-p", "text"],
+      ["--print"],
+      ["--"],
+    ]) {
+      expect(refusedPassArgs(refused)).toBeDefined();
+      expect(problems(refused)).toBeGreaterThan(0);
+    }
+    // The schema cannot see an operand missing at the end of the list; the reading skill refuses it.
+    expect(refusedPassArgs(["--permission-mode"])).toBeDefined();
+    for (const accepted of [
+      ["--permission-mode", "bypassPermissions"],
+      ["--permission-mode=auto"],
+      ["--modelish"],
+    ]) {
+      expect(refusedPassArgs(accepted)).toBeUndefined();
+      expect(problems(accepted)).toBe(0);
+    }
   });
 
   test("report as errors the nulls remoteName refuses, and other nulls as not set", () => {
@@ -439,7 +538,7 @@ describe("the reading skills", () => {
           f.path,
           skill,
           existsSync(
-            skill === "gc"
+            skill === "gc" || skill === "dispatch"
               ? join(plugin, "jig.ts")
               : skill === "evidence"
                 ? join(plugin, "shared", "evidence.ts")

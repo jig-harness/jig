@@ -327,6 +327,10 @@ describe("attach-pr.ts refuses", () => {
     const r = c.attach(tree, "42");
     expectSpawnExit(r, 2, "attach");
     expect(r.stderr).toContain("has diverged");
+    // It names the tree's own commits, so the stop says what to reconcile.
+    expect(r.stderr).toContain("Its commits the PR's head lacks");
+    expect(r.stderr).toContain(" mine.txt");
+    expect(r.stderr).not.toContain(" theirs.txt");
   });
 
   test("when the tree holding the branch has commits the PR's head lacks", () => {

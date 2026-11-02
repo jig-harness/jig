@@ -1,5 +1,5 @@
 /** Validate driver options, acquire ownership and keep its resources alive through the round loop. */
-import { fail, isDigits, shellQuote } from "./../cli.ts";
+import { ExitError, fail, isDigits, shellQuote } from "./../cli.ts";
 import { parseDriverOptions, applyPassTimeout } from "./options.ts";
 
 import {
@@ -69,6 +69,23 @@ import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
 import { armLedger, ledgerIdentity, ledgerSettlement } from "./ledger.ts";
 
+import { cardAfterDrive } from "./orca-card.ts";
+
+import {
+  type EffectivePass,
+  effectivePass,
+  PassModelUsageError,
+  passModelLine,
+  withoutModel,
+} from "./../pass-model.ts";
+
+import {
+  type EffectivePassArgs,
+  effectivePassArgs,
+  PassArgsUsageError,
+  permissionLine,
+} from "./../pass-args.ts";
+
 import type { DriveState } from "./../state/schema.ts";
 
 /**
@@ -130,11 +147,40 @@ async function stateUnderLocks(
   return quotaRefusal(state, agent, windowReopened) ?? state;
 }
 
+/**
+ * Run the drive; whatever ends it once the PR is known (a return, a refusal,
+ * a thrown failure) goes through `cardAfterDrive`, which moves nothing for a
+ * dry run and for the stops no person settles.
+ */
 export async function main(): Promise<number> {
+  const ctx = { pr: "", dryRun: false };
+  let exit: number;
+  try {
+    exit = await drive(ctx);
+  } catch (error) {
+    if (ctx.pr !== "")
+      await cardAfterDrive(
+        ctx.pr,
+        error instanceof ExitError ? error.code : 1,
+        ctx.dryRun,
+      );
+    throw error;
+  }
+  if (ctx.pr !== "") await cardAfterDrive(ctx.pr, exit, ctx.dryRun);
+  return exit;
+}
+
+async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
+  ctx.dryRun = options.dryRun;
   let { pr, keepDraft, handoffAt } = options;
-  const { maxRounds, dryRun, botsOnly, passTimeout, forward, agent } = options;
+  const { maxRounds, dryRun, botsOnly, passTimeout, forward } = options;
   const { takeOver, windowReopened } = options;
+  // The pass command as it runs, its model and extra arguments decided
+  // (`pass-model.ts`, `pass-args.ts`): every later use of it — the rounds, a
+  // re-arm or takeover command printed for a person — carries both.
+  const pass = decidePass(options.agent, options.passModel, options.passArgs);
+  const agent = pass.argv;
 
   const maxRoundsN = resolveMaxRounds(maxRounds);
   const deadlineRetryBudget = resolvePassDeadlineRetries();
@@ -166,6 +212,7 @@ export async function main(): Promise<number> {
   if (pr === "") fail(1, "drive.ts: could not resolve a PR number");
   requireCanonicalPr(pr);
   process.env.PR = pr;
+  ctx.pr = pr;
   // The authoritative, out-of-band statement of which PR this drive is about.
   // drive-status.ts refuses to run when a pass resolves a different one, which
   // is what makes driver/pass agreement an assertion rather than an inference
@@ -192,6 +239,9 @@ export async function main(): Promise<number> {
   // mark-Ready outcomes, and the terminal state.
   const logPath = join(stateDir, `drive-pr-${pr}.log`);
   startDriverLog(logPath);
+  console.error(passModelLine(pass));
+  console.error(pass.args.line);
+  console.error(permissionLine(pass.args.permission));
 
   // Everything that can refuse from the arguments and the durable state runs
   // before any lock is taken and before a takeover stops anyone: the pass
@@ -199,7 +249,7 @@ export async function main(): Promise<number> {
   // check is repeated once the locks are held (`stateUnderLocks`).
   const state = await readDriveState(pr);
   const refusal =
-    validatePassCommand(explicitPr, agent, botsOnly) ??
+    validatePassCommand(explicitPr, withoutModel(options.agent), botsOnly) ??
     quotaRefusal(state, agent, windowReopened);
   if (refusal !== undefined) return refusal;
 
@@ -235,6 +285,8 @@ export async function main(): Promise<number> {
     log: logPath,
     started: new Date().toISOString(),
     account,
+    model: pass.model,
+    permissionMode: pass.args.permission.mode,
   };
   const treeLock: DriveLock = {
     dir: join(stateDir, await worktreeLockName()),
@@ -429,15 +481,16 @@ export async function main(): Promise<number> {
     ledger,
     plan,
     current,
-    armCommand(driveTs, pr, botsOnly, " --take-over"),
+    armCommand(driveTs, pr, botsOnly, " --take-over", agent),
   );
   // From here the ledger says this driver is running, so whatever ends the
   // drive (an exit, a thrown refusal, a stop) marks it stopped.
-  await using settlement = ledgerSettlement(pr, held);
+  await using settlement = ledgerSettlement(pr, held, dryRun);
   const firstPassNotice = await pickUpDrive(pr, plan, pickup, {
     agent,
     botsOnly,
     dryRun,
+    windowReopened,
   });
 
   // A dry run inspects; it does not work a round. Counting it would inflate
@@ -480,7 +533,31 @@ export async function main(): Promise<number> {
     deadlineRetryBudget,
     firstPassNotice,
   });
-  return await settlement.done(roundsExit);
+  const exit = await settlement.done(roundsExit);
+  return exit;
+}
+
+/**
+ * The pass command with its model and extra arguments decided; a refused
+ * `--pass-model` or `--pass-args` exits 2, an unreadable setting 1.
+ */
+function decidePass(
+  agent: string[],
+  model: string | undefined,
+  args: string | undefined,
+): EffectivePass & { args: EffectivePassArgs } {
+  try {
+    const pass = effectivePass(agent, model);
+    const extra = effectivePassArgs(pass.argv, args);
+    return { ...pass, argv: extra.argv, args: extra };
+  } catch (e) {
+    return fail(
+      e instanceof PassModelUsageError || e instanceof PassArgsUsageError
+        ? 2
+        : 1,
+      `drive.ts: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
 }
 
 /** Refuse a pass whose declared target or thread scope differs from the driver. */

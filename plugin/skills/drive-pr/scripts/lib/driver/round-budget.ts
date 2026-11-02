@@ -25,6 +25,26 @@ import { passEnv } from "./repair.ts";
 
 import { recordedDecisions, stallNotice } from "./restart.ts";
 
+import { recordDriveEvent } from "./rearm.ts";
+
+import {
+  currentAutonomy,
+  describeAutonomy,
+} from "../../../../../shared/autonomy.ts";
+
+/**
+ * The autonomy level this round's pass decides under, and where it came
+ * from, read afresh each round so a change applies to the next one. An
+ * invalid setting is reported here and refused by the pass's own read.
+ */
+function autonomyLine(): string {
+  try {
+    return describeAutonomy(currentAutonomy());
+  } catch (err) {
+    return `autonomy: unreadable (${err instanceof Error ? err.message : String(err)})`;
+  }
+}
+
 export async function checkRoundStall(
   status: Record<string, unknown>,
   context: DriveRoundContext,
@@ -55,6 +75,7 @@ export async function checkRoundStall(
     if (!context.stallExtraRound) {
       context.stallExtraRound = true;
       context.passNotice = stallNotice(diagnostics);
+      await recordDriveEvent(context.pr, "restart", "stall");
       console.error(
         "  Running ONE more round with these diagnostics in the pass notice before stopping.",
       );
@@ -262,6 +283,7 @@ export async function readRoundBudget(
   console.error(
     `--- round ${round}/${context.maxRoundsN} on PR #${context.pr} ---`,
   );
+  console.error(autonomyLine());
   console.error(reasonLine);
   process.stderr.write(await severityWarnings(context.pr));
 

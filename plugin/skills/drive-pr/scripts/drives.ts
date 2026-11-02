@@ -69,6 +69,8 @@
  *                            unbindable claims are refused. With
  *                            --expect-started ISO, only the claim acquired
  *                            then is stopped; another holder exits 3.
+ *   drives.ts --report [--since <time>] [--json]
+ *                            the morning report (`lib/morning-report.ts`).
  *
  * Exit codes:
  *   0  listed / banner printed / positively nothing to report / --doctor's
@@ -115,6 +117,7 @@ import {
   CLAIM_PREFIX,
   type ClaimDiag,
   claimLive,
+  diagLines,
   samePidNamespace,
   parseClaimText,
 } from "./lib/claim.ts";
@@ -129,7 +132,6 @@ import {
   stallThresholdMs,
 } from "./lib/doctor.ts";
 import { attachedTree } from "./lib/driven-branch.ts";
-import { formatAccountIdentity } from "./lib/identity.ts";
 import {
   findPassChild,
   type PassChildAnswer,
@@ -144,6 +146,7 @@ import {
   unconcludedGitOpMarker,
 } from "./lib/proc.ts";
 import { legacyFootprint } from "./lib/state/legacy-state.ts";
+import { liveDrives, reportMain } from "./lib/morning-report.ts";
 import { type DriveState, isUsableState } from "./lib/state/schema.ts";
 import {
   peekResolvedStateDir,
@@ -701,6 +704,9 @@ async function gatherDoctorInput(
     passChild,
     quotaPark: snapshot.ok ? snapshot.state.quotaPark : null,
     parkedCount: snapshot.ok ? snapshot.state.parked.length : 0,
+    parkedQuestions: snapshot.ok
+      ? snapshot.state.parked.map((p) => p.reason)
+      : [],
     leftovers,
     stallThresholdMs: stallThresholdMs(),
     pr: row.key,
@@ -799,14 +805,8 @@ function printHuman(
       `● ${label} — LIVE, driver pid ${pid} (${group[0]?.host || "this host"}), claim refreshed ${age ?? "?"}s ago`,
     );
     console.log(`    repository: ${repository}`);
-    if (diag !== null) {
-      console.log(`    worktree: ${diag.worktree}`);
-      console.log(`    since:    ${diag.started}`);
-      console.log(`    log:      ${diag.log}`);
-      console.log(`    account:  ${formatAccountIdentity(diag.account)}`);
-    } else {
-      console.log("    (claim predates diagnostics — pid/host only)");
-    }
+    if (diag !== null) console.log(diagLines(diag).join("\n"));
+    else console.log("    (claim predates diagnostics — pid/host only)");
     console.log(
       `    locks:    ${group.map((r) => (r.kind === "pr" ? `PR #${r.key}` : "worktree")).join(" + ")}`,
     );
@@ -1332,12 +1332,19 @@ export async function forceStopDriver(
   return 0;
 }
 
-async function main(): Promise<number> {
+/** `--report` is a mode of its own; every other mode is the fleet's. */
+async function entry(): Promise<number> {
+  const argv = process.argv.slice(2);
+  return argv.includes("--report")
+    ? reportMain(argv, async (stateDir) => liveDrives(listRows(stateDir)))
+    : main(argv);
+}
+
+async function main(argv: string[]): Promise<number> {
   let json = false;
   let hereMode = false;
   let stopPr = "";
   let doctorMode = false;
-  const argv = process.argv.slice(2);
   const expectStarted = takeExpectStarted(argv);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] as string;
@@ -1351,7 +1358,7 @@ async function main(): Promise<number> {
     } else {
       fail(
         2,
-        `usage: drives.ts [--json] | [--here] | [--stop <PR> [--expect-started <ISO>]] | [--doctor [--json]]`,
+        `usage: drives.ts [--json] | [--here] | [--stop <PR> [--expect-started <ISO>]] | [--doctor [--json]] | [--report [--since <time>] [--json]]`,
       );
     }
   }
@@ -1440,4 +1447,4 @@ async function doctorRows(stateDir: string, lockRows: LockRow[]) {
 
 // Gated, so a helper such as `gatherWorktreeLeftovers` can be imported
 // without running this CLI against the importer's `process.argv`.
-if (import.meta.main) runMain("drives.ts", main);
+if (import.meta.main) runMain("drives.ts", entry);

@@ -66,7 +66,7 @@ time. Every one is optional.
 | `decide.glossary_file` | The canonical vocabulary, as `**Term**:` lines each followed by an `_Avoid_:` line of aliases | `CONTEXT.md` |
 | `decide.architect_agent` | The subagent that rules in phase 3; a name your agent tool does not know (for example a Claude Code agent under Codex) falls back to the default | A fresh general-purpose subagent, briefed with the [architect mandate](#the-architect-mandate) |
 | `decide.escalation_labels` | Labels added to an issue alongside `hitl` and its `hitl:<stakeholder>` facets when a call is escalated (for example the label that routes it to an architect) | None |
-| `issue_tracker.*` | The issue tracker, as `/jig:do-item` reads it (adapter, the team on Linear, `file_command`, and the `hitl` label in `labels.hitl`) | No tracker: outcomes land in the reply only |
+| `issue_tracker.*` | The issue tracker, as `/jig:do-item` reads it (adapter, the team on Linear and Jira, `file_command`, and the `hitl` label in `labels.hitl`) | No tracker: outcomes land in the reply only |
 
 ### Tracker operations
 
@@ -85,7 +85,7 @@ Linear forms are given as the adapter example.
 | File a new issue | The consumer's `issue_tracker.file_command` | — |
 | Attach a sheet | — | see [`references/decision-sheet.md`](references/decision-sheet.md#post-the-sheet) |
 
-An issue key is `ENG-123` on Linear and `#123` on GitHub Issues, an issue of
+An issue key is `ENG-123` on Linear and Jira and `#123` on GitHub Issues, an issue of
 the configured repository; this document writes it as `<KEY>`. Quote it on a
 command line: an unquoted `#` starts a shell comment.
 
@@ -239,13 +239,50 @@ to bottom and take the first row that matches:
 | The choice is reversible inside one pull request, with no persisted-data and no published-contract consequence | `decided` | The architect agent may take it |
 | Anything else | `escalated` | A human |
 
+**The `underdetermined` row depends on the autonomy level.** Read it when you
+reach that row:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/autonomy.ts"
+```
+
+Under `attended` (the default, and every session a person runs unless they
+chose a level), the row stands: name the missing evidence and stop there.
+Under `unattended` (a drive's pass, where the repository allows it), nobody is
+there to gather it: gather the missing evidence yourself within the round's
+remaining budget (read the code, run the measurement, check the record),
+then work the ladder again from the top with it. A call the evidence still
+leaves underdetermined, or that needs more than the round has, is
+`escalated`, never `decided`: the `decided` row needs the evidence the call
+lacked, and a guess is not evidence. Say in the record that
+the evidence was gathered unattended and what it was. Under a drive, add the
+ruling to the drive's decisions taken unattended (drive-pr § 8) with its
+record's link. The sensitivity row does not change with the level.
+
+**The last row depends on the level too, at `wide` only.** Under `wide` (a
+drive's pass where the repository's `max_level` allows it, often inside an
+`autonomy.off_hours` window), a call that reaches **Anything else** with no
+sensitivity flag, no `hitl:<stakeholder>` category, and no persisted-data or
+published-contract consequence is decided by the architect agent and marked
+**provisional**: the decision-record comment says so in its first line,
+names the level and how to reverse it (a comment on the pull request with a
+line `answer <key>: …` from an owner, member or collaborator, where `<key>`
+is the short slug you give the ruling), and the drive records it as
+`decide-provisional` with that key (drive-pr § 8), which only `wide`
+accepts. A person's answer reverses it, and the drive parks it for them.
+Under `attended` and `unattended` the row stands: escalate. A call the
+evidence could not settle stays `escalated` at `wide` too: this row decides
+only a call whose evidence is in hand.
+
 `hitl` marks a human-in-the-loop decision; `hitl:<stakeholder>` names whose
 call it is (the label conventions `/jig:do-item` reads). A repository
 that names the label differently sets it in `issue_tracker.labels.hitl`; read
 `hitl` throughout as that label.
 
 The last row is the important one: **the ladder fails closed.** A dilemma that
-does not clearly fit `decided` is escalated, not decided confidently.
+does not clearly fit `decided` is escalated, not decided confidently; at
+`wide`, decided only provisionally, where a person reverses it with one
+comment and the merge is still theirs.
 
 Why reversibility rather than importance: a choice that one pull request can
 unwind is genuinely cheap to reverse, and exactly that class is safe for an
@@ -297,7 +334,7 @@ average them into a confident recommendation. Two competent passes disagreeing
 | `decided` | A **decision note** comment on the live issue (default). An ADR **only** if it clears the bar below |
 | `escalated` | An issue carrying `hitl` + `hitl:<stakeholder>` (+ any `decide.escalation_labels`), its body in the [decision record](references/decision-record.md) format — plus a decision sheet above the threshold below |
 | `human-decided` | A follow-up **decision note** comment on that same `hitl` issue, folding the human's ruling (and the reasoning behind it) back onto it — not a new issue. If the issue carries a decision sheet, regenerate it so the call shows as decided |
-| `underdetermined` | A spike issue naming the missing evidence and what would settle it |
+| `underdetermined` | A spike issue naming the missing evidence and what would settle it. Under `unattended` the session gathers the evidence instead, and a call it still cannot settle within the round is `escalated` (Phase 3) |
 
 With no issue tracker configured, every outcome lands in the reply, and an
 issue the table asks for is a draft the user files.
@@ -334,6 +371,15 @@ threshold, and a human later asks to see the trade-offs on them**, elaborate per
 [`references/human-call-elaboration.md`](references/human-call-elaboration.md)
 — a distinct, conversational format from the record template above, for
 getting the human to a decision rather than for recording one already made.
+
+**A `decided` ruling under a drive is a decision taken without a person**:
+its decision-record comment is where a person reverses it, and the drive
+records it with that comment's link (drive-pr § 8). An `escalated`
+verdict under a drive is parked under the class `escalated`. The park takes
+its own record format (drive-pr § 4), not the decision record's: build it from
+the ruling (the question, the options with what each changes and costs, the
+recommendation and why) and link the escalation issue or comment from its
+`## Already done`.
 
 **Any text this skill writes to ask a human for a call** — an `escalated`
 record, an elaboration, an `hitl` issue body — follows the

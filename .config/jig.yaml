@@ -17,36 +17,50 @@ gc:
     - ../../orca/workspaces/jig
     - ../../worktrees/jig # Herdr-era worktrees, until none remain
     - .claude/worktrees # Claude Code's isolated subagent worktrees, inside the clone
+dispatch:
+  # What `jig dispatch` wants after a merge here: Jig's own post-merge pass.
+  followup_command: /followup
+  # The dispatcher's state on every pull request it manages (`jig:driving`,
+  # `jig:converged`, `jig:parked`, `jig:stale`, `jig:followed-up`), and a
+  # person's commands: `jig:drive` arms a drive on a pull request with
+  # no ledger, `jig:hold` keeps every stage off one. The host's
+  # `jig install dispatch --repo <clone> --yes` creates the labels.
+  labels:
+    enabled: true
 gates:
   command: bun run gates
 review:
   bots: ["docomply-review[bot]", "coderabbitai[bot]", "github-advanced-security[bot]"]
   # Naming the reviewer's app is what makes drive-pr wait for its review.
   reviewer_app: docomply-review
-  deferral_team: DOC
   repo_label: jig
   repo_slug: jig-harness/jig
+  # The labels a deferred review finding may carry, from label-taxonomy.yaml.
   taxonomy:
     types: [bug, feature, infra, docs, chore]
-    repos:
-      - docomply
-      - website
-      - forge
-      - ai-review
-      - engineering-standards
-      - harness-toolkit
-      - jig
-      - finops-engine
-      - sourcebook
+    repos: [jig]
     sizes: [xs, small]
-    context_prefixes: ["agent:", "domain:", "codearea:"]
-    ownership_prefixes: ["agent:", "domain:"]
+    context_prefixes: ["area:"]
+    ownership_prefixes: ["area:"]
     categories:
       [correctness, data-integrity, security, compliance, ux, performance, tests, docs, drift, style]
 issue_tracker:
-  adapter: linear
-  team: DOC
-  file_command: mcp__linear__save_issue
+  # Jig's work is the repository's own GitHub Issues: keys are `#<n>`, an
+  # open state is a `state:` label and a priority a `priority:` label.
+  adapter: github
+  states:
+    triage: "state:triage"
+    backlog: "state:backlog"
+    in_progress: "state:in-progress"
+    in_review: "state:in-review"
+    ops_pending: "state:ops-pending"
+  file_command: /jig:file-issue
+  # The work types do-item derives from an issue's type label: the taxonomy's
+  # type labels, the docs, chore and infra ones all being Task work.
+  types:
+    bug: [bug]
+    feature: [feature]
+    task: [docs, chore, infra]
   # Declared, not left to the default, so fleet health measures follow-ups.
   labels:
     followup: pr-followup
@@ -65,6 +79,11 @@ drive:
   # drive-pr marks them Ready after the first round
   # (CONTRIBUTING.md § Pull-request lifecycle).
   reviews_drafts: true
+  # Jig's pull requests edit its own skills under .claude/skills/**, and a
+  # pass started without a terminal is denied every write there unless its
+  # permission prompts are off. With them off, only the drive's instructions
+  # (guarded-push.ts, the bots-only rule) steer a pass, not a mechanism.
+  pass_args: [--permission-mode, bypassPermissions]
 ci:
   # The check main's ruleset requires; the drive waits for it on the
   # converged head.

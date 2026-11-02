@@ -85,6 +85,8 @@ plugin/shared/vendor/js-yaml.LICENSE
   js-yaml 4.1.1, MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin
 lib/vendor/js-yaml.LICENSE
   js-yaml 4.1.1, MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin
+plugin/shared/vendor/optique.LICENSE
+  Optique (@optique/core) 1.3.6, MIT License, Copyright 2025–2026 Hong Minhee
 plugin/skills/decide/scripts/ste-lint/LICENSE
   ste-lint, MIT License, Copyright (c) 2026 Dustin Yuchen Teng
 plugin/skills/audit/scripts/report/lucide/LICENSE

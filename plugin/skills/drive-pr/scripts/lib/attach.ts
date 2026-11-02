@@ -380,6 +380,9 @@ async function must(tree: string, args: string[]): Promise<void> {
     refuse(1, `git ${args.join(" ")} failed: ${r.stderr.trim()}`);
 }
 
+/** How many of a diverged tree's own commits its refusal names. */
+const DIVERGED_LISTED = 20;
+
 /** Bring a tree already on the head (by name or recorded) up to it. */
 async function catchUp(
   tree: string,
@@ -388,11 +391,28 @@ async function catchUp(
   detached: boolean,
 ): Promise<void> {
   if (await ancestor(tree, pr.head, sha)) return;
-  if (!(await ancestor(tree, sha, pr.head)))
+  if (!(await ancestor(tree, sha, pr.head))) {
+    // Name the tree's own commits, so the stop says what reconciling means.
+    const own = await g(tree, [
+      "log",
+      "--no-decorate",
+      "--format=%h %s",
+      `--max-count=${DIVERGED_LISTED}`,
+      `${pr.head}..${sha}`,
+    ]);
+    const commits =
+      own.code === 0 && own.stdout.trim() !== ""
+        ? `\n  Its commits the PR's head lacks (newest first, up to ${DIVERGED_LISTED}):\n${own.stdout
+            .trimEnd()
+            .split("\n")
+            .map((line) => `    ${line}`)
+            .join("\n")}`
+        : "";
     refuse(
       2,
-      `this tree's ${detached ? "head" : `branch '${pr.branch}'`} has diverged from PR #${pr.number}'s head ${pr.head.slice(0, 12)} — reconcile them first`,
+      `this tree's ${detached ? "head" : `branch '${pr.branch}'`} has diverged from PR #${pr.number}'s head ${pr.head.slice(0, 12)} — reconcile them first (rebase its own commits onto the PR's head, or reset to it and keep what is sound), then re-arm${commits}`,
     );
+  }
   await must(
     tree,
     detached

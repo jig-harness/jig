@@ -4,10 +4,17 @@ Picking up an issue should keep its context, validation and review together.
 Without a shared procedure, a started item can lose its findings between
 sessions or reach a pull request without the checks its changes need.
 `/jig:do-item <issue-key>` takes an issue from the configured tracker (its
-key is `ENG-123` on Linear, `#123` on GitHub Issues), checks its context and
+key is `ENG-123` on Linear and Jira, `#123` on GitHub Issues), checks its context and
 human checkpoints, delegates the work, validates it, opens a draft pull
 request under the repository's policy and arms
 [`drive-pr`](../drive-pr/README.md). A person merges.
+
+Before the pull request opens, a review gate runs tiered checks over the
+change, skipped for a change under 20 non-test lines. Its semantic tier
+runs the same [review lenses](../review/README.md) as `/jig:review`, from a
+base snapshot of its own: each lens the diff triggers runs with fresh
+context, the gate's summary says why it skipped the others, and the lenses'
+warnings go into the pull request body under Review Notes.
 
 ## The item's spec
 
@@ -51,6 +58,18 @@ the route is reported and the implementer runs on the model it ran on
 before. A `routing` section the rules refuse stops the pickup, naming the
 field at fault, until the repository corrects it.
 
+## The claim
+
+Before it starts the work, the skill claims the item: it assigns it to
+itself (the user its tracker credentials act as) and moves it to the
+in-progress state. It refuses an item already in progress or assigned to
+someone else, and stops when reading the item back shows another claim
+landed first, so a manual pickup and a dispatched one rarely work on one
+item side by side. A tracker has no conditional write, so two claims
+racing inside that re-read can both pass; the
+[dispatcher](../../README.md#the-dispatcher) reports an item two running
+sessions work on.
+
 ## Requirements and platforms
 
 Install the [plugin requirements](../../README.md#requirements), and name the
@@ -76,11 +95,34 @@ open its draft pull request, arm a drive, finish a pass and stop the drive —
 is still pending. Automated component coverage does not establish that
 interactive flow.
 
+## Arming the drive
+
+Once the pull request opens, the skill starts its
+[drive](../drive-pr/README.md), the unattended loop that works the review
+rounds, through drive-pr's `arm-drive.ts`, the same way `/jig:drive-pr`
+does. `do_item.arm_drive` in the
+[configuration](../../CONFIGURATION.md#do_item) says how: `auto`, the
+default, opens a terminal tab of the pull request's workspace where the
+session can (in Orca, below) and uses the session's background execution
+elsewhere; `tab`, `background` and `print` (the command only) choose one.
+Each round's agent runs on `drive.pass_model`
+([configuration](../../CONFIGURATION.md#drive)): `sonnet`, Claude Code's
+alias for the latest Sonnet, unless you name a model, an alias or a
+routing tier, and with the extra arguments `drive.pass_args` gives its
+command (none unless the repository sets them; see
+[drive-pr](../drive-pr/README.md)). The skill reports
+the command, the model, the permission mode, the driver log and the
+commands that list and stop the drive. An issue that waits on a person's
+decision gets the command only.
+
 ## Continuing work
 
 Invoke the same skill with the issue key again. It refreshes tracker state,
 checks whether prior findings can be reused and writes this session's intent
-snapshot. An issue with children selects one eligible child at a time; human
+snapshot. If the earlier pickup of an issue was interrupted, the issue is
+already in progress and assigned to you, so the claim refuses it: say in
+your request that you are resuming your own pickup, and the skill goes on
+without the claim. An issue held by another session stays refused. An issue with children selects one eligible child at a time; human
 checkpoints remain in force. Once a pull request exists, the drive owns its
 review rounds. See [the drive's README](../drive-pr/README.md) for inspecting
 or stopping it.
@@ -90,9 +132,29 @@ or stopping it.
 Run in a worktree of [Orca](https://www.onorca.dev), the skill also moves
 the worktree's card on Orca's workspace board, which the desktop app and
 Orca Mobile show: to In progress when it starts the issue, and to In review,
-with the pull request linked, once the pull request opens. Nothing turns
-this on and nothing in another runtime changes: outside Orca it makes no
-call, and an Orca call that fails only warns.
+with the pull request linked, once the pull request opens; the
+[drive](../drive-pr/README.md) moves it on from there. A
+board with custom columns maps these stages onto them in
+[`orca.board`](../../CONFIGURATION.md#orca). Nothing turns this on and
+nothing in another runtime changes: outside Orca it makes no call, and an
+Orca call that fails only warns.
+
+The workspace is also renamed as the work moves, from a template over the item key, title, pull request and a short status (`[I]`
+implementing, `[D]` driving, `[R]` ready to merge; `✅` done is reserved for
+a follow-up step and nothing sets it yet), `{id} {status} {title} {pr}` by
+default: [`workspace_name`](../../CONFIGURATION.md#workspace_name) changes the
+template, and `template: ""` turns the renaming off.
+
+It also arms the drive in a terminal tab of its own in the workspace, titled
+`drive #<PR>`, so the drive outlives the session, a person can watch its
+rounds, and the session that implemented the item ends without a drive
+running beside it. The tab is a fresh login shell of yours, so `bun`,
+`claude` and the Claude account or profile the drive uses come from it, not
+from the session. If Orca cannot open the tab, or the tab's drive does not
+show up in time, the drive starts in the background as it does elsewhere,
+and the skill says why. On a Windows host the drive always starts in the
+background: Orca's tab there can run `cmd.exe` or PowerShell, and the
+command is written for a POSIX shell.
 
 Orca's own Linear skill (`orca-linear`) has a completion flow of its own.
 Inside this skill the ticket's comments and transitions stay with `do-item`,

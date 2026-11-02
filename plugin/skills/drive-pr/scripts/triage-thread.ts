@@ -306,6 +306,7 @@ import {
   qualifyingOutcome,
 } from "./lib/outcome.ts";
 import { ghCall, readTimeoutEnv, resolvePr, run, tsArgv } from "./lib/proc.ts";
+import { refuseProvisional } from "./lib/provisional.ts";
 import {
   confirmedMeritSupersession,
   mootHeld,
@@ -666,8 +667,8 @@ async function main(): Promise<number> {
       `triage-thread.ts: thread ${threadId} has more than 100 comments (commentsTruncated).`,
       "Per /resolve-review-comments § 2 and SKILL.md § 3, a reply past the cap could",
       "supersede what is visible, so this is never handled automatically. Park it",
-      "instead:",
-      `  drive-state.ts park [PR] --key ${threadId} --kind thread --reason "..."`,
+      "under the class the cap protects, with its decision record on stdin (SKILL.md § 4):",
+      `  drive-state.ts park [PR] --key ${threadId} --kind thread --class human-thread < record.md`,
     );
   }
 
@@ -699,6 +700,7 @@ async function main(): Promise<number> {
     existingBody = c.body ?? "";
     break;
   }
+  refuseProvisional(threadId, thread.comments, existingUrl);
 
   // --cleanup-only: for the documented direct-post-supersession fallback ("stop
   // after reply-to-thread.ts and never invoke this script's resolve step" — the

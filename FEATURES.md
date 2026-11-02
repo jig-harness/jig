@@ -256,13 +256,13 @@ the single run, every field is documented with its default and the skills
 that read it, and the audit checks the configuration against the repository.
 Bindings to a named tool stand behind an interface: the skills reach the
 issue tracker through a small [tracker interface](GLOSSARY.md) with adapters
-for Linear and GitHub Issues, so another tracker is a new adapter, not a
+for Linear, GitHub Issues and Jira, so another tracker is a new adapter, not a
 change to the skills. [EXTENDING.md](plugin/EXTENDING.md) lists every point where an
 organization plugs in its own commands, skills, reviewers and stores.
 
 - **Practice:** [M0](modules/M0-instruction-architecture/),
   [M9](modules/M9-tasks-memory/)
-- **On the roadmap:** Jira and plan-file tracker adapters (roadmap item 12); the
+- **On the roadmap:** a plan-file tracker adapter (roadmap item 12); the
   values the skills still assume (roadmap item 10)
 
 ## Documents that say what is true now

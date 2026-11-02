@@ -67,7 +67,7 @@ import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
 import type { DriveState } from "./../state/schema.ts";
 import type { DriveLock } from "./locks.ts";
 import { driveState } from "./paths.ts";
-import { readDriveState } from "./rearm.ts";
+import { readDriveState, recordDriveEvent } from "./rearm.ts";
 import { SINGLE_INSTANCE_LOCK_EXIT, TAKEN_OVER_EXIT } from "./settings.ts";
 import type { TakeoverPlan } from "./takeover.ts";
 
@@ -269,6 +269,7 @@ export async function armLedger(
       "Re-arm once the pull request's comments read, or set DRIVE_PR_LEDGER=off to drive without the ledger.",
     );
   const ledger = readLedger(pr, snapshot);
+  refuseDamaged(pr, ledger, snapshot);
   const refusal = refuseBesideAnotherClone(
     pr,
     ledger,
@@ -354,6 +355,31 @@ function continuation(
     `ledger: another clone's claim (comment ${rival.id}, ${rival.claim.actor}) is past this clone's recorded position ${position}; arbitrating the drive by a claim.`,
   );
   return null;
+}
+
+/**
+ * A ledger that cannot be read is not an absent one: it may name a running
+ * driver, and a start without it would drive beside that driver with none of
+ * the recorded round or parked state. A readable ledger posted after the
+ * damaged one does not settle that: a lost creation race leaves exactly that
+ * duplicate, and its state may differ from what the damaged one recorded.
+ */
+function refuseDamaged(
+  pr: string,
+  ledger: Ledger | null,
+  snapshot: LedgerSnapshot,
+): void {
+  const readableId = snapshot.canonical?.comment.id ?? Number.POSITIVE_INFINITY;
+  if (!snapshot.malformed.some((c) => c.id < readableId)) return;
+  const what =
+    ledger === null
+      ? "holds no ledger this drive can read"
+      : "holds a ledger this drive cannot read ahead of the one it can";
+  fail(
+    1,
+    `drive.ts: PR #${pr}'s drive ledger ${what}; not starting the drive, since whether another clone drives it is unknown.`,
+    "Delete the damaged ledger comment and re-arm, or set DRIVE_PR_LEDGER=off to drive without the ledger.",
+  );
 }
 
 /** Report what is ignored, and refuse a version this code does not read. */
@@ -511,10 +537,12 @@ export function ledgerRenewal(pr: string): () => Promise<number | null> {
  * whose termination was not witnessed may still act): the ledger keeps
  * naming this driver running, its heartbeat ages toward the lease window,
  * and the record stays unmarked, so no recovery marks it stopped either.
+ * The same holds when the stop cannot be recorded in the drive state first.
  */
 export function ledgerSettlement(
   pr: string,
   held: readonly DriveLock[],
+  dryRun = false,
 ): AsyncDisposable & {
   done(code: number): Promise<number>;
 } {
@@ -533,11 +561,26 @@ export function ledgerSettlement(
       await dropRecord();
       return;
     }
-    if (driver === null) return;
     settled = true;
-    if (held.length === 0) {
+    if (driver !== null && held.length === 0) {
       console.error(
         `ledger: PR #${pr}'s ledger is left naming this driver running: its locks are retained, so its pass may still act.`,
+      );
+      return;
+    }
+    // The exit goes into the state before the ledger's last write, which
+    // mirrors the state's events: an unknown exit names none in the driver
+    // record, so a report reading the ledger falls back to those events, and
+    // the previous run's stop must not be the last of them. A dry run (no
+    // ledger driver either) records nothing. An unrecorded stop writes no
+    // ledger and keeps the record: the recovery (`lib/ledger-stop.ts`)
+    // records the stop and then writes the ledger, in that order.
+    const recorded =
+      dryRun || (await recordDriveEvent(pr, "stop", String(code ?? "unknown")));
+    if (driver === null) return;
+    if (!recorded) {
+      console.error(
+        `ledger: PR #${pr}'s ledger is left naming this driver running: its stop is not in the drive state, so the recovery writes both.`,
       );
       return;
     }

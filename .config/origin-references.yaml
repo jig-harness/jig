@@ -1,0 +1,6 @@
+# Read by Jig's own origin-reference gate (scripts/check-no-tracker-refs.ts,
+# patterns in scripts/tracker-key-patterns.txt): the key prefix of the issue
+# tracker Jig's work was kept in before it moved to GitHub Issues. Keys with
+# this prefix may not appear in repository content; this file is the one
+# place that spells it.
+tracker_team: DOC

@@ -38,6 +38,12 @@ import { runReviewPassPhase } from "./review-pass.ts";
 
 import { standDownOnNewerClaim } from "./ledger.ts";
 
+import { sweepProvisional } from "./provisional-sweep.ts";
+
+import { parkedFromStateJson } from "./../state/framed-park.ts";
+
+import { framedDecisionLines } from "./../state/park-frame.ts";
+
 async function gateRoundStatus(
   context: DriveRoundContext,
   code: number,
@@ -62,22 +68,20 @@ async function gateRoundStatus(
       // Deliberately terminal. Re-arming here is a measured failure: the loop
       // wakes, re-reads the same undeferrable threads, learns nothing it may
       // act on, and burns turns until something external stops it.
+      // Only these remain: the drive worked everything they do not block.
       console.error(
-        "HITL-parked — the decisions below need a human; not re-arming.",
+        "HITL-parked — only the decisions below remain, and each is a person's; not re-arming.",
       );
       const get = await run(tsArgv(driveState, ["get", context.pr]), {
         stderr: "ignore",
       });
       try {
-        const state = JSON.parse(get.stdout) as {
-          parked?: Array<{ kind: string; key: string; reason: string }>;
-        };
-        for (const p of state.parked ?? []) {
-          console.error(`  [${p.kind}] ${p.key}\n    ${p.reason}`);
-        }
+        for (const p of parkedFromStateJson(get.stdout))
+          console.error(`\n${framedDecisionLines(p).join("\n")}`);
       } catch {
-        // best-effort listing, like the bash `|| true`
+        // Best-effort listing: the handoff file and the ledger carry them too.
       }
+      console.error("");
       // What picks it up again: answers, not a wake-up (`rearm.ts`).
       console.error(
         "  Answer each one on its thread, or in a pull-request comment with a line `answer <key>: …`, as an",
@@ -150,6 +154,11 @@ async function waitForRoundBoundary(
   // drive here, before another pass could reply beside its successor.
   const takenOver = await standDownOnNewerClaim(context.pr);
   if (takenOver !== null) return takenOver;
+  // A person's comment on a provisional decision is parked for them before
+  // the gate counts the round's work (`provisional-sweep.ts`). A dry run
+  // previews and never sweeps: the sweep unresolves threads and parks.
+  const reversed = context.dryRun ? null : await sweepProvisional(context.pr);
+  if (reversed !== null) return reversed;
   const mailboxAtRoundStart = await context.mailboxCheckpoint();
   if (typeof mailboxAtRoundStart === "number") return mailboxAtRoundStart;
   if (mailboxAtRoundStart === "resumed") context.finalCiWait.clear();

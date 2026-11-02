@@ -153,8 +153,8 @@ field-adding release with the same remedy.
 - The audit's configuration-fit findings gain a `remedy: init` marker, and
   the sheet shows the command.
 - [plugin/README.md](../plugin/README.md): the install section ends with
-  `/jig:init` in the repository; `tools/plugin/setup.ts` prints it as the
-  next step.
+  `/jig:init` in the repository; `jig upgrade` and `tools/plugin/setup.ts`
+  (`plugin/runtime/harness.ts`) print it as the next step.
 - [docs/LIFECYCLE.md](../docs/LIFECYCLE.md): a row in the table of skills
   outside the loop: a repository adopts Jig, or updates its configuration
   after a plugin release.

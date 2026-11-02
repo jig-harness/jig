@@ -16,8 +16,11 @@ contracts are in the modules: the feature pipeline is
 the pull-request loop is [M7](modules/M7-pr-lifecycle-review/)
 ([`PR-LIFECYCLE.md`](modules/M7-pr-lifecycle-review/templates/PR-LIFECYCLE.md)),
 and the learning loop is [M8](modules/M8-learning-loop/)
-([`FLYWHEEL.md`](modules/M8-learning-loop/templates/FLYWHEEL.md)). Jargon:
-see [GLOSSARY.md](GLOSSARY.md).
+([`FLYWHEEL.md`](modules/M8-learning-loop/templates/FLYWHEEL.md)). Which of
+the plugin's parts at each station are scripts with no model in them and
+which are a model deciding is mapped in
+[plugin/MECHANISMS.md](plugin/MECHANISMS.md). Jargon: see
+[GLOSSARY.md](GLOSSARY.md).
 
 ## A factory of agents runs on scaffolding
 
@@ -73,10 +76,9 @@ have little to work from.
     `origin`) are listed in [ROADMAP.md](ROADMAP.md) item 10;
   - bindings to a named tool go behind an interface where one has been built:
     the skills reach the issue tracker through a small
-    [tracker interface](GLOSSARY.md) with adapters for Linear and GitHub
-    Issues, so another tracker is a new adapter rather than a change to the
-    skills (Jira and a
-    plan file kept in the repository are ROADMAP.md item 12; the review
+    [tracker interface](GLOSSARY.md) with adapters for Linear, GitHub
+    Issues and Jira, so another tracker is a new adapter rather than a change
+    to the skills (a plan file kept in the repository is ROADMAP.md item 12; the review
     skill's deferral step still calls Linear directly, item 10), and the
     [workspace launcher](tools/launcher/README.md) opens workspaces through
     providers in the same way: Herdr, the [workspace runtime](GLOSSARY.md)
@@ -192,10 +194,15 @@ Follow-up items enter the line again at station 1, so the execution level is
 itself a loop. `drive-pr` stops on one named end state (converged, waiting on
 a person, conflicting, …) and never approves or merges. On the roadmap: a
 converged drive arming the merge it certified (ROADMAP.md item 9, which
-changes "a person merges" and is decided on its own), and a skill that runs
+changes "a person merges" and is decided on its own), a skill that runs
 the post-merge stage [M7](modules/M7-pr-lifecycle-review/README.md) states,
 which settles what a merge still owes beyond the follow-ups station 7 files
-(item 17).
+(item 17), and a [dispatcher](GLOSSARY.md) that starts the
+line's stations with nobody at the keyboard: a pickup for each item
+assigned to the factory's tracker identity, a restart for each drive that
+stopped on a usage limit or an answered question, a follow-up for each
+merge, and a notification to a person for the stops that are theirs
+(item 33, [designed](design/dark-factory-dispatch.md)).
 
 ## The learning loop (wraps both)
 

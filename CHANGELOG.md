@@ -168,6 +168,11 @@ changes are marked **Breaking** and say what a consumer changes.
   ([GLOSSARY.md](GLOSSARY.md)). The design that derives it is
   [design/agent-routing.md](design/agent-routing.md), decided in
   [ADR-0009](docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md).
+- [GLOSSARY.md](GLOSSARY.md) defines the terms of the planned dispatcher,
+  which starts the execution line's stages with nobody at the keyboard:
+  dispatcher, tick, session runtime and factory identity, and the terms
+  of its control function: outcome log, stage drift and nudge.
+- [M12](modules/M12-parallel-agent-ergonomics/mappings.md#worktree-managers--agent-runners--where-the-hooks-wire)'s mappings say where Worktrunk runs a repository's worktree create and remove hooks: its blocking `pre-start` and `pre-remove` hooks in `.config/wt.toml`, each inside the worktree, so a failed remove hook keeps the worktree and its unsent reflection findings. Worktrunk skips project hooks when their approval is declined, so the hook must be approved before a removal for that guarantee to hold.
 
 ### Changed
 
@@ -318,6 +323,9 @@ changes are marked **Breaking** and say what a consumer changes.
   agent, model and effort they choose. Set `agent` (with optional `model`,
   `effort` and `surface`) to keep the agent started
   ([tools/launcher](tools/launcher/README.md)).
+- [ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)
+  is amended: Herdr stays the first workspace runtime for Jig's tooling,
+  except the planned dispatcher, which targets Orca first.
 
 ### Fixed
 
@@ -340,6 +348,707 @@ changes are marked **Breaking** and say what a consumer changes.
 - A link to a section of the getting-started, plugin, features or
   principles page no longer stops well below the header: it lands just
   under it.
+
+## [0.126.0] - 2026-11-02
+
+### Added
+
+- The Orca workspace card follows the work through the execution line. When
+  `drive-pr` marks a pull request Ready, the card moves to In review with the
+  pull request linked. When a drive stops on something a person must settle
+  (a park, a usage-limit stop, or a failure stop such as a failed reviewer
+  check, a stall or a spent round budget), the card is marked unread with
+  the stop's one-line reason as its comment, a park's question first, so
+  Orca Mobile shows what is waiting. Outside Orca nothing is called, and an
+  Orca failure only warns
+  ([drive-pr](plugin/skills/drive-pr/README.md)).
+- A card's comment never replaces one a person has not read: while the card
+  is unread, a new comment from the board script or a dispatcher
+  notification is appended to it, the read and the write held under one
+  lock per card; a writer that cannot take the lock within a few seconds
+  warns and writes nothing.
+- `orca.board` in `.config/jig.yaml` maps the board stages (`in_progress`,
+  `in_review`, `completed`) onto a board's custom columns; a repository that
+  sets nothing keeps Orca's own columns
+  ([CONFIGURATION.md](plugin/CONFIGURATION.md#orca)).
+
+### Changed
+
+- The board script moved to the plugin's shared code,
+  `plugin/shared/orca-board.ts`, and gained `--unread` and `--comment`; with
+  either, the stage may be left out. It takes a stage (`in-progress`,
+  `in-review` or `completed`) rather than any column id, which `orca.board`
+  maps.
+
+## [0.125.0] - 2026-11-02
+
+### Added
+
+- `jig upgrade` updates the plugin in Claude Code and Codex, whichever is on `PATH`, to the newest release of the channel each follows, and installs it in one that lacks it (following `stable` unless `--channel latest` says otherwise). Then the newly installed copy refreshes what runs it: each installed job's launcher copy and its job (the systemd units, the launchd job or the crontab line), and the `jig` command's launcher copy and script, so a change to the launcher in a release reaches them. A job keeps the environment, schedule and programs its install recorded, nothing is written where nothing differs, and a job that was enabled or running stays so. Every command that changes state is printed before it runs; `--json` prints what became of each tool and job, and `--jobs-only` refreshes the jobs after a tool updated the plugin on its own. See [the plugin's README](plugin/README.md#the-jig-command).
+- `jig doctor` checks the machine and the repository it runs in, and names the command that fixes each failure: Bun's version against the one Jig tests, `claude` and `codex` resolving outside every git checkout, the plugin in each tool and the channel it follows, the `jig` command's and each job's launcher copy against the installed plugin's, the programs each job names, each component's machine file and last run, Orca for the dispatcher, and the audit's configuration fit of the repository, offline. It exits 1 when a check fails; `--json` prints every check.
+
+### Changed
+
+- `bun tools/plugin/setup.ts` runs the plugin's own install and update code and is for the first install from a checkout, before `jig` is on `PATH`; afterwards `jig upgrade` and `jig doctor` do its work and more. A tool that fails no longer stops the other: setup reports it, goes on to the next, and exits 1 instead of 2; arguments it cannot take still exit 2. On a machine that follows `main`, its advice names `jig upgrade`.
+
+## [0.124.0] - 2026-11-02
+
+### Added
+
+- The dispatcher names what it starts, so a dispatched workspace is told from a person's at a glance on the board. A workspace it creates is named for the stage and the key (`⚙ dispatched · pickup #123`, `⚙ dispatched · rearm #456`, `⚙ dispatched · followup #789`), and its comment carries the [dispatched mark](GLOSSARY.md), that name and the launch record's id; a workspace it reuses keeps its name and gets the mark added to its comment once. Each session's terminal tab reads `jig dispatch · <stage> <key>`, and the notices workspace is `⚙ dispatched · notices`. The launch record keeps the mark, and a notification that rewrites a comment keeps it, so a workspace a session renamed is still known as dispatched. The convention lives in the dispatcher's runtime interface (`dispatch/lib/runtime/port.ts`), one place every runtime takes its names from.
+- The morning report (`drives.ts --report`) lists the workspaces the dispatcher launched into since the report's time, found by the mark on their launch records, each with the name it carries now and whether its comment still carries the mark (`dispatchedWorkspaces` with `--json`).
+
+### Changed
+
+- A workspace the dispatcher creates takes its Orca name, and so its folder's name, from the dispatched name rather than from its branch; the branch is still the one the repository's branch rule names.
+
+## [0.123.0] - 2026-11-02
+
+### Added
+
+- `jig gc`'s worktrees kind tells a worktree Orca manages from a plain one
+  and collects it through Orca. With `gc.orca.command` in the machine's
+  `~/.jig/jig.yaml` (an absolute path, since the scheduled run is not in an
+  Orca terminal), the inventory reads `orca worktree list --json` for the
+  repository and marks each checkout `runtime: orca` or `none`. An Orca
+  checkout's idle proof also reads Orca's registry (`orca worktree ps
+--json`): an agent Orca reports working or waiting in it keeps it, and a
+  registry that cannot be read refuses collection. An idle one is collected
+  the way the Orca workspace tool removes one: the repository's remove hook
+  inside it, its reflection findings parked, then `orca worktree rm`, so its
+  card, terminals and agent records go with it; the receipt names the hook
+  and the park. A plain worktree stays report-only.
+  The remove hook that runs is the declared base-branch commit's copy of the
+  hooks directory, never the retiring branch's; parking refuses while a
+  `JIG__` or `JIG_OVERLAY` override is set; the registry and the process
+  holders are read again right before removal, after the hook; and a registry
+  that lists a worktree twice refuses collection.
+
+## [0.122.0] - 2026-11-02
+
+The dispatcher shows its state on each pull request as a label, and takes
+a person's commands the same way.
+
+### Added
+
+- **Dispatch labels** (`dispatch.labels` in `.config/jig.yaml`, off by
+  default). With `enabled: true`, every `jig dispatch --apply` run keeps
+  one state label on each pull request it manages, derived from its drive
+  ledger: `jig:driving`, `jig:converged`, `jig:parked`, `jig:stale`, and
+  `jig:followed-up` once a merged pull request's follow-up is done. A run
+  writes only where the labels disagree, one forge call per pull request,
+  so a label changed by hand comes back at the next run; the dispatcher
+  never reads a state label to decide what to start. `prefix` replaces
+  `jig:` for a repository whose label taxonomy has its own convention.
+  A run without `--apply` reports what it would write, and a write the
+  forge refuses is reported in the receipt without failing the run.
+- **Commands a person gives with a label.** `jig:drive` on a pull
+  request with no drive ledger arms a drive on it (the machine file's
+  `rearm` stage, once per head commit), and is replaced by the state label
+  once the ledger exists. `jig:hold` keeps every stage off its pull request
+  while it is there; each run reports it, and only a person removes it.
+- **`only_labeled: true`** limits the dispatcher to the pull requests that
+  carry a label of the set: one with none is never read, re-armed or
+  followed up.
+- **`jig install dispatch --repo <path> [--yes]`** lists the dispatch
+  labels a repository lacks beside the timer, and with `--yes` creates them where the
+  signed-in account may, listing the rest with the command a person runs.
+  Run it once after turning the labels on: the labels must exist before a
+  run writes them.
+- **The morning report** (`drives.ts --report`) gives, for each repository
+  with the labels on, how many pull requests its latest run projected each
+  label for (`dispatchLabels` in `--json`).
+
+## [0.121.0] - 2026-11-02
+
+### Added
+
+- `jig install`, `jig uninstall`, `jig status`, `jig receipts` and `jig run` act on each component of the `jig` command, resource collection (`gc`) and the dispatcher (`dispatch`), the same way: name the components (`jig install dispatch`), or none for all of them. `jig install` previews and, with `--yes`, writes each component's scheduled job; with no component named it installs resource collection and registers the current repository (or `--repo`), and installs the dispatcher only when its machine file `~/.jig/dispatch.yaml` exists, saying otherwise that it was skipped and why. `jig uninstall` removes the repository's entry, `--machine` each component's job as well. `jig status` shows whether each job is installed, its schedule, next run and last receipt (`--json` for a script). `jig receipts gc` or `jig receipts dispatch` lists a component's receipts, a date that day's, a run id one run. `jig run` runs now what each timer runs (`jig gc --scheduled`, `jig dispatch --apply`). See [the plugin's README](plugin/README.md#the-jig-command).
+- `jig install` puts the `jig` command on `PATH`: `~/.local/bin/jig` (`jig.cmd` on Windows), which runs the launcher the scheduled jobs run, from its own copy, so each run uses the installed plugin copy and a plugin update reaches it without a new install. The first install runs from the installed copy as `bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts install --yes`. `jig uninstall --machine` removes the command with the jobs; a file at that path `jig install` did not write is left alone, and the install refuses to replace it.
+
+### Changed
+
+- `jig gc install` (with `--uninstall`, and `--machine` only with `--uninstall`), `jig dispatch install` (with `--uninstall` and `--interval`; it refuses `--machine`), `jig gc receipts` and `jig dispatch receipts` keep working as before but no longer appear in `jig --help` or a component's help, which name the lifecycle commands instead. `jig dispatch receipts <date>` now lists that day's receipts, as `jig receipts dispatch <date>` does. Jobs already installed keep running unchanged: there is nothing a consumer must change.
+
+## [0.120.3] - 2026-11-02
+
+### Changed
+
+- The dispatcher's README says which launch records `jig dispatch clear`
+  clears and which it refuses, as the command does: it clears an unknown
+  record, a pending one whose launch cannot be retried, or one that does
+  not read and whose claim is not alive, and refuses a running record,
+  readable or not, and, among the records that read, an ended or died one
+  and a pending one that can still be retried.
+
+## [0.120.2] - 2026-11-02
+
+### Added
+
+- A map of Jig by mechanism, [plugin/MECHANISMS.md](plugin/MECHANISMS.md),
+  on the site as "Where the model is in the loop": for each part of the
+  plugin (the gates, the `jig` command and its timers, resource collection,
+  the dispatcher and its records, the follow-up marker, the drive, review,
+  the tracker and forge scripts, pickup, the changelog and release, hooks,
+  the audit) it names the script that owns it, where its state lives and
+  what it refuses, the model sessions that use it and what they decide
+  there, and who notices a failure and who is asked to fix it. It also says
+  when a model reads or writes Jig's own code, and which boundaries rest on
+  instructions rather than on a check. The glossary defines
+  deterministic and reasoned parts.
+
+## [0.120.1] - 2026-11-02
+
+### Fixed
+
+- `drive-pr` no longer deadlocks pushing a conflict resolution in a
+  repository with a CI hold (`ci.hold_label`). GitHub runs no `pull_request`
+  CI on a pull request that conflicts with its base, so the checks the hold
+  waited for before it could be added again never ran. This happened after a
+  failed push released the hold, or when no CI had ever run on the pull
+  request. `ci-hold.ts ensure` now lets that push go ahead without the
+  label, and the push that clears the conflict runs full CI. A failed push
+  of that kind has no hold to roll back, so `finish-round.ts` no longer
+  reports retaining one.
+
+## [0.120.0] - 2026-11-02
+
+The dispatcher keeps its state in one SQLite database.
+
+### Added
+
+- **`jig dispatch log [--since <date>] [--jsonl]`** prints the outcome log
+  as text, or as JSON lines. Every run also adds the rows it wrote to the
+  month files (`log-<year>-<month>.jsonl`), the copy that outlives any
+  change to the database.
+- **`jig dispatch clear <record>`** removes a launch record only a person
+  can settle (one claimed on another host or before a reboot, a pending
+  one whose launch cannot be retried, or one that does not read), which
+  until now meant removing its files. It refuses a record whose session
+  is still running.
+
+### Changed
+
+- **The dispatcher's state is one database.** What `jig dispatch` keeps
+  between runs (the launch records, the records that keep a notification
+  or a nudge from going twice, the waiting and drift observations, each
+  follow-up's outcome, the stall clocks and the outcome log) is now
+  `~/.local/state/jig/dispatch/state.sqlite`, opened with Bun's built-in
+  SQLite, one table each. An outcome row is written in the same
+  transaction as what it records, so a run that stops between the two
+  leaves nothing to repair. The receipts and the account walls stay files.
+  The first run on this version creates the database and leaves the
+  `launches/`, `notices/`, `nudges/`, `idle/` and `followups/` folders of
+  an earlier version unread; delete them once the new version runs. The
+  month files an earlier version wrote stay, and new rows are added to
+  them. A database written by a newer plugin is refused, with its version
+  named.
+- **The dashboard queries the log.** `jig dispatch dashboard` filters in
+  SQL over the outcome log's table, reads the rows and their counts in one
+  read transaction, and reads while a run writes.
+
+## [0.119.0] - 2026-11-02
+
+The dispatcher admits Codex accounts beside Claude Code's, and the drive documents a Codex pass command.
+
+### Added
+
+- **A documented Codex pass command for the drive.** Beside Claude Code's
+  `claude -p "/jig:drive-pr --bots-only <PR>"`, `drive-pr` now documents
+  Codex's: `codex exec --dangerously-bypass-approvals-and-sandbox "Use the
+  jig:drive-pr skill: /jig:drive-pr --bots-only <PR>"`. A Codex pass runs
+  on its own `-m`, else the execution tier of `routing.models.codex`, else
+  Codex's own configured model; `drive.pass_model`, `--pass-model` and
+  `drive.pass_args` stay Claude Code's. `arm-drive.ts` in a Codex session
+  arms a drive with Codex's command, in an Orca terminal tab where it can
+  and otherwise as the printed command. A Codex pass has no turn cap of its
+  own, since the turn-budget hook counts nothing under Codex: the pass
+  deadline (`DRIVE_PR_PASS_TIMEOUT`, 90 minutes by default) is what ends one
+  that runs on.
+- **Codex accounts in the dispatcher.** An account's `vendor` in
+  `~/.jig/dispatch.yaml` now picks the agent every session on it runs in. A
+  drive re-armed on a `codex` account runs Codex's pass command with
+  `CODEX_HOME` set to the account's directory and `CLAUDE_CONFIG_DIR` and
+  every credential variable removed, so a drive stopped on a Claude Code
+  account's usage limit is re-armed on a Codex account at the next run. A
+  pickup on a Codex account starts Codex on the route's
+  `routing.models.codex` model and `routing.efforts.codex` effort (where the
+  session runtime can bind it; on Orca these stay reported); a follow-up
+  starts Codex on its own defaults. A repository
+  names a model per runtime in `routing.models`, never an agent.
+- **A deadline for every dispatched drive.** Each drive the dispatcher
+  launches runs under the pass deadline the run read (`DRIVE_PR_PASS_TIMEOUT`
+  in its environment, else 90 minutes), kept on its launch record and handed
+  to `drive.ts` as `--pass-timeout`. A `codex` account is not admitted for a
+  drive while that deadline is `0`, since nothing else would bound its pass.
+
+### Changed
+
+- **Any vendor name in the machine file.** `accounts[].vendor` accepts any
+  lowercase name. An account of a vendor the drive documents no pass command
+  for is accepted, reported at the top of every run and in its receipt
+  (`accountsNotAdmitted`) as accepted and not admitted, and never launched
+  on.
+
+## [0.118.0] - 2026-11-02
+
+The dispatcher re-drives a converged pull request that went stale.
+
+### Added
+
+- **Re-drive of a stale converged pull request.** `jig dispatch` now reads
+  each open pull request's mergeability and head commit with the pull
+  request. A drive that converged (`drive.ts` exit `0`) whose pull request
+  the forge now reports conflicting with its base, or whose head moved past
+  the head the drive verified, is classed `stale`, and the `rearm` stage
+  re-arms it on any admitted account, once per change (the pull request's
+  head, conflicting or not): the drive merges the base in through its
+  conflict-resolve round, or reviews the new head in its ordinary rounds.
+  A pull request its base merely moved past, still mergeable at the
+  verified head, is left alone, and one whose mergeability the forge is
+  still computing is reported unplaced for that run, with nothing launched.
+  The re-drive's row in the outcome log ends like any re-arm's, with a
+  reason that names why the drive was stale.
+
+## [0.117.0] - 2026-11-02
+
+The dispatcher shows how the stages it started went, and sends its one
+nudge.
+
+### Added
+
+- **The outcome log.** Every session `jig dispatch` launched gets one row
+  when it ends, in `~/.local/state/jig/dispatch/log-<year>-<month>.jsonl`,
+  which nothing removes: the stage, repository, item or pull request,
+  account, model, duration, a drive's rounds, and an outcome class from a
+  closed list (converged, merged, quota wall, parked for a person, stalled,
+  died, refused, gates failed, double claim, unknown) with the stage's own
+  answer as its reason. A stop no class fits is logged as `unknown` with its
+  last state. Each cause the dispatcher notifies on a stage it did not
+  launch, and each nudge, is an event row beside them.
+- **`jig dispatch dashboard [--port <n>]`**: one page over the log, filtered
+  by time (today, yesterday, a range), repository, stage, account, class and
+  reason, with the count of each class. It listens on the machine file's new
+  `dashboard.listen`, an address in the private or loopback ranges, behind a
+  token in the URL it prints, reads the log when the page asks and writes
+  nothing.
+- **Stage drift.** A drive the dispatcher launched whose unresolved review
+  threads do not fall over `dispatch.drive_rounds_flat` recorded rounds (3),
+  a pickup with no pull request after `dispatch.pickup_within` (2h), and a
+  follow-up still running after `dispatch.followup_within` (1h) are reported
+  as drifting with the evidence and notified once; the dispatcher never acts
+  on drift.
+- **The `steer` stage.** An interactive session the dispatcher launched now
+  starts with a session id the dispatcher chose, so a usage-limit wall it
+  meets is read from its own record and closes its account to admission
+  like a drive's. Once that wall has reset and the session still waits at an
+  empty prompt, the dispatcher types `Your usage limit has reset. Continue`
+  into it once, after re-reading the screen; a session still waiting after
+  that is notified, never nudged again. Enable it with `steer` in a
+  repository's machine-file stages.
+
+## [0.116.1] - 2026-11-01
+
+### Fixed
+
+- The docs skill's frontmatter gate no longer checks every document against a schema section it has already rejected. When the schema cannot be used as written (a section of the wrong shape, or a path rule that cannot be evaluated), the gate reports only the schema's own errors and exits 2, so `/jig:docs` shows the `frontmatter` check as `failed` instead of listing thousands of invalid-value findings that bury the real ones.
+
+## [0.116.0] - 2026-11-01
+
+`review` runs review lenses: single checks, one Markdown file each, selected by what the diff adds or removes and run with fresh context in its semantic tier. The first seed lens, `jig.swallowed-failure`, checks a change against M15's rules on failures.
+
+### Added
+
+- **Review lenses in `/jig:review`'s semantic tier.** A [review lens](GLOSSARY.md) is one check held in one file: its id and version, the module rules it enforces, the trigger that selects it, the evidence every finding must give, and what is and is not a finding ([the lens step](plugin/skills/review/references/lenses.md)). `select-lenses.ts` runs each lens whose paths and line patterns the diff matches and says why it skipped the others; each selected lens runs as its own reviewer with fresh context (a subagent, else the harness's agent command inside the base snapshot, else the same session, said so in the summary). Every lens is comment-only for now: a finding's effective severity is at most `WARNING`, and `INFO` when its evidence field is empty. Tier 3's line gains `⚠️ WARNINGS` and `⏭️ N/A`, the summary a `Lenses:` line, and `APPROVED WITH WARNINGS` admits lens warnings. `--lens=<id>` runs a lens whatever its trigger says; `--quick`, `--tier=1`, `--tier=2` and `--skip-t3` run none.
+- **`jig.swallowed-failure`**, the first [seed lens](GLOSSARY.md): a failure turned into a value or silence, a fallback that hides the fault, a wrapper that drops the cause, work nobody waits for, a removed check, and a branch on an error's message text ([M15](modules/M15-contracts-errors/README.md) pieces 1 and 3). Its eval fixtures, a diff it must flag and one it must stay quiet on, passed live.
+- **`review.lenses`** in `.config/jig.yaml` ([CONFIGURATION.md](plugin/CONFIGURATION.md)): `dir` for the repository's own lens files, `off` for lenses not to run, `triggers` for patterns appended to a lens's trigger. Read from the base branch; an id that names no lens, a pattern that is not a regular expression or a repository lens with the `jig.` prefix stops the review and is named.
+- **The lens step in `/jig:do-item`'s pre-PR gate**, from a base snapshot of its own, skipped with the other tiers under the small-change threshold; lens warnings go under Review Notes.
+- **`review.ts setup --base <branch>`** names the base branch directly, and **`--remote <name>`** the git remote it fetches and compares with (default `origin`).
+- **`/jig:audit` checks `review.lenses`** the way review reads it: an `off` or `triggers` entry that names no seed or repository lens is reported as a refusal.
+
+### Changed
+
+- **`review`'s setup writes the effective diff** beside the effective file list, with every Git setting that could change what either shows fixed on the command line and attributes read from the merge base, so neither the caller's Git configuration nor a clean filter a change assigns in its own attributes file can hide an edit. **Breaking:** setup needs Git 2.41 or later and stops, naming the requirement, on an older Git; and a path named with `--files` that does not exist in the reviewed tree, or that reaches outside it through a linked folder or contains a `..` segment, stops setup.
+- [M7](modules/M7-pr-lifecycle-review/README.md) leaves out only a lens catalogue beyond the seed lenses, and its `review-config.yaml` may reference a lens file (`file:`) or a seed lens's `id` instead of restating it.
+
+## [0.115.0] - 2026-11-01
+
+### Added
+
+- `jig dispatch` follows up a merge: with the `followup` stage enabled in the
+  machine file, each pull request merged since the stage started gets one
+  session running the repository's `dispatch.followup_command` on it, in its
+  workspace. A hidden-marker comment on the merged pull request claims the
+  follow-up before the session starts, and an earlier marker makes a later
+  run stand down. A follow-up whose session failed, or whose marker names a
+  launch record the machine no longer has, is notified once and never started
+  again; deleting its marker makes it wanted again. The session is an
+  interactive one, so with Orca, which cannot yet bind one to a chosen
+  account, each follow-up is reported and nothing is posted or started, as a
+  pickup is.
+- `jig dispatch marker claim|check|done <PR>`: how a follow-up command a
+  person runs by hand claims the merge with a marker of its own, checks before
+  each act outside the pull request that no earlier marker appeared (exit
+  `3` when one did), and marks its marker done once it succeeded.
+- `jig dispatch` reaches a person: with the `notify` stage enabled, each stop
+  only a person settles is notified once per cause, through the session
+  runtime: a drive parked with a decision unanswered (carrying the drive's
+  framed decision and how to answer it, `answer <key>: …` on the pull
+  request, which the next tick re-arms on), a drive stopped on an exit only a
+  person settles or with no exit, a failed follow-up, a stalled pickup, a
+  double claim and a session waiting past `dispatch.blocked_after`. With Orca
+  the message becomes the workspace's comment and the workspace is marked
+  unread, which Orca's phone app shows; a target with no workspace that can
+  take it goes to the repository's notices workspace
+  (`jig-dispatch-notices`). A message counts as sent only once the comment,
+  read back, carries it, and is appended rather than written over while the
+  workspace is still unread.
+- `drives.ts --report`, the morning report, lists what the dispatcher
+  launched, refused and notified on the machine since the last report, beside
+  the drives.
+
+### Changed
+
+- A drive's notification is planned whatever session runs in its pull
+  request's workspace: telling a person never competes with a session.
+
+## [0.114.0] - 2026-11-01
+
+### Added
+
+- `do-item` claims the issue it picks up: `tracker.ts claim <key>` assigns
+  it to the identity the tracker's credential acts as and moves it to
+  `in_progress`, refuses an issue already in progress or assigned to anyone
+  else (exit `3`, nothing written), and stands down when reading it back
+  shows another claim landed first (exit `4`). `do-item` and `work-batch`
+  stop on either instead of starting beside another session. The tracker
+  interface gains `viewer`, `assignees` and `assign` on GitHub Issues,
+  Linear and Jira.
+- `jig dispatch` plans pickups with the stage's whole guard: an item a
+  launch record or a running session holds is reported as running, one
+  whose last session ended without claiming it waits until it leaves the
+  dispatch states and comes back, an item more than one running session
+  joins to is reported as a double claim, a claimed item idle past
+  `dispatch.stalled_after` is reported as a stalled pickup and never
+  relaunched, and a session it started that waits past
+  `dispatch.blocked_after` is reported (both `30m` by default; see
+  [CONFIGURATION.md](plugin/CONFIGURATION.md#dispatch)).
+- The machine file's `pickup` stage starts a `do-item` session per pickup,
+  once, where the session runtime binds the session to the account it
+  bills: the fresh read just before the launch, admission and the identity
+  check, a workspace on the item's own branch with its issue linked, the
+  route's model and effort, and a launch record holding its slot while the
+  agent works or waits. The session records how it ended with
+  `jig dispatch result <record> <token> done|failed`. Orca cannot bind an
+  agent launch to a chosen account yet, so with Orca each pickup is
+  reported with that reason and nothing is started
+  ([the dispatcher](plugin/README.md#the-dispatcher)).
+
+### Changed
+
+- **Breaking:** `dispatch.states` no longer accepts `in_progress`, the state
+  `do-item`'s claim moves an item to, so a claimed item is never a pickup. A
+  repository whose `dispatch` section lists it must remove it first: the
+  section is refused with an error, and the tick plans nothing for that
+  repository, re-arms included.
+- A tick's launches stop at the deadline the installed launcher gives the
+  whole tick (planning included, less the time its receipt needs), not at the
+  smaller budget of its launches.
+- A dispatch tick opens at most two workspaces, the opens its timer's
+  deadline covers; a launch that needs another waits for the next tick.
+  Which repository, stage and target comes first rotates by one each
+  applying tick, counted in the state directory rather than read off the
+  clock, so a target whose open fails every time cannot keep the others
+  waiting whatever interval the timer was installed with.
+- An agent Orca reports as `blocked` (on a permission prompt) now holds its
+  stage, as a working or waiting one does.
+
+## [0.113.0] - 2026-11-01
+
+A repository can let a drive decide more during the hours nobody is there to ask, and a person reads one report in the morning. Both are built behind the opt-in and documented as not yet validated.
+
+### Added
+
+- `autonomy.off_hours`: `level`, the level a drive's pass decides at inside one of the windows of `schedule` (in the machine's local time zone, such as `Mon-Fri 20:00-07:00` and `Sat-Sun`; a window may cross midnight. Once the level is set the default schedule is `Mon-Fri 20:00-07:00`, `Sat-Sun` and `Mon 00:00-07:00`, so Sunday night is covered), capped by `max_level`. Unset, off-hours is off. The round header and `bun <plugin>/shared/autonomy.ts [--at <instant>]` print `wide (off_hours)` inside a window and the base level outside. See [`autonomy`](plugin/CONFIGURATION.md#autonomy).
+- The `wide` level, which until now acted as `unattended`: a review thread the arbiter rules `escalate` with the class `escalated` and no recorded human decision behind it gets a **provisional** reply outcome (`rejected`, `wont-fix` or `deferred`, never a fix) through drive-pr's `provisional-reply.ts`, which checks the level and the recorded ruling, posts, resolves and records it in one call; `decide`'s last-row escalation, with no sensitivity flag, stakeholder category, persisted-data or published-contract consequence, is decided and recorded as `decide-provisional`. A re-arm after `HITL_PARKED` with items unanswered hands the `escalated` ones to the first round to decide provisionally, and refuses when one is any other class. `wide` and `off_hours` are documented as available only once a working repository has run them for a month with fewer than one in ten provisional decisions reversed before the merge.
+- A provisional reply carries `**provisional**` after its outcome token and a hidden marker only `provisional-reply.ts` may post. `reconcile-replied-threads.ts` and `triage-thread.ts` skip a thread that stands on one, and the round gate does not count it as work even when a person unresolved it. A comment from an owner, member or collaborator on the thread (or `answer <key>: …` on the pull request for a `decide` ruling) reverses it: at the next round boundary the drive records the reversal and parks the item under `human-thread`. An unresolve alone reverses nothing. `human-thread` is kept among the park classes whatever `autonomy.park_classes` lists, beside `escalated` and `human-decision`.
+- `drives.ts --report [--since <time>] [--json]`, the morning report: for every pull request this clone's state has news of and every open one the signed-in account authored or drove (through the drive ledger, which falls back for `loop-metrics.ts` too when this clone holds no state), since the last report (remembered in the state directory) or `--since`: the terminal state and what it means, provisional decisions first and whether a person reversed them, takeovers and re-arms, parked decisions framed in full, issues filed and deferred entries not yet filed.
+- The drive state records the driver's exit, and the self-restarts and re-arms, as events the ledger carries, so the morning report reads how a drive ended from this clone's state or from the ledger.
+- `loop-metrics.ts` counts, per pull request, the self-restarts by cause, the re-arms by cause and the takeovers (from this clone's drive state, which now records them), the provisional decisions and how many a person reversed before the merge, with that share, and the review bots' transparent chat acknowledgements.
+- The drive ledger's `## Decisions taken unattended` lists provisional decisions first, with their key, outcome and reversal, and the ledger carries the drive's self-restarts and re-arms.
+
+## [0.112.0] - 2026-11-01
+
+### Added
+
+- `jig --help`, `jig help <command>` and `--help` after any command (`jig gc --help`, `jig dispatch install --help`) print help generated from the command line's own definitions, with a plain description of every option; `jig completion bash`, `zsh`, `fish`, `pwsh` or `nu` prints a shell completion script for the `jig` command. The command line is parsed with [Optique](https://optique.dev), vendored in the plugin (`shared/vendor/optique.mjs`, MIT License). Every existing form of `jig gc` and `jig dispatch`, and the jobs `install` wrote, keeps its meaning and exit code: there is nothing a consumer must change.
+
+### Changed
+
+- A refused `jig gc` or `jig dispatch` command line prints Optique's error with the command's usage on standard error, still with exit 2. A repeated value option (`--interval`, `--followup-since`) still takes the last one given. A switch given twice (`jig dispatch --json --json`) is now refused there as it already was for `jig gc`, and `jig --help` exits 0 with the help instead of 2.
+
+## [0.111.0] - 2026-11-01
+
+The skills can work on a Jira Cloud project as their issue tracker, beside
+GitHub Issues and Linear.
+
+### Added
+
+- A Jira Cloud tracker adapter, chosen with `issue_tracker.adapter: jira`:
+  `do-item`, `drive-pr`, `file-issue`, `work-batch`, `reflect`, the
+  dispatcher and the audit's reachability check work on the issues of one
+  Jira project. `issue_tracker.team` names the project key (`ENG` for
+  `ENG-123`). How states, priorities, issue types, fix versions, labels,
+  parents and issue links map onto Jig's tracker interface is in
+  [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker).
+- Its credentials, `JIRA_EMAIL` and `JIRA_API_TOKEN` in the environment: an
+  Atlassian account's email address and an API token made for it.
+- The `issue_tracker.jira` configuration section, whose unknown fields are
+  refused: `site`, the Jira Cloud site's `https://` address (required; an
+  `*.atlassian.net` host, or one `JIRA_ALLOWED_HOSTS` in the environment
+  names, so a repository's configuration cannot send the credential
+  elsewhere);
+  `issue_type` (default `Task`) and `subtask_type` (default the project's
+  one sub-task type), the types new issues get; and `priorities`,
+  `resolutions` and `link_types`, which name the Jira priorities,
+  resolutions and issue link types Jig's priorities, closed states and
+  relations map to
+  ([CONFIGURATION.md](plugin/CONFIGURATION.md#issue_tracker)).
+- On Jira, `issue_tracker.states` names are matched to status names ignoring
+  case, a status no name matches is read by its status category, and
+  `done`, `canceled` and `duplicate` may share one status when their
+  resolutions differ.
+- `dispatch.identity` on Jira: an Atlassian account id, or an email address
+  or display name that matches exactly one user. An assignment starts a
+  pickup only when a person's Atlassian account made it, not a guest, that
+  can be assigned issues in the project.
+
+## [0.110.0] - 2026-10-31
+
+### Added
+
+- `jig dispatch --apply` restarts stopped drives without a person: each
+  re-arm of a drive stopped on a usage limit or an answered park, and each
+  takeover of a wedged driver the machine started, runs in a terminal tab
+  of the pull request's Orca workspace (opened from the pull request when
+  none holds it), billed to an account the new machine file
+  (`~/.jig/dispatch.yaml`) lists, within that account's cap and outside
+  any usage-limit wall it recorded. A launch record written before each
+  launch keeps a lost answer from starting a second pass, and a refusal
+  `drive.ts` gives is not fought. See the plugin README's "The dispatcher"
+  and CONFIGURATION.md's "The machine's dispatch file".
+- `jig dispatch install [--interval 5m] [--yes] [--uninstall]` previews and
+  writes the timer that runs `jig dispatch --apply`, on the same scheduler
+  code as `jig gc install`.
+
+## [0.109.0] - 2026-10-31
+
+### Added
+
+- `drive.pass_args`, a list of words, gives a drive's Claude Code pass
+  command extra arguments, written before `-p` in the command `arm-drive.ts`
+  builds for `/jig:drive-pr` and `/jig:do-item`; `--pass-args "<words>"`
+  on `arm-drive.ts` and `drive.ts` overrides it for one drive. Set it to
+  `[--permission-mode, bypassPermissions]` to let unattended passes write
+  under protected paths such as `.claude/skills/**`, which a pass without a
+  terminal is otherwise denied in a prompting mode, at the cost of skipping
+  its permission prompts;
+  the default is empty
+  ([configuration](plugin/CONFIGURATION.md#drive)). The driver log and
+  `drives.ts` name the permission mode each pass runs in, re-arm and
+  takeover commands carry the arguments, a pass command that is not Claude
+  Code's ignores the field and says so, and a value that is not a list of
+  words stops the drive.
+
+## [0.108.0] - 2026-10-31
+
+### Changed
+
+- The default `workspace_name.template` now ends with the pull request: `{id} {status} {title} {pr}` (for example `<item-id> [D] Rename workspaces #<number>`). The suffix appears once the work has a pull request, so the name at pickup is unchanged. [`workspace_name.template`](plugin/CONFIGURATION.md#workspace_name) sets another name, and `""` turns the renaming off.
+
+## [0.107.0] - 2026-10-31
+
+### Added
+
+- `drive-pr` checks, before it announces merge-readiness, that the Orca
+  workspace it drove the pull request in is linked to that pull request, and
+  corrects the link when it is missing or names another one
+  (`scripts/workspace-pr-link.ts`). Outside Orca it does nothing.
+
+## [0.106.0] - 2026-10-31
+
+### Changed
+
+- `do-item` and `drive-pr` now rename the Orca workspace they run in by default, to `{id} {status} {title}` (for example `#12 [D] Rename workspaces`). [`workspace_name.template`](plugin/CONFIGURATION.md#workspace_name) changes the name, and setting it to `""` turns the renaming off.
+
+## [0.105.0] - 2026-10-31
+
+### Added
+
+- `jig dispatch`, the dispatcher's tick as a report: for each repository it
+  reads the items assigned to the repository's factory identity, each open
+  pull request's drive ledger and the sessions Orca runs, and prints every
+  pickup, re-arm, follow-up and notification it would start, each with the
+  record that wants it and the evidence, starting nothing. A stage a running
+  session holds is listed as running, and a record it cannot read is
+  reported, never planned. Each run writes a receipt that
+  `jig dispatch receipts` lists; `--apply` is refused in this version. See
+  [the dispatcher](plugin/README.md#the-dispatcher) and the
+  [`dispatch` section](plugin/CONFIGURATION.md#dispatch) of
+  `.config/jig.yaml` (`identity`, `states`, `followup_command`), which is
+  read from the default branch only.
+- The tracker interface reads the issues assigned to one user in given
+  states (`assignedIssues`) and who made an issue's current assignment
+  (`assignedBy`), on GitHub Issues and Linear.
+
+## [0.104.1] - 2026-10-31
+
+### Changed
+
+- `drive-pr`: the stops for a usage limit (exit `16`, and exit `6` when the
+  limit is met on the last round) and for a pass that found the pull request
+  no longer open (exit `5`) now list what the pass left in the tree, as a
+  failed pass's stop does: the uncommitted paths and the commits on top of the
+  head branch's remote ref, or that there are none, instead of advice to run
+  `git status` and `git log` yourself.
+
+## [0.104.0] - 2026-10-31
+
+### Added
+
+- `do-item` and `drive-pr` can rename the workspace they run in after the work and its stage, in Orca, when the repository sets [`workspace_name.template`](plugin/CONFIGURATION.md#workspace_name). The name can use `{id}`, `{status}`, `{title}` and `{pr}`; the status text is `[I]`, `[D]`, `[R]` and `✅` by default, and `workspace_name.statuses` overrides each. Nothing is renamed without the template.
+
+## [0.103.0] - 2026-10-31
+
+A drive stops for a person only on a decision the repository's human-in-the-loop registry reserves, and hands it over framed; every other decision it takes is recorded where a person can reverse it, and a repository can let it decide more while nobody is there.
+
+### Added
+
+- A configuration section, `autonomy`: `level` (`attended`, the default and today's behaviour, or `unattended`), the repository's ceiling `max_level`, which a person's user file or the environment may choose a level up to and never above, and `park_classes`, the decision classes a drive may park on (by default the registry template's rows plus `escalated` and `human-decision`); only the repository's file sets `max_level` and `park_classes`. A session a person runs reads `attended` unless that person chose a level. `wide` is accepted and acts as `unattended` until its column is built. `bun <plugin>/shared/autonomy.ts` prints the effective level and where it came from, and the drive prints the same line at the start of every round. See [`autonomy`](plugin/CONFIGURATION.md#autonomy).
+- Under `unattended`, `file-issue` files an issue another skill needs without asking, and its body says which skill filed it, from which pull request and why (`scripts/confirm-step.ts` decides and prints that line); `decide` gathers the evidence an underdetermined call lacks within the round's budget, then applies its ladder, escalating a call it still cannot settle.
+- Deferral without a tracker: where the deferral batch step cannot file (the repository's adapter is not Linear, or no Linear credential is set), `resolve-review-comments`' `defer-in-pr.ts` records the finding in a `## Deferred` section of the pull request body, by read-modify-write against the body's update time so a person's edits survive, and the thread resolves with `**deferred**` linking the section. `file-deferred.ts <PR>` files each entry through the configured tracker adapter, reusing an issue the tracker already holds for that entry (its source and fingerprint) unless the entry was corrected after that issue was filed, and replaces it with its issue; it names any `**deferred**` answer from an owner, member or collaborator, linking this pull request's own section, whose entry the body lost (a resolved thread's reply, or a summary finding's answer by its fingerprint), and exits `4`, and it fails rather than passing a thread whose comments run past one page; run it from a post-merge step or on a pull request closed without merging. See [the deferral protocol](plugin/skills/resolve-review-comments/references/deferral-protocol.md#deferral-without-a-tracker).
+- `drive-state.ts record-decision` records a decision the agent took without a person, with the autonomy level (in force when it runs, or the optional `level` the caller captured), its class, its record's link and how to reverse it; the handoff file and the drive ledger list them under `## Decisions taken unattended`, and count one with no record as a defect.
+- The review arbiter's `escalate` ruling carries a `class:` field (`human-decision` for a value the pull request records as a person's decision, else the registry row, else `escalated`) and a `human-decision:` answer. `drive-state.ts rule` records the arbiter's ruling with the thread's state: an `escalate` ruling needs its class, and one that touches a person's decision is always `human-decision`. A park of that thread then takes the recorded class and no other, and a thread ruled any other way is not parked.
+- `review.bots` entries may be a login or `{login, confirmation_marker, chat_marker}`. A comment after a held reply is transparent, resolving with the hold and never triaged or answered, when it carries no outcome token and either its author's confirmation marker (the measured marker of a built-in reviewer applies whether or not it is listed) or, for a bot `review.bots` lists, its chat marker and no severity line. A bot the list leaves out, or one without a severity format known to be its own (declared in `review.severity_formats`, or built in; Jig's format, assumed for the configured reviewer, does not count), gets no transparent chat follow-ups. A built-in reviewer's chat marker is built in; turning its chat replies off in that reviewer's own configuration removes them at the source.
+- M7's HITL registry template gives each row its class name and gains a row reserving parking to the registry's classes; the audit's `hitl-registry-published` criterion looks for that row. [ADR-0010](docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md) records the decision.
+
+### Changed
+
+- **Breaking:** `drive-state.ts park` requires `--class <one of autonomy.park_classes>` and a decision record on stdin (`## Question`, `## Options`, `## Recommended`, `## Class`, `## Steps for a person`, `## Already done`), and no longer takes `--reason`. A park without a class is refused with "decide and record it". A consumer whose own procedures or scripts call `park` must pass the class and the record ([drive-pr § 4](plugin/skills/drive-pr/SKILL.md#4-park-what-needs-a-human)).
+- `HITL_PARKED` prints each parked decision in full, and the handoff file and the ledger carry them; `drives.ts --doctor`'s `NEEDS_HUMAN` row names the parked questions instead of their count.
+
+## [0.102.0] - 2026-10-30
+
+### Added
+
+- `/jig:do-item` and `/jig:drive-pr` arm a drive in a terminal tab of the
+  pull request's workspace, titled `drive #<PR>`, when the session runs in
+  an Orca workspace. The drive then outlives the session and shows its
+  passes there, and the session that implemented the item ends without a
+  drive running beside it. Elsewhere the drive starts in the session's
+  background as before. Both skills arm through drive-pr's new
+  `arm-drive.ts`, which prints the command, what to do next, the pass model
+  and the commands that list and stop the drive. It opens no tab while a
+  drive already holds the pull request, and confirms that `drives.ts` lists
+  the drive it started. The tab is a fresh login shell of the user's, so
+  `bun`, `claude` and the Claude account come from it; the session's
+  configuration reaches it as the `JIG__` overrides and the layer
+  selectors `JIG_HOME`, `JIG_OVERLAY` and `JIG_USER_LAYER`, a blank selector
+  kept blank; a selector the session leaves unset, and any `JIG__` field the
+  shell's profile exports, are unset in the tab. A Windows host opens
+  no tab: Orca's tab there can run `cmd.exe` or PowerShell, and the command
+  is quoted for a POSIX shell.
+- `do_item.arm_drive` says how a drive is armed: `auto` (the default: a tab
+  where the session can open one, else the background, falling back to the
+  background when Orca refuses the tab or the tab's drive is not listed in
+  time), `tab`, `background` or `print` (the command only). Both skills read it
+  ([configuration](plugin/CONFIGURATION.md#do_item)).
+- `drive.pass_model` names the model each pass runs on: a model id, a
+  Claude Code alias, or a routing tier resolved through `routing.models`.
+  The default is `sonnet`, Claude Code's alias for the latest Sonnet.
+  `drive.ts --pass-model` overrides it for one run, as does `arm-drive.ts
+  --pass-model` for one arm
+  ([configuration](plugin/CONFIGURATION.md#drive)).
+
+### Changed
+
+- Each pass of a drive whose pass command is `claude` now runs
+  `claude --model <model>`: `drive.ts` adds the configured model when the
+  pass command names none, so a drive with no setting runs on `sonnet`
+  instead of Claude Code's default model. The driver log's `pass model:`
+  line and the `drives.ts` listing name the model, and the re-arm and
+  takeover commands the driver prints carry it. A pass command that is not
+  `claude` chooses its own model as before.
+- `/jig:work-batch` arms its drive through the same script.
+
+## [0.101.1] - 2026-10-30
+
+### Fixed
+
+- `drive-pr`: work nobody pushed no longer stalls a drive in a `HEAD_LAG`
+  wait that cannot end, or ends it over a dirty tree. When a pass ended its
+  turn after committing without pushing and still exited `0`, or a drive
+  was armed over local commits, the next status check read local HEAD ahead
+  of the pull request's head as GitHub lagging behind a push and polled for
+  its whole timeout (30 minutes by default) before stopping; meanwhile
+  replies promised fixes that were not on the pull request and CI stayed on
+  the old head. A pass that ended after editing without committing could let
+  the drive converge and then stop with exit `12`. The driver now measures
+  the tree afresh before every round's status check, the commits local HEAD
+  has on top of the head branch's remote ref and the edits the last pass left
+  uncommitted, compared by content (a symbolic link by its target), inside
+  submodules and untracked nested repositories too (a commit in one
+  included), however large an untracked file, and without a stalled
+  filesystem holding up the driver (a tree dirty at arm still stops at
+  convergence), hands
+  the round out over that head as it already did after a pass killed at its
+  deadline, and tells the round's pass to push them (a notice opening
+  `UNPUSHED COMMITS`, or `UNCOMMITTED EDITS` for edits alone). Commits that
+  do not build on that ref, which no round could push, stop the drive at once
+  with exit `1`, naming them; the attach's refusal of a diverged tree at arm
+  time names them too. A head that was pushed and that GitHub has not caught
+  up with is still waited for. A failed pass still stops the drive, to be
+  re-armed; its stop now lists the paths it
+  left uncommitted, untracked files and modified submodules included, and the
+  commits it left unpushed.
+- `drive-pr`: the drive's filesystem probes (the tree measurement above, the
+  check for an unfinished merge or rebase, and the status check's comparison
+  of the driven tree with the tree it measures) run under the plugin's own
+  empty Bun configuration and without `.env` files, so a consumer
+  repository's own Bun configuration (a `bunfig.toml` preload, say), or one
+  in the temporary directory, can no longer fail them or write into their
+  output.
+
+## [0.101.0] - 2026-10-30
+
+### Added
+
+- `/jig:changelog lint` (`lint.ts` in the `changelog` skill) checks the whole
+  changelog against the rules of its own format and of no other, Keep a
+  Changelog 1.1.0 or Common Changelog, as `changelog.format` names it or the
+  file says: the title and the text above the releases, release headings and
+  their order, dates written year-month-day, change types and their order
+  where the format sets one, link references, and a section for every version
+  the version files or the tags name. Each finding gives the file, the line,
+  the rule and what to change, with the section of the format's specification
+  that states the rule; what a format allows, such as a yanked release or an
+  Unreleased section without a date, is never a finding. The check reads the
+  file through Bun's CommonMark parser, so it judges what the file renders
+  as: a link is one that renders, and text in a comment or a code block is
+  not read as structure. The skill's GitHub
+  Action runs it as `command: lint`, after a checkout with `fetch-depth: 0`:
+  in a shallow clone the tags are not the whole history, so coverage is not
+  checked and the command exits 2. The rules per format are in the
+  [skill's README](plugin/skills/changelog/README.md#checking-the-whole-changelog).
+
+### Changed
+
+- The Common Changelog template is now the title alone, since the format
+  allows nothing but releases after it, and setup writes `changelog.format:
+  common-changelog` for that format, which a file holding only its title and
+  releases cannot name. A Common Changelog file whose opening paragraph names
+  its format keeps working; `lint` reports the paragraph, and once it is
+  removed the repository sets `changelog.format`.
 
 ## [0.100.0] - 2026-10-30
 
@@ -705,7 +1414,7 @@ A pull request can be driven from any working tree of its clone, from the clone'
   board when it runs in an Orca worktree: the card moves to In progress at
   pickup, and to In review with the pull request linked once the pull
   request opens. Outside Orca nothing changes and no Orca call is made
-  ([plugin/skills/do-item/scripts/orca-board.ts](plugin/skills/do-item/scripts/orca-board.ts)).
+  ([plugin/shared/orca-board.ts](plugin/shared/orca-board.ts)).
 
 ## [0.85.3] - 2026-10-26
 
@@ -4069,7 +4778,39 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.100.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.126.0...HEAD
+[0.126.0]: https://github.com/jig-harness/jig/compare/v0.125.0...v0.126.0
+[0.125.0]: https://github.com/jig-harness/jig/compare/v0.124.0...v0.125.0
+[0.124.0]: https://github.com/jig-harness/jig/compare/v0.123.0...v0.124.0
+[0.123.0]: https://github.com/jig-harness/jig/compare/v0.122.0...v0.123.0
+[0.122.0]: https://github.com/jig-harness/jig/compare/v0.121.0...v0.122.0
+[0.121.0]: https://github.com/jig-harness/jig/compare/v0.120.3...v0.121.0
+[0.120.3]: https://github.com/jig-harness/jig/compare/v0.120.2...v0.120.3
+[0.120.2]: https://github.com/jig-harness/jig/compare/v0.120.1...v0.120.2
+[0.120.1]: https://github.com/jig-harness/jig/compare/v0.120.0...v0.120.1
+[0.120.0]: https://github.com/jig-harness/jig/compare/v0.119.0...v0.120.0
+[0.119.0]: https://github.com/jig-harness/jig/compare/v0.118.0...v0.119.0
+[0.118.0]: https://github.com/jig-harness/jig/compare/v0.117.0...v0.118.0
+[0.117.0]: https://github.com/jig-harness/jig/compare/v0.116.1...v0.117.0
+[0.116.1]: https://github.com/jig-harness/jig/compare/v0.116.0...v0.116.1
+[0.116.0]: https://github.com/jig-harness/jig/compare/v0.115.0...v0.116.0
+[0.115.0]: https://github.com/jig-harness/jig/compare/v0.114.0...v0.115.0
+[0.114.0]: https://github.com/jig-harness/jig/compare/v0.113.0...v0.114.0
+[0.113.0]: https://github.com/jig-harness/jig/compare/v0.112.0...v0.113.0
+[0.112.0]: https://github.com/jig-harness/jig/compare/v0.111.0...v0.112.0
+[0.111.0]: https://github.com/jig-harness/jig/compare/v0.110.0...v0.111.0
+[0.110.0]: https://github.com/jig-harness/jig/compare/v0.109.0...v0.110.0
+[0.109.0]: https://github.com/jig-harness/jig/compare/v0.108.0...v0.109.0
+[0.108.0]: https://github.com/jig-harness/jig/compare/v0.107.0...v0.108.0
+[0.107.0]: https://github.com/jig-harness/jig/compare/v0.106.0...v0.107.0
+[0.106.0]: https://github.com/jig-harness/jig/compare/v0.105.0...v0.106.0
+[0.105.0]: https://github.com/jig-harness/jig/compare/v0.104.1...v0.105.0
+[0.104.1]: https://github.com/jig-harness/jig/compare/v0.104.0...v0.104.1
+[0.104.0]: https://github.com/jig-harness/jig/compare/v0.103.0...v0.104.0
+[0.103.0]: https://github.com/jig-harness/jig/compare/v0.102.0...v0.103.0
+[0.102.0]: https://github.com/jig-harness/jig/compare/v0.101.1...v0.102.0
+[0.101.1]: https://github.com/jig-harness/jig/compare/v0.101.0...v0.101.1
+[0.101.0]: https://github.com/jig-harness/jig/compare/v0.100.0...v0.101.0
 [0.100.0]: https://github.com/jig-harness/jig/compare/v0.99.0...v0.100.0
 [0.99.0]: https://github.com/jig-harness/jig/compare/v0.98.0...v0.99.0
 [0.98.0]: https://github.com/jig-harness/jig/compare/v0.97.2...v0.98.0

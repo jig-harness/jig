@@ -28,18 +28,6 @@ import {
 } from "../../plugin/shared/guarded-git-spawn.ts";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeWorkingArtifact } from "./artifact.ts";
-import {
-  claudeMarketplace,
-  claudeUserInstall,
-  codexInstall,
-  codexMarketplace,
-  DEFAULT_SOURCE,
-  describeSource,
-  followsMain,
-  PLUGIN_ID,
-  parse,
-  sameSource,
-} from "./setup.ts";
 
 const root = resolve(import.meta.dirname, "../..");
 const skill = "resolve-review-comments";
@@ -92,7 +80,7 @@ test("change-note commands run from the plugin cache and read the repository's c
       env,
     });
   // Without the field in the repository's own file nothing is asked of it.
-  for (const command of ["check.ts", "release.ts", "status.ts"]) {
+  for (const command of ["check.ts", "lint.ts", "release.ts", "status.ts"]) {
     const off = run(command, []);
     expectSpawnExit({ ...off, exitCode: off.status }, 0);
     expect(off.stdout).toContain("not configured");
@@ -115,7 +103,7 @@ test("change-note commands run from the plugin cache and read the repository's c
   const status = run("status.ts", ["--json"]);
   expectSpawnExit({ ...status, exitCode: status.status }, 0);
   expect(JSON.parse(status.stdout).next).toBe("1.0.1");
-  for (const command of ["check.ts", "release.ts", "status.ts"]) {
+  for (const command of ["check.ts", "lint.ts", "release.ts", "status.ts"]) {
     const unknown = run(command, ["--unknown"]);
     expectSpawnExit({ ...unknown, exitCode: unknown.status }, 2);
   }
@@ -222,7 +210,9 @@ test("every relative import in the copied plugin resolves inside the copy", () =
  * Type-checks `dir/shared` with no `skills/` beside it. The include names no
  * extension, so the compiler takes every file kind it reads (`.ts`, `.mts`,
  * `.cts`, declaration files), and declaration files are checked rather than
- * skipped, so an import in any of them must resolve.
+ * skipped, so an import in any of them must resolve. The one package name it
+ * resolves is Optique's: the vendored bundle's declarations are the pinned
+ * package's own types, which only the repository holds and nothing run reads.
  */
 function compileSharedAlone(dir: string): {
   status: number | null;
@@ -235,6 +225,9 @@ function compileSharedAlone(dir: string): {
       compilerOptions: {
         typeRoots: [join(root, "node_modules", "@types")],
         skipLibCheck: false,
+        paths: {
+          "@optique/core": [join(root, "node_modules", "@optique", "core")],
+        },
       },
       include: ["shared/**/*"],
       exclude: [],
@@ -328,356 +321,6 @@ test("every shipped agent is named after its file and inherits the session's mod
       expect(frontmatter).not.toMatch(new RegExp(`^${field}:`, "m"));
   }
 });
-
-test("setup defaults to the Jig repository and rejects unknown flags", () => {
-  const previous = process.env.JIG_MARKETPLACE;
-  delete process.env.JIG_MARKETPLACE;
-  try {
-    expect(parse([])).toEqual({
-      check: false,
-      source: DEFAULT_SOURCE,
-      explicit: false,
-      defaulted: true,
-      only: null,
-    });
-    expect(parse(["--check", "--codex", "--source", "/x"])).toEqual({
-      check: true,
-      source: "/x",
-      explicit: true,
-      defaulted: false,
-      only: "codex",
-    });
-    expect(parse(["--channel", "latest"])).toEqual({
-      check: false,
-      source: `${DEFAULT_SOURCE}#latest`,
-      explicit: true,
-      defaulted: false,
-      only: null,
-    });
-    expect(() => parse(["--source"])).toThrow("needs a marketplace source");
-    expect(() => parse(["--bogus"])).toThrow("unknown argument");
-    expect(() => parse(["--channel", "beta"])).toThrow(
-      "--channel needs one of: latest, stable",
-    );
-    expect(() =>
-      parse(["--channel", "stable", "--source", `${DEFAULT_SOURCE}#v0.3.0`]),
-    ).toThrow("contradict each other");
-    expect(() =>
-      parse(["--channel", "stable", "--source", "/src/jig"]),
-    ).toThrow("has no channels");
-  } finally {
-    if (previous !== undefined) process.env.JIG_MARKETPLACE = previous;
-  }
-});
-
-test("setup reads only the user-scope Claude Code install", () => {
-  // `claude plugin list --json` lists one entry per scope; a project install
-  // made for another directory must neither satisfy nor fail the check.
-  const project = {
-    id: PLUGIN_ID,
-    scope: "project",
-    projectPath: "/elsewhere",
-    version: "0.1.0",
-    enabled: false,
-  };
-  const user = {
-    id: PLUGIN_ID,
-    scope: "user",
-    version: "0.2.0",
-    enabled: true,
-  };
-  expect(claudeUserInstall([project])).toBeNull();
-  expect(claudeUserInstall([project, user])).toEqual({
-    version: "0.2.0",
-    enabled: true,
-  });
-  expect(claudeUserInstall({ unexpected: true })).toBeNull();
-  expect(
-    codexInstall({
-      installed: [{ pluginId: PLUGIN_ID, version: "0.2.0", enabled: false }],
-    }),
-  ).toEqual({ version: "0.2.0", enabled: false });
-  expect(codexInstall({ installed: [] })).toBeNull();
-});
-
-test("setup recognises where a marketplace is registered from", () => {
-  expect(
-    claudeMarketplace([
-      {
-        name: "jig",
-        source: "git",
-        url: "https://github.com/jig-harness/jig.git",
-        ref: "v0.2.0",
-      },
-    ]),
-  ).toEqual({
-    location: "https://github.com/jig-harness/jig.git#v0.2.0",
-    git: true,
-  });
-  expect(
-    claudeMarketplace([{ name: "jig", source: "directory", path: "/src/jig" }]),
-  ).toEqual({ location: "/src/jig", git: false });
-  expect(
-    codexMarketplace({
-      marketplaces: [
-        {
-          name: "jig",
-          marketplaceSource: { sourceType: "git", source: DEFAULT_SOURCE },
-        },
-      ],
-    }),
-  ).toEqual({ location: DEFAULT_SOURCE, git: true });
-  // Codex's list leaves the ref out; its config.toml carries it.
-  expect(
-    codexMarketplace(
-      {
-        marketplaces: [
-          {
-            name: "jig",
-            marketplaceSource: { sourceType: "git", source: DEFAULT_SOURCE },
-          },
-        ],
-      },
-      { marketplaces: { jig: { source: DEFAULT_SOURCE, ref: "stable" } } },
-    ),
-  ).toEqual({ location: `${DEFAULT_SOURCE}#stable`, git: true });
-  expect(codexMarketplace({ marketplaces: [] })).toBeNull();
-  expect(
-    describeSource({ location: `${DEFAULT_SOURCE}#stable`, git: true }),
-  ).toBe("the stable channel");
-  expect(describeSource({ location: DEFAULT_SOURCE, git: true })).toBe(
-    "main, the source address",
-  );
-  expect(
-    describeSource({ location: `${DEFAULT_SOURCE}#v0.3.0`, git: true }),
-  ).toBe("v0.3.0, pinned");
-  // Naming main outright still follows main; only a version tag is a pin.
-  expect(
-    describeSource({ location: `${DEFAULT_SOURCE}#main`, git: true }),
-  ).toBe("main, the source address");
-  expect(
-    describeSource({ location: `${DEFAULT_SOURCE}#feature`, git: true }),
-  ).toBe("the ref feature");
-  expect(followsMain(undefined)).toBe(true);
-  expect(followsMain("main")).toBe(true);
-  expect(followsMain("refs/heads/main")).toBe(true);
-  expect(followsMain("stable")).toBe(false);
-  expect(describeSource({ location: "/src/jig", git: false })).toBe(
-    "the directory /src/jig",
-  );
-  // A channel is a ref: following one channel does not satisfy the other.
-  expect(
-    sameSource(`${DEFAULT_SOURCE}#latest`, `${DEFAULT_SOURCE}#stable`),
-  ).toBe(false);
-  expect(sameSource(`${DEFAULT_SOURCE}#v0.2.0`, DEFAULT_SOURCE)).toBe(true);
-  // A requested release must not be satisfied by an unpinned registration.
-  expect(sameSource(DEFAULT_SOURCE, `${DEFAULT_SOURCE}#v0.2.0`)).toBe(false);
-  expect(sameSource("https://github.com/jig-harness/jig", DEFAULT_SOURCE)).toBe(
-    true,
-  );
-  expect(
-    sameSource(`${DEFAULT_SOURCE}#v0.1.0`, `${DEFAULT_SOURCE}#v0.2.0`),
-  ).toBe(false);
-  expect(sameSource("/src/jig", DEFAULT_SOURCE)).toBe(false);
-});
-
-/**
- * Run setup.ts against stub `claude`/`codex` commands that log every call and
- * answer the list queries from STUB_* environment JSON.
- */
-function runSetup(
-  args: string[],
-  stub: Record<string, string>,
-): { status: number | null; stdout: string; stderr: string; calls: string[] } {
-  const bin = mkdtempSync(join(scratch, "stub-bin-"));
-  const log = join(bin, "calls.log");
-  for (const tool of ["claude", "codex"])
-    writeFileSync(
-      join(bin, tool),
-      `#!/usr/bin/env bun
-import { appendFileSync } from "node:fs";
-const args = process.argv.slice(2).join(" ");
-appendFileSync(${JSON.stringify(log)}, ${JSON.stringify(tool)} + " " + args + "\\n");
-const key = ("STUB_${tool}_" + args).toUpperCase().replace(/[^A-Z0-9]+/g, "_");
-if (process.env.STUB_SLEEP === args) await Bun.sleep(10_000);
-if (process.env[key] !== undefined) console.log(process.env[key]);
-`,
-      { mode: 0o755 },
-    );
-  const result = spawnSync(
-    process.execPath,
-    [join(import.meta.dirname, "setup.ts"), ...args],
-    {
-      env: {
-        ...env,
-        // Never the machine's own Codex configuration.
-        CODEX_HOME: join(scratch, "no-codex-home"),
-        ...stub,
-        JIG_MARKETPLACE: "",
-        PATH: `${bin}${delimiter}${dirname(process.execPath)}${delimiter}/usr/bin${delimiter}/bin`,
-      },
-      encoding: "utf8",
-      timeout: 20_000,
-    },
-  );
-  const calls = existsSync(log)
-    ? readFileSync(log, "utf8").trim().split("\n")
-    : [];
-  return { ...result, calls };
-}
-
-const registeredHere = JSON.stringify([
-  { name: "jig", source: "directory", path: "/src/jig" },
-]);
-const userInstall = JSON.stringify([
-  { id: PLUGIN_ID, scope: "user", version: "0.2.0", enabled: true },
-]);
-
-test.skipIf(process.platform === "win32")(
-  "setup refuses a conflicting source before changing anything",
-  () => {
-    const result = runSetup(["--claude", "--source", DEFAULT_SOURCE], {
-      STUB_CLAUDE_PLUGIN_MARKETPLACE_LIST_JSON: registeredHere,
-      STUB_CLAUDE_PLUGIN_LIST_JSON: userInstall,
-    });
-    expect(result.status).toBe(2);
-    expect(result.stderr).toContain("is registered from /src/jig");
-    expect(result.calls).toEqual([
-      "claude --version",
-      "claude plugin marketplace list --json",
-    ]);
-  },
-  30_000,
-);
-
-test.skipIf(process.platform === "win32")(
-  "setup updates the user-scope install and refreshes a Git Codex marketplace",
-  () => {
-    const result = runSetup([], {
-      STUB_CLAUDE_PLUGIN_MARKETPLACE_LIST_JSON: registeredHere,
-      STUB_CLAUDE_PLUGIN_LIST_JSON: userInstall,
-      STUB_CODEX_PLUGIN_MARKETPLACE_LIST_JSON: JSON.stringify({
-        marketplaces: [
-          {
-            name: "jig",
-            marketplaceSource: { sourceType: "git", source: DEFAULT_SOURCE },
-          },
-        ],
-      }),
-      STUB_CODEX_PLUGIN_LIST_JSON: JSON.stringify({
-        installed: [{ pluginId: PLUGIN_ID, version: "0.2.0", enabled: true }],
-      }),
-    });
-    expect(result.status).toBe(0);
-    expect(result.calls).toContain("claude plugin update jig@jig --scope user");
-    expect(result.calls).not.toContain("claude plugin update jig@jig");
-    const codex = result.calls.filter((call) =>
-      call.startsWith("codex plugin"),
-    );
-    expect(codex).toEqual([
-      "codex plugin marketplace list --json",
-      "codex plugin marketplace upgrade jig",
-      "codex plugin add jig@jig",
-      "codex plugin list --json",
-      "codex plugin marketplace list --json",
-    ]);
-    // A machine registered from main is told how to follow a channel.
-    expect(result.stderr).toContain(
-      "codex: jig@jig follows main, the source address",
-    );
-    expect(result.stdout).toContain(
-      "codex: jig@jig 0.2.0 enabled, following main, the source address",
-    );
-  },
-  30_000,
-);
-
-test.skipIf(process.platform === "win32")(
-  "setup installs a fresh machine at the channel asked for",
-  () => {
-    const result = runSetup(["--channel", "latest"], {
-      STUB_CLAUDE_PLUGIN_MARKETPLACE_LIST_JSON: "[]",
-      STUB_CODEX_PLUGIN_MARKETPLACE_LIST_JSON: '{"marketplaces":[]}',
-      STUB_CLAUDE_PLUGIN_LIST_JSON: userInstall,
-      STUB_CODEX_PLUGIN_LIST_JSON: JSON.stringify({
-        installed: [{ pluginId: PLUGIN_ID, version: "0.2.0", enabled: true }],
-      }),
-    });
-    expect(result.status).toBe(0);
-    expect(result.calls).toContain(
-      `claude plugin install jig --marketplace ${DEFAULT_SOURCE}#latest`,
-    );
-    expect(result.calls).toContain(
-      `codex plugin marketplace add ${DEFAULT_SOURCE} --ref latest`,
-    );
-  },
-  30_000,
-);
-
-test.skipIf(process.platform === "win32")(
-  "setup refuses to move a machine to another channel without the removal",
-  () => {
-    const codexHome = mkdtempSync(join(scratch, "codex-home-"));
-    writeFileSync(
-      join(codexHome, "config.toml"),
-      `[marketplaces.jig]\nsource_type = "git"\nsource = "${DEFAULT_SOURCE}"\nref = "latest"\n`,
-    );
-    const result = runSetup(["--codex", "--channel", "stable"], {
-      STUB_CODEX_PLUGIN_MARKETPLACE_LIST_JSON: JSON.stringify({
-        marketplaces: [
-          {
-            name: "jig",
-            marketplaceSource: { sourceType: "git", source: DEFAULT_SOURCE },
-          },
-        ],
-      }),
-      CODEX_HOME: codexHome,
-    });
-    expect(result.status).toBe(2);
-    expect(result.stderr).toContain(
-      `registered from ${DEFAULT_SOURCE}#latest, not ${DEFAULT_SOURCE}#stable`,
-    );
-    expect(result.stderr).toContain("codex plugin marketplace remove jig");
-    expect(result.calls).toEqual([
-      "codex --version",
-      "codex plugin marketplace list --json",
-    ]);
-  },
-  30_000,
-);
-
-test.skipIf(process.platform === "win32")(
-  "setup bounds a stalled tool command",
-  () => {
-    const result = runSetup(["--claude"], {
-      STUB_CLAUDE_PLUGIN_MARKETPLACE_LIST_JSON: registeredHere,
-      STUB_SLEEP: "plugin marketplace update jig",
-      JIG_SETUP_TIMEOUT_SECONDS: "1",
-    });
-    expect(result.status).toBe(2);
-    expect(result.stderr).toContain("did not finish within 1s");
-  },
-  30_000,
-);
-
-test.skipIf(process.platform === "win32")(
-  "setup never skips a tool it could not inspect",
-  () => {
-    // A stalled version probe is an error, not "not on PATH": --check must
-    // not pass for the other tool alone.
-    const result = runSetup(["--check"], {
-      STUB_SLEEP: "--version",
-      JIG_SETUP_TIMEOUT_SECONDS: "1",
-      STUB_CODEX_PLUGIN_LIST_JSON: JSON.stringify({
-        installed: [{ pluginId: PLUGIN_ID, version: "0.2.0", enabled: true }],
-      }),
-    });
-    expect(result.status).toBe(2);
-    expect(result.stderr).toContain("claude --version did not finish");
-    expect(result.stdout).not.toContain("not on PATH");
-  },
-  30_000,
-);
 
 /** A scratch consumer repository holding only its own configuration. */
 function consumerRepo(name: string, overlay?: string): string {
@@ -1535,20 +1178,6 @@ if (query.includes("node(id:$threadId)")) {
   },
   30_000,
 );
-
-test("the vendored YAML parser is the pinned js-yaml build", () => {
-  // The plugin cache has no node_modules, so the plugin ships js-yaml's own
-  // ESM build with its licence. CONTRIBUTING.md § Derived files says how to
-  // refresh both when the dependency is updated.
-  const vendor = join(root, "plugin", "shared", "vendor");
-  const pinned = join(root, "node_modules/js-yaml");
-  expect(readFileSync(join(vendor, "js-yaml.mjs"), "utf8")).toBe(
-    readFileSync(join(pinned, "dist/js-yaml.mjs"), "utf8"),
-  );
-  expect(readFileSync(join(vendor, "js-yaml.LICENSE"), "utf8")).toBe(
-    readFileSync(join(pinned, "LICENSE"), "utf8"),
-  );
-});
 
 test("plugin cancellation registrations release only their own ownership", () => {
   const probe = join(scratch, "ownership-probe.ts");

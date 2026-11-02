@@ -197,15 +197,17 @@ this module for a repository with one released artifact: agents write each
 change's note and judge its release, a branch check holds pull requests to
 the repository's `changelog:` configuration, a release step writes the notes
 into a [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) or
-[Common Changelog](../../GLOSSARY.md) file and sets the version, and a
-GitHub Action with a workflow template runs the check, the release (pushed,
-or as a release pull request) and the tag after verification.
+[Common Changelog](../../GLOSSARY.md) file and sets the version, a
+whole-changelog check (`/jig:changelog lint`) holds the whole file to the
+rules of its format alone, each rule cited from that format's specification,
+and a GitHub Action with a workflow template runs the check, the release
+(pushed, or as a release pull request) and the tag after verification.
 
 ### What the module provides
 
 | Piece | What it is |
 |-------|------------|
-| [`changelog` skill](../../plugin/skills/changelog/README.md) | The runnable form: the change note's procedure, `check.ts`, `release.ts`, `status.ts`, `tag.ts`, `convert.ts`, `release-access.ts`, the GitHub Action and the workflow template, and `/jig:changelog setup` |
+| [`changelog` skill](../../plugin/skills/changelog/README.md) | The runnable form: the change note's procedure, `check.ts`, `lint.ts` (the whole changelog against its format's rules), `release.ts`, `status.ts`, `tag.ts`, `convert.ts`, `release-access.ts`, the GitHub Action and the workflow template, and `/jig:changelog setup` |
 | [`mappings.md`](mappings.md) | Release tools per ecosystem, tools for several artifacts in one repository, tagging after verification, checks of what a package holds, the release identity per CI provider, publishing without a stored token, listing what a release contains, release channels and packages to try before the merge |
 | [maturity criteria](../../plugin/skills/audit/criteria/M16-releases-versions.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
@@ -239,10 +241,6 @@ or as a release pull request) and the tag after verification.
   several artifacts uses a tool from
   [mappings.md](mappings.md#several-artifacts-in-one-repository) until it
   keeps one per artifact ([roadmap](../../ROADMAP.md)).
-- **A whole-changelog format check.** The branch check reads each note and
-  the release step writes well-formed sections, but no check yet validates
-  a whole changelog against its format's rules (structure, section names and
-  order, dates, link references) ([roadmap](../../ROADMAP.md)).
 - **Release channels.** An artifact released several times a day can offer
   [release channels](../../GLOSSARY.md): one that takes every tagged version,
   and one a version reaches by [promotion](../../GLOSSARY.md) after a

@@ -15,7 +15,10 @@ twice ends in the same place as opening it once.
 
 It is machine tooling, like the [launcher](../launcher/README.md), which uses
 it as its `orca` provider: it runs from a checkout of this repository, not
-from the plugin. Herdr remains the [workspace runtime](../../GLOSSARY.md)
+from the plugin. The rules it opens a branch's worktree by, and runs the
+create hook once by, live in the plugin
+([plugin/shared/orca-workspace/](../../plugin/shared/orca-workspace/open.ts)),
+so plugin code that opens an Orca workspace follows the same ones. Herdr remains the [workspace runtime](../../GLOSSARY.md)
 Jig's tooling targets first
 ([ADR-0005](../../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md));
 Orca is supported through the same interfaces, as Conductor is.
@@ -111,7 +114,10 @@ existed, `--comment` replaces its comment, which carries the prompt to paste.
 **`remove`** runs the repository's remove hook inside the worktree, parks the
 worktree's unsent [reflection](../../plugin/skills/reflect/README.md)
 findings, and only then removes the worktree through `orca worktree rm`.
-When either step fails the worktree stays. `--force` removes a worktree with
+When either step fails the worktree stays. The steps are the plugin's
+([`plugin/gc/worktree-removal.ts`](../../plugin/gc/worktree-removal.ts)),
+which `jig gc` runs too when it collects a worktree Orca manages
+([plugin/gc/README.md](../../plugin/gc/README.md#worktrees-orca-manages)). `--force` removes a worktree with
 uncommitted changes, which Orca refuses otherwise. Orca also deletes the
 worktree's local branch when it can tell the branch is merged, and keeps it
 otherwise. Parking runs the reflection journal in this process, so it

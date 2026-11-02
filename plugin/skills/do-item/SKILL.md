@@ -59,13 +59,13 @@ configuration from the working directory.
 
 ### Consumer configuration
 
-Every field is optional except `issue_tracker.team` on the Linear adapter (`issue_tracker.adapter: linear`).
+Every field is optional except `issue_tracker.team` on the Linear and Jira adapters (`issue_tracker.adapter: linear` or `jira`) and `issue_tracker.jira.site` on Jira.
 The skill reads them at run time from `.config/jig.yaml`:
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
-| `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) or `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client). Jira and a plan file kept in the repository are planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
-| `issue_tracker.team` | Linear only: the team the repository files into, as the prefix its issue keys carry (`ENG` for `ENG-123`) | Required on Linear: the tracker scripts stop with a message naming this field. Not used on GitHub Issues. A file that sets it without naming `issue_tracker.adapter` is refused, since the default adapter has no team: add `adapter: linear` |
+| `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client), or `jira` for Jira Cloud (credentials from `JIRA_EMAIL` and `JIRA_API_TOKEN`; its settings are under `issue_tracker.jira`, `site` required). A plan file kept in the repository is planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
+| `issue_tracker.team` | Linear and Jira: the team (Linear) or project (Jira) the repository files into, as the prefix its issue keys carry (`ENG` for `ENG-123`) | Required on Linear and Jira: the tracker scripts stop with a message naming this field. Not used on GitHub Issues. A file that sets it without naming `issue_tracker.adapter` is refused, since the default adapter has no team: add `adapter: linear` or `adapter: jira` |
 | `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress" |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
 | `issue_tracker.labels` | The repository's label for each role the skill acts on (see the table below) | The default names below |
@@ -176,13 +176,14 @@ deleted (GitHub then does not retarget the layer above).
 
 The scripts reach the tracker through the tracker port in
 `${CLAUDE_SKILL_DIR}/scripts/lib/tracker/`, whose adapter the overlay's
-`issue_tracker.adapter` selects (`linear` or `github`). Use the script
+`issue_tracker.adapter` selects (`linear`, `github` or `jira`). Use the script
 forms: they work on every adapter and map the workflow states for you. A
 harness with a native integration for the same tracker may use it instead;
 the native forms are given per adapter: Linear's Model Context Protocol
 ([MCP](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) tools, and
-the `gh` command line for GitHub Issues. Where a later step names only a
-Linear tool, the GitHub form is the row of this table it belongs to.
+the `gh` command line for GitHub Issues. Jira has no native form here: use
+the script forms. Where a later step names only a Linear tool, the GitHub
+form is the row of this table it belongs to, and on Jira its script form.
 
 | Operation | Script form | Native: Linear (MCP) | Native: GitHub Issues (`gh`) |
 |-----------|-------------|----------------------|------------------------------|
@@ -193,8 +194,8 @@ Linear tool, the GitHub form is the row of this table it belongs to.
 | Post comment | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment "<KEY>" --body-file body.md` | `mcp__linear__save_comment` | `gh issue comment` with the body from a file |
 | File a new issue | The consumer's `issue_tracker.file_command` | — | — |
 
-An issue key is `ENG-123` on Linear, where `issue_tracker.team` names the
-prefix, and `#123` on GitHub Issues, an issue of the configured repository;
+An issue key is `ENG-123` on Linear and Jira, where `issue_tracker.team`
+names the prefix, and `#123` on GitHub Issues, an issue of the configured repository;
 a person may also give a GitHub issue as `123` or as its web address, which
 the scripts read as `#123`. This document writes a key as `<KEY>`. Quote it
 on a command line (`"<KEY>"`): an unquoted `#` starts a shell comment. A file
@@ -582,22 +583,47 @@ routing below remain **exact**.
    Exit `2` is an `issue.json` that is missing or not an issue: stop the
    pickup and report the input error.
 
-2. **exact** — **Mark the issue started** (if not already active): transition
-   it to `in_progress` and assign it to yourself.
+2. **exact** — **Claim the issue**: assign it to yourself (the identity
+   the tracker's credential acts as) and transition it to `in_progress`,
+   unless someone already holds it.
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" in_progress
+   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" claim "<KEY>"
    ```
 
-   (**judgment** — native, Linear:
-   `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`.)
+   Exit `0` is the claim. Exit `3` is a refusal, nothing written: the issue
+   is already `in_progress` or assigned to someone else. Exit `4` is a
+   stand-down: the claim was written, and reading the issue back showed
+   another claim landed first. On `3` or `4`, stop the pickup and report the
+   reason it printed; never start the item beside another session. A person
+   resuming their own interrupted pickup of an `in_progress` item tells you
+   so, and you go on from here without the claim.
+
+   (**judgment** — native, Linear: read the issue and stop on the same two
+   refusals, then
+   `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`,
+   then read it again and stop, as on exit `4`, when it shows another
+   assignee, or when the issue is gone or no longer in the mapped state.)
 
    Then show the start on Orca's workspace board. In a worktree of
    [Orca](https://www.onorca.dev) this moves the worktree's card to In
    progress; anywhere else it does nothing, and it never fails the step:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/orca-board.ts" in-progress
+   bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-progress
+   ```
+
+   Then name the workspace for the stage. With a runtime that can rename its workspaces (Orca), this renames it, for
+   example to `JIG-12 [I] Rename workspaces` (the default `workspace_name.template`);
+   with the template set to `""`, or anywhere else, it does nothing; a failed Orca rename only warns and exits `0`,
+   while a malformed argument, an invalid `workspace_name` field or an unreadable title
+   file exits `2`, and a configuration file that cannot be parsed exits `1`. The issue title is
+   tracker text, so write it alone to `.context/workspace-title.md` with the
+   file editor and pass the file, never the title inside the command; quote
+   the key, since a GitHub key (`#123`) starts a shell comment unquoted:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" implementing --id "<KEY>" --title-file .context/workspace-title.md
    ```
 
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
@@ -761,7 +787,7 @@ routing below remain **exact**.
 
    Pass additional excluded git pathspecs after the base to replace the default
    TypeScript test patterns for the repository's languages. If the count
-   is under 20 (or zero), skip Tiers 1–3 and log
+   is under 20 (or zero), skip Tiers 1–3, the lens step with them, and log
    `"Pre-PR review skipped: N non-test lines changed (threshold: 20)."` The
    skip does **not** extend to the catalog's `reviewSkills` or the runbook pass
    below: a one-line change can still touch an area with a mandatory
@@ -826,6 +852,30 @@ routing below remain **exact**.
    reviewer references its result but does not re-run it. Tier 3 `REJECT`
    findings **block** the PR.
 
+   **Lens step — part of Tier 3:** run the
+   [review lenses](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+   the diff triggers, as [`/jig:review`](../review/SKILL.md) does, from a
+   base snapshot of its own. Create it, with the effective file list and
+   diff, against the pull request's base:
+
+   ```bash
+   bun --no-env-file --config="${CLAUDE_SKILL_DIR}/../review/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/../review/scripts/review.ts" setup --remote "<remote>" --base "<base branch>"
+   ```
+
+   `<base branch>` is `<base>` without its `<remote>/` prefix. Then follow
+   [review's lens step](../review/references/lenses.md) with the printed
+   `session`: select the lenses (`lenses`), write each selected lens's
+   brief (`brief`, with Tier 1's and Tier 2's findings), run each with fresh
+   context (one subagent per lens; otherwise the harness's agent command
+   through `agent`, inside the snapshot with its enumerated environment;
+   otherwise this session, saying so), and summarize with
+   `summarize-lenses.ts`, which prints Tier 3's state and the `Lenses:`
+   line for the summary below. Run `cleanup` on the session when the gate
+   ends, blocked or not. A configuration error in the lenses blocks like a
+   `CRITICAL` finding, with the error as the helper names it. Lens findings
+   are at most warnings: no lens is promoted to blocking, and one whose
+   evidence field is empty is `INFO`.
+
    **Verdict summary format** (**exact** — keep the structure; fill the
    values from this run):
 
@@ -837,7 +887,8 @@ routing below remain **exact**.
 
    Tier 1 (Patterns):  ✅ PASSED | ❌ BLOCKED   (rules checked: N, violations: N)
    Tier 2 (Contracts): ✅ PASSED | ⚠️ WARNINGS  (per-check status)
-   Tier 3 (Semantic):  ✅ APPROVED | ❌ REJECTED
+   Tier 3 (Semantic):  ✅ APPROVED | ⚠️ WARNINGS | ⏭️ N/A | ❌ REJECTED
+   Lenses:             N run, N skipped  (per-lens findings, or why skipped)
    reviewSkills:       ✅ APPROVED | ❌ BLOCKED  (per-skill status; N/A if empty)
    Runbook pass:       ✅ APPROVED | ❌ BLOCKED  (shellcheck: N findings; N/A if no runbook command changed)
 
@@ -854,8 +905,9 @@ routing below remain **exact**.
    `reviewSkills` entry under the reuse rule above. Loop until the verdict is
    `APPROVED` or `APPROVED WITH WARNINGS`.
 
-   - **`APPROVED WITH WARNINGS`**: put the Tier 2 warnings verbatim under
-     `## Review Notes` in the PR body, then push.
+   - **`APPROVED WITH WARNINGS`**: put the Tier 2 warnings and the lens
+     warnings (Tier 3 `⚠️ WARNINGS`) verbatim under `## Review Notes` in the
+     PR body, then push.
    - **`APPROVED`**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push -u <remote> "<branch>"`.
 
    Then run `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` and open the PR exactly as it plans
@@ -922,7 +974,7 @@ routing below remain **exact**.
    elsewhere nothing happens.
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/orca-board.ts" in-review --pr <PR>
+   bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-review --pr <PR>
    ```
 
    Orca also ships its own Linear skill (`orca-linear`) whose completion
@@ -941,25 +993,58 @@ routing below remain **exact**.
    memory, and most of the loop's calendar time is lost in exactly that
    seam. Arming is part of opening the PR:
 
-   1. **exact** — **Always emit the exact unattended drive command** — in the
-      end-of-run status message **and** in the tracker comment that links the PR,
-      with the real PR number substituted. Prepare the comment now; post it
-      after step 3's arm check so it can report the observed outcome. Use the
-      portable `bun` form on **one line** (a `\` continuation is POSIX-shell
-      only and breaks on PowerShell and `cmd.exe`):
+   1. **exact** — **Decide how the drive starts** with drive-pr's arm script,
+      run in this tree, on **one line** with the real PR number substituted
+      (a `\` continuation is POSIX-shell only and breaks on PowerShell and
+      `cmd.exe`). Add `--mode print` when an uncleared `hitl` checkpoint
+      remains: the issue carries `hitl` **and** this run did not receive
+      explicit clearance.
 
       ```bash
-      bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
+      bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/arm-drive.ts" <PR>
       ```
 
-      The pass command (`claude -p "..."`) is Claude Code's, and today it is
-      the one documented pass command. Do not guess one for another agent
-      tool.
+      It reads `do_item.arm_drive` (default `auto`: a terminal tab of this
+      workspace where the session can open one, in Orca on a macOS or Linux
+      host; the session's background execution elsewhere, Windows hosts
+      included), `drive.pass_model` (default `sonnet`) and
+      `drive.pass_args` (default none), and prints one
+      JSON object: `command`, the drive's start command on one line
+      (`bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model
+      <model> -p "/jig:drive-pr --bots-only <PR>"`, the `drive.pass_args`
+      words before `-p` when it is set); `status`, what to do
+      next (step 2); `way`, `reason` and `fallback`, why; `model`; `tab`,
+      `tail` and `drive` for a tab; and `handles`. A tab is a fresh login
+      shell of the user's: `bun`, the agent's command (`claude` or `codex`)
+      and the account or profile the drive uses come from that shell, not
+      from this session. Every
+      failure prints the same JSON with `status: failed` and `reason`, with
+      `command` built where the tree is known (on the default model when
+      the configured one cannot be read). Exit `1`: the setting cannot be
+      honoured here (`tab` outside Orca, on a Windows host, or a tab Orca
+      refused) or a setting, the model or the working tree cannot be read;
+      exit `2`: a malformed command line. Report `reason` with `command`, and
+      spawn nothing. The pass command is the documented one of the agent
+      tool this session runs in: Claude Code's (`claude --model <model> -p
+      "..."`) or Codex's (`codex exec … "Use the jig:drive-pr skill: …"`,
+      on `routing.models.codex`). A Codex session that cannot open a tab
+      gets `print`, since the background way is Claude Code's. In any other
+      agent tool the script answers `print`. Do not guess one for another
+      agent tool.
+
+      **Always emit `command`**, the exact unattended drive command, in the
+      end-of-run status message **and** in the tracker comment that links the
+      PR, with the pass model (`model`) and the permission mode
+      (`permissionMode`). Prepare the comment now; post it
+      after step 3's arm check so it can report the observed outcome.
 
       Include the drive's **observability handles** in the same comment. Take
-      the candidate log path from `drive.ts: driver log → ...` in the arm
-      output (a `drive.ts: driver log unavailable: <reason>` line instead
-      means this driver keeps none: say so and include the reason), or, when the arm was refused, from the refusing driver's
+      the candidate log path from `drive.log` when the script found the drive
+      listed (`armed`, `already-live`); otherwise from
+      `drive.ts: driver log → ...` in the arm output, the spawned task's or
+      the tab's `tail` (a `drive.ts: driver log unavailable: <reason>` line
+      instead means this driver keeps none: say so and include the reason),
+      or, when the arm was refused, from the refusing driver's
       diagnostics or its row in
       `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts" --json`. A
       per-PR lock refusal always names this PR's own driver; a worktree lock
@@ -972,36 +1057,50 @@ routing below remain **exact**.
       path before acquiring either lock and writes the log best effort, so
       neither the arm outcome nor the printed path proves the log exists.
       Never post a template such as `<state dir>` as a path. Include the
-      fleet commands too: `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts"` lists live drives, and
-      `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts" --stop <PR>` stops this one (the process probe uses `ps` on POSIX and
+      fleet commands too: `handles.list` lists live drives, and
+      `handles.stop` stops this one (the process probe uses `ps` on POSIX and
       PowerShell on Windows). These are what a human reaches for when the
-      background drive is an agent they have no window into.
+      drive runs where they have no window into it.
 
-   2. **exact** — **Spawn that command in the background** (the harness's
-      background execution; do not block the session on it) when **both**
-      hold: no uncleared `hitl` checkpoint remains (the issue carries `hitl`
-      **and** this run did not receive explicit clearance), **and** the harness
-      is Claude Code, whose `claude -p` is today the one documented pass
-      command. Spawning
-      is then mandatory: an emitted but unspawned command reintroduces the
-      human-memory delay this step removes, and a `hitl` issue cleared this
-      run is no reason to withhold it. Pass the Bash call's `timeout` of
-      `28800000` (8 hours) with `run_in_background`: in an unattended session
-      Claude Code stops a background command after 30 minutes without it (10
-      in a `claude -p` run whose prompt is passed as text), and
-      after 2 hours unless `BASH_MAX_TIMEOUT_MS` is raised (see
-      [drive-pr's README](../drive-pr/README.md#the-background-time-limit)).
-      Report the task handle. The drive
-      works the draft immediately (some review bots review drafts, others
-      skip them) and marks the PR Ready at the point
+   2. **exact** — **Act on the script's `status`:**
+      - `armed` → the drive runs in a terminal tab of its own (`tab.title`)
+        in the PR's workspace, and `drives.ts` lists it (`drive`). Report the
+        tab, the pass model and the handles. Spawn nothing: the session ends
+        without a background drive task, and step 3 has nothing to check.
+      - `already-live` → a drive already holds the PR (`drive`, with its
+        `doctor` verdict) and no tab was opened: report it as step 3 reports
+        a per-PR lock refusal.
+      - `unconfirmed` (only under `arm_drive: tab`) → the tab opened, but
+        `drives.ts` did not list the drive in time; `tail` is what the tab
+        printed. Read it once as step 3 reads a spawned task's output, and
+        report what it shows; do not open another tab or spawn the command
+        as well.
+      - `spawn` → **spawn `command` in the background** (the harness's
+        background execution; do not block the session on it). Spawning is
+        then mandatory: an emitted but unspawned command reintroduces the
+        human-memory delay this step removes, and a `hitl` issue cleared
+        this run is no reason to withhold it. Pass the Bash call's `timeout`
+        of `28800000` (8 hours) with `run_in_background`: in an unattended
+        session Claude Code stops a background command after 30 minutes
+        without it (10 in a `claude -p` run whose prompt is passed as text),
+        and after 2 hours unless `BASH_MAX_TIMEOUT_MS` is raised (see
+        [drive-pr's README](../drive-pr/README.md#the-background-time-limit)).
+        Report the task handle. When `fallback` is set, `auto` meant a tab
+        and the drive goes to the background instead: say why (Orca refused
+        the tab, a Windows host, or a tab whose drive `drives.ts` did not list
+        in time, whose `tail` to report too; a drive that tab did start holds
+        the PR's lock, so this spawn then meets step 3's exit `11`).
+      - `print` → emit the command only, with `reason`: for an uncleared
+        `hitl` checkpoint, starting review rounds would pre-empt the human
+        judgment; from a Codex session that cannot open a tab, the
+        background way is Claude Code's, so a person runs the command; for
+        an agent tool with no documented pass command, a guessed command is
+        worse than one left for a human to run.
+
+      The drive works the draft immediately (some review bots review
+      drafts, others skip them) and marks the PR Ready at the point
       `pull_requests.mark_ready` declares (after the first completed round
-      by default), so
-      one human decision is left: the merge. For an uncleared `hitl`
-      checkpoint, or another agent tool (Codex, for one), which has no
-      documented pass command today, emit the
-      command only: starting review rounds would pre-empt the human
-      judgment, and a guessed command is worse than one left for a human to
-      run.
+      by default), so one human decision is left: the merge.
 
    3. **exact** — **Never start a second driver; the refusal is mechanical.**
       `drive.ts` holds two single-instance locks for the life of a drive — a
@@ -1011,9 +1110,9 @@ routing below remain **exact**.
       driving, its worktree and its log. Only a claim written by an older
       driver is pid/hostname-only (see
       `${CLAUDE_SKILL_DIR}/../drive-pr/references/terminal-states.md`
-      § The single-instance locks). Check the spawned task's output **once**,
-      a few seconds after issuing it — not immediately, and not in a poll
-      loop:
+      § The single-instance locks). Check the spawned task's output (or an
+      `unconfirmed` tab's `tail`) **once**, a few seconds after issuing it —
+      not immediately, and not in a poll loop:
       - Exit `11` on the **per-PR** lock → this PR is already being driven:
         report "a drive is already live on #<PR>" with the holder's details
         and the doctor verdict the refusal names; do not retry. Do not stop a
@@ -1036,6 +1135,13 @@ routing below remain **exact**.
       - Exit `0` → the drive already reached a terminal state within the
         window: report its outcome rather than assuming it is running.
       - Still running → armed; move on without further polling.
+
+      Once armed, name the workspace for the driving stage (same rules as at
+      pickup, with `.context/workspace-title.md` still holding the title):
+
+      ```bash
+      bun "${CLAUDE_SKILL_DIR}/scripts/workspace-name.ts" driving --id "<KEY>" --title-file .context/workspace-title.md --pr <PR>
+      ```
 
       Post the prepared tracker comment with the arm outcome and the
       observability handles. Report the log path's verified, unavailable or
@@ -1191,8 +1297,9 @@ snapshot mapping are **exact**.
    before item 5 starts it. The route derived for this issue in Step 4a is
    this issue's, never the sub-issue's.
 
-5. **exact** — **Start the selected sub-issue**: transition it to
-   `in_progress` and assign it to yourself, as in Step 4a item 2.
+5. **exact** — **Start the selected sub-issue**: claim it as in Step 4a
+   item 2, and on a refusal or a stand-down choose another eligible
+   sub-issue or stop.
 
 6. **judgment** — **Delegate** as in Step 4a. When the selected
    sub-issue builds on a sibling whose pull request is still open, the

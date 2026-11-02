@@ -111,9 +111,9 @@ import { retryAttempts } from "../../../shared/retry.ts";
  *   2  usage error
  *   3  refused BEFORE pushing: dirty worktree, unconcluded git operation, or a
  *      working tree that could not be read at all
- *   4  refused BEFORE pushing: the initial required checks have not
- *      completed, the head moved, or an externally-owned CI hold label is
- *      present
+ *   4  refused BEFORE pushing: the required checks the CI hold waits for
+ *      have not completed on a PR that can run them, the head moved, or an
+ *      externally-owned CI hold label is present
  *   5  the PR is no longer open — nothing was pushed (guarded-push.ts's own 5,
  *      same code and meaning; drive-status.ts uses it identically). Also
  *      returned by the untriaged-thread check itself when it finds
@@ -145,7 +145,7 @@ import { retryAttempts } from "../../../shared/retry.ts";
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isTrustedBotConfirmation } from "./lib/bot-confirmation.ts";
+import { isTransparentFollowUp } from "./lib/bot-confirmation.ts";
 import { fail, isDigits, isGitSha, runMain, short } from "./lib/cli.ts";
 import { hasLeaveOpenMarker, qualifyingOutcome } from "./lib/outcome.ts";
 import {
@@ -832,7 +832,7 @@ async function checkUntriagedThreads(
     return later.every(
       (c) =>
         typeof c.url === "string" &&
-        isTrustedBotConfirmation(
+        isTransparentFollowUp(
           { authorLogin: c.author, body: c.body },
           qualifyingOutcome,
         ),
@@ -846,7 +846,7 @@ async function checkUntriagedThreads(
    * confirmation. `currentReplyOutcome` cannot be reused here:
    * once a confirmation follows the held reply, the literal latest comment
    * IS that confirmation, which carries no outcome token by construction
-   * (`isTrustedBotConfirmation` requires exactly that) — comparing THAT
+   * (`isTransparentFollowUp` requires exactly that) — comparing THAT
    * against the held outcome would always read `null`, defeating the
    * tolerance above at the very next check. This performs the identical
    * "edited in place" catch `currentReplyOutcome` performs for the
@@ -1100,7 +1100,7 @@ async function checkUntriagedThreads(
       // `triage-thread.ts` — is just as broken for a truncated thread as plain
       // `triage-thread.ts` is. The one remedy that actually works is the
       // documented one.
-      return "this thread is comment-truncated (>100 comments) — triage-thread.ts refuses it unconditionally, so the only working remedy is drive-state.ts park [PR] --key <id> --reason '...' (SKILL.md § 4)";
+      return "this thread is comment-truncated (>100 comments) — triage-thread.ts refuses it unconditionally, so the only working remedy is drive-state.ts park [PR] --key <id> --kind thread --class human-thread with its decision record on stdin (SKILL.md § 4)";
     }
     const key = t.threadId;
     const outcome = currentReplyOutcome(t);
@@ -1366,16 +1366,17 @@ async function main(): Promise<number> {
     },
   );
   if (pushRes.stdout !== "") process.stderr.write(pushRes.stdout);
-  if (pushRes.code !== 0) {
+  // `disabled` and `conflicting` pushed without a hold: none rolls back.
+  const unheld = ["disabled", "conflicting"].includes(holdRes.stdout.trim());
+  if (pushRes.code !== 0 && !unheld) {
     const rollback = await run(
       tsArgv(ciHold, ["rollback", pr, "--expect-head", report.head]),
       { stderr: "inherit", timeoutSec: ciHoldTimeoutSeconds() },
     );
     if (rollback.code === 0) {
-      if (rollback.stdout.trim() !== "disabled")
-        console.error(
-          "finish-round.ts: the push provably did not land; released the CI hold label acquired for it",
-        );
+      console.error(
+        "finish-round.ts: the push provably did not land; released the CI hold label acquired for it",
+      );
     } else if (rollback.code !== 5) {
       console.error(
         `finish-round.ts: retained the CI hold label after the failed push because rollback could not prove the ref stayed unchanged (exit ${rollback.code})`,

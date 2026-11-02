@@ -20,9 +20,13 @@
 #             match; also allowed in a nested type spec of one of those types
 #             (a list's `items`), applying to each entry; refused on any other
 #             type
+#   allow_empty  string: true when the empty string is a value the skill reads
+#             (an off-switch), not a missing one
 #   nullable  true when `null` is accepted and means "not set"
 #   items     list: the type of each entry: a type name; `fields:` for a
-#             list of mappings, each field typed; or, for a nested list or map,
+#             list of mappings, each field typed, with `optional:` naming the
+#             fields an entry may leave out and `or:` a type an entry may take
+#             instead of a mapping; or, for a nested list or map,
 #             `{ type: list, items: … }` or `{ type: map, values_type: … }`
 #   distinct  list: entries must be distinct
 #   nonempty  list: at least one entry
@@ -58,13 +62,22 @@ strict:
   - issue_tracker.labels
   - issue_tracker.github
   - issue_tracker.github.priority_labels
+  - issue_tracker.jira
+  - issue_tracker.jira.priorities
+  - issue_tracker.jira.resolutions
+  - issue_tracker.jira.link_types
   - resolve_conflicts
+  - review.lenses
   - reflection
   - code_stats
   - docs
+  - dispatch
   - specs
   - work_batch
   - work_batch.ranking
+  - workspace_name
+  - workspace_name.statuses
+  - orca.board
   - routing
   - routing.raise
   - verify
@@ -105,6 +118,74 @@ fields:
     repository_only: true
     since: 0.83.0
 
+  dispatch.identity:
+    type: string
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.105.0
+  dispatch.states:
+    type: list
+    items: { type: enum, values: [triage, backlog, todo, in_review, ops_pending, done, canceled, duplicate] }
+    distinct: true
+    nonempty: true
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.105.0
+  dispatch.followup_command:
+    type: string
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.105.0
+  dispatch.stalled_after:
+    type: string
+    pattern: "^\\d+\\s*[smh]$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.114.0
+  dispatch.blocked_after:
+    type: string
+    pattern: "^\\d+\\s*[smh]$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.114.0
+  dispatch.drive_rounds_flat:
+    type: integer
+    min: 1
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.117.0
+  dispatch.pickup_within:
+    type: string
+    pattern: "^\\s*0*(?:(?:[1-9]\\d?|[1-4]\\d\\d|5[0-6]\\d|57[0-6])\\s*h|(?:[1-9]\\d{0,3}|[12]\\d{4}|3[0-3]\\d{3}|34[0-4]\\d{2}|345[0-5]\\d|34560)\\s*m|(?:[1-9]\\d{0,5}|1\\d{6}|20[0-6]\\d{4}|207[0-2]\\d{3}|2073[0-5]\\d{2}|2073600)\\s*s)\\s*$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.117.0
+  dispatch.followup_within:
+    type: string
+    pattern: "^\\s*0*(?:(?:[1-9]\\d?|[1-4]\\d\\d|5[0-6]\\d|57[0-6])\\s*h|(?:[1-9]\\d{0,3}|[12]\\d{4}|3[0-3]\\d{3}|34[0-4]\\d{2}|345[0-5]\\d|34560)\\s*m|(?:[1-9]\\d{0,5}|1\\d{6}|20[0-6]\\d{4}|207[0-2]\\d{3}|2073[0-5]\\d{2}|2073600)\\s*s)\\s*$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.117.0
+  dispatch.labels.enabled:
+    type: boolean
+    default: false
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.122.0
+  dispatch.labels.prefix:
+    type: string
+    default: "jig:"
+    pattern: "^(?=.{1,39}$)[^,\\s](?:[^,]*[^,\\s])?$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.122.0
+  dispatch.labels.only_labeled:
+    type: boolean
+    default: false
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.122.0
+
   gates.command:
     type: command
     read_by: [resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar]
@@ -112,7 +193,10 @@ fields:
 
   review.bots:
     type: list
-    items: string
+    items:
+      or: string
+      fields: { login: string, confirmation_marker: string, chat_marker: string }
+      optional: [confirmation_marker, chat_marker]
     read_by: [resolve-review-comments, drive-pr, review]
   review.job_pattern:
     type: regex
@@ -211,6 +295,22 @@ fields:
         severities: { type: map, values_type: string }
     read_by: [drive-pr, resolve-review-comments]
     since: 0.61.0
+  review.lenses.dir:
+    type: path
+    exists: expected
+    read_by: [review, do-item]
+    since: 0.116.0
+  review.lenses.off:
+    type: list
+    items: string
+    distinct: true
+    read_by: [review, do-item]
+    since: 0.116.0
+  review.lenses.triggers:
+    type: map
+    values_type: { type: map, values_type: { type: list, items: string } }
+    read_by: [review, do-item]
+    since: 0.116.0
 
   repository.base_branch:
     type: string
@@ -248,7 +348,7 @@ fields:
     type: string
     pattern: "\\{key(_lower)?\\}"
     default: "{key_lower}-{slug}"
-    read_by: [do-item]
+    read_by: [do-item, dispatch]
   pull_requests.issue_link:
     type: enum
     values: [closes, refs, none]
@@ -293,10 +393,56 @@ fields:
     default: 2
     since: 0.98.0
     read_by: [drive-pr]
+  drive.pass_model:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._:/@[\\]-]*$"
+    default: sonnet
+    since: 0.102.0
+    read_by: [drive-pr, do-item]
+  drive.pass_args:
+    type: list
+    items:
+      type: string
+      pattern: "^(?!(?:--|-p|--print|--model)$)(?!--model=)\\S+$"
+    default: []
+    since: 0.109.0
+    read_by: [drive-pr, do-item]
   drive.escape_baseline_doc:
     type: path
     exists: expected
     read_by: [drive-pr]
+
+  autonomy.level:
+    type: enum
+    values: [attended, unattended, wide]
+    default: attended
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    since: 0.103.0
+  autonomy.max_level:
+    type: enum
+    values: [attended, unattended, wide]
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    repository_only: true
+    since: 0.103.0
+  autonomy.off_hours.level:
+    type: enum
+    values: [attended, unattended, wide]
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    since: 0.113.0
+  autonomy.off_hours.schedule:
+    type: list
+    items: string
+    nonempty: true
+    read_by: [drive-pr, resolve-review-comments, file-issue, decide]
+    since: 0.113.0
+  autonomy.park_classes:
+    type: list
+    items: { type: string, pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" }
+    distinct: true
+    nonempty: true
+    read_by: [drive-pr]
+    repository_only: true
+    since: 0.103.0
 
   ci.required_checks:
     type: list
@@ -310,46 +456,76 @@ fields:
 
   issue_tracker.adapter:
     type: enum
-    values: [linear, github]
+    values: [linear, github, jira]
     default: github
-    read_by: [do-item, drive-pr, decide, work-batch]
+    read_by: [do-item, drive-pr, decide, work-batch, dispatch]
   issue_tracker.team:
     type: string
     pattern: "^[A-Z][A-Z0-9]*$"
-    read_by: [do-item, drive-pr, review, work-batch]
+    read_by: [do-item, drive-pr, review, work-batch, dispatch]
     repository_only: true
   issue_tracker.states:
     type: map
     keys: [triage, backlog, todo, in_progress, in_review, ops_pending, done, canceled, duplicate]
-    read_by: [do-item, work-batch]
+    read_by: [do-item, work-batch, dispatch]
   issue_tracker.github.repository:
     type: string
     pattern: "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     repository_only: true
     since: 0.82.0
   issue_tracker.github.states_from:
     type: enum
     values: [labels, project]
     default: labels
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.82.0
   issue_tracker.github.project:
     type: string
     pattern: "^https://github\\.com/(orgs|users)/[A-Za-z0-9-]+/projects/[1-9][0-9]*/?$"
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     repository_only: true
     since: 0.82.0
   issue_tracker.github.status_field:
     type: string
     default: Status
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.82.0
   issue_tracker.github.priority_labels:
     type: map
     keys: [urgent, high, medium, low]
-    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.82.0
+  issue_tracker.jira.site:
+    type: string
+    pattern: "^https://[A-Za-z0-9.-]+/?$"
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    repository_only: true
+    since: 0.111.0
+  issue_tracker.jira.issue_type:
+    type: string
+    default: Task
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
+  issue_tracker.jira.subtask_type:
+    type: string
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
+  issue_tracker.jira.priorities:
+    type: map
+    keys: [urgent, high, medium, low]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
+  issue_tracker.jira.resolutions:
+    type: map
+    keys: [done, canceled, duplicate]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
+  issue_tracker.jira.link_types:
+    type: map
+    keys: [blocks, related, duplicate]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: 0.111.0
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch]
@@ -435,6 +611,12 @@ fields:
     values_type: { type: map, values_type: any }
     read_by: [do-item]
     since: 0.89.0
+  do_item.arm_drive:
+    type: enum
+    values: [auto, tab, background, print]
+    default: auto
+    since: 0.102.0
+    read_by: [do-item, drive-pr]
 
   specs.adapters:
     type: list
@@ -451,6 +633,26 @@ fields:
     read_by: [do-item]
     repository_only: true
     since: 0.100.0
+
+  workspace_name.template:
+    type: string
+    pattern: "^(?:[^{}]|\\{(?:id|status|title|pr)\\})*$"
+    allow_empty: true
+    default: "{id} {status} {title} {pr}"
+    read_by: [do-item, drive-pr]
+    since: 0.104.0
+  workspace_name.statuses:
+    type: map
+    keys: [implementing, driving, ready, done]
+    read_by: [do-item, drive-pr]
+    since: 0.104.0
+
+  orca.board:
+    type: map
+    keys: [in_progress, in_review, completed]
+    values_type: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" }
+    read_by: [do-item, drive-pr]
+    since: 0.126.0
 
   work_batch.point_budget:
     type: integer
@@ -523,12 +725,12 @@ fields:
   routing.models:
     type: map
     values_type: { type: map, values_type: string }
-    read_by: [do-item]
+    read_by: [do-item, drive-pr, dispatch]
     since: 0.92.0
   routing.efforts:
     type: map
     values_type: { type: map, values_type: string }
-    read_by: [do-item]
+    read_by: [do-item, dispatch]
     since: 0.92.0
 
   fleet_health.config:

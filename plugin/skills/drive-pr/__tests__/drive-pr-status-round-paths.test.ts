@@ -374,6 +374,60 @@ describe("drive-status.ts structuralEscalationDue", () => {
     ).toEqual(["a.ts", "b.ts"]);
   });
 
+  // A listed bot's chat acknowledgement after the held reply is transparent
+  // (`lib/bot-confirmation.ts`): the hold still describes the thread. One
+  // that carries a finding is a newer comment, as above.
+  for (const [label, body, paths] of [
+    [
+      "a transparent acknowledgement keeps the hold",
+      "<!-- coderabbit-ai-generated:v1 -->\nThanks: the fix is noted, and nothing further is requested.",
+      ["b.ts"],
+    ],
+    [
+      "an acknowledgement carrying a finding supersedes the hold",
+      "<!-- coderabbit-ai-generated:v1 -->\nThanks. One more:\n\n_⚠️ Potential issue_ | _🟠 Major_ | _⚡ Quick win_\n\nStill wrong.",
+      ["a.ts", "b.ts"],
+    ],
+  ] as const)
+    it(`a held thread: ${label}`, async () => {
+      const round1 = writeFixture({
+        threads: [
+          {
+            id: "PRRT_a",
+            path: "a.ts",
+            bot: false,
+            comments: [
+              { authorAssociation: "NONE", body: "a finding" },
+              {
+                author: "example-user-2",
+                authorAssociation: "OWNER",
+                body: "**accepted** — fixed already; posting once pushed.",
+              },
+              {
+                author: "coderabbitai",
+                authorAssociation: "NONE",
+                body,
+                bot: true,
+              },
+            ],
+          },
+          { id: "PRRT_live1", path: "b.ts", bot: true },
+        ],
+      });
+      await hold(
+        round1.stateDir,
+        "PRRT_a",
+        "thread",
+        "https://example.invalid/PRRT_a/comment-1",
+      );
+      const r1 = await probeIn(round1.dir, round1.stateDir, HEAD, [
+        "--bump-attempt",
+      ]);
+      expect(
+        (r1.json.work as Record<string, unknown>).unresolvedThreadPaths,
+      ).toEqual([...paths]);
+    });
+
   // Same argument, for a held SUMMARY finding — no thread, so the exclusion
   // has to key on the fingerprint `answer-summary-finding.ts` will eventually
   // post against, not a thread id. The fixture's two backlog findings both

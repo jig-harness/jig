@@ -5,7 +5,8 @@
  * (modules/M12-parallel-agent-ergonomics/mappings.md).
  *
  * A repository supplies its hooks as executables at fixed paths, read from
- * the worktree itself so each branch runs its own version:
+ * the worktree itself so each branch runs its own version, and each runs
+ * under the plugin's supervisor (plugin/shared/worktree-hooks.ts):
  *
  *   .config/worktree-hooks/create   run in a new worktree, once
  *   .config/worktree-hooks/remove   run in a worktree about to be removed
@@ -26,8 +27,6 @@
  * the agent then works in it. Open only branches whose code you would run.
  */
 import {
-  accessSync,
-  constants,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -36,13 +35,21 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import {
+  PARK_TIMEOUT_MS,
+  parkFindings,
+  WorktreeRemovalError,
+} from "../../plugin/gc/worktree-removal.ts";
 import { errnoCode } from "../../plugin/shared/errors.ts";
 import {
-  spawnSync as guardedSpawnSync,
-  withoutLeakyGitEnv,
-} from "../../plugin/shared/guarded-git-spawn.ts";
-import { main as journalMain } from "../../plugin/skills/reflect/scripts/journal.ts";
-import { withGitDeadline } from "../../plugin/skills/reflect/scripts/lib/context.ts";
+  type Hook,
+  HOOK_TIMEOUT_MS,
+  HOOKS_DIR,
+  hookFailure,
+  hookPath as sharedHookPath,
+  superviseHook,
+  WorktreeHookError,
+} from "../../plugin/shared/worktree-hooks.ts";
 import { assertLinkedWorktree, findGitWorktree, samePath } from "./git.ts";
 import { findHerdrWorktree, herdrCall, herdrJson } from "./herdr.ts";
 import {
@@ -55,112 +62,27 @@ import {
 } from "./owner.ts";
 import { budget, type Context, HerdrError, output } from "./runner.ts";
 
-export const HOOKS_DIR = ".config/worktree-hooks";
-/** The longest a create or remove hook may run; a dependency install is slow. */
-export const HOOK_TIMEOUT_MS = 15 * 60_000;
+export {
+  type Hook,
+  HOOK_TIMEOUT_MS,
+  HOOKS_DIR,
+  SUPERVISOR,
+} from "../../plugin/shared/worktree-hooks.ts";
+export { PARK_TIMEOUT_MS } from "../../plugin/gc/worktree-removal.ts";
+
 /** How long the tool waits for the plugin event to take the claim before running the hook itself. */
 export const PLUGIN_GRACE_MS = 5_000;
-/** The longest parking a worktree's reflection findings may take: a few git calls. */
-export const PARK_TIMEOUT_MS = 3 * 60_000;
-/** The hook output kept for the log; a dependency install is verbose. */
-const HOOK_OUTPUT_BYTES = 256 * 1024 * 1024;
 const POLL_MS = 500;
-
-export type Hook = "create" | "remove";
 
 /** The hook's path in the worktree, or null when the repository has none. */
 export function hookPath(worktree: string, hook: Hook): string | null {
-  const path = join(worktree, HOOKS_DIR, hook);
-  if (!existsSync(path)) return null;
   try {
-    accessSync(path, constants.X_OK);
-  } catch {
-    throw new HerdrError(`${path} exists but is not executable; chmod +x it`);
+    return sharedHookPath(worktree, hook);
+  } catch (error) {
+    if (error instanceof WorktreeHookError) throw new HerdrError(error.message);
+    throw error;
   }
-  return path;
 }
-
-/** How long past a hook's limit its supervisor may take to end it. */
-const SUPERVISOR_SLACK_MS = 10_000;
-
-/**
- * Runs a hook under a supervisor: a `bun -e` script, since `bun` is on every
- * machine the tool runs on, including a `--host` that has only its bundle.
- * The supervisor starts the hook as the leader of a session and process group
- * of its own (`setsid`, which needs no terminal, where a shell's `set -m`
- * turns job control off without one), and writes its own process id and then
- * the group's to the file it is given, so a waiter can tell while any part of
- * the run, the hook's own children included, is still alive. It ends the
- * whole group when the hook fails, when it outlives its limit, when the
- * supervisor is signalled or fails (a record it cannot write included: its
- * cleanup is in place before the hook starts), and when the tool that started
- * it has gone: a failed run, or one whose tool was killed (by a launcher's or
- * SSH session's deadline), leaves nothing running, with a group record or
- * without one.
- * Arguments: the record file (`-` for none), the hook, its limit in
- * milliseconds and the tool's process id.
- */
-export const SUPERVISOR = `
-const fs = require("node:fs");
-const [file, hook, limitText, ownerText] = process.argv.slice(1);
-const owner = Number(ownerText);
-const record = (line) => file !== "-" && fs.appendFileSync(file, line + "\\n");
-let child;
-const end = (code, why) => {
-  if (why) console.error(why);
-  if (child) try { process.kill(-child.pid, "SIGKILL"); } catch {}
-  process.exit(code);
-};
-for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(signal, () => end(143));
-const failed = (error) => end(1, "the supervisor of " + hook + " failed (" + (error?.message ?? error) + "); ended the hook");
-process.on("uncaughtException", failed);
-process.on("unhandledRejection", failed);
-// The same start as processStart in owner.ts reads, which this script
-// cannot import; empty when it cannot be read, and the id alone is recorded.
-const startOf = (pid) => {
-  try {
-    if (process.platform === "linux") {
-      const stat = fs.readFileSync("/proc/" + pid + "/stat", "utf8");
-      const ticks = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19];
-      const boot = fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
-      return /^[0-9]+$/.test(ticks ?? "") ? boot + ":" + ticks : "";
-    }
-    const ps = Bun.spawnSync(["/bin/ps", "-o", "lstart=", "-p", String(pid)], { env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, timeout: 10000 });
-    const text = ps.stdout.toString().trim();
-    return ps.exitCode === 0 ? text.replace(/\\s+/g, "_") : "";
-  } catch {
-    return "";
-  }
-};
-const named = (role, pid) => { const start = startOf(pid); return role + " " + pid + (start ? " " + start : ""); };
-if (file !== "-") fs.writeFileSync(file, "");
-record(named("wrapper", process.pid));
-try {
-  child = Bun.spawn([hook], { detached: true, stdin: "ignore", stdout: "inherit", stderr: "inherit" });
-} catch (error) {
-  console.error("could not start " + hook + ": " + error.message);
-  process.exit(127);
-}
-try {
-  record(named("group", child.pid));
-} catch (error) {
-  end(1, "could not record the process group of " + hook + " (" + error.message + "); ended it");
-}
-const deadline = Date.now() + Number(limitText);
-const ownerGone = () => {
-  if (process.ppid !== owner) return true;
-  try { process.kill(owner, 0); return false; } catch (error) { return error.code === "ESRCH"; }
-};
-const watch = setInterval(() => {
-  if (ownerGone()) end(143, "the workspace tool that ran " + hook + " has ended; ending the hook");
-  if (Date.now() >= deadline) end(124, hook + " did not finish within its limit of " + Math.round(Number(limitText) / 1000) + " seconds; ended it");
-}, 500);
-await child.exited;
-clearInterval(watch);
-const code = child.exitCode ?? 1;
-if (code !== 0) end(code);
-process.exit(0);
-`;
 
 /**
  * Run a hook in its worktree under the supervisor; throws when it fails. Its
@@ -175,34 +97,17 @@ export function runHook(
   path: string,
   groupFile?: string,
 ): void {
-  const limitMs = budget(ctx, HOOK_TIMEOUT_MS);
-  const result = guardedSpawnSync(
-    process.execPath,
-    [
-      "-e",
-      SUPERVISOR,
-      groupFile ?? "-",
-      path,
-      String(limitMs),
-      String(process.pid),
-    ],
-    {
-      cwd: worktree,
-      env: withoutLeakyGitEnv(),
-      timeout: limitMs + SUPERVISOR_SLACK_MS,
-      maxBuffer: HOOK_OUTPUT_BYTES,
-    },
+  const run = superviseHook(
+    worktree,
+    path,
+    budget(ctx, HOOK_TIMEOUT_MS),
+    groupFile,
   );
-  for (const stream of [result.stdout, result.stderr])
-    for (const line of (stream ?? "").split("\n"))
-      if (line !== "") ctx.log(line);
-  if (result.status !== 0 || result.error !== undefined) {
+  for (const line of run.lines) ctx.log(line);
+  const failure = hookFailure(path, run);
+  if (failure !== null) {
     if (groupFile !== undefined) endGroup(ctx, groupFile);
-    throw new HerdrError(
-      result.error === undefined
-        ? `${path} failed (exit ${result.status ?? "none: killed"})`
-        : `${path} did not complete: ${result.error.message}`,
-    );
+    throw new HerdrError(failure);
   }
 }
 
@@ -523,43 +428,20 @@ export function createdWorktreePath(eventJson: string | undefined): string {
 }
 
 /**
- * Park the worktree's unsent reflection findings where the next reflection
- * in any worktree of the repository adopts them, through the reflect skill's
- * own `journal.ts park`, run as if from inside the worktree.
- *
- * It runs in this process, since a `--host` run has only this bundle on the
- * host, so the worktree is named the ways the journal reads it: the working
- * directory, `JIG_CONSUMER_ROOT` (which the journal prefers to it), and an
- * environment without the git variables that would route its git calls to
- * another repository. All three are restored afterwards. Parking gets
- * `PARK_TIMEOUT_MS`, or what is left of the run's limit when that is less,
- * and every git call the journal makes is cut to the time left of it.
+ * Park the worktree's unsent reflection findings (`parkFindings`), for
+ * `PARK_TIMEOUT_MS` or what is left of the run's limit when that is less.
  */
 export async function parkJournal(
   ctx: Context,
   worktree: string,
 ): Promise<void> {
-  const deadline = Date.now() + budget(ctx, PARK_TIMEOUT_MS);
-  const previousCwd = process.cwd();
-  const previousEnv = { ...process.env };
-  const clean = withoutLeakyGitEnv();
-  for (const key of Object.keys(process.env))
-    if (!(key in clean)) delete process.env[key];
-  process.env.JIG_CONSUMER_ROOT = worktree;
-  process.chdir(worktree);
-  let status: number;
   try {
-    status = await withGitDeadline(deadline, () => journalMain(["park"]));
-  } finally {
-    process.chdir(previousCwd);
-    for (const key of Object.keys(process.env))
-      if (!(key in previousEnv)) delete process.env[key];
-    Object.assign(process.env, previousEnv);
+    await parkFindings(worktree, Date.now() + budget(ctx, PARK_TIMEOUT_MS));
+  } catch (error) {
+    if (error instanceof WorktreeRemovalError)
+      throw new HerdrError(error.message);
+    throw error;
   }
-  if (status !== 0)
-    throw new HerdrError(
-      `parking the reflection findings of ${worktree} failed (exit ${status})`,
-    );
 }
 
 export interface RemoveOptions {

@@ -15,11 +15,13 @@ import { isAbsolute, join } from "node:path";
 import { layersFingerprint } from "../../../../shared/config-layers.ts";
 import { DecodeError, isDistinctNameList } from "../../../../shared/guards.ts";
 import {
+  botEntries,
   configSource,
   consumerRoot,
   readConfig,
   readRemoteName,
   remoteName,
+  type ReviewBot,
 } from "../../../../shared/consumer.ts";
 import { verifyRemoteIsPrRepo } from "./base-drift.ts";
 import { attachedTree } from "./driven-branch.ts";
@@ -147,11 +149,27 @@ export function reviewedShaMarker(): string {
   );
 }
 
+/**
+ * `review.bots` as entries, each a login or `{login, …markers}`; `undefined`
+ * when the field is not a list. Entries of another shape are dropped, as
+ * this best-effort reader always has.
+ */
+export function reviewBotEntries(): (string | ReviewBot)[] | undefined {
+  const bots = section("review").bots;
+  if (!Array.isArray(bots)) return undefined;
+  return bots.filter(
+    (b): b is string | ReviewBot =>
+      (typeof b === "string" && b !== "") ||
+      (typeof b === "object" &&
+        b !== null &&
+        typeof (b as { login?: unknown }).login === "string" &&
+        (b as { login: string }).login !== ""),
+  );
+}
+
 /** `review.bots`: the logins the review skill treats as reviewers. */
 export function reviewBots(): string[] {
-  const bots = section("review").bots;
-  if (!Array.isArray(bots)) return [];
-  return bots.filter((b): b is string => typeof b === "string" && b !== "");
+  return botEntries(reviewBotEntries() ?? []).map((b) => b.login);
 }
 
 /**
@@ -242,6 +260,107 @@ export function passDeadlineRetriesSetting(): number | undefined {
       "must be a whole number of at least 0",
     );
   return value as number;
+}
+
+/** The model each pass runs on when neither `--pass-model` nor `drive.pass_model` names one: Claude Code's alias for the latest Sonnet. */
+export const DEFAULT_PASS_MODEL = "sonnet";
+
+/**
+ * A model as a pass command takes it: one word that does not start with a
+ * dash (a model id, a Claude Code alias such as `sonnet`, or a routing tier).
+ */
+export const PASS_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/@[\]-]*$/;
+
+/** `drive.pass_model`: the model, alias or routing tier each pass runs on; `undefined` when not configured. */
+export function passModelSetting(): string | undefined {
+  const value = section("drive").pass_model;
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || !PASS_MODEL_PATTERN.test(value))
+    throw new DecodeError(
+      configSource("drive.pass_model"),
+      "$.drive.pass_model",
+      "must be one word naming a model, a Claude Code alias or a routing tier",
+    );
+  return value;
+}
+
+/** The extra arguments a pass command gets when neither `--pass-args` nor `drive.pass_args` names any. */
+export const DEFAULT_PASS_ARGS: readonly string[] = [];
+
+/**
+ * One word of a pass command's extra arguments: no whitespace, and none of
+ * the words `refusedPassArgs` refuses, so the audit's schema rejects what the
+ * reading skill would stop on.
+ */
+export const PASS_ARG_PATTERN =
+  /^(?!(?:--|-p|--print|--model)$)(?!--model=)\S+$/;
+
+/**
+ * Why `words` cannot be extra arguments of a pass command, `undefined` when
+ * they can: the model has its own setting, and the drive writes the prompt.
+ */
+export function refusedPassArgs(words: readonly string[]): string | undefined {
+  if (words.includes("--"))
+    return "cannot hold --: it would end the pass command's options and turn -p into its prompt";
+  if (words[words.length - 1] === "--permission-mode")
+    return "cannot end with --permission-mode: it needs a mode after it, and the drive's -p would be read as that mode";
+  const word = words.find(
+    (w) =>
+      w === "-p" ||
+      w === "--print" ||
+      w === "--model" ||
+      w.startsWith("--model="),
+  );
+  return word === undefined
+    ? undefined
+    : `cannot hold ${word}: drive.pass_model or --pass-model sets the model, and the drive writes -p and its prompt`;
+}
+
+/** `drive.pass_args`: extra arguments for a Claude Code pass command; `undefined` when not configured. */
+export function passArgsSetting(): string[] | undefined {
+  const value = section("drive").pass_args;
+  if (value === undefined || value === null) return undefined;
+  const refuse = (detail: string) =>
+    new DecodeError(
+      configSource("drive.pass_args"),
+      "$.drive.pass_args",
+      detail,
+    );
+  if (
+    !Array.isArray(value) ||
+    !value.every((w) => typeof w === "string" && PASS_ARG_PATTERN.test(w))
+  )
+    throw refuse(
+      "must be a list of words, each a string without spaces, such as [--permission-mode, bypassPermissions]",
+    );
+  const refused = refusedPassArgs(value);
+  if (refused !== undefined) throw refuse(refused);
+  return value;
+}
+
+/** How a skill arms a drive: `do_item.arm_drive`'s values. */
+export const ARM_DRIVE_MODES = ["auto", "tab", "background", "print"] as const;
+export type ArmDriveMode = (typeof ARM_DRIVE_MODES)[number];
+
+/** How a drive is armed when `do_item.arm_drive` is not set. */
+export const DEFAULT_ARM_DRIVE: ArmDriveMode = "auto";
+
+/** Whether `value` is one of `do_item.arm_drive`'s values. */
+export function isArmDriveMode(value: unknown): value is ArmDriveMode {
+  return ARM_DRIVE_MODES.some((mode) => mode === value);
+}
+
+/** `do_item.arm_drive`: how do-item and drive-pr arm a drive; `undefined` when not configured. */
+export function armDriveSetting(): ArmDriveMode | undefined {
+  const value = section("do_item").arm_drive;
+  if (value === undefined || value === null) return undefined;
+  if (!isArmDriveMode(value))
+    throw new DecodeError(
+      configSource("do_item.arm_drive"),
+      "$.do_item.arm_drive",
+      `must be one of ${ARM_DRIVE_MODES.join(", ")}`,
+    );
+  return value;
 }
 
 /**
