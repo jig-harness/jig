@@ -17,7 +17,8 @@ import { receiptsKind } from "../kinds/receipts.ts";
 import { sharedGcLock, exclusiveGcLock } from "../../shared/gc-lock.ts";
 import { SCRATCH_OWNER_FILE } from "../../shared/scratch-owner.ts";
 import { boundDeclaration, parseDeclaration, parseMachine } from "../config.ts";
-import { jobFiles } from "../scheduler.ts";
+import { jobFiles } from "../../runtime/scheduler.ts";
+import { gcJobSpec } from "../job-spec.ts";
 import { argumentsFor, scheduledCollection } from "../cli.ts";
 import { readReceipt, writeReceipt, receiptPaths } from "../receipts.ts";
 import type { Receipt } from "../types.ts";
@@ -229,7 +230,7 @@ test("scheduler files preserve exact argv and explicit environment", () => {
   const job = {
     command: ["/opt/bun", "/cache/jig's plugin/jig.ts", "gc", "--scheduled"],
     env: { PATH: "/bin:/a b", JIG_HOME: "/a&b" },
-    hour: 4,
+    spec: gcJobSpec(4),
   };
   expect(jobFiles("launchd", job)["dev.jig.gc.plist"]).toContain("/a&amp;b");
   expect(jobFiles("systemd", job)["jig-gc.service"]).toContain(
@@ -347,7 +348,7 @@ test("systemd escapes command dollars while preserving environment dollars", () 
   const files = jobFiles("systemd", {
     command: ["/opt/bun", "/cache/jig$version/jig.ts"],
     env: { JIG_HOME: "/a$b%c" },
-    hour: 4,
+    spec: gcJobSpec(4),
   });
   expect(files["jig-gc.service"]).toContain(
     'ExecStart="/opt/bun" "/cache/jig$$version/jig.ts"',
