@@ -8,7 +8,9 @@
  * drives on the accounts that file names, so `jig install` with no component
  * named leaves the dispatcher out while the file does not exist, and its
  * install refuses without one. Its timer serves every repository the file
- * lists, so only `jig uninstall --machine` removes it.
+ * lists, so only `jig uninstall --machine` removes it. With `--repo`, its
+ * install also creates the dispatch labels that repository turns on and
+ * lacks (`install-labels.ts`).
  */
 import { existsSync } from "node:fs";
 import type { Component, LastRun } from "../runtime/component.ts";
@@ -23,6 +25,7 @@ import {
   winningIntervalArguments,
 } from "./cli.ts";
 import { dispatchJobSpec, installDispatch } from "./install.ts";
+import { installLabels } from "./install-labels.ts";
 import { type MachineConfig, machineConfigPath } from "./lib/machine-config.ts";
 import { readReceipt, receiptPaths } from "./receipts.ts";
 
@@ -82,12 +85,17 @@ export const dispatchComponent: Component<DispatchArguments> = {
       : null,
   job,
   missingOptIn,
-  install: (request) =>
-    installDispatch(
+  install: async (request) => {
+    const timer = await installDispatch(
       { intervalMs: null, confirm: request.confirm, uninstall: false },
       request.script,
       machineFile(),
-    ),
+    );
+    // A repository named with --repo also gets the dispatch labels it lacks.
+    if (request.repository === undefined) return timer;
+    const labels = await installLabels([request.repository], request.confirm);
+    return Math.max(timer, labels);
+  },
   uninstall: async (request) => {
     if (request.machine)
       // A removal needs no machine file: a broken one must not keep the timer installed.

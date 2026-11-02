@@ -6,6 +6,7 @@
  */
 import { isMapping, parseConfigText } from "../../shared/config-layers.ts";
 import { CANONICAL_STATES } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import { DEFAULT_LABELS, type LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
 import type { DispatchSection } from "./types.ts";
 
@@ -25,7 +26,11 @@ const KEYS = [
   "drive_rounds_flat",
   "pickup_within",
   "followup_within",
+  "labels",
 ];
+const LABEL_KEYS = ["enabled", "prefix", "only_labeled"];
+/** A GitHub label is at most 50 characters, and the longest name the prefix goes before is `followed-up`. */
+const MAX_PREFIX = 50 - "followed-up".length;
 
 class SectionError extends Error {}
 
@@ -78,6 +83,56 @@ function wait(
   }
 }
 
+function flag(value: unknown, field: string, fallback: boolean): boolean {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== "boolean")
+    throw new SectionError(`dispatch.labels.${field} must be true or false`);
+  return value;
+}
+
+function prefix(value: unknown): string {
+  if (value === undefined || value === null) return DEFAULT_LABELS.prefix;
+  // `gh pr edit --add-label` splits its value at commas.
+  if (
+    typeof value !== "string" ||
+    value === "" ||
+    value !== value.trim() ||
+    value.includes(",") ||
+    value.length > MAX_PREFIX
+  )
+    throw new SectionError(
+      `dispatch.labels.prefix must be a nonempty string of at most ${MAX_PREFIX} characters, with no comma and no space at either end`,
+    );
+  return value;
+}
+
+/** `dispatch.labels`: off unless `enabled`, and `only_labeled` only with it. */
+function labels(value: unknown): LabelConfig {
+  if (value === undefined || value === null) return DEFAULT_LABELS;
+  if (!isMapping(value))
+    throw new SectionError("dispatch.labels must be a mapping");
+  const raw = value as Record<string, unknown>;
+  const unknown = Object.keys(raw).filter((k) => !LABEL_KEYS.includes(k));
+  if (unknown.length > 0)
+    throw new SectionError(
+      `dispatch.labels has unknown key(s): ${unknown.join(", ")} (known: ${LABEL_KEYS.join(", ")})`,
+    );
+  const config = {
+    enabled: flag(raw.enabled, "enabled", DEFAULT_LABELS.enabled),
+    prefix: prefix(raw.prefix),
+    onlyLabeled: flag(
+      raw.only_labeled,
+      "only_labeled",
+      DEFAULT_LABELS.onlyLabeled,
+    ),
+  };
+  if (config.onlyLabeled && !config.enabled)
+    throw new SectionError(
+      "dispatch.labels.only_labeled needs dispatch.labels.enabled: with the labels off, no pull request carries one",
+    );
+  return config;
+}
+
 /** The `dispatch` section of parsed configuration values, with defaults. */
 export function dispatchSection(
   values: Record<string, unknown>,
@@ -108,6 +163,7 @@ export function dispatchSection(
       "followup_within",
       DEFAULT_FOLLOWUP_WITHIN_MS,
     ),
+    labels: labels(section.labels),
   };
 }
 
