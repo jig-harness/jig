@@ -105,14 +105,14 @@ export function admittedVendor(account: MachineAccount): AccountVendor {
   return vendor;
 }
 
-/** An account the machine file lists that a launch of `launch`'s kind is never admitted on, and why. */
+/** An account the machine file lists that a drive's pass is never admitted on, and why. */
 export interface NotAdmitted {
   account: string;
   vendor: string;
   reason: string;
 }
 
-/** The accounts a drive's pass under `deadlineSec`, or an interactive session, is never admitted on. */
+/** The accounts a drive's pass under the pass deadline `deadlineSec` is never admitted on. */
 export function notAdmitted(
   accounts: MachineAccount[],
   deadlineSec: number,
