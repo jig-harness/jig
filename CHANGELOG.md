@@ -349,6 +349,20 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.120.1] - 2026-11-02
+
+### Fixed
+
+- `drive-pr` no longer deadlocks pushing a conflict resolution in a
+  repository with a CI hold (`ci.hold_label`). GitHub runs no `pull_request`
+  CI on a pull request that conflicts with its base, so the checks the hold
+  waited for before it could be added again never ran. This happened after a
+  failed push released the hold, or when no CI had ever run on the pull
+  request. `ci-hold.ts ensure` now lets that push go ahead without the
+  label, and the push that clears the conflict runs full CI. A failed push
+  of that kind has no hold to roll back, so `finish-round.ts` no longer
+  reports retaining one.
+
 ## [0.120.0] - 2026-11-02
 
 The dispatcher keeps its state in one SQLite database.
@@ -4616,7 +4630,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.120.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.120.1...HEAD
+[0.120.1]: https://github.com/jig-harness/jig/compare/v0.120.0...v0.120.1
 [0.120.0]: https://github.com/jig-harness/jig/compare/v0.119.0...v0.120.0
 [0.119.0]: https://github.com/jig-harness/jig/compare/v0.118.0...v0.119.0
 [0.118.0]: https://github.com/jig-harness/jig/compare/v0.117.0...v0.118.0
