@@ -135,25 +135,30 @@ function word(text: string): RegExp {
 
 /**
  * The owner and name a git remote address carries (`git@host:o/n.git`,
- * `https://host/o/n`). The owner is the whole namespace, so a nested address
- * (`git@host:org/team/n.git`) keeps `org/team`.
+ * `https://host/o/n`, `/srv/o/n.git`). The owner is the whole namespace, so a
+ * nested address (`git@host:org/team/n.git`) keeps `org/team`; for a
+ * filesystem path it is the directory holding the repository.
  */
 export function remoteOwnerName(
   address: string,
 ): { owner: string; name: string } | null {
   const trimmed = address.trim();
+  const local = /^(?:\.{1,2})?\/(.+)$/.exec(trimmed)?.[1];
   const path =
     /^[a-z][a-z0-9+.-]*:\/\/[^/\s]*\/(.+)$/i.exec(trimmed)?.[1] ??
-    /^[^/\s]*:(.+)$/.exec(trimmed)?.[1];
+    /^[^/\s]*:(.+)$/.exec(trimmed)?.[1] ??
+    local;
   const parts = path
     ?.replace(/\/+$/, "")
     .replace(/\.git$/, "")
     .split("/")
-    .filter((part) => part !== "");
+    .filter((part) => part !== "" && part !== "." && part !== "..");
   const name = parts?.pop();
-  return parts && parts.length > 0 && name
-    ? { owner: parts.join("/"), name }
-    : null;
+  if (!parts || parts.length === 0 || !name) return null;
+  return {
+    owner: local && path === local ? (parts.at(-1) ?? "") : parts.join("/"),
+    name,
+  };
 }
 
 /**
@@ -458,6 +463,12 @@ function gh(args: string[], input?: string) {
   });
 }
 
+/** Whether `gh` could not be started at all, so nothing reached GitHub. */
+function isMissingProgram(error: Error | undefined): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "ENOENT" || code === "EACCES";
+}
+
 function why(run: ReturnType<typeof gh>): string {
   if (run.error) return run.error.message;
   return run.stderr.trim() || `gh exited ${run.status}`;
@@ -634,23 +645,17 @@ function asDraft(value: unknown): Draft | null {
 }
 
 /**
- * The new-issue address built from the title and body now in `d`, so edits a
- * person made to the draft file are what the form carries. The body is left
- * out, for the person to paste, when the address would be too long.
+ * The bug form's address built from the title and body now in `d`, so edits a
+ * person made to the draft file are what the form carries: the body goes in
+ * the "What happened" field. `omitted` names each field the address leaves
+ * out because it would be too long, for the person to paste.
  */
-export function fallbackUrl(
-  d: Pick<Draft, "title" | "body" | "labels">,
-): string {
-  const build = (withBody: boolean) => {
-    const query = new URLSearchParams({
-      title: d.title,
-      labels: d.labels.join(","),
-    });
-    if (withBody) query.set("body", d.body);
-    return `https://github.com/${JIG_REPOSITORY}/issues/new?${query.toString()}`;
-  };
-  const full = build(true);
-  return full.length <= URL_LIMIT ? full : build(false);
+export function fallbackUrl(d: Pick<Draft, "title" | "body">): {
+  url: string;
+  omitted: string[];
+} {
+  const { url, omitted } = formUrl(d.title, { what: d.body });
+  return { url, omitted };
 }
 
 /**
@@ -688,6 +693,32 @@ function findFiled(title: string): string | null | undefined {
   }
 }
 
+/** Report why `gh issue create` failed and what to do instead; never returns. */
+function reportFilingFailure(d: Draft, run: ReturnType<typeof gh>): never {
+  const reason = `could not file with gh: ${why(run)}`;
+  const existing = isMissingProgram(run.error) ? null : findFiled(d.title);
+  if (existing === undefined)
+    fail(
+      1,
+      `${reason}\nWhether the issue was created is unknown: search ${searchUrl(d.title)} before filing again.`,
+    );
+  if (existing)
+    fail(
+      1,
+      `${reason}\nThe issue exists already, so do not file it again: ${existing}`,
+    );
+  const form = fallbackUrl(d);
+  const paste =
+    form.omitted.length > 0
+      ? `\nThe address is too long for: ${form.omitted.join(", ")}. Paste ${form.omitted.length === 1 ? "it" : "them"} from the draft's title and body into the form.`
+      : "";
+  fail(
+    1,
+    reason,
+    `Open the form instead: ${form.url}${paste}\nThe form also asks for the plugin version and where you installed it from.`,
+  );
+}
+
 function runFile(argv: string[]): number {
   const [path, ...rest] = argv;
   if (!path || rest.length > 0)
@@ -705,21 +736,7 @@ function runFile(argv: string[]): number {
   const d = asDraft(parsed);
   if (!d) fail(2, `${path} is not a draft this script wrote`);
   const run = gh(fileArgs(d), d.body);
-  if (run.status !== 0) {
-    const reason = `could not file with gh: ${why(run)}`;
-    const existing = findFiled(d.title);
-    if (existing === undefined)
-      fail(
-        1,
-        `${reason}\nWhether the issue was created is unknown: search ${searchUrl(d.title)} before filing again.`,
-      );
-    if (existing)
-      fail(
-        1,
-        `${reason}\nThe issue exists already, so do not file it again: ${existing}`,
-      );
-    fail(1, reason, `Open the form instead: ${fallbackUrl(d)}`);
-  }
+  if (run.status !== 0) reportFilingFailure(d, run);
   process.stdout.write(run.stdout);
   return 0;
 }

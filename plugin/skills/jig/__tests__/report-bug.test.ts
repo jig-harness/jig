@@ -100,12 +100,33 @@ test("an oversized field is left out, in a fixed order, until the address fits",
   expect(huge.omitted).toEqual(["the title"]);
 });
 
-test("the fallback address carries the title and body as they are now", () => {
-  const url = new URL(
-    fallbackUrl({ title: "a: b", body: "edited body", labels: ["bug"] }),
-  );
-  expect(url.searchParams.get("body")).toBe("edited body");
-  expect(url.searchParams.get("title")).toBe("a: b");
+test("the fallback address targets the bug form with the edited title and body", () => {
+  const { url, omitted } = fallbackUrl({ title: "a: b", body: "edited body" });
+  const parsed = new URL(url);
+  expect(parsed.searchParams.get("template")).toBe("bug.yml");
+  expect(parsed.searchParams.get("what")).toBe("edited body");
+  expect(parsed.searchParams.get("title")).toBe("a: b");
+  expect(omitted).toEqual([]);
+});
+
+test("the fallback address names what it leaves out when too long", () => {
+  const long = fallbackUrl({ title: "t", body: "x".repeat(9000) });
+  expect(long.url.length).toBeLessThanOrEqual(8000);
+  expect(long.omitted).toEqual(["What happened"]);
+  const title = fallbackUrl({ title: "t".repeat(9000), body: "b" });
+  expect(title.url.length).toBeLessThanOrEqual(8000);
+  expect(title.omitted).toContain("the title");
+});
+
+test("a filesystem remote yields its owner and name", () => {
+  expect(remoteOwnerName("/srv/acme-co/storefront.git")).toEqual({
+    owner: "acme-co",
+    name: "storefront",
+  });
+  expect(remoteOwnerName("../acme-co/storefront")).toEqual({
+    owner: "acme-co",
+    name: "storefront",
+  });
 });
 
 test("a nested remote namespace is redacted whole", () => {
@@ -362,4 +383,23 @@ test("a missing field, an unknown channel or no command is a usage error", () =>
   });
   expectSpawnExit(none, 2);
   expect(none.stderr.toString()).toContain("report-bug.ts search");
+});
+
+test("with no gh, file prints the form address and does not search", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  const draft = join(dir, "draft.json");
+  writeFileSync(
+    draft,
+    JSON.stringify({ title: "t", body: "b", labels: ["bug"], url: "u" }),
+  );
+  const run = Bun.spawnSync([process.execPath, script, "file", draft], {
+    env: { ...process.env, PATH: dir },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expectSpawnExit(run, 1);
+  const err = run.stderr.toString();
+  expect(err).toContain("Open the form instead: https://github.com/");
+  expect(err).toContain("template=bug.yml");
+  expect(err).not.toContain("unknown");
 });
