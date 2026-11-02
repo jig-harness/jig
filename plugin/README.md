@@ -180,8 +180,9 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 ```
 
 which clears only a record the tick cannot settle: an unknown one, a
-pending one whose launch cannot be retried, or one that does not read. It
-refuses a running record (stop its session first), an ended or died one,
+pending one whose launch cannot be retried, or one that does not read,
+whatever state its claim shows. It refuses a running record (stop its
+session first), and, among the records that read, an ended or died one
 and a pending one whose launch can still be retried: those the tick
 settles.
 
