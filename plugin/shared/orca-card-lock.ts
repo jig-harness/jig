@@ -13,7 +13,7 @@
  * directory, which a launcher can change per process), named after the
  * workspace's path and created exclusively, holding its owner's pid and a
  * token. Release removes it only while it still holds that token. A lock
- * whose owner is no longer running is reclaimed by one reclaimer at a time.
+ * whose owner is no longer running is moved aside and removed.
  * The lock is published whole (linked into place from a private file), so
  * an interrupted acquisition leaves no empty lock. A writer that cannot take the lock within its
  * deadline gets `null` and skips its write: the board is a convenience.
@@ -27,8 +27,8 @@ import {
   linkSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -89,42 +89,32 @@ function ownerGone(pid: number | null): boolean {
 }
 
 /**
- * Remove a stale lock. Reclaimers take turns through a mutex file, so only
- * one at a time judges and removes a lock: a lock whose recorded owner is
- * gone cannot be replaced by anyone else (a new holder needs the path free,
- * and only a reclaimer frees it), so the file removed is the one judged. A
- * mutex whose holder is gone is broken; one that names no owner, after
- * `MUTEX_STALE_MS`.
+ * Remove a stale lock without ever unlinking a lock someone else published
+ * meanwhile. The judged file is moved aside by `rename`, which takes
+ * whichever file is at the path at that instant, and the moved file is judged
+ * again: only a file whose recorded owner is gone is deleted. A live lock
+ * that was taken by mistake (it replaced the judged one between the judgment
+ * and the move) is linked back; if the path was taken again in that instant,
+ * the live lock's own holder finds its token gone and skips releasing.
  */
 function reclaim(lock: string): void {
   if (!ownerGone(ownerOf(lock))) return;
-  const mutex = `${lock}.reclaim`;
-  if (!publish(mutex, `${process.pid}\n`)) {
-    breakStaleMutex(mutex);
+  const aside = `${lock}.stale-${process.pid}-${randomUUID()}`;
+  try {
+    renameSync(lock, aside);
+  } catch (error) {
+    swallow(error, "another reclaimer or the holder removed the lock first");
     return;
   }
   try {
-    if (ownerGone(ownerOf(lock))) rmSync(lock, { force: true });
+    if (ownerGone(ownerOf(aside))) return;
+    try {
+      linkSync(aside, lock);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
   } finally {
-    rmSync(mutex, { force: true });
-  }
-}
-
-/** Milliseconds after which a reclaim mutex that names no owner is taken to be left by a dead reclaimer. */
-const MUTEX_STALE_MS = 10_000;
-
-function breakStaleMutex(mutex: string): void {
-  try {
-    // A reclaimer still running may only be slow: its mutex is broken once
-    // its process is gone, and by age only when it names no owner.
-    const owner = ownerOf(mutex);
-    const stale =
-      owner === null
-        ? Date.now() - statSync(mutex).mtimeMs > MUTEX_STALE_MS
-        : ownerGone(owner);
-    if (stale) rmSync(mutex, { force: true });
-  } catch (error) {
-    swallow(error, "the mutex was released meanwhile");
+    rmSync(aside, { force: true });
   }
 }
 

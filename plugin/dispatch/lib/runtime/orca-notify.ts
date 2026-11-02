@@ -16,8 +16,9 @@ import { run } from "../../../shared/proc.ts";
 import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
 import { MAX_COMMENT, type RuntimeReceipt } from "./port.ts";
 
+/** The remaining budget in seconds, fractional: a call never outlives the deadline. */
 function seconds(ms: number): number {
-  return Math.max(1, Math.ceil(ms / 1000));
+  return Math.max(0.001, ms / 1000);
 }
 
 async function call(
@@ -37,7 +38,7 @@ async function call(
     return {
       ok: false,
       lost: true,
-      why: `orca ${args.slice(0, 2).join(" ")} gave no answer within ${seconds(timeoutMs)}s`,
+      why: `orca ${args.slice(0, 2).join(" ")} gave no answer within ${seconds(timeoutMs).toFixed(3)}s`,
     };
   const envelope = orcaEnvelope(done.stdout);
   if (done.code === 0 && envelope?.ok === true)
@@ -172,8 +173,9 @@ async function notifyUnlocked(
       lost: false,
       detail: `${target.path}: orca worktree show named no readable comment and unread mark; nothing written`,
     };
-  const comment = merged(card, message);
-  if (comment !== null) {
+  const merge = merged(card, message);
+  if (merge !== null) {
+    const comment = argumentSafe(merge);
     // The budget the sender computed from an earlier listing; the card read
     // under the lock is the one the written comment is measured on.
     if (comment.length > MAX_COMMENT)
@@ -191,7 +193,7 @@ async function notifyUnlocked(
         "--worktree",
         selector,
         "--comment",
-        argumentSafe(comment),
+        comment,
         "--unread",
       ],
       remaining(),

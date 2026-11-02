@@ -8,20 +8,20 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { orcaNotify } from "../lib/runtime/orca-notify.ts";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { MAX_COMMENT } from "../lib/runtime/port.ts";
 
 const dirs: string[] = [];
-const saved = process.env.ORCA_CLI_COMMAND;
 
 afterEach(() => {
-  process.env.ORCA_CLI_COMMAND = saved;
-  if (saved === undefined) delete process.env.ORCA_CLI_COMMAND;
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
 /** A fake `orca` whose `worktree show` answers `card` and whose `worktree set` records its comment. */
-function fakeOrca(card: Record<string, unknown>): { sets: () => string[] } {
+function fakeOrca(card: Record<string, unknown>): {
+  script: string;
+  sets: () => string[];
+} {
   const dir = mkdtempSync(join(tmpdir(), "fake-orca-"));
   dirs.push(dir);
   const script = join(dir, "orca");
@@ -37,8 +37,8 @@ console.log(JSON.stringify({ ok: true, result: { worktree: ${JSON.stringify(card
 `,
   );
   chmodSync(script, 0o755);
-  process.env.ORCA_CLI_COMMAND = script;
   return {
+    script,
     sets: () =>
       readFileSync(log, "utf8")
         .split("\n")
@@ -47,13 +47,28 @@ console.log(JSON.stringify({ ok: true, result: { worktree: ${JSON.stringify(card
   };
 }
 
-const target = (name: string) => ({
-  id: "w",
-  path: `/ws/notify-merge/${name}`,
-});
-const lockless = async <T>(_w: string, body: () => Promise<T>) => ({
-  value: await body(),
-});
+const CHILD = `
+import { orcaNotify } from ${JSON.stringify(new URL("../lib/runtime/orca-notify.ts", import.meta.url).pathname)};
+const lockless = async (_w, body) => ({ value: await body() });
+const [name, message] = process.argv.slice(1);
+const receipt = await orcaNotify({ id: "w", path: "/ws/notify-merge/" + name }, message, 5000, lockless);
+console.log(JSON.stringify(receipt));
+`;
+
+/** Runs `orcaNotify` in a child whose environment names the fake `orca`. */
+async function notify(
+  orca: { script: string },
+  name: string,
+  message: string,
+): Promise<Record<string, unknown>> {
+  const child = Bun.spawnSync([process.execPath, "-e", CHILD, name, message], {
+    env: { ...process.env, ORCA_CLI_COMMAND: orca.script },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expectSpawnExit(child, 0);
+  return JSON.parse(child.stdout.toString()) as Record<string, unknown>;
+}
 
 describe("notify on Orca: merging into an unread comment", () => {
   test("appends only the entries the unread comment lacks", async () => {
@@ -61,11 +76,10 @@ describe("notify on Orca: merging into an unread comment", () => {
       isUnread: true,
       comment: "[jig dispatch: a]\nfirst",
     });
-    await orcaNotify(
-      target("partial"),
+    await notify(
+      orca,
+      "partial",
       "[jig dispatch: a]\nfirst\n\n[jig dispatch: b]\nsecond",
-      5000,
-      lockless,
     );
     expect(orca.sets()).toEqual([
       "[jig dispatch: a]\nfirst\n\n[jig dispatch: b]\nsecond",
@@ -74,7 +88,7 @@ describe("notify on Orca: merging into an unread comment", () => {
 
   test("a merged comment that opens with '-' is passed as text, not a flag", async () => {
     const orca = fakeOrca({ isUnread: true, comment: "- investigate release" });
-    await orcaNotify(target("dash"), "[jig dispatch: k]\nx", 5000, lockless);
+    await notify(orca, "dash", "[jig dispatch: k]\nx");
     expect(orca.sets()[0]?.startsWith("Unread notes:\n- investigate")).toBe(
       true,
     );
@@ -82,12 +96,17 @@ describe("notify on Orca: merging into an unread comment", () => {
 
   test("an unread card that names no comment is not overwritten", async () => {
     const orca = fakeOrca({ isUnread: true });
-    const receipt = await orcaNotify(
-      target("nocomment"),
-      "[jig dispatch: k]\nx",
-      5000,
-      lockless,
-    );
+    const receipt = await notify(orca, "nocomment", "[jig dispatch: k]\nx");
+    expect(receipt).toMatchObject({ ok: false, lost: false });
+    expect(orca.sets()).toEqual([]);
+  });
+
+  test("the '-' prefix counts toward the limit", async () => {
+    const orca = fakeOrca({
+      isUnread: true,
+      comment: `-${"n".repeat(MAX_COMMENT - 22)}`,
+    });
+    const receipt = await notify(orca, "prefix", "[jig dispatch: k]\n" + "x");
     expect(receipt).toMatchObject({ ok: false, lost: false });
     expect(orca.sets()).toEqual([]);
   });
@@ -97,12 +116,7 @@ describe("notify on Orca: merging into an unread comment", () => {
       isUnread: true,
       comment: "n".repeat(MAX_COMMENT - 5),
     });
-    const receipt = await orcaNotify(
-      target("full"),
-      "[jig dispatch: k]\nx",
-      5000,
-      lockless,
-    );
+    const receipt = await notify(orca, "full", "[jig dispatch: k]\nx");
     expect(receipt).toMatchObject({ ok: false, lost: false });
     expect(orca.sets()).toEqual([]);
   });
