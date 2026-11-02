@@ -12,7 +12,9 @@
  * 2. admit an account with a free slot and no wall, and check that the
  *    wrapper's environment resolves to that account's identity;
  * 3. the pull request's workspace: the one joined to it, else its head
- *    branch opened (a branch the merge deleted is cut from the base);
+ *    branch opened (a branch the merge deleted is cut from the base) in a
+ *    workspace named for the follow-up and the pull request (`dispatched`
+ *    in `runtime/port.ts`), under the launch record's id minted here;
  * 4. write the launch record, which holds the slot from here on;
  * 5. post the marker naming the record, then read the markers back: an
  *    earlier trusted marker wins, and this one is deleted and the record
@@ -40,7 +42,11 @@ import {
   recordExit,
   writeRecord,
 } from "../launches.ts";
-import type { SessionsReport } from "../runtime/port.ts";
+import {
+  type Dispatched,
+  dispatched,
+  type SessionsReport,
+} from "../runtime/port.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
@@ -131,6 +137,7 @@ async function workspaceFor(
   repo: RepoTarget,
   ctx: FollowupContext,
   pr: MarkedPr,
+  named: Dispatched,
 ): Promise<Opened> {
   const sessions = await ctx.sessions().catch(() => null);
   const joined = sessions?.ok
@@ -138,7 +145,11 @@ async function workspaceFor(
     : undefined;
   if (joined !== undefined)
     return { workspace: { id: joined.id, path: joined.path } };
-  return openWithinBudget(state, repo, { pr: pr.number, head: pr.head });
+  return openWithinBudget(state, repo, {
+    pr: pr.number,
+    head: pr.head,
+    dispatched: named,
+  });
 }
 
 /**
@@ -212,10 +223,12 @@ function newFollowupRecord(
   ctx: FollowupContext,
   slots: Slots,
   workspace: { id: string; path: string },
+  named: { id: string; mark: string },
 ): LaunchRecord & { pr: number } {
   return {
     version: 1,
-    id: newRecordId(new Date()),
+    id: named.id,
+    mark: named.mark,
     token: newToken(),
     action: "followup",
     repo: repo.slug,
@@ -258,9 +271,11 @@ async function launchOne(
   const admitted = await admitAccount(state, action);
   if ("outcome" in admitted) return admitted.outcome;
   const { slots } = admitted;
+  const id = newRecordId(new Date());
+  const named = dispatched("followup", `#${pr.number}`, id);
   const opened = workspaceOr(
     action,
-    await workspaceFor(state, repo, ctx, pr),
+    await workspaceFor(state, repo, ctx, pr, named),
     slots.account.name,
   );
   if ("outcome" in opened) return opened.outcome;
@@ -275,6 +290,7 @@ async function launchOne(
     ctx,
     slots,
     opened.workspace,
+    { id, mark: named.mark },
   );
   return claimAndLaunch(state, repo, action, ctx, record, slots);
 }

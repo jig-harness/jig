@@ -11,7 +11,9 @@
  * 2. admit an account with a free slot and no wall, and check that the
  *    wrapper's environment resolves to that account's identity;
  * 3. the item's workspace: the one joined to it, else a new branch named
- *    by the repository's branch rule with the issue linked;
+ *    by the repository's branch rule with the issue linked, the workspace
+ *    named for the pickup and the item (`dispatched` in `runtime/port.ts`)
+ *    under the launch record's id minted here;
  * 4. the fresh read again, now that the workspace is open, and the route's
  *    model and effort;
  * 5. write the launch record, then `launch` the session under the record's
@@ -32,7 +34,11 @@ import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
 import { type LaunchRecord, newRecordId, newToken } from "../launches.ts";
 import { pickupRoute } from "../route.ts";
-import type { SessionsReport } from "../runtime/port.ts";
+import {
+  type Dispatched,
+  dispatched,
+  type SessionsReport,
+} from "../runtime/port.ts";
 import { freshPickup } from "../sources/tracker.ts";
 import { failureText } from "../text.ts";
 import type {
@@ -107,6 +113,7 @@ async function workspaceFor(
   repo: RepoTarget,
   ctx: PickupContext,
   issue: PoolIssue,
+  named: Dispatched,
 ): Promise<Opened> {
   const sessions = await ctx.sessions().catch(() => null);
   const joined = sessions?.ok
@@ -122,6 +129,7 @@ async function workspaceFor(
       issue.title,
     ),
     tracker: ctx.tracker.adapter,
+    dispatched: named,
   });
 }
 
@@ -139,9 +147,11 @@ async function launchOne(
   const admitted = await admitAccount(state, action);
   if ("outcome" in admitted) return admitted.outcome;
   const slots = admitted.slots;
+  const id = newRecordId(new Date());
+  const named = dispatched("pickup", action.target, id);
   const opened = workspaceOr(
     action,
-    await workspaceFor(state, repo, ctx, before.issue),
+    await workspaceFor(state, repo, ctx, before.issue, named),
     slots.account.name,
   );
   if ("outcome" in opened) return opened.outcome;
@@ -166,7 +176,7 @@ async function launchOne(
     return waits(action, pastDeadline, slots.account.name);
   const record: LaunchRecord = {
     version: 1,
-    id: newRecordId(new Date()),
+    id,
     token: newToken(),
     action: "pickup",
     repo: repo.slug,
@@ -189,6 +199,7 @@ async function launchOne(
     command: null,
     marker: null,
     sessionId: sessionIdFor(vendor),
+    mark: named.mark,
   };
   const launched = await startRecord(state, record, slots);
   return { ...launched, detail: `${launched.detail}; ${route.detail}` };

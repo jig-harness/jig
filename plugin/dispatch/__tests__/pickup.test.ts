@@ -58,7 +58,36 @@ function fixture(): World {
 const launches = (r: { repos: Array<{ launches: unknown[] }> }) =>
   (r.repos[0]?.launches ?? []) as Array<Record<string, unknown>>;
 
+/** The branch checked out at `path`. */
+function branchOf(path: string): string {
+  const r = Bun.spawnSync(["git", "-C", path, "branch", "--show-current"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expectSpawnExit(r, 0);
+  return r.stdout.toString().trim();
+}
+
 describe("jig dispatch --apply picks up assigned items", () => {
+  it("names the item's new workspace and its tab as dispatched, and keeps the mark on its record", async () => {
+    const w = fixture();
+    const id = String(launches(await applyTick(w, true))[0]?.record);
+    const mark = `⚙ dispatched · pickup #12 · launch ${id}`;
+    const [create] = orcaCalls(w, "worktree", "create");
+    expect(create?.[create.indexOf("--name") + 1]).toBe(
+      "⚙ dispatched · pickup #12",
+    );
+    expect(create?.[create.indexOf("--comment") + 1]).toBe(mark);
+    const record = readRecord(id, dispatchState(w));
+    expect(record?.mark).toBe(mark);
+    // The branch is still the one the repository's branch rule names.
+    expect(branchOf(record?.workspace?.path ?? "")).toBe("12-issue-12");
+    const [tab] = orcaCalls(w, "terminal", "create");
+    expect(tab?.[tab.indexOf("--title") + 1]).toBe("jig dispatch · pickup #12");
+    // The comment the create gave it already carries the mark: the launch writes nothing more.
+    expect(orcaCalls(w, "worktree", "set")).toEqual([]);
+  });
+
   it("gives an assigned todo item exactly one workspace and one session across three ticks", async () => {
     const w = fixture();
     w.env.CLAUDE_CODE_OAUTH_TOKEN = "a-token-for-another-account";
@@ -78,7 +107,7 @@ describe("jig dispatch --apply picks up assigned items", () => {
     const [create] = orcaCalls(w, "worktree", "create");
     expect(create).toContain("--issue");
     expect(create?.[create.indexOf("--issue") + 1]).toBe("12");
-    expect(create?.[create.indexOf("--name") + 1]).toBe("12-issue-12");
+    expect(branchOf(record?.workspace?.path ?? "")).toBe("12-issue-12");
 
     await waitFor("the session", () => claudeRuns(w).length === 1);
     const [session] = claudeRuns(w);

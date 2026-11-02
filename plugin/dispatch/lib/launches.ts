@@ -8,7 +8,8 @@
  * ever overwrites another's:
  *
  * - `record`, the tick's: the action, the pull request, the account, the
- *   random token, the workspace and the runtime's answer to each launch;
+ *   random token, the workspace, the dispatched mark its workspace carries
+ *   and the runtime's answer to each launch;
  * - `claim`, the wrapper's (`run.ts`): the process identity it ran under
  *   (host, boot id, process id and the process's start time), set by an
  *   update that only fills an empty column, so exactly one wrapper ever
@@ -119,6 +120,13 @@ export interface LaunchRecord {
   redrive?: StaleCause | null;
   /** The vendor session id the tick minted for an interactive session and passed to its agent; `null` when none was. */
   sessionId?: string | null;
+  /**
+   * The dispatched mark the launch's workspace was named and marked with
+   * (`dispatchedMark` in `runtime/port.ts`): the stage, the key and this
+   * record's id. It joins a workspace a skill renamed to its launch.
+   * `null` on a record written before the mark was kept.
+   */
+  mark?: string | null;
   /** A drive's unresolved-thread count at each ledger round, recorded the first tick that sees the round (the `thread_samples` table). */
   samples?: ThreadSample[];
   /** When a tick first saw a pickup's workspace hold a pull request; its expectation of opening one is met for good. */
@@ -323,7 +331,7 @@ function optionalSeconds(value: unknown): boolean {
 /** The fields a later version added, each absent or of its type. */
 function optionalFields(value: Record<string, unknown>): boolean {
   return (
-    ["agentId", "model", "effort", "command", "sessionId"].every((k) =>
+    ["agentId", "model", "effort", "command", "sessionId", "mark"].every((k) =>
       optionalText(value[k]),
     ) &&
     [value.marker, value.round].every(
@@ -367,10 +375,11 @@ function normalized(value: LaunchRecord): LaunchRecord {
 /** What Control keeps on a record, at its defaults where it was never written. */
 function controlFields(
   value: LaunchRecord,
-): Pick<LaunchRecord, "round" | "sessionId"> {
+): Pick<LaunchRecord, "round" | "sessionId" | "mark"> {
   return {
     round: value.round ?? null,
     sessionId: value.sessionId ?? null,
+    mark: value.mark ?? null,
   };
 }
 
@@ -715,6 +724,32 @@ export async function readLaunches(root = stateRoot()): Promise<{
       state: stateOf(row, rows, boot),
       result: asResult(row.result),
     });
+  }
+  return { records, unreadable };
+}
+
+/**
+ * The records written at or after `since` (milliseconds) that carry a
+ * dispatched mark, oldest first, for a reader that never creates the
+ * database; a row that does not read is left out and named.
+ */
+export function markedSince(
+  since: number,
+  root = stateRoot(),
+): { records: LaunchRecord[]; unreadable: string[] } {
+  const db = existingStateDb(root);
+  if (db === null) return { records: [], unreadable: [] };
+  const all = db
+    .query("SELECT id, record, claim, exit, result FROM launches ORDER BY id")
+    .all() as LaunchRow[];
+  const records: LaunchRecord[] = [];
+  const unreadable: string[] = [];
+  for (const row of all) {
+    const record = recordOf(row, root, new Map());
+    if (record === null)
+      unreadable.push(`launch record ${row.id} in ${statePath(root)}`);
+    else if (Date.parse(record.createdAt) >= since && record.mark)
+      records.push(record);
   }
   return { records, unreadable };
 }

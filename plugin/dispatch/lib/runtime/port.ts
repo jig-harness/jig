@@ -7,6 +7,14 @@
  * An interactive launch runs only on a runtime that reports it can bind
  * the session to its account (`interactiveBinding`). Every method runs
  * under a deadline, and an answer past it counts as lost.
+ *
+ * What the dispatcher starts is named by one convention, kept here, which
+ * every runtime takes as strings (`dispatchedName`, `dispatchedMark`,
+ * `tabTitle`): a workspace it creates is named for the stage and the key,
+ * its comment carries the mark with the launch record's id, and the record
+ * keeps the same mark. A skill may rename the workspace to what the work
+ * became; the mark in its comment and on its record still says the
+ * dispatcher started it.
  */
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { RepoTarget } from "../types.ts";
@@ -39,6 +47,8 @@ export interface Workspace {
   unverifiableTerminals: number;
   comment: string;
   unread: boolean;
+  /** The name the runtime shows for the workspace now; `""` when it reports none. */
+  name: string;
 }
 
 /** What the join reads a workspace against. */
@@ -82,10 +92,14 @@ export interface RuntimeReceipt {
   comment?: string;
 }
 
-/** What `launch` starts. */
+/**
+ * What `launch` starts. `title` names its terminal tab (`tabTitle`), and
+ * `mark` (`dispatchedMark`) is added to the workspace's comment before the
+ * session starts, once, keeping what the comment already holds.
+ */
 export type LaunchStage =
   /** A headless pass: the wrapper (`run.ts`) under its launch record, in a terminal titled `title`. */
-  | { kind: "headless"; title: string; record: string }
+  | { kind: "headless"; title: string; mark: string; record: string }
   /**
    * An interactive session (a pickup's `do-item`, a merge's follow-up):
    * `skill` on `target`, with the route's model and effort, under its
@@ -95,6 +109,7 @@ export type LaunchStage =
   | {
       kind: "interactive";
       title: string;
+      mark: string;
       record: string;
       skill: string;
       target: string;
@@ -110,6 +125,14 @@ export interface ItemTarget {
   branch: string;
   /** The tracker adapter's name (`issue_tracker.adapter`): `github`, `linear`, `jira`. */
   tracker: string;
+  dispatched: Dispatched;
+}
+
+/** A pull request a workspace is opened for: its head branch. */
+export interface PullRequestTarget {
+  pr: number;
+  head: string;
+  dispatched: Dispatched;
 }
 
 /**
@@ -119,6 +142,7 @@ export interface ItemTarget {
  */
 export interface NoticesTarget {
   notices: string;
+  dispatched: Dispatched;
 }
 
 /** Whether a runtime can start an interactive session billed to a chosen account. */
@@ -138,10 +162,15 @@ export interface SessionRuntime {
    * not covered, a page cut short), so nothing is read as "no session".
    */
   sessions(repo: RepoTarget, join: JoinTargets): Promise<SessionsReport>;
-  /** A workspace for an item (a new branch, its issue linked), a pull request (its head) or the repository's notifications, reused when one exists. */
+  /**
+   * A workspace for an item (a new branch, its issue linked), a pull request
+   * (its head) or the repository's notifications, reused when one exists. A
+   * workspace it creates is named `target.dispatched.name`, with the mark as
+   * its comment; one it reuses keeps its name and its comment.
+   */
   openWorkspace(
     repo: RepoTarget,
-    target: ItemTarget | { pr: number; head: string } | NoticesTarget,
+    target: ItemTarget | PullRequestTarget | NoticesTarget,
   ): Promise<RuntimeReceipt>;
   /**
    * A session in the workspace that runs the stage, billed to `account`.
@@ -159,8 +188,9 @@ export interface SessionRuntime {
   /**
    * A message that reaches a person through the workspace `target`: in
    * Orca, the workspace's comment set to `message` and the workspace marked
-   * unread, which Orca's phone app shows. Its receipt carries the target's
-   * comment as the runtime reads it back after the write.
+   * unread, which Orca's phone app shows. The dispatched marks the comment
+   * held stay in it (`keepMarks`). Its receipt carries the target's comment
+   * as the runtime reads it back after the write.
    */
   notify(
     target: { id: string; path: string },
@@ -191,3 +221,127 @@ export const NUDGES = {
   continue: "Your usage limit has reset. Continue",
 } as const;
 export type Nudge = keyof typeof NUDGES;
+
+/**
+ * The convention that names what the dispatcher starts, one place for every
+ * runtime. A name reads on a board at a glance and survives a prefix search:
+ * the mark, the stage, the key (`⚙ dispatched · rearm #456`). A comment
+ * carries the same name and the launch record's id, one line per stage and
+ * key (`⚙ dispatched · rearm #456 · launch <id>`). A terminal tab names the
+ * dispatcher, the stage and the key (`jig dispatch · rearm #456`).
+ */
+export const DISPATCHED = "⚙ dispatched";
+
+const SEPARATOR = " · ";
+const LAUNCH = " · launch ";
+
+/** A stage the dispatcher starts something for: a launch record's action. */
+export type NamedStage = "pickup" | "rearm" | "takeover" | "followup";
+
+/** The name a workspace the dispatcher creates carries: the mark, the stage and the key. */
+export function dispatchedName(stage: NamedStage, key: string): string {
+  return `${DISPATCHED}${SEPARATOR}${stage} ${key}`;
+}
+
+/** The line a workspace's comment and the launch record carry: the name and the launch record's id. */
+export function dispatchedMark(
+  stage: NamedStage,
+  key: string,
+  launchId: string,
+): string {
+  return `${dispatchedName(stage, key)}${LAUNCH}${launchId}`;
+}
+
+/** The title of the terminal tab a launch opens. */
+export function tabTitle(stage: NamedStage, key: string): string {
+  return `jig dispatch${SEPARATOR}${stage} ${key}`;
+}
+
+/** The name, and the comment's mark, of the repository's notices workspace, which no launch record names. */
+export const NOTICES_NAME = `${DISPATCHED}${SEPARATOR}notices`;
+
+/** What a workspace the dispatcher opens is named and marked with. */
+export interface Dispatched {
+  name: string;
+  mark: string;
+}
+
+/** The name and the mark of a launch's workspace. */
+export function dispatched(
+  stage: NamedStage,
+  key: string,
+  launchId: string,
+): Dispatched {
+  return {
+    name: dispatchedName(stage, key),
+    mark: dispatchedMark(stage, key, launchId),
+  };
+}
+
+/** One mark line of a comment: the name it carries and the launch record it names (`null` for the notices workspace's). */
+export interface MarkLine {
+  line: string;
+  name: string;
+  launch: string | null;
+}
+
+/** The mark lines of a comment, in order. */
+export function marksIn(comment: string): MarkLine[] {
+  const marks: MarkLine[] = [];
+  for (const raw of comment.split("\n")) {
+    const line = raw.trim();
+    if (!line.startsWith(`${DISPATCHED}${SEPARATOR}`)) continue;
+    const at = line.lastIndexOf(LAUNCH);
+    marks.push(
+      at < 0
+        ? { line, name: line, launch: null }
+        : {
+            line,
+            name: line.slice(0, at),
+            launch: line.slice(at + LAUNCH.length),
+          },
+    );
+  }
+  return marks;
+}
+
+/** A comment's lines other than those in `drop`, trimmed at the end. */
+function linesBut(comment: string, drop: ReadonlySet<string>): string {
+  return comment
+    .split("\n")
+    .filter((l) => !drop.has(l.trim()))
+    .join("\n")
+    .trimEnd();
+}
+
+/** The comment without its mark lines, trimmed. */
+export function withoutMarks(comment: string): string {
+  return linesBut(comment, new Set(marksIn(comment).map((m) => m.line))).trim();
+}
+
+/**
+ * The comment with `mark` added on a line of its own, keeping what it
+ * holds: an earlier mark of the same stage and key gives way to it, so the
+ * comment names the latest launch once and holds one mark per stage and key.
+ * `null` when the comment already carries the mark.
+ */
+export function withMark(comment: string, mark: string): string | null {
+  const [added] = marksIn(mark);
+  if (added === undefined) return null;
+  const marks = marksIn(comment);
+  if (marks.some((m) => m.line === added.line)) return null;
+  const kept = linesBut(
+    comment,
+    new Set(marks.filter((m) => m.name === added.name).map((m) => m.line)),
+  );
+  return kept === "" ? added.line : `${kept}\n${added.line}`;
+}
+
+/** `message` with the mark lines `previous` held and it lacks put first, so a rewrite of a comment keeps them. */
+export function keepMarks(previous: string, message: string): string {
+  const held = new Set(marksIn(message).map((m) => m.line));
+  const kept = marksIn(previous)
+    .map((m) => m.line)
+    .filter((l) => !held.has(l));
+  return kept.length === 0 ? message : `${kept.join("\n")}\n\n${message}`;
+}

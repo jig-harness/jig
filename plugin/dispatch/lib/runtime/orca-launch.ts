@@ -1,7 +1,9 @@
 /**
  * The session runtime on Orca, for what starts a session: a terminal tab of
  * the workspace running the wrapper under its launch record (`orca terminal
- * create --worktree <selector> --title <stage> --command <wrapper>`). The
+ * create --worktree <selector> --title <tab title> --command <wrapper>`),
+ * the tab titled by the port's convention (`jig dispatch · rearm #456`) and
+ * the workspace's comment given the launch's dispatched mark first. The
  * wrapper binds the session to its account through the account's
  * configuration directory, with the credential variables removed, and its
  * claim on the record keeps a retried launch from starting a second
@@ -21,6 +23,7 @@ import { shellQuote } from "../../../shared/cli.ts";
 import { orcaCommand, orcaEnvelope } from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
+import { markComment } from "./orca-comment.ts";
 import type { LaunchStage, RuntimeReceipt } from "./port.ts";
 
 const RUN_TS = resolve(import.meta.dir, "../../run.ts");
@@ -80,12 +83,32 @@ async function agentIdOf(
 }
 
 /**
- * Start the stage's session in `workspace`. The key is the launch record's
- * token: a retry calls this again with the same record and key, and the
- * wrapper's claim on the record keeps a second terminal from starting a
- * second session.
+ * Start the stage's session in `workspace`, after adding the stage's
+ * dispatched mark to the workspace's comment. The key is the launch
+ * record's token: a retry calls this again with the same record and key,
+ * and the wrapper's claim on the record keeps a second terminal from
+ * starting a second session. A mark that cannot be written does not hold
+ * the launch back: the launch record keeps the mark, and the receipt says
+ * why the comment lacks it.
  */
 export async function orcaLaunch(
+  workspace: { id: string; path: string },
+  stage: LaunchStage,
+  key: string,
+  timeoutMs: number,
+): Promise<RuntimeReceipt> {
+  const unmarked = await markComment(workspace.path, stage.mark, timeoutMs);
+  const receipt = await startTerminal(workspace, stage, key, timeoutMs);
+  return unmarked === null
+    ? receipt
+    : {
+        ...receipt,
+        detail: `${receipt.detail}; the workspace's comment does not carry the dispatched mark: ${unmarked}`,
+      };
+}
+
+/** `orca terminal create` running the wrapper under the record, in a tab titled for the stage. */
+async function startTerminal(
   workspace: { id: string; path: string },
   stage: LaunchStage,
   key: string,
