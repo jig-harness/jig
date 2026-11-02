@@ -27,6 +27,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { isMapping } from "../shared/config-layers.ts";
 import { swallow } from "../shared/errors.ts";
+import type { NotAdmitted } from "./lib/accounts.ts";
 import { failureText } from "./lib/text.ts";
 import type { RepoReport } from "./lib/types.ts";
 
@@ -44,6 +45,8 @@ export interface TickReceipt {
   exitStatus: number;
   /** Why `--apply` was asked for with a machine file and nothing was started. */
   applyWithheld?: string;
+  /** The machine file's accounts a drive's pass is never admitted on, and why: a vendor with no documented pass command, a Codex account while the pass deadline is `0`. */
+  accountsNotAdmitted?: NotAdmitted[];
   /** Launch records that do not read, left out of every count. */
   unreadableLaunches?: string[];
   /** Outcome rows that could not be written for records of repositories this tick did not read. */

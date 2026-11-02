@@ -22,8 +22,9 @@
  *
  * The marker is the one thing the dispatcher writes to the forge.
  */
-import type { Slots } from "../accounts.ts";
+import { admittedVendor, type Slots } from "../accounts.ts";
 import { holding } from "../holding.ts";
+import { sessionIdFor } from "../session.ts";
 import {
   deleteMarker,
   readBack,
@@ -205,7 +206,7 @@ function newFollowupRecord(
     pr: pr.number,
     item: null,
     account: slots.account.name,
-    vendor: slots.account.vendor,
+    vendor: admittedVendor(slots.account),
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
     replaces: null,
@@ -219,7 +220,7 @@ function newFollowupRecord(
     released: false,
     command: ctx.section.followupCommand,
     marker: null,
-    sessionId: crypto.randomUUID(),
+    sessionId: sessionIdFor(admittedVendor(slots.account)),
   };
 }
 

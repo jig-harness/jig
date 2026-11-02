@@ -22,6 +22,7 @@ import {
   permissionMode,
   withPassArgs,
 } from "../scripts/lib/pass-args.ts";
+import { passCommand } from "../scripts/lib/pass-command.ts";
 
 const BYPASS = ["--permission-mode", "bypassPermissions"];
 const PASS = ["claude", "--model", "sonnet", "-p", "/jig:drive-pr 7"];
@@ -154,17 +155,41 @@ describe("effectivePassArgs", () => {
   });
 
   it("leaves a pass command that is not Claude Code's alone, saying the setting is ignored", () => {
-    const codex = ["codex", "exec", "/jig:drive-pr 7"];
-    const pass = effectivePassArgs(codex, undefined, configured);
-    expect(pass.argv).toEqual(codex);
+    const other = ["other-agent", "run", "/jig:drive-pr 7"];
+    const pass = effectivePassArgs(other, undefined, configured);
+    expect(pass.argv).toEqual(other);
     expect(pass.line).toBe(
-      "pass args: none; drive.pass_args applies to a Claude Code pass command, and 'codex' ignores it",
+      "pass args: none; drive.pass_args applies to a Claude Code pass command, and 'other-agent' ignores it",
     );
     expect(pass.permission.mode).toBeNull();
     expect(() =>
-      effectivePassArgs(codex, BYPASS.join(" "), configured),
+      effectivePassArgs(other, BYPASS.join(" "), configured),
     ).toThrow(PassArgsUsageError);
-    expect(effectivePassArgs(codex, "", configured).argv).toEqual(codex);
+    expect(effectivePassArgs(other, "", configured).argv).toEqual(other);
+  });
+
+  it("reads a Codex pass command's permission from its own words", () => {
+    const documented = passCommand("codex", 7);
+    const pass = effectivePassArgs(documented, undefined, configured);
+    expect(pass.argv).toEqual(documented);
+    expect(pass.permission).toEqual({
+      mode: "no sandbox, no approvals",
+      source: "the pass command's --dangerously-bypass-approvals-and-sandbox",
+    });
+    expect(
+      effectivePassArgs(
+        ["codex", "exec", "--sandbox", "workspace-write", "/jig:drive-pr 7"],
+        undefined,
+        configured,
+      ).permission.mode,
+    ).toBe("sandbox workspace-write");
+    expect(
+      effectivePassArgs(
+        ["codex", "exec", "/jig:drive-pr 7"],
+        undefined,
+        configured,
+      ).permission.mode,
+    ).toBe("inherited");
   });
 
   it("stops on a setting it cannot read", () => {

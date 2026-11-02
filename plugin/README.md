@@ -181,6 +181,30 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 
 which refuses a record whose session is still running.
 
+**The account picks the agent.** Each account in the machine file names its
+`vendor`, and that decides the agent every session on it runs in: a re-arm
+admitted on a `claude` account runs Claude Code's pass command with
+`CLAUDE_CONFIG_DIR` set to the account's directory, one on a `codex` account
+runs Codex's documented pass command
+([drive-pr](skills/drive-pr/README.md#how-to-start-it)) with `CODEX_HOME`
+set to it, and in either the other directory variable and every credential
+variable (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)
+are removed, so a drive stopped on a Claude Code account's usage limit is
+re-armed on a Codex account at the next run. A repository never names an
+agent: it names a model per runtime in `routing.models`, which a pass reads
+for its vendor (the execution tier of `routing.models.codex` for a Codex
+pass, `drive.pass_model` for Claude Code's) and a pickup reads through its
+route. Every drive runs under the pass deadline the run read
+(`DRIVE_PR_PASS_TIMEOUT` in its environment, else the drive's 90 minutes),
+written on its launch record and handed to `drive.ts` as `--pass-timeout`.
+A Codex pass has no turn cap of its own, so a `codex` account is not
+admitted for a drive while that deadline is `0`; an account of any other
+vendor, which the drive documents no pass command for, is accepted by the
+machine file and never admitted. Each run reports both at its top
+(`accepted, not admitted`, with the reason) and in its receipt
+(`accountsNotAdmitted`). The `review-arbiter` agent and the turn-budget
+hook stay Claude Code's ([Codex notes](#codex-notes)).
+
 **Pickups** (the `pickup` stage) start one `do-item` session per item
 assigned to the factory identity in a dispatch state, once: just before
 the launch the item is read again (still assigned, still in a dispatch
@@ -209,11 +233,15 @@ the configuration directory of the account the host has selected, which a
 person can switch at any moment. So with Orca every pickup is reported,
 with that reason, and nothing is opened or started. The launch path is
 built behind the runtime's answer: a terminal tab running the dispatcher's
-wrapper, which binds the session through the account's configuration
-directory as it does a drive's pass, and reads the agent's id back as the
-terminal's tab and pane, the id `orca worktree ps` reports agents under.
-It switches on once Orca is shown to report a session started that way as
-an agent.
+wrapper, which starts the agent of the account's vendor (Claude Code, or
+Codex on the route's `routing.models.codex` model and `routing.efforts.codex`
+effort), binds it through the account's configuration directory as it does
+a drive's pass, and reads the agent's id back as the terminal's tab and
+pane, the id `orca worktree ps` reports agents under. Orca reports a Codex
+session started that way as an agent under that id, but Codex first asks
+whether to trust a folder it has not seen, and nobody answers; that it
+reports a Claude Code session started that way is not shown. It switches on
+once both are settled.
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed
@@ -847,10 +875,17 @@ them together.
   [`agents/review-arbiter.md`](agents/review-arbiter.md) as its
   instructions, or define the arbiter once as a Codex custom agent from that
   file.
-- **The drive's default pass command** starts Claude Code
-  (`claude -p "/jig:drive-pr <PR>"`). To drive with Codex, put a Codex
-  command after the `--` in the
-  [start command](skills/drive-pr/README.md#how-to-start-it).
+- **The drive has a pass command for each.** Claude Code's
+  (`claude -p "/jig:drive-pr <PR>"`) is the default; Codex's
+  (`codex exec --dangerously-bypass-approvals-and-sandbox "Use the
+  jig:drive-pr skill: /jig:drive-pr <PR>"`) is the one a drive armed from a
+  Codex session runs, and the one the dispatcher runs on a Codex account
+  ([start command](skills/drive-pr/README.md#how-to-start-it)). A Codex
+  pass runs on the execution tier of `routing.models.codex`, else Codex's
+  own configured model; `drive.pass_model` is Claude Code's. Since the
+  turn-budget hook counts nothing under Codex, a Codex pass has no turn cap
+  of its own: the pass deadline (`DRIVE_PR_PASS_TIMEOUT`, 90 minutes by
+  default) is what ends one that runs on, so keep it on for a Codex drive.
 
 ## Call a skill's scripts from repository code
 

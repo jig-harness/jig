@@ -24,9 +24,13 @@
  * is read from the command as it runs (`--permission-mode X`, or
  * `--dangerously-skip-permissions` for `bypassPermissions`), and is
  * `inherited` (Claude Code's own settings decide) when the command sets none.
+ * A `codex` pass command's is read from its own words the same way: its
+ * documented `--dangerously-bypass-approvals-and-sandbox`, a `--sandbox`,
+ * or `inherited` (Codex's configuration decides).
  */
 import { basename } from "node:path";
 import { passVendor } from "./identity.ts";
+import { CODEX_BYPASS } from "./pass-command.ts";
 import {
   DEFAULT_PASS_ARGS,
   passArgsSetting,
@@ -190,7 +194,33 @@ function otherPass(
     line: set
       ? `pass args: none; drive.pass_args applies to a Claude Code pass command, and '${name}' ignores it`
       : `pass args: none (the pass command is ${name})`,
-    permission: { mode: null, source: `chosen by the pass command (${name})` },
+    permission:
+      passVendor(argv) === "codex"
+        ? codexPermission(argv)
+        : { mode: null, source: `chosen by the pass command (${name})` },
+  };
+}
+
+/**
+ * How a `codex` pass command runs its commands: without a sandbox or
+ * approvals (its documented form), in the sandbox `--sandbox` names, or as
+ * Codex's own configuration decides.
+ */
+export function codexPermission(argv: readonly string[]): PermissionMode {
+  if (argv.slice(1).includes(CODEX_BYPASS))
+    return {
+      mode: "no sandbox, no approvals",
+      source: `the pass command's ${CODEX_BYPASS}`,
+    };
+  for (let i = 1; i + 1 < argv.length; i++)
+    if (argv[i] === "--sandbox" || argv[i] === "-s")
+      return {
+        mode: `sandbox ${argv[i + 1]}`,
+        source: "the pass command's --sandbox",
+      };
+  return {
+    mode: "inherited",
+    source: "the pass command sets no --sandbox; Codex's configuration decides",
   };
 }
 

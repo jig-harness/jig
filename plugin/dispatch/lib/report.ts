@@ -77,6 +77,10 @@ export function formatReceipt(receipt: TickReceipt, path: string): string {
           `--apply withheld, nothing was started: ${receipt.applyWithheld}`,
           "",
         ]),
+    ...(receipt.accountsNotAdmitted ?? []).map(
+      (a) =>
+        `account ${a.account} (vendor ${a.vendor}) accepted, not admitted: ${a.reason}`,
+    ),
     ...(receipt.unreadableLaunches ?? []).map(
       (p) => `launch record that does not read, left out: ${p}`,
     ),

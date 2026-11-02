@@ -47,12 +47,15 @@ const MACHINE_STAGES = [
 ] as const;
 export type MachineStage = (typeof MACHINE_STAGES)[number];
 
-export type AccountVendor = "claude" | "codex";
-
 export interface MachineAccount {
   /** The account's name here, which launch records and walls are keyed by. */
   name: string;
-  vendor: AccountVendor;
+  /**
+   * The agent tool the account bills (`claude`, `codex`): it chooses the
+   * agent every session on the account runs in. Any name is accepted; one
+   * the drive documents no pass command for is reported and never admitted.
+   */
+  vendor: string;
   /** The account's Orca profile configuration directory (`CLAUDE_CONFIG_DIR` or `CODEX_HOME`). */
   configDir: string;
   /** What the drive's identity resolver reads from that directory: an email address or an account id. */
@@ -224,8 +227,10 @@ function account(value: unknown, i: number): MachineAccount {
     throw new MachineConfigError(`${where} must be a mapping`);
   only(value, ACCOUNT_KEYS, where);
   const vendor = text(value.vendor, `${where}.vendor`);
-  if (vendor !== "claude" && vendor !== "codex")
-    throw new MachineConfigError(`${where}.vendor must be claude or codex`);
+  if (!/^[a-z][a-z0-9-]*$/.test(vendor))
+    throw new MachineConfigError(
+      `${where}.vendor must be an agent tool's name in lowercase letters, digits and dashes (claude, codex): ${vendor}`,
+    );
   const name = text(value.name, `${where}.name`);
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name))
     throw new MachineConfigError(

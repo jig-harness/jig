@@ -93,6 +93,8 @@ export interface LaunchRecord {
   configDir: string;
   /** The machine file's `wall_backoff` when the record was written, for a wall with no known reset. */
   wallBackoffMs: number;
+  /** For a drive: the pass deadline, in seconds (`0` for none), it was admitted under and runs under (`drive.ts --pass-timeout`); absent on a record written before it was kept. */
+  passTimeoutSec?: number | null;
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */
   replaces: string | null;
   /** The ledger facts the launch acted on: the same facts after a refusal are never launched again. */
@@ -312,6 +314,12 @@ function optionalTime(value: unknown): boolean {
   );
 }
 
+/** Whether a value is absent, `null`, or a whole number of seconds. */
+function optionalSeconds(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
 /** The fields a later version added, each absent or of its type. */
 function optionalFields(value: Record<string, unknown>): boolean {
   return (
@@ -321,6 +329,7 @@ function optionalFields(value: Record<string, unknown>): boolean {
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
+    optionalSeconds(value.passTimeoutSec) &&
     optionalTime(value.endedAt) &&
     optionalTime(value.openedAt) &&
     isRedrive(value.redrive)

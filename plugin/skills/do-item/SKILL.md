@@ -1015,18 +1015,22 @@ routing below remain **exact**.
       words before `-p` when it is set); `status`, what to do
       next (step 2); `way`, `reason` and `fallback`, why; `model`; `tab`,
       `tail` and `drive` for a tab; and `handles`. A tab is a fresh login
-      shell of the user's: `bun`, `claude` and the Claude account or profile
-      the drive uses come from that shell, not from this session. Every
+      shell of the user's: `bun`, the agent's command (`claude` or `codex`)
+      and the account or profile the drive uses come from that shell, not
+      from this session. Every
       failure prints the same JSON with `status: failed` and `reason`, with
       `command` built where the tree is known (on the default model when
       the configured one cannot be read). Exit `1`: the setting cannot be
       honoured here (`tab` outside Orca, on a Windows host, or a tab Orca
       refused) or a setting, the model or the working tree cannot be read;
       exit `2`: a malformed command line. Report `reason` with `command`, and
-      spawn nothing. The pass command (`claude --model <model> -p "..."`) is
-      Claude Code's, today the one documented pass command; in another agent
-      tool the script answers `print`. Do not guess one for another agent
-      tool.
+      spawn nothing. The pass command is the documented one of the agent
+      tool this session runs in: Claude Code's (`claude --model <model> -p
+      "..."`) or Codex's (`codex exec … "Use the jig:drive-pr skill: …"`,
+      on `routing.models.codex`). A Codex session that cannot open a tab
+      gets `print`, since the background way is Claude Code's. In any other
+      agent tool the script answers `print`. Do not guess one for another
+      agent tool.
 
       **Always emit `command`**, the exact unattended drive command, in the
       end-of-run status message **and** in the tracker comment that links the
@@ -1088,9 +1092,10 @@ routing below remain **exact**.
         the PR's lock, so this spawn then meets step 3's exit `11`).
       - `print` → emit the command only, with `reason`: for an uncleared
         `hitl` checkpoint, starting review rounds would pre-empt the human
-        judgment; for another agent tool (Codex, for one), which has no
-        documented pass command today, a guessed command is worse than one
-        left for a human to run.
+        judgment; from a Codex session that cannot open a tab, the
+        background way is Claude Code's, so a person runs the command; for
+        an agent tool with no documented pass command, a guessed command is
+        worse than one left for a human to run.
 
       The drive works the draft immediately (some review bots review
       drafts, others skip them) and marks the PR Ready at the point
