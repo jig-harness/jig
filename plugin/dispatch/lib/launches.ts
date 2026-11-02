@@ -435,10 +435,12 @@ function recordOf(
   const value = parseJson(row.record, `launch record ${row.id}`);
   // A record whose embedded id names another row would read that row's claim and exit.
   if (!isLaunchRecord(value) || value.id !== row.id) return null;
-  return {
-    ...normalized(value),
-    ...(control?.get(row.id) ?? controlRows(root, row.id).get(row.id) ?? EMPTY),
-  };
+  // A supplied map is authoritative: a launch it lacks has no samples or episodes.
+  const rows =
+    control === undefined
+      ? controlRows(root, row.id).get(row.id)
+      : control.get(row.id);
+  return { ...normalized(value), ...(rows ?? EMPTY) };
 }
 
 interface EpisodeRow {
