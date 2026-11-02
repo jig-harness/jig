@@ -100,7 +100,15 @@ receipts and the second decision come from the runner, not from the helper.
   only where the tool that creates and opens them takes the kind's lock
   shared for as long as a session uses the worktree, and the collector
   takes it exclusive across the final proof and the removal; a worktree that
-  tool did not open is reported only.
+  tool did not open is reported only, unless a
+  [workspace runtime](../GLOSSARY.md) manages it. The runtime's registry of
+  the agents working in the worktree then stands in for the lock: it is read
+  in the final proof and again right before the removal, an agent in it that
+  has not finished or a registry that cannot be read keeps the worktree, and the removal goes
+  through the runtime, so its own records of the worktree go with it
+  ([the Orca binding](../plugin/gc/README.md#worktrees-orca-manages)). Until
+  the runtime offers a reservation, an agent started between that last read
+  and the removal is not excluded.
 - **Refuse what is not registered.** A resource the repository did not
   declare, or that carries no owner record where one is required, is a
   finding, not a candidate: the missing registration is the defect to report.

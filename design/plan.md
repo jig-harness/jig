@@ -469,7 +469,9 @@ per step:
   Coordinate tool-state creators with collection admission before enabling
   retirement; its legacy reaper lock excludes only other reapers.
   Validate its weekly job through the installed command before starting
-  the later kinds. Worktree collection stays disabled until this integration.
+  the later kinds. Worktree collection stays disabled until this
+  integration, except for a worktree Orca manages, which `jig gc` collects
+  through Orca.
 - **Containers, volumes and images**, keyed to the compose projects the
   worktrees derive, and the machine-level dangling images and build cache.
 - **Branches** merged as the forge records it (squash merges included) or
