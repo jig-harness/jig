@@ -559,14 +559,29 @@ export async function arm(
     commandLine([...sessionOverrides(env), ...base.argv]),
     deps,
   );
-  return tabReport(chosen, outcome, setting.value === "auto");
+  return tabReport(chosen, outcome, setting.value === "auto", vendor);
 }
 
-/** `report` sent to the background instead of a tab, saying why. */
+/**
+ * `report` sent to the background instead of a tab, saying why; from a
+ * Codex session, whose background way is not Claude Code's, the command is
+ * printed instead.
+ */
 function fallBack(
   report: ArmReport,
   why: string,
+  vendor: AccountVendor,
 ): { report: ArmReport; exit: number } {
+  if (vendor === "codex")
+    return {
+      report: {
+        ...report,
+        way: "print",
+        status: "print",
+        fallback: `${why}; the background way is Claude Code's background execution, so the command is printed instead`,
+      },
+      exit: 0,
+    };
   return {
     report: {
       ...report,
@@ -580,13 +595,15 @@ function fallBack(
 
 /**
  * The report after a tab. Under `auto`, a tab that did not open, or whose
- * drive was not listed in time, falls back to the background: a drive the
- * tab did start holds the PR's lock, so the second refuses (exit `11`).
+ * drive was not listed in time, falls back to the background (to the
+ * printed command from a Codex session): a drive the tab did start holds
+ * the PR's lock, so the second refuses (exit `11`).
  */
 function tabReport(
   chosen: ArmReport,
   outcome: TabOutcome,
   auto: boolean,
+  vendor: AccountVendor,
 ): { report: ArmReport; exit: number } {
   const tab = { title: tabTitle(chosen.pr), terminal: null };
   switch (outcome.status) {
@@ -625,11 +642,12 @@ function tabReport(
         return fallBack(
           seen,
           "the tab opened, but drives.ts did not list its drive in time (tail has what the tab printed)",
+          vendor,
         );
       return { report: { ...seen, status: "unconfirmed" }, exit: 0 };
     }
     case "failed":
-      if (auto) return fallBack(chosen, outcome.why);
+      if (auto) return fallBack(chosen, outcome.why, vendor);
       return {
         report: { ...chosen, status: "failed", reason: outcome.why },
         exit: 1,

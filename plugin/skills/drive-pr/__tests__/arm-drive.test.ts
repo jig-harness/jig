@@ -313,6 +313,19 @@ describe("the Codex pass an arm from a Codex session builds", () => {
     expect(report.argv).toContain("codex");
     expect(report.argv).not.toContain("claude");
   });
+
+  it("prints the command, not the background, when Orca refuses a Codex session's tab under auto", async () => {
+    const { report, exit } = await arm(
+      inputs("auto", {
+        CODEX_HOME: "/x",
+        ORCA_CLI_COMMAND: "/opt/orca/bin/orca",
+      }),
+      deps(fakeOrca(REFUSED).runner, [null]),
+    );
+    expect(exit).toBe(0);
+    expect(report).toMatchObject({ way: "print", status: "print" });
+    expect(report.fallback).toContain("the command is printed instead");
+  });
 });
 
 /** Orca's stand-in: answers `terminal create` and `terminal read`; records each call. */
