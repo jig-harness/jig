@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -280,7 +286,7 @@ test("the search covers closed issues, and has an address to search by hand", ()
 });
 
 test("run in a consumer repository, the draft carries none of its names", () => {
-  const repo = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "jig-report-bug-")));
   // The root preloads point JIG_OVERLAY at a fixture; the child reads the
   // repository's own file.
   const env = withoutLeakyGitEnv({

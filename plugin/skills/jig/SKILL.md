@@ -124,8 +124,10 @@ confirms every report before it is filed.
 6. **Ask the person** to confirm, showing the title and the body: with
    `AskUserQuestion` in Claude Code where the session can use it, as a
    plain-text question anywhere else. With nobody there to answer (an
-   unattended run), stop and leave the draft file's path and the form
-   address in the run's output; never file it unattended.
+   unattended run), stop and leave the draft file's path in the run's
+   output; never file it unattended. The draft's stored `url` predates your
+   edits, so do not hand it on: step 7's `file` builds the address from the
+   edited title and body.
 7. **File it** once the person agrees:
 
    ```sh
