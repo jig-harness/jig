@@ -6,7 +6,7 @@
  * card first and writes after. Two writers doing that at once (a drive's
  * stop and the dispatcher's notification, say) would each read the old
  * comment and the second write would drop the first one's text. Every comment
- * writer (`orca-board.ts` and the dispatcher's notify) therefore holds this
+ * writer (`orca-board.ts`, the dispatcher's notify and its launch mark) therefore holds this
  * lock across its read and its write.
  *
  * The lock is a file under the user's state directory (not the temporary

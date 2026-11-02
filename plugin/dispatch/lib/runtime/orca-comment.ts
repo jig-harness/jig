@@ -4,6 +4,7 @@
  * deadline: what `notify` writes a message through, and what `launch` adds
  * the dispatched mark to.
  */
+import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
 import { orcaCommand, orcaEnvelope } from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
@@ -82,11 +83,39 @@ export async function markComment(
   path: string,
   mark: string,
   timeoutMs: number,
+  lock: CardLock = withCardLock,
 ): Promise<string | null> {
   const until = Date.now() + timeoutMs;
   const [added] = marksIn(mark);
   if (added === undefined) return "it is not a dispatched mark";
-  const read = await readComment(path, timeoutMs);
+  // The read, the write and the read-back hold the card's comment lock, the
+  // one every comment writer takes, so a notification written meanwhile is
+  // not replaced by this write; the wait for it is part of the deadline.
+  let locked: { value: string | null } | null;
+  try {
+    locked = await lock(
+      path,
+      () => markUnlocked(path, mark, added.line, until),
+      { waitMs: Math.max(0, Math.min(timeoutMs, 5000)) },
+    );
+  } catch (error) {
+    return `the card's comment lock could not be taken: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  return (
+    locked?.value ?? "another writer held the card's comment past the deadline"
+  );
+}
+
+/** `markComment`'s read, write and read-back, holding the card's lock; `null` when the mark is in the comment. */
+async function markUnlocked(
+  path: string,
+  mark: string,
+  line: string,
+  until: number,
+): Promise<string | null> {
+  const first = until - Date.now();
+  if (first <= 0) return "no time was left to read it";
+  const read = await readComment(path, first);
   if ("why" in read) return read.why;
   const next = withMark(read.comment, mark);
   if (next === null) return null;
@@ -101,7 +130,7 @@ export async function markComment(
   if (after <= 0) return "no time was left to read it back";
   const back = await readComment(path, after);
   if ("why" in back) return `it could not be read back: ${back.why}`;
-  return marksIn(back.comment).some((m) => m.line === added.line)
+  return marksIn(back.comment).some((m) => m.line === line)
     ? null
     : "orca accepted the write, but the comment read back without the mark";
 }

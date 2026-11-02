@@ -43,6 +43,7 @@ import {
 } from "../log.ts";
 import { carries, holdsNotice } from "../notices.ts";
 import {
+  keepMarks,
   MAX_COMMENT,
   NOTICES_NAME,
   type RuntimeReceipt,
@@ -224,12 +225,15 @@ export function fitting(
   causes: Cause[],
 ): { send: Cause[]; later: Cause[] } {
   const unread = workspace.unread && workspace.comment.trim() !== "";
-  let used = unread ? workspace.comment.length : 0;
+  // A read comment is replaced, behind the dispatched marks it keeps.
+  let used = unread
+    ? workspace.comment.length
+    : keepMarks(workspace.comment, "").length;
   const send: Cause[] = [];
   const later: Cause[] = [];
   for (const c of causes) {
     const next = used + c.notice.text.length + 2;
-    if ((unread || send.length > 0) && next > MAX_COMMENT) {
+    if ((used > 0 || send.length > 0) && next > MAX_COMMENT) {
       later.push(c);
       continue;
     }

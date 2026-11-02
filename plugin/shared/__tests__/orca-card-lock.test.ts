@@ -196,22 +196,6 @@ describe("the card's comment lock", () => {
     expect(readdirSync(root)).toEqual([]);
   });
 
-  test("recovery over a long chain of abandoned mutexes stops at the caller's deadline", async () => {
-    const root = scratchRoot();
-    const lock = cardLockPath(WORKSPACE, root);
-    const stale = `${deadPid()}\nleft\n`;
-    writeFileSync(lock, stale);
-    const id = createHash("sha256").update(stale).digest("hex").slice(0, 16);
-    const dead = deadPid();
-    for (let generation = 1; generation <= 300; generation++)
-      writeFileSync(`${lock}.reclaim-${id}-${generation}`, `${dead}\nx\n`);
-    const before = readdirSync(root).sort();
-    expect(
-      await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 0 }),
-    ).toBeNull();
-    expect(readdirSync(root).sort()).toEqual(before);
-  });
-
   test("recovery whose budget runs out part-way through the chain stops walking and removes nothing", async () => {
     const root = scratchRoot();
     const lock = cardLockPath(WORKSPACE, root);

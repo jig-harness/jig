@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { orcaNotify } from "../lib/runtime/orca-notify.ts";
+import { NOTICES_NAME } from "../lib/runtime/port.ts";
 
 describe("notify on Orca", () => {
   test("writes nothing, and says so, when another writer holds the card's comment lock", async () => {
@@ -44,5 +45,23 @@ describe("notify on Orca", () => {
     );
     expect(receipt).toMatchObject({ ok: false, lost: false });
     expect(receipt.detail).toContain("EACCES");
+  });
+});
+
+describe("the launch mark on Orca", () => {
+  test("is written under the card's comment lock, and not at all without it", async () => {
+    const { markComment } = await import("../lib/runtime/orca-comment.ts");
+    const asked: string[] = [];
+    const why = await markComment(
+      "/ws/app/feat-x",
+      NOTICES_NAME,
+      1000,
+      async (workspace) => {
+        asked.push(workspace);
+        return null;
+      },
+    );
+    expect(asked).toEqual(["/ws/app/feat-x"]);
+    expect(why).toContain("another writer");
   });
 });
