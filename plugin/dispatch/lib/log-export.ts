@@ -86,23 +86,46 @@ interface Copied {
   row: string;
 }
 
-/** Call `each` for each row with `mark < seq <= high`, in order, reading `BATCH` rows at a time. */
+/**
+ * Call `each` for each row with `mark < seq <= high` (and, when `within` is
+ * given, `at_ms` in that half-open range), in order, reading `BATCH` rows at
+ * a time.
+ */
 function eachRow(
   db: Database,
   mark: number,
   high: number,
   each: (row: Copied) => void,
+  within?: { from: number; to: number },
 ): void {
+  const range = within === undefined ? "" : "AND at_ms >= ? AND at_ms < ?";
+  const extra = within === undefined ? [] : [within.from, within.to];
   let after = mark;
   for (;;) {
     const page = db
       .query(
-        `SELECT seq, key, at, row FROM log WHERE seq > ? AND seq <= ? ORDER BY seq LIMIT ${BATCH}`,
+        `SELECT seq, key, at, row FROM log WHERE seq > ? AND seq <= ? ${range} ORDER BY seq LIMIT ${BATCH}`,
       )
-      .all(after, high) as Copied[];
+      .all(after, high, ...extra) as Copied[];
     if (page.length === 0) return;
     for (const r of page) each(r);
     after = (page.at(-1) as Copied).seq;
+  }
+}
+
+/** The months with a row in `mark < seq <= high`, read from the timestamps alone, never the rows. */
+function monthsOf(db: Database, mark: number, high: number): Set<string> {
+  const months = new Set<string>();
+  let after = mark;
+  for (;;) {
+    const page = db
+      .query(
+        `SELECT seq, at FROM log WHERE seq > ? AND seq <= ? ORDER BY seq LIMIT ${BATCH}`,
+      )
+      .all(after, high) as { seq: number; at: string }[];
+    if (page.length === 0) return months;
+    for (const r of page) months.add(monthOf(r.at));
+    after = (page.at(-1) as { seq: number }).seq;
   }
 }
 
@@ -129,20 +152,31 @@ function copyMonth(
   let fd: number | null = null;
   let added = 0;
   try {
-    eachRow(db, mark, high, (r) => {
-      if (monthOf(r.at) !== month || held.has(r.key)) return;
-      if (fd === null) {
-        fd = openSync(temporary, "wx", 0o600);
-        // A line the file holds is kept as it is, blank lines apart.
-        const out = fd;
-        eachLine(path, (text) => {
-          if (text !== "") writeAllSync(out, `${text}\n`);
-        });
-      }
-      writeAllSync(fd, `${r.row}\n`);
-      held.add(r.key);
-      added++;
-    });
+    const [year, number] = month.split("-").map(Number) as [number, number];
+    const within = {
+      from: Date.UTC(year, number - 1, 1),
+      to: Date.UTC(year, number, 1),
+    };
+    eachRow(
+      db,
+      mark,
+      high,
+      (r) => {
+        if (monthOf(r.at) !== month || held.has(r.key)) return;
+        if (fd === null) {
+          fd = openSync(temporary, "wx", 0o600);
+          // A line the file holds is kept as it is, blank lines apart.
+          const out = fd;
+          eachLine(path, (text) => {
+            if (text !== "") writeAllSync(out, `${text}\n`);
+          });
+        }
+        writeAllSync(fd, `${r.row}\n`);
+        held.add(r.key);
+        added++;
+      },
+      within,
+    );
     if (fd === null) return 0;
     fsyncSync(fd);
     closeSync(fd);
@@ -189,10 +223,8 @@ export function exportLog(root = stateRoot()): number {
       } | null
     )?.seq ?? 0;
   if (mark >= high) return 0;
-  const months = new Set<string>();
-  eachRow(db, mark, high, (r) => months.add(monthOf(r.at)));
   let added = 0;
-  for (const month of months)
+  for (const month of monthsOf(db, mark, high))
     added += copyMonth(
       db,
       logFile(`${month}-01T00:00:00.000Z`, root),
