@@ -721,10 +721,11 @@ comment and `/followup` moves it to completed, `jig gc --collect` on an
 idle Orca checkout, once every launch path is covered by admission or
 Orca refuses a removal atomically, leaves no card in `orca worktree list
 --json`, the dispatcher's account cap reads `orca account usage --json`
-where Orca has it, and an agent in a Jig repository reaching `waiting`
+where Orca has it, and an agent in a Jig repository reaching `waiting`, `blocked` or `done`
 under the plugin has a trailing tick pending that starts once the running
-tick has finished and a minute has passed since the last start, and stays
-pending while the machine-wide tick lock refuses it.
+tick has finished and a minute has passed since the last start, stays
+pending while the machine-wide tick lock refuses it, and survives an event
+that arrives while that tick processes the repository.
 
 ## Later
 

@@ -92,23 +92,26 @@ collected the way the workspace tool's `remove` does it today: the remove
 hook inside the worktree, the reflection park, then `orca worktree rm`,
 never `git worktree remove`, so the card, the terminals and the agent
 records go with the checkout. Orca's registry is part of the idle proof: a
-checkout whose agent Orca reports working is never idle, whatever git says,
-and an unreadable registry refuses collection, as the gc contract says
-(fail closed). The registry is a snapshot, though: an opener can start an
+checkout with an agent in any state short of finished (working, waiting or
+blocked) is never idle, whatever git says, and an unreadable or incomplete
+registry refuses collection, as the gc contract says (fail closed). The registry is a snapshot, though: an opener can start an
 agent after the read and before the removal. So an Orca-managed checkout
 stays report-only, as every worktree does today
 ([plugin/gc/README.md](../plugin/gc/README.md)), until every path that can start an agent in
 it is covered: either each launch and open path takes `gc`'s session
-admission around the launch, or Orca refuses a removal atomically while an
-agent starts. Jig's workspace tool and the dispatcher can take admission,
+admission around the launch and holds it while the session lives in any
+state short of finished, or Orca refuses a removal atomically while an
+agent is starting or live in any such state. Jig's workspace tool and the dispatcher can take admission,
 but a direct `orca agent launch --worktree` or an open in Orca's app can
 come after the registry read and produces no creation event, and a
 creation-event handler would take admission after the creation, not around
 it. So workspace provenance alone never makes a checkout collectable, and
 a workspace made outside Jig stays report-only. Collection through Orca
 starts when one of the two is in place. The workspace tool's remove steps move into the plugin for
-this, as item 33 moves its open steps, and the `tools/orca` copy is
-deleted in the same pull request.
+this, as item 33 moves its open steps. The `tools/orca` entry point stays
+as the launcher's `orca` provider and the caller of the workspace-open
+path until a pull request names the launcher's migration to the plugin;
+that pull request deletes the copy.
 
 ### What Jig asks of Orca
 
@@ -166,13 +169,18 @@ without a change to the tick. Ticks for one repository run one at a time,
 and a tick starts no sooner than a minute after the last one started. An
 event that arrives while a tick runs or inside that minute sets a pending
 flag; one trailing tick starts once the running tick has finished and the
-minute has passed. The tick lock is machine-wide, so a timer tick or
-another repository's tick can refuse the invocation without reading this
-repository: the plugin clears the flag only after a tick has processed the
-repository, and on a refusal keeps it and retries after the same minute.
-A status change after a tick read its state is therefore never dropped,
-and the next tick that runs processes it, later than a minute when a tick
-runs long or the lock is busy. On `workspace.created` it logs
+minute has passed. The plugin counts the events it receives for a
+repository and a tick takes the count when it starts; once the tick has
+processed the repository, the plugin clears the pending flag only if no
+event has arrived since that count, and otherwise keeps it for the trailing
+tick. The tick lock is machine-wide, so a timer tick or another
+repository's tick can refuse the invocation without reading this
+repository: the plugin keeps the flag on a refusal and retries after the
+same minute. While the worker lives, a status change after a tick read its
+state is therefore never dropped, and the next tick that runs processes it,
+later than a minute when a tick runs long or the lock is busy. The flag and
+the count live in the worker's memory: a restart loses a pending tick, and
+the machine's timer tick then processes the repository. On `workspace.created` it logs
 the workspace and does nothing else; the table above says when the create
 hook joins. One setting names the `jig` command;
 the plugin calls the installed `jig` plugin and bundles nothing, so Jig's
