@@ -5,9 +5,11 @@ import { join } from "node:path";
 import { collectionDeadlineMs } from "../../runtime/launcher.ts";
 import { driveHold } from "../lib/actions/drive-hold.ts";
 import {
+  type LaunchAttempt,
   type LaunchExit,
   type LaunchRecord,
   type ProcessIdentity,
+  markedSince,
   pruneLaunches,
   readLaunches,
   type ReadRecord,
@@ -252,5 +254,48 @@ describe("the timer's job", () => {
   it("holds every duration inside a timer's range", () => {
     expect(() => duration("720h", "x")).toThrow("at most 24d");
     expect(duration("576h", "x")).toBe(576 * 3_600_000);
+  });
+});
+
+describe("the records a report counts as launched", () => {
+  const mark = "⚙ dispatched · rearm #7 · launch 20260101T000000Z-aaaaaaaa";
+  const sent: LaunchAttempt = {
+    at: "2026-01-01T00:00:00.000Z",
+    outcome: "sent",
+    detail: "",
+  };
+
+  it("holds the records of the window that were launched, and not one abandoned before a launch", () => {
+    const dir = root();
+    writeRecord(
+      record("20260101T000000Z-aaaaaaaa", { mark, attempts: [sent] }),
+      dir,
+    );
+    writeRecord(record("20260101T000001Z-bbbbbbbb", { mark }), dir);
+    writeRecord(
+      record("20260101T000002Z-cccccccc", {
+        mark,
+        attempts: [{ ...sent, outcome: "failed" }],
+      }),
+      dir,
+    );
+    writeRecord(
+      record("20250101T000000Z-dddddddd", {
+        mark,
+        attempts: [sent],
+        createdAt: "2025-01-01T00:00:00.000Z",
+      }),
+      dir,
+    );
+    writeRecord(
+      record("20260101T000003Z-eeeeeeee", { mark: null, attempts: [sent] }),
+      dir,
+    );
+    const { records, unreadable } = markedSince(
+      Date.parse("2026-01-01T00:00:00.000Z"),
+      dir,
+    );
+    expect(unreadable).toEqual([]);
+    expect(records.map((r) => r.id)).toEqual(["20260101T000000Z-aaaaaaaa"]);
   });
 });

@@ -730,8 +730,11 @@ export async function readLaunches(root = stateRoot()): Promise<{
 
 /**
  * The records written at or after `since` (milliseconds) that carry a
- * dispatched mark, oldest first, for a reader that never creates the
- * database; a row that does not read is left out and named.
+ * dispatched mark and were launched, oldest first, for a reader that never
+ * creates the database; a row that does not read is left out and named. A
+ * record that ended before any launch was attempted started no session in
+ * its workspace, so it is not one. The window is read by the indexed
+ * creation time, not by scanning the history.
  */
 export function markedSince(
   since: number,
@@ -740,15 +743,21 @@ export function markedSince(
   const db = existingStateDb(root);
   if (db === null) return { records: [], unreadable: [] };
   const all = db
-    .query("SELECT id, record, claim, exit, result FROM launches ORDER BY id")
-    .all() as LaunchRow[];
+    .query(
+      "SELECT id, record, claim, exit, result FROM launches WHERE created_at >= ? ORDER BY id",
+    )
+    .all(new Date(since).toISOString()) as LaunchRow[];
   const records: LaunchRecord[] = [];
   const unreadable: string[] = [];
   for (const row of all) {
     const record = recordOf(row, root, new Map());
     if (record === null)
       unreadable.push(`launch record ${row.id} in ${statePath(root)}`);
-    else if (Date.parse(record.createdAt) >= since && record.mark)
+    else if (
+      Date.parse(record.createdAt) >= since &&
+      record.mark &&
+      record.attempts.some((a) => a.outcome !== "failed")
+    )
       records.push(record);
   }
   return { records, unreadable };

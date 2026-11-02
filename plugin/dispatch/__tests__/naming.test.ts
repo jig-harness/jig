@@ -231,6 +231,24 @@ describe("jig dispatch names what it starts", () => {
       "jig dispatch · followup #9",
     );
   });
+
+  it("says so when the workspace's comment did not take the mark", async () => {
+    const w = base(["followup"]);
+    w.setPrs("merged", [mergedPr(9, "feature/9-done", "2026-10-31T12:00:00Z")]);
+    w.setComments(9, []);
+    const ws = join(w.root, "ws-9");
+    mkdirSync(ws, { recursive: true });
+    w.setWorkspaces([
+      { branch: "feature/9-done", linkedPR: 9, path: ws, name: "Retries" },
+    ]);
+    writeFileSync(join(w.dir, "orca-set-noop"), "");
+    const [launched] = launches(await applyTick(w, true));
+    const record = readRecord(launched?.record as string, dispatchState(w));
+    expect(record?.attempts[0]?.detail).toContain(
+      "does not carry the dispatched mark",
+    );
+    expect(shown(w, ws).comment).not.toContain("dispatched");
+  });
 });
 
 describe("the dispatched mark in a comment", () => {
@@ -257,6 +275,28 @@ describe("the dispatched mark in a comment", () => {
     );
     expect(keepMarks(`${a}\nold`, `${a}\n\nnew`)).toBe(`${a}\n\nnew`);
     expect(keepMarks("a person's note", "new")).toBe("new");
+  });
+
+  it("is recognized only in the shape of a launch's mark or the notices workspace's", () => {
+    expect(
+      marksIn(
+        [
+          "⚙ dispatched · keep the retry investigation notes",
+          "⚙ dispatched · unknown #7 · launch 20261101T010000Z-aaaaaaaa",
+          "⚙ dispatched · rearm #7 · launch nope",
+          a,
+        ].join("\n"),
+      ).map((m) => m.line),
+    ).toEqual([a]);
+    expect(withoutMarks("⚙ dispatched · keep the retry notes")).toBe(
+      "⚙ dispatched · keep the retry notes",
+    );
+  });
+
+  it("is the freshly read comment's, not an older launch's that a message carries", () => {
+    expect(keepMarks(`${b}\nold`, `${a}\n\nnew message`)).toBe(
+      `${b}\n\nnew message`,
+    );
   });
 
   it("names its stage, key and launch, and leaves the rest of the comment", () => {

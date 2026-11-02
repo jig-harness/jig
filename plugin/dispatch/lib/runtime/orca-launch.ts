@@ -97,8 +97,15 @@ export async function orcaLaunch(
   key: string,
   timeoutMs: number,
 ): Promise<RuntimeReceipt> {
-  const unmarked = await markComment(workspace.path, stage.mark, timeoutMs);
-  const receipt = await startTerminal(workspace, stage, key, timeoutMs);
+  // One timeout covers the whole launch, as the launcher reserves: the mark
+  // takes at most a third of it and the terminal what is left.
+  const until = Date.now() + timeoutMs;
+  const unmarked = await markComment(
+    workspace.path,
+    stage.mark,
+    Math.floor(timeoutMs / 3),
+  );
+  const receipt = await startTerminal(workspace, stage, key, until);
   return unmarked === null
     ? receipt
     : {
@@ -112,8 +119,9 @@ async function startTerminal(
   workspace: { id: string; path: string },
   stage: LaunchStage,
   key: string,
-  timeoutMs: number,
+  until: number,
 ): Promise<RuntimeReceipt> {
+  const timeoutMs = Math.max(1, until - Date.now());
   const done = await run(
     [
       orcaBinary(),
@@ -140,7 +148,9 @@ async function startTerminal(
     const detail = `orca terminal create: ${JSON.stringify(envelope.result).slice(0, 300)}`;
     if (stage.kind === "headless") return { ok: true, detail };
     const handle = handleOf(envelope.result);
-    const agentId = handle === null ? null : await agentIdOf(handle, timeoutMs);
+    const left = until - Date.now();
+    const agentId =
+      handle === null || left <= 0 ? null : await agentIdOf(handle, left);
     return agentId === null
       ? {
           ok: true,

@@ -242,6 +242,8 @@ async function callLaunch(
   record: LaunchRecord,
 ): Promise<LaunchAttempt> {
   const workspace = record.workspace as { id: string; path: string };
+  // A record an older plugin wrote has no mark; the launch marks its workspace, so the record keeps the same one.
+  record.mark = markOf(record);
   let receipt: RuntimeReceipt;
   try {
     receipt = await state.runtime.launch(

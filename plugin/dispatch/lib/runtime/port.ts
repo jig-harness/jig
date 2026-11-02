@@ -285,22 +285,31 @@ export interface MarkLine {
   launch: string | null;
 }
 
-/** The mark lines of a comment, in order. */
+/** A launch's mark line: a stage the dispatcher names, a key without spaces and a launch record's id. */
+const MARK_LINE = new RegExp(
+  `^(${DISPATCHED}${SEPARATOR}(?:pickup|rearm|takeover|followup) \\S+)${LAUNCH}(\\d{8}T\\d{6}Z-[a-f\\d]{8})$`,
+);
+
+/**
+ * The mark lines of a comment, in order: the notices workspace's name and the
+ * exact shape of a launch's mark. Any other line, whatever it begins with,
+ * is the person's text.
+ */
 export function marksIn(comment: string): MarkLine[] {
   const marks: MarkLine[] = [];
   for (const raw of comment.split("\n")) {
     const line = raw.trim();
-    if (!line.startsWith(`${DISPATCHED}${SEPARATOR}`)) continue;
-    const at = line.lastIndexOf(LAUNCH);
-    marks.push(
-      at < 0
-        ? { line, name: line, launch: null }
-        : {
-            line,
-            name: line.slice(0, at),
-            launch: line.slice(at + LAUNCH.length),
-          },
-    );
+    if (line === NOTICES_NAME) {
+      marks.push({ line, name: line, launch: null });
+      continue;
+    }
+    const found = MARK_LINE.exec(line);
+    if (found !== null)
+      marks.push({
+        line,
+        name: found[1] as string,
+        launch: found[2] as string,
+      });
   }
   return marks;
 }
@@ -337,11 +346,20 @@ export function withMark(comment: string, mark: string): string | null {
   return kept === "" ? added.line : `${kept}\n${added.line}`;
 }
 
-/** `message` with the mark lines `previous` held and it lacks put first, so a rewrite of a comment keeps them. */
+/**
+ * `message` with the mark lines `previous` holds put first, so a rewrite of a
+ * comment keeps them. `previous` is the comment as it was just read, so its
+ * mark for a stage and key wins over a different launch's mark for the same
+ * stage and key that `message` carries from an older snapshot.
+ */
 export function keepMarks(previous: string, message: string): string {
-  const held = new Set(marksIn(message).map((m) => m.line));
-  const kept = marksIn(previous)
-    .map((m) => m.line)
-    .filter((l) => !held.has(l));
-  return kept.length === 0 ? message : `${kept.join("\n")}\n\n${message}`;
+  const current = new Map<string, string>();
+  for (const m of marksIn(previous)) current.set(m.name, m.line);
+  if (current.size === 0) return message;
+  const stale = new Set(
+    marksIn(message)
+      .filter((m) => current.has(m.name))
+      .map((m) => m.line),
+  );
+  return `${[...current.values()].join("\n")}\n\n${linesBut(message, stale).trim()}`;
 }
