@@ -170,20 +170,20 @@ fields:
     default: false
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.122.0
   dispatch.labels.prefix:
     type: string
     default: "jig:"
     pattern: "^(?=.{1,39}$)[^,\\s](?:[^,]*[^,\\s])?$"
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.122.0
   dispatch.labels.only_labeled:
     type: boolean
     default: false
     read_by: [dispatch]
     repository_only: true
-    since: next
+    since: 0.122.0
 
   gates.command:
     type: command
