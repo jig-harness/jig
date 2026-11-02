@@ -230,7 +230,7 @@ export type Nudge = keyof typeof NUDGES;
  * key (`⚙ dispatched · rearm #456 · launch <id>`). A terminal tab names the
  * dispatcher, the stage and the key (`jig dispatch · rearm #456`).
  */
-export const DISPATCHED = "⚙ dispatched";
+const DISPATCHED = "⚙ dispatched";
 
 const SEPARATOR = " · ";
 const LAUNCH = " · launch ";
@@ -239,7 +239,7 @@ const LAUNCH = " · launch ";
 export type NamedStage = "pickup" | "rearm" | "takeover" | "followup";
 
 /** The name a workspace the dispatcher creates carries: the mark, the stage and the key. */
-export function dispatchedName(stage: NamedStage, key: string): string {
+function dispatchedName(stage: NamedStage, key: string): string {
   return `${DISPATCHED}${SEPARATOR}${stage} ${key}`;
 }
 

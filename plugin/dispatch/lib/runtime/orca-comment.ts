@@ -9,11 +9,11 @@ import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
 import { withMark } from "./port.ts";
 
-export function seconds(ms: number): number {
+function seconds(ms: number): number {
   return Math.max(1, Math.ceil(ms / 1000));
 }
 
-export type CallAnswer =
+type CallAnswer =
   | { ok: true; result: unknown }
   | { ok: false; lost: boolean; why: string };
 
@@ -47,7 +47,7 @@ export async function call(
 }
 
 /** The comment in `worktree show`'s answer; `null` when it names none. */
-export function commentOf(result: unknown): string | null {
+function commentOf(result: unknown): string | null {
   const worktree = isRecord(result) ? result.worktree : undefined;
   return isRecord(worktree) && typeof worktree.comment === "string"
     ? worktree.comment

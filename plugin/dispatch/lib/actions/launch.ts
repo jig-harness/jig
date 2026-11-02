@@ -196,12 +196,12 @@ function attemptOf(receipt: RuntimeReceipt): LaunchAttempt {
 }
 
 /** What the dispatcher's names call a record's target: the item's key, else `#<pr>`. */
-export function nameKey(record: Pick<LaunchRecord, "item" | "pr">): string {
+function nameKey(record: Pick<LaunchRecord, "item" | "pr">): string {
   return record.item ?? `#${String(record.pr)}`;
 }
 
 /** The mark a record carries: the one it was written with, else the convention's for it. */
-export function markOf(record: LaunchRecord): string {
+function markOf(record: LaunchRecord): string {
   return (
     record.mark ?? dispatchedMark(record.action, nameKey(record), record.id)
   );
