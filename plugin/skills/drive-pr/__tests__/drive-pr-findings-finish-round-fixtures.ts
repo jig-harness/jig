@@ -38,7 +38,10 @@ export function createFindingsFinishRoundFixtures() {
    * --porcelain` and the git-dir marker probe to answer TRUTHFULLY about a
    * real scratch repository, because "did it refuse before pushing" is a claim
    * about those answers. Intercepting only `push` keeps every one of them real
-   * while leaving the one irreversible act observable as a file.
+   * while leaving the one irreversible act observable as a file. A
+   * `push-fails` file in `dir` turns the push into a bare remote rejection;
+   * a `push-resolves-conflict` file makes a push that lands clear the PR's
+   * conflict with its base, as a conflict resolution does.
    */
   function recordingGit(dir: string, pushLog: string): string {
     const real = Bun.which("git");
@@ -52,7 +55,12 @@ export function createFindingsFinishRoundFixtures() {
         "#!/usr/bin/env bash",
         'if [ "${1:-}" = "push" ]; then',
         `  ${GIT_PUSH_FLAG_GUARD}`,
+        `  [ ! -e ${JSON.stringify(join(dir, "push-fails"))} ] || { echo ' ! [remote rejected] HEAD -> feature (failed)' >&2; exit 1; }`,
         `  printf '%s\\n' "$*" >> ${JSON.stringify(pushLog)}`,
+        `  if [ -e ${JSON.stringify(join(dir, "push-resolves-conflict"))} ]; then`,
+        `    jq '.mergeable = "MERGEABLE"' ${JSON.stringify(join(dir, "pr-view.json"))} > ${JSON.stringify(join(dir, "pr-view.json.tmp"))}`,
+        `    mv ${JSON.stringify(join(dir, "pr-view.json.tmp"))} ${JSON.stringify(join(dir, "pr-view.json"))}`,
+        "  fi",
         '  echo "   abc..def  HEAD -> main"',
         "  exit 0",
         "fi",

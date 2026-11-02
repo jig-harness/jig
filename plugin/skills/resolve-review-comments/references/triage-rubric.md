@@ -548,7 +548,14 @@ follow-up is filed, so the caller finalizes them after acting (the commit
 sha, the issue link) and only then posts; `rejected` and `wont-fix` drafts
 change nothing downstream and may post as-is. For `escalate` there is no
 draft — the outcome awaits the human, and any interim status reply goes out
-with `--no-outcome`.
+with `--no-outcome` — except under a drive at the `wide` autonomy level,
+where an `escalate` with the class `escalated` and `human-decision: no` comes
+with a `provisional-draft`: the reply outcome the arbiter would choose were
+the call the agent's, `rejected`, `wont-fix` or `deferred`, never a fix. The
+caller posts it with drive-pr's `provisional-reply.ts`, which marks it a
+**provisional decision**: a person reverses it by commenting on the thread,
+and until then reconciliation and triage skip the thread (a different sense
+from the provisional *drafts* above, which are finalized before they post).
 
 Arbiter ground rules (enforced by its agent definition):
 

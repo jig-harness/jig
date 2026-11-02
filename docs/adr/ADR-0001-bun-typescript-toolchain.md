@@ -1,11 +1,11 @@
 ---
 title: "ADR-0001: Bun and TypeScript for Jig's tooling and gates"
 type: adr
-status: approved
+status: amended
 description: "Jig's runnable tooling, gates and skills are written in TypeScript and run with Bun"
 lifecycle: permanent
-version: "1.0"
-last_updated: 2026-10-13
+version: "1.1"
+last_updated: 2026-11-01
 owner: maintainers
 decision_date: 2026-10-04
 supersedes: ~
@@ -68,3 +68,27 @@ Bun through mise.
 
 Not mechanically checked. A gate forbidding new shell scripts outside
 `seeds/` and test fixtures would check the first half of the decision.
+
+## Amendments
+
+### 2026-11-01 — A library with no single-file build is vendored as a bundle Jig builds (v1.1)
+
+Touches the Decision's "a skill that needs a library vendors its single-file
+build" and the Costs section's dependency line. Code that runs from the
+plugin still depends only on Bun's built-ins and on code vendored beside it,
+with its licence and its line in [NOTICE](../../NOTICE). A library that ships
+a single-file build is vendored as that file, byte for byte, as js-yaml is. A
+library that ships none, such as Optique, the parser the `jig` command line is
+written with, is vendored as a bundle Jig builds from the pinned package with
+Bun's bundler, unminified so a reader can follow it: a script in
+`tools/plugin/` bundles an entry file that names only what the plugin
+imports, and `tools/plugin/vendored.test.ts` and the generated-file check
+rebuild the bundle and compare it with the vendored file byte for byte, so it
+cannot drift from the pinned package or be edited by hand. Its declarations
+name the package's own types, which the type check reads from the
+repository's `node_modules`; nothing that runs reads them.
+
+The bundle is what the pinned Bun writes for the pinned package, so a change
+that updates either rebuilds it, and a Bun update can change a vendored file
+whose library did not change. A bundle also carries the parts of the library
+its entry reaches, not only the functions the plugin calls.

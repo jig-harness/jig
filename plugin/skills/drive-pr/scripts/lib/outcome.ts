@@ -23,6 +23,8 @@
  * thread replies or admit summary answers nobody composed through the script.
  */
 
+import { hasProvisionalMarker } from "../../../../shared/reply-markers.ts";
+
 export const OUTCOMES = [
   "accepted",
   "rejected",
@@ -106,10 +108,42 @@ export function qualifyingOutcome(body: string): QualifyingReply | null {
   };
 }
 
+/**
+ * The outcomes a provisional decision may reply with: a reply outcome only,
+ * never a fix, so a provisional decision never grows the diff.
+ */
+export const PROVISIONAL_OUTCOMES: ReadonlySet<Outcome> = new Set<Outcome>([
+  "rejected",
+  "wont-fix",
+  "deferred",
+]);
+
+/** The token a provisional reply carries right after its outcome token. */
+export const PROVISIONAL_TOKEN = "**provisional**";
+
+/**
+ * Is this body a provisional reply: a qualifying `rejected`, `wont-fix` or
+ * `deferred` reply whose reason opens with the provisional token and whose
+ * last line is `PROVISIONAL_MARKER`? Both are required, so neither a quoted
+ * marker nor a hand-typed token alone makes a reply provisional.
+ */
+export function isProvisionalReply(body: string): boolean {
+  const q = qualifyingOutcome(body);
+  return (
+    q !== null &&
+    PROVISIONAL_OUTCOMES.has(q.outcome) &&
+    q.reason.startsWith(PROVISIONAL_TOKEN) &&
+    hasProvisionalMarker(body)
+  );
+}
+
 export {
   hasLeaveOpenMarker,
   hasNoOutcomeMarker,
+  hasProvisionalMarker,
   LEAVE_OPEN_MARKER,
   LEAVE_OPEN_MARKER_PRODUCER_ENV,
   NO_OUTCOME_MARKER,
+  PROVISIONAL_MARKER,
+  PROVISIONAL_MARKER_PRODUCER_ENV,
 } from "../../../../shared/reply-markers.ts";

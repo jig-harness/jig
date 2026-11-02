@@ -49,10 +49,23 @@ update and release the plugin is in [plugin/README.md](../../plugin/README.md).
   and the whole path against a scratch origin, pushing with the workflow's own
   push script.
 
+- [vendor-optique.ts](vendor-optique.ts) vendors Optique, the parser the
+  `jig` command line is written with, into `plugin/shared/vendor/`: the
+  plugin runs without `node_modules` and Optique ships no single-file build,
+  so it bundles the names [optique-entry.ts](optique-entry.ts) lists from the
+  pinned package with Bun's bundler, unminified, and writes the bundle, its
+  declarations (the package's own types) and the package's licence. A script
+  that needs another of Optique's functions adds its name to the entry and
+  runs `bun tools/plugin/vendor-optique.ts`; `--check` exits 1 naming each
+  vendored file that differs from a fresh build.
+
+- [vendored.test.ts](vendored.test.ts) keeps the vendored YAML parser
+  identical to the pinned js-yaml build and the vendored command-line parser
+  identical to a fresh build of the pinned Optique.
+
 - [plugin.test.ts](plugin.test.ts) checks that both manifests name the
   drive loop's skills and every shipped agent, checks every skill's and
-  agent's name and paths, keeps the vendored YAML parser identical to the
-  pinned package, and runs the skills' scripts (the review skill, the
+  agent's name and paths, and runs the skills' scripts (the review skill, the
   procedure skills, `decide` and `explain`) from a copy built by
   `artifact.ts` outside this repository, with no `node_modules` above it,
   against a scratch consumer repository, the way a plugin cache holds them.

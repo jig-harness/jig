@@ -47,6 +47,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { errnoCode, swallow } from "../../plugin/shared/errors.ts";
+import { CLAIM_WAIT_MS } from "../../plugin/shared/orca-workspace/limits.ts";
 import { AGENT_NAME } from "./agent.ts";
 import { parseEnvelope, probeAgentSession } from "./herdr.ts";
 import { localOwner, ownerAlive, ownerLine } from "./owner.ts";
@@ -61,8 +62,7 @@ import type { Spawned } from "./spawn.ts";
 
 /** What a kickoff key may look like: it names files. */
 export const KICKOFF_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-/** How long a kickoff waits for another launch of the same key. */
-export const CLAIM_WAIT_MS = 120_000;
+export { CLAIM_WAIT_MS };
 /** The bound on submitting the prompt. */
 export const PROMPT_TIMEOUT_MS = 45_000;
 /** Lines of the agent's output searched for an earlier kickoff. */

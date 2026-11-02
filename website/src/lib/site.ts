@@ -70,6 +70,7 @@ export const NAV: readonly NavEntry[] = [
       { label: "The plugin", href: "/adopt/plugin/" },
       { label: "Configuration", href: "/adopt/configuration/" },
       { label: "Extending", href: "/adopt/extending/" },
+      { label: "Mechanisms", href: "/adopt/mechanisms/" },
     ],
   },
   { label: "Modules", href: "/modules/" },

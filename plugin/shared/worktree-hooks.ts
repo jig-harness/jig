@@ -16,10 +16,9 @@ import {
   spawnSync as guardedSpawnSync,
   withoutLeakyGitEnv,
 } from "./guarded-git-spawn.ts";
+import { HOOK_TIMEOUT_MS, HOOKS_DIR } from "./orca-workspace/limits.ts";
 
-export const HOOKS_DIR = ".config/worktree-hooks";
-/** The longest a create or remove hook may run; a dependency install is slow. */
-export const HOOK_TIMEOUT_MS = 15 * 60_000;
+export { HOOK_TIMEOUT_MS, HOOKS_DIR };
 /** The hook output kept for the log; a dependency install is verbose. */
 const HOOK_OUTPUT_BYTES = 256 * 1024 * 1024;
 /** How long past a hook's limit its supervisor may take to end it. */

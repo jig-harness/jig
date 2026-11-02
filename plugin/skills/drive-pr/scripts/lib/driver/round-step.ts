@@ -38,6 +38,8 @@ import { runReviewPassPhase } from "./review-pass.ts";
 
 import { standDownOnNewerClaim } from "./ledger.ts";
 
+import { sweepProvisional } from "./provisional-sweep.ts";
+
 import { parkedFromStateJson } from "./../state/framed-park.ts";
 
 import { framedDecisionLines } from "./../state/park-frame.ts";
@@ -152,6 +154,11 @@ async function waitForRoundBoundary(
   // drive here, before another pass could reply beside its successor.
   const takenOver = await standDownOnNewerClaim(context.pr);
   if (takenOver !== null) return takenOver;
+  // A person's comment on a provisional decision is parked for them before
+  // the gate counts the round's work (`provisional-sweep.ts`). A dry run
+  // previews and never sweeps: the sweep unresolves threads and parks.
+  const reversed = context.dryRun ? null : await sweepProvisional(context.pr);
+  if (reversed !== null) return reversed;
   const mailboxAtRoundStart = await context.mailboxCheckpoint();
   if (typeof mailboxAtRoundStart === "number") return mailboxAtRoundStart;
   if (mailboxAtRoundStart === "resumed") context.finalCiWait.clear();

@@ -15,7 +15,10 @@ twice ends in the same place as opening it once.
 
 It is machine tooling, like the [launcher](../launcher/README.md), which uses
 it as its `orca` provider: it runs from a checkout of this repository, not
-from the plugin. Herdr remains the [workspace runtime](../../GLOSSARY.md)
+from the plugin. The rules it opens a branch's worktree by, and runs the
+create hook once by, live in the plugin
+([plugin/shared/orca-workspace/](../../plugin/shared/orca-workspace/open.ts)),
+so plugin code that opens an Orca workspace follows the same ones. Herdr remains the [workspace runtime](../../GLOSSARY.md)
 Jig's tooling targets first
 ([ADR-0005](../../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md));
 Orca is supported through the same interfaces, as Conductor is.

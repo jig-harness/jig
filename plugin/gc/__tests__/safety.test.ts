@@ -250,6 +250,7 @@ test("bad arguments are refused before a sweep", () => {
   for (const args of [
     ["--kind", "unknown"],
     ["--repo"],
+    ["--repo", ""],
     ["--wat"],
     ["--collect", "--scheduled"],
     ["--machine"],

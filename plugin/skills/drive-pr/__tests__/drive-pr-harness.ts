@@ -1100,7 +1100,7 @@ export DRIVE_PR_STUB_GH_NESTED=1
   if [[ "$requires_json" -eq 1 ]]; then
     case "$command:$json_fields" in
       'pr checks:name,bucket,state'|'repo view:owner,name'|\
-      'pr view:number'|'pr view:state'|'pr view:headRefOid'|\
+      'pr view:number'|'pr view:state'|'pr view:headRefOid'|'pr view:mergeable'|\
       'pr view:baseRefName'|'pr view:baseRefName,url'|'pr view:state,isDraft'|\
       'pr view:state,headRefOid,labels'|\
       'pr view:state,headRefOid,baseRefOid'|\

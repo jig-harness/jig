@@ -34,8 +34,8 @@ export function claimName(nonce: string): string {
 }
 
 /** The diagnostics line — every field required, either a string or (for
- * `account`) a shape-checked nested object, except `model`, which a claim
- * written before the pass model was stamped lacks. */
+ * `account`) a shape-checked nested object, except `model` and
+ * `permissionMode`, which a claim written before they were stamped lacks. */
 export interface ClaimDiag {
   /** PR number the owner is driving. */
   pr: string;
@@ -52,6 +52,9 @@ export interface ClaimDiag {
   /** The model each pass runs on (`pass-model.ts`); `null` when the pass
    * command chooses its own, absent from a claim that predates it. */
   model?: string | null;
+  /** The permission mode each pass runs in (`pass-args.ts`); `null` when
+   * the pass command chooses its own, absent from a claim that predates it. */
+  permissionMode?: string | null;
 }
 
 export interface ClaimRecord {
@@ -170,27 +173,34 @@ function parseDiag(rest: string): ClaimDiag | null {
   const account =
     "account" in o ? parseAccount(o.account) : PRE_STAMPING_ACCOUNT;
   if (account === null) return null;
-  const model = claimModel(o);
-  const diag = { pr, worktree, log, started, account };
-  return model === undefined ? diag : { ...diag, model };
+  const model = claimLabel(o.model);
+  const permissionMode = claimLabel(o.permissionMode);
+  return {
+    pr,
+    worktree,
+    log,
+    started,
+    account,
+    ...(model === undefined ? {} : { model }),
+    ...(permissionMode === undefined ? {} : { permissionMode }),
+  };
 }
 
 /**
- * A claim's pass model: absent when the claim has none, and read as
- * absent when it is not a nonempty string or `null`. The model only labels a
- * listing, so a bad one costs its own line, never the record `--stop` and the
- * parent-driver check read.
+ * A claim's pass model or permission mode: absent when the claim has none,
+ * and read as absent when it is not a nonempty string or `null`. Each only
+ * labels a listing, so a bad one costs its own line, never the record
+ * `--stop` and the parent-driver check read.
  */
-function claimModel(o: Record<string, unknown>): string | null | undefined {
-  const { model } = o;
-  if (model === null) return null;
-  return typeof model === "string" && model !== "" ? model : undefined;
+function claimLabel(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  return typeof value === "string" && value !== "" ? value : undefined;
 }
 
-/** The pass model as a listing shows it. */
-function formatPassModel(diag: ClaimDiag): string {
-  if (diag.model === undefined) return "unknown (claim predates the model)";
-  return diag.model ?? "chosen by the pass command";
+/** A pass model or permission mode as a listing shows it. */
+function formatLabel(value: string | null | undefined, what: string): string {
+  if (value === undefined) return `unknown (claim predates the ${what})`;
+  return value ?? "chosen by the pass command";
 }
 
 /** A live drive's diagnostics as `drives.ts` lists them, one indented line each. */
@@ -200,7 +210,8 @@ export function diagLines(diag: ClaimDiag): string[] {
     `    since:    ${diag.started}`,
     `    log:      ${diag.log}`,
     `    account:  ${formatAccountIdentity(diag.account)}`,
-    `    model:    ${formatPassModel(diag)}`,
+    `    model:    ${formatLabel(diag.model, "model")}`,
+    `    permissions: ${formatLabel(diag.permissionMode, "permission mode")}`,
   ];
 }
 

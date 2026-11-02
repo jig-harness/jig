@@ -14,6 +14,7 @@
 
 import { type RunResult, run } from "../../../../drive-pr/scripts/lib/proc.ts";
 import { pager, postGraphQL, runClient } from "./graphql.ts";
+import { assignedOperations, OPEN, poolFilter } from "./linear-pool.ts";
 import {
   CLOSED_STATE_TYPES,
   type CanonicalState,
@@ -30,7 +31,6 @@ import {
   type LabelledIssueState,
   type LedgerIssue,
   type PoolIssue,
-  type PoolQuery,
   type StartedIssueActivity,
   type Tracker,
   type TrackerLabel,
@@ -736,8 +736,6 @@ export function parseLabelledNode(
 
 // ── Candidate pools ────────────────────────────────────────────────────────
 
-const OPEN = { state: { type: { nin: [...CLOSED_STATE_TYPES] } } };
-
 const POOL_FIELDS = `
   identifier title url priority createdAt
   state { id name type }
@@ -769,35 +767,6 @@ query TrackerOpenChildren($id: String!, $filter: IssueFilter!, $after: String) {
 
 const POOL_ISSUE_QUERY = `
 query TrackerPoolIssue($id: String!) { issue(id: $id) { ${POOL_FIELDS} } }`;
-
-/**
- * Linear's issue filter for a pool. Each label clause is its own `and` entry:
- * two `labels` keys in one object would leave only the last. "Carries none"
- * is `every` + `nin`; `some` + `nin` would match any issue with one label
- * outside the list, which is nearly all of them.
- */
-export function poolFilter(
-  team: string,
-  query: PoolQuery,
-): Record<string, unknown> {
-  if (
-    query.withSomeOf.length === 0 ||
-    query.withSomeOf.some((l) => l.length === 0)
-  )
-    throw new Error(
-      "a pool query needs at least one non-empty label list; an empty one would read every open issue",
-    );
-  return {
-    and: [
-      { team: { key: { eq: team } } },
-      OPEN,
-      ...query.withSomeOf.map((l) => ({ labels: { name: { in: l } } })),
-      ...(query.withNoneOf === undefined || query.withNoneOf.length === 0
-        ? []
-        : [{ labels: { every: { name: { nin: query.withNoneOf } } } }]),
-    ],
-  };
-}
 
 /** Parse one pool node; a truncated label page is recorded, not fatal. */
 export function parsePoolIssue(raw: unknown): PoolIssue {
@@ -1482,6 +1451,12 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       const issue = record(data, "data").issue;
       return issue === null ? null : parsePoolIssue(issue);
     },
+    ...assignedOperations({
+      ...opts,
+      pageAll,
+      poolQuery: POOL_QUERY,
+      parsePool: parsePoolIssue,
+    }),
 
     async createIssue(issue) {
       requireTitle(issue.title);

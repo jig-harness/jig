@@ -65,6 +65,7 @@ with the review.
 | [Evidence before claims, and a debugging protocol](verify-and-debug.md) | 28 |
 | [The spec a work item links](spec-link.md), with its [research note](spec-ecosystems-research.md) | 29 |
 | [Routing work to an agent, a model and an effort](agent-routing.md) | 31 |
+| [Driving any pull request from anywhere, with autonomy that fits the hour](dark-factory-driving.md) | 32 |
 | [The dispatcher, a tick that starts the execution line's stages](dark-factory-dispatch.md) | 33 |
 
 ## Starting a design
