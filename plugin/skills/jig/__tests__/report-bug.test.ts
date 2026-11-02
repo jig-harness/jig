@@ -7,8 +7,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { withoutLeakyGitEnv } from "../../../shared/guarded-git-spawn.ts";
 import {
   body,
@@ -174,6 +175,21 @@ test("a body edited to drop a blank line before a heading loses no text", () => 
   const r = fallbackUrl({ title: "t", body: edited });
   expect(r.split).toBe(true);
   expect(new URL(r.url).searchParams.get("what")).toBe("it parked");
+});
+
+test("an answer that starts with an indented code block keeps its indentation", () => {
+  const edited = body({
+    version: "1.2.3",
+    channel: "marketplace",
+    what: "it parked",
+    expected: "it converges",
+    tools: "Claude Code on Linux",
+  }).replace("\nit parked\n", "\n    bun run gates\n    exit 1\n");
+  const r = fallbackUrl({ title: "t", body: edited });
+  expect(r.split).toBe(true);
+  expect(new URL(r.url).searchParams.get("what")).toBe(
+    "    bun run gates\n    exit 1",
+  );
 });
 
 test("a body quoting a form heading is kept whole, not split at the quote", () => {
@@ -484,10 +500,9 @@ test("with gh not logged in, file prints the form address and does not search", 
     draft,
     JSON.stringify({ title: "t", body: "b", labels: ["bug"], url: "u" }),
   );
-  const gh = join(dir, "gh");
-  writeFileSync(gh, "#!/bin/sh\nexit 4\n", { mode: 0o755 });
+  writeFakeProgram(join(dir, "gh"), "#!/bin/sh\nexit 4\n");
   const run = Bun.spawnSync([process.execPath, script, "file", draft], {
-    env: { ...process.env, PATH: dir },
+    env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` },
     stdout: "pipe",
     stderr: "pipe",
   });
