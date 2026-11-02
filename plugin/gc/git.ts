@@ -31,6 +31,8 @@ export async function gcGit(root: string, args: string[]): Promise<string> {
     [
       "git",
       "--no-optional-locks",
+      // Replacement objects would show a commit other than the one asked for.
+      "--no-replace-objects",
       "-c",
       "core.fsmonitor=false",
       "-c",
