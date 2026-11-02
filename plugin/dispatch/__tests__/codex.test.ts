@@ -290,14 +290,14 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
         "route strategic for Codex, high, gpt-example-large",
       ),
     });
-    expect(
-      readRecord(launchedRecord(receipt), dispatchState(w)),
-    ).toMatchObject({
-      vendor: "codex",
-      sessionId: null,
-      model: "gpt-example-large",
-      effort: "high",
-    });
+    expect(readRecord(launchedRecord(receipt), dispatchState(w))).toMatchObject(
+      {
+        vendor: "codex",
+        sessionId: null,
+        model: "gpt-example-large",
+        effort: "high",
+      },
+    );
 
     await waitFor("the session", () => codexRuns(w).length === 1);
     expect(codexRuns(w)).toEqual([
