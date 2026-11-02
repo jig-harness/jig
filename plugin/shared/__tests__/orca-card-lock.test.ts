@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -124,6 +131,59 @@ describe("the card's comment lock", () => {
     const results = await Promise.all([writer(), writer(), writer(), writer()]);
     expect(results.every((r) => r !== null)).toBe(true);
     expect(overlap).toBe(false);
+  });
+
+  test("separate processes contending for a stale lock lose no read-modify-write", async () => {
+    const root = scratchRoot();
+    const counter = join(root, "counter");
+    writeFileSync(counter, "0");
+    writeFileSync(cardLockPath(WORKSPACE, root), `${deadPid()}\nleft\n`);
+    const script = `
+      import { readFileSync, writeFileSync } from "node:fs";
+      import { withCardLock } from ${JSON.stringify(join(import.meta.dir, "../orca-card-lock.ts"))};
+      for (let i = 0; i < 15; i++) {
+        const got = await withCardLock(${JSON.stringify(WORKSPACE)}, async () => {
+          const n = Number(readFileSync(${JSON.stringify(counter)}, "utf8"));
+          await new Promise((done) => setTimeout(done, 2));
+          writeFileSync(${JSON.stringify(counter)}, String(n + 1));
+        }, { root: ${JSON.stringify(root)}, waitMs: 30000 });
+        if (got === null) process.exit(3);
+      }
+    `;
+    const children = Array.from({ length: 4 }, () =>
+      Bun.spawn([process.execPath, "-e", script], {
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+    );
+    for (const child of children) {
+      const exitCode = await child.exited;
+      expectSpawnExit(
+        {
+          exitCode,
+          stdout: await new Response(child.stdout).text(),
+          stderr: await new Response(child.stderr).text(),
+        },
+        0,
+      );
+    }
+    expect(readFileSync(counter, "utf8")).toBe("60");
+  });
+
+  test("a reclaim mutex held by a live reclaimer is left alone, an abandoned one is removed", async () => {
+    const root = scratchRoot();
+    const lock = cardLockPath(WORKSPACE, root);
+    writeFileSync(lock, `${deadPid()}\nleft\n`);
+    writeFileSync(`${lock}.reclaim`, `${process.pid}\nrival\n`);
+    expect(
+      await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 150 }),
+    ).toBeNull();
+    expect(existsSync(lock)).toBe(true);
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(`${lock}.reclaim`, old, old);
+    expect(
+      await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 2000 }),
+    ).toEqual({ value: "x" });
   });
 
   test("reclaiming a dead owner's lock leaves nothing behind", async () => {

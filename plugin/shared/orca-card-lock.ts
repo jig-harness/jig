@@ -13,7 +13,8 @@
  * directory, which a launcher can change per process), named after the
  * workspace's path and created exclusively, holding its owner's pid and a
  * token. Release removes it only while it still holds that token. A lock
- * whose owner is no longer running is moved aside and removed.
+ * whose owner is no longer running is removed by one reclaimer at a time,
+ * under a short mutex file beside it.
  * The lock is published whole (linked into place from a private file), so
  * an interrupted acquisition leaves no empty lock. A writer that cannot take the lock within its
  * deadline gets `null` and skips its write: the board is a convenience.
@@ -27,8 +28,8 @@ import {
   linkSync,
   mkdirSync,
   readFileSync,
-  renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -88,33 +89,40 @@ function ownerGone(pid: number | null): boolean {
   }
 }
 
+/** Milliseconds after which a reclaim mutex is taken to be abandoned. */
+const RECLAIM_ABANDONED_MS = 10_000;
+
 /**
- * Remove a stale lock without ever unlinking a lock someone else published
- * meanwhile. The judged file is moved aside by `rename`, which takes
- * whichever file is at the path at that instant, and the moved file is judged
- * again: only a file whose recorded owner is gone is deleted. A live lock
- * that was taken by mistake (it replaced the judged one between the judgment
- * and the move) is linked back; if the path was taken again in that instant,
- * the live lock's own holder finds its token gone and skips releasing.
+ * Remove a stale lock while holding the reclaim mutex, so one reclaimer at a
+ * time judges and removes it. While the stale file stands at the lock path no
+ * writer can publish there, and only a reclaimer ever removes a lock it did not
+ * take, so the file judged under the mutex is the file removed: a live
+ * holder's lock is never in the way. The mutex is held for two file reads and
+ * one removal, with no waiting; a mutex older than `RECLAIM_ABANDONED_MS`
+ * belongs to a reclaimer that died inside that stretch and is removed.
  */
-function reclaim(lock: string): void {
+function reclaim(lock: string, abandonedMs = RECLAIM_ABANDONED_MS): void {
   if (!ownerGone(ownerOf(lock))) return;
-  const aside = `${lock}.stale-${process.pid}-${randomUUID()}`;
-  try {
-    renameSync(lock, aside);
-  } catch (error) {
-    swallow(error, "another reclaimer or the holder removed the lock first");
+  const mutex = `${lock}.reclaim`;
+  const content = `${process.pid}\n${randomUUID()}\n`;
+  if (!publish(mutex, content)) {
+    try {
+      if (Date.now() - statSync(mutex).mtimeMs > abandonedMs) {
+        rmSync(mutex, { force: true });
+      }
+    } catch (error) {
+      swallow(error, "the reclaimer holding the mutex finished first");
+    }
     return;
   }
   try {
-    if (ownerGone(ownerOf(aside))) return;
-    try {
-      linkSync(aside, lock);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    }
+    if (ownerGone(ownerOf(lock))) rmSync(lock, { force: true });
   } finally {
-    rmSync(aside, { force: true });
+    try {
+      if (readFileSync(mutex, "utf8") === content) rmSync(mutex);
+    } catch (error) {
+      swallow(error, "the mutex was already removed as abandoned");
+    }
   }
 }
 
