@@ -522,6 +522,26 @@ shell must not expand; `--title <text>` is for a caller that starts the
 script without a shell. `--id` is left out for a pull request that serves no
 item.
 
+## `orca`
+
+How the skills show a piece of work on [Orca](https://www.onorca.dev)'s
+workspace board, where the session runs in a terminal Orca opened. Each stage
+of the execution line moves the worktree's card: `do-item` to the
+`in_progress` stage at pickup and to `in_review` when it opens the pull
+request, and `drive-pr` to `in_review` when it marks the pull request Ready;
+`completed` is the stage a post-merge step moves it to. A drive that stops where a
+person must look (a park, a usage-limit stop, a failure stop) marks the card
+unread with the stop's one-line reason as its comment, and moves no column.
+Outside Orca nothing is read or called, and an Orca failure only warns.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `orca.board` | map from a stage (`in_progress`, `in_review`, `completed`) to a board status id | Orca's own columns, `{in_progress: in-progress, in_review: in-review, completed: completed}` | do-item, drive-pr | The column each stage moves the card to, for a board with custom columns. An entry overrides one stage and keeps the rest; a stage outside this set, or a value that is not a status id (letters, digits, `-` and `_`), only warns and moves nothing |
+
+From the repository root, `bun "<plugin>/shared/orca-board.ts" [in-progress|in-review|completed] [--pr <number>] [--unread] [--comment <text>]`
+moves the card by hand, `<plugin>` being the installed plugin's directory.
+The stage is written with a hyphen there, as Orca's default column is named.
+
 ## `work_batch`
 
 How `work-batch` sizes and ranks a batch of small issues for one pull
@@ -1261,6 +1281,8 @@ do_item:
 workspace_name:
   template: "{status} {id} {title}"   # [D] JIG-12 Rename workspaces
   statuses: { ready: "[R]", done: "✅" }
+orca:
+  board: { in_review: review, completed: shipped }   # custom board columns
 work_batch:
   point_budget: 16
   size_points: { xs: 1, small: 2, medium: 6 }   # keys: exactly issue_tracker.labels.batch_sizes

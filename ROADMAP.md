@@ -278,9 +278,9 @@ to the person; its Herdr provider starts the configured agent.
   on the server rather than on the launching machine, so two machines never
   start it twice; reflection findings parked on a server's host before a
   removal, which today refuses while unsent ones are there; hooks on a
-  server's host supervised as they are on a machine; the review and merge
-  stages shown on Orca's workspace board, beside the pickup and pull
-  request stages it shows today; the drive, pickup and
+  server's host supervised as they are on a machine; the merge stage shown
+  on Orca's workspace board, beside the pickup, pull request, review and
+  stop stages it shows today; the drive, pickup and
   review skills checked inside Orca worktrees on a server, as item 19 does
   for Herdr; and the tool and the launcher's Orca provider on Windows, where
   the tool's host steps (`sh`, `test`, `mkdir`) need the host's own shell

@@ -132,9 +132,12 @@ or stopping it.
 Run in a worktree of [Orca](https://www.onorca.dev), the skill also moves
 the worktree's card on Orca's workspace board, which the desktop app and
 Orca Mobile show: to In progress when it starts the issue, and to In review,
-with the pull request linked, once the pull request opens. Nothing turns
-this on and nothing in another runtime changes: outside Orca it makes no
-call, and an Orca call that fails only warns.
+with the pull request linked, once the pull request opens; the
+[drive](../drive-pr/README.md) moves it on from there. A
+board with custom columns maps these stages onto them in
+[`orca.board`](../../CONFIGURATION.md#orca). Nothing turns this on and
+nothing in another runtime changes: outside Orca it makes no call, and an
+Orca call that fails only warns.
 
 The workspace is also renamed as the work moves, from a template over the item key, title, pull request and a short status (`[I]`
 implementing, `[D]` driving, `[R]` ready to merge; `✅` done is reserved for

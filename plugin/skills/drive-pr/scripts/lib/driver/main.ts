@@ -69,6 +69,8 @@ import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
 import { armLedger, ledgerIdentity, ledgerSettlement } from "./ledger.ts";
 
+import { cardAfterDrive } from "./orca-card.ts";
+
 import {
   type EffectivePass,
   effectivePass,
@@ -506,7 +508,10 @@ export async function main(): Promise<number> {
     deadlineRetryBudget,
     firstPassNotice,
   });
-  return await settlement.done(roundsExit);
+  const exit = await settlement.done(roundsExit);
+  // A stop a person settles shows on the Orca card, unread with its reason.
+  await cardAfterDrive(pr, exit, dryRun);
+  return exit;
 }
 
 /**
