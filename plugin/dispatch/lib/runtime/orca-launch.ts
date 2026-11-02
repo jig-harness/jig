@@ -9,12 +9,12 @@
  * lost, never read as a refusal.
  *
  * A headless pass is the wrapper's drive. An interactive session is the
- * wrapper's Claude Code session; its receipt names the agent by the id
- * `orca worktree ps` reports it under, the terminal's tab and pane
- * (`<tabId>:<leafId>`), read back with `orca terminal show`. Whether Orca's
- * status hooks report a session started this way as an agent is not shown
- * yet, so Orca reports that it cannot bind an interactive session
- * (`orca.ts`) and the tick never asks for one.
+ * wrapper's session of the account's agent (Claude Code or Codex, as the
+ * account's vendor says); its receipt names the agent by the id `orca
+ * worktree ps` reports it under, the terminal's tab and pane
+ * (`<tabId>:<leafId>`), read back with `orca terminal show`. Orca still
+ * reports that it cannot bind an interactive session (`orca.ts` says why),
+ * so the tick never asks for one.
  */
 import { resolve } from "node:path";
 import { shellQuote } from "../../../shared/cli.ts";

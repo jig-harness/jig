@@ -20,6 +20,7 @@
  * its row in the outcome log (log.ts, log-ended.ts), before any expired
  * record is removed.
  */
+import { passTimeoutSeconds } from "../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { parseTrackerConfig } from "../skills/do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../skills/do-item/scripts/lib/tracker/index.ts";
@@ -52,7 +53,7 @@ import { rotated } from "./lib/actions/launch.ts";
 import { applyNotices } from "./lib/actions/notify.ts";
 import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
-import { lastAccount, slotTable } from "./lib/accounts.ts";
+import { lastAccount, notAdmitted, slotTable } from "./lib/accounts.ts";
 import { readMarkers } from "./lib/followup-marker.ts";
 import {
   readOutcomes,
@@ -654,6 +655,7 @@ function applyState(
     records,
     table: slotTable(machine.accounts, records, nowMs),
     last: lastAccount(records),
+    passDeadlineSec: passTimeoutSeconds(),
     startedAt: Date.now(),
     tick,
     repos: options.repos.length,
@@ -691,6 +693,13 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     const withheld =
       attempt !== null && "withheld" in attempt ? attempt.withheld : undefined;
     const apply = attempt !== null && "tick" in attempt ? attempt : null;
+    const refusedAccounts =
+      machine === null
+        ? []
+        : notAdmitted(
+            machine.accounts,
+            apply?.passDeadlineSec ?? passTimeoutSeconds(),
+          );
     const receipt: TickReceipt = {
       version: 1,
       runId: newRunId(now),
@@ -700,6 +709,9 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       apply: apply !== null,
       exitStatus: 0,
       ...(withheld === undefined ? {} : { applyWithheld: withheld }),
+      ...(refusedAccounts.length === 0
+        ? {}
+        : { accountsNotAdmitted: refusedAccounts }),
       unreadableLaunches: read.unreadable,
       repos: [],
     };

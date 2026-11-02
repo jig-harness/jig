@@ -17,6 +17,7 @@
  * fresh launch. Everything else in the plan is reported, as without
  * `--apply`.
  */
+import { admittedVendor } from "../accounts.ts";
 import { type LaunchRecord, newRecordId, newToken } from "../launches.ts";
 import type { SessionsReport } from "../runtime/port.ts";
 import { failureText } from "../text.ts";
@@ -173,9 +174,10 @@ async function launchOne(
       repoPath: repo.path,
       pr: pr.number,
       account: slots.account.name,
-      vendor: slots.account.vendor,
+      vendor: admittedVendor(slots.account),
       configDir: slots.account.configDir,
       wallBackoffMs: state.machine.wallBackoffMs,
+      passTimeoutSec: state.passDeadlineSec,
       replaces: action.takeover ?? null,
       facts: action.facts ?? factsOf(pr),
       createdAt: new Date().toISOString(),

@@ -243,17 +243,75 @@ describe("the way a drive is armed", () => {
     });
   });
 
-  it("prints the command only for print, and in a session that is not Claude Code's", () => {
+  it("prints the command only for print, and in a session of no agent tool with a documented pass", () => {
     expect(chooseWay("print", IN_ORCA, "linux")).toMatchObject({
       way: "print",
     });
-    const codex = chooseWay(
+    const none = chooseWay(
       "auto",
-      { CODEX_HOME: "/x", ORCA_CLI_COMMAND: "/opt/orca/bin/orca" },
+      { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" },
       "linux",
     );
-    expect(codex).toMatchObject({ way: "print" });
-    expect(JSON.stringify(codex)).toContain("this session runs codex");
+    expect(none).toMatchObject({ way: "print" });
+    expect(JSON.stringify(none)).toContain(
+      "the documented pass commands are Claude Code's and Codex's",
+    );
+  });
+
+  it("arms from a Codex session in a tab, and prints the command where Claude Code would use the background", () => {
+    const orca = { CODEX_HOME: "/x", ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
+    expect(chooseWay("auto", orca, "linux")).toMatchObject({
+      way: "tab",
+      orca: "/opt/orca/bin/orca",
+    });
+    const away = chooseWay("auto", { CODEX_HOME: "/x" }, "linux");
+    expect(away).toMatchObject({ way: "print" });
+    expect(JSON.stringify(away)).toContain("this session is Codex's");
+    expect(chooseWay("background", orca, "linux")).toMatchObject({
+      way: "print",
+    });
+    expect(chooseWay("tab", { CODEX_HOME: "/x" }, "linux")).toMatchObject({
+      error: expect.stringContaining("cannot open a terminal tab"),
+    });
+  });
+});
+
+describe("the Codex pass an arm from a Codex session builds", () => {
+  it("runs Codex's documented pass command, on routing.models.codex's model after exec", () => {
+    const argv = driveArgv(REQUEST, "gpt-example", [], "codex");
+    expect(argv.slice(argv.indexOf("--") + 1)).toEqual([
+      "codex",
+      "exec",
+      "-m",
+      "gpt-example",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 42",
+    ]);
+    const unset = driveArgv(REQUEST, null, [], "codex");
+    expect(unset.slice(unset.indexOf("--") + 1)).toEqual([
+      "codex",
+      "exec",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 42",
+    ]);
+  });
+
+  it("reports the Codex command, its model and its permission in a Codex session", async () => {
+    const { report, exit } = await arm(
+      {
+        ...inputs("print", { CODEX_HOME: "/x" }),
+        model: { model: null, source: "Codex's own configuration" },
+      },
+      deps(fakeOrca(OPENED).runner, [null]),
+    );
+    expect(exit).toBe(0);
+    expect(report).toMatchObject({
+      status: "print",
+      model: null,
+      permissionMode: "no sandbox, no approvals",
+    });
+    expect(report.argv).toContain("codex");
+    expect(report.argv).not.toContain("claude");
   });
 });
 

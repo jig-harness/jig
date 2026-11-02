@@ -168,8 +168,27 @@ fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
   cwd: process.cwd(),
   configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
   token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
+  codexHome: process.env.CODEX_HOME ?? null,
+  anthropicKey: process.env.ANTHROPIC_API_KEY ?? null,
+  openaiKey: process.env.OPENAI_API_KEY ?? null,
 }) + "\\n");
 process.exit(fs.existsSync(F + "/drive-exit") ? Number(fs.readFileSync(F + "/drive-exit", "utf8")) : 0);
+`;
+
+/** The Codex a pickup's wrapper starts in tests: it records how it was started and runs until \`claude-exit\` appears. */
+const FAKE_CODEX = `#!/usr/bin/env bun
+const fs = require("node:fs");
+const F = process.env.DISPATCH_FAKE_DIR;
+fs.appendFileSync(F + "/codex-runs.jsonl", JSON.stringify({
+  argv: process.argv.slice(2),
+  cwd: process.cwd(),
+  codexHome: process.env.CODEX_HOME ?? null,
+  configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
+  token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
+}) + "\\n");
+const until = Date.now() + 60000;
+while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(50);
+process.exit(0);
 `;
 
 /** The Claude Code a pickup's wrapper starts in tests: it records how it was started and runs until \`claude-exit\` appears. */
@@ -295,6 +314,7 @@ export function world(): World {
   writeFakeProgram(join(bin, "gh"), WRAPPER(join(dir, "..", "bin", "gh")));
   writeFakeProgram(join(bin, "orca"), FAKE_ORCA);
   writeFakeProgram(join(bin, "claude"), FAKE_CLAUDE);
+  writeFakeProgram(join(bin, "codex"), FAKE_CODEX);
   writeFileSync(join(root, "fake-drive.js"), FAKE_DRIVE);
   const write = (name: string, value: unknown) =>
     writeFileSync(

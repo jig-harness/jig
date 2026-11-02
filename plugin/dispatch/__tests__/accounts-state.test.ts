@@ -24,6 +24,9 @@ const account = (
   maxPerAccount: 2,
 });
 
+/** A drive's pass under the drive's default deadline. */
+const PASS = { kind: "pass", deadlineSec: 5400 } as const;
+
 const process = {
   host: "h",
   bootId: "b",
@@ -79,7 +82,7 @@ describe("account admission state", () => {
       Date.now(),
       "/nonexistent-state-root",
     );
-    expect(admitRearm(table, null)).toEqual({
+    expect(admitRearm(table, null, PASS)).toEqual({
       waits: expect.stringContaining("wall not recorded"),
     });
   });
@@ -133,7 +136,7 @@ describe("account admission state", () => {
       "/nonexistent-state-root",
     );
     expect(slotsOf(table, replaced.record)?.account.name).toBe("b");
-    expect(admitTakeover(table, replaced)).toEqual({
+    expect(admitTakeover(table, replaced, PASS.deadlineSec)).toEqual({
       admitted: table[0] as (typeof table)[number],
     });
   });

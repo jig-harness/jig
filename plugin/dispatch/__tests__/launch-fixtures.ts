@@ -26,13 +26,15 @@ export interface Account {
   name: string;
   identity: string;
   dir: string;
+  /** `claude` when absent. */
+  vendor?: string;
 }
 
 export function dispatchState(w: World): string {
   return join(w.home, ".local", "state", "jig", "dispatch");
 }
 
-/** An account whose configuration directory resolves to `email`. */
+/** A Claude Code account whose configuration directory resolves to `email`. */
 export function account(w: World, name: string, email: string): Account {
   const dir = join(w.root, `config-${name}`);
   mkdirSync(dir, { recursive: true });
@@ -41,6 +43,17 @@ export function account(w: World, name: string, email: string): Account {
     JSON.stringify({ oauthAccount: { emailAddress: email } }),
   );
   return { name, identity: email, dir };
+}
+
+/** A Codex account whose `CODEX_HOME` resolves to the account id `id` (its `auth.json`). */
+export function codexAccount(w: World, name: string, id: string): Account {
+  const dir = join(w.root, `codex-${name}`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "auth.json"),
+    JSON.stringify({ tokens: { account_id: id } }),
+  );
+  return { name, identity: id, dir, vendor: "codex" };
 }
 
 /** The machine file: the world's repository with `stages` (`rearm` by default) and `repository`'s keys, and these accounts. */
@@ -58,7 +71,7 @@ export function machineFile(
       repositories: [{ path: w.repo, stages, ...repository }],
       accounts: accounts.map((a) => ({
         name: a.name,
-        vendor: "claude",
+        vendor: a.vendor ?? "claude",
         config_dir: a.dir,
         identity: a.identity,
         ...(a.max === undefined ? {} : { max_per_account: a.max }),
@@ -135,6 +148,9 @@ export function driveRuns(w: World): Array<{
   cwd: string;
   configDir: string | null;
   token: string | null;
+  codexHome: string | null;
+  anthropicKey: string | null;
+  openaiKey: string | null;
 }> {
   const path = join(w.dir, "drive-runs.jsonl");
   if (!existsSync(path)) return [];

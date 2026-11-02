@@ -49,14 +49,16 @@ import {
 
 /**
  * Whether Orca binds an interactive session to its account. `orca agent
- * launch` has no account selection for Claude Code (`orca account select`
- * covers OpenCode and Devin only), and Orca starts the agent with the
- * configuration directory of the account the host has active, which a
+ * launch` has no account selection for Claude Code or Codex (`orca account
+ * select` covers OpenCode and Devin only), and Orca starts the agent with
+ * the configuration directory of the account the host has active, which a
  * person can switch at any moment. The wrapper in a terminal tab binds the
- * session through the account's directory, as it does a headless pass, but
- * that Orca reports such a session as an agent, under the id its launch
- * receipt names, is not shown yet. Until it is, pickups are reported and
- * none is started.
+ * session through the account's directory, as it does a headless pass.
+ * Orca reports a Codex session started that way as an agent (`codex`)
+ * under the id its launch receipt names, but Codex then waits on its
+ * question whether to trust a folder it has not seen, which nobody answers;
+ * that Orca reports a Claude Code session started that way is not shown.
+ * Until both are settled, pickups are reported and none is started.
  */
 const ORCA_BINDING: Binding = {
   ok: false,

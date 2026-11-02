@@ -12,14 +12,18 @@
  *   background  the session's background execution, as before tabs
  *   print       the command only, for a person to run
  *
- * Whatever the setting, a session that is not Claude Code's prints the
- * command only: `claude` is the one documented pass command, and a guessed
- * one for another agent tool is worse than one left for a person to run.
+ * The pass command is the session's own agent tool's documented one
+ * (`pass-command.ts`): Claude Code's in a Claude Code session, Codex's in a
+ * Codex session. A Codex session opens a tab where it can and otherwise
+ * prints the command: the background way is Claude Code's background
+ * execution. A session of any other tool, or one no harness can be read
+ * for, prints Claude Code's command only: a guessed one for another agent
+ * tool is worse than one left for a person to run.
  *
  * In a tab the drive outlives the session and has a window a person can
  * watch, and the session that implemented the item ends without a drive
  * running beside it. The tab is a fresh login shell of the user's: `bun`,
- * `claude` and the Claude account come from it, not from the session. The
+ * the agent's CLI and its account come from it, not from the session. The
  * tab only starts the drive: the command it types is the one this module
  * builds, quoted for a POSIX shell. On a Windows host Orca's tab can be
  * `cmd.exe` or PowerShell, which that quoting is not written for, so a
@@ -44,11 +48,30 @@ import {
 } from "../../../../shared/orca.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { driveTs, drives } from "./driver/paths.ts";
+import type { AccountVendor } from "./identity.ts";
 import type { ArmDriveMode } from "./overlay.ts";
-import { type PassArgs, permissionMode } from "./pass-args.ts";
-import type { PassModel } from "./pass-model.ts";
+import { codexPermission, type PassArgs, permissionMode } from "./pass-args.ts";
+import { passCommand } from "./pass-command.ts";
+import { withCodexModel } from "./pass-model.ts";
 
 type Env = Record<string, string | undefined>;
+
+/** The model a drive's passes run on and where it came from; `null` when the pass command's tool decides. */
+export interface ArmModel {
+  model: string | null;
+  source: string;
+}
+
+/**
+ * The agent tool whose pass command a session arms: Claude Code's in a
+ * Claude Code session, Codex's in a Codex session; `null` for any other.
+ */
+export function sessionVendor(env: Env): AccountVendor | null {
+  const harness = detectHarness(env)?.name ?? null;
+  if (harness === "claude-code") return "claude";
+  if (harness === "codex") return "codex";
+  return null;
+}
 
 /** The way a drive is armed once the setting meets the session. */
 export type ArmWay = "tab" | "background" | "print";
@@ -133,13 +156,38 @@ export function sessionOverrides(
 }
 
 /**
+ * The pass command `vendor` runs on `model`: Claude Code's with `passArgs`
+ * before its `-p`; Codex's with `-m` after `exec` (none when `model` is
+ * `null`, so Codex's own configuration decides).
+ */
+function passArgv(
+  vendor: AccountVendor,
+  pr: string,
+  model: string | null,
+  passArgs: readonly string[],
+): string[] {
+  const pass = passCommand(vendor, pr);
+  if (vendor === "codex")
+    return model === null ? pass : withCodexModel(pass, model);
+  const [claude, ...prompt] = pass;
+  return [
+    claude as string,
+    ...(model === null ? [] : ["--model", model]),
+    ...passArgs,
+    ...prompt,
+  ];
+}
+
+/**
  * The argument list that starts the drive: `drive.ts` in the tree, its pass
- * on `model`, with `passArgs` before the pass's `-p`.
+ * (`vendor`'s documented pass command) on `model`, with `passArgs` before a
+ * Claude Code pass's `-p`.
  */
 export function driveArgv(
   request: ArmRequest,
-  model: string,
+  model: string | null,
   passArgs: readonly string[] = [],
+  vendor: AccountVendor = "claude",
 ): string[] {
   const { pr, tree, forward } = request;
   return [
@@ -151,12 +199,7 @@ export function driveArgv(
     "--bots-only",
     ...forward,
     "--",
-    "claude",
-    "--model",
-    model,
-    ...passArgs,
-    "-p",
-    `/jig:drive-pr --bots-only ${pr}`,
+    ...passArgv(vendor, pr, model, passArgs),
   ];
 }
 
@@ -206,12 +249,27 @@ export function chooseWay(
 ): WayChoice | { error: string } {
   if (setting === "print")
     return { way: "print", reason: "arm_drive is print: the command only" };
-  const harness = detectHarness(env)?.name ?? null;
-  if (harness !== "claude-code")
+  const vendor = sessionVendor(env);
+  if (vendor === null)
     return {
       way: "print",
-      reason: `the pass command is Claude Code's, and this session runs ${harness ?? "no agent harness this can identify"}: the command only, for a person to run`,
+      reason: `the documented pass commands are Claude Code's and Codex's, and this session runs ${detectHarness(env)?.name ?? "no agent harness this can identify"}: Claude Code's command only, for a person to run`,
     };
+  const choice = claudeOrTab(setting, env, platform);
+  if (vendor === "claude" || "error" in choice || choice.way !== "background")
+    return choice;
+  return {
+    way: "print",
+    reason: `${choice.reason}; the background way is Claude Code's background execution, and this session is Codex's: the command only, for a person to run`,
+  };
+}
+
+/** The way to arm from a session that can open a tab or run in the background. */
+function claudeOrTab(
+  setting: Exclude<ArmDriveMode, "print">,
+  env: Env,
+  platform: NodeJS.Platform,
+): WayChoice | { error: string } {
   const orca = orcaTabCommand(env);
   if (setting === "background")
     return { way: "background", reason: "arm_drive is background" };
@@ -400,7 +458,8 @@ export interface ArmReport {
   reason: string;
   /** Set when `auto` meant a tab and the drive goes to the background instead: why. */
   fallback: string | null;
-  model: string;
+  /** `null` when the pass command's tool decides (a Codex pass with no model configured). */
+  model: string | null;
   modelSource: string;
   /** The extra words the pass command carries before `-p`, and their source. */
   passArgs: string[];
@@ -422,19 +481,24 @@ export interface ArmReport {
  * the extra pass arguments or the working tree could not be read. `command`
  * is built on `model` (the default where the configured one could not be
  * read) and `passArgs` (none where they could not be read) once the tree is
- * known.
+ * known, for `vendor`'s pass command (Claude Code's when none is named).
  */
 export function failedReport(
   request: { pr: string; tree: string | null; forward: string[] },
   setting: ArmReport["armDrive"],
-  pass: { model: PassModel; passArgs: PassArgs },
+  pass: { model: ArmModel; passArgs: PassArgs; vendor?: AccountVendor },
   reason: string,
 ): ArmReport {
   const { model, passArgs } = pass;
+  const vendor = pass.vendor ?? "claude";
   const tree = request.tree;
   const known = tree === null ? null : { ...request, tree };
   const argv =
-    known === null ? [] : driveArgv(known, model.model, passArgs.words);
+    known === null ? [] : driveArgv(known, model.model, passArgs.words, vendor);
+  const permission =
+    vendor === "codex"
+      ? codexPermission(passArgv(vendor, request.pr, null, []))
+      : permissionMode(["claude", ...passArgs.words]);
   return {
     pr: request.pr,
     tree,
@@ -447,8 +511,7 @@ export function failedReport(
     modelSource: model.source,
     passArgs: passArgs.words,
     passArgsSource: passArgs.source,
-    permissionMode:
-      permissionMode(["claude", ...passArgs.words]).mode ?? "default",
+    permissionMode: permission.mode ?? "default",
     command: known === null ? null : commandLine(argv),
     argv,
     tab: null,
@@ -462,7 +525,8 @@ export function failedReport(
 export interface ArmInputs {
   request: ArmRequest;
   setting: { value: ArmDriveMode; source: string };
-  model: PassModel;
+  /** The model of the session's agent tool's pass (`sessionVendor(env)`; Claude Code's for any other session). */
+  model: ArmModel;
   passArgs: PassArgs;
   env: Env;
   platform?: NodeJS.Platform;
@@ -474,7 +538,8 @@ export async function arm(
   deps: TabDeps,
 ): Promise<{ report: ArmReport; exit: number }> {
   const { request, setting, model, passArgs, env } = inputs;
-  const base = failedReport(request, setting, { model, passArgs }, "");
+  const vendor = sessionVendor(env) ?? "claude";
+  const base = failedReport(request, setting, { model, passArgs, vendor }, "");
   const choice = chooseWay(setting.value, env, inputs.platform);
   if ("error" in choice)
     return { report: { ...base, reason: choice.error }, exit: 1 };
