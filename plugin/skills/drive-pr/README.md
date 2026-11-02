@@ -225,7 +225,10 @@ and re-adds it takes control), and certifies the head only on required checks
 that started after the removal. When someone else removes the label, the
 drive accepts only checks that started strictly after that removal; GitHub
 records the removal to the second, so a run that started in the same second
-has to be rerun. A drive that dies mid-round leaves the label
+has to be rerun. A pull request that conflicts with its base runs no
+`pull_request` CI at all, so while the checks the hold waits for cannot run,
+the drive pushes the conflict resolution without the label, and the push
+that clears the conflict runs full CI. A drive that dies mid-round leaves the label
 behind; see [§ The exit states](#the-exit-states--what-you-do-now) for the recovery.
 
 ### Push hold

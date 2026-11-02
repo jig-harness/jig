@@ -4,6 +4,7 @@
  * (`lib/ci-policy.ts`); every predicate takes them as arguments.
  */
 
+import { swallow } from "../../../../shared/errors.ts";
 import { isGitSha } from "./cli.ts";
 
 export interface LabelTransition {
@@ -419,6 +420,29 @@ export function completedHoldPrecondition(
     watermark,
     strictAfter,
   );
+}
+
+/**
+ * Whether a `gh pr view --json mergeable` call says the pull request
+ * conflicts with its base. `UNKNOWN`, which GitHub reports while it is still
+ * computing, a failed call and an unreadable answer are not a conflict.
+ */
+export function reportsConflict(call: {
+  code: number;
+  stdout: string;
+}): boolean {
+  if (call.code !== 0) return false;
+  try {
+    const value = JSON.parse(call.stdout) as unknown;
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      (value as Record<string, unknown>).mergeable === "CONFLICTING"
+    );
+  } catch (err) {
+    swallow(err, "the mergeability answer is not JSON");
+    return false;
+  }
 }
 
 export function checkRunWatermark(
