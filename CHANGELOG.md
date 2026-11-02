@@ -349,6 +349,22 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.120.2] - 2026-11-02
+
+### Added
+
+- A map of Jig by mechanism, [plugin/MECHANISMS.md](plugin/MECHANISMS.md),
+  on the site as "Where the model is in the loop": for each part of the
+  plugin (the gates, the `jig` command and its timers, resource collection,
+  the dispatcher and its records, the follow-up marker, the drive, review,
+  the tracker and forge scripts, pickup, the changelog and release, hooks,
+  the audit) it names the script that owns it, where its state lives and
+  what it refuses, the model sessions that use it and what they decide
+  there, and who notices a failure and who is asked to fix it. It also says
+  when a model reads or writes Jig's own code, and which boundaries rest on
+  instructions rather than on a check. The glossary defines
+  deterministic and reasoned parts.
+
 ## [0.120.1] - 2026-11-02
 
 ### Fixed
@@ -4630,7 +4646,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.120.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.120.2...HEAD
+[0.120.2]: https://github.com/jig-harness/jig/compare/v0.120.1...v0.120.2
 [0.120.1]: https://github.com/jig-harness/jig/compare/v0.120.0...v0.120.1
 [0.120.0]: https://github.com/jig-harness/jig/compare/v0.119.0...v0.120.0
 [0.119.0]: https://github.com/jig-harness/jig/compare/v0.118.0...v0.119.0
