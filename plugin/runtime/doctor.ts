@@ -529,7 +529,13 @@ async function configFitCheck(pluginRoot: string): Promise<DoctorCheck> {
     "scripts",
     "config-fit.ts",
   );
-  const report = `bun ${script} --offline`;
+  const report = [
+    shellQuote(process.execPath),
+    "--no-env-file",
+    shellQuote(`--config=${join(pluginRoot, "gc", "bunfig.toml")}`),
+    shellQuote(script),
+    "--offline",
+  ].join(" ");
   const result = await run(
     [
       process.execPath,
