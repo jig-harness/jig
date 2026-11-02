@@ -3,8 +3,9 @@
  * order, as a headless pass in the pull request's workspace, on an
  * admitted account. For each one:
  *
- * 1. read the pull request's ledger again, and go on only when its facts
- *    are the ones the plan acted on;
+ * 1. read the pull request and its ledger again, and go on only when its
+ *    facts are the ones the plan acted on (for a re-drive of a stale
+ *    converged drive, the pull request's head and mergeability too);
  * 2. admit an account (accounts.ts), and check that the wrapper's
  *    environment resolves to that account's identity;
  * 3. use the workspace that holds the pull request, or open one;
@@ -23,8 +24,10 @@ import type {
   Action,
   DrivenPr,
   LaunchOutcome,
+  LedgerClass,
   RepoReport,
   RepoTarget,
+  StaleCause,
 } from "../types.ts";
 import { factsOf } from "./drive-hold.ts";
 import {
@@ -74,20 +77,40 @@ async function retryBlocked(
   if (read === null) return "its ledger cannot be read again";
   if (record.facts !== factsOf(read))
     return `its ledger changed since the launch (now ${factsOf(read)})`;
-  const want = record.action === "rearm" ? "re-armable" : "silent";
+  const want = wantedClass(record.action === "takeover", record.redrive);
   if (read.class !== want) return `its ledger now reads ${read.class}`;
+  const moved = changedStale(record.redrive, read);
+  if (moved !== null) return moved;
   return accountBlocked(state, record);
 }
 
-/** The fresh read: the ledger must still say what the plan acted on. */
+/** The class a launch acts on: a takeover's `silent`, a re-drive's `stale`, any other re-arm's `re-armable`. */
+function wantedClass(
+  takeover: boolean,
+  redrive: StaleCause | null | undefined,
+): LedgerClass {
+  if (takeover) return "silent";
+  return redrive == null ? "re-armable" : "stale";
+}
+
+/** Why a stale pull request no longer shows the change a re-drive acts on; `null` when it still does. */
+function changedStale(
+  redrive: StaleCause | null | undefined,
+  fresh: DrivenPr,
+): string | null {
+  if (redrive == null || fresh.stale?.change === redrive.change) return null;
+  return `its pull request changed since the plan read it (now ${fresh.stale?.cause ?? fresh.why})`;
+}
+
+/** The fresh read: the ledger, and a stale one's pull request, must still say what the plan acted on. */
 function stillWanted(action: Action, fresh: DrivenPr | null): string | null {
   if (fresh === null) return "its ledger cannot be read again";
   if (factsOf(fresh) !== action.facts)
     return `its ledger changed since the plan read it (now ${factsOf(fresh)})`;
-  const want = action.takeover === undefined ? "re-armable" : "silent";
-  return fresh.class === want
-    ? null
-    : `its ledger now reads ${fresh.class}: ${fresh.why}`;
+  const want = wantedClass(action.takeover !== undefined, action.redrive);
+  if (fresh.class !== want)
+    return `its ledger now reads ${fresh.class}: ${fresh.why}`;
+  return changedStale(action.redrive, fresh);
 }
 
 async function workspaceFor(
@@ -166,6 +189,7 @@ async function launchOne(
       command: null,
       marker: null,
       round: roundOf(pr),
+      redrive: action.redrive ?? null,
     },
     slots,
   );

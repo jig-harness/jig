@@ -62,6 +62,7 @@ export interface WantedItem {
 export type LedgerClass =
   | "driven"
   | "silent"
+  | "stale"
   | "done"
   | "stopped-by-person"
   | "stopped-unknown"
@@ -85,6 +86,16 @@ export interface WaitingPark {
   lines: string[];
 }
 
+/**
+ * Why a converged drive is stale: `cause` in words, for the report and the
+ * outcome log; `change` names the pull request's state that made it so (its
+ * head and whether it conflicts), for which a re-drive is launched once.
+ */
+export interface StaleCause {
+  cause: string;
+  change: string;
+}
+
 /** One open pull request whose comments hold a drive ledger. */
 export interface DrivenPr {
   number: number;
@@ -97,6 +108,8 @@ export interface DrivenPr {
   evidence: Evidence;
   /** For a `parked` ledger: the decisions still unanswered. */
   waiting?: WaitingPark[];
+  /** For a `stale` ledger: what its stop does not fix. */
+  stale?: StaleCause;
 }
 
 /** One pull request merged since the follow-up stage's start. */
@@ -175,6 +188,8 @@ export interface Action {
   facts?: string;
   /** For a takeover: the launch record whose driver it replaces. */
   takeover?: string;
+  /** For a re-drive of a stale converged drive: why it is stale. */
+  redrive?: StaleCause;
   /** For a notification: its cause. */
   cause?: NotifyCause;
   /** For a notification: the message, with the key that suppresses a repeat. */
