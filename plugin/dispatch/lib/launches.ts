@@ -715,14 +715,15 @@ function latestRefusals(records: ReadRecord[]): Set<string> {
 }
 
 /**
- * The ids of each pull request's latest re-drive record: its change is never
- * re-driven twice, and the record is the only evidence of that.
+ * The ids of each change's latest re-drive record: a change is never
+ * re-driven twice, and the record is the only evidence of that, so every
+ * change a pull request has been re-driven for keeps one.
  */
 function latestRedrives(records: ReadRecord[]): Set<string> {
   const latest = new Map<string, ReadRecord>();
   for (const r of records) {
     if (!isDrive(r.record) || !r.record.redrive) continue;
-    const key = `${r.record.repo}#${String(r.record.pr)}`;
+    const key = `${r.record.repo}#${String(r.record.pr)}\0${r.record.redrive.change}`;
     const seen = latest.get(key);
     if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
       latest.set(key, r);
