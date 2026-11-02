@@ -194,7 +194,7 @@ describe("jig dispatch names what it starts", () => {
     expect(comment).toContain(`[jig dispatch: ${SLUG} PR #7 stopped 7`);
   });
 
-  it("names a follow-up's new workspace and its tab, and marks a reused one", async () => {
+  it("names a follow-up's new workspace and its tab, and keeps the mark on the record", async () => {
     const w = base(["followup"]);
     w.setPrs("merged", [mergedPr(9, "feature/9-done", "2026-10-31T12:00:00Z")]);
     w.setComments(9, []);

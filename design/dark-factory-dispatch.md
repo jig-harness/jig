@@ -458,8 +458,8 @@ implementation:
   step that opens a workspace, and the tool then calls the moved code, so
   the pickups in step 4 reuse it rather than a copy;
 - `launch` for a **headless pass** (a drive re-arm or takeover) as
-  `orca terminal create --worktree <selector> --title <stage> --command
-  <wrapper>`, the account's configuration directory set in the command's
+  `orca terminal create --worktree <selector> --title <tab title> --command
+  <wrapper>` (the title as Naming what it starts gives it), the account's configuration directory set in the command's
   environment (below); for an **interactive session** (a pickup, a
   follow-up) as `orca agent launch --agent <id> --worktree <selector>
   --prompt "<skill> <key>"`, with the model and effort from the item's
@@ -479,9 +479,10 @@ implementation:
   rather than starting a second agent, is checked when the pickup stage is
   built, and until it does, a lost interactive launch is not retried;
 - `notify` as a workspace marked unread with the message as its comment
-  (`orca worktree set --comment <message> --unread`, the comment read back
-  with `orca worktree show`), appended to the comment while the workspace
-  is still unread (see Notifications), which Orca's phone app shows. A workspace's comment carries a kickoff
+  (`orca worktree set --comment <message> --unread`, the comment read
+  first and read back with `orca worktree show`), appended to the comment while the workspace
+  is still unread (see Notifications) and keeping the comment's dispatched
+  marks, which Orca's phone app shows. A workspace's comment carries a kickoff
   prompt until its agent starts, so the tick never writes one on a
   workspace that may yet start an agent with it. The target is the item's
   or pull request's workspace when its agent has started; otherwise
@@ -505,6 +506,37 @@ implementation:
 
 A second runtime is a second implementation of the same methods, with
 nothing in the tick changed.
+
+#### Naming what it starts
+
+A person looking at the board should tell what the dispatcher started
+from what they started themselves. One convention, in the interface
+itself (`plugin/dispatch/lib/runtime/port.ts`), gives every runtime the
+same strings, so a later runtime names things as Orca does:
+
+- **The name** of a workspace the dispatcher creates: a short mark, the
+  stage, the key (`⚙ dispatched · pickup #123`, `⚙ dispatched · rearm
+  #456`, `⚙ dispatched · followup #789`; the notices workspace is
+  `⚙ dispatched · notices`). It reads at a glance and a search for the
+  mark finds every one. On Orca it is the `--name` of `orca worktree
+  create`, which Orca shows as the workspace's name and makes its folder's
+  name from; the branch is still the one the branch rule names.
+- **The mark** in the workspace's comment: the name and the launch
+  record's id (`⚙ dispatched · rearm #456 · launch <id>`), on a line of its
+  own, one per stage and key, a later launch's replacing the earlier one.
+  A workspace the dispatcher creates gets it as its comment; one it reuses
+  keeps its name, and `launch` adds the mark to its comment before the
+  session starts, keeping what the comment holds and never adding a
+  launch's mark twice. A notification that rewrites the comment keeps its
+  marks. A mark the runtime refuses to write does not hold the launch
+  back: the receipt says so.
+- **The tab title** of a launch: `jig dispatch · rearm #456`.
+
+The launch record keeps the same mark. A skill may rename a workspace to
+what the work became; the mark outlives the name, so the comment and the
+record still say the dispatcher started it, and the morning report lists
+the workspaces of the night by the mark on their launch records, each with
+the name it carries now.
 
 ### Admission by account
 
@@ -1085,6 +1117,22 @@ One pull request each, in this order; each is usable on its own.
    written. Waits on step 3. Usable alone: a person sees from a phone what
    the dispatcher holds each pull request as, adopts one with a label and
    stands the dispatcher down from another.
+11. **Name what the dispatcher starts.** The naming convention in the
+   runtime interface (see Naming what it starts): a workspace the
+   dispatcher creates named for its stage and key, with the mark and the
+   launch record's id as its comment; a reused one keeping its name, the
+   mark added to its comment once at launch; the terminal tab and the
+   notices workspace named as the dispatcher's; the mark kept on the
+   launch record and through a notification's rewrite of the comment; the
+   morning report's dispatched workspaces, by the mark on their launch
+   records, with the name each carries now. Tests: a pickup, a re-arm and
+   a follow-up each open a workspace named with the mark, the stage and
+   the key, or mark the one they reuse, under a tab that names the
+   dispatcher; a workspace renamed after its launch is still listed by the
+   morning report; a notification keeps the mark; a mark Orca refuses to
+   write leaves the launch as it was. Waits on step 3. Usable alone: a
+   person tells a dispatched workspace from their own at a glance on the
+   board.
 
 ## Left out
 

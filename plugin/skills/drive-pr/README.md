@@ -583,9 +583,14 @@ notifications it sent (a refusal repeated tick after tick is listed once),
 and, for a repository that turns
 [dispatch labels](../../CONFIGURATION.md#dispatch) on, how many pull
 requests its latest run projected each label for (the labels it wanted,
-not read back after its writes).
-`--json` prints the same as data, the dispatcher's part under `dispatch`
-and the label counts under `dispatchLabels`.
+not read back after its writes). It also lists the workspaces the
+dispatcher launched into, found by the dispatched mark on their launch
+records rather than by their names, each with the name it carries now and
+whether its comment still carries the mark, so a workspace a session
+renamed is still there.
+`--json` prints the same as data, the dispatcher's part under `dispatch`,
+the label counts under `dispatchLabels` and the workspaces under
+`dispatchedWorkspaces`.
 
 Where your repository has a pre-merge follow-up step, have its list include
 the pull request's provisional decisions, so the person merging reads each

@@ -349,13 +349,32 @@ pull request's or item's workspace, and the workspace is marked unread,
 which Orca's phone app shows; a target with no workspace that can take a
 comment (none, or one whose comment may still be its agent's kickoff
 prompt) goes to the repository's notices workspace, a branch of the default
-branch (`jig-dispatch-notices`) into which no agent is launched. A message
+branch (`jig-dispatch-notices`), named `⚙ dispatched · notices`, into which
+no agent is launched. A message
 counts as sent only once the workspace's comment, read back, carries its key
 line (`[jig dispatch: …]`), and is never sent again while its cause stands;
 while a workspace is still unread, a new message is appended to its comment
 rather than replacing it. The answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.
+
+**What it starts is named as the dispatcher's**, so a person tells it from
+their own work at a glance on the board. A workspace the dispatcher creates
+is named for the stage and the key (`⚙ dispatched · pickup #123`,
+`⚙ dispatched · rearm #456`, `⚙ dispatched · followup #789`; with Orca,
+the folder's name follows it, while the branch stays the one the branch
+rule names), and its comment carries the
+[dispatched mark](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
+that name and the launch record's id (`⚙ dispatched · rearm #456 · launch
+<id>`). A workspace it reuses keeps its name, and the mark is added to its
+comment, once, on a line of its own after what the comment holds (a later
+launch's mark replaces an earlier one's for the same stage and key). Each
+session's terminal tab reads `jig dispatch · <stage> <key>`. A session may
+rename its workspace to what the work became; the mark outlives the name,
+since the launch record keeps it too and a notification that rewrites the
+comment keeps it, and the morning report (`drives.ts --report`) lists the
+workspaces the dispatcher launched into by the mark on their launch records,
+each with the name it carries now.
 
 **Dispatch labels** (`dispatch.labels` in the repository's
 [configuration](CONFIGURATION.md#dispatch), off by default) make the
