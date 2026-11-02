@@ -44,6 +44,8 @@ if (args[0] === "repo" && args[1] === "view" && args.includes("nameWithOwner,def
   out({ nameWithOwner: "${SLUG}", defaultBranchRef: { name: "main" } });
 if (args[0] === "pr" && args[1] === "list") {
   const state = args[args.indexOf("--state") + 1];
+  // A listing that fails while prs-<state>-fail exists.
+  if (fs.existsSync(F + "/prs-" + state + "-fail")) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
   out(fs.readFileSync(F + "/prs-" + state + ".json", "utf8"));
 }
 if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headRefOid"))) {

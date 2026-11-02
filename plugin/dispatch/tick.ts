@@ -369,7 +369,6 @@ async function readForge(
     out.merged = [];
     out.inScope = new Set();
     out.disputed = new Set();
-    out.created = new Map();
   }
   return out;
 }

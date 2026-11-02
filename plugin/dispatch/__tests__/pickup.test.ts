@@ -12,7 +12,7 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { readRecord, readResult } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { updateIdle } from "../lib/idle.ts";
-import { assignedIssue, SLUG, type World, world } from "./fixtures.ts";
+import { assignedIssue, openPr, SLUG, type World, world } from "./fixtures.ts";
 import {
   account,
   dispatchState,
@@ -109,6 +109,32 @@ describe("jig dispatch --apply picks up assigned items", () => {
     expect(orcaCalls(w, "terminal", "create")).toHaveLength(1);
     expect(claudeRuns(w)).toHaveLength(1);
     expect(recordIds(w)).toEqual([id]);
+  });
+
+  it("records a pickup's opened pull request though the merged listing fails", async () => {
+    const w = fixture();
+    w.setConfig(`${CONFIG}  followup_command: /followup\n`);
+    const id = String(launches(await applyTick(w, true))[0]?.record);
+    const path = readRecord(id, dispatchState(w))?.workspace?.path ?? "";
+    w.setPrs("open", [
+      {
+        ...openPr(31, "12-issue-12"),
+        createdAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    ]);
+    w.setWorkspaces([
+      {
+        branch: "12-issue-12",
+        linkedPR: 31,
+        path,
+        agents: [{ state: "working", paneKey: "tab-1:leaf-1" }],
+      },
+    ]);
+    writeFileSync(join(w.dir, "prs-merged-fail"), "");
+    // The tick reports the failed read in its status; the bookkeeping is what matters here.
+    await waitFor("the wrapper", () => claudeRuns(w).length === 1);
+    await w.dispatch([], join(w.root, "bound-tick.ts"));
+    expect(readRecord(id, dispatchState(w))?.openedAt).toBeDefined();
   });
 
   it("says why nothing was started when the rotation cursor cannot be kept", async () => {
