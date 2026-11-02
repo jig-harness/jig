@@ -665,22 +665,24 @@ const BODY_FIELDS: [string, string][] = [
  * once (an answer quoting one, fenced or not, makes the boundary ambiguous).
  */
 function splitBody(text: string): Record<string, string> | null {
-  for (const [, label] of BODY_FIELDS)
-    if (text.split(`### ${label}\n`).length > 2) return null;
+  const repeated = BODY_FIELDS.some(
+    ([, label]) => text.split(`### ${label}\n`).length > 2,
+  );
+  if (repeated) return null;
   const heads = BODY_FIELDS.map(([, label]) => `### ${label}\n\n`);
+  const starts: number[] = [];
+  for (const head of heads) {
+    const start = text.indexOf(head, (starts.at(-1) ?? -1) + 1);
+    if (start < 0) return null;
+    starts.push(start);
+  }
+  if (starts[0] !== 0) return null;
   const fields: Record<string, string> = {};
-  let at = 0;
-  for (const [i, head] of heads.entries()) {
-    const start = text.indexOf(head, at);
-    const id = BODY_FIELDS[i]?.[0];
-    if (start < 0 || !id || (i === 0 && start !== 0)) return null;
-    const from = start + head.length;
-    const next = heads[i + 1];
-    const end = next ? text.indexOf(`\n\n${next}`, from) : text.length;
-    if (end < 0) return null;
-    const value = text.slice(from, end).trim();
+  for (const [i, [id]] of BODY_FIELDS.entries()) {
+    const from = (starts[i] ?? 0) + (heads[i]?.length ?? 0);
+    const end = starts[i + 1] ?? text.length + 2;
+    const value = text.slice(from, end - 2).trim();
     if (value !== NO_RESPONSE) fields[id] = value;
-    at = end;
   }
   return fields;
 }
