@@ -10,13 +10,13 @@ import {
   type LaunchRecord,
   type ProcessIdentity,
   claimRecord,
-  markedSince,
   pruneLaunches,
   readLaunches,
   recordExit,
   type ReadRecord,
   writeRecord,
 } from "../lib/launches.ts";
+import { markedSince } from "../lib/launch-report.ts";
 import { stateDb, closeStateDb } from "../lib/state.ts";
 import type { DrivenPr } from "../lib/types.ts";
 import { dispatchJobSpec } from "../install.ts";
@@ -301,7 +301,7 @@ describe("the marked records a report reads", () => {
     writeRecord(
       record("20250101T000000Z-ffffffff", {
         mark,
-        attempts: [sent],
+        attempts: [{ ...sent, at: "2025-01-01T00:00:01.000Z" }],
         createdAt: "2025-01-01T00:00:00.000Z",
       }),
       dir,
@@ -322,5 +322,44 @@ describe("the marked records a report reads", () => {
       ["20260101T000003Z-dddddddd", "not started"],
       ["20260101T000004Z-eeeeeeee", "not started"],
     ]);
+  });
+
+  it("holds a record created before the window whose launch was replayed in it", () => {
+    const dir = root();
+    writeRecord(
+      record("20251231T000000Z-99999999", {
+        mark,
+        createdAt: "2025-12-31T00:00:00.000Z",
+        attempts: [
+          { ...sent, at: "2025-12-31T00:00:01.000Z", outcome: "lost" },
+          { ...sent, at: "2026-01-01T00:00:05.000Z" },
+        ],
+      }),
+      dir,
+    );
+    const { records } = markedSince(
+      Date.parse("2026-01-01T00:00:00.000Z"),
+      dir,
+    );
+    expect(records.map((r) => [r.record.id, r.launch])).toEqual([
+      ["20251231T000000Z-99999999", "started"],
+    ]);
+  });
+
+  it("does not take a claim that does not read as proof of a launch, and names it", () => {
+    const dir = root();
+    writeRecord(record("20260101T000000Z-aaaaaaaa", { mark }), dir);
+    stateDb(dir)
+      .query("UPDATE launches SET claim = '{}' WHERE id = ?")
+      .run("20260101T000000Z-aaaaaaaa");
+    const { records, unreadable } = markedSince(
+      Date.parse("2026-01-01T00:00:00.000Z"),
+      dir,
+    );
+    expect(records.map((r) => [r.record.id, r.launch])).toEqual([
+      ["20260101T000000Z-aaaaaaaa", "not started"],
+    ]);
+    expect(unreadable).toHaveLength(1);
+    expect(unreadable[0]).toContain("claim of launch record");
   });
 });

@@ -7,7 +7,8 @@
  * carries the mark. What the morning report lists as dispatched.
  */
 import { stateRoot } from "../receipts.ts";
-import { type LaunchRecord, type LaunchSeen, markedSince } from "./launches.ts";
+import { type LaunchSeen, markedSince } from "./launch-report.ts";
+import type { LaunchRecord } from "./launches.ts";
 import { orcaRuntime } from "./runtime/orca.ts";
 import {
   marksIn,

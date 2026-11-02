@@ -427,7 +427,7 @@ function isExit(value: unknown): value is LaunchExit {
 }
 
 /** One record's row as the table holds it. */
-interface LaunchRow {
+export interface LaunchRow {
   id: string;
   record: string;
   claim: string | null;
@@ -436,7 +436,7 @@ interface LaunchRow {
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
-function recordOf(
+export function recordOf(
   row: LaunchRow,
   root: string,
   control?: Map<string, ControlRows>,
@@ -548,7 +548,7 @@ export function readResult(
 }
 
 /** A row's claim: `undefined` when none, `null` when it does not read. */
-function claimOf(row: LaunchRow): ProcessIdentity | null | undefined {
+export function claimOf(row: LaunchRow): ProcessIdentity | null | undefined {
   const value = parseJson(row.claim, `the claim of launch record ${row.id}`);
   if (value === undefined) return undefined;
   return isIdentity(value) ? value : null;
@@ -724,57 +724,6 @@ export async function readLaunches(root = stateRoot()): Promise<{
       state: stateOf(row, rows, boot),
       result: asResult(row.result),
     });
-  }
-  return { records, unreadable };
-}
-
-/**
- * How a record's launch went, as far as the record says: `started` when the
- * runtime answered that it started the session or the wrapper claimed the
- * record (the wrapper ran, though the tick may have died before it saved
- * the answer); `lost` when an answer was lost and nothing shows the wrapper
- * ran; `not started` otherwise (no launch was called, or the runtime
- * answered that it started nothing).
- */
-export type LaunchSeen = "started" | "lost" | "not started";
-
-function launchSeen(record: LaunchRecord, row: LaunchRow): LaunchSeen {
-  if (row.claim !== null || record.attempts.some((a) => a.outcome === "sent"))
-    return "started";
-  return record.attempts.some((a) => a.outcome === "lost")
-    ? "lost"
-    : "not started";
-}
-
-/**
- * Every record written at or after `since` (milliseconds) that carries a
- * dispatched mark, oldest first, with how its launch went, for a reader that
- * never creates the database; a row that does not read is left out and
- * named. No record is left out for how its launch went: the reader says it.
- * The window is read by the indexed creation time.
- */
-export function markedSince(
-  since: number,
-  root = stateRoot(),
-): {
-  records: Array<{ record: LaunchRecord; launch: LaunchSeen }>;
-  unreadable: string[];
-} {
-  const db = existingStateDb(root);
-  if (db === null) return { records: [], unreadable: [] };
-  const all = db
-    .query(
-      "SELECT id, record, claim, exit, result FROM launches WHERE created_at >= ? ORDER BY id",
-    )
-    .all(new Date(since).toISOString()) as LaunchRow[];
-  const records: Array<{ record: LaunchRecord; launch: LaunchSeen }> = [];
-  const unreadable: string[] = [];
-  for (const row of all) {
-    const record = recordOf(row, root, new Map());
-    if (record === null)
-      unreadable.push(`launch record ${row.id} in ${statePath(root)}`);
-    else if (Date.parse(record.createdAt) >= since && record.mark)
-      records.push({ record, launch: launchSeen(record, row) });
   }
   return { records, unreadable };
 }
