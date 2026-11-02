@@ -13,8 +13,17 @@
  * A pull request a person's `hold` label stands the dispatcher down from
  * gets no action of any stage: each one the records want is reported as
  * held instead, and planned again once the label is gone.
+ *
+ * A pull request held behind another in a serialized change area
+ * (`contention.ts`) gets no re-arm, takeover or re-drive: each is reported
+ * as `held: serialized behind #N in <area>`, and the group's leader is
+ * planned as any pull request is. A pull request whose place in a group
+ * cannot be told this tick gets none either, reported as unplaced. Its
+ * notifications go on: a hold keeps the dispatcher's own launches off,
+ * not a person's view of the pull request.
  */
 import { type DriveHold, driveHold, factsOf } from "./actions/drive-hold.ts";
+import { type Contention, heldReason } from "./contention.ts";
 import { holding, liveAgents } from "./holding.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { planDrift } from "./expectations.ts";
@@ -59,6 +68,8 @@ export interface PlanInput {
   held?: ReadonlySet<number>;
   /** Under `only_labeled`: the pull requests read and found labelled. An action on any other pull request is withheld. */
   inScope?: ReadonlySet<number>;
+  /** The pull requests serialization holds, or cannot place, this tick. */
+  serialized?: Pick<Contention, "held" | "unplaced">;
   nowMs: number;
 }
 
@@ -71,6 +82,8 @@ type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
   held: Array<{ target: string; stage: Stage; reason: string }>;
   /** The targets `only_labeled` withheld actions from: their notice records stand. */
   withheld: string[];
+  /** The re-arms, takeovers and re-drives a serialized area's hold kept off. */
+  serialHeld: Array<{ target: string; stage: Stage; reason: string }>;
 };
 
 /** The ledger classes that need nothing from the tick but a line in the report. */
@@ -91,7 +104,12 @@ const NOTIFY: ReadonlyMap<LedgerClass, NotifyCause> = new Map([
 
 export function planTick(input: PlanInput): Plan {
   const { sessions } = input;
-  const plan: Plan = { ...planPickups(input), held: [], withheld: [] };
+  const plan: Plan = {
+    ...planPickups(input),
+    held: [],
+    withheld: [],
+    serialHeld: [],
+  };
 
   /** One wanted stage for one target, minus what is running. */
   function want(action: Action, joined: (w: Workspace) => boolean): void {
@@ -169,7 +187,40 @@ export function planTick(input: PlanInput): Plan {
   plan.actions.push(...drift.actions);
   plan.running.push(...drift.running);
   holdBack(plan, input.held ?? new Set(), input.inScope);
+  if (input.serialized !== undefined) serialBack(plan, input.serialized);
   return plan;
+}
+
+/**
+ * Move each drive's re-arm (a takeover and a re-drive among them) on a pull
+ * request serialization holds out of the plan, into its report; one on a
+ * pull request whose place serialization cannot tell this tick is unplaced.
+ */
+function serialBack(
+  plan: Pick<Plan, "actions" | "serialHeld" | "unplaced">,
+  serialized: Pick<Contention, "held" | "unplaced">,
+): void {
+  const kept: Action[] = [];
+  for (const action of plan.actions) {
+    const pr = /^PR #(\d+)$/.exec(action.target);
+    const n = pr === null || action.stage !== "rearm" ? null : Number(pr[1]);
+    const why = n === null ? undefined : serialized.unplaced.get(n);
+    const hold = n === null ? undefined : serialized.held.get(n);
+    if (why !== undefined)
+      plan.unplaced.push({
+        target: action.target,
+        record: "forge",
+        reason: why,
+      });
+    else if (hold !== undefined)
+      plan.serialHeld.push({
+        target: action.target,
+        stage: action.stage,
+        reason: `${heldReason(hold)}; without it the tick would ${action.takeover === undefined ? "rearm" : "take over"}: ${action.reason}`,
+      });
+    else kept.push(action);
+  }
+  plan.actions = kept;
 }
 
 /**

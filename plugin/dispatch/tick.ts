@@ -67,6 +67,7 @@ import { outOfTime, rotated } from "./lib/actions/launch.ts";
 import {
   heldPullRequests,
   planLabels,
+  type ProjectionInput,
   writeLabels,
 } from "./lib/actions/labels.ts";
 import { carriesSet, hasCommand, type LabelConfig } from "./lib/labels.ts";
@@ -98,6 +99,7 @@ import type {
   SessionsReport,
 } from "./lib/runtime/port.ts";
 import { readSection } from "./lib/section.ts";
+import { observeContention } from "./lib/sources/contention.ts";
 import { readDrives } from "./lib/sources/ledgers.ts";
 import { readPickups } from "./lib/sources/tracker.ts";
 import { failureText } from "./lib/text.ts";
@@ -243,6 +245,14 @@ async function gatherRepo(
 
   const { created } = forge;
   await observeRunning(context, repo, report, drives, sessions, created);
+  const serialized = await observeContention(
+    repo,
+    values,
+    report,
+    forge,
+    allRecords(context),
+    nowMs,
+  );
   const held = heldPullRequests(labels, [...open, ...merged]);
   const { inScope } = forge;
   planRepo(context, repo.slug, report, {
@@ -255,6 +265,7 @@ async function gatherRepo(
     sessions,
     created,
     held,
+    serialized,
     ...(labels?.onlyLabeled === true ? { inScope } : {}),
   });
   if (labels?.onlyLabeled === true) report.inScope = [...inScope];
@@ -273,6 +284,7 @@ async function gatherRepo(
   await projectLabels(context, repo.slug, report, labels, {
     ...forge,
     listed: entry !== null,
+    serialized,
   });
   return report;
 }
@@ -426,7 +438,10 @@ async function projectLabels(
   slug: string,
   report: RepoReport,
   labels: LabelConfig | null,
-  forge: ForgeRead & { listed: boolean },
+  forge: ForgeRead & {
+    listed: boolean;
+    serialized: NonNullable<ProjectionInput["serialized"]>;
+  },
 ): Promise<void> {
   if (labels === null || !forge.ok) return;
   const followedUp = new Set(
@@ -441,6 +456,7 @@ async function projectLabels(
     drives: forge.drives,
     merged: forge.merged.filter((p) => !forge.disputed.has(p.number)),
     followedUp,
+    serialized: forge.serialized,
   });
   const apply = context.apply;
   planned.report.held = report.labels?.held ?? [];
@@ -719,6 +735,7 @@ function planRepo(
   holdBack(nudged, input.held ?? new Set(), input.inScope);
   report.actions.push(...nudged.actions);
   report.withheld = plan.withheld;
+  report.serialized?.held.push(...plan.serialHeld);
   report.running.push(...steers.running);
   report.unplaced.push(...plan.unplaced);
   report.quiet.push(...plan.quiet);

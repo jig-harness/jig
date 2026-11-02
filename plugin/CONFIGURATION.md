@@ -324,7 +324,7 @@ not resolve it either.
 |-------|------|-------------|---------|--------------|
 | `drive.validation_plan_command` | shell command | The plan is `gates.command` alone | drive-pr, fix-ci, resolve-conflicts, review, descar | Reads changed files (one per line) on stdin and prints the validation plan as JSON on stdout. The change-areas skill's resolver prints such a plan from the catalog: `bun <plugin>/skills/change-areas/scripts/resolve.ts --files - --format json`, or the repository's own [composer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) around it |
 | `drive.load_guard_command` | shell command | No load guard | drive-pr | Waits until the machine can take heavy checks |
-| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts | The repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (YAML with an `areas:` map). The [change-areas](skills/change-areas/README.md) skill validates the whole catalog against [its schema](skills/change-areas/README.md#the-catalog) and resolves a change against it. The plugin reads each area's `paths` and `generated[].source` globs, `labels`, `tracker.labels` and `tracker.flags` (`linear:` is the older spelling of the `tracker:` block) and `agent`, through one reader that refuses an area whose globs, labels or `tracker` block are malformed, with the field at fault; `agent` and the rest of the area are passed through unchecked. `resolve-conflicts` also reads each area's `generated[].outputs` and `command` (see `resolve_conflicts.generated`). `determine_agent.ts --catalog` overrides it for one run |
+| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing, no serialized areas | drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts, dispatch | The repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (YAML with an `areas:` map). The [change-areas](skills/change-areas/README.md) skill validates the whole catalog against [its schema](skills/change-areas/README.md#the-catalog) and resolves a change against it. The plugin reads each area's `paths` and `generated[].source` globs, `labels`, `tracker.labels` and `tracker.flags` (`linear:` is the older spelling of the `tracker:` block), `serialize` and `agent`, through one reader that refuses an area whose globs, labels, `tracker` block or `serialize` are malformed, with the field at fault; `agent` and the rest of the area are passed through unchecked. `resolve-conflicts` also reads each area's `generated[].outputs` and `command` (see `resolve_conflicts.generated`), and its history report proposes `serialize` for the areas its conflict hotspots lie in (`history.ts --propose-serialize`). The dispatcher reads the catalog from the default branch as the forge holds it, as it reads its `dispatch` section, so it must be a repository-relative path there; an area marked `serialize: true` has its pull requests driven one at a time ([`dispatch`](#dispatch)). `determine_agent.ts --catalog` overrides it for one run |
 | `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-item | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
 | `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops unconverged (exit `6`). The `--max-rounds` flag overrides it for one run. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
 | `drive.pass_deadline_retries` | whole number ≥ 0 | `2` | drive-pr | How many passes killed at their deadline one drive restarts from, counted in the drive state across re-arms and takeovers until the drive converges or the pull request closes: the driver reports what the killed pass left in the tree, leaves it there and starts the next round. Past this many it stops with exit `15` and says the budget is spent; `0` stops at the first. A value that is not a whole number of at least 0 stops the drive |
@@ -1054,12 +1054,33 @@ take commands from a person. With the default prefix:
 | `jig:converged` | the dispatcher | the drive converged at the pull request's head: a person merges |
 | `jig:parked` | the dispatcher | the drive stopped on something only a person settles |
 | `jig:stale` | the dispatcher | the drive converged, then the pull request conflicted with its base or its head moved: the dispatcher re-drives it |
+| `jig:held` | the dispatcher | the pull request waits its turn in a serialized change area (below): the dispatcher drives it once it leads |
 | `jig:followed-up` | the dispatcher | merged, and its follow-up is done |
 | `jig:drive` | a person | adopt a pull request with no drive ledger: the dispatcher arms a drive on it (the machine file's `rearm` stage), once per head commit, and replaces the label with the state label once the ledger exists |
 | `jig:hold` | a person | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it |
 
+A serialized change area (`serialize: true` on an area of the
+[change-area catalog](#drive) that `drive.change_areas_catalog` names, read
+from the default branch) holds every dispatched pull request that touches
+it but one: the one closest to merge, which the dispatcher drives as any
+other. The rest get no re-arm, takeover or re-drive while they wait, are
+reported as `held: serialized behind #N in <area>` (and, with the dispatch
+labels on, carry `jig:held`), and
+each hold's start and end is an event row in the outcome log, the end with
+how long it lasted. The order is mechanical, from the ledger and the forge:
+converged and mergeable first, then a drive in progress, then the fewest
+unresolved review threads, then the most rounds, then the oldest. When the
+leader merges or stops touching the area, the next run promotes the next.
+A pull request in two serialized areas waits unless it leads both. Only
+the dispatcher's own launches wait: a drive a person arms on a held pull
+request is not stopped, and the run reports that the area has two drives.
+A pull request whose files, threads or ledger do not read this run, or a
+catalog that does not read, leaves its group unplaced for the run, with no
+re-arm and no label written, and the next run reads it again.
+
 The ledger is the truth: each `--apply` run sets each managed pull
-request's state label from its ledger again, one forge call per pull
+request's state label from its ledger again (`jig:held` from the serialized
+areas), one forge call per pull
 request whose labels disagree, so a state label a person changed comes
 back at the next run, and the dispatcher never reads a state label to
 decide what to start. A run without `--apply`, or for a repository the

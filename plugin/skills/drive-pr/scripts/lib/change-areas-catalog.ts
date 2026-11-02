@@ -14,6 +14,8 @@
  *       tracker:                       # optional; `linear:` is the older spelling
  *         labels: [area:api]           #   tracker labels for the area
  *         flags: [security]            #   flag labels every change there carries
+ *       serialize: true                # optional: the dispatcher drives the pull
+ *                                      #   requests that touch it one at a time
  *
  * Matching is direct: a path belongs to the areas whose own globs match it.
  * The areas a change implies through other areas are the full resolver's
@@ -34,6 +36,8 @@ export interface CatalogArea {
   trackerLabels: string[];
   /** `tracker.flags`, then `linear.flags`. */
   flags: string[];
+  /** `serialize`: the pull requests that touch the area are driven one at a time; `false` when absent. */
+  serialize: boolean;
   /** The area as the catalog writes it. */
   fields: Readonly<Record<string, unknown>>;
 }
@@ -78,6 +82,9 @@ function trackerLists(
   });
 }
 
+/** An area field whose value has the wrong type. */
+class CatalogFieldError extends Error {}
+
 /** Validate a parsed catalog into its areas. Throws with the field at fault. */
 export function parseCatalog(raw: unknown): Map<string, CatalogArea> {
   if (!isRecord(raw) || !isRecord(raw.areas))
@@ -102,7 +109,19 @@ export function parseCatalog(raw: unknown): Map<string, CatalogArea> {
       ...trackerLabels,
     ];
     const flags = trackerLists(area, key, "flags");
-    out.set(key, { globs, labels, trackerLabels, flags, fields: area });
+    const serialize = area.serialize === undefined ? false : area.serialize;
+    if (typeof serialize !== "boolean")
+      throw new CatalogFieldError(
+        `catalog area ${key}.serialize: expected true or false`,
+      );
+    out.set(key, {
+      globs,
+      labels,
+      trackerLabels,
+      flags,
+      serialize,
+      fields: area,
+    });
   }
   return out;
 }

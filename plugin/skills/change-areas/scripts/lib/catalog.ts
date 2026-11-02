@@ -118,6 +118,8 @@ export interface Area {
   agent?: string;
   /** The area's own labels. */
   labels?: string[];
+  /** Pull requests that touch the area are driven one at a time (the dispatcher). */
+  serialize?: boolean;
   [field: string]: unknown;
 }
 
@@ -422,6 +424,7 @@ function areaSpec(doc: Record<string, unknown>, fields: FieldExtensions): Spec {
       linear: { check: tracker },
       agent: { check: word(vocab.agent) },
       labels: { check: textList },
+      serialize: { check: extension("boolean") },
       // Reserved for projections a repository's own tooling reads; their
       // shape is that tooling's.
       ci: { check: anything },
