@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   admitRearm,
   admitTakeover,
+  passEnvironment,
   refreshWalls,
   slotsOf,
   slotTable,
@@ -23,6 +24,9 @@ const account = (
   identity: "me@example.com",
   maxPerAccount: 2,
 });
+
+/** A drive's pass under the drive's default deadline. */
+const PASS = { kind: "pass", deadlineSec: 5400 } as const;
 
 const process = {
   host: "h",
@@ -79,7 +83,7 @@ describe("account admission state", () => {
       Date.now(),
       "/nonexistent-state-root",
     );
-    expect(admitRearm(table, null)).toEqual({
+    expect(admitRearm(table, null, PASS)).toEqual({
       waits: expect.stringContaining("wall not recorded"),
     });
   });
@@ -133,7 +137,7 @@ describe("account admission state", () => {
       "/nonexistent-state-root",
     );
     expect(slotsOf(table, replaced.record)?.account.name).toBe("b");
-    expect(admitTakeover(table, replaced)).toEqual({
+    expect(admitTakeover(table, replaced, PASS.deadlineSec)).toEqual({
       admitted: table[0] as (typeof table)[number],
     });
   });
@@ -160,5 +164,21 @@ describe("account admission state", () => {
     );
     refreshWalls(table, [record], Date.now(), root);
     expect(table[0]?.wallUnrecorded).toBe(true);
+  });
+});
+
+describe("passEnvironment", () => {
+  it("removes the wrapper's harness markers and binds the account's directory", () => {
+    const env = passEnvironment(
+      {
+        CLAUDECODE: "1",
+        CODEX_SANDBOX: "seatbelt",
+        CLAUDE_CONFIG_DIR: "/other",
+        OPENAI_API_KEY: "k",
+        PATH: "/bin",
+      },
+      { vendor: "codex", configDir: "/codex-home" },
+    );
+    expect(env).toEqual({ PATH: "/bin", CODEX_HOME: "/codex-home" });
   });
 });

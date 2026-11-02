@@ -27,6 +27,11 @@
  *                 `drive.ts`, as `--pass-model` is
  *   --max-rounds, --keep-draft, --handoff-at  forwarded to `drive.ts`
  *
+ * The pass command is the session's own agent tool's (`lib/arm.ts`): in a
+ * Codex session it is Codex's, on the execution tier of
+ * `routing.models.codex` (else Codex's own configured model), and
+ * `--pass-model` and `--pass-args`, which are Claude Code's, are refused.
+ *
  * Prints one JSON object (`ArmReport` in `lib/arm.ts`): `status` says what
  * the caller does next — `armed` (a tab runs the drive and `drives.ts` lists
  * it), `unconfirmed` (under `tab`: a tab opened, the drive was not listed in
@@ -48,14 +53,17 @@ import { fail, isDigits, runMain, sleep } from "./lib/cli.ts";
 import {
   arm,
   type ArmInputs,
+  type ArmModel,
   type ArmReport,
   type ArmRequest,
   failedReport,
   type LiveDrive,
   liveDriveIn,
+  sessionVendor,
   type TabDeps,
 } from "./lib/arm.ts";
 import { drives } from "./lib/driver/paths.ts";
+import type { AccountVendor } from "./lib/identity.ts";
 import {
   type ArmDriveMode,
   armDriveSetting,
@@ -68,10 +76,11 @@ import {
   chosenPassArgs,
   type PassArgs,
   PassArgsUsageError,
+  parsePassArgsFlag,
 } from "./lib/pass-args.ts";
 import {
+  configuredCodexModel,
   configuredPassModel,
-  type PassModel,
   PassModelUsageError,
   resolveModelValue,
 } from "./lib/pass-model.ts";
@@ -190,6 +199,20 @@ function attempt<T>(read: () => T): T | Error {
 /** The flags a failed report's command leaves out, with their values. */
 const PASS_FLAGS = new Set(["--pass-model", "--pass-args"]);
 
+/** The model a failed report's command is built on when the configured one could not be read. */
+function fallbackModel(vendor: AccountVendor): ArmModel {
+  return vendor === "claude"
+    ? {
+        model: DEFAULT_PASS_MODEL,
+        source: "the default, since the configured model could not be read",
+      }
+    : {
+        model: null,
+        source:
+          "Codex's own configuration, since the configured model could not be read",
+      };
+}
+
 /**
  * The arm's inputs, or the `failed` report of the first one that could not
  * be read (exit 2 for a `--pass-model` that names no model or a
@@ -202,9 +225,10 @@ async function readInputs(
   args: Args,
 ): Promise<ArmInputs | { report: ArmReport; exit: number }> {
   const tree = await workingTree();
+  const vendor = sessionVendor(process.env) ?? "claude";
   const armDrive = attempt(() => setting(args.mode));
-  const model = attempt(() => passModel(args.passModel));
-  const passArgs = attempt(() => chosenPassArgs(args.passArgs));
+  const model = attempt(() => passModel(args.passModel, vendor));
+  const passArgs = attempt(() => extraPassArgs(args.passArgs, vendor));
   const problems = [tree, armDrive, model, passArgs].filter(
     (v) => v instanceof Error,
   );
@@ -223,10 +247,6 @@ async function readInputs(
       passArgs,
       env: process.env,
     };
-  const fallback = {
-    model: DEFAULT_PASS_MODEL,
-    source: "the default, since the configured model could not be read",
-  };
   const noArgs: PassArgs = {
     words: [],
     source: "none, since the extra pass arguments could not be read",
@@ -241,8 +261,9 @@ async function readInputs(
       { pr, tree: tree instanceof Error ? null : tree, forward },
       armDrive instanceof Error ? null : armDrive,
       {
-        model: model instanceof Error ? fallback : model,
+        model: model instanceof Error ? fallbackModel(vendor) : model,
         passArgs: passArgs instanceof Error ? noArgs : passArgs,
+        vendor,
       },
       `arm-drive.ts: ${problem?.message ?? "unknown"}`,
     ),
@@ -265,10 +286,34 @@ function setting(mode: ArmDriveMode | undefined): {
     : { value: configured, source: "do_item.arm_drive" };
 }
 
-function passModel(flag: string | undefined): PassModel {
+/** The pass's model: Claude Code's `--pass-model`, else `drive.pass_model`; a Codex pass's from `routing.models.codex`. */
+function passModel(flag: string | undefined, vendor: AccountVendor): ArmModel {
+  if (vendor === "codex") {
+    if (flag !== undefined)
+      throw new PassModelUsageError(
+        "--pass-model applies to a Claude Code pass command; a Codex pass runs on routing.models.codex.execution, else Codex's own configuration",
+      );
+    return configuredCodexModel();
+  }
   return flag === undefined
     ? configuredPassModel()
     : resolveModelValue(flag, "--pass-model");
+}
+
+/** The pass's extra arguments: Claude Code's; a Codex pass takes none, and `--pass-args` is refused for it. */
+function extraPassArgs(
+  flag: string | undefined,
+  vendor: AccountVendor,
+): PassArgs {
+  if (vendor === "claude") return chosenPassArgs(flag);
+  if (flag !== undefined && parsePassArgsFlag(flag).length > 0)
+    throw new PassArgsUsageError(
+      "--pass-args applies to a Claude Code pass command; a Codex pass takes its documented arguments",
+    );
+  return {
+    words: [],
+    source: "none; drive.pass_args applies to a Claude Code pass command",
+  };
 }
 
 /** The live drive on the PR, read from `drives.ts --json` in the tree. */
@@ -299,7 +344,7 @@ function confirmSeconds(): number {
 function answer({ report, exit }: { report: ArmReport; exit: number }): number {
   console.log(JSON.stringify(report, null, 2));
   console.error(
-    `arm-drive.ts: ${report.status}${report.way === null ? "" : ` (${report.way})`} — ${report.fallback ?? report.reason}; pass model ${report.model} (${report.modelSource}); permission mode ${report.permissionMode}`,
+    `arm-drive.ts: ${report.status}${report.way === null ? "" : ` (${report.way})`} — ${report.fallback ?? report.reason}; pass model ${report.model ?? "none named"} (${report.modelSource}); permission mode ${report.permissionMode}`,
   );
   return exit;
 }

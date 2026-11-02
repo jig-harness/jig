@@ -20,6 +20,7 @@
  * its row in the outcome log (log.ts, log-ended.ts), before any expired
  * record is removed.
  */
+import { passTimeoutSeconds } from "../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { parseTrackerConfig } from "../skills/do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../skills/do-item/scripts/lib/tracker/index.ts";
@@ -52,7 +53,12 @@ import { rotated } from "./lib/actions/launch.ts";
 import { applyNotices } from "./lib/actions/notify.ts";
 import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
-import { lastAccount, slotTable } from "./lib/accounts.ts";
+import {
+  lastAccount,
+  type NotAdmitted,
+  notAdmitted,
+  slotTable,
+} from "./lib/accounts.ts";
 import { readMarkers } from "./lib/followup-marker.ts";
 import {
   readOutcomes,
@@ -654,6 +660,7 @@ function applyState(
     records,
     table: slotTable(machine.accounts, records, nowMs),
     last: lastAccount(records),
+    passDeadlineSec: passTimeoutSeconds(),
     startedAt: Date.now(),
     tick,
     repos: options.repos.length,
@@ -667,6 +674,22 @@ function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
         runtimeTimeoutMs: machine.runtimeTimeoutMs,
         workspaceTimeoutMs: machine.workspaceTimeoutMs,
       });
+}
+
+/**
+ * The machine file's accounts a drive's pass is never admitted on, for the
+ * receipt: a vendor with no documented pass command, or a Codex account
+ * while the pass deadline this run reads is `0`.
+ */
+function accountsReport(
+  machine: MachineConfig | null,
+  apply: ApplyState | null,
+): { accountsNotAdmitted?: NotAdmitted[] } {
+  if (machine === null) return {};
+  const deadline =
+    apply === null ? passTimeoutSeconds() : apply.passDeadlineSec;
+  const refused = notAdmitted(machine.accounts, deadline);
+  return refused.length === 0 ? {} : { accountsNotAdmitted: refused };
 }
 
 export async function runTick(options: TickOptions): Promise<TickResult> {
@@ -700,6 +723,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       apply: apply !== null,
       exitStatus: 0,
       ...(withheld === undefined ? {} : { applyWithheld: withheld }),
+      ...accountsReport(machine, apply),
       unreadableLaunches: read.unreadable,
       repos: [],
     };

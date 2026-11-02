@@ -309,8 +309,21 @@ it, or read `state` from the `--json` report, which is unambiguous either way.
 bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- claude -p "/jig:drive-pr --bots-only 123"
 ```
 
+That is Claude Code's pass command. Codex's is the other documented one: it
+names the skill in its prompt, since Codex runs a skill the prompt names, and
+runs without a sandbox or approvals, since a pass pushes, calls the forge and
+has nobody to ask:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- codex exec --dangerously-bypass-approvals-and-sandbox "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 123"
+```
+
 Each round is a **fresh agent process**, so a long converge never depends on one
-session's context surviving. That is the preferred unattended mode.
+session's context surviving. That is the preferred unattended mode. A Codex
+pass has no turn cap of its own (§ Handing off before you degrade): the pass
+deadline (`DRIVE_PR_PASS_TIMEOUT`, `--pass-timeout`, 90 minutes by default)
+is what ends one that runs on, so do not switch the deadline off (`0`) for a
+Codex drive.
 
 **The pass model.** A Claude Code pass (`claude …`) runs on the model the
 driver decides: `--pass-model <model>` for this run, else the pass command's
@@ -321,8 +334,11 @@ routing tier (`execution`, `strategic`, resolved through
 and where it came from (an own `--model` the configuration resolves to is
 named as that setting's; one that names no model is reported as none), the
 `drives.ts` row names it, and every re-arm or takeover command the driver
-prints carries it. Another agent tool's pass command chooses its own model,
-and `--pass-model` is refused for it (exit `2`).
+prints carries it. A Codex pass (`codex …`) runs on its own `-m`, else the
+execution tier of `routing.models.codex`, added after `exec`, else Codex's
+own configured model; `drive.pass_model` is Claude Code's and is not read for
+it. Any other pass command chooses its own model, and `--pass-model` is
+refused for every pass command but Claude Code's (exit `2`).
 
 **The pass arguments.** A Claude Code pass command can carry extra words
 before `-p`, such as `--permission-mode bypassPermissions`, without which a
@@ -336,7 +352,8 @@ takeover command does, runs as written. The driver log's `pass args:` and
 `permission mode:` lines and the `drives.ts` row name them (`inherited` when
 the command sets no mode: Claude Code's own settings then decide). Another agent tool's pass command ignores
 `drive.pass_args`, and the log says so; `--pass-args` is refused for it
-(exit `2`). A `drive.pass_args` that is not a list of words stops the drive
+(exit `2`). A Codex pass's `permission mode:` is read from its own words:
+`no sandbox, no approvals` for the documented command. A `drive.pass_args` that is not a list of words stops the drive
 (exit `1`), naming the field.
 
 **The attach.** Once it holds the tree's driver lock and the PR's,
@@ -1043,11 +1060,16 @@ could forge or forget.
    `handles.list` (list) and `handles.stop` (stop). Then end the turn. After handing over, do
    not touch the drive's state, threads, or worktree: the driver owns them.
 
-Today the one documented pass command is Claude Code's `claude -p`. In
-another agent tool (Codex, for one), do not arm: `arm-drive.ts` answers
-`print` there, so print the command and say why, as `/jig:do-item` does,
-and do not substitute a guessed pass command. A person can put their own
-tool's command after the `--` and run it.
+The documented pass commands are Claude Code's `claude -p` and Codex's
+`codex exec` (§ Running it), and `arm-drive.ts` builds the one of the agent
+tool this session runs in. In a Codex session it opens a terminal tab where
+Orca can and otherwise answers `print`, since the background way is Claude
+Code's background execution: print the command and say why, as
+`/jig:do-item` does. `--pass-model` and `--pass-args` are Claude Code's and
+are refused there (exit `2`). In any other agent tool, do not arm:
+`arm-drive.ts` answers `print` with Claude Code's command, so print it, say
+why, and do not substitute a guessed pass command. A person can put their
+own tool's command after the `--` and run it.
 
 ### Driver pass: you are headless and one-shot
 
@@ -3061,7 +3083,8 @@ Under Claude Code, the plugin's turn-budget hook
 round-trips off the transcript and injects a wrap-up instruction some turns
 short of the cap. Under Codex it counts nothing: Codex's transcript is not in
 the format it reads, so it reports could not check and no warning ever comes
-([plugin README § Codex notes](../../README.md#codex-notes)). **When such a
+([plugin README § Codex notes](../../README.md#codex-notes)): a Codex pass
+has no turn cap, and the pass deadline is what ends one that runs on. **When such a
 warning fires, finish only the step in flight, run `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" handoff
 [PR]`, report, and end the turn** — do not open another triage-fix-validate
 cycle inside that margin. Why the counting is an approximation:
