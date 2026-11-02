@@ -31,6 +31,7 @@ import {
   defaultBranchConfig,
   mergedNotClosed,
   mergedSince,
+  openPullRequest,
   openPullRequests,
   repoTarget,
   unresolvedThreadCount,
@@ -270,7 +271,6 @@ async function gatherRepo(
       runtime,
       section,
       tracked,
-      open,
       login,
       merged,
       join,
@@ -285,7 +285,6 @@ interface ApplyInputs {
   runtime: SessionRuntime;
   section: DispatchSection;
   tracked: Tracked;
-  open: Awaited<ReturnType<typeof openPullRequests>>;
   login: string | null;
   merged: MarkedPr[];
   join: JoinTargets;
@@ -309,11 +308,12 @@ async function applyStages(
     async () => {
       if (enabled.has("rearm"))
         await applyDrives(apply, repo, report, inputs.sessions, async (pr) => {
-          const listed = inputs.open.filter((p) => p.number === pr);
+          // The pull request read again too: a stale drive's head and mergeability are its facts.
+          const listed = await openPullRequest(repo.slug, pr);
           const [again] = await readDrives(
             repo.slug,
             login,
-            listed,
+            [listed],
             Date.now(),
           );
           return again ?? null;

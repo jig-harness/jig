@@ -59,6 +59,7 @@ import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { type ProcessRow, processTable } from "../../shared/process-table.ts";
 import { publishOnce, stateRoot } from "../receipts.ts";
+import type { StaleCause } from "./types.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up session. */
 export type LaunchAction = "rearm" | "takeover" | "pickup" | "followup";
@@ -122,6 +123,8 @@ export interface LaunchRecord {
   marker: number | null;
   /** A drive's ledger round when it was launched, which its outcome row's rounds count from; `null` when unknown. */
   round?: number | null;
+  /** For a re-arm of a stale converged drive: why it was stale, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
+  redrive?: StaleCause | null;
   /** The vendor session id the tick minted for an interactive session and passed to its agent; `null` when none was. */
   sessionId?: string | null;
   /** A drive's unresolved-thread count at each ledger round, recorded the first tick that sees the round. */
@@ -343,7 +346,19 @@ function optionalFields(value: Record<string, unknown>): boolean {
     (value.logged === undefined || typeof value.logged === "boolean") &&
     optionalTime(value.openedAt) &&
     optionalList(value.samples, isSample) &&
-    optionalList(value.episodes, isEpisode)
+    optionalList(value.episodes, isEpisode) &&
+    isRedrive(value.redrive)
+  );
+}
+
+/** Whether a value is absent, `null`, or a stale cause. */
+function isRedrive(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (isMapping(value) &&
+      typeof value.cause === "string" &&
+      typeof value.change === "string")
   );
 }
 
@@ -385,6 +400,7 @@ function normalized(value: LaunchRecord): LaunchRecord {
     model: value.model ?? null,
     effort: value.effort ?? null,
     released: value.released === true,
+    redrive: value.redrive ?? null,
     ...followupFields(value),
     ...controlFields(value),
   };
