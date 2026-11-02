@@ -11,6 +11,7 @@ import { delimiter, join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { gcGit, gitEnvironment } from "../git.ts";
+import { ancestry } from "../kinds/worktree-git.ts";
 import { worktreeProof } from "../kinds/worktree-proof.ts";
 
 function repository() {
@@ -290,4 +291,19 @@ console.log(JSON.stringify(await worktreePolicy(${JSON.stringify(f.repo)})));`;
     remote: "upstream",
     base: "trunk",
   });
+});
+
+test("ancestry ignores a replacement ref that fabricates descent", async () => {
+  const f = repository();
+  const head = (await gcGit(f.repo, ["rev-parse", "HEAD"])).trim();
+  writeFileSync(join(f.repo, "tracked.txt"), "second\n");
+  f.git("commit", "-am", "second");
+  const second = (await gcGit(f.repo, ["rev-parse", "HEAD"])).trim();
+  f.git("checkout", "--orphan", "other");
+  f.git("commit", "-m", "unrelated", "--allow-empty");
+  const other = (await gcGit(f.repo, ["rev-parse", "HEAD"])).trim();
+  expect(await ancestry(f.repo, head, other)).toBe(false);
+  // Replace the unrelated tip with a commit that descends from `head`.
+  f.git("replace", other, second);
+  expect(await ancestry(f.repo, head, other)).toBe(false);
 });
