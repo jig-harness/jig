@@ -100,7 +100,7 @@ export function verbCommands(names: readonly string[]) {
   );
   const repository = optional(
     option("--repo", pathValue, {
-      description: message`The repository resource collection registers or removes. Without it, the current checkout.`,
+      description: message`The repository resource collection registers or removes, and whose missing dispatch labels the dispatcher's install creates. Without it, the current checkout for resource collection, and no labels.`,
     }),
   );
   const confirm = option("--yes", {

@@ -1010,6 +1010,9 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.drive_rounds_flat` | positive whole number | `3`: a drive the dispatcher launched drifts when its unresolved review threads at the latest round the dispatcher recorded are not below the count this many recorded rounds earlier | dispatch |
 | `dispatch.pickup_within` | duration | `2h`: a pickup the dispatcher launched that has opened no pull request by then drifts | dispatch |
 | `dispatch.followup_within` | duration | `1h`: a follow-up the dispatcher launched that has not ended by then drifts | dispatch |
+| `dispatch.labels.enabled` | `true` or `false` | `false`: no label is read or written. `true` turns the [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on (below) | dispatch |
+| `dispatch.labels.prefix` | string of at most 39 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch |
+| `dispatch.labels.only_labeled` | `true` or `false` | `false`: every open pull request is read for a drive ledger. `true` limits the dispatcher to the pull requests that carry a label of the set: one that carries none is never read, re-armed or followed up. Refused unless `enabled` is `true` | dispatch |
 
 An item is a pickup when it is assigned to `identity` and in one of
 `states`, and the person who made that assignment can write to the
@@ -1043,6 +1046,34 @@ expectation is reported as drifting, and, where the machine file enables
 values itself: when a class keeps recurring on the dashboard, the change is
 a person's, through `reflect` and `review-reflections` (see
 [the plugin's README](README.md#the-dispatcher)).
+
+The dispatch labels (`dispatch.labels`) put the dispatcher's state on each
+pull request it manages, where a person sees it from any forge client, and
+take commands from a person. With the default prefix:
+
+| Label | Who writes it | Meaning |
+|-------|---------------|---------|
+| `jig:driving` | the dispatcher | a drive runs, or stopped on a state the dispatcher re-arms (a usage limit, an answered park) |
+| `jig:converged` | the dispatcher | the drive converged at the pull request's head: a person merges |
+| `jig:parked` | the dispatcher | the drive stopped on something only a person settles |
+| `jig:stale` | the dispatcher | the drive converged, then the pull request conflicted with its base or its head moved: the dispatcher re-drives it |
+| `jig:followed-up` | the dispatcher | merged, and its follow-up is done |
+| `jig:drive` | a person | adopt a pull request with no drive ledger: the dispatcher arms a drive on it (the machine file's `rearm` stage), once per head commit, and replaces the label with the state label once the ledger exists |
+| `jig:hold` | a person | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it |
+
+The ledger is the truth: each `--apply` run sets each managed pull
+request's state label from its ledger again, one forge call per pull
+request whose labels disagree, so a state label a person changed comes
+back at the next run, and the dispatcher never reads a state label to
+decide what to start. A run without `--apply`, or for a repository the
+machine file does not list, writes nothing and reports what it would
+write. The labels must exist before a run writes them: `jig install
+dispatch --repo <path> --yes` creates the missing ones where the signed-in
+account may, and lists the rest for a person, as `pull_requests.labels`
+must exist before a pull request opens with them. A write the forge
+refuses is reported and tried again at the next run; it does not fail the
+run. With `only_labeled` off, a drive a person armed by hand on a pull
+request with no label is still found, and gets its label at the next run.
 
 ### The machine's dispatch file
 
@@ -1133,6 +1164,10 @@ dispatch:
   drive_rounds_flat: 3
   pickup_within: 2h
   followup_within: 1h
+  labels:
+    enabled: true
+    prefix: "jig:"
+    only_labeled: false
 gates:
   command: make check                    # required by resolve-review-comments
 review:

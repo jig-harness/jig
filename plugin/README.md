@@ -390,6 +390,27 @@ rather than replacing it. The answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.
 
+**Dispatch labels** (`dispatch.labels` in the repository's
+[configuration](CONFIGURATION.md#dispatch), off by default) make the
+dispatcher's state visible on each pull request, from any forge client,
+and let a person steer it the same way. Each `--apply` run sets each
+managed pull request's state label (`jig:driving`, `jig:converged`,
+`jig:parked`, `jig:stale`, `jig:followed-up` under the default prefix)
+from its drive ledger, writing only where the labels disagree, so a label
+changed by hand, or left behind by a drive that was killed, is corrected
+at the next run; no state label is ever read to decide what to start. Two
+labels are a person's commands, which the dispatcher reads and never
+adds: `jig:drive` on a pull request with no drive ledger arms a drive on
+it (the `rearm` stage, once per head commit) and is replaced by the state
+label once the ledger exists, and `jig:hold` keeps every stage off the
+pull request while it is there, reported at every run and removed only by
+a person. With `only_labeled`, the dispatcher reads only the pull requests
+that carry a label of the set. The labels must exist first: `jig install
+dispatch --repo <path>` lists the missing ones beside the timer, and with
+`--yes` creates them where the signed-in account may and lists the rest
+with the command a person runs. A label write the forge refuses is reported in the receipt,
+and the run does not fail.
+
 **The outcome log.** Every launch record that ends gets one row in the
 [outcome log](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), a
 table of the state database written in the same transaction as the
@@ -503,7 +524,9 @@ code [resource collection](gc/README.md) uses: a systemd user timer, a
 launchd job or a crontab line; `jig install` with no component named
 installs it too once the machine file exists. Install it on the host that
 runs the sessions (with Orca, the Orca server's host).
-`jig uninstall dispatch --machine --yes` removes it. The earlier
+`jig uninstall dispatch --machine --yes` removes it. `jig install dispatch
+--repo <path>` also lists the [dispatch labels](#the-dispatcher) that
+repository turns on and lacks, and creates them with `--yes`. The earlier
 `jig dispatch install [--interval 5m] [--yes] [--uninstall]` keeps working,
 and is the one form that sets an interval other than the machine file's.
 
