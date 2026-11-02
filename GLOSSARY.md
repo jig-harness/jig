@@ -1256,6 +1256,13 @@ make, use the entry's term instead.
   convergence. The practice is
   [M13's](modules/M13-pipeline-economy/README.md#7-hold); drive-pr's
   `ci.hold_label` is its driver side.
+- **Drive mailbox** — the one way to reach a running *PR drive loop* from
+  outside it: append-only files in the working tree into which a person, or
+  the session that started the drive, writes a note or a directive, and
+  which only the driver answers. A note is context a pass may read; a
+  directive (hold the push, pause, stop) is enforced by the drive's own
+  scripts, whatever a pass does
+  ([drive-pr](plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)).
 - **Held-head check** — the step of a required check that fails, or cancels
   its own run, while a pull request carries the *CI hold* label, so a held
   head is visibly not mergeable from the moment the label lands until the
@@ -1702,6 +1709,17 @@ make, use the entry's term instead.
   instructions and tool list that a skill or session hands one narrow job to.
   A plugin can ship subagents beside its skills; Claude Code loads them,
   Codex reads them only from its own agent folders.
+- **Deterministic part and reasoned part** — the two kinds of part a
+  system of agents is built from. A **deterministic part** is a script with
+  no model in it: given the same records it does the same thing, and it
+  refuses or reports what it cannot read rather than guess (a gate, the
+  *dispatcher*'s *tick*, a tracker script, a release step). A **reasoned
+  part** is a model session working from instructions and deciding (a
+  skill's session, a pass of a *PR drive loop*, an implementer, the *Review
+  Arbiter*, an audit's score where no *probe* decides). In Jig the reasoned
+  parts decide and a deterministic part writes the shared record, checking
+  what it is given. See
+  [plugin/MECHANISMS.md](plugin/MECHANISMS.md).
 - **Issue** — one unit of work in the issue tracker: what `/jig:do-item` picks
   up and a pull request closes. Skills say *item* for short. *Avoid*: ticket,
   card, task.

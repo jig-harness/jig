@@ -10,7 +10,11 @@ of M6, over the plugin's skills.
 
 The stages are named, never numbered. Each names the skill, command or
 document that owns it and the artifact it hands on; the detail is in the
-owner's own document, not here. The last stage feeds the first.
+owner's own document, not here. The last stage feeds the first. The same
+system by mechanism, which parts are scripts and which are a model deciding
+at each stage, is
+[plugin/MECHANISMS.md](../plugin/MECHANISMS.md); by station, it is
+[FACTORY.md](../FACTORY.md).
 
 | Stage | Owner | Hands on | Detail |
 |-------|-------|----------|--------|
