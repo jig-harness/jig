@@ -722,7 +722,7 @@ idle Orca checkout, once every launch path is covered by admission or
 Orca refuses a removal atomically, leaves no card in `orca worktree list
 --json`, the dispatcher's account cap reads `orca account usage --json`
 where Orca has it, and an agent in a Jig repository reaching `waiting`, `blocked` or `done`
-under the plugin has a tick pending from the moment the event arrives:
+under the plugin has a tick pending from the moment the event arrives, while the plugin's worker lives (a restart loses the pending flag and the machine's timer tick then processes the repository):
 the first event after a minute of quiet starts it at once, an event during
 a running tick or the minute after a start waits for one trailing tick
 that starts once the running tick has finished and a minute has passed
