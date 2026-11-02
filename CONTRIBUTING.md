@@ -158,6 +158,29 @@ Replace the label placeholders with the intended labels. The first checks
 the taxonomy alone; the second also reads the repository's labels through
 the signed-in `gh` command-line client.
 
+## Where models write Jig's code
+
+At run time no model reads or writes Jig's code: the dispatcher, `jig gc`,
+the launcher and the drive's loop control are scripts, and the sessions
+they start write the consuming repository's code
+([the mechanism map](plugin/MECHANISMS.md#when-a-model-reads-or-writes-jigs-own-code)).
+While Jig is being developed, models write its code all the time, since
+Jig is built with its own tools:
+
+- an implementer building a step of a plan, picked up by `/jig:do-item`;
+- a drive pass fixing what a reviewer flagged, in whatever file the reviewer
+  flagged, the dispatcher's own code included;
+- a follow-up or site-update session (`followup`, `website-update`) editing
+  status pages and the site's copy.
+
+What a part is held to follows from who writes it and who runs it:
+
+| Kind of code | Written by | Read or run at run time by | Held to |
+|--------------|------------|----------------------------|---------|
+| Loop control and machine tools: `plugin/dispatch/`, `plugin/gc/`, `plugin/skills/drive-pr/scripts/` and the gates | models, during development | scripts only | the test rules in [AGENTS.md](AGENTS.md) (a test seen to fail before its pass is trusted); for `drive-pr`, a deadline on every outbound call ([plugin/AGENTS.md](plugin/AGENTS.md#changing-drive-pr)); and the refusal on an unreadable record each script's own header states |
+| Skill instructions: `SKILL.md`, references, lens files, the arbiter's definition | models and people, during development | models, every session | the context budget, the skill-authoring counts [the ratchet](#the-ratchet) keeps from growing, and, for `drive-pr` alone, tests that its scripts' exit codes and its prose agree (`plugin/skills/drive-pr/__tests__/terminal-states*.test.ts`) |
+| A consuming repository's own code and records | models, at run time | that repository's gates and reviewers | that repository's gates, review rounds, and a person's merge |
+
 ## Toolchain
 
 Runnable tooling and gates are written in Bun + TypeScript
