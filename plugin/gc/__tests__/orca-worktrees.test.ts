@@ -428,6 +428,23 @@ describe.skipIf(
     expect(readFileSync(join(f.root, "hook-ran"), "utf8")).toContain(f.tree);
   }, 60_000);
 
+  test("a hook that export attributes would leave out of the archive keeps the checkout", () => {
+    const f = setup();
+    const attributes = join(f.root, "repo", ".git", "info", "attributes");
+    mkdirSync(dirname(attributes), { recursive: true });
+    writeFileSync(attributes, ".config/worktree-hooks/** export-ignore\n");
+    idle(f);
+    const result = gc(f, ["--collect", "--json"]);
+    expectSpawnExit(result, 1);
+    expect(
+      (JSON.parse(result.stdout.toString()) as Receipt).resources[0],
+    ).toMatchObject({
+      outcome: "failed",
+      reason: expect.stringContaining("export attributes"),
+    });
+    expect(existsSync(f.tree)).toBe(true);
+  }, 60_000);
+
   test("a helper the branch added beside the remove hook is never run by collection", () => {
     const f = setup();
     writeFileSync(

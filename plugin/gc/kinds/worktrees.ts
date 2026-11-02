@@ -17,13 +17,10 @@ import {
   runOrca,
 } from "../../shared/orca.ts";
 import { run } from "../../shared/proc.ts";
-import {
-  spawnSync,
-  withoutLeakyGitEnv,
-} from "../../shared/guarded-git-spawn.ts";
+import { spawnSync } from "../../shared/guarded-git-spawn.ts";
 import { HOOKS_DIR, hookPath } from "../../shared/worktree-hooks.ts";
 import { isAbsolute, join, normalize, relative, sep } from "node:path";
-import { gcGit as git } from "../git.ts";
+import { gcGit as git, gitEnvironment } from "../git.ts";
 import { localSteps, removeThroughOrca } from "../worktree-removal.ts";
 import { processHolder } from "./worktree-git.ts";
 import {
@@ -120,7 +117,7 @@ async function snapshotBaseHooks(
     tip,
     "--",
     `${HOOKS_DIR}/remove`,
-  ]).catch(() => "");
+  ]);
   if (held === "") {
     // The base branch decides whether a teardown is required; a checkout that
     // brings a hook of its own the base never reviewed is still refused.
@@ -129,50 +126,10 @@ async function snapshotBaseHooks(
       `kept: ${HOOKS_DIR}/remove is not in the base branch, so its code was never reviewed there`,
     );
   }
-  const startup = join(worktree, "bunfig.toml");
-  if (existsSync(startup)) {
-    const local = await git(repository, [
-      "hash-object",
-      "--no-filters",
-      startup,
-    ]);
-    const base = await git(repository, [
-      "rev-parse",
-      `${tip}:bunfig.toml`,
-    ]).catch(() => "");
-    if (local !== base)
-      throw new GcError(
-        "kept: bunfig.toml differs from the base branch's; remove the worktree by hand",
-      );
-  }
+  await requireBaseBunfig(repository, tip, worktree);
   const dir = mkdtempSync(join(tmpdir(), "jig-gc-hooks-"));
   try {
-    const env = withoutLeakyGitEnv();
-    const archive = join(dir, "hooks.tar");
-    const spawned: [string, string[]][] = [
-      [
-        "git",
-        [
-          "-C",
-          repository,
-          "archive",
-          "--format=tar",
-          "-o",
-          archive,
-          tip,
-          "--",
-          HOOKS_DIR,
-        ],
-      ],
-      ["tar", ["-xf", archive, "-C", dir]],
-    ];
-    for (const [file, args] of spawned) {
-      const done = spawnSync(file, args, { env, timeout: 60_000 });
-      if (done.status !== 0)
-        throw new GcError(
-          `could not extract ${HOOKS_DIR} from the base branch`,
-        );
-    }
+    await extractBaseHooks(repository, tip, dir);
     const hook = join(dir, HOOKS_DIR, "remove");
     accessSync(hook, constants.X_OK);
     return { hook, dir };
@@ -183,6 +140,84 @@ async function snapshotBaseHooks(
       : new GcError(
           `kept: the base branch's ${HOOKS_DIR}/remove cannot run (${error instanceof Error ? error.message : String(error)})`,
         );
+  }
+}
+/** Refuse a checkout whose Bun startup file is not the base branch's. */
+async function requireBaseBunfig(
+  repository: string,
+  tip: string,
+  worktree: string,
+): Promise<void> {
+  const startup = join(worktree, "bunfig.toml");
+  if (!existsSync(startup)) return;
+  const local = await git(repository, ["hash-object", "--no-filters", startup]);
+  const base = await git(repository, ["rev-parse", `${tip}:bunfig.toml`]).catch(
+    () => "",
+  );
+  if (local !== base)
+    throw new GcError(
+      "kept: bunfig.toml differs from the base branch's; remove the worktree by hand",
+    );
+}
+/**
+ * Extract the commit's hooks directory into `dir`, then check every committed
+ * file as extracted: `git archive` honours export-ignore and export-subst, and
+ * what runs must be the committed bytes.
+ */
+async function extractBaseHooks(
+  repository: string,
+  tip: string,
+  dir: string,
+): Promise<void> {
+  const env = gitEnvironment() as Record<string, string>;
+  const archive = join(dir, "hooks.tar");
+  const spawned: [string, string[]][] = [
+    [
+      "git",
+      [
+        "--no-replace-objects",
+        "-C",
+        repository,
+        "archive",
+        "--format=tar",
+        "-o",
+        archive,
+        tip,
+        "--",
+        HOOKS_DIR,
+      ],
+    ],
+    ["tar", ["-xf", archive, "-C", dir]],
+  ];
+  for (const [file, args] of spawned) {
+    const done = spawnSync(file, args, { env, timeout: 60_000 });
+    if (done.status !== 0)
+      throw new GcError(`could not extract ${HOOKS_DIR} from the base branch`);
+  }
+  const listed = await git(repository, [
+    "ls-tree",
+    "-r",
+    "-z",
+    tip,
+    "--",
+    HOOKS_DIR,
+  ]);
+  for (const row of listed.split("\0").filter((entry) => entry !== "")) {
+    const match = /^(100644|100755) blob ([0-9a-f]+)\t(.+)$/s.exec(row);
+    if (match === null)
+      throw new GcError(
+        `kept: ${HOOKS_DIR} in the base branch holds an entry that is not a plain file`,
+      );
+    const [, , oid, path] = match;
+    const extracted = join(dir, path ?? "");
+    if (
+      !existsSync(extracted) ||
+      (await git(repository, ["hash-object", "--no-filters", extracted])) !==
+        oid
+    )
+      throw new GcError(
+        `kept: ${path} was changed or left out by git archive's export attributes`,
+      );
   }
 }
 /**

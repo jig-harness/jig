@@ -88,8 +88,10 @@ The retiring branch could supply the hook, and it runs unattended with the
 user's credentials, so collection extracts the hooks directory of the declared
 base-branch commit and runs that copy, with the checkout as its working
 directory; what the branch changed or added there is never run. A repository
-whose base branch has no remove hook keeps the worktree, as does one whose
-`bunfig.toml` differs from the base branch's, since that file could preload
+whose base branch and checkout have no remove hook has nothing to run; a
+checkout that brings a hook the base branch lacks keeps the worktree, as does
+a hooks directory that `git archive` would alter through export attributes,
+and so does one whose `bunfig.toml` differs from the base branch's, since that file could preload
 code into the hook's Bun. A helper the hook starts from elsewhere in the
 checkout is the branch's own; keep helpers beside the hook. The registry is read once more after the
 hook and the park, right before `orca worktree rm`, because the hook may run
