@@ -16,13 +16,16 @@ and tells a person when a stage stops on something only a person can
 settle. It never merges: that stays a person's
 ([ADR-0003](../docs/adr/ADR-0003-a-person-merges.md)).
 
-This is the design of [plan.md](plan.md) item 33. Nothing of it is built
-yet. It builds on item 32 (driving any pull request from anywhere): the
+This is the design of [plan.md](plan.md) item 33. Every step of its
+[build order](#build-order) is built, and the documents that describe it are
+the current truth; the item stays open on the roadmap until its "Done when"
+checks run on a host running Orca, each named at its own build step. It
+builds on item 32 (driving any pull request from anywhere): the
 [drive ledger](../plugin/skills/drive-pr/README.md#where-its-state-lives)
 on each pull request, the re-arm of a stopped drive and the takeover of a
 wedged one are in `drive-pr` today; item 32's framed park (a park that
 carries the question, the options and the recommended one) and its morning
-report are still being built. M0 names the service this is: a
+report are built too. M0 names the service this is: a
 [control plane](../GLOSSARY.md), "a service that tracks an agent's job and
 can reach a person". The dispatcher is the first one Jig ships, for the
 execution line only. Its first [session runtime](../GLOSSARY.md) is Orca
@@ -734,7 +737,7 @@ which a directory shared between accounts could not.
 
 A notification goes out once per cause, its launch record or receipt
 naming what was sent: a drive parked with an item unanswered, carrying the
-parked questions (item 32's framed decision once that is built); a drive
+parked questions (item 32's framed decision, built); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
 stalled pickup or a double claim; a failed follow-up; a session waiting past
@@ -773,7 +776,7 @@ record per cause (an unchanged refusal not to retry, a notification
 already sent), keyed by the cause's own facts (the item and its state, the
 ledger's generation and exit, the park), and dropped only when those facts
 change or the item or pull request leaves every record the tick reads. `jig dispatch
-receipts` lists them; once item 32's morning report is built, it lists the
+receipts` lists them; the morning report (`drives.ts --report`) lists the
 launches, refusals and notifications since the last report beside the
 drives' own.
 
@@ -1091,8 +1094,8 @@ One pull request each, in this order; each is usable on its own.
    person runs it by hand and marks that marker done when it succeeds
    (Jig's `/followup` first); the notifications above
    through `notify`. The park's
-   notification carries item 32's framed decision once that is built, and
-   the receipts join its morning report then; a consumer repository's
+   notification carries item 32's framed decision, and
+   the receipts join its morning report; a consumer repository's
    follow-up waits on its own post-merge command (item 17).
 6. **Control.** The outcome log and its classifier, the expectations and
    stage drift, `jig dispatch dashboard`, the interactive wall record and
