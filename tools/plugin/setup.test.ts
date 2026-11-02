@@ -50,7 +50,7 @@ test("setup defaults to the Jig repository and rejects unknown flags", () => {
     defaulted: false,
     only: "codex",
   });
-  expect(parse(["--channel", "latest"])).toEqual({
+  expect(parse(["--channel", "latest"], noMarketplace)).toEqual({
     check: false,
     source: `${DEFAULT_SOURCE}#latest`,
     explicit: true,
