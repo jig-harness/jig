@@ -352,6 +352,15 @@ export function workspaceOr(
   return opened;
 }
 
+/** Whether a pending record's launch can still be replayed: it has a workspace, its last attempt got no answer and an attempt remains. */
+export function retryable(record: LaunchRecord): boolean {
+  return (
+    record.workspace !== null &&
+    record.attempts.at(-1)?.outcome !== "sent" &&
+    record.attempts.length < MAX_ATTEMPTS
+  );
+}
+
 /** The pending records of `repo` whose launch got no answer and may be replayed once, of the actions `kinds` names. */
 export function replayable(
   state: ApplyState,
@@ -363,10 +372,8 @@ export function replayable(
       ({ record, state: s }) =>
         record.repo === repo &&
         s.kind === "pending" &&
-        record.workspace !== null &&
         kinds.includes(record.action) &&
-        record.attempts.at(-1)?.outcome !== "sent" &&
-        record.attempts.length < MAX_ATTEMPTS,
+        retryable(record),
     )
     .map((r) => r.record);
 }

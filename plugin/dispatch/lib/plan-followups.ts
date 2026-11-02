@@ -34,8 +34,6 @@ export interface FollowupInput {
   merged: MarkedPr[];
   launches: ReadRecord[];
   outcomes: ReadonlyMap<number, FollowupOutcome>;
-  /** The pull requests whose outcome file does not read: unknown, not absent. */
-  unreadableOutcomes?: ReadonlySet<number>;
   nowMs: number;
 }
 
@@ -81,18 +79,6 @@ function endedAs(
   return found === undefined ? null : outcomeOf(found);
 }
 
-/** Why a marker whose record is gone and whose outcome file does not read cannot be judged failed; `null` otherwise. */
-function lostOutcome(
-  input: FollowupInput,
-  pr: number,
-  marker: number,
-  id: string,
-  gone: boolean,
-): string | null {
-  if (!gone || input.unreadableOutcomes?.has(pr) !== true) return null;
-  return `marker comment ${marker} names launch record ${id}, which is gone, and the pull request's outcome file does not read: its result is unknown, a person settles it`;
-}
-
 /** Why the launch record a marker names is not this pull request's follow-up; `null` when it is, or is not on this machine. */
 function foreignRecord(
   found: ReadRecord | undefined,
@@ -119,15 +105,7 @@ function planTickMarker(
   const id = marker.run.record;
   const found = input.launches.find((r) => r.record.id === id);
   const ended = endedAs(input, pr.number, id, found);
-  const unsettled =
-    foreignRecord(found, pr, marker.id, id) ??
-    lostOutcome(
-      input,
-      pr.number,
-      marker.id,
-      id,
-      found === undefined && ended === null,
-    );
+  const unsettled = foreignRecord(found, pr, marker.id, id);
   if (unsettled !== null) {
     plan.unplaced.push({ target, record: "forge", reason: unsettled });
     return;

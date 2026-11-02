@@ -38,8 +38,9 @@
  * pull request (`lib/session.ts`), bound to its account the same way; its
  * exit is recorded, and no wall is written for it.
  *
- * Exit codes: the drive's own; 2 usage or a token that is not the record's;
- * 3 the record was already claimed, so nothing started.
+ * Exit codes: the drive's own; 2 usage, a token that is not the record's,
+ * or a state database a newer plugin wrote; 3 the record was already
+ * claimed, so nothing started.
  */
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
@@ -57,11 +58,12 @@ import {
   isDrive,
   type LaunchRecord,
   ownIdentity,
-  readRecordFile,
+  readRecord,
   recordExit,
 } from "./lib/launches.ts";
 import { probeWall } from "./lib/quota-probe.ts";
 import { sessionArgv } from "./lib/session.ts";
+import { StateVersionError } from "./lib/state.ts";
 import { writeWall } from "./lib/walls.ts";
 
 /** `drive.ts`'s exit for a usage-limit wall it cannot wait out. */
@@ -208,7 +210,7 @@ async function wallRecorded(
 }
 
 async function wrap(id: string, token: string): Promise<number> {
-  const record = readRecordFile(id);
+  const record = readRecord(id);
   if (record === null || record.token !== token) {
     console.error(
       `jig dispatch run: ${id} is not a launch record with that token`,
@@ -273,7 +275,14 @@ export async function runMain(argv: string[]): Promise<number> {
     );
     return 2;
   }
-  return wrap(argv[0] as string, argv[1] as string);
+  try {
+    return await wrap(argv[0] as string, argv[1] as string);
+  } catch (error) {
+    // A state database a newer plugin wrote: nothing is started.
+    if (!(error instanceof StateVersionError)) throw error;
+    console.error(`jig dispatch run: ${error.message}`);
+    return 2;
+  }
 }
 
 if (import.meta.main) process.exitCode = await runMain(process.argv.slice(2));

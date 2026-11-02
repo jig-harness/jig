@@ -2,12 +2,13 @@
  * Each launched stage's expectation of how it progresses while it runs,
  * and the stages running outside theirs (**drifting**):
  *
- * - a drive's unresolved review threads fall: each tick records, on the
+ * - a drive's unresolved review threads fall: each tick records, for the
  *   drive's launch record, the unresolved-thread count at the ledger's
- *   current round the first time it sees that round (`sampleThreads`); the
- *   drive drifts when the count at the latest recorded round is not below
- *   the count `dispatch.drive_rounds_flat` recorded rounds earlier. Rounds
- *   the tick never saw are gaps, not samples;
+ *   current round the first time it sees that round (`sampleThreads`, the
+ *   state database's `thread_samples` table, keyed by the record and the
+ *   round); the drive drifts when the count at the latest recorded round is
+ *   not below the count `dispatch.drive_rounds_flat` recorded rounds
+ *   earlier. Rounds the tick never saw are gaps, not samples;
  * - a pickup opens a pull request within `dispatch.pickup_within` of its
  *   launch;
  * - a follow-up ends within `dispatch.followup_within` of its launch.
@@ -27,6 +28,7 @@ import {
   targetOf,
   writeRecord,
 } from "./launches.ts";
+import { stateDb } from "./state.ts";
 import { pickupNotice } from "./notices.ts";
 import type { SessionsReport } from "./runtime/port.ts";
 import type {
@@ -68,11 +70,14 @@ export async function sampleThreads(
       swallow(error, `PR #${record.pr}'s threads at round ${round} are a gap`);
       continue;
     }
-    record.samples = [
-      ...samples,
-      { round, threads, at: new Date().toISOString() },
-    ];
-    writeRecord(record, root);
+    const sample = { round, threads, at: new Date().toISOString() };
+    stateDb(root)
+      .query(
+        `INSERT INTO thread_samples (launch, round, threads, at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (launch, round) DO NOTHING`,
+      )
+      .run(record.id, round, threads, sample.at);
+    record.samples = [...samples, sample];
   }
 }
 
