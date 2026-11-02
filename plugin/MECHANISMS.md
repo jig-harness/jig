@@ -153,7 +153,7 @@ development and shipped as a version.
 | [Dispatcher's records](#the-dispatchers-records-receipts-outcome-log-dashboard-notifications) | `dispatch/receipts.ts`, `dispatch/lib/log.ts`, `dispatch/dashboard.ts`, `dispatch/lib/notices.ts` | a dispatched session records its result | the dashboard; the morning report | a person, through `/jig:reflect` |
 | [Follow-up marker](#the-follow-up-marker) | `dispatch/marker.ts`, `dispatch/lib/followup-marker.ts` | the follow-up session | the follow-up session (exit 1, 2 or 3) | a person deletes or marks the marker |
 | [The drive](#the-drive-driver-locks-leases-ledger) | `skills/drive-pr/scripts/drive.ts` and its libraries | drive passes; the session that arms it | its exit state; the dispatcher; the morning report | the dispatcher re-arms mechanical stops; a person the rest |
-| [Steering a drive](#steering-a-running-drive-the-mailbox-and-the-ci-hold) | `skills/drive-pr/scripts/mailbox.ts`, `skills/drive-pr/scripts/ci-hold.ts` | the session that armed the drive; a person | the drive's exit (17, 18, 19 or 1) | the sender resumes the directive; a person removes a leftover label |
+| [Steering a drive](#steering-a-running-drive-the-mailbox-and-the-ci-hold) | `skills/drive-pr/scripts/mailbox.ts`, `skills/drive-pr/scripts/ci-hold.ts` | the session that armed the drive; a person | `guarded-push.ts`'s exit 17; the drive's exit 18, 19 or 1 | the sender resumes the directive; a person removes a leftover label |
 | [Review threads](#review-threads-and-the-arbiter) | `skills/resolve-review-comments/scripts/` | drive pass; the arbiter | the pass (non-zero exit), then `drive.ts` | the next pass, or a person on a park |
 | [Review and lenses](#review-and-lenses) | `skills/review/scripts/` | review's semantic tier and lens reviewers | the reviewing session (exit 2) | the session, or the repository's lens owner |
 | [Tracker and forge](#the-tracker-and-the-forge) | `skills/do-item/scripts/tracker.ts` and its adapters; `gh` under deadlines | every skill that files, reads or claims | the calling session (exit 1 or 2); the tick's report | a person (credentials); a Jig change (an adapter) |
@@ -376,7 +376,7 @@ development and shipped as a version.
   [drive mailbox](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a
   pair of append-only files under `.context/drive-mailbox/`, written through
   `skills/drive-pr/scripts/mailbox.ts`: any sender appends to the inbox, and
-  only the driver appends to the outbox. Its three directives are enforced
+  only the driver appends to the outbox. Its directives are enforced
   by scripts, not by the pass:
   `hold-push` makes `skills/drive-pr/scripts/guarded-push.ts` refuse the push (exit 17, which a
   later round recovers from), and `skills/drive-pr/scripts/push-hold-recheck.ts`,
