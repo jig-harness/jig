@@ -67,12 +67,21 @@ const MENU =
 /** How many of the screen's last lines the input box must be among. */
 const PROMPT_ZONE = 10;
 
-/** One input line without its box border: a border is a `│` at both ends, and a lone `│` or `|` is the person's text. */
-function unframed(line: string): string {
-  const t = line.trim();
-  return t.length >= 2 && t.startsWith("│") && t.endsWith("│")
-    ? t.slice(1, -1).trim()
-    : t;
+/** Whether a line has a `│` at both ends. */
+const bordered = (line: string): boolean =>
+  line.length >= 2 && line.startsWith("│") && line.endsWith("│");
+
+/**
+ * The input box's lines without its border. A border is stripped only when
+ * every non-empty line of the box has one: a `│` or `|` on a box that is not
+ * wholly framed is the person's text.
+ */
+function unframedBox(lines: readonly string[]): string[] {
+  const filled = lines.map((l) => l.trim()).filter((l) => l !== "");
+  const framed = filled.length > 0 && filled.every(bordered);
+  return (framed ? filled.map((l) => l.slice(1, -1).trim()) : filled).filter(
+    (l) => l !== "",
+  );
 }
 
 /**
@@ -99,10 +108,7 @@ export function screenNotReady(lines: readonly string[]): string | null {
   const edges = all.map((i) => i - offset);
   if (edges.length < 2 || (edges[0] as number) < 0)
     return "the screen shows no input prompt";
-  const box = zone
-    .slice((edges[0] as number) + 1, edges[1])
-    .map(unframed)
-    .filter((l) => l !== "");
+  const box = unframedBox(zone.slice((edges[0] as number) + 1, edges[1]));
   if (box.length === 0) return "the screen shows no input prompt";
   if (box.length > 1) return "the input box holds text below its first line";
   const only = box[0] as string;

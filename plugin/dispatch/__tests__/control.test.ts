@@ -300,6 +300,10 @@ describe("the screen check before a nudge", () => {
         "╰────╯",
       ]),
     ).toBe("the input box holds text below its first line");
+    // A bar-only continuation line in a box that is not wholly framed is draft text.
+    expect(screenNotReady([rule, "> ", "│ │", rule])).toBe(
+      "the input box holds text below its first line",
+    );
     // A draft line shaped like a rule makes the boundaries ambiguous; nothing is sent.
     expect(
       screenNotReady([
