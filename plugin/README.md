@@ -123,7 +123,7 @@ list --json` names it). Run it from the repository to register, or add
 ```sh
 jig install   [COMPONENT...] [--repo <path>] [--yes]
 jig uninstall [COMPONENT...] [--repo <path>] [--machine] [--yes]
-jig upgrade   [--claude | --codex] [--channel latest|stable] [--source <marketplace>] [--json]
+jig upgrade   [--claude | --codex] [--channel latest|stable] [--source <marketplace>] [--jobs-only] [--json]
 jig doctor    [COMPONENT...] [--json]
 jig status    [COMPONENT...] [--json]
 jig receipts  COMPONENT [<date> | <run-id>]

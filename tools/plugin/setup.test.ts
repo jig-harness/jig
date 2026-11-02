@@ -18,6 +18,7 @@ import {
   LEAKY_GIT_ENV,
   spawnSync,
 } from "../../plugin/shared/guarded-git-spawn.ts";
+import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { DEFAULT_SOURCE, PLUGIN_ID } from "../../plugin/runtime/harness.ts";
 import { parse } from "./setup.ts";
 
@@ -34,44 +35,39 @@ beforeAll(() => {
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 test("setup defaults to the Jig repository and rejects unknown flags", () => {
-  const previous = process.env.JIG_MARKETPLACE;
-  delete process.env.JIG_MARKETPLACE;
-  try {
-    expect(parse([])).toEqual({
-      check: false,
-      source: DEFAULT_SOURCE,
-      explicit: false,
-      defaulted: true,
-      only: null,
-    });
-    expect(parse(["--check", "--codex", "--source", "/x"])).toEqual({
-      check: true,
-      source: "/x",
-      explicit: true,
-      defaulted: false,
-      only: "codex",
-    });
-    expect(parse(["--channel", "latest"])).toEqual({
-      check: false,
-      source: `${DEFAULT_SOURCE}#latest`,
-      explicit: true,
-      defaulted: false,
-      only: null,
-    });
-    expect(() => parse(["--source"])).toThrow("needs a marketplace source");
-    expect(() => parse(["--bogus"])).toThrow("unknown argument");
-    expect(() => parse(["--channel", "beta"])).toThrow(
-      "--channel needs one of: latest, stable",
-    );
-    expect(() =>
-      parse(["--channel", "stable", "--source", `${DEFAULT_SOURCE}#v0.3.0`]),
-    ).toThrow("contradict each other");
-    expect(() =>
-      parse(["--channel", "stable", "--source", "/src/jig"]),
-    ).toThrow("has no channels");
-  } finally {
-    if (previous !== undefined) process.env.JIG_MARKETPLACE = previous;
-  }
+  const noMarketplace = { ...process.env, JIG_MARKETPLACE: undefined };
+  expect(parse([], noMarketplace)).toEqual({
+    check: false,
+    source: DEFAULT_SOURCE,
+    explicit: false,
+    defaulted: true,
+    only: null,
+  });
+  expect(parse(["--check", "--codex", "--source", "/x"])).toEqual({
+    check: true,
+    source: "/x",
+    explicit: true,
+    defaulted: false,
+    only: "codex",
+  });
+  expect(parse(["--channel", "latest"])).toEqual({
+    check: false,
+    source: `${DEFAULT_SOURCE}#latest`,
+    explicit: true,
+    defaulted: false,
+    only: null,
+  });
+  expect(() => parse(["--source"])).toThrow("needs a marketplace source");
+  expect(() => parse(["--bogus"])).toThrow("unknown argument");
+  expect(() => parse(["--channel", "beta"])).toThrow(
+    "--channel needs one of: latest, stable",
+  );
+  expect(() =>
+    parse(["--channel", "stable", "--source", `${DEFAULT_SOURCE}#v0.3.0`]),
+  ).toThrow("contradict each other");
+  expect(() => parse(["--channel", "stable", "--source", "/src/jig"])).toThrow(
+    "has no channels",
+  );
 });
 
 /**
@@ -81,7 +77,12 @@ test("setup defaults to the Jig repository and rejects unknown flags", () => {
 function runSetup(
   args: string[],
   stub: Record<string, string>,
-): { status: number | null; stdout: string; stderr: string; calls: string[] } {
+): {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  calls: string[];
+} {
   const bin = mkdtempSync(join(scratch, "stub-bin-"));
   const log = join(bin, "calls.log");
   for (const tool of ["claude", "codex"])
@@ -116,7 +117,12 @@ if (process.env[key] !== undefined) console.log(process.env[key]);
   const calls = existsSync(log)
     ? readFileSync(log, "utf8").trim().split("\n")
     : [];
-  return { ...result, calls };
+  return {
+    exitCode: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    calls,
+  };
 }
 
 const registeredHere = JSON.stringify([
@@ -133,7 +139,7 @@ test.skipIf(process.platform === "win32")(
       STUB_CLAUDE_PLUGIN_MARKETPLACE_LIST_JSON: registeredHere,
       STUB_CLAUDE_PLUGIN_LIST_JSON: userInstall,
     });
-    expect(result.status).toBe(1);
+    expectSpawnExit(result, 1);
     expect(result.stderr).toContain("is registered from /src/jig");
     expect(result.calls).toEqual([
       "claude --version",
@@ -161,7 +167,7 @@ test.skipIf(process.platform === "win32")(
         installed: [{ pluginId: PLUGIN_ID, version: "0.2.0", enabled: true }],
       }),
     });
-    expect(result.status).toBe(0);
+    expectSpawnExit(result, 0);
     expect(result.calls).toContain("claude plugin update jig@jig --scope user");
     expect(result.calls).not.toContain("claude plugin update jig@jig");
     const codex = result.calls.filter((call) =>
@@ -198,7 +204,7 @@ test.skipIf(process.platform === "win32")(
         installed: [{ pluginId: PLUGIN_ID, version: "0.2.0", enabled: true }],
       }),
     });
-    expect(result.status).toBe(0);
+    expectSpawnExit(result, 0);
     expect(result.calls).toContain(
       `claude plugin install jig --marketplace ${DEFAULT_SOURCE}#latest`,
     );
@@ -228,7 +234,7 @@ test.skipIf(process.platform === "win32")(
       }),
       CODEX_HOME: codexHome,
     });
-    expect(result.status).toBe(1);
+    expectSpawnExit(result, 1);
     expect(result.stderr).toContain(
       `registered from ${DEFAULT_SOURCE}#latest, not ${DEFAULT_SOURCE}#stable`,
     );
@@ -249,7 +255,7 @@ test.skipIf(process.platform === "win32")(
       STUB_SLEEP: "plugin marketplace update jig",
       JIG_SETUP_TIMEOUT_SECONDS: "1",
     });
-    expect(result.status).toBe(1);
+    expectSpawnExit(result, 1);
     expect(result.stderr).toContain("did not finish within 1s");
   },
   30_000,
@@ -267,7 +273,7 @@ test.skipIf(process.platform === "win32")(
         installed: [{ pluginId: PLUGIN_ID, version: "0.2.0", enabled: true }],
       }),
     });
-    expect(result.status).toBe(1);
+    expectSpawnExit(result, 1);
     expect(result.stderr).toContain("claude --version did not finish");
     expect(result.stdout).not.toContain("not on PATH");
     // A harness that fails does not stop the next one.

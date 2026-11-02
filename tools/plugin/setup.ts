@@ -67,17 +67,20 @@ function take(argv: string[], at: number, flags: Flags): number {
   return at;
 }
 
-export function parse(argv: string[]) {
+export function parse(argv: string[], env: NodeJS.ProcessEnv = process.env) {
   const flags: Flags = { check: false, only: null };
   for (let at = 0; at < argv.length; at++) at = take(argv, at, flags);
   const { check, only, source, channel } = flags;
   return {
     check,
-    ...harnessRequest({
-      ...(source === undefined ? {} : { source }),
-      ...(channel === undefined ? {} : { channel }),
-      only,
-    }),
+    ...harnessRequest(
+      {
+        ...(source === undefined ? {} : { source }),
+        ...(channel === undefined ? {} : { channel }),
+        only,
+      },
+      env,
+    ),
   };
 }
 
