@@ -37,7 +37,7 @@ import {
 } from "./launch-fixtures.ts";
 
 const JIG = resolve(import.meta.dir, "../../jig.ts");
-const ENTRY = resolve(import.meta.dir, "install-labels-entry.ts");
+const ENTRY = resolve(import.meta.dir, "fixtures", "install-labels-entry.ts");
 
 const config = (labels: string) => `issue_tracker:
   adapter: github

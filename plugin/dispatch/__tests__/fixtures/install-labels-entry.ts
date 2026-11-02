@@ -3,7 +3,7 @@
  * own, for the tests: the whole verb with `--yes` would also write the
  * timer, which needs the installed plugin copy.
  */
-import { installLabels } from "../install-labels.ts";
+import { installLabels } from "../../install-labels.ts";
 
 const args = process.argv.slice(2);
 process.exit(
