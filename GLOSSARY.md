@@ -1553,11 +1553,13 @@ make, use the entry's term instead.
   unlike Jig's practice modules, which are documented practices.
 - **Lifecycle verb (of the `jig` command)** — a command that acts the same
   way on every *component* of the `jig` command, rather than doing one
-  component's own work: `jig install`, `jig uninstall`, `jig status`,
-  `jig receipts` and `jig run`. With no component named, it acts on all of
-  them, except that `jig install` and `jig run` leave out a component whose
-  opt-in is missing, and `jig receipts` always names one component; each
-  component's own work stays under its name (`jig gc --collect`).
+  component's own work: `jig install`, `jig uninstall`, `jig upgrade`,
+  `jig doctor`, `jig status`, `jig receipts` and `jig run`. With no
+  component named, it acts on all of them, except that `jig install` and
+  `jig run` leave out a component whose opt-in is missing, `jig receipts`
+  always names one component, and `jig upgrade` names none: it updates the
+  plugin itself, then refreshes every installed job. Each component's own
+  work stays under its name (`jig gc --collect`).
 - **Type guard** — a function that checks at run time that a value has a
   given shape, and tells the type checker so when it does. Data read from
   outside the program (JSON, a configuration file) is checked by one before

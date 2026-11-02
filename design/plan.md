@@ -155,8 +155,11 @@ Built in this order:
 3. **`doctor` and `upgrade`**: `tools/plugin/setup.ts`'s install, update
    and check move into the plugin as `jig upgrade` and `jig doctor`, moved
    and not copied: `tools/plugin/setup.ts` keeps only a call into the
-   plugin's code, so a first install from a checkout still works. `doctor`
-   also runs the audit's configuration-fit check.
+   plugin's code, so a first install from a checkout still works. After
+   the plugin, `jig upgrade` has the newly installed copy refresh each
+   installed job's launcher copy and job, and the `jig` command, keeping
+   what each install recorded. `doctor` also runs the audit's
+   configuration-fit check, offline.
 4. **The timers keep the plugin current**: the launcher runs the installed
    copy's `jig upgrade --scheduled` before each job and resolves the entry
    again, so the job runs the copy the upgrade installed. The upgrade is on
