@@ -301,7 +301,7 @@ describe("the marked records a report reads", () => {
     writeRecord(
       record("20250101T000000Z-ffffffff", {
         mark,
-        attempts: [{ ...sent, at: "2025-01-01T00:00:01.000Z" }],
+        attempts: [sent],
         createdAt: "2025-01-01T00:00:00.000Z",
       }),
       dir,
@@ -324,7 +324,7 @@ describe("the marked records a report reads", () => {
     ]);
   });
 
-  it("holds a record created before the window whose launch was replayed in it", () => {
+  it("lists a launch by the night it was recorded, not by when it was replayed", () => {
     const dir = root();
     writeRecord(
       record("20251231T000000Z-99999999", {
@@ -341,7 +341,9 @@ describe("the marked records a report reads", () => {
       Date.parse("2026-01-01T00:00:00.000Z"),
       dir,
     );
-    expect(records.map((r) => [r.record.id, r.launch])).toEqual([
+    expect(records).toEqual([]);
+    const night = markedSince(Date.parse("2025-12-31T00:00:00.000Z"), dir);
+    expect(night.records.map((r) => [r.record.id, r.launch])).toEqual([
       ["20251231T000000Z-99999999", "started"],
     ]);
   });

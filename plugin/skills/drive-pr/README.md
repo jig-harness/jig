@@ -585,9 +585,10 @@ and, for a repository that turns
 requests its latest run projected each label for (the labels it wanted,
 not read back after its writes). It also lists the workspaces the
 dispatcher launched into, found by the dispatched mark on their launch
-records rather than by their names, each with the name it carries now,
-whether its comment still carries the mark, and how its launch went when
-it did not start, so a workspace a session renamed is still there.
+records rather than by their names and listed by the night the launch was
+recorded, each with the name it carries now, whether its comment still
+carries the mark, and how its launch went when it did not start, so a
+workspace a session renamed is still there.
 `--json` prints the same as data, the dispatcher's part under `dispatch`,
 the label counts under `dispatchLabels` and the workspaces under
 `dispatchedWorkspaces`.

@@ -91,10 +91,12 @@ function setUp(): { forge: Forge; orca: string } {
   roots.push(root);
   writeRecord(record({}), root);
   // Before the report's time, and one written before records kept the mark.
+  const before = new Date(Date.now() - 48 * 3_600_000).toISOString();
   writeRecord(
     record({
       id: "20261030T010000Z-bbbbbbbb",
-      createdAt: new Date(Date.now() - 48 * 3_600_000).toISOString(),
+      createdAt: before,
+      attempts: [{ at: before, outcome: "sent", detail: "" }],
       mark: "⚙ dispatched · rearm #7 · launch 20261030T010000Z-bbbbbbbb",
     }),
     root,
