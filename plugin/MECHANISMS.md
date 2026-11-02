@@ -118,23 +118,12 @@ repository's own code, replies and records. The plugin they run is an
 installed copy, and a change to it reaches a machine only as a released
 version ([releases](README.md#releases)).
 
-**While Jig is being developed, all the time.** Jig is built with its own
-tools, so models write Jig's code in exactly the places they write any
-repository's code:
-
-- an implementer building a step of a plan, picked up by `do-item`;
-- a drive pass fixing what a reviewer flagged, in whatever file the reviewer
-  flagged, the dispatcher's own code included;
-- a follow-up or site-update session (Jig's own maintenance skills) editing
-  status pages and the site's copy.
-
-Which of these a part falls under decides what it is held to:
-
-| Kind of code | Written by | Read or run at run time by | Held to |
-|--------------|------------|----------------------------|---------|
-| Loop control and machine tools: `dispatch/`, `gc/`, `skills/drive-pr/scripts/` and the gates | models, during development | scripts only | Jig's test rules (a test seen to fail before its pass is trusted, from the repository's instructions); for `drive-pr`, a deadline on every outbound call ([the plugin's instructions](https://github.com/jig-harness/jig/blob/main/plugin/AGENTS.md)); and the refusal on an unreadable record each script's own header states |
-| Skill instructions: `SKILL.md`, references, lens files, the arbiter's definition | models and people, during development | models, every session | the context budget, the skill-authoring counts the [ratchet](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) keeps from growing, and, for `drive-pr` alone, tests that its scripts' exit codes and its prose agree (`skills/drive-pr/__tests__/terminal-states*.test.ts`) |
-| The repository's own code and records | models, at run time | the repository's own gates and reviewers | the repository's gates, review rounds, and a person's merge |
+**In the repository's own work, a model writes the code.** What a session
+writes in a repository that uses Jig is that repository's code and records,
+and it is held to that repository's gates, review rounds and a person's
+merge. A defect in one of Jig's scripts is a change to Jig, shipped as a
+version. How Jig itself is developed, and what its own changes must pass, is
+in [CONTRIBUTING.md](https://github.com/jig-harness/jig/blob/main/CONTRIBUTING.md).
 
 ## The map at a glance
 
@@ -313,9 +302,11 @@ development and shipped as a version.
   (`dispatch/lib/followup-marker.ts`). The tick posts one naming its launch
   record before it starts the session. A run by hand uses
   `jig dispatch marker claim`, `check` before each act outside the pull
-  request, and `done` at the end (`dispatch/marker.ts`). Of two trusted
-  markers the earlier comment wins; a marker counts only when the
-  dispatcher's own login or an owner, member or collaborator wrote it.
+  request, and `done` at the end (`dispatch/marker.ts`). A marker counts only
+  when the dispatcher's own login or an owner, member or collaborator wrote
+  it. Of two trusted markers the commands stand down for the earlier
+  comment; the dispatcher instead reports a conflict and plans no follow-up
+  until a person settles the duplicate (`dispatch/lib/plan-followups.ts`).
   Refuses: exit 3 when an earlier marker holds the follow-up, exit 2 for a
   comment that is not a trusted marker.
 - **Reasoned.** The follow-up session decides what the merge still owes and
@@ -444,7 +435,7 @@ development and shipped as a version.
 
 ### The tracker and the forge
 
-- **Deterministic.** Every skill reaches the issue tracker through
+- **Deterministic.** Almost every skill reaches the issue tracker through
   `skills/do-item/scripts/tracker.ts` and the
   [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   behind it (`skills/do-item/scripts/lib/tracker/`, with adapters for GitHub
@@ -455,7 +446,10 @@ development and shipped as a version.
   (`skills/drive-pr/scripts/lib/proc.ts`), and the dispatcher's reads either
   answer in full or throw, so a population read in part is never planned
   from (`dispatch/lib/forge.ts`). Refuses: `get_issue.ts` exits 2 when the
-  tracker cannot be reached; `list_comments.ts` never prints a partial list.
+  tracker cannot be reached; `list_comments.ts` never prints a partial list. One exception: the deferral step's batching
+  script (`skills/resolve-review-comments/scripts/defer-batch.ts`) files on
+  Linear directly, so choosing GitHub Issues or Jira does not redirect it
+  until deferral moves onto the interface.
 - **Reasoned.** `file-issue`, `do-item`, `work-batch`, the deferral step and
   `reflect` decide what to file, label or comment; the scripts write it.
   `file-issue` checks labels against the repository's taxonomy
@@ -533,7 +527,7 @@ development and shipped as a version.
 
 ### Hooks
 
-- **Deterministic.** The plugin registers one
+- **Deterministic.** The plugin registers an
   [agent-runtime hook](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   (`hooks/hooks.json`): the turn-budget guard (`hooks/turn-budget-guard.ts`),
   which counts a session's turns before every tool call and, near the
