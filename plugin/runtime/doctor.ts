@@ -17,6 +17,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
+import { shellQuote } from "../shared/cli.ts";
 import { swallow } from "../shared/errors.ts";
 import { decodeJson, isRecord } from "../shared/guards.ts";
 import { run } from "../shared/proc.ts";
@@ -293,7 +294,13 @@ async function commandCheck(
   const installed = commandScriptCall(text);
   const call = installed === null ? null : launcherCall(installed.command);
   // The launcher is the thing that is broken, so the repair runs the plugin copy this doctor runs from.
-  const fix = `bun "${script}" install --yes`;
+  const fix = [
+    "bun",
+    "--no-env-file",
+    shellQuote(`--config=${join(dirname(script), "gc", "bunfig.toml")}`),
+    shellQuote(script),
+    "install --yes",
+  ].join(" ");
   if (call === null)
     return fail(
       "command:launcher",
