@@ -805,11 +805,8 @@ processes the repository.
     whole process group. Supervise it there too, once what the host must
     provide is decided: `bun` for the shared supervisor, as the Herdr tool
     asks of its hosts, or a supervisor in the host's own shell;
-  - `do-item` shows pickup and the opened pull request on Orca's
-    workspace board (`plugin/skills/do-item/scripts/orca-board.ts`); the review and merge
-    stages are not shown yet (`drive-pr` converged, the merge's follow-up
-    moving the card to `completed`), and the tracker's GitHub issues could
-    be linked with `--issue`;
+  - the board card (`plugin/shared/orca-board.ts`) could link the
+    tracker's GitHub issue with `--issue`;
   - a worktree created in the Orca app gets Orca's branch name and Orca's
     own setup hook, not the repository's convention and create hook; say in
     M12's mappings how a repository's `orca.yaml` setup script and Orca's

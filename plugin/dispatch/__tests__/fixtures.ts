@@ -186,7 +186,7 @@ if (args[0] === "worktree" && (args[1] === "set" || args[1] === "show")) {
     if (args.includes("--display-name")) row.displayName = args[args.indexOf("--display-name") + 1];
     fs.writeFileSync(F + "/orca-ps.json", JSON.stringify(ps));
   }
-  answer({ worktree: { id: row.worktreeId, path: row.path, comment: row.comment, displayName: row.displayName } });
+  answer({ worktree: { id: row.worktreeId, path: row.path, comment: row.comment, isUnread: row.unread === true, displayName: row.displayName } });
 }
 if (args[0] === "worktree" && args[1] === "ps") {
   const ps = JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8"));

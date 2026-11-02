@@ -66,6 +66,9 @@ export type SessionsReport =
   | { ok: false; source: string; reason: string };
 
 /** The states in which an agent holds its stage. */
+/** The most characters one comment holds: it travels as one process argument, which a platform bounds. */
+export const MAX_COMMENT = 16_000;
+
 export const RUNNING_STATES: ReadonlySet<string> = new Set([
   "working",
   "waiting",
@@ -187,10 +190,12 @@ export interface SessionRuntime {
   ): Promise<RuntimeReceipt>;
   /**
    * A message that reaches a person through the workspace `target`: in
-   * Orca, the workspace's comment set to `message` and the workspace marked
-   * unread, which Orca's phone app shows. The dispatched marks the comment
-   * held stay in it (`keepMarks`). Its receipt carries the target's comment
-   * as the runtime reads it back after the write.
+   * Orca, `message` appended to the workspace's comment while that is still
+   * unread (read afresh under the comment lock, never from an earlier
+   * listing), else set as the comment, and the workspace marked unread,
+   * which Orca's phone app shows. The dispatched marks the comment held stay
+   * in it (`keepMarks`). Its receipt carries the target's comment as the
+   * runtime reads it back after the write.
    */
   notify(
     target: { id: string; path: string },

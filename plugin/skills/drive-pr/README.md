@@ -645,6 +645,18 @@ reads the workspace's linked pull request and sets it only when it is missing or
 names another one. Run it only in the worktree that drove the pull request. Outside Orca
 it does nothing, and an Orca failure only warns (exit `0`).
 
+The drive also keeps the workspace's card on Orca's board true. When it marks
+the pull request Ready, the card moves to In review with the pull request
+linked. When it stops on something you must look at (a park, a usage-limit
+stop, or a failure stop such as a failed reviewer check, a stall or a spent
+round budget), the card is marked unread with the stop's one-line reason as
+its comment, a park's question first, so Orca Mobile shows what is waiting.
+While the card is still unread, the reason is appended to its comment rather
+than replacing what a person has not read yet.
+Convergence adds no stop update, though the Ready transition can still move the card; [`orca.board`](../../CONFIGURATION.md#orca)
+maps the stages onto custom columns. Outside Orca nothing is called, and an
+Orca failure only warns.
+
 ## What it will never do
 
 - **Merge, approve, or request changes** on the PR.

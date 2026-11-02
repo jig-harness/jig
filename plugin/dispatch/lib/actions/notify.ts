@@ -43,6 +43,8 @@ import {
 } from "../log.ts";
 import { carries, holdsNotice } from "../notices.ts";
 import {
+  keepMarks,
+  MAX_COMMENT,
   NOTICES_NAME,
   type RuntimeReceipt,
   type SessionsReport,
@@ -217,21 +219,21 @@ async function noticesWorkspace(
   return noticesBlocked(read) ?? read;
 }
 
-/** The most characters one comment holds: it travels as one process argument, which a platform bounds. */
-const MAX_COMMENT = 16_000;
-
 /** The causes that fit one comment after the unread text, which is kept whole; one that does not fit waits until it is read, and a later one that fits still goes. */
 export function fitting(
   workspace: Workspace,
   causes: Cause[],
 ): { send: Cause[]; later: Cause[] } {
-  const unread = workspace.unread && holdsNotice(workspace.comment);
-  let used = unread ? workspace.comment.length : 0;
+  const unread = workspace.unread && workspace.comment.trim() !== "";
+  // A read comment is replaced, behind the dispatched marks it keeps.
+  let used = unread
+    ? workspace.comment.length
+    : keepMarks(workspace.comment, "").length;
   const send: Cause[] = [];
   const later: Cause[] = [];
   for (const c of causes) {
     const next = used + c.notice.text.length + 2;
-    if ((unread || send.length > 0) && next > MAX_COMMENT) {
+    if ((used > 0 || send.length > 0) && next > MAX_COMMENT) {
       later.push(c);
       continue;
     }
@@ -241,12 +243,9 @@ export function fitting(
   return { send, later };
 }
 
-/** The message for a workspace: its comment whole while it is still unread from an earlier notification, then the causes' texts. */
-function messageFor(workspace: Workspace, causes: Cause[]): string {
-  const texts = causes.map((c) => c.notice.text);
-  if (!(workspace.unread && holdsNotice(workspace.comment)))
-    return texts.join("\n\n");
-  return [workspace.comment, ...texts].join("\n\n");
+/** The message for a workspace: the causes' texts; the runtime appends them to a comment still unread. */
+function messageFor(causes: Cause[]): string {
+  return causes.map((c) => c.notice.text).join("\n\n");
 }
 
 /** `notify`'s answer; a call that throws is an answer lost. */
@@ -309,7 +308,7 @@ async function sendTo(
     ),
   );
   if (send.length === 0) return out;
-  const receipt = await deliver(state, workspace, messageFor(workspace, send));
+  const receipt = await deliver(state, workspace, messageFor(send));
   for (const c of send) {
     const why = notArrived(receipt, c);
     if (why === null) suppress(c, workspace.path);
