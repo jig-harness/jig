@@ -110,6 +110,12 @@
  *                                      `--comment-url`, compared exactly, which
  *                                      closes it.
  *
+ * A thread whose qualifying reply is PROVISIONAL (`lib/outcome.ts`'s
+ * `isProvisionalReply`, posted by `provisional-reply.ts` under the `wide`
+ * autonomy level) is skipped, action `provisional`: a person reverses it by
+ * commenting, which the next round reads, and an unresolve alone is left as
+ * the person left it.
+ *
  * A truncated thread (over the 100-comment cap) is reported, never acted on —
  * per SKILL.md § 3, a reply past the cap could supersede what's visible, so a
  * qualifying comment found in the visible prefix is not trustworthy evidence
@@ -124,6 +130,7 @@ import { fileURLToPath } from "node:url";
 import { fail, isDigits, runMain } from "./lib/cli.ts";
 import {
   hasLeaveOpenMarker,
+  isProvisionalReply,
   qualifyingOutcome as sharedQualifyingOutcome,
 } from "./lib/outcome.ts";
 import { ghCall, readTimeoutEnv, resolvePr, run, tsArgv } from "./lib/proc.ts";
@@ -175,6 +182,17 @@ interface Thread {
  */
 function qualifyingOutcome(body: string): string {
   return sharedQualifyingOutcome(body)?.outcome ?? "";
+}
+
+/**
+ * A reply carrying `LEAVE_OPEN_MARKER` with an outcome the marker can mean
+ * something for: a merit outcome, or `moot` (see the call site).
+ */
+function markedLeftOpen(body: string, outcome: string): boolean {
+  return (
+    hasLeaveOpenMarker(body) &&
+    (MERIT_OUTCOMES.has(outcome) || outcome === "moot")
+  );
 }
 
 /** Shape-check one NDJSON line from list-unresolved-threads.ts. */
@@ -541,10 +559,13 @@ async function main(): Promise<number> {
       // treated as `left-open` and its stale-hold cleanup could then DELETE the
       // accepted hold for an unverified fix, the exact false-convergence class
       // the `confirmedMeritSupersession` gate exists to prevent.
-      if (
-        hasLeaveOpenMarker(qualifyingBody) &&
-        (MERIT_OUTCOMES.has(outcome) || outcome === "moot")
-      ) {
+      if (isProvisionalReply(qualifyingBody)) {
+        // A provisional reply (`provisional-reply.ts`) stands until a person
+        // comments, and the round, not this sweep, reads that comment: a
+        // thread a person unresolved without a word is left as they left it,
+        // so the sweep never undoes a reversal.
+        action = "provisional";
+      } else if (markedLeftOpen(qualifyingBody, outcome)) {
         action = "left-open";
         leftOpen += 1;
         if (!dryRun) {

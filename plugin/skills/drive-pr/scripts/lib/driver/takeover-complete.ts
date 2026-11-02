@@ -24,7 +24,12 @@ import type { DriveState, HeldItem } from "./../state/schema.ts";
 
 import { driveState, reconcileRepliedThreads } from "./paths.ts";
 
-import { admitAnsweredParks, parseJson } from "./rearm.ts";
+import {
+  admitAnsweredParks,
+  parseJson,
+  quotaRearmCause,
+  recordDriveEvent,
+} from "./rearm.ts";
 
 import { settleTakeover, type TakeoverPlan } from "./takeover.ts";
 
@@ -249,8 +254,16 @@ export async function pickUpDrive(
   pr: string,
   plan: TakeoverPlan | null,
   state: DriveState,
-  opts: { agent: string[]; botsOnly: boolean; dryRun: boolean },
+  opts: {
+    agent: string[];
+    botsOnly: boolean;
+    dryRun: boolean;
+    windowReopened: boolean;
+  },
 ): Promise<string> {
+  const quotaCause = quotaRearmCause(state, opts.windowReopened, new Date());
+  if (quotaCause !== null && !opts.dryRun)
+    await recordDriveEvent(pr, "rearm", quotaCause);
   const takeover =
     plan === null
       ? ""

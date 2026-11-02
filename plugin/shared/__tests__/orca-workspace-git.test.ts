@@ -12,9 +12,9 @@ import {
   probeBranch,
   refreshBaseRef,
   repoIdentity,
-} from "../git.ts";
-import { localContext } from "../runner.ts";
-import { fail, fakeContext, ok } from "./fake.ts";
+} from "../orca-workspace/git.ts";
+import { localContext } from "../orca-workspace/runner.ts";
+import { fail, fakeContext, ok } from "./fake-context.ts";
 
 const R = "/repo";
 const B = "feat/x";

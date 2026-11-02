@@ -317,10 +317,17 @@ export async function checkFrontmatter(
   const schema = await readSchema(schemaFile);
   const tree = markdownFiles(env.DOCS_DIR || "docs");
   const files = args.length ? args : tree;
-  let errors = report(
-    `${schemaFile} (the schema cannot be used as written)`,
-    schemaErrors(schema, tree, files),
-  );
+  const unusable = schemaErrors(schema, tree, files);
+  if (unusable.length) {
+    // Against a section it already rejected, every document would fail the
+    // check read as empty, burying the errors that name what to fix.
+    report(`${schemaFile} (the schema cannot be used as written)`, unusable);
+    console.log(
+      `ERROR: the schema cannot be used as written, so no document was checked: ${unusable.join("; ")}`,
+    );
+    return 2;
+  }
+  let errors = 0;
   const fresh = newDocs(env.NEW_DOCS, files);
   errors += report("NEW_DOCS", fresh.errors);
   const index = resolve(generatedIndexPath(env));

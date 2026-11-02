@@ -37,46 +37,42 @@
  */
 import { cli, strictOptions } from "../../lib/cli.ts";
 import {
-  assertBranchName,
-  assertLinkedWorktree,
-  type BranchAction,
-  branchesWithPrefix,
-  decideBranchAction,
-  defaultBase,
-  ensureUpstreamTracking,
-  findGitWorktree,
-  probeBranch,
-  refreshBaseRef,
-} from "../herdr/git.ts";
-import { CLAIM_WAIT_MS, KICKOFF_KEY } from "../herdr/kickoff.ts";
-import {
+  COMMAND_ALLOWANCE,
   HOOK_TIMEOUT_MS,
   HOOKS_DIR,
-  PARK_TIMEOUT_MS,
-  parkJournal,
-} from "../herdr/lifecycle.ts";
+  OPEN_LIMIT_MS,
+} from "../../plugin/shared/orca-workspace/limits.ts";
+import {
+  attachBranch,
+  chooseBranch,
+  listedWorktree,
+  type OrcaRepo,
+  type OrcaWorktree,
+  repoOf,
+  setWorktree,
+} from "../../plugin/shared/orca-workspace/open.ts";
+import {
+  assertBranchName,
+  assertLinkedWorktree,
+  findGitWorktree,
+} from "../herdr/git.ts";
+import { KICKOFF_KEY } from "../herdr/kickoff.ts";
+import { PARK_TIMEOUT_MS, parkJournal } from "../herdr/lifecycle.ts";
 import { UsageError } from "../herdr/options.ts";
 import { ownerLine } from "../herdr/owner.ts";
 import {
   COMMAND_TIMEOUT_MS,
   type Context,
-  output,
   withLimit,
 } from "../herdr/runner.ts";
 import {
   onServer,
   orcaCall,
   orcaErrorText,
-  orcaJson,
-  recordOf,
+  portOf,
   resolveOrcaCommand,
-  textOf,
 } from "./cli.ts";
-import {
-  CLONE_TIMEOUT_MS,
-  type CloneSource,
-  cloneMissingRepo,
-} from "./clone.ts";
+import { type CloneSource, cloneMissingRepo } from "./clone.ts";
 import {
   startCreateHook,
   assertNoUnsentFindings,
@@ -94,6 +90,7 @@ import {
 import { OrcaError, type Workspace, workspace } from "./runner.ts";
 import { worktreeToken } from "./worktree-token.ts";
 
+export { OPEN_LIMIT_MS };
 export { CREATE_HOOK_CLAIM, CREATE_HOOK_MARK } from "./hooks.ts";
 export { fileSegment, type Receipt, receiptPath } from "./receipts.ts";
 
@@ -104,18 +101,6 @@ export const USAGE = `usage:
       [--model <id> [--effort <level>]] [--surface chat|terminal] [--json]
   workspace.ts remove --repo <name> --branch <name> [--environment <name> --ssh <host>] [--force]`;
 
-/**
- * The calls around the hook: git probes, fetches and the clone checks, Orca's
- * list, create, link and launch, the worktree's git directory, the hook's
- * claim and mark, the worktree's token, where the journal is and its read.
- */
-const COMMAND_ALLOWANCE = 30;
-/** The time `open` may take: a clone, the create hook, waiting for another open's start of the agent, and the calls around them. */
-export const OPEN_LIMIT_MS =
-  CLONE_TIMEOUT_MS +
-  HOOK_TIMEOUT_MS +
-  CLAIM_WAIT_MS +
-  COMMAND_ALLOWANCE * COMMAND_TIMEOUT_MS;
 /** The time `remove` may take: the remove hook, parking, and the calls around them. */
 export const REMOVE_LIMIT_MS =
   HOOK_TIMEOUT_MS + PARK_TIMEOUT_MS + COMMAND_ALLOWANCE * COMMAND_TIMEOUT_MS;
@@ -173,319 +158,20 @@ export interface Opened {
   kickoff: "sent" | "already-sent" | "none";
 }
 
-interface OrcaRepo {
-  id: string;
-  path: string;
-}
-
-interface OrcaWorktree {
-  id: string;
-  path: string;
-  /** Without `refs/heads/`. */
-  branch: string;
-}
-
-/** Whether two path texts name the same directory, trailing slashes aside. */
-function sameText(a: string, b: string): boolean {
-  return a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
-}
-
-/**
- * The repository Orca knows by `name`: its id and its clone's path on Orca's
- * machine. With `clone`, a repository Orca does not have is cloned and added
- * first.
- */
-function repoOf(ws: Workspace, name: string, clone?: CloneSource): OrcaRepo {
-  const what = `orca repo show ${name}`;
-  const envelope = orcaCall<{ repo?: unknown }>(
-    ws,
-    ["repo", "show", "--repo", `name:${name}`],
-    what,
+/** The repository Orca knows by `name`; with `clone`, one Orca does not have is cloned and added first. */
+function repoNamed(ws: Workspace, name: string, clone?: CloneSource): OrcaRepo {
+  return repoOf(
+    portOf(ws),
+    name,
+    clone === undefined
+      ? undefined
+      : (missing) => cloneMissingRepo(ws, missing, clone),
   );
-  let found: unknown;
-  if (envelope.ok) found = envelope.result?.repo;
-  else if (envelope.error.code !== "repo_not_found")
-    throw new OrcaError(`${what}: ${orcaErrorText(envelope.error)}`);
-  else if (clone !== undefined) found = cloneMissingRepo(ws, name, clone);
-  else
-    throw new OrcaError(
-      `Orca${onServer(ws.target)} has no repository named ${name}; add the clone there with orca repo add --path <clone>, or name one of orca repo list`,
-    );
-  const repo = recordOf(found, what);
-  return { id: textOf(repo, "id", what), path: textOf(repo, "path", what) };
-}
-
-function worktreeOf(value: unknown, what: string): OrcaWorktree {
-  const row = recordOf(value, what);
-  const branch = row.branch;
-  return {
-    id: textOf(row, "id", what),
-    path: textOf(row, "path", what),
-    // A detached checkout (a clone kept at a tag) has no branch.
-    branch:
-      typeof branch === "string" ? branch.replace(/^refs\/heads\//, "") : "",
-  };
-}
-
-/** The branch checked out at `path`, read from git itself. */
-function checkedOutBranch(ws: Workspace, path: string, what: string): string {
-  const head = ws.host.run([
-    "git",
-    "-C",
-    path,
-    "symbolic-ref",
-    "--short",
-    "HEAD",
-  ]);
-  if (head.status !== 0 || head.stdout.trim() === "")
-    throw new OrcaError(
-      `${what} left ${path} with no branch checked out: ${output(head)}`,
-    );
-  return head.stdout.trim();
-}
-
-/** The git common directory of the checkout at `path`, as the host reports it. */
-function commonDirOf(ws: Workspace, path: string): string {
-  const dir = ws.host.run([
-    "git",
-    "-C",
-    path,
-    "rev-parse",
-    "--path-format=absolute",
-    "--git-common-dir",
-  ]);
-  if (dir.status !== 0 || dir.stdout.trim() === "")
-    throw new OrcaError(
-      `cannot read the git common directory of ${path}: ${output(dir)}`,
-    );
-  return dir.stdout.trim();
-}
-
-/**
- * Refuse a path that is not a worktree of the repository's own clone before
- * anything mutates a branch in it: a linked worktree of another clone passes
- * the linked-worktree check, and a stale or wrong answer from Orca must not
- * have this tool rename or delete branches in a repository it was not asked
- * about.
- */
-function assertWorktreeOf(
-  ws: Workspace,
-  repo: OrcaRepo,
-  path: string,
-  what: string,
-): void {
-  const clone = commonDirOf(ws, repo.path);
-  const own = commonDirOf(ws, path);
-  if (!sameText(clone, own))
-    throw new OrcaError(
-      `${what} reported a worktree at ${path}, which belongs to the clone at ${own}, not to ${repo.path}'s (${clone}); not touching it`,
-    );
-}
-
-/** Orca's row for the checkout at `path`, or null when Orca does not list it. */
-function listedWorktree(
-  ws: Workspace,
-  repo: OrcaRepo,
-  path: string,
-): OrcaWorktree | null {
-  const what = "orca worktree list";
-  const listed = recordOf(
-    orcaJson(ws, ["worktree", "list", "--repo", `id:${repo.id}`], what),
-    what,
-  );
-  if (!Array.isArray(listed.worktrees))
-    throw new OrcaError(`${what}: no worktrees in the answer`);
-  for (const row of listed.worktrees) {
-    const worktree = worktreeOf(row, what);
-    if (sameText(worktree.path, path)) return worktree;
-  }
-  return null;
-}
-
-/**
- * The worktree that already holds the branch, as Orca lists it, or null.
- * A checkout made with plain git that Orca hides is refused rather than
- * duplicated: Orca shows such checkouts when asked to.
- */
-function existingWorktree(
-  ws: Workspace,
-  repo: OrcaRepo,
-  branch: string,
-): OrcaWorktree | null {
-  const path = findGitWorktree(ws.host, repo.path, branch);
-  if (path === null) return null;
-  assertLinkedWorktree(ws.host, path, `reattach to ${branch}`);
-  const row = listedWorktree(ws, repo, path);
-  if (row === null)
-    throw new OrcaError(
-      `${branch} is checked out at ${path}, which Orca${onServer(ws.target)} does not list; show the repository's non-Orca worktrees (orca repo set --repo id:${repo.id} --external-worktree-visibility show) and open it again, or remove that checkout`,
-    );
-  ws.host.log(`↺ reattaching: ${branch} is at ${path}`);
-  return row;
-}
-
-/**
- * Give the new checkout the branch asked for. Orca names a new branch after
- * the worktree, under its own prefix, so the checkout is moved onto the
- * branch (a fresh one is renamed; an existing one, on origin or local, is
- * checked out) and Orca's branch deleted. Orca reads the branch from git,
- * so it follows.
- */
-function nameBranch(
-  ws: Workspace,
-  created: OrcaWorktree,
-  branch: string,
-  start: Start,
-): void {
-  if (created.branch === branch) return;
-  const git = (...args: string[]): void => {
-    const done = ws.host.run(["git", "-C", created.path, ...args]);
-    if (done.status !== 0)
-      throw new OrcaError(
-        `git ${args[0]} failed in ${created.path}: ${output(done)}`,
-      );
-  };
-  if (start === "create-from-base") {
-    git("branch", "-m", created.branch, branch);
-    return;
-  }
-  if (start === "create-from-origin")
-    git("checkout", "--quiet", "-B", branch, `origin/${branch}`);
-  else git("checkout", "--quiet", branch);
-  git("branch", "-D", created.branch);
-}
-
-/**
- * The branch to open: the one asked for, or the one existing branch, local
- * or on origin, that starts with the reuse prefix, which it continues. The
- * Herdr workspace tool chooses by the same rule.
- */
-function chooseBranch(
-  ws: Workspace,
-  clone: string,
-  branch: string,
-  reusePrefix: string | undefined,
-): string {
-  if (reusePrefix === undefined) return branch;
-  const found = branchesWithPrefix(ws.host, clone, reusePrefix);
-  if (found.length === 0 || found.includes(branch)) return branch;
-  const [only, ...more] = found;
-  if (only === undefined || more.length > 0)
-    throw new OrcaError(
-      `several branches start with ${reusePrefix}: ${found.join(", ")}; open the one to continue by its name, without --reuse-prefix`,
-    );
-  ws.host.log(`↺ ${only} already starts with ${reusePrefix}; opening it`);
-  return only;
-}
-
-type Start = Exclude<BranchAction, { kind: "refuse-diverged" }>["kind"];
-
-/** Where the new checkout starts: origin's copy, the local branch, or the refreshed base. */
-function startRef(
-  ws: Workspace,
-  repo: OrcaRepo,
-  options: OpenOptions,
-  branch: string,
-  start: Start,
-): string {
-  if (start === "create-from-origin") return `origin/${branch}`;
-  if (start === "use-local") return branch;
-  const base = options.base ?? defaultBase(ws.host, repo.path);
-  refreshBaseRef(ws.host, repo.path, base);
-  return base;
-}
-
-/** `orca worktree create`'s arguments: the repository's own setup is skipped, since the hook runs once the branch has its name. */
-function createArgs(
-  repo: OrcaRepo,
-  options: OpenOptions,
-  branch: string,
-  from: string,
-): string[] {
-  return [
-    "worktree",
-    "create",
-    "--repo",
-    `id:${repo.id}`,
-    "--name",
-    branch,
-    "--base-branch",
-    from,
-    "--no-parent",
-    "--setup",
-    "skip",
-    ...(options.comment === undefined ? [] : ["--comment", options.comment]),
-    ...(options.activate ? ["--activate"] : []),
-  ];
-}
-
-/** Create the worktree for a branch no checkout holds. */
-function createWorktree(
-  ws: Workspace,
-  repo: OrcaRepo,
-  options: OpenOptions,
-  branch: string,
-): OrcaWorktree {
-  const action = decideBranchAction(probeBranch(ws.host, repo.path, branch));
-  if (action.kind === "refuse-diverged")
-    throw new OrcaError(
-      `${branch} has ${action.ahead.length} commit(s) origin lacks; reconcile the branch with origin before opening it`,
-    );
-  const from = startRef(ws, repo, options, branch, action.kind);
-  const what = "orca worktree create";
-  const created = worktreeOf(
-    recordOf(orcaJson(ws, createArgs(repo, options, branch, from), what), what)
-      .worktree,
-    what,
-  );
-  // What Orca says it created is checked like any other path before
-  // anything acts on it: a linked worktree, and one of this repository's
-  // clone. The branch it gave is read from git, not from the answer, since
-  // the branch is what is renamed next.
-  assertLinkedWorktree(
-    ws.host,
-    created.path,
-    `use the new worktree for ${branch}`,
-  );
-  assertWorktreeOf(ws, repo, created.path, what);
-  nameBranch(
-    ws,
-    { ...created, branch: checkedOutBranch(ws, created.path, what) },
-    branch,
-    action.kind,
-  );
-  const listed = findGitWorktree(ws.host, repo.path, branch);
-  if (listed === null || !sameText(listed, created.path))
-    throw new OrcaError(
-      `${what} reported ${branch} at ${created.path}, but the clone's git worktree list has ${listed ?? "nothing"}`,
-    );
-  ws.host.log(`✓ worktree ${created.path} (branch ${branch}, from ${from})`);
-  return { ...created, branch };
-}
-
-/** Set one of the worktree's Orca metadata fields; the reason it failed, or null. */
-function setWorktree(
-  ws: Workspace,
-  worktree: OrcaWorktree,
-  flag: string,
-  value: string,
-): string | null {
-  const what = "orca worktree set";
-  try {
-    const envelope = orcaCall(
-      ws,
-      ["worktree", "set", "--worktree", `id:${worktree.id}`, flag, value],
-      what,
-    );
-    return envelope.ok ? null : orcaErrorText(envelope.error);
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error);
-  }
 }
 
 /** Link the issue in Orca's Linear integration; a failure only warns, since the link is a convenience. */
 function linkIssue(ws: Workspace, worktree: OrcaWorktree, issue: string): void {
-  const reason = setWorktree(ws, worktree, "--linear-issue", issue);
+  const reason = setWorktree(portOf(ws), worktree, "--linear-issue", issue);
   if (reason !== null)
     ws.orca.log(
       `⚠ could not link ${issue} to the worktree in Orca (${reason}); connect Orca's Linear integration to have it linked`,
@@ -503,7 +189,7 @@ function updateComment(
   worktree: OrcaWorktree,
   comment: string,
 ): void {
-  const reason = setWorktree(ws, worktree, "--comment", comment);
+  const reason = setWorktree(portOf(ws), worktree, "--comment", comment);
   if (reason !== null)
     ws.orca.log(
       `⚠ could not update the worktree's comment in Orca (${reason}); it may hold an earlier prompt`,
@@ -597,23 +283,25 @@ function launchAgent(
 
 export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
   assertBranchName(ws.host, requested.branch);
-  const repo = repoOf(ws, requested.repo, requested.clone);
+  const repo = repoNamed(ws, requested.repo, requested.clone);
+  const port = portOf(ws);
   const branch = chooseBranch(
-    ws,
+    port,
     repo.path,
     requested.branch,
     requested.reusePrefix,
   );
   if (branch !== requested.branch) assertBranchName(ws.host, branch);
-  const found = existingWorktree(ws, repo, branch);
-  const worktree = found ?? createWorktree(ws, repo, requested, branch);
-  // On every path, reattaching included: a tracking repair an earlier open
-  // could not finish is made now (the helper's own contract), and a link
-  // that failed then (the integration not yet connected) is tried again.
-  ensureUpstreamTracking(ws.host, repo.path, branch);
+  const { worktree, reattached } = attachBranch(port, repo, branch, {
+    ...(requested.base === undefined ? {} : { base: requested.base }),
+    ...(requested.comment === undefined ? {} : { comment: requested.comment }),
+    createFlags: requested.activate ? ["--activate"] : [],
+  });
+  // On every path, reattaching included: a link that failed in an earlier
+  // open (the integration not yet connected) is tried again.
   if (requested.linearIssue !== undefined)
     linkIssue(ws, worktree, requested.linearIssue);
-  if (found !== null && requested.noAgent && requested.comment !== undefined)
+  if (reattached && requested.noAgent && requested.comment !== undefined)
     updateComment(ws, worktree, requested.comment);
   // The worktree's own git directory: where the create hook's mark and claim
   // are kept, and the token that tells this worktree from one that stood at
@@ -624,7 +312,7 @@ export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
     path: worktree.path,
     branch,
     worktreeId: worktree.id,
-    reattached: found !== null,
+    reattached,
     hookRan: false,
     agentLaunched: false,
     kickoff: "none",
@@ -666,7 +354,7 @@ export async function removeWorkspace(
   ws: Workspace,
   options: RemoveOptions,
 ): Promise<string> {
-  const repo = repoOf(ws, options.repo);
+  const repo = repoNamed(ws, options.repo);
   const path = findGitWorktree(ws.host, repo.path, options.branch);
   if (path === null)
     throw new OrcaError(
@@ -677,7 +365,7 @@ export async function removeWorkspace(
     path,
     `remove the worktree of ${options.branch}`,
   );
-  const row = listedWorktree(ws, repo, path);
+  const row = listedWorktree(portOf(ws), repo, path);
   if (row === null)
     throw new OrcaError(
       `${options.branch} is checked out at ${path}, which Orca${onServer(ws.target)} does not list; remove that checkout with git worktree remove`,

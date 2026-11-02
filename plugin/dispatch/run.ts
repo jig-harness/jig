@@ -1,0 +1,288 @@
+/**
+ * The wrapper a dispatched headless pass runs in its terminal:
+ *
+ *   bun --no-env-file --config=<plugin>/dispatch/bunfig.toml \
+ *     <plugin>/dispatch/run.ts <record> <token>
+ *
+ * It claims its launch record atomically, so a second terminal started for
+ * a record already claimed (a launch retried under the same record) exits
+ * without starting anything. It then starts
+ * `drive.ts <PR> [--take-over] --bots-only --pass-timeout <s> -- <pass>` in
+ * the pull request's workspace, the pass being the documented pass command
+ * of the account's vendor (`claude -p "/jig:drive-pr --bots-only <PR>"`, or
+ * Codex's `codex exec …`) and the deadline the one the tick admitted it
+ * under, with the account's configuration directory set (`CLAUDE_CONFIG_DIR`
+ * or `CODEX_HOME`) and the credential variables and the other directory
+ * variable removed, so the pass bills the account the tick admitted. When
+ * the drive ends it records the exit, and an
+ * exit `16` (a usage-limit wall) writes the account's wall: the reset the
+ * drive recorded, else `wall_backoff` from now.
+ *
+ *   bun … run.ts identity claude|codex
+ *
+ * prints the account identity the drive's own resolver reads in this
+ * process's environment; the tick runs it in the wrapper's environment
+ * before a launch.
+ *
+ *   bun … run.ts quota <session-id> <cwd> <since>
+ *
+ * prints, as JSON, the usage-limit wall the interactive session
+ * `<session-id>` met since `<since>`, read with the drive's quota adapters
+ * from the configuration directory in this process's environment, or
+ * `null` (`lib/quota-probe.ts`); the tick runs it in the session's
+ * account's environment.
+ *
+ * A pickup's record starts its vendor's agent instead (Claude Code or
+ * Codex), interactively, on `/jig:do-item <key>` with its route's model and
+ * effort, and a follow-up's on the repository's follow-up command and the
+ * pull request (`lib/session.ts`), bound to its account the same way; its
+ * exit is recorded, and no wall is written for it.
+ *
+ * Exit codes: the drive's own; 2 usage, a token that is not the record's,
+ * or a state database a newer plugin wrote; 3 the record was already
+ * claimed, so nothing started.
+ */
+import { spawn } from "node:child_process";
+import { resolve } from "node:path";
+import { swallow } from "../shared/errors.ts";
+import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
+import { passCommand } from "../skills/drive-pr/scripts/lib/pass-command.ts";
+import { run } from "../shared/proc.ts";
+import {
+  driveState,
+  driveTs,
+} from "../skills/drive-pr/scripts/lib/driver/paths.ts";
+import { passEnvironment } from "./lib/accounts.ts";
+import {
+  claimRecord,
+  isDrive,
+  type LaunchRecord,
+  ownIdentity,
+  readRecord,
+  recordExit,
+} from "./lib/launches.ts";
+import { probeWall } from "./lib/quota-probe.ts";
+import { sessionArgv } from "./lib/session.ts";
+import { StateVersionError } from "./lib/state.ts";
+import { writeWall } from "./lib/walls.ts";
+
+/** `drive.ts`'s exit for a usage-limit wall it cannot wait out. */
+const QUOTA_PARKED = 16;
+const CLAIMED = 3;
+const FORWARDED = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+
+const BUNFIG = resolve(import.meta.dir, "bunfig.toml");
+
+/**
+ * The drive command a record starts, under the same trusted startup as this
+ * wrapper: the documented pass command of the record's vendor, under the
+ * pass deadline the record was admitted with.
+ */
+function driveCommand(record: LaunchRecord, script: string): string[] {
+  const pr = String(record.pr);
+  const deadline = record.passTimeoutSec;
+  return [
+    process.execPath,
+    "--no-env-file",
+    `--config=${BUNFIG}`,
+    script,
+    pr,
+    ...(record.action === "takeover" ? ["--take-over"] : []),
+    "--bots-only",
+    ...(typeof deadline === "number"
+      ? ["--pass-timeout", String(deadline)]
+      : []),
+    "--",
+    ...passCommand(record.vendor, pr),
+  ];
+}
+
+/** The drive script: `drive-pr`'s, unless a test names another. */
+function driveScript(): string {
+  return process.env.JIG_DISPATCH_DRIVE_SCRIPT || driveTs;
+}
+
+function runDrive(
+  argv: string[],
+  cwd: string,
+  env: Record<string, string>,
+): Promise<{ code: number | null; signal: string | null }> {
+  return new Promise((settle) => {
+    const child = spawn(argv[0] as string, argv.slice(1), {
+      cwd,
+      env,
+      stdio: "inherit",
+    });
+    const forward = (name: NodeJS.Signals) => child.kill(name);
+    for (const name of FORWARDED) process.on(name, forward);
+    const done = (code: number | null, signal: string | null) => {
+      for (const name of FORWARDED) process.off(name, forward);
+      settle({ code, signal });
+    };
+    child.on("error", (error) => {
+      console.error(`jig dispatch run: ${error.message}`);
+      done(127, null);
+    });
+    child.on("exit", (code, signal) => done(code, signal));
+  });
+}
+
+/** The reset in the drive state's quota park, read under the same trusted startup as the drive: the state script runs in the consumer's workspace. */
+async function parkedReset(pr: number): Promise<string | null> {
+  const done = await run(
+    [
+      process.execPath,
+      "--no-env-file",
+      `--config=${BUNFIG}`,
+      driveState,
+      "get",
+      String(pr),
+    ],
+    { stderr: "pipe", timeoutSec: 120 },
+  );
+  if (done.code !== 0) return null;
+  try {
+    const state: unknown = JSON.parse(done.stdout);
+    const park = (state as { quotaPark?: { resetAt?: unknown } } | null)
+      ?.quotaPark;
+    return typeof park?.resetAt === "string" ? park.resetAt : null;
+  } catch (error) {
+    swallow(error, "drive-state.ts get printed no JSON");
+    return null;
+  }
+}
+
+/** The reset the drive recorded for its park, when it is still ahead. */
+async function recordedReset(
+  pr: number,
+  nowMs: number,
+): Promise<string | null> {
+  const reset = await parkedReset(pr);
+  return reset !== null && Date.parse(reset) > nowMs ? reset : null;
+}
+
+async function writeAccountWall(
+  record: LaunchRecord & { pr: number },
+): Promise<void> {
+  const now = Date.now();
+  const reset = await recordedReset(record.pr, now);
+  const path = writeWall({
+    account: record.account,
+    vendor: record.vendor,
+    configDir: record.configDir,
+    resetAt: reset ?? new Date(now + record.wallBackoffMs).toISOString(),
+    source:
+      reset === null
+        ? `no reset recorded; wall_backoff from ${new Date(now).toISOString()}`
+        : `the drive's quota park on PR #${record.pr}`,
+  });
+  console.error(`jig dispatch run: ${record.account} is walled (${path})`);
+}
+
+/** Whether the account's wall was recorded; a failure is the exit's to carry, not a reason to lose the exit. */
+async function tryWriteWall(
+  record: LaunchRecord & { pr: number },
+): Promise<boolean> {
+  try {
+    await writeAccountWall(record);
+    return true;
+  } catch (error) {
+    swallow(error, `the wall of ${record.account} could not be recorded`);
+    return false;
+  }
+}
+
+/** What a record starts: a drive's pass, or an interactive session. */
+function stageArgv(record: LaunchRecord): string[] {
+  return isDrive(record)
+    ? driveCommand(record, driveScript())
+    : sessionArgv(record);
+}
+
+/** Whether a drive that stopped on its account's wall had that wall recorded; true when there was none to record. */
+async function wallRecorded(
+  record: LaunchRecord,
+  code: number | null,
+): Promise<boolean> {
+  if (!isDrive(record) || record.pr === null || code !== QUOTA_PARKED)
+    return true;
+  return tryWriteWall({ ...record, pr: record.pr });
+}
+
+async function wrap(id: string, token: string): Promise<number> {
+  const record = readRecord(id);
+  if (record === null || record.token !== token) {
+    console.error(
+      `jig dispatch run: ${id} is not a launch record with that token`,
+    );
+    return 2;
+  }
+  if (record.workspace === null) {
+    console.error(`jig dispatch run: ${id} names no workspace`);
+    return 2;
+  }
+  const identity = await ownIdentity();
+  if (identity === null) {
+    console.error(
+      "jig dispatch run: the process table cannot be read; not starting",
+    );
+    return 2;
+  }
+  if (!claimRecord(id, identity)) {
+    console.error(
+      `jig dispatch run: ${id} is already claimed; nothing started`,
+    );
+    return CLAIMED;
+  }
+  process.chdir(record.workspace.path);
+  const { code, signal } = await runDrive(
+    stageArgv(record),
+    record.workspace.path,
+    passEnvironment(process.env, record),
+  );
+  // The wall first: once the exit is published the record no longer holds its
+  // slot, and a tick in between would admit the walled account.
+  const wallUnrecorded = !(await wallRecorded(record, code));
+  recordExit(id, {
+    at: new Date().toISOString(),
+    code,
+    signal,
+    ...(wallUnrecorded ? { wallUnrecorded: true as const } : {}),
+  });
+  return code ?? 1;
+}
+
+/** The wrapper's command line; `jig dispatch run` reaches it too. */
+export async function runMain(argv: string[]): Promise<number> {
+  if (argv[0] === "identity" && argv.length === 2) {
+    console.log(JSON.stringify(resolveAccountIdentity([argv[1] as string])));
+    return 0;
+  }
+  if (argv[0] === "quota" && argv.length === 4) {
+    const [, session, cwd, since] = argv as [string, string, string, string];
+    if (!Number.isFinite(Date.parse(since))) {
+      console.error(`jig dispatch run: ${since} is not a date`);
+      return 2;
+    }
+    console.log(
+      JSON.stringify(probeWall(session, cwd, new Date(since), new Date())),
+    );
+    return 0;
+  }
+  if (argv.length !== 2) {
+    console.error(
+      "usage: run.ts <record> <token> | run.ts identity claude|codex | run.ts quota <session-id> <cwd> <since>",
+    );
+    return 2;
+  }
+  try {
+    return await wrap(argv[0] as string, argv[1] as string);
+  } catch (error) {
+    // A state database a newer plugin wrote: nothing is started.
+    if (!(error instanceof StateVersionError)) throw error;
+    console.error(`jig dispatch run: ${error.message}`);
+    return 2;
+  }
+}
+
+if (import.meta.main) process.exitCode = await runMain(process.argv.slice(2));

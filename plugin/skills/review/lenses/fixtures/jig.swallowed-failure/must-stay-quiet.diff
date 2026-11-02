@@ -1,0 +1,20 @@
+diff --git a/src/catalog/read-price.ts b/src/catalog/read-price.ts
+index 5e2a8c4..b7d19f0 100644
+--- a/src/catalog/read-price.ts
++++ b/src/catalog/read-price.ts
+@@ -12 +12,14 @@ export async function readPrice(
+-  return source.price(productId);
++  try {
++    return await cache.price(productId);
++  } catch (cause) {
++    // The cache only saves a round trip: when it cannot answer, the price
++    // comes from the source, and the failure is reported with its cause.
++    log.warn("price cache unavailable; reading the source", { productId, cause });
++  }
++  try {
++    return await source.price(productId);
++  } catch (cause) {
++    if (cause instanceof NotFound && cause.code === "PRODUCT_NOT_FOUND")
++      throw new UnknownProduct(productId, { cause });
++    throw new PriceUnavailable("the price could not be read", { cause });
++  }

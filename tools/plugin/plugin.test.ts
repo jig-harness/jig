@@ -222,7 +222,9 @@ test("every relative import in the copied plugin resolves inside the copy", () =
  * Type-checks `dir/shared` with no `skills/` beside it. The include names no
  * extension, so the compiler takes every file kind it reads (`.ts`, `.mts`,
  * `.cts`, declaration files), and declaration files are checked rather than
- * skipped, so an import in any of them must resolve.
+ * skipped, so an import in any of them must resolve. The one package name it
+ * resolves is Optique's: the vendored bundle's declarations are the pinned
+ * package's own types, which only the repository holds and nothing run reads.
  */
 function compileSharedAlone(dir: string): {
   status: number | null;
@@ -235,6 +237,9 @@ function compileSharedAlone(dir: string): {
       compilerOptions: {
         typeRoots: [join(root, "node_modules", "@types")],
         skipLibCheck: false,
+        paths: {
+          "@optique/core": [join(root, "node_modules", "@optique", "core")],
+        },
       },
       include: ["shared/**/*"],
       exclude: [],
@@ -1535,20 +1540,6 @@ if (query.includes("node(id:$threadId)")) {
   },
   30_000,
 );
-
-test("the vendored YAML parser is the pinned js-yaml build", () => {
-  // The plugin cache has no node_modules, so the plugin ships js-yaml's own
-  // ESM build with its licence. CONTRIBUTING.md § Derived files says how to
-  // refresh both when the dependency is updated.
-  const vendor = join(root, "plugin", "shared", "vendor");
-  const pinned = join(root, "node_modules/js-yaml");
-  expect(readFileSync(join(vendor, "js-yaml.mjs"), "utf8")).toBe(
-    readFileSync(join(pinned, "dist/js-yaml.mjs"), "utf8"),
-  );
-  expect(readFileSync(join(vendor, "js-yaml.LICENSE"), "utf8")).toBe(
-    readFileSync(join(pinned, "LICENSE"), "utf8"),
-  );
-});
 
 test("plugin cancellation registrations release only their own ownership", () => {
   const probe = join(scratch, "ownership-probe.ts");

@@ -64,6 +64,12 @@
 import type { Outcome } from "./outcome.ts";
 import { OUTCOMES } from "./outcome.ts";
 import type { CommitSample, PrSample, ReviewSample } from "./sample.ts";
+import {
+  type AutonomyMetrics,
+  autonomyMetrics,
+  type DurableAutonomy,
+  renderAutonomyMetrics,
+} from "./metrics-autonomy.ts";
 
 export interface SizeBlock {
   /** Non-merge, non-sibling commits — the ones that authored something HERE. */
@@ -265,6 +271,8 @@ export interface LoopMetrics {
    * Churn over churn, so the ratio is coherent; `null` when nothing was added.
    */
   postReviewShare: number | null;
+  /** What the drive decided and recovered from without a person (`metrics-autonomy.ts`). */
+  autonomy: AutonomyMetrics;
 }
 
 /**
@@ -416,6 +424,8 @@ export function computeLoopMetrics(
    * that omitting the argument is no longer possible.
    */
   siblingCommitOids: ReadonlySet<string>,
+  /** The drive state this clone holds for the pull request, `null` for none. */
+  durable: DurableAutonomy | null = null,
 ): LoopMetrics {
   // Only INITIATING bot reviews mark a round. A thread reply is recorded as a
   // review, for bots exactly as for humans — the driver's own outcome replies
@@ -584,6 +594,18 @@ export function computeLoopMetrics(
       changedFiles: sample.changedFiles,
     },
     postReviewShare: authored === 0 ? null : inducedSize.additions / authored,
+    autonomy: autonomyMetrics(
+      sample.threads.map((t) => ({
+        autonomy: t.autonomy ?? {
+          provisional: false,
+          reversedAt: null,
+          chatAcknowledgements: 0,
+          incomplete: false,
+        },
+      })),
+      sample.mergedAt,
+      durable,
+    ),
   };
 }
 
@@ -820,5 +842,6 @@ export function renderLoopMetrics(m: LoopMetrics): string {
   lines.push(
     `  merged     net diff ${m.merged.additions}+/${m.merged.deletions}- across ${plural(m.merged.changedFiles, "file")} (net, not churn — not comparable to the churn figures above)`,
   );
+  lines.push(...renderAutonomyMetrics(m.autonomy));
   return `${lines.join("\n")}\n`;
 }

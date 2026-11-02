@@ -111,9 +111,9 @@ import { retryAttempts } from "../../../shared/retry.ts";
  *   2  usage error
  *   3  refused BEFORE pushing: dirty worktree, unconcluded git operation, or a
  *      working tree that could not be read at all
- *   4  refused BEFORE pushing: the initial required checks have not
- *      completed, the head moved, or an externally-owned CI hold label is
- *      present
+ *   4  refused BEFORE pushing: the required checks the CI hold waits for
+ *      have not completed on a PR that can run them, the head moved, or an
+ *      externally-owned CI hold label is present
  *   5  the PR is no longer open — nothing was pushed (guarded-push.ts's own 5,
  *      same code and meaning; drive-status.ts uses it identically). Also
  *      returned by the untriaged-thread check itself when it finds
@@ -1366,16 +1366,17 @@ async function main(): Promise<number> {
     },
   );
   if (pushRes.stdout !== "") process.stderr.write(pushRes.stdout);
-  if (pushRes.code !== 0) {
+  // `disabled` and `conflicting` pushed without a hold: none rolls back.
+  const unheld = ["disabled", "conflicting"].includes(holdRes.stdout.trim());
+  if (pushRes.code !== 0 && !unheld) {
     const rollback = await run(
       tsArgv(ciHold, ["rollback", pr, "--expect-head", report.head]),
       { stderr: "inherit", timeoutSec: ciHoldTimeoutSeconds() },
     );
     if (rollback.code === 0) {
-      if (rollback.stdout.trim() !== "disabled")
-        console.error(
-          "finish-round.ts: the push provably did not land; released the CI hold label acquired for it",
-        );
+      console.error(
+        "finish-round.ts: the push provably did not land; released the CI hold label acquired for it",
+      );
     } else if (rollback.code !== 5) {
       console.error(
         `finish-round.ts: retained the CI hold label after the failed push because rollback could not prove the ref stayed unchanged (exit ${rollback.code})`,

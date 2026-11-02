@@ -1,4 +1,5 @@
 import { parseDeclaration } from "../../../../gc/config.ts";
+import { dispatchSection } from "../../../../dispatch/lib/section.ts";
 import { parkClasses, resolveAutonomy } from "../../../../shared/autonomy.ts";
 import { ExitError } from "../../../../shared/cli.ts";
 import { isMapping as isRecord } from "../../../../shared/config-layers.ts";
@@ -25,8 +26,10 @@ import { parseRouting } from "../../../do-item/scripts/lib/routing.ts";
 import { parseTrackerConfig } from "../../../do-item/scripts/lib/tracker/config.ts";
 import { parseWorkTypes } from "../../../do-item/scripts/lib/work-types.ts";
 import { parsePrPolicy } from "../../../drive-pr/scripts/lib/pr-policy.ts";
+import { refusedPassArgs } from "../../../drive-pr/scripts/lib/overlay.ts";
 import { parseSeverityFormats } from "../../../drive-pr/scripts/lib/severity-formats.ts";
 import { journalPath } from "../../../reflect/scripts/lib/context.ts";
+import { checkLensConfig } from "../../../review/scripts/select-lenses.ts";
 import { parseReflection } from "../../../reflect/scripts/lib/settings.ts";
 import { parseObligations } from "../../../resolve-conflicts/scripts/lib/obligations.ts";
 import {
@@ -134,6 +137,17 @@ export function skillValidation(
     if (typeof review === "object" && review !== null && !Array.isArray(review))
       parseSeverityFormats((review as Config).severity_formats);
   });
+  attempt("drive-pr (pass arguments)", () => {
+    const drive = config.drive;
+    if (typeof drive !== "object" || drive === null || Array.isArray(drive))
+      return;
+    const words = (drive as Config).pass_args;
+    if (!Array.isArray(words) || !words.every((w) => typeof w === "string"))
+      return; // the schema reports a value that is not a list of words
+    const refused = refusedPassArgs(words);
+    if (refused !== undefined)
+      throw new ExitError(2, `drive.pass_args ${refused}`);
+  });
   attempt("autonomy (level, ceiling, park classes)", () => {
     const layered = {
       values: config,
@@ -152,6 +166,7 @@ export function skillValidation(
   );
   attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));
   attempt("gc", () => parseDeclaration(config.gc, root));
+  attempt("dispatch", () => dispatchSection(config));
   attempt("docs", () => parseDocsSettings(config.docs, root));
   attempt("design-brief-builder (handback)", () => {
     const handback = at(config, "design_brief.handback");
@@ -161,6 +176,7 @@ export function skillValidation(
   const batchSizes = batchSizesOf(config);
   if (batchSizes !== null && sizePointsFindings(config).length === 0)
     attempt("work-batch", () => parseWorkBatchSection(config, batchSizes));
+  attempt("review (lenses)", () => checkLensConfig(root, config.review));
   attempt("reflect", () => {
     const reflection = parseReflection(config.reflection, root);
     const journal = reflection.journal ?? null;

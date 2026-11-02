@@ -1051,6 +1051,8 @@ make, use the entry's term instead.
   against them before it's ever allowed to block anything.
 - **Review lens** — one additive, numbered check taught to a reviewer (a
   prompt module or checklist bullet), typically born from a documented miss.
+  A repository numbers its own (`LENS-NNN`); a *seed lens*'s `jig.` id
+  (`jig.swallowed-failure`) serves as its number.
 - **Seed lens** — a *review lens* Jig ships rather than one a repository grew
   from its own misses: the review form of one rule a Jig module states, for
   the part of the rule no gate can check.
@@ -1173,6 +1175,20 @@ make, use the entry's term instead.
   but is stuck (alive with no progress) or dead with nothing left unpushed;
   it is refused against a driver that is making progress
   ([drive-pr](plugin/skills/drive-pr/README.md#picking-up-a-stopped-drive)).
+- **Permission mode (of a pass)** — the setting of an agent tool that
+  decides which of its actions ask a person first. Claude Code's
+  `default` mode asks before most edits and commands; a pass of a *PR
+  drive loop* runs with no person at a terminal to answer, so whatever
+  would ask is denied instead, writes under protected paths such as
+  `.claude/skills/**` among them (the `auto` mode lets a classifier approve
+  some of these instead). `bypassPermissions` skips those prompts, though
+  explicit ask rules, tools that need a person, and Claude Code's checks
+  before removing critical paths still apply, so an unattended call can
+  still be denied. It trades the prompts for the instructions the drive
+  gives the pass (its push script, its bots-only rule), which steer it but
+  do not stop it; only Claude Code's deny rules and hooks still do. A repository chooses it for its passes with
+  `drive.pass_args`
+  ([configuration](plugin/CONFIGURATION.md#drive)).
 - **Drive ledger** — the resumable part of a *PR drive loop*'s saved state
   (its round, what it parked for a person and why, what it replied to and
   pushed, who drove it and when it last wrote), kept as one hidden-marker
@@ -1197,12 +1213,32 @@ make, use the entry's term instead.
   `autonomy.park_classes`, and a *PR drive loop* may park only under one of
   them (for a review thread, the class the review arbiter ruled for it)
   ([configuration](plugin/CONFIGURATION.md#autonomy)).
-- **Autonomy level** — how far an agent may decide without asking a person,
-  set by a repository (`attended`, the default, `unattended`, or `wide`, which
-  acts as `unattended`) and capped
-  by its ceiling, `autonomy.max_level`; a person's own configuration may
-  choose a level up to that ceiling. The level changes nothing the *HITL*
-  registry reserves ([configuration](plugin/CONFIGURATION.md#autonomy)).
+- **Autonomy level** — how far an agent may decide without asking a person:
+  `attended`, the default, `unattended`, or `wide`, which also takes
+  *provisional decisions*. A repository sets it and caps it with its
+  ceiling, `autonomy.max_level`; a person's own configuration may choose a
+  level up to that ceiling, and `autonomy.off_hours` may set a wider one for
+  a drive's passes during the windows of a schedule in the machine's local
+  time (**off-hours**). The level changes nothing the *HITL* registry
+  reserves. `wide` and off-hours are documented as available only once a
+  working repository has validated them
+  ([configuration](plugin/CONFIGURATION.md#autonomy)).
+- **Provisional decision** — a decision only the `wide` *autonomy level*
+  takes without a person, where the review arbiter or `decide` would
+  otherwise escalate a call no *decision class* reserves: a review thread
+  answered with a reply outcome (`rejected`, `wont-fix` or `deferred`, never
+  a fix) marked `**provisional**`, or a `decide` ruling marked so. It is
+  recorded, listed first in the *morning report*, and reversed by a comment
+  from an owner, member or collaborator, after which the drive parks it for
+  that person; unresolving the thread alone reverses nothing. It is
+  admissible because the merge stays a person's
+  ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
+- **Morning report** — what `drives.ts --report` prints for a person after
+  an unattended night: for each pull request this clone drove or the
+  account authored or drove, its terminal state and what it means, the
+  *provisional decisions* first, takeovers and re-arms, parked decisions,
+  issues filed and deferred findings not yet filed
+  ([drive-pr](plugin/skills/drive-pr/README.md)).
 - **Transparent follow-up** — a review bot's comment after a reply the drive
   is holding open until its fix is pushed, which carries no new finding: a
   confirmation marked with the bot's confirmation marker, or a chat
@@ -1220,6 +1256,13 @@ make, use the entry's term instead.
   convergence. The practice is
   [M13's](modules/M13-pipeline-economy/README.md#7-hold); drive-pr's
   `ci.hold_label` is its driver side.
+- **Drive mailbox** — the one way to reach a running *PR drive loop* from
+  outside it: append-only files in the working tree into which a person, or
+  the session that started the drive, writes a note or a directive, and
+  which only the driver answers. A note is context a pass may read; a
+  directive (hold the push, pause, stop) is enforced by the drive's own
+  scripts, whatever a pass does
+  ([drive-pr](plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)).
 - **Held-head check** — the step of a required check that fails, or cancels
   its own run, while a pull request carries the *CI hold* label, so a held
   head is visibly not mergeable from the moment the label lands until the
@@ -1501,6 +1544,12 @@ make, use the entry's term instead.
 - **Command-line boundary** — the one wrapper around a script's entry point
   that turns its result or failure into an exit code and a message, so every
   script reports failures the same way.
+- **Component (of the `jig` command)** — one of the machine-level tools the
+  plugin's `jig` command joins into one command line: resource collection
+  (`jig gc`) and the *dispatcher* (`jig dispatch`). Each defines its command
+  beside its code, and `jig` combines them, so help and shell completion
+  cover every component the same way. A program, unlike Jig's practice
+  modules, which are documented practices.
 - **Type guard** — a function that checks at run time that a value has a
   given shape, and tells the type checker so when it does. Data read from
   outside the program (JSON, a configuration file) is checked by one before
@@ -1515,6 +1564,17 @@ make, use the entry's term instead.
 - **Marketplace** — a catalog an agent tool installs plugins from; usually a
   Git repository with a manifest listing its plugins. This repository is its
   own marketplace.
+- **Dark factory** — a delivery loop that runs with nobody watching: work is
+  picked up, implemented, reviewed and driven to its merge decision by agents,
+  and a person is involved only at the decisions the *HITL* registry reserves.
+  Jig is built toward one; the merge stays a person's.
+- **Provisional decision** — a decision an agent takes under the `wide`
+  *autonomy level* because nobody is there to ask, marked as such where it
+  is taken and listed first in the morning report, so a person can reverse
+  it before the merge. Under `wide`, a drive that parked re-arms once every
+  unanswered item is provisionally decided, where the item's class allows
+  it. Planned, with `wide`'s column and the morning report
+  ([design](design/dark-factory-driving.md#provisional-decisions)).
 - **Consumer overlay** — a repository's own values for a shared procedure,
   such as its gate command and reviewer names, kept in
   `.config/jig.yaml` and read by the procedure when it runs.
@@ -1649,13 +1709,25 @@ make, use the entry's term instead.
   instructions and tool list that a skill or session hands one narrow job to.
   A plugin can ship subagents beside its skills; Claude Code loads them,
   Codex reads them only from its own agent folders.
+- **Deterministic part and reasoned part** — the two kinds of part a
+  system of agents is built from. A **deterministic part** is a script with
+  no model in it: given the same records it does the same thing, and it
+  refuses or reports what it cannot read rather than guess (a gate, the
+  *dispatcher*'s *tick*, a tracker script, a release step). A **reasoned
+  part** is a model session working from instructions and deciding (a
+  skill's session, a pass of a *PR drive loop*, an implementer, the *Review
+  Arbiter*, an audit's score where no *probe* decides). In Jig the reasoned
+  parts decide and a deterministic part writes the shared record, checking
+  what it is given. See
+  [plugin/MECHANISMS.md](plugin/MECHANISMS.md).
 - **Issue** — one unit of work in the issue tracker: what `/jig:do-item` picks
   up and a pull request closes. Skills say *item* for short. *Avoid*: ticket,
   card, task.
 - **Issue key** — the short name a tracker gives an issue, which branch
   names, commit messages and pull requests carry to link work to it:
-  `ENG-123` on Linear (the team's prefix and a number), `#123` on GitHub
-  Issues (a number within one repository). Each *tracker adapter* defines
+  `ENG-123` on Linear (the team's prefix and a number), `PROJ-123` on Jira
+  (the project's key and a number), `#123` on GitHub Issues (a number
+  within one repository). Each *tracker adapter* defines
   its key's shape, how a key appears in a branch name (`eng-123-…`,
   `123-…`) and in a file name (`ENG-123`, `issue-123`). Write a key quoted
   on a command line: an unquoted `#` starts a shell comment.
@@ -1670,9 +1742,13 @@ make, use the entry's term instead.
   interface does not have yet (attaching a file), and a few reads of
   Linear's own answers.
   [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists
-  them under "What still assumes Linear". Adapters for Linear and GitHub
-  Issues are built; adapters for Jira and for a plan file kept in the
-  repository are planned ([ROADMAP.md](ROADMAP.md) item 12).
+  them under "What still assumes Linear". Adapters for Linear, GitHub
+  Issues and Jira are built; an adapter for a plan file kept in the
+  repository is planned ([ROADMAP.md](ROADMAP.md) item 12).
+- **ADF (Atlassian Document Format)** — the JSON form Jira stores rich
+  text in (issue descriptions, comments). Jig's Jira adapter converts it to
+  Markdown when it reads and from Markdown when it writes, so the skills
+  only ever handle Markdown.
 - **Batch** — several small, independent issues from one area of the code
   closed by one pull request, with one commit for each issue, so the review
   is paid once instead of once per issue
@@ -1705,8 +1781,12 @@ make, use the entry's term instead.
   line with nobody at the keyboard: a pickup for an item assigned to the
   *factory identity*, a restart of a stopped review drive, the follow-up
   after a merge. It runs as a *tick* on a timer, starts sessions through a
-  *session runtime*, and never merges or answers a parked question. Planned
-  ([ROADMAP.md](ROADMAP.md) item 33); it is Jig's first *control plane*.
+  *session runtime*, and never merges or answers a parked question. It
+  reports every stage, restarts stopped drives and tells a person about
+  each stop only a person settles today, and starts pickups and follow-ups
+  where its *session runtime* can bind a session to the account it bills;
+  the rest is [ROADMAP.md](ROADMAP.md) item 33. It is Jig's first
+  *control plane*.
 - **Tick** — one run of the *dispatcher*: read the tracker, the pull
   requests' drive ledgers and the running sessions, work out which stages
   are wanted and not running, report them, and start them only when told
@@ -1714,6 +1794,19 @@ make, use the entry's term instead.
   only what it did: what it started and how each ended, a receipt per
   tick, and the account walls and repeat suppressions those imply, so
   stopping it loses nothing and the next tick finds the same facts.
+- **Launch record** — the *dispatcher*'s record of one session it started,
+  written before the launch: what it starts, on which pull request or item,
+  on which subscription account, and a random token. The wrapper that runs
+  the session adds the process it runs as and, when it ends, the stage's
+  exit. A launch whose answer is lost still has its record, so it holds its
+  stage and its account's *slot*, and is never followed by a second launch.
+- **Slot** — one session the *dispatcher* may hold on a subscription
+  account at once. Each account has a cap of slots (two by default); a
+  *launch record* that is pending, running or unknown holds one.
+- **Wall** — a subscription account's usage limit, as the *dispatcher*
+  records it once a session it started stops on it: the account is left
+  out of every launch until the wall's reset. A later write never moves the
+  reset earlier.
 - **Session runtime** — the interface the *dispatcher* starts agent
   sessions through: list the sessions in a repository's workspaces, open a
   workspace, launch a session on a subscription account, notify a person.
@@ -1723,15 +1816,43 @@ make, use the entry's term instead.
 - **Factory identity** — the tracker user a repository assigns an item to
   when the *dispatcher* should pick it up. An item assigned to it and in
   one of the repository's dispatch states is started, when a person with
-  write access made the assignment; the pickup's move to the in-progress
-  state is the claim, so no item is picked up twice.
+  write access made the assignment. The `do-item` session claims it
+  (assigns it to itself and moves it to the in-progress state, refusing an
+  item someone already holds), which keeps an item from being picked up twice
+  in all but a race between two claims, which the dispatcher reports.
+- **Stalled pickup** — an item the *factory identity* claimed (in its
+  in-progress state) that has had no running session for longer than the
+  repository's `dispatch.stalled_after`. The *dispatcher* reports it and
+  never starts it again: a second session would be a second implementer on
+  a claimed item, so a person settles it.
+- **Double claim** — an item more than one running session works on at
+  once: two workspaces, or a workspace beside a launch the *dispatcher*
+  still holds for another one. The dispatcher reports it and starts
+  nothing for it.
+- **Follow-up marker** — a hidden-marker comment on a merged pull request
+  that claims its follow-up, so one run settles the merge: the
+  *dispatcher* posts one before it starts the follow-up's session, and a
+  follow-up a person runs by hand posts one too and marks it done when it
+  succeeds. Of two, the earlier comment wins, and the later run stands
+  down. Only a marker from the dispatcher's own account or from an owner,
+  member or collaborator of the repository counts.
+- **Notices workspace** — the workspace the *dispatcher* keeps per
+  repository, on a branch of the default branch, for the notifications whose
+  pull request or item has no workspace that can take one. It never
+  launches an agent into it; it only writes its comment and marks it
+  unread for a person to read.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
-  it started ended: one row per session with its stage, repository,
+  it started ended, a table of its state database with a text copy of one
+  file per month: one row per session with its stage, repository,
   account, duration and an outcome class from the closed list the
   dispatcher's design defines, among them converged, quota wall, parked
   for a person, stalled and died; a stop no class in that list fits is
-  logged as `unknown` with its last state, never dropped. One dashboard filters it; it is
-  never rendered into a report file.
+  logged as `unknown` with its last state, never dropped. Beside those
+  rows it holds one event row per notification it delivered and per nudge
+  it attempted (for a stalled pickup, a double claim or a stage drift),
+  except for a notification about the stop of a session it started, which
+  its row for that session already covers. One dashboard filters
+  it; it is never rendered into a report file.
 - **Stage drift** — a running stage falling short of what it is expected to
   achieve: a review drive whose open threads do not fall across rounds, a
   pickup that has not opened a pull request in time. The *dispatcher*
@@ -1740,6 +1861,11 @@ make, use the entry's term instead.
   closed set with one entry: "continue" to a session it started that is
   waiting at its prompt after a usage limit that has since reset. Anything else a stuck
   session needs goes to a person.
+- **Waiting episode** — one stretch of a session the *dispatcher* started
+  waiting at its prompt behind a usage limit, kept on that session's launch
+  record: the wall's observation time and reset, and whether the session's
+  last record is still the wall. A new observation time starts a new
+  episode; the *nudge* is sent at most once per episode.
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of

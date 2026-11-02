@@ -24,3 +24,15 @@ export const hasLeaveOpenMarker = (body: string): boolean =>
   hasTrailingMarker(body, LEAVE_OPEN_MARKER);
 export const hasNoOutcomeMarker = (body: string): boolean =>
   hasTrailingMarker(body, NO_OUTCOME_MARKER);
+
+/**
+ * A provisional reply: an outcome taken under the `wide` autonomy level that
+ * a person may reverse by commenting on the thread. `provisional-reply.ts`
+ * is its only producer and sets the producer flag before posting;
+ * `reply-to-thread.ts` refuses the marker from anyone else.
+ */
+export const PROVISIONAL_MARKER = "<!-- reply-to-thread:provisional -->";
+export const PROVISIONAL_MARKER_PRODUCER_ENV =
+  "DRIVE_PR_INTERNAL_PROVISIONAL_MARKER";
+export const hasProvisionalMarker = (body: string): boolean =>
+  hasTrailingMarker(body, PROVISIONAL_MARKER);

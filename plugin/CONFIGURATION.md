@@ -26,7 +26,7 @@ Contents: [the file](#the-file) ·
 [`specs`](#specs) · [`workspace_name`](#workspace_name) · [`work_batch`](#work_batch) · [`routing`](#routing) ·
 [`fleet_health`](#fleet_health) · [`verify`](#verify) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
-[`code_stats`](#code_stats) · [`gc`](#gc) ·
+[`code_stats`](#code_stats) · [`gc`](#gc) · [`dispatch`](#dispatch) ·
 [procedure skills](#procedure-skills) ·
 [environment variables](#environment-variables) ·
 [complete example](#complete-example)
@@ -47,7 +47,8 @@ Contents: [the file](#the-file) ·
   are strict instead: there a misspelt key would silently keep the default it
   was written to change, so it is an error. They are `pull_requests`,
   `issue_tracker.states` (keys are canonical states),
-  `issue_tracker.labels` (keys are label roles), `resolve_conflicts`
+  `issue_tracker.labels` (keys are label roles), `review.lenses` (including
+  each `triggers` entry), `resolve_conflicts`
   (including each `generated` entry), `reflection`, `specs`, `verify` and `code_stats`
   (including each `areas` entry, and `kinds`, whose keys are kinds). In `review.taxonomy` every
   key other than `provenance_label` and `epic_label` is read as a list of
@@ -119,7 +120,7 @@ Command-line flags, where a script has them, override all three.
   [environment variables](#environment-variables)) still work and override
   all three layers.
 - **Fields only a repository sets.** `gates.command`,
-  `repository.base_branch`, `issue_tracker.team`, `review.repo_slug`,
+  `repository.base_branch`, `issue_tracker.team`, `issue_tracker.jira.site`, `review.repo_slug`,
   `review.repo_label`, `ci.required_checks`, `docs.root`, `docs.schema`,
   `autonomy.max_level`, `autonomy.park_classes`, every `changelog`,
   `code_stats` and `specs` field describe one repository. Set in the user file
@@ -178,7 +179,9 @@ field only to override the derivation:
 
 ## `review`
 
-How review threads are resolved and how the drive recognises its AI reviewer.
+How review threads are resolved, how the drive recognises its AI reviewer,
+and which [review lenses](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+the `review` skill's semantic tier runs.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
@@ -202,6 +205,9 @@ How review threads are resolved and how the drive recognises its AI reviewer.
 | `review.sticky_marker` | text | `<!-- ai-code-review -->` | drive-pr | Text identifying the reviewer's summary comment. Read only when a reviewer is expected. `DRIVE_PR_STICKY_MARKER` overrides it |
 | `review.reviewed_sha_marker` | text | `ai-reviewed-sha` | drive-pr | Marker for the commit the reviewer reviewed, inside that comment. Read only when a reviewer is expected. `DRIVE_PR_SHA_MARKER` overrides it |
 | `review.severity_formats` | list of `{login, shape, severities}` | none: the [built-in formats](EXTENDING.md#severity-formats) only | drive-pr, resolve-review-comments | How a reviewer writes a finding's severity, so the decline ladder can use it: a reviewer with no built-in format, or words or a shape a built-in format does not read. `login` is the reviewer's GitHub login (`[bot]` optional); `shape` is `bold-token` (`🟡 **Major**`), `badge` (a `![P1 Badge]` image), `html-badge` (an `<img alt="P1">` image), `pipe-fields` (`**category** \| **Major** \| **effort**`) or `icon-fields` (`**<picture>…</picture> Major** · **category** · **effort**`); `severities` maps each of the reviewer's words to `blocker`, `high`, `medium` or `low`. Read before the built-in formats, which still apply to a comment no entry reads, and only on comments that login posted. `null` means not set |
+| `review.lenses.dir` | path | none: only the plugin's seed lenses run | review, do-item | Folder of the repository's own lens files, one Markdown file per lens in the plugin's lens format, read from the base branch. A repository lens keeps its `LENS-NNN` number; the `jig.` prefix is the seed lenses'. A lens file the change under review adds is reported as proposed and not run |
+| `review.lenses.off` | list of lens ids | none | review, do-item | Lenses not to run. `--lens=<id>` still runs one. An id that names no lens stops the review |
+| `review.lenses.triggers` | map from lens id to `{paths, exclude, added_lines, removed_lines}`, each a list | none | review, do-item | Patterns appended to a lens's own trigger, never replacing them, so a repository fits a seed lens to its languages and layout: `paths` and `exclude` are globs, `added_lines` and `removed_lines` regular expressions matched against one changed line at a time. An unknown id, an unknown key or a pattern that is not a regular expression stops the review |
 
 The [resolve-review-comments README](skills/resolve-review-comments/README.md)
 and the [drive-pr README](skills/drive-pr/README.md) explain how these are used.
@@ -257,7 +263,7 @@ issue on merge, merged by a human.
 | `pull_requests.max_stack_depth` | whole number ≥ 1 | no cap | Most pull requests one stack may hold, the new one included. Needs `stacking` other than `none` |
 | `pull_requests.open_as` | `draft`, `ready` | `ready` when `drive.reviews_drafts` is `false`, else `draft` | How a new pull request opens |
 | `pull_requests.mark_ready` | whole number ≥ 1, `converged`, `never` | `1` | When `drive-pr` marks a draft Ready for review: after round N completes, only once the draft-reviewing reviewer has nothing left (`converged`), or never (a person marks it). A draft that converges before round N is marked at convergence, since reviewers that skip drafts would otherwise never see it. Marking Ready summons those reviewers, so a later number spends their review on a cleaner head |
-| `pull_requests.branch_name` | pattern | `{key_lower}-{slug}` | Branch name for an issue. Placeholders: `{key}` (`ENG-12`), `{key_lower}` (`eng-12`), `{slug}` (the issue title in lowercase words joined by `-`, at most 40 characters). Must contain `{key}` or `{key_lower}`: the issue key in the branch name is what links the pull request to its issue. Placeholders must be separated by at least one character, the key must not have a digit beside it, and `{slug}` may appear once, or the key cannot be read back from a branch. Example: `feature/{key_lower}-{slug}` |
+| `pull_requests.branch_name` | pattern | `{key_lower}-{slug}` | Branch name for an issue. Placeholders: `{key}` (`ENG-12`), `{key_lower}` (`eng-12`), `{slug}` (the issue title in lowercase words joined by `-`, at most 40 characters). Must contain `{key}` or `{key_lower}`: the issue key in the branch name is what links the pull request to its issue. Placeholders must be separated by at least one character, the key must not have a digit beside it, and `{slug}` may appear once, or the key cannot be read back from a branch. Example: `feature/{key_lower}-{slug}`. `do-item` and `dispatch` both read it |
 | `pull_requests.issue_link` | `closes`, `refs`, `none` | `closes` | The line linking the pull request to its issue: `Closes ENG-12` (merging closes the issue), `Refs ENG-12` (linked, left open), or none |
 | `pull_requests.size_budget` | whole number ≥ 1 | no budget | Most changed lines (added plus deleted, against the pull request's base) one pull request may carry; the audit record `.config/jig-audit.yaml`, which every audit rewrites whole, is not counted, and `pr-plan.ts` names it beside the size. Over it, `pr-plan.ts` refuses: split the change (into a stack when stacking is allowed), or state why it cannot be split with `--accept-oversize <reason>` and put the reason in the body |
 | `pull_requests.labels` | list of label names | none | Labels added when the pull request opens, such as `agent-authored`. Each must already exist in the repository |
@@ -322,7 +328,8 @@ not resolve it either.
 | `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-item | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
 | `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops unconverged (exit `6`). The `--max-rounds` flag overrides it for one run. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
 | `drive.pass_deadline_retries` | whole number ≥ 0 | `2` | drive-pr | How many passes killed at their deadline one drive restarts from, counted in the drive state across re-arms and takeovers until the drive converges or the pull request closes: the driver reports what the killed pass left in the tree, leaves it there and starts the next round. Past this many it stops with exit `15` and says the budget is spent; `0` stops at the first. A value that is not a whole number of at least 0 stops the drive |
-| `drive.pass_model` | one word: a model id, a Claude Code alias, or a routing tier (`execution`, `strategic`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. A pass command that is not Claude Code's chooses its own model. A value that is not one word stops the drive |
+| `drive.pass_model` | one word: a model id, a Claude Code alias, or a routing tier (`execution`, `strategic`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. It is Claude Code's: a Codex pass runs on its own `-m`, else the execution tier of `routing.models.codex`, else Codex's own configured model, and any other pass command chooses its own model. A value that is not one word stops the drive |
+| `drive.pass_args` | list of words, each a string without spaces, such as `[--permission-mode, bypassPermissions]` | `[]`: the pass command carries no extra arguments | drive-pr, do-item | Extra arguments for a Claude Code pass command: the arm command both skills build carries them before `-p` (`claude --model <model> <words> -p …`), and `drive.ts` adds them before `-p` to a pass command that carries no arguments of its own. A command that carries its own (the arm command, or a re-arm or takeover command a stopped drive printed) is kept as written. The `--pass-args "<words>"` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive: one value, split on spaces, and empty for none. The driver log and the `drives.ts` listing name the [permission mode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) each pass runs in (`inherited` when the command sets none: Claude Code's own settings decide). **What setting it risks:** `--permission-mode bypassPermissions` skips the permission prompts of the unattended passes (explicit ask rules, tools that need a person and checks before removing critical paths still apply), so a pass can then write nearly anywhere, including protected paths such as `.claude/skills/**` that a pass without a terminal is otherwise denied in a prompting mode; what then limits it is the instructions the drive gives it (`guarded-push.ts` pushes to the pull request's branch only, and the bots-only rule keeps it to bot threads), which a pass follows but nothing stops it from ignoring; a repository that needs a mechanical limit adds Claude Code `permissions.deny` rules or hooks. Jig sets nothing here for a repository that did not ask. It cannot hold `--model` (set `drive.pass_model`) or `-p`/`--print` (the drive writes the prompt). A pass command that is not Claude Code's ignores the field and the driver log says so. A value that is not a list of words stops the drive with a message naming the field |
 | `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
 
 ## `autonomy`
@@ -342,11 +349,55 @@ says by what. A session with a person in it, rather than a drive's pass
 (`$DRIVE_PR_TARGET` unset), reads `attended` unless that person set a level
 in their own file or the environment.
 
+`off_hours` widens the level during the hours nobody is there to ask: inside
+one of its schedule's windows, a drive's pass runs at `off_hours.level`
+instead, capped by `max_level` like any other choice, and the printed line
+names the effective level and records the off-hours choice and the cap; outside every window the base level
+stands. A person's session never runs at the off-hours level.
+
+```yaml
+autonomy:
+  level: unattended
+  max_level: wide
+  off_hours:
+    level: wide
+    schedule:              # the default once off_hours.level is set
+      - "Mon-Fri 20:00-07:00"
+      - "Sat-Sun"
+      - "Mon 00:00-07:00"
+```
+
+What each level permits:
+
+| Decision | `attended` | `unattended` | `wide` |
+|---|---|---|---|
+| File a tracker issue a skill needs | Confirm first | File it; the body says which skill filed it, from which pull request and why | Same |
+| Defer a finding no tracker adapter can file | The pull request's `## Deferred` section | Same | Same |
+| A choice `decide` rules reversible inside one pull request | Decide and record | Same | Same |
+| A choice `decide` would rule underdetermined | Rule it `underdetermined`, naming the missing evidence in a spike issue (or a comment on the existing issue) | Gather the missing evidence, then apply the ladder, escalating a call it still cannot settle | Same |
+| A choice `decide`'s last row would escalate, with no sensitivity flag, no stakeholder category and no persisted-data or published-contract consequence | Escalate | Escalate | Decide it, marked provisional |
+| A review thread the arbiter rules `escalate` with the class `escalated` and no recorded human decision behind it | Park it | Same | Reply with a provisional `rejected`, `wont-fix` or `deferred`, never a fix; resolve it; list it in the morning report |
+| Re-arm after `HITL_PARKED` with items unanswered | Never | Never | Once every unanswered item is of the class `escalated`, handed on to be decided provisionally |
+
+No level decides a class the registry reserves. A person reverses a
+provisional decision by commenting on its thread (or on the pull request
+with a line `answer <key>: …`) as an owner, member or collaborator; the drive
+then parks it under `human-thread`. An unresolve alone reverses nothing.
+
+**`wide` and `off_hours` are not yet validated.** They ship opt-in as a
+recorded exception to Jig's rule against shipping unvalidated dials, to be
+revisited once a working repository has run them for a month with at least ten counted
+provisional decisions and fewer than one in ten of them reversed before the merge (`loop-metrics.ts`
+reports the share per pull request). Until then, opt in only to take part in
+that measurement.
+
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `autonomy.level` | `attended`, `unattended` or `wide` | `attended`, today's behaviour | drive-pr, resolve-review-comments, file-issue, decide | `attended`: a skill confirms an issue before filing it, and `decide` rules an underdetermined call `underdetermined`, naming the missing evidence in a spike issue (or a comment on the existing issue). `unattended`: `file-issue` files without the confirmation, its body saying which skill filed it, from which pull request and why; `decide` gathers the evidence an underdetermined call lacks within the round's budget, then applies its ladder, escalating a call it still cannot settle. Under both, a deferral no tracker adapter can file goes into the pull request's `## Deferred` section. `wide` is accepted and acts as `unattended`: its column (provisional decisions and off-hours windows) is not built yet |
+| `autonomy.level` | `attended`, `unattended` or `wide` | `attended`, today's behaviour | drive-pr, resolve-review-comments, file-issue, decide | The level a drive's pass decides at outside the off-hours windows, per the table above. `wide` is not yet validated (above) |
 | `autonomy.max_level` | `attended`, `unattended` or `wide` | The repository's own `level`, else `attended` | drive-pr, resolve-review-comments, file-issue, decide | The highest level any layer may choose. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error |
-| `autonomy.park_classes` | list of distinct class names (lower-case words joined by hyphens) | `ready`, `merge`, `release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`, `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`, `escalated`, `human-decision` | drive-pr | The decision classes a drive may park on: the rows of the repository's [human-in-the-loop registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md), by default the template's. Set, it replaces the default list; `escalated` and `human-decision`, which the review arbiter emits, are kept whatever it lists. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error |
+| `autonomy.off_hours.level` | `attended`, `unattended` or `wide` | Off-hours is off | drive-pr, resolve-review-comments, file-issue, decide | The level a drive's pass decides at inside a window of `off_hours.schedule`, capped by `max_level`. Any layer may set it; the repository's ceiling still bounds it. Not yet validated (above) |
+| `autonomy.off_hours.schedule` | nonempty list of windows | `Mon-Fri 20:00-07:00`, `Sat-Sun` and `Mon 00:00-07:00`, once `off_hours.level` is set | drive-pr, resolve-review-comments, file-issue, decide | When off-hours applies, in the machine's local time zone. A window is `<days> [HH:MM-HH:MM]`: a day (`Mon`), a range (`Mon-Fri`; `Fri-Mon` wraps across the end of the week) or a comma list of those, then optionally times; without times it is those days whole; times alone (`22:00-06:00`) mean every day. An end at or before the start closes the next day, so a window crosses midnight; the days name the day it opens, which is why the default names Sunday night's end, `Mon 00:00-07:00`, on its own. A schedule without a level is an error |
+| `autonomy.park_classes` | list of distinct class names (lower-case words joined by hyphens) | `ready`, `merge`, `release`, `scope`, `human-thread`, `reviewer-posture`, `next-item`, `reopen-or-waive`, `dark-dial`, `rules`, `destructive`, `legal`, `copy`, `escalated`, `human-decision` | drive-pr | The decision classes a drive may park on: the rows of the repository's [human-in-the-loop registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md), by default the template's. Set, it replaces the default list; `escalated` and `human-decision`, which the review arbiter emits, and `human-thread`, which a reversed provisional decision is parked under, are kept whatever it lists. Only the repository's file sets it: the user file refuses it, and an environment variable for it is an error |
 
 ## `ci`
 
@@ -359,14 +410,20 @@ in their own file or the environment.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `issue_tracker.adapter` | adapter name | `github` | do-item, drive-pr, decide, work-batch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers: `github` or `linear`. `github` (GitHub Issues) uses the signed-in `gh` command-line client, which also reads `GH_TOKEN` or `GITHUB_TOKEN`; with `JIG_GITHUB_GRAPHQL_URL` set it sends requests to that GraphQL endpoint (a GitHub Enterprise Server) with the token from `GH_TOKEN` or `GITHUB_TOKEN`. `linear` reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client. A file that sets `issue_tracker.team` without `issue_tracker.adapter` (or with it empty) is refused, since the default adapter has no team: add `adapter: linear` |
-| `issue_tracker.team` | team key such as `ENG` | **Required by the Linear adapter**; refused unless `issue_tracker.adapter` is set too | do-item, drive-pr, review, work-batch | Linear only: the key issue identifiers carry (`ENG` for `ENG-123`). GitHub Issues keys are `#123`, of the repository `issue_tracker.github.repository` names |
-| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate`. On GitHub Issues, `done`, `canceled` and `duplicate` are an issue closed as completed, not planned or duplicate, and each open state is the label (or, with `issue_tracker.github.states_from: project`, the board option) of that name; `todo` carries no label, so a new issue is in `todo` |
-| `issue_tracker.github.repository` | `owner/name` | The repository the git remote (`repository.remote`, else `origin`) points to on github.com | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the repository whose issues the skills work on |
-| `issue_tracker.github.states_from` | `labels` or `project` | `labels` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: where an open issue's workflow state is kept. `labels`: a label per state, named by `issue_tracker.states`. `project`: the option of a Projects board's single-select field; an open issue with no option is in `todo`, and one whose option names no open state is refused; the token then needs the `project` scope (`gh auth refresh -s project`) |
-| `issue_tracker.github.project` | a board's web address, `https://github.com/orgs/<org>/projects/<n>` or `https://github.com/users/<user>/projects/<n>` | **Required when `states_from` is `project`** | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the board whose field holds the state. Moving an issue to an open state adds it to the board when it is not there |
-| `issue_tracker.github.status_field` | field name | `Status` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the board's single-select field that holds the state |
-| `issue_tracker.github.priority_labels` | map from `urgent`, `high`, `medium`, `low` to a label | `priority: urgent`, `priority: high`, `priority: medium`, `priority: low` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the label that carries each priority (1 to 4); an issue with none has no priority. Each priority needs its own label, which with `states_from: labels` is also no state's label |
+| `issue_tracker.adapter` | adapter name | `github` | do-item, drive-pr, decide, work-batch, dispatch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers: `github`, `linear` or `jira`. `github` (GitHub Issues) uses the signed-in `gh` command-line client, which also reads `GH_TOKEN` or `GITHUB_TOKEN`; with `JIG_GITHUB_GRAPHQL_URL` set it sends requests to that GraphQL endpoint (a GitHub Enterprise Server) with the token from `GH_TOKEN` or `GITHUB_TOKEN`. `linear` reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client. `jira` (Jira Cloud, through its REST API version 3) reads `JIRA_EMAIL` and `JIRA_API_TOKEN`, an Atlassian account's email address and an API token made for it, and signs every request with them (HTTP Basic authentication); its settings are under `issue_tracker.jira`. A file that sets `issue_tracker.team` without `issue_tracker.adapter` (or with it empty) is refused, since the default adapter has no team: add `adapter: linear` or `adapter: jira` |
+| `issue_tracker.team` | team key such as `ENG` | **Required by the Linear and Jira adapters**; refused unless `issue_tracker.adapter` is set too | do-item, drive-pr, review, work-batch, dispatch | The key issue identifiers carry (`ENG` for `ENG-123`): the Linear team's key, or the Jira project's key. A Jira project key with `_` in it cannot be used, since a key is a capital letter followed by capital letters and digits. GitHub Issues keys are `#123`, of the repository `issue_tracker.github.repository` names |
+| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch, dispatch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate`. On GitHub Issues, `done`, `canceled` and `duplicate` are an issue closed as completed, not planned or duplicate, and each open state is the label (or, with `issue_tracker.github.states_from: project`, the board option) of that name; `todo` carries no label, so a new issue is in `todo`. On Jira, each name is matched to a status name ignoring case, and a status no name matches is read by its status category (To Do: not started, In Progress: started, Done: completed); `done`, `canceled` and `duplicate` may share one status when `issue_tracker.jira.resolutions` gives each its own resolution. A move takes one transition: the one out of the issue's current status into a status of the state's name, refused (naming the transitions there are) when none or several match. A Jira workflow suits this with a status per state the repository uses, transitions into In Progress, In Review and Done that any status can take, and a resolution field on the Done transition's screen |
+| `issue_tracker.github.repository` | `owner/name` | The repository the git remote (`repository.remote`, else `origin`) points to on github.com | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: the repository whose issues the skills work on |
+| `issue_tracker.github.states_from` | `labels` or `project` | `labels` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: where an open issue's workflow state is kept. `labels`: a label per state, named by `issue_tracker.states`. `project`: the option of a Projects board's single-select field; an open issue with no option is in `todo`, and one whose option names no open state is refused; the token then needs the `project` scope (`gh auth refresh -s project`) |
+| `issue_tracker.github.project` | a board's web address, `https://github.com/orgs/<org>/projects/<n>` or `https://github.com/users/<user>/projects/<n>` | **Required when `states_from` is `project`** | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: the board whose field holds the state. Moving an issue to an open state adds it to the board when it is not there |
+| `issue_tracker.github.status_field` | field name | `Status` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: the board's single-select field that holds the state |
+| `issue_tracker.github.priority_labels` | map from `urgent`, `high`, `medium`, `low` to a label | `priority: urgent`, `priority: high`, `priority: medium`, `priority: low` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | GitHub Issues only: the label that carries each priority (1 to 4); an issue with none has no priority. Each priority needs its own label, which with `states_from: labels` is also no state's label |
+| `issue_tracker.jira.site` | the site's address, starting with `https://`, such as `https://example.atlassian.net` | **Required by the Jira adapter** | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the Jira Cloud site whose project `issue_tracker.team` names. The address has no port. The host must end in `.atlassian.net`, since the credential is sent to it; the environment variable `JIRA_ALLOWED_HOSTS` (comma separated) names other hosts, and redirects are never followed. Every field of `issue_tracker.jira` is checked whatever the adapter, and a field the section does not have is refused |
+| `issue_tracker.jira.issue_type` | issue type name | `Task` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the issue type a new issue gets, and an issue created under an Epic (or another parent above the standard level) |
+| `issue_tracker.jira.subtask_type` | issue type name | The project's one sub-task issue type; refused when it has none or several | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the type of an issue created under a standard issue. Creating an issue under a sub-task is refused |
+| `issue_tracker.jira.priorities` | map from `urgent`, `high`, `medium`, `low` to a Jira priority name | `Highest`, `High`, `Medium`, `Low` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the priority that carries each of Jig's priorities (1 to 4). An issue with another priority has none (0). A Jira issue always has a priority, so moving one to no priority is refused, and a new issue with none is created with the project's default |
+| `issue_tracker.jira.resolutions` | map from `done`, `canceled`, `duplicate` to a resolution name | `Done`, `Won't Do`, `Duplicate` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the resolution set when an issue moves into one of these states, where the transition's screen has a resolution field, and read back to tell the three apart when they share one status |
+| `issue_tracker.jira.link_types` | map from `blocks`, `related`, `duplicate` to an issue link type name | `Blocks`, `Relates`, `Duplicate` | do-item, drive-pr, file-issue, reflect, work-batch, dispatch | Jira only: the issue link type that carries each relation between issues; links of any other type are ignored |
 | `issue_tracker.labels.epic` | label | `review.taxonomy.epic_label`, else `epic` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch | Marks an issue whose sub-issues are worked one at a time |
 | `issue_tracker.labels.hitl` | label | `hitl` | do-item, decide, work-batch | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
 | `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item, work-batch | A step a person performs outside the code; caps an epic at `ops_pending` |
@@ -396,7 +453,7 @@ same), rather than running without the repository's routing and gates.
 | `do_item.scouts` | map from agent to a list of scouts | none | do-item | Scouts that run before each agent. The key is the **agent**, not a label |
 | `do_item.gates` | list of `{labels, paths, skill}` | none | do-item | Review skills that must approve a change before it is pushed, when the issue carries one of the `labels` or the change touches one of the `paths` |
 | `do_item.execution_plan_block` | name | `execution-plan-v1` | do-item | Name of the fenced block in an epic's description that holds its machine-readable execution plan |
-| `do_item.arm_drive` | `auto`, `tab`, `background`, `print` | `auto` | do-item, drive-pr | How `/jig:do-item`'s § Arm the drive and `/jig:drive-pr`'s § Arm start the drive (both through drive-pr's `arm-drive.ts`). `auto`: in a terminal tab of the pull request's workspace where the session can open one (in an [Orca](https://www.onorca.dev) workspace on a macOS or Linux host), and with the session's background execution elsewhere, falling back to the background, and saying why, when Orca refuses the tab or the tab's drive is not listed in time. `tab`: a terminal tab, or a reported failure. `background`: the session's background execution. `print`: the command only, for a person to run. The tab is a fresh login shell of the user's, so `bun`, `claude` and the Claude account or profile come from it, not from the session. A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the drive's command is quoted for a POSIX shell: `auto` arms in the background, and `tab` fails. A session that is not Claude Code's prints the command whatever the setting, and so does a human checkpoint the run has no clearance for |
+| `do_item.arm_drive` | `auto`, `tab`, `background`, `print` | `auto` | do-item, drive-pr | How `/jig:do-item`'s § Arm the drive and `/jig:drive-pr`'s § Arm start the drive (both through drive-pr's `arm-drive.ts`). `auto`: in a terminal tab of the pull request's workspace where the session can open one (in an [Orca](https://www.onorca.dev) workspace on a macOS or Linux host), and with the session's background execution elsewhere, falling back to the background, and saying why, when Orca refuses the tab or the tab's drive is not listed in time. `tab`: a terminal tab, or a reported failure. `background`: the session's background execution. `print`: the command only, for a person to run. The tab is a fresh login shell of the user's, so `bun`, the agent's command (`claude` or `codex`) and the account or profile come from it, not from the session. A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the drive's command is quoted for a POSIX shell: `auto` arms in the background, and `tab` fails. The drive's pass command is the one of the agent tool the session runs in: a Codex session arms Codex's pass command, in a tab, and prints it where Claude Code would use the background. A session of any other tool prints Claude Code's command whatever the setting, and so does a human checkpoint the run has no clearance for |
 | `do_item.work_types` | map from a work type to fields of its row in the depth table below | The table's defaults | do-item | How much each delivery station does for an item of each type. An entry overrides single fields and keeps the rest of the row; a type outside the default list must set every field. Refused: an entry for a type outside `issue_tracker.types`, an entry for `unknown`, a field the table does not have, and a value outside a field's set. do-item prints the type and its row when it picks up an item |
 
 The routing order and the gates are explained in
@@ -449,12 +506,13 @@ unknown key is refused.
 ## `workspace_name`
 
 Names the workspace a skill runs in after the work it holds and the stage the
-work is at, in a runtime that can rename its workspaces (Orca today). Absent,
-nothing is renamed. A failed rename only warns.
+work is at, in a runtime that can rename its workspaces (Orca today), for
+example `#12 [D] Rename workspaces`. On by default; `template: ""` turns it
+off. A failed rename only warns.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `workspace_name.template` | text with `{id}`, `{status}`, `{title}` and `{pr}` | none: workspaces keep their names | do-item, drive-pr | The name. `{id}` is the item key, `{status}` the stage's text from `workspace_name.statuses`, `{title}` the item title, `{pr}` `#<number>` once there is a pull request. A variable with no value renders empty. Any other `{name}` is refused |
+| `workspace_name.template` | text with `{id}`, `{status}`, `{title}` and `{pr}` | `{id} {status} {title} {pr}` | do-item, drive-pr | The name. An empty string turns the renaming off; a blank one is refused. `{id}` is the item key, `{status}` the stage's text from `workspace_name.statuses`, `{title}` the item title, `{pr}` `#<number>` once there is a pull request. A variable with no value renders empty. Any other `{name}` is refused |
 | `workspace_name.statuses` | map from a stage to text | `{implementing: "[I]", driving: "[D]", ready: "[R]", done: "✅"}` | do-item, drive-pr | What `{status}` stands for at each stage: do-item sets `implementing` at pickup and `driving` when it arms the drive, drive-pr sets `ready` after the merge-ready announcement posts. `done` is for a follow-up step. An entry overrides one stage and keeps the rest; a stage outside this set is refused |
 
 From the repository root, `bun "<do-item-skill-dir>/scripts/workspace-name.ts" <stage> [--id "<key>"] [--title-file <path>] [--pr <number>]`
@@ -508,8 +566,8 @@ nothing yet
 | `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare under `tracker.flags` | do-item | Flag labels that move the effort up one step |
 | `routing.raise.sizes` | list of labels | The known sizes (`work_batch.sizes`, else `issue_tracker.labels.batch_sizes`, with `review.taxonomy.sizes`) outside `issue_tracker.labels.batch_sizes`; `[large]` where that leaves none | do-item | Size labels that move the effort up one step. A batchable size never raises by default |
 | `routing.raise.reviews` | `true` or `false` | `true` | do-item | Whether an area with a mandatory review (`review.skills` naming a skill) among the areas the item's labels reach through `do_item.agents.codearea_areas`, and every area their `impliedBy` closure adds, moves the effort up one step |
-| `routing.models` | map from a runtime (`claude-code`, `codex`) to `{execution, strategic}`, each the runtime's [family alias](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) | `claude-code: {execution: sonnet, strategic: opus}` | do-item, drive-pr | Where a routing tier becomes a model: a route names a tier, never a model, and `drive.pass_model` set to a tier resolves here too (that field may also name a model directly). A declared runtime row names both tiers and replaces that runtime's default; a runtime with no row gets no model, and its routes are recorded and not applied |
-| `routing.efforts` | map from a runtime to a map from an effort to the runtime's name for it | Each effort as written | do-item | Where a runtime spells an effort differently |
+| `routing.models` | map from a runtime (`claude-code`, `codex`) to `{execution, strategic}`, each the runtime's [family alias](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) | `claude-code: {execution: sonnet, strategic: opus}` | do-item, drive-pr, dispatch | Where a routing tier becomes a model: a route names a tier, never a model, and `drive.pass_model` set to a tier resolves here too (that field may also name a model directly). A Codex pass of a drive runs on the `codex` row's `execution` model. The dispatcher reads the row of the agent a session runs in, which the account's vendor picks: a repository names a model per runtime here, never an agent. A declared runtime row names both tiers and replaces that runtime's default; a runtime with no row gets no model, and its routes are recorded and not applied |
+| `routing.efforts` | map from a runtime to a map from an effort to the runtime's name for it | Each effort as written | do-item, dispatch | Where a runtime spells an effort differently. A dispatched Codex session takes its effort as Codex's `model_reasoning_effort` |
 
 Refused besides: an unknown field in `routing` or `routing.raise`, a name
 that is more than one word (it would not read back from the route record),
@@ -828,6 +886,7 @@ These are set per machine or per run, not committed:
 | `JIG_AFTER_VERSION_TIMEOUT_SEC` | Seconds `changelog.after_version` may run before it is stopped and the release fails; 1800 by default |
 | `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
+| `JIRA_EMAIL`, `JIRA_API_TOKEN` | Credentials for the Jira adapter: an Atlassian account's email address and an API token made for it |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
 | `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees), and `attach-pr.ts --place` choose the tree without attaching; `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
 | `DRIVE_PR_LEDGER` | `off` makes `drive.ts` drive without the drive ledger on the pull request: no seeding from it, no check for another clone's driver, no writes; `on` or unset uses it ([where its state lives](skills/drive-pr/README.md#where-its-state-lives)) |
@@ -921,6 +980,131 @@ Use `gc --json` for the receipt schema on standard output.
 The available collectors and remaining rollout work are in
 [the collector's README](gc/README.md).
 
+## `dispatch`
+
+What the [dispatcher](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (`jig dispatch`) starts for this
+repository: a program on the machine that runs the agent sessions, which
+looks at the tracker, the pull requests' drive ledgers and the running
+sessions, and reports each stage that should be running and is not. It
+reads this section from the repository's default branch as the forge holds
+it, fresh at every run, never from a checkout: a change to it takes effect
+once it merges, and a section that cannot be read plans nothing for the
+repository. What a run may start is the machine's to say, in
+[the machine's dispatch file](#the-machines-dispatch-file); see
+[the plugin's README](README.md#the-dispatcher).
+
+| Field | Type | Default / meaning | Read by |
+|-------|------|-------------------|---------|
+| `dispatch.identity` | string: a GitHub login; a Linear user's email or display name; or, on Jira, an Atlassian account id, or an email or display name that matches exactly one user (more or fewer matches are refused) | None: the repository has no pickups | dispatch |
+| `dispatch.states` | nonempty list of [canonical states](#issue_tracker), without `in_progress` (the state `do-item`'s claim moves an item to) | `[todo]` | dispatch |
+| `dispatch.followup_command` | string | None: no follow-ups. Jig's own is `/followup`; a consumer repository names its own post-merge command, which claims the follow-up with `jig dispatch marker` as [the plugin's README](README.md#the-dispatcher) says | dispatch |
+| `dispatch.stalled_after` | duration (`90s`, `30m`, `1h`) | `30m`: a claimed item (assigned to `identity` in `in_progress`) with no running session for longer is reported as a stalled pickup, never relaunched | dispatch |
+| `dispatch.blocked_after` | duration | `30m`: a session the dispatcher started that its runtime reports waiting (on a question or a permission prompt) for longer is reported; it keeps its slot | dispatch |
+| `dispatch.drive_rounds_flat` | positive whole number | `3`: a drive the dispatcher launched drifts when its unresolved review threads at the latest round the dispatcher recorded are not below the count this many recorded rounds earlier | dispatch |
+| `dispatch.pickup_within` | duration | `2h`: a pickup the dispatcher launched that has opened no pull request by then drifts | dispatch |
+| `dispatch.followup_within` | duration | `1h`: a follow-up the dispatcher launched that has not ended by then drifts | dispatch |
+
+An item is a pickup when it is assigned to `identity` and in one of
+`states`, and the person who made that assignment can write to the
+repository (GitHub: the one `issue_tracker.github.repository` names, which is
+the dispatched repository unless that field says otherwise), is a non-guest member of the team (Linear), or is a person's Atlassian account, not a guest, that can be assigned issues in the project (Jira); an item
+assigned by anyone else is reported and never planned. On Jira an app's
+account, Jira Automation's own included, is never trusted, so a Jira
+Automation rule that assigns an item starts a pickup only when it runs as a
+person. The sessions dispatched for a Jira repository run with the
+`JIRA_EMAIL` and `JIRA_API_TOKEN` of the account `identity` names. A
+dispatched `do-item` session claims its item with that identity's
+credentials (assigned to it, moved to `in_progress`), so the tick then
+watches the item among the claimed ones: one more than one running session
+joins to is a double claim, and one idle past `stalled_after` a stalled
+pickup; both are reported and nothing is started for them. A pickup whose
+session ended without claiming the item is not started again until the
+item leaves the dispatch states or its assignment for one run and comes
+back. A pull request merged
+since the follow-up stage's start wants `followup_command`. That start
+(`followup_since`) is the machine's, not the repository's:
+`jig dispatch --followup-since <date>` sets it, and otherwise each run keeps
+the start the previous run's receipt recorded (the first run starts it at
+its own time), unless the machine file's entry for the repository names
+one.
+
+The expectation fields (`drive_rounds_flat`, `pickup_within` and
+`followup_within`) govern the stages' expectations. A stage outside its
+expectation is reported as drifting, and, where the machine file enables
+`notify` and the run applies, notified once and written to the outcome log
+(a run that only reports writes no row for it); the dispatcher never acts on drift, and never changes these
+values itself: when a class keeps recurring on the dashboard, the change is
+a person's, through `reflect` and `review-reflections` (see
+[the plugin's README](README.md#the-dispatcher)).
+
+### The machine's dispatch file
+
+What this machine dispatches, and on whose accounts, lives only in
+`$JIG_HOME/dispatch.yaml` (default `~/.jig/dispatch.yaml`); a repository
+cannot set it, and environment variables cannot override settings inside it.
+`JIG_HOME` selects the directory that contains it. `jig dispatch --apply`, and the
+timer `jig dispatch install` writes, start only what this file enables; a
+run without `--apply` reads it for the repositories to report on, and
+works without it. An unknown key anywhere in the file is refused.
+
+```yaml
+repositories:
+  - path: /home/me/dev/web          # absolute; ~/ is expanded
+    stages: [rearm]                  # rearm, pickup, followup, notify, steer
+    followup_since: 2026-10-30T00:00:00Z
+accounts:
+  - name: work
+    vendor: claude
+    config_dir: /home/me/.claude-work
+    identity: me@example.com
+    max_per_account: 2
+interval: 5m
+wall_backoff: 1h
+runtime_timeout: 1m
+receipts_days: 30
+dashboard:
+  listen: 100.64.0.7:8765           # jig dispatch dashboard; private or loopback only
+```
+
+| Setting | Default / meaning |
+|---------|-------------------|
+| `repositories[].path` | Required; the repository's local checkout. List a repository in one machine's file only |
+| `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` starts re-arms and takeovers of drives, and a re-drive, once per change, of a converged drive whose pull request now conflicts with its base or whose head moved past the head the drive verified. `pickup` starts a `do-item` session per item the repository's `dispatch` section makes a pickup, and `followup` a session running `dispatch.followup_command` per merged pull request, each only where the session runtime can bind an interactive session to its account: Orca cannot yet, so each is reported with that reason and nothing is started. `notify` sends each notification once (with Orca, the workspace's comment, marked unread). `steer` sends the one nudge, `Your usage limit has reset. Continue`, once to an interactive session the runtime reports waiting after its account's wall reset; no other stage implies it |
+| `repositories[].followup_since` | None; when the follow-up stage started for it. Without it, the previous run's receipt keeps the start |
+| `accounts[].name` | Required; the account's name here, which launch records and walls are kept under |
+| `accounts[].vendor` | Required; the agent tool the account bills, which every session on it runs in: `claude` (Claude Code) or `codex` (Codex), the tools the drive documents a pass command for. A drive's pass on a `codex` account runs Codex's pass command, on the execution tier of the repository's `routing.models.codex`, and is admitted only while the pass deadline the run reads (`DRIVE_PR_PASS_TIMEOUT`, else 90 minutes) is positive, since a Codex pass has no turn cap of its own. Any other name (lowercase letters, digits and dashes) is accepted, reported on every run as accepted and not admitted, and never launched on |
+| `accounts[].config_dir` | Required; the configuration directory of the account's profile, set as `CLAUDE_CONFIG_DIR` (`claude`) or `CODEX_HOME` (`codex`) for each session it bills. The session starts with the other variable and `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` removed, so only this directory decides the account |
+| `accounts[].identity` | Required; the email address or account id the drive's identity resolver reads from that directory. A launch whose directory resolves to anything else, or to nothing, starts nothing and is reported |
+| `accounts[].max_per_account` | 2; the sessions the dispatcher may hold on the account at once (its slots). Sessions a person starts on the same account are not counted, so lower it when you share the account |
+| `interval` | `5m`; how often the installed timer runs the tick, in whole minutes (`jig dispatch install --interval` overrides it) |
+| `wall_backoff` | `1h`; how long an account stays out of admission after a pass stops on its usage limit (exit `16`) when the drive recorded no reset |
+| `runtime_timeout` | `1m`; the deadline of each session-runtime call but opening a workspace. An answer past it counts as lost |
+| `workspace_timeout` | The Orca workspace tool's own limit on opening a workspace (a clone, the create hook and the calls around them); the deadline of opening a pull request's or an item's workspace. Twice this plus eight times `runtime_timeout` is one tick's budget, and the dispatch configuration is refused when that budget exceeds 2,147,483,647 milliseconds (about 24.86 days, the longest a timer holds; each duration alone may be at most 24 days); a tick opens at most two workspaces, one of them kept for the notices workspace when the machine file enables `notify` for any repository, and a launch that needs a workspace beyond that waits for the next tick |
+| `receipts_days` | 30; days receipts and ended launch records are kept. The outcome log is never removed |
+| `dashboard.listen` | None; the address `jig dispatch dashboard` listens on: a numeric address in the loopback or private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7`, `fe80::/10`) with an optional port (`8765` when none is named; `--port` overrides it). A host name or any other address is refused. Without it, the dashboard does not start |
+
+Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
+under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one
+per run), `walls/` (each account's usage-limit wall, which lifts at its
+latest recorded reset), the tick lock, the rotation cursor (`tick-index`)
+and the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
+removes. Everything else is one
+SQLite database, `state.sqlite`: the launch records (one per launch,
+written before it, with a pickup session's own result), since when each
+claimed item has had no running session (for `stalled_after`), each
+dispatched follow-up's outcome (done or failed, kept whatever
+`receipts_days` says), a record per notification sent (dropped once its
+cause is gone, except a drift's, which stays for the life of its launch
+and expectation so a launch that recovers and drifts again does not
+notify twice), a record per nudge attempted (with whether it arrived), and
+the outcome log (a row per launch that ended, per notification delivered
+and per nudge attempted, which nothing removes; a notification about the
+stop of a launch it started has no row of its own, because that launch's
+ended row covers it). A database a newer plugin wrote is refused, with its
+version named, until the plugin is updated. A launch record a run cannot
+check (claimed on another host or before a reboot) holds its account's
+slot until a person clears it with `jig dispatch clear <record>`.
+
 ## Complete example
 
 Every section, with values a typical repository might set. Copy only what
@@ -931,6 +1115,15 @@ gc:
   kinds: [tool-state]
   worktree_roots: [../worktrees]
   scratch_prefixes: [/tmp/example-test.]
+dispatch:
+  identity: example-factory
+  states: [todo]
+  followup_command: /post-merge
+  stalled_after: 30m
+  blocked_after: 30m
+  drive_rounds_flat: 3
+  pickup_within: 2h
+  followup_within: 1h
 gates:
   command: make check                    # required by resolve-review-comments
 review:
@@ -962,6 +1155,13 @@ review:
     - login: example-linter[bot]
       shape: badge                       # bold-token | badge | html-badge | pipe-fields | icon-fields
       severities: { Sev1: blocker, Sev2: high, Sev3: medium, Sev4: low }
+  lenses:
+    dir: .config/review-lenses           # the repository's own lens files
+    off: [LENS-004]                      # lenses not to run
+    triggers:                            # appended to a lens's own trigger
+      jig.swallowed-failure:
+        added_lines: ['\bunwrap_or_default\(']
+        exclude: ["spec/**"]
 repository:
   base_branch: develop                   # default: the repository's default branch
   remote: upstream                       # default: origin
@@ -983,17 +1183,21 @@ drive:
   max_rounds: 10                         # default round budget of a drive; --max-rounds overrides
   pass_deadline_retries: 2               # passes killed at their deadline a drive restarts from
   pass_model: sonnet                     # a model id, an alias or a routing tier; --pass-model overrides
+  pass_args: []                          # extra words for a claude pass, before -p, e.g. [--permission-mode, bypassPermissions]; --pass-args overrides
   escape_baseline_doc: docs/review-loop-baseline.md
 autonomy:
   level: attended                        # attended | unattended | wide
   max_level: unattended                  # the ceiling a person's layer may choose up to
+  off_hours:
+    level: unattended                    # inside a window; capped by max_level
+    schedule: ["Mon-Fri 20:00-07:00", "Sat-Sun", "Mon 00:00-07:00"]   # machine local time
   park_classes: [ready, merge, release, scope, human-thread, reviewer-posture, next-item, reopen-or-waive, dark-dial, rules, destructive, legal, copy]
 ci:
   required_checks: [build, test]
   hold_label: ci:hold
 issue_tracker:
-  adapter: linear                        # or github, the default
-  team: ENG                              # Linear only: required by the Linear adapter
+  adapter: linear                        # or jira, or github, the default
+  team: ENG                              # required by the Linear and Jira adapters
   file_command: /jig:file-issue
   taxonomy: docs/label-taxonomy.yaml
   states:
@@ -1031,6 +1235,13 @@ issue_tracker:
       high: "priority: high"
       medium: "priority: medium"
       low: "priority: low"
+  jira:                                  # read by the jira adapter only
+    site: https://example.atlassian.net  # required by the jira adapter
+    issue_type: Task
+    subtask_type: Sub-task               # default: the project's one sub-task type
+    priorities: { urgent: Highest, high: High, medium: Medium, low: Low }
+    resolutions: { done: Done, canceled: "Won't Do", duplicate: Duplicate }
+    link_types: { blocks: Blocks, related: Relates, duplicate: Duplicate }
 do_item:
   agents:
     default: general-purpose

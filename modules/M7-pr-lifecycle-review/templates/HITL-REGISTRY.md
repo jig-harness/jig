@@ -30,8 +30,9 @@ Convention-only entries are marked so — a tracked state, not a resting place.
 ## The registry
 
 Each row's class is the name an autonomous run parks under (Jig's review
-drive reads them as `autonomy.park_classes`); rename or add a class with its
-row.
+drive reads them from the `autonomy.park_classes` list in its configuration,
+not from this table); rename or add a class with its row and in that list, or
+the drive refuses a park under it.
 
 | Class | Decision class | Why it must stay human | Trigger / where it bites |
 |-------|----------------|------------------------|--------------------------|

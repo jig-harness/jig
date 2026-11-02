@@ -36,6 +36,8 @@ export interface IssueListing {
   since?: string;
   /** The milestone's number, as GitHub's filter takes it. */
   milestoneNumber?: string;
+  /** Assigned to this login. */
+  assignee?: string;
 }
 
 export interface Client {
@@ -212,6 +214,7 @@ export function gitHubClient(opts: ClientOptions): Client {
       const filterBy: Record<string, unknown> = {};
       if (listing.labels !== undefined) filterBy.labels = listing.labels;
       if (listing.since !== undefined) filterBy.since = listing.since;
+      if (listing.assignee !== undefined) filterBy.assignee = listing.assignee;
       if (listing.milestoneNumber !== undefined)
         filterBy.milestoneNumber = listing.milestoneNumber;
       const nodes = await pageAll(

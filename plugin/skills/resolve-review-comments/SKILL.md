@@ -256,7 +256,14 @@ interrupts the user. An `escalate` ruling carries a `class:`, the decision
 class of the repository's human-in-the-loop registry that keeps the call a
 person's (`human-decision` for a value the pull request records as a person's
 decision, else the registry row, else `escalated`); under a drive it is the
-class the item is parked under (drive-pr § 4). When that escalation turns out to be an **architectural**
+class the item is parked under (drive-pr § 4). At the `wide` autonomy level a
+drive answers an `escalate` with the class `escalated` and no human decision
+behind it **provisionally** instead: a reply outcome (`rejected`, `wont-fix`
+or `deferred`, never a fix) posted with `**provisional**` after its token by
+drive-pr's `provisional-reply.ts`, resolved, and recorded where a person can
+reverse it with a comment (drive-pr § Autonomy). A thread standing on a
+provisional reply is never triaged again. A run outside a drive has no drive
+state to record one in, and escalates as at any other level. When that escalation turns out to be an **architectural**
 question rather than a product/scope one — which pattern, which contract
 shape, which boundary — route it through the `decide` skill (`/jig:decide`)
 before interrupting: it checks the question against the repository's

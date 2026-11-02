@@ -30,6 +30,7 @@ import { fail } from "./cli.ts";
 import { cachedRepoView } from "./gh-conditional.ts";
 import { type Outcome, qualifyingOutcome } from "./outcome.ts";
 import { ghCall } from "./proc.ts";
+import { type ThreadAutonomy, threadAutonomy } from "./metrics-autonomy.ts";
 
 export interface CommitSample {
   oid: string;
@@ -252,6 +253,8 @@ export interface ThreadSample {
    * Local unreachability is not part of this field's own null case.
    */
   reviewedHeadOid: string | null;
+  /** Provisional replies, their reversals, chat acknowledgements (`metrics-autonomy.ts`). */
+  autonomy?: ThreadAutonomy;
 }
 
 export interface PrSample {
@@ -854,6 +857,7 @@ export function threadFrom(
       firstOriginalCommit.oid !== ""
         ? firstOriginalCommit.oid
         : null,
+    autonomy: threadAutonomy(commentNodes, truncated),
   };
 }
 

@@ -25,6 +25,8 @@ import { passEnv } from "./repair.ts";
 
 import { recordedDecisions, stallNotice } from "./restart.ts";
 
+import { recordDriveEvent } from "./rearm.ts";
+
 import {
   currentAutonomy,
   describeAutonomy,
@@ -73,6 +75,7 @@ export async function checkRoundStall(
     if (!context.stallExtraRound) {
       context.stallExtraRound = true;
       context.passNotice = stallNotice(diagnostics);
+      await recordDriveEvent(context.pr, "restart", "stall");
       console.error(
         "  Running ONE more round with these diagnostics in the pass notice before stopping.",
       );
