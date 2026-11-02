@@ -17,33 +17,64 @@ import {
   closeSync,
   fsyncSync,
   openSync,
-  readFileSync,
+  readdirSync,
+  readSync,
   renameSync,
-  writeFileSync,
+  unlinkSync,
+  writeSync,
 } from "node:fs";
 import { stateRoot } from "../receipts.ts";
 import { logFile, monthOf, parseLine } from "./log.ts";
 import { existingStateDb } from "./state.ts";
 
-/** Write `text` to `path` whole: a reader sees the old file or the new one. */
-function writeWhole(path: string, text: string): void {
-  const temporary = `${path}.${crypto.randomUUID()}.tmp`;
-  const fd = openSync(temporary, "wx", 0o600);
+/** The most rows one export copies; the rest wait for the next tick. */
+const BATCH = 5000;
+const CHUNK = 1 << 20;
+const TEMPORARY = /\.[0-9a-f-]{36}\.tmp$/;
+
+/** Remove the temporaries an interrupted export left beside the month files. */
+function reclaimTemporaries(root: string): void {
+  let names: string[];
   try {
-    writeFileSync(fd, text);
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
+    names = readdirSync(root);
+  } catch {
+    return;
   }
-  renameSync(temporary, path);
+  for (const name of names) {
+    if (!/^log-.*\.jsonl\./.test(name) || !TEMPORARY.test(name)) continue;
+    try {
+      unlinkSync(`${root}/${name}`);
+    } catch {
+      // gone already, or not ours to remove
+    }
+  }
 }
 
-function readText(path: string): string {
+/** Call `line` for each line of `path` (without its newline), reading it in chunks; nothing for a missing file. */
+function eachLine(path: string, line: (text: string) => void): void {
+  let fd: number;
   try {
-    return readFileSync(path, "utf8");
+    fd = openSync(path, "r");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     throw error;
+  }
+  try {
+    const buffer = Buffer.alloc(CHUNK);
+    let rest = "";
+    const decoder = new TextDecoder();
+    for (;;) {
+      const n = readSync(fd, buffer, 0, CHUNK, null);
+      if (n === 0) break;
+      rest += decoder.decode(buffer.subarray(0, n), { stream: true });
+      const parts = rest.split("\n");
+      rest = parts.pop() as string;
+      for (const part of parts) line(part);
+    }
+    rest += decoder.decode();
+    if (rest !== "") line(rest);
+  } finally {
+    closeSync(fd);
   }
 }
 
@@ -54,29 +85,56 @@ interface Copied {
   row: string;
 }
 
-/** Add to one month's file the rows it lacks; returns how many it added. */
+/**
+ * Add to one month's file the rows it lacks; returns how many it added.
+ * The file is copied in chunks into a temporary beside it, the rows added,
+ * and the temporary renamed into place: a reader sees the old file or the
+ * new one, and a failure removes the temporary.
+ */
 function copyMonth(path: string, rows: Copied[]): number {
-  const text = readText(path);
   const held = new Set<string>();
-  for (const line of text.split("\n")) {
-    const key = parseLine(line)?.key;
+  eachLine(path, (text) => {
+    const key = parseLine(text)?.key;
     if (key !== undefined) held.add(key);
-  }
+  });
   const missing = rows.filter((r) => !held.has(r.key));
   if (missing.length === 0) return 0;
-  const lead = text === "" || text.endsWith("\n") ? text : `${text}\n`;
-  writeWhole(path, lead + missing.map((r) => `${r.row}\n`).join(""));
+  const temporary = `${path}.${crypto.randomUUID()}.tmp`;
+  const fd = openSync(temporary, "wx", 0o600);
+  try {
+    // A line the file holds is kept as it is, blank lines apart.
+    eachLine(path, (text) => {
+      if (text !== "") writeSync(fd, `${text}\n`);
+    });
+    for (const r of missing) writeSync(fd, `${r.row}\n`);
+    fsyncSync(fd);
+    closeSync(fd);
+    renameSync(temporary, path);
+  } catch (error) {
+    try {
+      closeSync(fd);
+    } catch {
+      // closed already
+    }
+    try {
+      unlinkSync(temporary);
+    } catch {
+      // never created or already renamed
+    }
+    throw error;
+  }
   return missing.length;
 }
 
 /**
- * Copy the rows written since the last copy into their months' files;
- * returns how many lines it added. Nothing happens before the database
- * exists.
+ * Copy the rows written since the last copy (at most a batch a call) into
+ * their months' files; returns how many lines it added. Nothing happens
+ * before the database exists.
  */
 export function exportLog(root = stateRoot()): number {
   const db = existingStateDb(root);
   if (db === null) return 0;
+  reclaimTemporaries(root);
   const mark =
     (
       db.query("SELECT seq FROM log_export WHERE id = 1").get() as {
@@ -84,13 +142,17 @@ export function exportLog(root = stateRoot()): number {
       } | null
     )?.seq ?? 0;
   const fresh = db
-    .query("SELECT seq, key, at, row FROM log WHERE seq > ? ORDER BY seq")
+    .query(
+      `SELECT seq, key, at, row FROM log WHERE seq > ? ORDER BY seq LIMIT ${BATCH}`,
+    )
     .all(mark) as Copied[];
   if (fresh.length === 0) return 0;
   const months = new Map<string, Copied[]>();
   for (const row of fresh) {
     const month = monthOf(row.at);
-    months.set(month, [...(months.get(month) ?? []), row]);
+    const held = months.get(month);
+    if (held === undefined) months.set(month, [row]);
+    else held.push(row);
   }
   let added = 0;
   for (const rows of months.values())

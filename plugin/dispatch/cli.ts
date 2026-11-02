@@ -230,7 +230,7 @@ const log = command(
     }),
   }),
   {
-    brief: message`Print the outcome log as text, oldest row first.`,
+    brief: message`Print the outcome log as text, in the order the rows were written.`,
     description: message`Reads the state database and prints one line a row; --jsonl prints the rows as the log-<year>-<month>.jsonl files hold them.`,
   },
 );

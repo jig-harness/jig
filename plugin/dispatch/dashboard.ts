@@ -18,7 +18,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { ExitError } from "../shared/cli.ts";
 import type { Listen } from "./lib/listen.ts";
-import { bucket, type LogRow, OUTCOME_CLASSES, rowsOf } from "./lib/log.ts";
+import { type LogRow, OUTCOME_CLASSES, rowsOf } from "./lib/log.ts";
 import { existingStateDb } from "./lib/state.ts";
 import { stateRoot } from "./receipts.ts";
 
@@ -37,31 +37,50 @@ interface DashboardFilter {
   reason?: string;
 }
 
-/** The rows a filter keeps, newest first: one query over the log table. */
-function filterRows(root: string, f: DashboardFilter): LogRow[] {
-  const db = existingStateDb(root);
-  if (db === null) return [];
-  const rows = db
-    .query(
-      `SELECT row FROM log
-       WHERE at_ms >= ?1 AND at_ms <= ?2
+/** The most rows one query returns; the counts still cover every row the filter keeps. */
+export const DASHBOARD_ROWS = 5000;
+
+const KEPT = `at_ms >= ?1 AND at_ms <= ?2
          AND (?3 IS NULL OR repo = ?3)
          AND (?4 IS NULL OR stage = ?4)
          AND (?5 IS NULL OR account = ?5)
          AND (?6 IS NULL OR bucket = ?6)
-         AND (?7 IS NULL OR instr(lower(reason), lower(?7)) > 0)
-       ORDER BY at_ms DESC, seq DESC`,
+         AND (?7 IS NULL OR instr(lower(reason), lower(?7)) > 0)`;
+
+function filterArgs(f: DashboardFilter) {
+  return [
+    f.fromMs,
+    f.toMs,
+    f.repo ?? null,
+    f.stage ?? null,
+    f.account ?? null,
+    f.class ?? null,
+    f.reason ?? null,
+  ];
+}
+
+/** The newest rows a filter keeps (at most `DASHBOARD_ROWS`), newest first, and how many classes' rows it keeps in all. */
+function filterRows(
+  root: string,
+  f: DashboardFilter,
+): { rows: LogRow[]; counts: Record<string, number> } {
+  const db = existingStateDb(root);
+  if (db === null) return { rows: [], counts: {} };
+  const rows = db
+    .query(
+      `SELECT row FROM log WHERE ${KEPT}
+       ORDER BY at_ms DESC, seq DESC LIMIT ${DASHBOARD_ROWS}`,
     )
-    .all(
-      f.fromMs,
-      f.toMs,
-      f.repo ?? null,
-      f.stage ?? null,
-      f.account ?? null,
-      f.class ?? null,
-      f.reason ?? null,
-    ) as Array<{ row: string }>;
-  return rowsOf(rows);
+    .all(...filterArgs(f)) as Array<{ row: string }>;
+  const counted = db
+    .query(
+      `SELECT bucket, COUNT(*) AS n FROM log WHERE ${KEPT} GROUP BY bucket`,
+    )
+    .all(...filterArgs(f)) as Array<{ bucket: string; n: number }>;
+  return {
+    rows: rowsOf(rows),
+    counts: Object.fromEntries(counted.map((c) => [c.bucket, c.n])),
+  };
 }
 
 /** The values each field takes in the window, for the page's choices. */
@@ -87,13 +106,6 @@ function windowValues(
       .map((r) => r.value)
       .sort((a, b) => a.localeCompare(b));
   return out;
-}
-
-/** How many rows each class (and each observation no class names) holds. */
-function classCounts(rows: LogRow[]): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const row of rows) counts[bucket(row)] = (counts[bucket(row)] ?? 0) + 1;
-  return counts;
 }
 
 function text(params: URLSearchParams, name: string): string | undefined {
@@ -129,12 +141,12 @@ export function dashboardData(
   root = stateRoot(),
 ): Record<string, unknown> {
   const filter = parseFilter(params, nowMs);
-  const rows = filterRows(root, filter);
+  const { rows, counts } = filterRows(root, filter);
   const values = windowValues(root, filter);
   return {
     from: new Date(filter.fromMs).toISOString(),
     to: new Date(filter.toMs).toISOString(),
-    counts: classCounts(rows),
+    counts,
     rows,
     options: {
       repo: values.repo,

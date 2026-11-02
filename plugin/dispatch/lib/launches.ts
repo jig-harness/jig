@@ -418,14 +418,22 @@ interface LaunchRow {
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
-function recordOf(row: LaunchRow, root: string): LaunchRecord | null {
+function recordOf(
+  row: LaunchRow,
+  root: string,
+  control?: Map<string, ControlRows>,
+): LaunchRecord | null {
   const value = parseJson(row.record, `launch record ${row.id}`);
   // A record whose embedded id names another row would read that row's claim and exit.
   if (!isLaunchRecord(value) || value.id !== row.id) return null;
-  return { ...normalized(value), ...controlRows(row.id, root) };
+  return {
+    ...normalized(value),
+    ...(control?.get(row.id) ?? controlRows(root, row.id).get(row.id) ?? EMPTY),
+  };
 }
 
 interface EpisodeRow {
+  launch: string;
   observed_at: string;
   reset_at: string | null;
   evidence: string;
@@ -433,32 +441,46 @@ interface EpisodeRow {
   read_at: string;
 }
 
-/** A record's thread samples and waiting episodes, in the order they were first written. */
-function controlRows(
-  id: string,
-  root: string,
-): Pick<LaunchRecord, "samples" | "episodes"> {
+type ControlRows = Pick<LaunchRecord, "samples" | "episodes">;
+
+const EMPTY: ControlRows = { samples: [], episodes: [] };
+
+/** The thread samples and waiting episodes of one launch, or of every launch, in the order they were first written. */
+function controlRows(root: string, id?: string): Map<string, ControlRows> {
   const db = stateDb(root);
+  const where = id === undefined ? "" : "WHERE launch = ?";
+  const args = id === undefined ? [] : [id];
+  const out = new Map<string, ControlRows>();
+  const of = (launch: string) => {
+    let rows = out.get(launch);
+    if (rows === undefined) {
+      rows = { samples: [], episodes: [] };
+      out.set(launch, rows);
+    }
+    return rows;
+  };
   const samples = db
     .query(
-      "SELECT round, threads, at FROM thread_samples WHERE launch = ? ORDER BY rowid",
+      `SELECT launch, round, threads, at FROM thread_samples ${where} ORDER BY rowid`,
     )
-    .all(id) as ThreadSample[];
-  const episodes = (
-    db
-      .query(
-        `SELECT observed_at, reset_at, evidence, last, read_at
-         FROM waiting_episodes WHERE launch = ? ORDER BY rowid`,
-      )
-      .all(id) as EpisodeRow[]
-  ).map((e) => ({
-    observedAt: e.observed_at,
-    resetAt: e.reset_at,
-    evidence: e.evidence,
-    last: e.last === 1,
-    readAt: e.read_at,
-  }));
-  return { samples, episodes };
+    .all(...args) as Array<ThreadSample & { launch: string }>;
+  for (const { launch, round, threads, at } of samples)
+    (of(launch).samples as ThreadSample[]).push({ round, threads, at });
+  const episodes = db
+    .query(
+      `SELECT launch, observed_at, reset_at, evidence, last, read_at
+       FROM waiting_episodes ${where} ORDER BY rowid`,
+    )
+    .all(...args) as EpisodeRow[];
+  for (const e of episodes)
+    (of(e.launch).episodes as WaitingEpisode[]).push({
+      observedAt: e.observed_at,
+      resetAt: e.reset_at,
+      evidence: e.evidence,
+      last: e.last === 1,
+      readAt: e.read_at,
+    });
+  return out;
 }
 
 function launchRow(id: string, root: string): LaunchRow | null {
@@ -604,13 +626,18 @@ function exitOf(row: Pick<LaunchRow, "id" | "exit">): LaunchExit | null {
 export function unrecordedWalls(ids: string[], root = stateRoot()): string[] {
   const db = existingStateDb(root);
   if (db === null || ids.length === 0) return [];
-  const wanted = new Set(ids);
-  const rows = db
-    .query("SELECT id, exit FROM launches WHERE exit IS NOT NULL")
-    .all() as Array<Pick<LaunchRow, "id" | "exit">>;
-  return rows
-    .filter((r) => wanted.has(r.id) && exitOf(r)?.wallUnrecorded === true)
-    .map((r) => r.id);
+  const found: string[] = [];
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    const rows = db
+      .query(
+        `SELECT id, exit FROM launches WHERE exit IS NOT NULL AND id IN (${chunk.map(() => "?").join(",")})`,
+      )
+      .all(...chunk) as Array<Pick<LaunchRow, "id" | "exit">>;
+    for (const r of rows)
+      if (exitOf(r)?.wallUnrecorded === true) found.push(r.id);
+  }
+  return found;
 }
 
 const NO_PROCESS: ProcessIdentity = {
@@ -663,10 +690,11 @@ export async function readLaunches(root = stateRoot()): Promise<{
     .all() as LaunchRow[];
   const rows = all.length === 0 ? [] : await processTable();
   const boot = bootId();
+  const control = controlRows(root);
   const records: ReadRecord[] = [];
   const unreadable: string[] = [];
   for (const row of all) {
-    const record = recordOf(row, root);
+    const record = recordOf(row, root, control);
     if (record === null) {
       unreadable.push(`launch record ${row.id} in ${statePath(root)}`);
       continue;
@@ -780,8 +808,12 @@ export function pruneLaunches(
   if (removed.length === 0) return removed;
   const db = stateDb(root);
   const remove = db.query("DELETE FROM launches WHERE id = ?");
+  const removeNudges = db.query("DELETE FROM nudges WHERE record = ?");
   inTransaction(db, () => {
-    for (const id of removed) remove.run(id);
+    for (const id of removed) {
+      remove.run(id);
+      removeNudges.run(id);
+    }
   });
   return removed;
 }
@@ -789,4 +821,51 @@ export function pruneLaunches(
 /** Remove a record: one the runtime answered it started nothing for, or one a person cleared. */
 export function removeRecord(id: string, root = stateRoot()): void {
   stateDb(root).query("DELETE FROM launches WHERE id = ?").run(id);
+}
+
+/** A row as `inspectRow` read it: what a conditional removal compares against. */
+export interface InspectedRow {
+  /** The record, or `null` when it does not read. */
+  record: LaunchRecord | null;
+  /** The state the claim and exit say, which holds whether or not the record reads. */
+  state: LaunchState;
+  claim: string | null;
+  exit: string | null;
+}
+
+/** One row's record and state, whether or not its record reads; `null` when there is no such row. */
+export async function inspectRow(
+  id: string,
+  root = stateRoot(),
+): Promise<InspectedRow | null> {
+  const row = launchRow(id, root);
+  if (row === null) return null;
+  const rows = await processTable();
+  return {
+    record: recordOf(row, root),
+    state: stateOf(row, rows),
+    claim: row.claim,
+    exit: row.exit,
+  };
+}
+
+/**
+ * Remove a row only while its claim and exit are still what `seen` read:
+ * a wrapper that claimed it, or an exit written, since leaves it in place.
+ * Returns whether the row was removed.
+ */
+export function removeRecordIf(
+  id: string,
+  seen: Pick<InspectedRow, "claim" | "exit">,
+  root = stateRoot(),
+): boolean {
+  const db = stateDb(root);
+  return inTransaction(db, () => {
+    const result = db
+      .query("DELETE FROM launches WHERE id = ? AND claim IS ? AND exit IS ?")
+      .run(id, seen.claim, seen.exit);
+    if (result.changes === 0) return false;
+    db.query("DELETE FROM nudges WHERE record = ?").run(id);
+    return true;
+  });
 }

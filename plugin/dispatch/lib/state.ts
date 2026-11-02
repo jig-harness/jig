@@ -96,6 +96,7 @@ const MIGRATIONS: readonly string[] = [
     detail TEXT NOT NULL,
     PRIMARY KEY (record, episode)
   );
+  CREATE INDEX nudges_repo ON nudges (repo);
   CREATE TABLE followup_outcomes (
     repo TEXT NOT NULL,
     pr INTEGER NOT NULL,
@@ -201,6 +202,13 @@ export function stateDb(root = stateRoot()): Database {
   }
   connections.set(path, db);
   return db;
+}
+
+/** Close and forget the connection to the state database under `root`, when this process holds one. */
+export function closeStateDb(root = stateRoot()): void {
+  const path = statePath(root);
+  connections.get(path)?.close();
+  connections.delete(path);
 }
 
 /** The state database under `root` when it exists; `null` before the first tick created it. A reader never creates it. */

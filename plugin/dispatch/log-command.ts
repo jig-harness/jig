@@ -1,6 +1,6 @@
 /**
  * `jig dispatch log [--since DATE] [--jsonl]`: the outcome log as text,
- * read from the state database (`lib/log.ts`), oldest row first. With
+ * read from the state database (`lib/log.ts`), in the order the rows were written. With
  * `--jsonl` it prints each row as the JSON line the month files
  * (`lib/log-export.ts`) hold, the export that outlives the database's
  * schema; without it, one line a row for a person: the time, the class,
@@ -42,8 +42,10 @@ export function logMain(
       : Date.parse(options.since);
   const rows = db
     .query("SELECT row FROM log WHERE at_ms >= ? ORDER BY seq")
-    .all(since) as Array<{ row: string }>;
-  if (options.jsonl) for (const { row } of rows) print(row);
-  else for (const row of rowsOf(rows)) print(textLine(row));
+    .iterate(since) as IterableIterator<{ row: string }>;
+  for (const selected of rows) {
+    if (options.jsonl) print(selected.row);
+    else for (const row of rowsOf([selected])) print(textLine(row));
+  }
   return 0;
 }

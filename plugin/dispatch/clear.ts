@@ -10,14 +10,17 @@
  * It takes the tick lock, so no tick holding the record in memory writes
  * it back after it is removed.
  *
- * Exit codes: 0 cleared; 2 usage, no such record, or a record whose
- * wrapper is alive; 3 a tick holds the lock.
+ * Only those records clear: an ended or died one, and a pending one whose
+ * launch can still be retried, are the tick's to settle.
+ *
+ * Exit codes: 0 cleared; 2 usage, no such record, a record that may not be
+ * cleared or that changed while it was read; 3 a tick holds the lock.
  */
 import {
+  inspectRow,
   isRecordId,
-  readLaunches,
-  readRecord,
-  removeRecord,
+  type InspectedRow,
+  removeRecordIf,
 } from "./lib/launches.ts";
 import { existingStateDb } from "./lib/state.ts";
 import { stateRoot, takeTickLock } from "./receipts.ts";
@@ -25,23 +28,20 @@ import { stateRoot, takeTickLock } from "./receipts.ts";
 /** A tick holds the lock: try again once it is done. */
 const LOCK_HELD = 3;
 
-/** A record's state by name, its process when it is alive, or `null` when there is no such row. */
-async function stateOf(
-  id: string,
-  root: string,
-): Promise<string | { pid: number } | null> {
-  const db = existingStateDb(root);
-  if (db === null) return null;
-  if (db.query("SELECT 1 FROM launches WHERE id = ?").get(id) === null)
-    return null;
-  if (readRecord(id, root) === null) return "unreadable";
-  const found = (await readLaunches(root)).records.find(
-    (r) => r.record.id === id,
-  );
-  if (found === undefined) return "unreadable";
-  return found.state.kind === "alive"
-    ? { pid: found.state.process.pid }
-    : found.state.kind;
+/** Why a row may not be cleared; `null` when a person may clear it. */
+function refusal(id: string, row: InspectedRow): string | null {
+  const { state, record } = row;
+  if (state.kind === "alive")
+    return `${id} is running (process ${state.process.pid}); stop its session first`;
+  // The claim speaks whether or not the record reads.
+  if (record === null) return null;
+  if (state.kind === "unknown") return null;
+  if (state.kind === "pending") {
+    const last = record.attempts.at(-1);
+    if (last !== undefined && last.outcome !== "sent") return null;
+    return `${id} is pending and its launch can still be retried`;
+  }
+  return `${id} is ${state.kind}: the tick settles it and its outcome row, and it keeps its protections until it is pruned`;
 }
 
 export async function clearMain(
@@ -60,18 +60,24 @@ export async function clearMain(
     return LOCK_HELD;
   }
   try {
-    const state = await stateOf(id, root);
-    if (state === null) {
+    const row =
+      existingStateDb(root) === null ? null : await inspectRow(id, root);
+    if (row === null) {
       console.error(`jig dispatch clear: no launch record ${id}`);
       return 2;
     }
-    if (typeof state !== "string") {
+    const refused = refusal(id, row);
+    if (refused !== null) {
+      console.error(`jig dispatch clear: ${refused}`);
+      return 2;
+    }
+    if (!removeRecordIf(id, row, root)) {
       console.error(
-        `jig dispatch clear: ${id} is running (process ${state.pid}); stop its session first`,
+        `jig dispatch clear: ${id} changed while it was read (a wrapper claimed it or it ended); try again`,
       );
       return 2;
     }
-    removeRecord(id, root);
+    const state = row.record === null ? "unreadable" : row.state.kind;
     console.log(JSON.stringify({ record: id, cleared: true, state }));
     return 0;
   } finally {

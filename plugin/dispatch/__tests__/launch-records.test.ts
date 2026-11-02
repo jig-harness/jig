@@ -13,14 +13,17 @@ import {
   type ReadRecord,
   writeRecord,
 } from "../lib/launches.ts";
-import { stateDb } from "../lib/state.ts";
+import { stateDb, closeStateDb } from "../lib/state.ts";
 import type { DrivenPr } from "../lib/types.ts";
 import { dispatchJobSpec } from "../install.ts";
 import { duration } from "../lib/machine-config.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true });
+  for (const dir of dirs.splice(0)) {
+    closeStateDb(dir);
+    rmSync(dir, { recursive: true });
+  }
 });
 
 function root(): string {

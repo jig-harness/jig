@@ -3,6 +3,7 @@
  * its classifier, the dashboard's address check, and the screen check before a
  * nudge is typed.
  */
+import { closeStateDb } from "../lib/state.ts";
 import { afterEach, describe, expect, it } from "bun:test";
 import {
   appendFileSync,
@@ -32,7 +33,10 @@ import { screenNotReady } from "../lib/runtime/orca-steer.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true });
+  for (const dir of dirs.splice(0)) {
+    closeStateDb(dir);
+    rmSync(dir, { recursive: true });
+  }
 });
 
 function root(): string {

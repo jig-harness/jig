@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeRow, type LogRow } from "../lib/log.ts";
 import { exportLog } from "../lib/log-export.ts";
-import { stateDb } from "../lib/state.ts";
+import { stateDb, closeStateDb } from "../lib/state.ts";
 import { SLUG, type World, world } from "./fixtures.ts";
 import { dispatchState } from "./launch-fixtures.ts";
 
@@ -27,7 +27,10 @@ let current: World | null = null;
 afterEach(() => {
   current?.close();
   current = null;
-  for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true });
+  for (const r of roots.splice(0)) {
+    closeStateDb(r);
+    rmSync(r, { recursive: true, force: true });
+  }
 });
 
 function row(key: string, at: string, reason = "r"): LogRow {

@@ -4,6 +4,7 @@
  * directory, matched on the session id the tick minted; and whether the
  * session's last record is still that wall.
  */
+import { closeStateDb } from "../lib/state.ts";
 import { afterEach, describe, expect, it } from "bun:test";
 import {
   appendFileSync,
@@ -24,7 +25,10 @@ const CWD = "/work/example-repo-12";
 
 const dirs: string[] = [];
 afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true });
+  for (const dir of dirs.splice(0)) {
+    closeStateDb(dir);
+    rmSync(dir, { recursive: true });
+  }
 });
 
 function wallLine(sessionId: string, timestamp: string): string {
