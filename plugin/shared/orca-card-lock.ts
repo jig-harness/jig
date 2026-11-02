@@ -9,8 +9,9 @@
  * writer (`orca-board.ts` and the dispatcher's notify) therefore holds this
  * lock across its read and its write.
  *
- * The lock is a file under the user's state directory (not the temporary directory, which a launcher can change per process), named after
- * the workspace's path and created exclusively, holding its owner's pid and a
+ * The lock is a file under the user's state directory (not the temporary
+ * directory, which a launcher can change per process), named after the
+ * workspace's path and created exclusively, holding its owner's pid and a
  * token. Release removes it only while it still holds that token. A lock
  * whose owner is no longer running is reclaimed by one reclaimer at a time.
  * The lock is published whole (linked into place from a private file), so
