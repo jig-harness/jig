@@ -106,10 +106,9 @@ function ownerGone(pid: number | null): boolean {
  * lock it did not take, so the file judged under the mutex is the file removed.
  * Once content is no longer what stands at the lock path no reclaimer can act
  * on it again (a lock's token is never reused), so the sweep covers every
- * content of this lock, not only the one judged: the completed mutexes of
- * content that no longer stands, and the staging files of publishers that are
- * gone. A live publisher's staging file and the standing content's mutexes are
- * never touched. Walking the generations and the sweep both stop at
+ * content of this lock, not only the one judged, but removes only what its
+ * owner has left behind: a mutex or staging file a live process owns, and the
+ * standing content's mutexes, are never touched. Walking the generations and the sweep both stop at
  * `deadline`, so neither a chain of abandoned mutexes nor a large set of
  * leftover files can hold the caller past its wait; what the sweep leaves, any
  * later reclaim of this lock finds and removes.
@@ -136,30 +135,45 @@ function reclaim(lock: string, deadline: number): void {
   }
 }
 
-/** Remove the completed mutexes and dead publishers' staging files of every content of `lock`. */
+/**
+ * Remove the leftovers of every content of `lock` whose owner is gone: a
+ * mutex whose recorded owner is no longer running, and a staging file whose
+ * publisher is no longer running. What a live process owns is never touched,
+ * whatever generation or content it belongs to, and the standing content is
+ * read afresh before each removal, so a snapshot that went stale while the
+ * sweep ran cannot reach a mutex of the content that stands now.
+ */
 function sweep(lock: string, deadline: number): void {
+  const dir = dirname(lock);
   const family = `${basename(lock)}.reclaim-`;
-  const standing = readLock(lock);
-  const standingId =
-    standing === null
-      ? null
-      : createHash("sha256").update(standing).digest("hex").slice(0, 16);
-  for (const name of readdirSync(dirname(lock))) {
+  for (const name of readdirSync(dir)) {
     if (performance.now() >= deadline) break;
     const [, id, rest] = name.startsWith(family)
       ? (/^([0-9a-f]{16})-(.*)$/.exec(name.slice(family.length)) ?? [])
       : [];
-    if (id !== undefined && id !== standingId && sweepable(rest ?? ""))
-      rmSync(join(dirname(lock), name), { force: true });
+    if (id === undefined || id === standingId(lock)) continue;
+    const file = join(dir, name);
+    if (leftover(file, rest ?? "")) rmSync(file, { force: true });
   }
 }
 
+/** The id the mutex names of the content standing at `lock` carry; `null` when none stands. */
+function standingId(lock: string): string | null {
+  const standing = readLock(lock);
+  return standing === null
+    ? null
+    : createHash("sha256").update(standing).digest("hex").slice(0, 16);
+}
+
 /**
- * Whether the rest of a mutex file's name, after the prefix, names a completed
- * mutex (a generation number) or a staging file whose publisher is gone.
+ * Whether `file`, named `rest` after the prefix, is a mutex whose owner is gone
+ * or a staging file whose publisher is gone.
  */
-function sweepable(rest: string): boolean {
-  if (/^\d+$/.test(rest)) return true;
+function leftover(file: string, rest: string): boolean {
+  if (/^\d+$/.test(rest)) {
+    const owner = readLock(file);
+    return owner !== null && ownerGone(pidOf(owner));
+  }
   const staged = /^\d+\.init-(\d+)-/.exec(rest);
   return staged !== null && ownerGone(Number(staged[1]));
 }

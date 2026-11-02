@@ -245,8 +245,9 @@ describe("the card's comment lock", () => {
     const stale = `${deadPid()}\nleft\n`;
     writeFileSync(lock, stale);
     const id = createHash("sha256").update(stale).digest("hex").slice(0, 16);
+    const dead = deadPid();
     for (let generation = 2; generation <= 300; generation++)
-      writeFileSync(`${lock}.reclaim-${id}-${generation}`, "1\nx\n");
+      writeFileSync(`${lock}.reclaim-${id}-${generation}`, `${dead}\nx\n`);
     const real = performance.now.bind(performance);
     const start = real();
     // The budget covers the deadline and taking the first generation, then is spent.
@@ -284,12 +285,16 @@ describe("the card's comment lock", () => {
       .update(`${deadPid()}\nearlier\n`)
       .digest("hex")
       .slice(0, 16);
+    const dead = deadPid();
     for (let generation = 2; generation <= 20; generation++)
-      writeFileSync(`${lock}.reclaim-${retired}-${generation}`, "1\nx\n");
+      writeFileSync(`${lock}.reclaim-${retired}-${generation}`, `${dead}\nx\n`);
+    // A live reclaimer's mutex of other content stands untouched.
+    const live = `${lock}.reclaim-${retired}-99`;
+    writeFileSync(live, `${process.pid}\nx\n`);
     const stale = `${deadPid()}\nleft\n`;
     writeFileSync(lock, stale);
     await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 1000 });
-    expect(readdirSync(root)).toEqual([]);
+    expect(readdirSync(root)).toEqual([live.slice(root.length + 1)]);
   });
 
   test("reclaiming a dead owner's lock leaves nothing behind", async () => {
