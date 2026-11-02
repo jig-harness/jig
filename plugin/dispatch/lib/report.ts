@@ -87,6 +87,9 @@ export function formatReceipt(receipt: TickReceipt, path: string): string {
     ...(receipt.unloggedOutcomes ?? []).map(
       (reason) => `outcome log: ${reason}`,
     ),
+    ...(receipt.logCopyFailed === undefined
+      ? []
+      : [`outcome log: ${receipt.logCopyFailed}`]),
     ...receipt.repos.flatMap((r) => [...repoLines(r, receipt.apply), ""]),
     `Receipt: ${path}`,
   ].join("\n");

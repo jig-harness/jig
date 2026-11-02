@@ -51,8 +51,9 @@ someone to notice, a merge waits for someone to run its follow-up. Nothing watch
 tracker or the pull requests for the next thing to start, so with nobody at
 the keyboard the line stops at the first stage boundary.
 [design/dark-factory-dispatch.md](dark-factory-dispatch.md) has how it
-works: `jig dispatch` in `plugin/dispatch/`, a stateless tick on a timer
-`jig dispatch install` writes, reads the items assigned to the repository's
+works: `jig dispatch` in `plugin/dispatch/`, a tick on a timer
+`jig dispatch install` writes, which keeps what it did in one SQLite
+database and nothing in memory between runs, reads the items assigned to the repository's
 factory identity in a dispatch state (through a new tracker-interface read,
 `assignedIssues(identity, states)`, and `assignedBy(key)` for who made the assignment, beside the unchanged pool query), the drive ledger on each
 pull request and the session runtime's list of running sessions; it

@@ -6,9 +6,10 @@
  * mergeability the forge is still computing gets nothing that tick.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { readRecord } from "../lib/launches.ts";
 import { type EndedRow, readRows } from "../lib/log.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
@@ -87,13 +88,8 @@ describe("jig dispatch --apply re-drives a stale converged pull request", () => 
   it("re-arms a converged drive the forge reports conflicting exactly once across three ticks", async () => {
     const w = fixture({ mergeable: "CONFLICTING" });
     const record = await redrive(w);
-    const stored = JSON.parse(
-      readFileSync(
-        join(dispatchState(w), "launches", `${record}.json`),
-        "utf8",
-      ),
-    );
-    expect(stored.redrive).toEqual({
+    const stored = readRecord(record, dispatchState(w));
+    expect(stored?.redrive).toEqual({
       cause: "conflicting with its base",
       change: `head ${HEAD_SHA}, conflicting`,
     });

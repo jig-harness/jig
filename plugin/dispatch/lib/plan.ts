@@ -44,8 +44,6 @@ export interface PlanInput {
   merged: MarkedPr[];
   /** The follow-ups' outcome records, by pull request. */
   outcomes: ReadonlyMap<number, FollowupOutcome>;
-  /** The pull requests whose outcome file does not read. */
-  unreadableOutcomes?: ReadonlySet<number>;
   sessions: SessionsReport;
   /** Each pull request's creation time; a pickup's pull request is one created after its launch. */
   created?: ReadonlyMap<number, string>;
@@ -131,9 +129,6 @@ export function planTick(input: PlanInput): Plan {
         merged: input.merged,
         launches: input.launches,
         outcomes: input.outcomes,
-        ...(input.unreadableOutcomes === undefined
-          ? {}
-          : { unreadableOutcomes: input.unreadableOutcomes }),
         nowMs: input.nowMs,
       },
       plan,

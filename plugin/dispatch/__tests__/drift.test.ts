@@ -9,7 +9,7 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { processTable } from "../../shared/process-table.ts";
-import { bootId, readRecordFile } from "../lib/launches.ts";
+import { bootId, readRecord } from "../lib/launches.ts";
 import { readRows } from "../lib/log.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
@@ -127,7 +127,7 @@ describe("stage drift", () => {
     expect(orcaCalls(w, "worktree", "set")).toHaveLength(1);
     expect(fourth.repos[0]?.launches).toEqual([]);
     expect(
-      readRecordFile(RECORD, dispatchState(w))?.samples?.map((s) => [
+      readRecord(RECORD, dispatchState(w))?.samples?.map((s) => [
         s.round,
         s.threads,
       ]),

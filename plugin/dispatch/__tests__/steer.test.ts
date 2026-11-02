@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { readRecordFile } from "../lib/launches.ts";
+import { readRecord } from "../lib/launches.ts";
 import { readRows } from "../lib/log.ts";
 import { NUDGES } from "../lib/runtime/port.ts";
 import { assignedIssue, SLUG, type World, world } from "./fixtures.ts";
@@ -83,7 +83,7 @@ describe("the continue nudge", () => {
     // The pickup starts, with the session id the tick minted.
     const first = await applyTick(w, true);
     const id = String(first.repos[0]?.launches[0]?.record);
-    const record = readRecordFile(id, dispatchState(w));
+    const record = readRecord(id, dispatchState(w));
     const session = record?.sessionId ?? "";
     expect(session).toMatch(/^[0-9a-f-]{36}$/);
     await waitFor("the session", () => claudeRuns(w).length === 1);
@@ -162,7 +162,7 @@ describe("the continue nudge", () => {
     expect(probe?.argv.slice(0, 3)).toEqual(["quota", session, workspace]);
     expect(probe?.configDir).toBe(a.dir);
     expect(
-      readRecordFile(id, dispatchState(w))?.episodes?.map((e) => e.observedAt),
+      readRecord(id, dispatchState(w))?.episodes?.map((e) => e.observedAt),
     ).toEqual([observedAt]);
     const nudges = readRows(undefined, undefined, dispatchState(w)).filter(
       (r) => r.kind === "event" && r.event === "nudge",

@@ -12,7 +12,7 @@
 import { timingSafeEqual } from "node:crypto";
 import {
   isRecordId,
-  readRecordFile,
+  readRecord,
   readResult,
   recordResult,
   type SessionResult,
@@ -39,7 +39,7 @@ export function resultMain(argv: string[], root?: string): number {
     console.error(USAGE);
     return 2;
   }
-  const record = isRecordId(id) ? readRecordFile(id, root) : null;
+  const record = isRecordId(id) ? readRecord(id, root) : null;
   if (record === null || !sameToken(record.token, token)) {
     console.error(
       `jig dispatch result: ${id} is not a launch record with that token`,

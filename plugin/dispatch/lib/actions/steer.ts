@@ -10,9 +10,9 @@
  * the same call and types the text.
  *
  * - **Once per episode.** Before the send, a suppression record keyed by
- *   the session and its episode is written, pending, under
- *   `~/.local/state/jig/dispatch/nudges/`; its delivery is a second mark
- *   written after (delivered, or not known to have arrived). A send whose
+ *   the session and its episode is written, pending (the state database's
+ *   `nudges` table, whose key refuses a second); its delivery is marked
+ *   after (delivered, or not known to have arrived), once. A send whose
  *   answer is lost, or a tick that stopped between the two, never leads to
  *   a second one: a pending record a later tick finds is marked not known
  *   to have arrived. A check that failed before any send removes the
@@ -20,36 +20,27 @@
  * - **Then a person.** A nudge not known to have arrived, or a session
  *   still waiting on the same episode after its nudge, is notified; it is
  *   never nudged again.
- * - **Logged.** Each nudge's event row is written with its delivery mark,
- *   so the log never reads an attempted nudge as a delivered one.
+ * - **Logged.** Each nudge's event row is written in the same transaction
+ *   as its delivery mark, so the log never reads an attempted nudge as a
+ *   delivered one, and never lacks a nudge whose delivery is marked.
  *
  * There is no open-ended nudge: every other stuck state is a notification.
  */
-import { createHash } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-} from "node:fs";
-import { join } from "node:path";
-import { swallow } from "../../../shared/errors.ts";
-import { isRecord } from "../../../shared/guards.ts";
-import { publishOnce, stateRoot } from "../../receipts.ts";
+import { stateRoot } from "../../receipts.ts";
 import {
   isInteractive,
   type ReadRecord,
   targetOf,
   type WaitingEpisode,
 } from "../launches.ts";
-import { appendRow } from "../log.ts";
+import { insertRow } from "../log.ts";
 import { pickupNotice } from "../notices.ts";
 import {
   type RuntimeReceipt,
   type SessionsReport,
   WAITING_STATES,
 } from "../runtime/port.ts";
+import { inTransaction, stateDb } from "../state.ts";
 import { failureText } from "../text.ts";
 import type { Action, RepoReport, Running, SteerOutcome } from "../types.ts";
 import { agentOf } from "./pickup-hold.ts";
@@ -67,92 +58,44 @@ export interface NudgeRecord {
   detail: string;
 }
 
-function nudgesRoot(root: string): string {
-  return join(root, "nudges");
-}
-
-function digest(record: string, episode: string): string {
-  return createHash("sha256")
-    .update(`${record}\n${episode}`)
-    .digest("hex")
-    .slice(0, 32);
-}
-
-function attemptFile(root: string, record: string, episode: string): string {
-  return join(nudgesRoot(root), `${digest(record, episode)}.json`);
-}
-
-function deliveryFile(root: string, record: string, episode: string): string {
-  return join(nudgesRoot(root), `${digest(record, episode)}.delivery`);
-}
-
-/** The mark that a nudge's event row is in the log: a later tick does not look for it again. */
-function loggedFile(root: string, record: string, episode: string): string {
-  return join(nudgesRoot(root), `${digest(record, episode)}.logged`);
-}
-
-function readJson(path: string): unknown {
-  try {
-    return JSON.parse(readFileSync(path, "utf8"));
-  } catch (error) {
-    swallow(error, `${path} does not read`);
-    return undefined;
-  }
-}
-
 /** The nudges of `repo`, by record and episode. */
 export function readNudges(
   repo: string,
   root = stateRoot(),
 ): Map<string, NudgeRecord> {
-  const out = new Map<string, NudgeRecord>();
-  let names: string[];
-  try {
-    names = readdirSync(nudgesRoot(root));
-  } catch (error) {
-    swallow(error, "no nudge has been sent yet");
-    return out;
-  }
-  for (const name of names.filter((n) => /^[a-f\d]{32}\.json$/.test(n))) {
-    const value = readJson(join(nudgesRoot(root), name));
-    if (
-      !isRecord(value) ||
-      value.repo !== repo ||
-      typeof value.record !== "string" ||
-      typeof value.episode !== "string"
+  const rows = stateDb(root)
+    .query(
+      `SELECT repo, record, target, account, episode, at, delivery, detail
+       FROM nudges WHERE repo = ?`,
     )
-      continue;
-    const mark = readJson(
-      join(nudgesRoot(root), name.replace(/\.json$/, ".delivery")),
-    );
-    const delivery =
-      isRecord(mark) &&
-      (mark.delivery === "delivered" || mark.delivery === "unknown")
-        ? mark.delivery
-        : "pending";
-    out.set(nudgeKey(value.record, value.episode), {
-      ...(value as unknown as NudgeRecord),
-      delivery,
-      detail:
-        isRecord(mark) && typeof mark.detail === "string" ? mark.detail : "",
-    });
-  }
-  return out;
+    .all(repo) as NudgeRecord[];
+  return new Map(rows.map((n) => [nudgeKey(n.record, n.episode), n]));
 }
 
 function nudgeKey(record: string, episode: string): string {
   return `${record} ${episode}`;
 }
 
-/** Append a nudge's event row, then its logged mark; the row's key makes a repeat a no-op. */
-function logDelivery(
+/**
+ * Mark a pending nudge's delivery, and write its event row in the same
+ * transaction; a nudge already marked keeps its mark, and gets no row.
+ */
+function markDelivery(
   nudge: NudgeRecord,
   delivery: "delivered" | "unknown",
   detail: string,
   root: string,
 ): void {
-  appendRow(
-    {
+  const db = stateDb(root);
+  inTransaction(db, () => {
+    const marked = db
+      .query(
+        `UPDATE nudges SET delivery = ?, detail = ?
+         WHERE record = ? AND episode = ? AND delivery = 'pending'`,
+      )
+      .run(delivery, detail, nudge.record, nudge.episode);
+    if (marked.changes !== 1) return;
+    insertRow(db, {
       kind: "event",
       key: `nudge ${nudge.record} ${nudge.episode}`,
       at: nudge.at,
@@ -163,30 +106,13 @@ function logDelivery(
       account: nudge.account,
       class: null,
       reason: `continue ${delivery === "delivered" ? "delivered" : "sent, not known to have arrived"}: ${detail}`,
-    },
-    root,
-  );
-  publishOnce(loggedFile(root, nudge.record, nudge.episode), `${nudge.at}\n`);
-}
-
-/** Write a nudge's delivery mark, and its event row with it. */
-function markDelivery(
-  nudge: NudgeRecord,
-  delivery: "delivered" | "unknown",
-  detail: string,
-  root: string,
-): void {
-  publishOnce(
-    deliveryFile(root, nudge.record, nudge.episode),
-    `${JSON.stringify({ delivery, detail, at: new Date().toISOString() })}\n`,
-  );
-  logDelivery(nudge, delivery, detail, root);
+    });
+  });
 }
 
 /**
  * Mark each nudge of `repo` still pending (a tick stopped between the send
- * and its mark) as not known to have arrived, with its event row; a nudge
- * already marked gets its event row again when a stop kept it from the log.
+ * and its mark) as not known to have arrived, with its event row.
  */
 export function settlePending(
   nudges: Map<string, NudgeRecord>,
@@ -194,17 +120,7 @@ export function settlePending(
 ): string[] {
   const failed: string[] = [];
   for (const nudge of nudges.values()) {
-    if (nudge.delivery !== "pending") {
-      if (existsSync(loggedFile(root, nudge.record, nudge.episode))) continue;
-      try {
-        logDelivery(nudge, nudge.delivery, nudge.detail, root);
-      } catch (error) {
-        failed.push(
-          `the event row of the nudge of ${nudge.record} did not reach the log and waits for a later tick: ${failureText(error)}`,
-        );
-      }
-      continue;
-    }
+    if (nudge.delivery !== "pending") continue;
     const detail = "a later tick found the send without its answer";
     try {
       markDelivery(nudge, "unknown", detail, root);
@@ -408,9 +324,22 @@ async function sendOne(
     delivery: "pending",
     detail: "",
   };
-  mkdirSync(nudgesRoot(root), { recursive: true, mode: 0o700 });
-  const attempt = attemptFile(root, nudge.record, nudge.episode);
-  if (!publishOnce(attempt, `${JSON.stringify(record, null, 2)}\n`))
+  const db = stateDb(root);
+  const attempted = db
+    .query(
+      `INSERT INTO nudges (record, episode, repo, target, account, at, delivery, detail)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', '')
+       ON CONFLICT (record, episode) DO NOTHING`,
+    )
+    .run(
+      record.record,
+      record.episode,
+      record.repo,
+      record.target,
+      record.account,
+      record.at,
+    );
+  if (attempted.changes !== 1)
     return outcome(
       action,
       "refused",
@@ -419,7 +348,9 @@ async function sendOne(
   const receipt = await steerOnce(state, nudge.agent);
   if (!receipt.ok && receipt.lost !== true) {
     // Nothing was typed: the episode may be nudged at a later tick.
-    rmSync(attempt, { force: true });
+    db.query(
+      "DELETE FROM nudges WHERE record = ? AND episode = ? AND delivery = 'pending'",
+    ).run(record.record, record.episode);
     return outcome(action, "refused", receipt.detail);
   }
   const delivery = receipt.ok ? "delivered" : "unknown";

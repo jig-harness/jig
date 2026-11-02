@@ -1,8 +1,9 @@
 /**
- * Control's parts on their own: the outcome log's file rules and its
- * classifier, the dashboard's address check, and the screen check before a
+ * Control's parts on their own: the outcome log's table and its text copy,
+ * its classifier, the dashboard's address check, and the screen check before a
  * nudge is typed.
  */
+import { closeStateDb } from "../lib/state.ts";
 import { afterEach, describe, expect, it } from "bun:test";
 import {
   appendFileSync,
@@ -15,8 +16,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { LaunchRecord, ReadRecord } from "../lib/launches.ts";
 import { parseListen } from "../lib/listen.ts";
+import { exportLog } from "../lib/log-export.ts";
 import {
-  appendRow,
+  writeRow,
   classifyEnded,
   type EndedRow,
   type OutcomeClass,
@@ -31,7 +33,10 @@ import { screenNotReady } from "../lib/runtime/orca-steer.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true });
+  for (const dir of dirs.splice(0)) {
+    closeStateDb(dir);
+    rmSync(dir, { recursive: true });
+  }
 });
 
 function root(): string {
@@ -58,51 +63,46 @@ function row(key: string, at = "2026-11-01T10:00:00.000Z"): EndedRow {
   };
 }
 
-describe("the outcome log's file", () => {
-  it("writes a row once, cuts a torn last line, and keeps an unterminated one that parses", () => {
+describe("the outcome log's table", () => {
+  it("writes a row once, by its key, and reads rows by their time", () => {
     const dir = root();
-    expect(appendRow(row("one"), dir)).toBe(true);
-    expect(appendRow(row("one"), dir)).toBe(false);
-    const file = logFile("2026-11-01T10:00:00.000Z", dir);
-    appendFileSync(file, '{"kind":"ended","key":"tor');
-    expect(appendRow(row("two"), dir)).toBe(true);
-    appendFileSync(file, JSON.stringify(row("three")));
-    expect(appendRow(row("four"), dir)).toBe(true);
-    expect(readFileSync(file, "utf8").endsWith("\n")).toBe(true);
+    expect(writeRow(row("one"), dir)).toBe(true);
+    expect(writeRow(row("one"), dir)).toBe(false);
+    expect(writeRow(row("oct", "2026-10-31T23:59:59.000Z"), dir)).toBe(true);
     expect(readRows(undefined, undefined, dir).map((r) => r.key)).toEqual([
       "one",
-      "two",
-      "three",
-      "four",
+      "oct",
     ]);
-  });
-
-  it("cuts a torn last line longer than any window, and finds a key far back in the file", () => {
-    const dir = root();
-    appendRow(row("first"), dir);
-    const file = logFile("2026-11-01T10:00:00.000Z", dir);
-    appendFileSync(file, `${"x".repeat(600 * 1024)}`);
-    expect(appendRow(row("after"), dir)).toBe(true);
-    for (let i = 0; i < 3000; i++) appendRow(row(`filler-${i}`), dir);
-    expect(appendRow(row("first"), dir)).toBe(false);
-    const keys = readRows(undefined, undefined, dir).map((r) => r.key);
-    expect(keys.slice(0, 2)).toEqual(["first", "after"]);
-    expect(keys.filter((k) => k === "first")).toHaveLength(1);
-  });
-
-  it("puts a row in the file of its month, and a reader skips a line that is not a row", () => {
-    const dir = root();
-    appendRow(row("oct", "2026-10-31T23:59:59.000Z"), dir);
-    appendRow(row("nov", "2026-11-01T00:00:00.000Z"), dir);
-    expect(logFile("2026-10-31T23:59:59.000Z", dir)).toEndWith(
-      "log-2026-10.jsonl",
-    );
-    appendFileSync(logFile("2026-11-01T00:00:00.000Z", dir), "not a row\n{}\n");
     expect(
       readRows(Date.parse("2026-11-01T00:00:00.000Z"), Infinity, dir).map(
         (r) => r.key,
       ),
-    ).toEqual(["nov"]);
+    ).toEqual(["one"]);
+  });
+
+  it("copies each row into the file of its month once, keeping the lines a file already held", () => {
+    const dir = root();
+    writeRow(row("oct", "2026-10-31T23:59:59.000Z"), dir);
+    writeRow(row("nov", "2026-11-01T00:00:00.000Z"), dir);
+    expect(exportLog(dir)).toBe(2);
+    const october = logFile("2026-10-31T23:59:59.000Z", dir);
+    expect(october).toEndWith("log-2026-10.jsonl");
+    const november = logFile("2026-11-01T00:00:00.000Z", dir);
+    expect(readFileSync(october, "utf8")).toBe(
+      `${JSON.stringify(row("oct", "2026-10-31T23:59:59.000Z"))}\n`,
+    );
+    // A line the copy already holds (one from before the database, or not a row) stays as it is.
+    appendFileSync(november, "not a row\n{}");
+    writeRow(row("later", "2026-11-02T00:00:00.000Z"), dir);
+    expect(exportLog(dir)).toBe(1);
+    expect(exportLog(dir)).toBe(0);
+    expect(readFileSync(november, "utf8").split("\n")).toEqual([
+      JSON.stringify(row("nov", "2026-11-01T00:00:00.000Z")),
+      "not a row",
+      "{}",
+      JSON.stringify(row("later", "2026-11-02T00:00:00.000Z")),
+      "",
+    ]);
   });
 });
 

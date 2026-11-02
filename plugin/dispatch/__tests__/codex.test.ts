@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { bootId, readRecordFile } from "../lib/launches.ts";
+import { bootId, readRecord } from "../lib/launches.ts";
 import { formatReceipt } from "../lib/report.ts";
 import { writeWall } from "../lib/walls.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -134,7 +134,7 @@ describe("jig dispatch --apply on Codex accounts", () => {
     });
     expect(receipt.accountsNotAdmitted).toBeUndefined();
     const id = launchedRecord(receipt);
-    expect(readRecordFile(id, dispatchState(w))).toMatchObject({
+    expect(readRecord(id, dispatchState(w))).toMatchObject({
       vendor: "codex",
       passTimeoutSec: 5400,
       sessionId: null,
@@ -290,14 +290,14 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
         "route strategic for Codex, high, gpt-example-large",
       ),
     });
-    expect(
-      readRecordFile(launchedRecord(receipt), dispatchState(w)),
-    ).toMatchObject({
-      vendor: "codex",
-      sessionId: null,
-      model: "gpt-example-large",
-      effort: "high",
-    });
+    expect(readRecord(launchedRecord(receipt), dispatchState(w))).toMatchObject(
+      {
+        vendor: "codex",
+        sessionId: null,
+        model: "gpt-example-large",
+        effort: "high",
+      },
+    );
 
     await waitFor("the session", () => codexRuns(w).length === 1);
     expect(codexRuns(w)).toEqual([

@@ -1,14 +1,15 @@
 /**
  * The tick's part of the outcome log (`log.ts`) for launch records: each
- * record that ended gets its ended row once. The row's time is kept on the
- * record (`endedAt`) before the row is appended, and the record is marked
- * (`logged`) after, so a tick that stopped in between writes the same row
- * into the same month's file, where the append finds its key and writes
- * nothing twice.
+ * record that ended gets its ended row once. The record's end (`endedAt`,
+ * the time the row carries) and the row are written in one transaction,
+ * so either both are in the database or neither is: a record with its end
+ * written has its row, and one without is ended and logged by the next
+ * tick that reads it.
  */
 import { failureText } from "./text.ts";
 import { isDrive, type ReadRecord, writeRecord } from "./launches.ts";
-import { appendRow, endedRow, endTime, hasEnded } from "./log.ts";
+import { endedRow, endTime, hasEnded, insertRow } from "./log.ts";
+import { inTransaction, stateDb } from "./state.ts";
 import type { DrivenPr } from "./types.ts";
 
 export interface EndContext {
@@ -29,7 +30,7 @@ function endRound(r: ReadRecord, drives: DrivenPr[] | null): number | null {
   return r.record.samples?.at(-1)?.round ?? null;
 }
 
-/** Append the ended row of each record in `records` that ended and has none yet; returns what failed. */
+/** Write the ended row of each record in `records` that ended and has none yet; returns what failed. */
 export async function logEnded(
   records: ReadRecord[],
   ctx: EndContext,
@@ -37,29 +38,27 @@ export async function logEnded(
   const failed: string[] = [];
   for (const r of records) {
     const { record } = r;
-    if (!hasEnded(r) || record.logged === true) continue;
+    if (!hasEnded(r) || record.endedAt !== undefined) continue;
     try {
-      if (record.endedAt === undefined) {
-        record.endedAt = endTime(r, ctx.nowIso);
-        writeRecord(record, ctx.root);
-      }
       const exit = r.state.kind === "ended" ? r.state.exit.code : null;
       const merged =
         isDrive(record) && exit === 5 && record.pr !== null
           ? await ctx.merged(record.pr)
           : null;
       const takenOver = ctx.all.some((x) => x.record.replaces === record.id);
-      appendRow(
-        endedRow(
-          r,
-          record.endedAt,
-          { takenOver, merged },
-          isDrive(record) ? endRound(r, ctx.drives) : null,
-        ),
-        ctx.root,
+      const endedAt = endTime(r, ctx.nowIso);
+      const row = endedRow(
+        r,
+        endedAt,
+        { takenOver, merged },
+        isDrive(record) ? endRound(r, ctx.drives) : null,
       );
-      record.logged = true;
-      writeRecord(record, ctx.root);
+      const db = stateDb(ctx.root);
+      inTransaction(db, () => {
+        writeRecord({ ...record, endedAt }, ctx.root);
+        insertRow(db, row);
+      });
+      record.endedAt = endedAt;
     } catch (error) {
       failed.push(
         `the outcome row of launch record ${record.id} could not be written: ${failureText(error)}`,

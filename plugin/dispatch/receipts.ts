@@ -47,10 +47,12 @@ export interface TickReceipt {
   applyWithheld?: string;
   /** The machine file's accounts a drive's pass is never admitted on, and why: a vendor with no documented pass command, a Codex account while the pass deadline is `0`. */
   accountsNotAdmitted?: NotAdmitted[];
-  /** Launch record files that do not read, left out of every count. */
+  /** Launch records that do not read, left out of every count. */
   unreadableLaunches?: string[];
   /** Outcome rows that could not be written for records of repositories this tick did not read. */
   unloggedOutcomes?: string[];
+  /** Why the outcome log's text copy was not brought up to date. */
+  logCopyFailed?: string;
   repos: RepoReport[];
 }
 
@@ -212,7 +214,7 @@ const FINISHED = "finished";
  * never exists empty and only one writer can create it. False when
  * something already is there.
  */
-export function publishOnce(path: string, text: string): boolean {
+function publishOnce(path: string, text: string): boolean {
   const temporary = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
   writeFileSync(temporary, text, { mode: 0o600 });
   try {

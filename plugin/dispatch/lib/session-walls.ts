@@ -5,8 +5,9 @@
  * account's configuration directory (`quota-probe.ts`, run as `run.ts
  * quota` in the account's environment). A wall found is:
  *
- * - a **waiting episode** on that session's own launch record (the wall's
- *   observation time, its reset, and whether the session's last record is
+ * - a **waiting episode** of that session's own launch record (the state
+ *   database's `waiting_episodes` table, keyed by the record and the wall's
+ *   observation time: its reset, and whether the session's last record is
  *   still the wall), so every session behind one account's wall has its
  *   own, which the one nudge answers (`actions/steer.ts`);
  * - the account's wall (`walls.ts`), which admission reads, written once
@@ -24,10 +25,10 @@ import {
   type LaunchRecord,
   type ReadRecord,
   type WaitingEpisode,
-  writeRecord,
 } from "./launches.ts";
 import { isProbedWall, type ProbedWall } from "./quota-probe.ts";
 import { type SessionsReport, WAITING_STATES } from "./runtime/port.ts";
+import { stateDb } from "./state.ts";
 import { failureText } from "./text.ts";
 import { type Wall, writeWall } from "./walls.ts";
 
@@ -128,11 +129,39 @@ function wentOn(r: ReadRecord, readAt: string, root?: string): void {
   const episodes = record.episodes ?? [];
   const latest = episodes.at(-1);
   if (latest === undefined || !latest.last) return;
+  stateDb(root)
+    .query(
+      "UPDATE waiting_episodes SET last = 0, read_at = ? WHERE launch = ? AND observed_at = ?",
+    )
+    .run(readAt, record.id, latest.observedAt);
   record.episodes = [
     ...episodes.slice(0, -1),
     { ...latest, last: false, readAt },
   ];
-  writeRecord(record, root);
+}
+
+/** Keep an episode: a new wall is a new row, the same wall read again updates its own. */
+function writeEpisode(
+  record: LaunchRecord,
+  episode: WaitingEpisode,
+  root?: string,
+): void {
+  stateDb(root)
+    .query(
+      `INSERT INTO waiting_episodes (launch, observed_at, reset_at, evidence, last, read_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (launch, observed_at) DO UPDATE SET
+         reset_at = excluded.reset_at, evidence = excluded.evidence,
+         last = excluded.last, read_at = excluded.read_at`,
+    )
+    .run(
+      record.id,
+      episode.observedAt,
+      episode.resetAt,
+      episode.evidence,
+      episode.last ? 1 : 0,
+      episode.readAt,
+    );
 }
 
 /** The account's wall a new episode closes it with: the resolved reset, else `wall_backoff` from the wall. */
@@ -177,8 +206,8 @@ function keepEpisode(
   // The account's wall first: a stop between the two writes leaves no
   // episode, so the next tick finds the wall as new and publishes both.
   if (!same) writeWall(accountWallOf(record, found), root);
+  writeEpisode(record, episode, root);
   record.episodes = same
     ? [...episodes.slice(0, -1), episode]
     : [...episodes, episode];
-  writeRecord(record, root);
 }
