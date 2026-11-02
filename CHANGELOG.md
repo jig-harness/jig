@@ -349,6 +349,26 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.118.0] - 2026-11-02
+
+The dispatcher re-drives a converged pull request that went stale.
+
+### Added
+
+- **Re-drive of a stale converged pull request.** `jig dispatch` now reads
+  each open pull request's mergeability and head commit with the pull
+  request. A drive that converged (`drive.ts` exit `0`) whose pull request
+  the forge now reports conflicting with its base, or whose head moved past
+  the head the drive verified, is classed `stale`, and the `rearm` stage
+  re-arms it on any admitted account, once per change (the pull request's
+  head, conflicting or not): the drive merges the base in through its
+  conflict-resolve round, or reviews the new head in its ordinary rounds.
+  A pull request its base merely moved past, still mergeable at the
+  verified head, is left alone, and one whose mergeability the forge is
+  still computing is reported unplaced for that run, with nothing launched.
+  The re-drive's row in the outcome log ends like any re-arm's, with a
+  reason that names why the drive was stale.
+
 ## [0.117.0] - 2026-11-02
 
 The dispatcher shows how the stages it started went, and sends its one
@@ -4517,7 +4537,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.117.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.118.0...HEAD
+[0.118.0]: https://github.com/jig-harness/jig/compare/v0.117.0...v0.118.0
 [0.117.0]: https://github.com/jig-harness/jig/compare/v0.116.1...v0.117.0
 [0.116.1]: https://github.com/jig-harness/jig/compare/v0.116.0...v0.116.1
 [0.116.0]: https://github.com/jig-harness/jig/compare/v0.115.0...v0.116.0
