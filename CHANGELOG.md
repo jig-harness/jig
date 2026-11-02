@@ -349,6 +349,207 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.120.3] - 2026-11-02
+
+### Changed
+
+- The dispatcher's README says which launch records `jig dispatch clear`
+  clears and which it refuses, as the command does: it clears an unknown
+  record, a pending one whose launch cannot be retried, or one that does
+  not read and whose claim is not alive, and refuses a running record,
+  readable or not, and, among the records that read, an ended or died one
+  and a pending one that can still be retried.
+
+## [0.120.2] - 2026-11-02
+
+### Added
+
+- A map of Jig by mechanism, [plugin/MECHANISMS.md](plugin/MECHANISMS.md),
+  on the site as "Where the model is in the loop": for each part of the
+  plugin (the gates, the `jig` command and its timers, resource collection,
+  the dispatcher and its records, the follow-up marker, the drive, review,
+  the tracker and forge scripts, pickup, the changelog and release, hooks,
+  the audit) it names the script that owns it, where its state lives and
+  what it refuses, the model sessions that use it and what they decide
+  there, and who notices a failure and who is asked to fix it. It also says
+  when a model reads or writes Jig's own code, and which boundaries rest on
+  instructions rather than on a check. The glossary defines
+  deterministic and reasoned parts.
+
+## [0.120.1] - 2026-11-02
+
+### Fixed
+
+- `drive-pr` no longer deadlocks pushing a conflict resolution in a
+  repository with a CI hold (`ci.hold_label`). GitHub runs no `pull_request`
+  CI on a pull request that conflicts with its base, so the checks the hold
+  waited for before it could be added again never ran. This happened after a
+  failed push released the hold, or when no CI had ever run on the pull
+  request. `ci-hold.ts ensure` now lets that push go ahead without the
+  label, and the push that clears the conflict runs full CI. A failed push
+  of that kind has no hold to roll back, so `finish-round.ts` no longer
+  reports retaining one.
+
+## [0.120.0] - 2026-11-02
+
+The dispatcher keeps its state in one SQLite database.
+
+### Added
+
+- **`jig dispatch log [--since <date>] [--jsonl]`** prints the outcome log
+  as text, or as JSON lines. Every run also adds the rows it wrote to the
+  month files (`log-<year>-<month>.jsonl`), the copy that outlives any
+  change to the database.
+- **`jig dispatch clear <record>`** removes a launch record only a person
+  can settle (one claimed on another host or before a reboot, a pending
+  one whose launch cannot be retried, or one that does not read), which
+  until now meant removing its files. It refuses a record whose session
+  is still running.
+
+### Changed
+
+- **The dispatcher's state is one database.** What `jig dispatch` keeps
+  between runs (the launch records, the records that keep a notification
+  or a nudge from going twice, the waiting and drift observations, each
+  follow-up's outcome, the stall clocks and the outcome log) is now
+  `~/.local/state/jig/dispatch/state.sqlite`, opened with Bun's built-in
+  SQLite, one table each. An outcome row is written in the same
+  transaction as what it records, so a run that stops between the two
+  leaves nothing to repair. The receipts and the account walls stay files.
+  The first run on this version creates the database and leaves the
+  `launches/`, `notices/`, `nudges/`, `idle/` and `followups/` folders of
+  an earlier version unread; delete them once the new version runs. The
+  month files an earlier version wrote stay, and new rows are added to
+  them. A database written by a newer plugin is refused, with its version
+  named.
+- **The dashboard queries the log.** `jig dispatch dashboard` filters in
+  SQL over the outcome log's table, reads the rows and their counts in one
+  read transaction, and reads while a run writes.
+
+## [0.119.0] - 2026-11-02
+
+The dispatcher admits Codex accounts beside Claude Code's, and the drive documents a Codex pass command.
+
+### Added
+
+- **A documented Codex pass command for the drive.** Beside Claude Code's
+  `claude -p "/jig:drive-pr --bots-only <PR>"`, `drive-pr` now documents
+  Codex's: `codex exec --dangerously-bypass-approvals-and-sandbox "Use the
+  jig:drive-pr skill: /jig:drive-pr --bots-only <PR>"`. A Codex pass runs
+  on its own `-m`, else the execution tier of `routing.models.codex`, else
+  Codex's own configured model; `drive.pass_model`, `--pass-model` and
+  `drive.pass_args` stay Claude Code's. `arm-drive.ts` in a Codex session
+  arms a drive with Codex's command, in an Orca terminal tab where it can
+  and otherwise as the printed command. A Codex pass has no turn cap of its
+  own, since the turn-budget hook counts nothing under Codex: the pass
+  deadline (`DRIVE_PR_PASS_TIMEOUT`, 90 minutes by default) is what ends one
+  that runs on.
+- **Codex accounts in the dispatcher.** An account's `vendor` in
+  `~/.jig/dispatch.yaml` now picks the agent every session on it runs in. A
+  drive re-armed on a `codex` account runs Codex's pass command with
+  `CODEX_HOME` set to the account's directory and `CLAUDE_CONFIG_DIR` and
+  every credential variable removed, so a drive stopped on a Claude Code
+  account's usage limit is re-armed on a Codex account at the next run. A
+  pickup on a Codex account starts Codex on the route's
+  `routing.models.codex` model and `routing.efforts.codex` effort (where the
+  session runtime can bind it; on Orca these stay reported); a follow-up
+  starts Codex on its own defaults. A repository
+  names a model per runtime in `routing.models`, never an agent.
+- **A deadline for every dispatched drive.** Each drive the dispatcher
+  launches runs under the pass deadline the run read (`DRIVE_PR_PASS_TIMEOUT`
+  in its environment, else 90 minutes), kept on its launch record and handed
+  to `drive.ts` as `--pass-timeout`. A `codex` account is not admitted for a
+  drive while that deadline is `0`, since nothing else would bound its pass.
+
+### Changed
+
+- **Any vendor name in the machine file.** `accounts[].vendor` accepts any
+  lowercase name. An account of a vendor the drive documents no pass command
+  for is accepted, reported at the top of every run and in its receipt
+  (`accountsNotAdmitted`) as accepted and not admitted, and never launched
+  on.
+
+## [0.118.0] - 2026-11-02
+
+The dispatcher re-drives a converged pull request that went stale.
+
+### Added
+
+- **Re-drive of a stale converged pull request.** `jig dispatch` now reads
+  each open pull request's mergeability and head commit with the pull
+  request. A drive that converged (`drive.ts` exit `0`) whose pull request
+  the forge now reports conflicting with its base, or whose head moved past
+  the head the drive verified, is classed `stale`, and the `rearm` stage
+  re-arms it on any admitted account, once per change (the pull request's
+  head, conflicting or not): the drive merges the base in through its
+  conflict-resolve round, or reviews the new head in its ordinary rounds.
+  A pull request its base merely moved past, still mergeable at the
+  verified head, is left alone, and one whose mergeability the forge is
+  still computing is reported unplaced for that run, with nothing launched.
+  The re-drive's row in the outcome log ends like any re-arm's, with a
+  reason that names why the drive was stale.
+
+## [0.117.0] - 2026-11-02
+
+The dispatcher shows how the stages it started went, and sends its one
+nudge.
+
+### Added
+
+- **The outcome log.** Every session `jig dispatch` launched gets one row
+  when it ends, in `~/.local/state/jig/dispatch/log-<year>-<month>.jsonl`,
+  which nothing removes: the stage, repository, item or pull request,
+  account, model, duration, a drive's rounds, and an outcome class from a
+  closed list (converged, merged, quota wall, parked for a person, stalled,
+  died, refused, gates failed, double claim, unknown) with the stage's own
+  answer as its reason. A stop no class fits is logged as `unknown` with its
+  last state. Each cause the dispatcher notifies on a stage it did not
+  launch, and each nudge, is an event row beside them.
+- **`jig dispatch dashboard [--port <n>]`**: one page over the log, filtered
+  by time (today, yesterday, a range), repository, stage, account, class and
+  reason, with the count of each class. It listens on the machine file's new
+  `dashboard.listen`, an address in the private or loopback ranges, behind a
+  token in the URL it prints, reads the log when the page asks and writes
+  nothing.
+- **Stage drift.** A drive the dispatcher launched whose unresolved review
+  threads do not fall over `dispatch.drive_rounds_flat` recorded rounds (3),
+  a pickup with no pull request after `dispatch.pickup_within` (2h), and a
+  follow-up still running after `dispatch.followup_within` (1h) are reported
+  as drifting with the evidence and notified once; the dispatcher never acts
+  on drift.
+- **The `steer` stage.** An interactive session the dispatcher launched now
+  starts with a session id the dispatcher chose, so a usage-limit wall it
+  meets is read from its own record and closes its account to admission
+  like a drive's. Once that wall has reset and the session still waits at an
+  empty prompt, the dispatcher types `Your usage limit has reset. Continue`
+  into it once, after re-reading the screen; a session still waiting after
+  that is notified, never nudged again. Enable it with `steer` in a
+  repository's machine-file stages.
+
+## [0.116.1] - 2026-11-01
+
+### Fixed
+
+- The docs skill's frontmatter gate no longer checks every document against a schema section it has already rejected. When the schema cannot be used as written (a section of the wrong shape, or a path rule that cannot be evaluated), the gate reports only the schema's own errors and exits 2, so `/jig:docs` shows the `frontmatter` check as `failed` instead of listing thousands of invalid-value findings that bury the real ones.
+
+## [0.116.0] - 2026-11-01
+
+`review` runs review lenses: single checks, one Markdown file each, selected by what the diff adds or removes and run with fresh context in its semantic tier. The first seed lens, `jig.swallowed-failure`, checks a change against M15's rules on failures.
+
+### Added
+
+- **Review lenses in `/jig:review`'s semantic tier.** A [review lens](GLOSSARY.md) is one check held in one file: its id and version, the module rules it enforces, the trigger that selects it, the evidence every finding must give, and what is and is not a finding ([the lens step](plugin/skills/review/references/lenses.md)). `select-lenses.ts` runs each lens whose paths and line patterns the diff matches and says why it skipped the others; each selected lens runs as its own reviewer with fresh context (a subagent, else the harness's agent command inside the base snapshot, else the same session, said so in the summary). Every lens is comment-only for now: a finding's effective severity is at most `WARNING`, and `INFO` when its evidence field is empty. Tier 3's line gains `⚠️ WARNINGS` and `⏭️ N/A`, the summary a `Lenses:` line, and `APPROVED WITH WARNINGS` admits lens warnings. `--lens=<id>` runs a lens whatever its trigger says; `--quick`, `--tier=1`, `--tier=2` and `--skip-t3` run none.
+- **`jig.swallowed-failure`**, the first [seed lens](GLOSSARY.md): a failure turned into a value or silence, a fallback that hides the fault, a wrapper that drops the cause, work nobody waits for, a removed check, and a branch on an error's message text ([M15](modules/M15-contracts-errors/README.md) pieces 1 and 3). Its eval fixtures, a diff it must flag and one it must stay quiet on, passed live.
+- **`review.lenses`** in `.config/jig.yaml` ([CONFIGURATION.md](plugin/CONFIGURATION.md)): `dir` for the repository's own lens files, `off` for lenses not to run, `triggers` for patterns appended to a lens's trigger. Read from the base branch; an id that names no lens, a pattern that is not a regular expression or a repository lens with the `jig.` prefix stops the review and is named.
+- **The lens step in `/jig:do-item`'s pre-PR gate**, from a base snapshot of its own, skipped with the other tiers under the small-change threshold; lens warnings go under Review Notes.
+- **`review.ts setup --base <branch>`** names the base branch directly, and **`--remote <name>`** the git remote it fetches and compares with (default `origin`).
+- **`/jig:audit` checks `review.lenses`** the way review reads it: an `off` or `triggers` entry that names no seed or repository lens is reported as a refusal.
+
+### Changed
+
+- **`review`'s setup writes the effective diff** beside the effective file list, with every Git setting that could change what either shows fixed on the command line and attributes read from the merge base, so neither the caller's Git configuration nor a clean filter a change assigns in its own attributes file can hide an edit. **Breaking:** setup needs Git 2.41 or later and stops, naming the requirement, on an older Git; and a path named with `--files` that does not exist in the reviewed tree, or that reaches outside it through a linked folder or contains a `..` segment, stops setup.
+- [M7](modules/M7-pr-lifecycle-review/README.md) leaves out only a lens catalogue beyond the seed lenses, and its `review-config.yaml` may reference a lens file (`file:`) or a seed lens's `id` instead of restating it.
+
 ## [0.115.0] - 2026-11-01
 
 ### Added
@@ -4456,7 +4657,16 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.115.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.120.3...HEAD
+[0.120.3]: https://github.com/jig-harness/jig/compare/v0.120.2...v0.120.3
+[0.120.2]: https://github.com/jig-harness/jig/compare/v0.120.1...v0.120.2
+[0.120.1]: https://github.com/jig-harness/jig/compare/v0.120.0...v0.120.1
+[0.120.0]: https://github.com/jig-harness/jig/compare/v0.119.0...v0.120.0
+[0.119.0]: https://github.com/jig-harness/jig/compare/v0.118.0...v0.119.0
+[0.118.0]: https://github.com/jig-harness/jig/compare/v0.117.0...v0.118.0
+[0.117.0]: https://github.com/jig-harness/jig/compare/v0.116.1...v0.117.0
+[0.116.1]: https://github.com/jig-harness/jig/compare/v0.116.0...v0.116.1
+[0.116.0]: https://github.com/jig-harness/jig/compare/v0.115.0...v0.116.0
 [0.115.0]: https://github.com/jig-harness/jig/compare/v0.114.0...v0.115.0
 [0.114.0]: https://github.com/jig-harness/jig/compare/v0.113.0...v0.114.0
 [0.113.0]: https://github.com/jig-harness/jig/compare/v0.112.0...v0.113.0

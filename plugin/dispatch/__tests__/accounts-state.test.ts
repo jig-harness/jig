@@ -1,16 +1,17 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   admitRearm,
   admitTakeover,
+  passEnvironment,
   refreshWalls,
   slotsOf,
   slotTable,
 } from "../lib/accounts.ts";
 import { writeWall } from "../lib/walls.ts";
-import type { ReadRecord } from "../lib/launches.ts";
+import { type ReadRecord, recordExit, writeRecord } from "../lib/launches.ts";
 import type { MachineAccount } from "../lib/machine-config.ts";
 
 const account = (
@@ -23,6 +24,9 @@ const account = (
   identity: "me@example.com",
   maxPerAccount: 2,
 });
+
+/** A drive's pass under the drive's default deadline. */
+const PASS = { kind: "pass", deadlineSec: 5400 } as const;
 
 const process = {
   host: "h",
@@ -79,7 +83,7 @@ describe("account admission state", () => {
       Date.now(),
       "/nonexistent-state-root",
     );
-    expect(admitRearm(table, null)).toEqual({
+    expect(admitRearm(table, null, PASS)).toEqual({
       waits: expect.stringContaining("wall not recorded"),
     });
   });
@@ -133,7 +137,7 @@ describe("account admission state", () => {
       "/nonexistent-state-root",
     );
     expect(slotsOf(table, replaced.record)?.account.name).toBe("b");
-    expect(admitTakeover(table, replaced)).toEqual({
+    expect(admitTakeover(table, replaced, PASS.deadlineSec)).toEqual({
       admitted: table[0] as (typeof table)[number],
     });
   });
@@ -148,17 +152,34 @@ describe("account admission state", () => {
       root,
     );
     expect(table[0]?.wallUnrecorded).toBe(false);
-    mkdirSync(join(root, "launches"), { recursive: true });
-    writeFileSync(
-      join(root, "launches", `${record.record.id}.exit`),
-      JSON.stringify({
+    writeRecord(record.record, root);
+    recordExit(
+      record.record.id,
+      {
         at: "2026-01-01T00:00:00.000Z",
         code: 16,
         signal: null,
         wallUnrecorded: true,
-      }),
+      },
+      root,
     );
     refreshWalls(table, [record], Date.now(), root);
     expect(table[0]?.wallUnrecorded).toBe(true);
+  });
+});
+
+describe("passEnvironment", () => {
+  it("removes the wrapper's harness markers and binds the account's directory", () => {
+    const env = passEnvironment(
+      {
+        CLAUDECODE: "1",
+        CODEX_SANDBOX: "seatbelt",
+        CLAUDE_CONFIG_DIR: "/other",
+        OPENAI_API_KEY: "k",
+        PATH: "/bin",
+      },
+      { vendor: "codex", configDir: "/codex-home" },
+    );
+    expect(env).toEqual({ PATH: "/bin", CODEX_HOME: "/codex-home" });
   });
 });

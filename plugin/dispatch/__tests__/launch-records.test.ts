@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectionDeadlineMs } from "../../runtime/launcher.ts";
@@ -13,13 +13,17 @@ import {
   type ReadRecord,
   writeRecord,
 } from "../lib/launches.ts";
+import { stateDb, closeStateDb } from "../lib/state.ts";
 import type { DrivenPr } from "../lib/types.ts";
 import { dispatchJobSpec } from "../install.ts";
 import { duration } from "../lib/machine-config.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true });
+  for (const dir of dirs.splice(0)) {
+    closeStateDb(dir);
+    rmSync(dir, { recursive: true });
+  }
 });
 
 function root(): string {
@@ -126,6 +130,39 @@ describe("retention", () => {
     expect(pruneLaunches([a, b], Date.parse("2027-01-01"), 7, dir)).toEqual([]);
   });
 
+  it("keeps each change's latest re-drive record past the retention", () => {
+    const dir = root();
+    const redrive = (id: string, change: string, at: string) =>
+      ended(
+        record(id, {
+          createdAt: at,
+          redrive: { cause: "conflicting", change },
+        }),
+        0,
+        at,
+      );
+    const old = redrive(
+      "20260101T000000Z-aaaaaaaa",
+      "c1",
+      "2026-01-01T00:00:00.000Z",
+    );
+    const other = redrive(
+      "20260102T000000Z-bbbbbbbb",
+      "c2",
+      "2026-01-02T00:00:00.000Z",
+    );
+    const again = redrive(
+      "20260103T000000Z-cccccccc",
+      "c1",
+      "2026-01-03T00:00:00.000Z",
+    );
+    // c1 was re-driven twice (a return to an older head): only its latest
+    // record stays; c2's stays as the evidence for c2.
+    expect(
+      pruneLaunches([old, other, again], Date.parse("2027-01-01"), 7, dir),
+    ).toEqual(["20260101T000000Z-aaaaaaaa"]);
+  });
+
   it("keeps an unreleased pickup until it is released", () => {
     const dir = root();
     const pickup = (released: boolean) =>
@@ -148,7 +185,7 @@ describe("retention", () => {
 });
 
 describe("reading records", () => {
-  it("leaves out a record that is incomplete or names another file", async () => {
+  it("leaves out a record that is incomplete or names another row", async () => {
     const dir = root();
     const good = record("20260101T000000Z-aaaaaaaa");
     writeRecord(good, dir);
@@ -156,12 +193,13 @@ describe("reading records", () => {
     const { createdAt: _drop, ...partial } = record(
       "20260101T000002Z-cccccccc",
     );
-    writeFileSync(
-      join(dir, "launches", "20260101T000002Z-cccccccc.json"),
-      JSON.stringify(partial),
+    const raw = stateDb(dir).query(
+      `INSERT INTO launches (id, repo, action, pr, item, created_at, record)
+       VALUES (?, 'o/a', 'rearm', 7, NULL, '2026-01-01T00:00:00.000Z', ?)`,
     );
-    writeFileSync(
-      join(dir, "launches", "20260101T000003Z-dddddddd.json"),
+    raw.run("20260101T000002Z-cccccccc", JSON.stringify(partial));
+    raw.run(
+      "20260101T000003Z-dddddddd",
       JSON.stringify(record("20260101T000000Z-aaaaaaaa")),
     );
     const read = await readLaunches(dir);

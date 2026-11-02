@@ -4,13 +4,7 @@
  * records and walls written straight into the child's state directory, and
  * polling for what the wrapper leaves behind.
  */
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { dump } from "../../shared/yaml.ts";
 import {
@@ -20,19 +14,22 @@ import {
   recordExit,
   writeRecord,
 } from "../lib/launches.ts";
+import { existingStateDb } from "../lib/state.ts";
 import type { World } from "./fixtures.ts";
 
 export interface Account {
   name: string;
   identity: string;
   dir: string;
+  /** `claude` when absent. */
+  vendor?: string;
 }
 
 export function dispatchState(w: World): string {
   return join(w.home, ".local", "state", "jig", "dispatch");
 }
 
-/** An account whose configuration directory resolves to `email`. */
+/** A Claude Code account whose configuration directory resolves to `email`. */
 export function account(w: World, name: string, email: string): Account {
   const dir = join(w.root, `config-${name}`);
   mkdirSync(dir, { recursive: true });
@@ -41,6 +38,17 @@ export function account(w: World, name: string, email: string): Account {
     JSON.stringify({ oauthAccount: { emailAddress: email } }),
   );
   return { name, identity: email, dir };
+}
+
+/** A Codex account whose `CODEX_HOME` resolves to the account id `id` (its `auth.json`). */
+export function codexAccount(w: World, name: string, id: string): Account {
+  const dir = join(w.root, `codex-${name}`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "auth.json"),
+    JSON.stringify({ tokens: { account_id: id } }),
+  );
+  return { name, identity: id, dir, vendor: "codex" };
 }
 
 /** The machine file: the world's repository with `stages` (`rearm` by default) and `repository`'s keys, and these accounts. */
@@ -58,7 +66,7 @@ export function machineFile(
       repositories: [{ path: w.repo, stages, ...repository }],
       accounts: accounts.map((a) => ({
         name: a.name,
-        vendor: "claude",
+        vendor: a.vendor ?? "claude",
         config_dir: a.dir,
         identity: a.identity,
         ...(a.max === undefined ? {} : { max_per_account: a.max }),
@@ -135,6 +143,9 @@ export function driveRuns(w: World): Array<{
   cwd: string;
   configDir: string | null;
   token: string | null;
+  codexHome: string | null;
+  anthropicKey: string | null;
+  openaiKey: string | null;
 }> {
   const path = join(w.dir, "drive-runs.jsonl");
   if (!existsSync(path)) return [];
@@ -155,16 +166,18 @@ export function terminalCreates(w: World): string[][] {
     .filter((args) => args[0] === "terminal" && args[1] === "create");
 }
 
-/** The ids of the launch records in the child's state directory. */
+/** The ids of the launch records in the child's state database. */
 export function recordIds(w: World): string[] {
-  const dir = join(dispatchState(w), "launches");
-  return existsSync(dir)
-    ? readdirSync(dir)
-        .filter((n) => n.endsWith(".json"))
-        .map((n) => n.slice(0, -".json".length))
-    : [];
+  const rows = existingStateDb(dispatchState(w))
+    ?.query("SELECT id FROM launches ORDER BY id")
+    .all() as Array<{ id: string }> | undefined;
+  return (rows ?? []).map((r) => r.id);
 }
 
+/** Whether the wrapper recorded the stage's exit on the record `id`. */
 export function exitWritten(w: World, id: string): boolean {
-  return existsSync(join(dispatchState(w), "launches", `${id}.exit`));
+  const row = existingStateDb(dispatchState(w))
+    ?.query("SELECT exit FROM launches WHERE id = ?")
+    .get(id) as { exit: string | null } | null | undefined;
+  return typeof row?.exit === "string";
 }

@@ -111,6 +111,7 @@ export const PAGE_NAMES: Readonly<Record<string, string>> = {
   "/factory/": "the factory page",
   "/features/": "What you get",
   "/adopt/extending/": "the extending page",
+  "/adopt/mechanisms/": "the mechanisms page",
   "/adopt/existing/#profiles": "the profiles",
   "/modules/": "the module map",
   "/principles/": "the principles",

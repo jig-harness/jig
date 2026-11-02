@@ -57,6 +57,11 @@ const PAGES: [string, string, string][] = [
     "extend adapt interface adapter tracker linear jira store reflection notion command hook forge github gitlab ci github actions windows macos linux operating system wsl launcher provider requirements",
   ],
   [
+    "Where the model is in the loop",
+    "/adopt/mechanisms/",
+    "mechanisms deterministic reasoned model script boundary ledger marker receipt outcome log dispatcher tick drive pass implementer arbiter audit probe judgement failure",
+  ],
+  [
     "Adoption guide · existing repository",
     "/adopt/existing/",
     "brownfield audit ladder profile order grandfathering coverage gate",

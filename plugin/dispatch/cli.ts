@@ -10,7 +10,9 @@
  * interval; `jig dispatch result` is how a dispatched interactive session
  * records how it ended; `jig dispatch marker` is how a follow-up command
  * claims a merged pull request's follow-up, checks its claim and marks it
- * done.
+ * done; `jig dispatch dashboard` serves one page over the outcome log while
+ * it runs; `jig dispatch log` prints the outcome log as text; `jig dispatch
+ * clear` removes a launch record only a person can settle.
  */
 import { basename, dirname } from "node:path";
 import { consumerRoot } from "../shared/consumer.ts";
@@ -34,7 +36,11 @@ import {
   type ValueParser,
   withDefault,
 } from "../shared/vendor/optique.mjs";
+import { DEFAULT_PORT, dashboardMain } from "./dashboard.ts";
+import { clearMain } from "./clear.ts";
 import { installDispatch } from "./install.ts";
+import { StateVersionError } from "./lib/state.ts";
+import { logMain } from "./log-command.ts";
 import {
   duration,
   type MachineConfig,
@@ -216,17 +222,91 @@ const marker = command(
   },
 );
 
+const log = command(
+  "log",
+  object({
+    action: constant("log"),
+    since: optional(
+      option("--since", dateValue, {
+        description: message`Leave out the rows timed before this date.`,
+      }),
+    ),
+    jsonl: option("--jsonl", {
+      description: message`Print each row as the JSON line the month files hold.`,
+    }),
+  }),
+  {
+    brief: message`Print the outcome log as text, in the order the rows were written.`,
+    description: message`Reads the state database and prints one line a row; --jsonl prints the rows as the log-<year>-<month>.jsonl files hold them.`,
+  },
+);
+
+const clear = command(
+  "clear",
+  object({
+    action: constant("clear"),
+    record: argument(string({ metavar: "RECORD" }), {
+      description: message`The launch record to remove.`,
+    }),
+  }),
+  {
+    brief: message`Remove a launch record only a person can settle.`,
+    description: message`Removes a launch record that is unknown, pending or unreadable, which holds its stage and its account's slot until it is cleared; refuses one whose session is running.`,
+  },
+);
+
+/** A port between 1 and 65535. */
+const portValue: ValueParser<"sync", number> = {
+  mode: "sync",
+  metavar: "PORT",
+  placeholder: 1,
+  parse: (input) =>
+    /^[1-9][0-9]*$/.test(input) && Number(input) <= 65_535
+      ? { success: true, value: Number(input) }
+      : {
+          success: false,
+          error: message`Expected a port between 1 and 65535, but got ${input}.`,
+        },
+  format: (value) => String(value),
+};
+
+const dashboard = command(
+  "dashboard",
+  object({
+    action: constant("dashboard"),
+    port: optional(
+      option("--port", portValue, {
+        description: message`The port to listen on. Without it, the port dashboard.listen names, else ${String(DEFAULT_PORT)}.`,
+      }),
+    ),
+  }),
+  {
+    brief: message`Serve one page over the outcome log, filtered by time, repository, stage, account and class.`,
+    description: message`Listens on the machine file's dashboard.listen, an address in the private or loopback ranges, until stopped; prints its URL with the token a request needs. It reads the log when the page asks and writes nothing.`,
+  },
+);
+
 /**
- * `jig dispatch`: one tick by default, with `result` and `marker` as its
- * subcommands. Its `install` and `receipts` subcommands do what the
- * lifecycle verbs `jig install dispatch` and `jig receipts dispatch` do, and
- * stay for the command lines that use them, hidden from help.
+ * `jig dispatch`: one tick by default, with `result`, `marker`, `dashboard`,
+ * `log` and `clear` as its subcommands. Its `install` and `receipts`
+ * subcommands do what the lifecycle verbs `jig install dispatch` and
+ * `jig receipts dispatch` do, and stay for the command lines that use them,
+ * hidden from help.
  */
 const dispatch = (wholeMinutes: boolean) =>
   command(
     "dispatch",
     withDefault(
-      or(installation(wholeMinutes), receipts, result, marker, tick),
+      or(
+        installation(wholeMinutes),
+        receipts,
+        result,
+        marker,
+        dashboard,
+        log,
+        clear,
+        tick,
+      ),
       {
         action: "tick",
         apply: false,
@@ -316,14 +396,29 @@ function repositories(options: Tick, machine: MachineConfig | null): string[] {
   return [consumerRoot()];
 }
 
-export async function dispatchMain(
-  args: DispatchArguments,
-  script = "",
-): Promise<number> {
+type Subcommand = Exclude<DispatchArguments, { action: "tick" }>;
+
+/** A subcommand's run: everything but the tick. */
+function subcommandMain(
+  args: Subcommand,
+  script: string,
+): number | Promise<number> {
   if (args.action === "result")
     // An interactive session's own answer, under its launch record's token.
     return resultMain([args.record, args.token, args.outcome]);
   if (args.action === "receipts") return showReceipts(args.runId);
+  if (args.action === "log")
+    return logMain({
+      jsonl: args.jsonl,
+      ...(args.since === undefined ? {} : { since: args.since }),
+    });
+  if (args.action === "clear") return clearMain(args.record);
+  if (args.action === "dashboard")
+    return dashboardMain(
+      machineFile()?.dashboardListen ?? null,
+      args.port,
+      machineConfigPath(),
+    );
   if (args.action === "marker")
     return markerMain({
       verb: args.verb,
@@ -331,17 +426,37 @@ export async function dispatchMain(
       comment: args.comment ?? null,
       repo: args.repo ?? null,
     });
-  if (args.action === "install")
-    // A removal needs no machine file: a broken one must not keep the timer installed.
-    return installDispatch(
-      {
-        intervalMs: args.intervalMs ?? null,
-        confirm: args.confirm,
-        uninstall: args.uninstall,
-      },
-      script,
-      args.uninstall ? null : machineFile(),
-    );
+  // `install`. A removal needs no machine file: a broken one must not keep the timer installed.
+  return installDispatch(
+    {
+      intervalMs: args.intervalMs ?? null,
+      confirm: args.confirm,
+      uninstall: args.uninstall,
+    },
+    script,
+    args.uninstall ? null : machineFile(),
+  );
+}
+
+export async function dispatchMain(
+  args: DispatchArguments,
+  script = "",
+): Promise<number> {
+  try {
+    return await commandMain(args, script);
+  } catch (error) {
+    // A state database a newer plugin wrote is refused by every command that reads it.
+    if (error instanceof StateVersionError)
+      throw new ExitError(2, `jig dispatch: ${error.message}`);
+    throw error;
+  }
+}
+
+async function commandMain(
+  args: DispatchArguments,
+  script: string,
+): Promise<number> {
+  if (args.action !== "tick") return subcommandMain(args, script);
   const machine = machineFile();
   if (args.apply && machine === null)
     throw new ExitError(

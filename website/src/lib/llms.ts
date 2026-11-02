@@ -176,6 +176,11 @@ export const FIXED_PAGES: Readonly<Record<string, readonly Link[]>> = {
       route: "/adopt/extending/",
       note: "what a repository adapts with a value, a command of its own or an implementation in Jig",
     },
+    {
+      title: "Where the model is in the loop",
+      route: "/adopt/mechanisms/",
+      note: "which parts are scripts with no model in them and which are a model deciding, who owns each record, and who notices a failure",
+    },
   ],
 };
 

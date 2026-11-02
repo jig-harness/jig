@@ -27,7 +27,9 @@ import type {
   PoolIssue,
   Tracker,
 } from "../../../skills/do-item/scripts/lib/tracker/port.ts";
+import { admittedVendor } from "../accounts.ts";
 import { holding } from "../holding.ts";
+import { sessionIdFor } from "../session.ts";
 import { type LaunchRecord, newRecordId, newToken } from "../launches.ts";
 import { pickupRoute } from "../route.ts";
 import type { SessionsReport } from "../runtime/port.ts";
@@ -151,10 +153,12 @@ async function launchOne(
   const beforeRoute = outOfTime(state);
   if (beforeRoute !== null)
     return waits(action, beforeRoute, slots.account.name);
+  const vendor = admittedVendor(slots.account);
   const route = await pickupRoute(
     after.issue,
     workspace.path,
     Math.ceil(state.machine.runtimeTimeoutMs / 1000),
+    { vendor, configDir: slots.account.configDir },
   );
   // Deriving the route runs a child for up to the runtime timeout.
   const pastDeadline = outOfTime(state);
@@ -170,7 +174,7 @@ async function launchOne(
     pr: null,
     item: action.target,
     account: slots.account.name,
-    vendor: slots.account.vendor,
+    vendor,
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
     replaces: null,
@@ -184,6 +188,7 @@ async function launchOne(
     released: false,
     command: null,
     marker: null,
+    sessionId: sessionIdFor(vendor),
   };
   const launched = await startRecord(state, record, slots);
   return { ...launched, detail: `${launched.detail}; ${route.detail}` };

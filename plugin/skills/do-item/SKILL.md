@@ -787,7 +787,7 @@ routing below remain **exact**.
 
    Pass additional excluded git pathspecs after the base to replace the default
    TypeScript test patterns for the repository's languages. If the count
-   is under 20 (or zero), skip Tiers 1–3 and log
+   is under 20 (or zero), skip Tiers 1–3, the lens step with them, and log
    `"Pre-PR review skipped: N non-test lines changed (threshold: 20)."` The
    skip does **not** extend to the catalog's `reviewSkills` or the runbook pass
    below: a one-line change can still touch an area with a mandatory
@@ -852,6 +852,30 @@ routing below remain **exact**.
    reviewer references its result but does not re-run it. Tier 3 `REJECT`
    findings **block** the PR.
 
+   **Lens step — part of Tier 3:** run the
+   [review lenses](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+   the diff triggers, as [`/jig:review`](../review/SKILL.md) does, from a
+   base snapshot of its own. Create it, with the effective file list and
+   diff, against the pull request's base:
+
+   ```bash
+   bun --no-env-file --config="${CLAUDE_SKILL_DIR}/../review/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/../review/scripts/review.ts" setup --remote "<remote>" --base "<base branch>"
+   ```
+
+   `<base branch>` is `<base>` without its `<remote>/` prefix. Then follow
+   [review's lens step](../review/references/lenses.md) with the printed
+   `session`: select the lenses (`lenses`), write each selected lens's
+   brief (`brief`, with Tier 1's and Tier 2's findings), run each with fresh
+   context (one subagent per lens; otherwise the harness's agent command
+   through `agent`, inside the snapshot with its enumerated environment;
+   otherwise this session, saying so), and summarize with
+   `summarize-lenses.ts`, which prints Tier 3's state and the `Lenses:`
+   line for the summary below. Run `cleanup` on the session when the gate
+   ends, blocked or not. A configuration error in the lenses blocks like a
+   `CRITICAL` finding, with the error as the helper names it. Lens findings
+   are at most warnings: no lens is promoted to blocking, and one whose
+   evidence field is empty is `INFO`.
+
    **Verdict summary format** (**exact** — keep the structure; fill the
    values from this run):
 
@@ -863,7 +887,8 @@ routing below remain **exact**.
 
    Tier 1 (Patterns):  ✅ PASSED | ❌ BLOCKED   (rules checked: N, violations: N)
    Tier 2 (Contracts): ✅ PASSED | ⚠️ WARNINGS  (per-check status)
-   Tier 3 (Semantic):  ✅ APPROVED | ❌ REJECTED
+   Tier 3 (Semantic):  ✅ APPROVED | ⚠️ WARNINGS | ⏭️ N/A | ❌ REJECTED
+   Lenses:             N run, N skipped  (per-lens findings, or why skipped)
    reviewSkills:       ✅ APPROVED | ❌ BLOCKED  (per-skill status; N/A if empty)
    Runbook pass:       ✅ APPROVED | ❌ BLOCKED  (shellcheck: N findings; N/A if no runbook command changed)
 
@@ -880,8 +905,9 @@ routing below remain **exact**.
    `reviewSkills` entry under the reuse rule above. Loop until the verdict is
    `APPROVED` or `APPROVED WITH WARNINGS`.
 
-   - **`APPROVED WITH WARNINGS`**: put the Tier 2 warnings verbatim under
-     `## Review Notes` in the PR body, then push.
+   - **`APPROVED WITH WARNINGS`**: put the Tier 2 warnings and the lens
+     warnings (Tier 3 `⚠️ WARNINGS`) verbatim under `## Review Notes` in the
+     PR body, then push.
    - **`APPROVED`**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push -u <remote> "<branch>"`.
 
    Then run `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` and open the PR exactly as it plans
@@ -989,18 +1015,22 @@ routing below remain **exact**.
       words before `-p` when it is set); `status`, what to do
       next (step 2); `way`, `reason` and `fallback`, why; `model`; `tab`,
       `tail` and `drive` for a tab; and `handles`. A tab is a fresh login
-      shell of the user's: `bun`, `claude` and the Claude account or profile
-      the drive uses come from that shell, not from this session. Every
+      shell of the user's: `bun`, the agent's command (`claude` or `codex`)
+      and the account or profile the drive uses come from that shell, not
+      from this session. Every
       failure prints the same JSON with `status: failed` and `reason`, with
       `command` built where the tree is known (on the default model when
       the configured one cannot be read). Exit `1`: the setting cannot be
       honoured here (`tab` outside Orca, on a Windows host, or a tab Orca
       refused) or a setting, the model or the working tree cannot be read;
       exit `2`: a malformed command line. Report `reason` with `command`, and
-      spawn nothing. The pass command (`claude --model <model> -p "..."`) is
-      Claude Code's, today the one documented pass command; in another agent
-      tool the script answers `print`. Do not guess one for another agent
-      tool.
+      spawn nothing. The pass command is the documented one of the agent
+      tool this session runs in: Claude Code's (`claude --model <model> -p
+      "..."`) or Codex's (`codex exec … "Use the jig:drive-pr skill: …"`,
+      on `routing.models.codex`). A Codex session that cannot open a tab
+      gets `print`, since the background way is Claude Code's. In any other
+      agent tool the script answers `print`. Do not guess one for another
+      agent tool.
 
       **Always emit `command`**, the exact unattended drive command, in the
       end-of-run status message **and** in the tracker comment that links the
@@ -1062,9 +1092,10 @@ routing below remain **exact**.
         the PR's lock, so this spawn then meets step 3's exit `11`).
       - `print` → emit the command only, with `reason`: for an uncleared
         `hitl` checkpoint, starting review rounds would pre-empt the human
-        judgment; for another agent tool (Codex, for one), which has no
-        documented pass command today, a guessed command is worse than one
-        left for a human to run.
+        judgment; from a Codex session that cannot open a tab, the
+        background way is Claude Code's, so a person runs the command; for
+        an agent tool with no documented pass command, a guessed command is
+        worse than one left for a human to run.
 
       The drive works the draft immediately (some review bots review
       drafts, others skip them) and marks the PR Ready at the point

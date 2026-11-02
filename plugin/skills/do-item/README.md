@@ -9,6 +9,13 @@ human checkpoints, delegates the work, validates it, opens a draft pull
 request under the repository's policy and arms
 [`drive-pr`](../drive-pr/README.md). A person merges.
 
+Before the pull request opens, a review gate runs tiered checks over the
+change, skipped for a change under 20 non-test lines. Its semantic tier
+runs the same [review lenses](../review/README.md) as `/jig:review`, from a
+base snapshot of its own: each lens the diff triggers runs with fresh
+context, the gate's summary says why it skipped the others, and the lenses'
+warnings go into the pull request body under Review Notes.
+
 ## The item's spec
 
 Once it has the issue, it shows what the issue says must be built: the

@@ -29,6 +29,8 @@ import {
 
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+
 import { createFindingsFinishRoundFixtures } from "./drive-pr-findings-finish-round-fixtures.ts";
 
 useDrivePrSuite();
@@ -276,6 +278,133 @@ describe("finish-round.ts", () => {
       readFileSync(join(r.stateDir, "drive-pr-999.json"), "utf8"),
     ) as { ciHold: { phase: string; eventId: string } };
     expect(state.ciHold).toMatchObject({ phase: "held", eventId: "LE_3" });
+  });
+
+  // A hold this drive released on a head whose unlabel CI never ran: GitHub
+  // runs no `pull_request` workflow while the PR conflicts with its base, and
+  // the push waiting here is the conflict resolution. `sentinels` are the
+  // fixture switches to arm (`push-fails`, `push-resolves-conflict`,
+  // `no-mergeability`).
+  const releasedWithoutUnlabelCi = (
+    mergeable: string,
+    sentinels: string[] = [],
+  ) =>
+    finishRound({
+      fixture: { threads: [], mergeable },
+      seedState: async ({ stateDir, fixtureDir, cwd }) => {
+        for (const name of sentinels) writeFileSync(join(fixtureDir, name), "");
+        const head = Bun.spawnSync(["git", "rev-parse", "HEAD"], {
+          cwd,
+          env: gitCleanEnv(),
+        })
+          .stdout.toString()
+          .trim();
+        await seed(stateDir, fixtureDir, cwd, [
+          "set-ci-hold",
+          "999",
+          "--set",
+          "released",
+          "--event-id",
+          "LE_2",
+          "--head",
+          head,
+          "--actor-name",
+          "drive-user",
+          "--created-at",
+          "2026-09-10T10:00:00Z",
+          "--check-run-watermark",
+          "10000",
+        ]);
+        writeFileSync(
+          join(fixtureDir, "timeline.json"),
+          JSON.stringify(
+            [
+              ["labeled", "2026-09-10T09:59:00Z"],
+              ["unlabeled", "2026-09-10T10:00:00Z"],
+            ].map(([event, createdAt], index) => ({
+              node_id: `LE_${index + 1}`,
+              event,
+              label: { name: "ci:hold" },
+              actor: { login: "drive-user" },
+              created_at: createdAt,
+            })),
+          ),
+        );
+      },
+    });
+
+  it("pushes a conflicting PR's resolution without re-adding the hold its released head never got CI for", async () => {
+    const failed = await releasedWithoutUnlabelCi("CONFLICTING", [
+      "push-fails",
+      "push-resolves-conflict",
+    ]);
+    expectSpawnExit(failed, 1);
+    expect(failed.report.state).toBe("PUSH_FAILED");
+    expect(failed.stderr).toContain("conflicts with its base");
+    // No hold was taken for the push, so a failed one has none to roll back.
+    expect(failed.stderr).not.toContain("CI hold label");
+    rmSync(join(failed.fixtureDir, "push-fails"));
+    const r = await finishRound({
+      repo: failed.repo,
+      fixtureDir: failed.fixtureDir,
+      stateDir: failed.stateDir,
+    });
+    expectSpawnExit(r, 0);
+    expect(r.pushed).not.toBe("");
+    const timeline = JSON.parse(
+      readFileSync(join(r.fixtureDir, "timeline.json"), "utf8"),
+    ) as unknown[];
+    expect(timeline).toHaveLength(2);
+    const state = JSON.parse(
+      readFileSync(join(r.stateDir, "drive-pr-999.json"), "utf8"),
+    ) as { ciHold: Record<string, unknown> };
+    expect(state.ciHold).toMatchObject({ phase: "released", eventId: "LE_2" });
+  });
+
+  it("still waits for the unlabel CI on a released head GitHub can run it on, or whose mergeability it cannot read", async () => {
+    for (const [mergeable, sentinels] of [
+      ["MERGEABLE", []],
+      ["UNKNOWN", []],
+      ["CONFLICTING", ["no-mergeability"]],
+    ] as const) {
+      const r = await releasedWithoutUnlabelCi(mergeable, [...sentinels]);
+      expectSpawnExit(r, 4, `${mergeable} ${sentinels.join(" ")}`);
+      expect(r.report.state).toBe("CI_HOLD_WAIT");
+      expect(r.pushed).toBe("");
+      expect(r.stderr).toContain("triggered by the latest unlabel");
+    }
+  });
+
+  it("pushes a PR that has conflicted since it opened, before any CI ran on it, without taking the hold", async () => {
+    const r = await finishRound({
+      fixture: { threads: [], mergeable: "CONFLICTING" },
+      seedState: async ({ fixtureDir }) => {
+        writeFileSync(join(fixtureDir, "push-resolves-conflict"), "");
+        writeFileSync(join(fixtureDir, "timeline.json"), "[]");
+        // No required check ever ran; the reviewer's run stays.
+        const runsPath = join(fixtureDir, "check-runs.json");
+        const runs = JSON.parse(readFileSync(runsPath, "utf8")) as {
+          check_runs: Array<{ name: string }>;
+        };
+        runs.check_runs = runs.check_runs.filter(
+          (run) =>
+            !["code-quality-and-build", "tests", "Schema gate"].includes(
+              run.name,
+            ),
+        );
+        writeFileSync(runsPath, JSON.stringify(runs));
+      },
+    });
+    expectSpawnExit(r, 0);
+    expect(r.pushed).not.toBe("");
+    expect(r.stderr).toContain("conflicts with its base");
+    expect(
+      JSON.parse(readFileSync(join(r.fixtureDir, "timeline.json"), "utf8")),
+    ).toEqual([]);
+    const state = JSON.parse(
+      readFileSync(join(r.stateDir, "drive-pr-999.json"), "utf8"),
+    ) as { ciHold: unknown };
+    expect(state.ciHold).toBeNull();
   });
 
   it("recovers an interrupted acquisition followed by a human removal without wedging", async () => {

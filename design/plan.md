@@ -51,8 +51,9 @@ someone to notice, a merge waits for someone to run its follow-up. Nothing watch
 tracker or the pull requests for the next thing to start, so with nobody at
 the keyboard the line stops at the first stage boundary.
 [design/dark-factory-dispatch.md](dark-factory-dispatch.md) has how it
-works: `jig dispatch` in `plugin/dispatch/`, a stateless tick on a timer
-`jig dispatch install` writes, reads the items assigned to the repository's
+works: `jig dispatch` in `plugin/dispatch/`, a tick on a timer
+`jig dispatch install` writes, which keeps what it did in one SQLite
+database and nothing in memory between runs, reads the items assigned to the repository's
 factory identity in a dispatch state (through a new tracker-interface read,
 `assignedIssues(identity, states)`, and `assignedBy(key)` for who made the assignment, beside the unchanged pool query), the drive ledger on each
 pull request and the session runtime's list of running sessions; it
@@ -156,12 +157,37 @@ Built in this order:
    and not copied: `tools/plugin/setup.ts` keeps only a call into the
    plugin's code, so a first install from a checkout still works. `doctor`
    also runs the audit's configuration-fit check.
+4. **The timers keep the plugin current**: the launcher runs the installed
+   copy's `jig upgrade --scheduled` before each job and resolves the entry
+   again, so the job runs the copy the upgrade installed. The upgrade is on
+   by default (a machine that runs the dispatcher is the one with nobody at
+   the keyboard), follows the channel the machine installed from, and a pin
+   receives nothing. It runs at most once per `upgrade.every` (an hour)
+   whichever timer fires first, is a line in that job's receipt and in the
+   morning report, and when it fails it is reported, named by `jig doctor`,
+   and not tried again inside the interval. The launcher runs it from the
+   installed copy, never from itself, and the launcher copy is refreshed by
+   `jig upgrade` as step 3 has it. A versioned cache install puts each
+   version into its own directory, so a run already started keeps the files
+   it started with. A plugin loaded in place from a local marketplace has no
+   such directory: the scheduled upgrade skips it, reports the skip in the
+   job's receipt, and leaves updating it to the person who maintains that
+   folder. `jig install --no-upgrade`, or `upgrade: off` in the machine
+   file, opts a machine out.
 
 Done when `jig` on `PATH` installs, upgrades, checks and removes both
 components through the same verbs, `jig doctor` reports the plugin's
 installation and the repository's configuration fit, `tools/plugin/setup.ts`
-holds no logic of its own, and a job installed before the first step still
-runs on a machine that took every release since.
+holds no logic of its own, a job installed before the first step still
+runs on a machine that took every release since, two timers firing within
+one interval run the upgrade once and the job after it runs the newly
+installed copy, a failed upgrade is reported and withheld for the rest of
+the interval while the job still runs, a successful and a failed upgrade
+each appear in the job's receipt and the morning report and `jig doctor`
+names the failed one, a scheduled run on a plugin loaded
+in place from a local marketplace leaves that folder untouched, records the
+skip in the receipt and still runs the job, and a pinned machine or one with
+`upgrade: off` runs no upgrade.
 
 ### 3. The kickoff family
 
@@ -408,15 +434,11 @@ then become a plan item of its own or been dropped.
 
 ### 23. Seed review lenses
 
-M7 says how [review lenses](../GLOSSARY.md) are held but ships none, so
-nothing in `review` checks a change against the rules Jig's own modules
-state. [design/review-lenses.md](review-lenses.md) has how it works:
+`review` runs [review lenses](../GLOSSARY.md) from one file each, and
+ships the seed lens `jig.swallowed-failure` for M15; the other rules Jig's
+modules state that no gate can judge have none yet.
+[design/review-lenses.md](review-lenses.md) has how it works. What is left:
 
-- **The lens contract and the first lens**: one file per lens, selected by
-  what the diff adds or removes, run by `review`'s semantic tier with fresh
-  context, each finding carrying the evidence its lens asks for, and capped
-  at a warning; `review.lenses` configuration; `jig.swallowed-failure` for
-  M15.
 - **`jig.test-gap`** for M14.
 - **`jig.stale-comment`**, after M4 gains its rule for comments in code.
 - **`jig.type-invariants`**, after M15 gains its rule for types.

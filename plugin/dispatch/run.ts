@@ -7,10 +7,14 @@
  * It claims its launch record atomically, so a second terminal started for
  * a record already claimed (a launch retried under the same record) exits
  * without starting anything. It then starts
- * `drive.ts <PR> [--take-over] --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"`
- * in the pull request's workspace, with the account's configuration
- * directory set and the credential variables removed, so the pass bills the
- * account the tick admitted. When the drive ends it records the exit, and an
+ * `drive.ts <PR> [--take-over] --bots-only --pass-timeout <s> -- <pass>` in
+ * the pull request's workspace, the pass being the documented pass command
+ * of the account's vendor (`claude -p "/jig:drive-pr --bots-only <PR>"`, or
+ * Codex's `codex exec …`) and the deadline the one the tick admitted it
+ * under, with the account's configuration directory set (`CLAUDE_CONFIG_DIR`
+ * or `CODEX_HOME`) and the credential variables and the other directory
+ * variable removed, so the pass bills the account the tick admitted. When
+ * the drive ends it records the exit, and an
  * exit `16` (a usage-limit wall) writes the account's wall: the reset the
  * drive recorded, else `wall_backoff` from now.
  *
@@ -20,19 +24,29 @@
  * process's environment; the tick runs it in the wrapper's environment
  * before a launch.
  *
- * A pickup's record starts Claude Code instead, interactively, on
- * `/jig:do-item <key>` with its route's model and effort, and a follow-up's
- * on the repository's follow-up command and the pull request
- * (`lib/session.ts`), bound to its account the same way; its exit is
- * recorded, and no wall is written for it.
+ *   bun … run.ts quota <session-id> <cwd> <since>
  *
- * Exit codes: the drive's own; 2 usage or a token that is not the record's;
- * 3 the record was already claimed, so nothing started.
+ * prints, as JSON, the usage-limit wall the interactive session
+ * `<session-id>` met since `<since>`, read with the drive's quota adapters
+ * from the configuration directory in this process's environment, or
+ * `null` (`lib/quota-probe.ts`); the tick runs it in the session's
+ * account's environment.
+ *
+ * A pickup's record starts its vendor's agent instead (Claude Code or
+ * Codex), interactively, on `/jig:do-item <key>` with its route's model and
+ * effort, and a follow-up's on the repository's follow-up command and the
+ * pull request (`lib/session.ts`), bound to its account the same way; its
+ * exit is recorded, and no wall is written for it.
+ *
+ * Exit codes: the drive's own; 2 usage, a token that is not the record's,
+ * or a state database a newer plugin wrote; 3 the record was already
+ * claimed, so nothing started.
  */
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { swallow } from "../shared/errors.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
+import { passCommand } from "../skills/drive-pr/scripts/lib/pass-command.ts";
 import { run } from "../shared/proc.ts";
 import {
   driveState,
@@ -44,10 +58,12 @@ import {
   isDrive,
   type LaunchRecord,
   ownIdentity,
-  readRecordFile,
+  readRecord,
   recordExit,
 } from "./lib/launches.ts";
+import { probeWall } from "./lib/quota-probe.ts";
 import { sessionArgv } from "./lib/session.ts";
+import { StateVersionError } from "./lib/state.ts";
 import { writeWall } from "./lib/walls.ts";
 
 /** `drive.ts`'s exit for a usage-limit wall it cannot wait out. */
@@ -57,9 +73,14 @@ const FORWARDED = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
 const BUNFIG = resolve(import.meta.dir, "bunfig.toml");
 
-/** The drive command a record starts, under the same trusted startup as this wrapper. */
+/**
+ * The drive command a record starts, under the same trusted startup as this
+ * wrapper: the documented pass command of the record's vendor, under the
+ * pass deadline the record was admitted with.
+ */
 function driveCommand(record: LaunchRecord, script: string): string[] {
   const pr = String(record.pr);
+  const deadline = record.passTimeoutSec;
   return [
     process.execPath,
     "--no-env-file",
@@ -68,10 +89,11 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
     pr,
     ...(record.action === "takeover" ? ["--take-over"] : []),
     "--bots-only",
+    ...(typeof deadline === "number"
+      ? ["--pass-timeout", String(deadline)]
+      : []),
     "--",
-    "claude",
-    "-p",
-    `/jig:drive-pr --bots-only ${pr}`,
+    ...passCommand(record.vendor, pr),
   ];
 }
 
@@ -188,7 +210,7 @@ async function wallRecorded(
 }
 
 async function wrap(id: string, token: string): Promise<number> {
-  const record = readRecordFile(id);
+  const record = readRecord(id);
   if (record === null || record.token !== token) {
     console.error(
       `jig dispatch run: ${id} is not a launch record with that token`,
@@ -236,13 +258,31 @@ export async function runMain(argv: string[]): Promise<number> {
     console.log(JSON.stringify(resolveAccountIdentity([argv[1] as string])));
     return 0;
   }
+  if (argv[0] === "quota" && argv.length === 4) {
+    const [, session, cwd, since] = argv as [string, string, string, string];
+    if (!Number.isFinite(Date.parse(since))) {
+      console.error(`jig dispatch run: ${since} is not a date`);
+      return 2;
+    }
+    console.log(
+      JSON.stringify(probeWall(session, cwd, new Date(since), new Date())),
+    );
+    return 0;
+  }
   if (argv.length !== 2) {
     console.error(
-      "usage: run.ts <record> <token> | run.ts identity claude|codex",
+      "usage: run.ts <record> <token> | run.ts identity claude|codex | run.ts quota <session-id> <cwd> <since>",
     );
     return 2;
   }
-  return wrap(argv[0] as string, argv[1] as string);
+  try {
+    return await wrap(argv[0] as string, argv[1] as string);
+  } catch (error) {
+    // A state database a newer plugin wrote: nothing is started.
+    if (!(error instanceof StateVersionError)) throw error;
+    console.error(`jig dispatch run: ${error.message}`);
+    return 2;
+  }
 }
 
 if (import.meta.main) process.exitCode = await runMain(process.argv.slice(2));

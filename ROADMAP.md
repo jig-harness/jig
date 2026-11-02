@@ -53,9 +53,12 @@ resource collection (`jig gc`) and the dispatcher (`jig dispatch`) as its
 `doctor`, `status` and `receipts`. `jig doctor` checks the plugin's
 installation and runs the audit's check that a repository's configuration
 fits it, and `jig upgrade` replaces the setup script a machine runs from a
-Jig checkout. Help for every command and shell completion come from the
-same definitions that parse the command line, and the jobs a machine
-already installed keep running unchanged.
+Jig checkout. The installed timers run that upgrade themselves, at most
+once an hour and on by default, so a machine that runs the dispatcher stays
+on its channel's newest version with nobody at the keyboard; a pinned
+machine receives nothing. Help for every command and shell completion come
+from the same definitions that parse the command line, and the jobs a
+machine already installed keep running unchanged.
 
 ### 3. The kickoff family
 
@@ -144,10 +147,11 @@ other than GitHub.
 
 ### 23. Seed review lenses
 
-[`review`](plugin/skills/review/SKILL.md) gains a set of
-[review lenses](GLOSSARY.md), each the review form of one rule a module
-states: no swallowed failure ([M15](modules/M15-contracts-errors/README.md)),
-a test for each changed behaviour ([M14](modules/M14-testing-strategy/README.md)),
+[`review`](plugin/skills/review/SKILL.md) runs [review lenses](GLOSSARY.md)
+from one file each, and ships the lens for no swallowed failure
+([M15](modules/M15-contracts-errors/README.md)); the other rules Jig's
+modules state that no gate can judge have none yet. Still to come: a test for
+each changed behaviour ([M14](modules/M14-testing-strategy/README.md)),
 comments that say what the code does now ([M4](modules/M4-docs-governance/README.md)),
 and types that admit no invalid value (M15). Each runs only when the diff
 gives it something to check, comments until measurement shows it may block,
