@@ -131,9 +131,13 @@ describe("jig dispatch --apply picks up assigned items", () => {
       },
     ]);
     writeFileSync(join(w.dir, "prs-merged-fail"), "");
-    // The tick reports the failed read in its status; the bookkeeping is what matters here.
     await waitFor("the wrapper", () => claudeRuns(w).length === 1);
-    await w.dispatch([], join(w.root, "bound-tick.ts"));
+    const r = await w.dispatch([], join(w.root, "bound-tick.ts"));
+    expectSpawnExit(r, 1);
+    const receipt = JSON.parse(r.stdout) as TickReceipt;
+    expect(receipt.repos[0]?.records).toContainEqual(
+      expect.objectContaining({ record: "forge", ok: false }),
+    );
     expect(readRecord(id, dispatchState(w))?.openedAt).toBeDefined();
   });
 
