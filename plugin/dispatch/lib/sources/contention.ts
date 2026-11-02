@@ -14,11 +14,7 @@ import {
   readContention,
   UNREAD_CONTENTION,
 } from "../contention.ts";
-import {
-  defaultBranchFile,
-  pullRequestFiles,
-  unresolvedThreadCount,
-} from "../forge.ts";
+import { defaultBranchFile, pullRequestFiles } from "../forge.ts";
 import type { ReadRecord } from "../launches.ts";
 import { settleHolds } from "../serial-holds.ts";
 import type { DrivenPr, RepoReport, RepoTarget } from "../types.ts";
@@ -64,6 +60,7 @@ export async function observeContention(
   forge: ForgeView,
   launches: readonly ReadRecord[],
   nowMs: number,
+  threads: (pr: number) => Promise<number>,
 ): Promise<Contention> {
   if (!forge.ok) return UNREAD_CONTENTION;
   const merged = new Set(forge.merged.map((m) => m.number));
@@ -81,7 +78,7 @@ export async function observeContention(
     {
       catalog: async (p) => defaultBranchFile(repo, repositoryPath(p)),
       files: (pr) => pullRequestFiles(repo.slug, pr),
-      threads: (pr) => unresolvedThreadCount(repo.slug, pr),
+      threads,
     },
   );
   if (path !== null)

@@ -83,6 +83,28 @@ describe("serialization's decision", () => {
     expect(c.held.get(5)).toEqual({ area: "migrations", leader: 3 });
   });
 
+  it("orders members the same whatever the input order when some creation times are unknown", async () => {
+    const created = new Map([
+      [1, "2026-03-01T00:00:00Z"],
+      [3, "2026-01-01T00:00:00Z"],
+    ]);
+    const orders = new Set<string>();
+    for (const drives of [
+      [drive(1), drive(2), drive(3)],
+      [drive(3), drive(1), drive(2)],
+      [drive(2), drive(3), drive(1)],
+    ]) {
+      const c = await readContention(
+        { ...input(drives), created },
+        reads({ 1: ["db/1"], 2: ["db/2"], 3: ["db/3"] }, { 1: 0, 2: 0, 3: 0 }),
+      );
+      orders.add(
+        (c.report?.groups[0]?.order ?? []).map((o) => o.target).join(","),
+      );
+    }
+    expect([...orders]).toEqual(["PR #3,PR #1,PR #2"]);
+  });
+
   it("holds a pull request in two groups unless it leads both", async () => {
     const c = await readContention(
       input([drive(1), drive(2), drive(3)]),

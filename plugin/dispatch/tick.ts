@@ -45,7 +45,6 @@ import {
   pullRequestLabels,
   openPullRequests,
   repoTarget,
-  unresolvedThreadCount,
 } from "./lib/forge.ts";
 import {
   applySteers,
@@ -53,7 +52,11 @@ import {
   readNudges,
   settlePending,
 } from "./lib/actions/steer.ts";
-import { observeOpened, sampleThreads } from "./lib/expectations.ts";
+import {
+  observeOpened,
+  sampleThreads,
+  tickThreadReader,
+} from "./lib/expectations.ts";
 import { logEnded } from "./lib/log-ended.ts";
 import { observeWalls } from "./lib/session-walls.ts";
 import type { Tracker } from "../skills/do-item/scripts/lib/tracker/port.ts";
@@ -244,7 +247,16 @@ async function gatherRepo(
   });
 
   const { created } = forge;
-  await observeRunning(context, repo, report, drives, sessions, created);
+  const threads = tickThreadReader(repo.slug);
+  await observeRunning(
+    context,
+    repo,
+    report,
+    drives,
+    sessions,
+    created,
+    threads,
+  );
   const serialized = await observeContention(
     repo,
     values,
@@ -252,6 +264,7 @@ async function gatherRepo(
     forge,
     allRecords(context),
     nowMs,
+    threads,
   );
   const held = heldPullRequests(labels, [...open, ...merged]);
   const { inScope } = forge;
@@ -577,11 +590,10 @@ async function observeRunning(
   drives: Awaited<ReturnType<typeof readDrives>>,
   sessions: SessionsReport,
   created: ReadonlyMap<number, string>,
+  threads: (pr: number) => Promise<number>,
 ): Promise<void> {
   const records = allRecords(context);
-  await sampleThreads(records, repo.slug, drives, (pr) =>
-    unresolvedThreadCount(repo.slug, pr),
-  );
+  await sampleThreads(records, repo.slug, drives, threads);
   observeOpened(records, repo.slug, sessions, created);
   const timeoutSec = Math.ceil(
     (context.options.machine?.runtimeTimeoutMs ?? 60_000) / 1000,
