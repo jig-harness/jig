@@ -283,23 +283,28 @@ function launcherCheck(
       );
 }
 
-async function commandCheck(runtime: Runtime): Promise<DoctorCheck> {
+async function commandCheck(
+  runtime: Runtime,
+  script: string,
+): Promise<DoctorCheck> {
   const text = installedCommandText();
   if (text === null)
     return skip("command:launcher", "the jig command is not installed");
-  const script = commandScriptCall(text);
-  const call = script === null ? null : launcherCall(script.command);
+  const installed = commandScriptCall(text);
+  const call = installed === null ? null : launcherCall(installed.command);
+  // The launcher is the thing that is broken, so the repair runs the plugin copy this doctor runs from.
+  const fix = `bun "${script}" install --yes`;
   if (call === null)
     return fail(
       "command:launcher",
       "cannot read the command the installed jig script runs",
-      "jig install --yes",
+      fix,
     );
   if (Object.keys(call.programs).length === 0)
     return fail(
       "command:launcher",
       "the installed jig script's command names no agent tool",
-      "jig install --yes",
+      fix,
     );
   const problems = [
     programProblem(call.bun, false),
@@ -308,7 +313,7 @@ async function commandCheck(runtime: Runtime): Promise<DoctorCheck> {
     ),
   ].filter((problem) => problem !== null);
   if (problems.length > 0)
-    return fail("command:launcher", problems.join("; "), "jig install --yes");
+    return fail("command:launcher", problems.join("; "), fix);
   return launcherCheck(
     "command:launcher",
     commandLauncherDirectory(),
@@ -591,7 +596,7 @@ async function doctorChecks(options: {
     bunCheck(),
     ...HARNESSES.map(pathCheck),
     ...pluginChecks(),
-    await commandCheck(runtime),
+    await commandCheck(runtime, options.script),
   ];
   for (const component of options.components)
     if (options.names.length === 0 || options.names.includes(component.name))
