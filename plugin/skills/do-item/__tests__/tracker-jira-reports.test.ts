@@ -658,6 +658,7 @@ describe("Jira adapter: assignments", () => {
       driveRoundsFlat: 3,
       pickupWithinMs: 7_200_000,
       followupWithinMs: 3_600_000,
+      labels: { enabled: false, prefix: "jig:", onlyLabeled: false },
     };
     const member = await readPickups(() => jira(assigned(MEMBER)).t, section);
     expect(member.read.ok).toBe(true);

@@ -579,8 +579,13 @@ findings not yet filed, with the `file-deferred.ts` command that files them.
 Where the [dispatcher](../../README.md#the-dispatcher) runs on the machine,
 it then lists what the dispatcher did over the same time, from its tick
 receipts: the sessions it launched, the launches it refused, and the
-notifications it sent (a refusal repeated tick after tick is listed once).
-`--json` prints the same as data, the dispatcher's part under `dispatch`.
+notifications it sent (a refusal repeated tick after tick is listed once),
+and, for a repository that turns
+[dispatch labels](../../CONFIGURATION.md#dispatch) on, how many pull
+requests its latest run projected each label for (the labels it wanted,
+not read back after its writes).
+`--json` prints the same as data, the dispatcher's part under `dispatch`
+and the label counts under `dispatchLabels`.
 
 Where your repository has a pre-merge follow-up step, have its list include
 the pull request's provisional decisions, so the person merging reads each

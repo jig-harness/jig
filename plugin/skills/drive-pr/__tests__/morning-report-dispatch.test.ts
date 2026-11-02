@@ -225,4 +225,41 @@ describe("drives.ts --report: what the dispatcher did", () => {
     expectSpawnExit(r, 0);
     expect(JSON.parse(r.stdout).unread).toHaveLength(1);
   });
+
+  it("counts the pull requests per dispatch label at each repository's latest run", async () => {
+    const labelled = repo({
+      labels: {
+        prefix: "jig:",
+        onlyLabeled: false,
+        unlabeled: 0,
+        states: [
+          { target: "PR #7", state: "driving" },
+          { target: "PR #8", state: "driving" },
+          { target: "PR #9", state: "converged" },
+          { target: "PR #10", state: "unknown" },
+          { target: "PR #11", state: null },
+        ],
+        commands: [{ target: "PR #7", command: "hold", note: "a hold" }],
+        held: [],
+        writes: [],
+      },
+    });
+    const forge = setUp([labelled]);
+    const json = await report(forge, ["--json"]);
+    expectSpawnExit(json, 0);
+    const out = JSON.parse(json.stdout);
+    expect(out.unread).toEqual([]);
+    expect(out.dispatchLabels).toMatchObject([
+      {
+        repo: "example-org/example-repo",
+        counts: { "jig:driving": 2, "jig:converged": 1, "jig:hold": 1 },
+      },
+    ]);
+    // A report moves the next one's start, so the text reads a home of its own.
+    const text = await report(setUp([labelled]), []);
+    expectSpawnExit(text, 0);
+    expect(text.stdout).toContain(
+      "example-org/example-repo: jig:driving 2, jig:converged 1, jig:hold 1",
+    );
+  });
 });
