@@ -1,0 +1,21 @@
+import { describe, expect, test } from "bun:test";
+import { orcaNotify } from "../lib/runtime/orca-notify.ts";
+
+describe("notify on Orca", () => {
+  test("writes nothing, and says so, when another writer holds the card's comment lock", async () => {
+    const asked: string[] = [];
+    const receipt = await orcaNotify(
+      { id: "w1", path: "/ws/app/feat-x" },
+      "[jig dispatch: k]\nPR #4 parked",
+      1000,
+      async (workspace) => {
+        asked.push(workspace);
+        return null;
+      },
+    );
+    expect(asked).toEqual(["/ws/app/feat-x"]);
+    expect(receipt.ok).toBe(false);
+    expect(receipt).toMatchObject({ ok: false, lost: false });
+    expect(receipt.detail).toContain("lock");
+  });
+});

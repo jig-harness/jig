@@ -5,11 +5,15 @@
  * as an unread workspace with its comment. The comment is then read back
  * (`orca worktree show`): that read is the receipt, and the tick counts a
  * message as sent only once it finds the message's key in it. Each call
- * runs under the runtime's deadline; an answer past it is lost.
+ * runs under the runtime's deadline; an answer past it is lost. The write
+ * and the read-back hold the card's comment lock, shared with the skills'
+ * board helper; a lock not taken in time sends nothing, and the receipt says
+ * so (not lost: nothing was written).
  */
 import { orcaCommand, orcaEnvelope } from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
+import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
 import type { RuntimeReceipt } from "./port.ts";
 
 function seconds(ms: number): number {
@@ -55,6 +59,27 @@ function commentOf(result: unknown): string | null {
 }
 
 export async function orcaNotify(
+  target: { id: string; path: string },
+  message: string,
+  timeoutMs: number,
+  lock: CardLock = withCardLock,
+): Promise<RuntimeReceipt> {
+  // The write and its read-back hold the card's lock, the one every comment
+  // writer takes (`shared/orca-card-lock.ts`), so no writer's read-then-write
+  // falls between them.
+  const locked = await lock(target.path, () =>
+    notifyUnlocked(target, message, timeoutMs),
+  );
+  return (
+    locked?.value ?? {
+      ok: false,
+      lost: false,
+      detail: `${target.path}: another writer held the card's comment past the lock's deadline; nothing written`,
+    }
+  );
+}
+
+async function notifyUnlocked(
   target: { id: string; path: string },
   message: string,
   timeoutMs: number,

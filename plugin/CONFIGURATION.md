@@ -532,6 +532,9 @@ request, and `drive-pr` to `in_review` when it marks the pull request Ready;
 `completed` is the stage a post-merge step moves it to. A drive that stops where a
 person must look (a park, a usage-limit stop, a failure stop) marks the card
 unread with the stop's one-line reason as its comment, and moves no column.
+A comment never replaces one a person has not read: while the card is
+unread, the new line is appended to its comment, which Jig's dispatcher
+notifications do too, under one lock per card.
 Outside Orca nothing is read or called, and an Orca failure only warns.
 
 | Field | Type | When absent | Read by | What it does |

@@ -24,6 +24,11 @@ const current = JSON.stringify({ ok: true, result: { worktree: { id: ID } } });
 const set = current;
 const setArgs = (...flags: string[]) =>
   ["worktree set --worktree", `id:${ID}`, ...flags, "--json"].join(" ");
+const showArgs = `worktree show --worktree id:${ID} --json`;
+const unreadCard = JSON.stringify({
+  ok: true,
+  result: { worktree: { id: ID, comment: "an earlier note", isUnread: true } },
+});
 
 const HITL_PARKED_EXIT = 8;
 const REVIEWER_FAILED_EXIT = 7;
@@ -148,13 +153,16 @@ describe("in an Orca terminal", () => {
     } = deps(
       {
         "worktree current --json": current,
-        [setArgs("--unread", "--comment", comment)]: set,
+        [showArgs]: unreadCard,
+        [setArgs("--unread", "--comment", `an earlier note\n${comment}`)]: set,
       },
       parkedState("Which release carries it?"),
     );
     await cardOnStop("42", HITL_PARKED_EXIT, d);
     expect(reads).toEqual(["42"]);
-    expect(calls[1]).toBe(setArgs("--unread", "--comment", comment));
+    expect(calls[2]).toBe(
+      setArgs("--unread", "--comment", `an earlier note\n${comment}`),
+    );
   });
 
   test("a failure stop marks the card unread without reading the drive state", async () => {
@@ -166,11 +174,12 @@ describe("in an Orca terminal", () => {
       deps: d,
     } = deps({
       "worktree current --json": current,
+      [showArgs]: current,
       [setArgs("--unread", "--comment", comment)]: set,
     });
     await cardOnStop("42", REVIEWER_FAILED_EXIT, d);
     expect(reads).toEqual([]);
-    expect(calls[1]).toBe(setArgs("--unread", "--comment", comment));
+    expect(calls[2]).toBe(setArgs("--unread", "--comment", comment));
   });
 
   test("a converged drive moves nothing", async () => {

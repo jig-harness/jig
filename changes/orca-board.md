@@ -13,6 +13,11 @@ release: minor
   Orca Mobile shows what is waiting. Outside Orca nothing is called, and an
   Orca failure only warns
   ([drive-pr](../plugin/skills/drive-pr/README.md)).
+- A card's comment never replaces one a person has not read: while the card
+  is unread, a new comment from the board script or a dispatcher
+  notification is appended to it, the read and the write held under one
+  lock per card; a writer that cannot take the lock within a few seconds
+  warns and writes nothing.
 - `orca.board` in `.config/jig.yaml` maps the board stages (`in_progress`,
   `in_review`, `completed`) onto a board's custom columns; a repository that
   sets nothing keeps Orca's own columns

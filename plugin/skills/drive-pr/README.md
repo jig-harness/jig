@@ -640,6 +640,8 @@ linked. When it stops on something you must look at (a park, a usage-limit
 stop, or a failure stop such as a failed reviewer check, a stall or a spent
 round budget), the card is marked unread with the stop's one-line reason as
 its comment, a park's question first, so Orca Mobile shows what is waiting.
+While the card is still unread, the reason is appended to its comment rather
+than replacing what a person has not read yet.
 A converged drive moves nothing; [`orca.board`](../../CONFIGURATION.md#orca)
 maps the stages onto custom columns. Outside Orca nothing is called, and an
 Orca failure only warns.

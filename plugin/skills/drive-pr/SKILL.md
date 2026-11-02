@@ -168,12 +168,14 @@ consumer polling `--json` for one of these states will never see it there.
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
 In an [Orca](https://www.onorca.dev) worktree, `drive.ts` shows a stop a
-person must settle on the workspace card: a park, a usage-limit stop and every failure stop (an operational failure, a usage
-error, the round budget spent, a failed reviewer check, an unworkable
-conflict, an unclean converged worktree, a stall, a recurring pass deadline)
-mark the card unread with the stop's one-line reason as its comment, the
-park's question first among them. A converged drive, a closed pull request, a
-stop a person asked for and a drive another driver holds move nothing
+person must settle on the workspace card: a park, a usage-limit stop and
+every failure stop (an operational failure, a usage error, the round budget
+spent, a failed reviewer check, an unworkable conflict, an unclean converged
+worktree, a stall, a recurring pass deadline) mark the card unread with the
+stop's one-line reason as its comment, the park's question first among them;
+on a card still unread, the reason is appended to the comment a person has
+not read yet. A converged drive, a closed pull request, a stop a person asked
+for and a drive another driver holds move nothing
 (`scripts/lib/driver/orca-card.ts`). Outside Orca nothing is called, and an
 Orca failure only warns; the exit is the stop's own either way.
 

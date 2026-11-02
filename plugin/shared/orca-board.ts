@@ -22,9 +22,14 @@
  * Nothing turns it on: it acts only when the session runs in a terminal Orca
  * opened (Orca puts its command in `ORCA_CLI_COMMAND`, or its directory in
  * `ORCA_CLI_BIN_DIR`) and Orca knows the working directory as one of its
- * worktrees (`orca worktree current`). Outside Orca it makes no call and
- * reads no configuration. The board is a convenience, so every Orca failure,
- * and an `orca.board` it cannot read, only warns and the exit is 0; only a
+ * worktrees (`orca worktree current`). A comment never replaces one a person
+ * has not read: while the card is unread, the new comment is appended to its
+ * comment, read and written under the card's lock (`orca-card-lock.ts`),
+ * which the dispatcher's notifications take too.
+ *
+ * Outside Orca it makes no call and reads no configuration. The board is a
+ * convenience, so every Orca failure, a lock not taken in time and an
+ * `orca.board` it cannot read only warn and the exit is 0; only a
  * malformed command line exits 2.
  */
 import { fail, isDigits, runMain } from "./cli.ts";
@@ -37,6 +42,7 @@ import {
   orcaResult,
   runOrca,
 } from "./orca.ts";
+import { type CardLock, withCardLock } from "./orca-card-lock.ts";
 
 const USAGE =
   "usage: orca-board.ts [in-progress|in-review|completed] [--pr <number>] [--unread] [--comment <text>]";
@@ -213,18 +219,118 @@ function setArgs(
 }
 
 /** What an update set, for the line it reports. */
-function described(update: BoardUpdate, status: string | undefined): string {
+function described(
+  update: BoardUpdate,
+  status: string | undefined,
+  appended: boolean,
+): string {
   return [
     ...(status === undefined ? [] : [status]),
     ...(update.pr === undefined ? [] : [`PR #${update.pr} linked`]),
     ...(update.unread === true ? ["marked unread"] : []),
-    ...(update.comment === undefined ? [] : ["comment set"]),
+    ...(update.comment === undefined
+      ? []
+      : [appended ? "comment appended" : "comment set"]),
   ].join(", ");
 }
 
 /**
+ * The comment to write: while the card is unread, its comment is one a
+ * person has not read, so the new line is appended to it (once); otherwise
+ * the new comment replaces it.
+ */
+export function mergedComment(
+  existing: string | null,
+  unread: boolean,
+  comment: string,
+): string {
+  if (!unread || existing === null || existing.trim() === "") return comment;
+  if (existing.split("\n").includes(comment)) return existing;
+  return `${existing}\n${comment}`;
+}
+
+/** The workspace path an Orca worktree id names (`<repo id>::<path>`). */
+function workspacePath(id: string): string {
+  const at = id.indexOf("::");
+  return at < 0 ? id : id.slice(at + 2);
+}
+
+/** The card's comment and unread mark, or a warning when they cannot be read. */
+async function readCard(
+  command: string,
+  runner: OrcaRunner,
+  id: string,
+): Promise<{ comment: string | null; unread: boolean } | { warning: string }> {
+  const done = await runner(command, [
+    "worktree",
+    "show",
+    "--worktree",
+    `id:${id}`,
+    "--json",
+  ]);
+  const worktree = orcaResult(done)?.worktree;
+  if (typeof worktree !== "object" || worktree === null)
+    return {
+      warning: `⚠ could not read the card's comment ${orcaFailure(done)}`,
+    };
+  const card = worktree as Record<string, unknown>;
+  return {
+    comment: typeof card.comment === "string" ? card.comment : null,
+    unread: card.isUnread === true,
+  };
+}
+
+/** Write `update` to the card `id`; returns the line to report. */
+async function writeCard(
+  command: string,
+  runner: OrcaRunner,
+  id: string,
+  update: BoardUpdate,
+  status: string | undefined,
+  appended = false,
+): Promise<string> {
+  const done = await runner(command, setArgs(id, update, status));
+  if (orcaResult(done) === null)
+    return `orca-board: ⚠ could not update the card ${orcaFailure(done)}`;
+  return `orca-board: ${described(update, status, appended)}`;
+}
+
+/**
+ * Write a comment under the card's lock: read the card, append to the
+ * comment of an unread card, write. A lock not taken in time skips the
+ * write with a warning.
+ */
+async function writeComment(
+  command: string,
+  runner: OrcaRunner,
+  id: string,
+  update: BoardUpdate & { comment: string },
+  status: string | undefined,
+  lock: CardLock,
+): Promise<string> {
+  const locked = await lock(workspacePath(id), async () => {
+    const card = await readCard(command, runner, id);
+    if ("warning" in card) return `orca-board: ${card.warning}; nothing set`;
+    const comment = mergedComment(card.comment, card.unread, update.comment);
+    return await writeCard(
+      command,
+      runner,
+      id,
+      { ...update, comment },
+      status,
+      comment !== update.comment,
+    );
+  });
+  return (
+    locked?.value ??
+    "orca-board: ⚠ another writer held the card's comment past the lock's deadline; nothing set"
+  );
+}
+
+/**
  * Apply `update` to the working directory's card: its stage's column, the
- * linked pull request, the unread mark and the comment. Returns the line to
+ * linked pull request, the unread mark and the comment, which is appended to
+ * an unread card's comment rather than replacing it. Returns the line to
  * report: what was set, or why nothing was; a failure is that warning, never
  * a throw.
  */
@@ -233,6 +339,7 @@ export async function updateBoard(
   env: Record<string, string | undefined> = process.env,
   runner: OrcaRunner = runOrca,
   config: () => Record<string, unknown> = readConfig,
+  lock: CardLock = withCardLock,
 ): Promise<string> {
   const command = orcaCommand(env);
   if (command === null) return "orca-board: not in Orca; nothing to do";
@@ -249,10 +356,17 @@ export async function updateBoard(
   if (current === "none")
     return "orca-board: Orca does not list this directory as a worktree; nothing to do";
   if ("warning" in current) return `orca-board: ${current.warning}`;
-  const done = await runner(command, setArgs(current.id, update, status));
-  if (orcaResult(done) === null)
-    return `orca-board: ⚠ could not update the card ${orcaFailure(done)}`;
-  return `orca-board: ${described(update, status)}`;
+  const { comment } = update;
+  return comment === undefined
+    ? await writeCard(command, runner, current.id, update, status)
+    : await writeComment(
+        command,
+        runner,
+        current.id,
+        { ...update, comment },
+        status,
+        lock,
+      );
 }
 
 if (import.meta.main)

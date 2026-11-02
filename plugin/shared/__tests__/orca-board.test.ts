@@ -2,12 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { ExitError } from "../cli.ts";
 import { orcaAnswering } from "../../../lib/test-helpers/orca-answering.ts";
 import type { OrcaRunner } from "../orca.ts";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   BOARD_STAGES,
   boardColumns,
+  mergedComment,
   parseArgs,
   updateBoard,
 } from "../orca-board.ts";
+import { withCardLock } from "../orca-card-lock.ts";
 
 const ORCA = { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
 const ID = "repo-1::/ws/app/feat-x";
@@ -17,6 +22,9 @@ const current = JSON.stringify({ ok: true, result: { worktree: { id: ID } } });
 const set = JSON.stringify({ ok: true, result: { worktree: { id: ID } } });
 const setArgs = (...flags: string[]) =>
   ["worktree set --worktree", `id:${ID}`, ...flags, "--json"].join(" ");
+const showArgs = `worktree show --worktree id:${ID} --json`;
+const shown = (card: { comment: string; isUnread: boolean }) =>
+  JSON.stringify({ ok: true, result: { worktree: { id: ID, ...card } } });
 
 describe("outside Orca", () => {
   test("makes no call and reads no configuration", async () => {
@@ -63,12 +71,107 @@ describe("in an Orca terminal", () => {
     const comment = "PR #42 parked: which release carries it?";
     const { calls, runner } = orcaAnswering({
       "worktree current --json": current,
+      [showArgs]: shown({ comment: "older note", isUnread: false }),
       [setArgs("--unread", "--comment", comment)]: set,
     });
     expect(
       await updateBoard({ unread: true, comment }, ORCA, runner, noConfig),
     ).toBe("orca-board: marked unread, comment set");
-    expect(calls[1]).toBe(setArgs("--unread", "--comment", comment));
+    expect(calls).toEqual([
+      "worktree current --json",
+      showArgs,
+      setArgs("--unread", "--comment", comment),
+    ]);
+  });
+
+  test("appends to the comment of a card a person has not read", async () => {
+    const comment = "PR #42 parked: which release carries it?";
+    const both = `[jig dispatch: x]\nPR #41 waits\n${comment}`;
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": current,
+      [showArgs]: shown({
+        comment: "[jig dispatch: x]\nPR #41 waits",
+        isUnread: true,
+      }),
+      [setArgs("--unread", "--comment", both)]: set,
+    });
+    expect(
+      await updateBoard({ unread: true, comment }, ORCA, runner, noConfig),
+    ).toBe("orca-board: marked unread, comment appended");
+    expect(calls[2]).toBe(setArgs("--unread", "--comment", both));
+  });
+
+  test("replaces the comment of a card that is not unread", async () => {
+    const comment = "merged; released as v0.121.0";
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": current,
+      [showArgs]: shown({ comment: "PR #42 parked: why?", isUnread: false }),
+      [setArgs("--workspace-status", "completed", "--comment", comment)]: set,
+    });
+    expect(
+      await updateBoard(
+        { stage: "completed", comment },
+        ORCA,
+        runner,
+        noConfig,
+      ),
+    ).toBe("orca-board: completed, comment set");
+    expect(calls[2]).toBe(
+      setArgs("--workspace-status", "completed", "--comment", comment),
+    );
+  });
+
+  test("does not append a line the unread comment already holds", () => {
+    expect(mergedComment("a\nb", true, "b")).toBe("a\nb");
+    expect(mergedComment("a", true, "b")).toBe("a\nb");
+    expect(mergedComment("a", false, "b")).toBe("b");
+    expect(mergedComment(null, true, "b")).toBe("b");
+    expect(mergedComment("  ", true, "b")).toBe("b");
+  });
+
+  test("writes nothing when the card cannot be read", async () => {
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": current,
+      [showArgs]: JSON.stringify({ ok: false, error: { code: "boom" } }),
+    });
+    expect(
+      await updateBoard(
+        { comment: "PR #4 parked: why?" },
+        ORCA,
+        runner,
+        noConfig,
+      ),
+    ).toContain("⚠ could not read the card's comment (exit 1)");
+    expect(calls).toEqual(["worktree current --json", showArgs]);
+  });
+
+  test("warns and writes nothing when another writer holds the card's lock", async () => {
+    const root = mkdtempSync(join(tmpdir(), "orca-card-lock-"));
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": current,
+    });
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    const { promise: holding, resolve: taken } = Promise.withResolvers<void>();
+    const holder = withCardLock(
+      "/ws/app/feat-x",
+      async () => {
+        taken();
+        await held;
+      },
+      { root },
+    );
+    await holding;
+    const line = await updateBoard(
+      { unread: true, comment: "PR #4 parked: why?" },
+      ORCA,
+      runner,
+      noConfig,
+      (workspace, body) => withCardLock(workspace, body, { root, waitMs: 150 }),
+    );
+    release();
+    await holder;
+    expect(line).toContain("⚠ another writer held the card's comment");
+    expect(calls).toEqual(["worktree current --json"]);
   });
 
   test("passes every flag together, the comment as one argument", async () => {
@@ -85,6 +188,13 @@ describe("in an Orca terminal", () => {
       noConfig,
     );
     expect(seen[1]).toEqual([
+      "worktree",
+      "show",
+      "--worktree",
+      `id:${ID}`,
+      "--json",
+    ]);
+    expect(seen[2]).toEqual([
       "worktree",
       "set",
       "--worktree",
