@@ -1086,8 +1086,9 @@ dashboard:
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
 under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one
 per run), `walls/` (each account's usage-limit wall, which lifts at its
-latest recorded reset) and the outcome log's text copy,
-`log-<year>-<month>.jsonl`, which nothing removes. Everything else is one
+latest recorded reset), the tick lock, the rotation cursor (`tick-index`)
+and the outcome log's text copy, `log-<year>-<month>.jsonl`, which nothing
+removes. Everything else is one
 SQLite database, `state.sqlite`: the launch records (one per launch,
 written before it, with a pickup session's own result), since when each
 claimed item has had no running session (for `stalled_after`), each

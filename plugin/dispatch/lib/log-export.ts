@@ -7,8 +7,8 @@
  *
  * The database remembers the last row it copied (`log_export`). A tick
  * adds each later row to its month's file, unless the file already holds
- * a row with that key, by writing the file whole with the rows added and
- * renaming it into place: a tick that stops mid-copy leaves the file as it
+ * a row with that key, by writing the file whole, once, with the rows added
+ * and renaming it into place: a tick that stops mid-copy leaves the file as it
  * was, and the next copies the same rows again without a second line for
  * any. A line the file already holds is kept as it is, so a copy written
  * before the database existed, or before it was replaced, is never lost.
@@ -23,11 +23,12 @@ import {
   unlinkSync,
   writeSync,
 } from "node:fs";
+import type { Database } from "bun:sqlite";
 import { stateRoot } from "../receipts.ts";
 import { logFile, monthOf, parseLine } from "./log.ts";
 import { existingStateDb } from "./state.ts";
 
-/** The most rows one query copies; an export repeats until it has copied every row written before it began. */
+/** The most rows one query reads; an export pages through the rows written before it began. */
 const BATCH = 5000;
 const CHUNK = 1 << 20;
 const TEMPORARY = /\.[0-9a-f-]{36}\.tmp$/;
@@ -85,66 +86,91 @@ interface Copied {
   row: string;
 }
 
+/** Call `each` for each row with `mark < seq <= high`, in order, reading `BATCH` rows at a time. */
+function eachRow(
+  db: Database,
+  mark: number,
+  high: number,
+  each: (row: Copied) => void,
+): void {
+  let after = mark;
+  for (;;) {
+    const page = db
+      .query(
+        `SELECT seq, key, at, row FROM log WHERE seq > ? AND seq <= ? ORDER BY seq LIMIT ${BATCH}`,
+      )
+      .all(after, high) as Copied[];
+    if (page.length === 0) return;
+    for (const r of page) each(r);
+    after = (page.at(-1) as Copied).seq;
+  }
+}
+
 /**
- * Add to one month's file the rows it lacks; returns how many it added.
- * The file is copied in chunks into a temporary beside it, the rows added,
- * and the temporary renamed into place: a reader sees the old file or the
+ * Add to one month's file the rows of the range it lacks; returns how many
+ * it added. The file is copied in chunks into a temporary beside it, the
+ * rows read from the database a page at a time are added, and the
+ * temporary is renamed into place once: a reader sees the old file or the
  * new one, and a failure removes the temporary.
  */
-function copyMonth(path: string, rows: Copied[]): number {
+function copyMonth(
+  db: Database,
+  path: string,
+  month: string,
+  mark: number,
+  high: number,
+): number {
   const held = new Set<string>();
   eachLine(path, (text) => {
     const key = parseLine(text)?.key;
     if (key !== undefined) held.add(key);
   });
-  const missing = rows.filter((r) => !held.has(r.key));
-  if (missing.length === 0) return 0;
   const temporary = `${path}.${crypto.randomUUID()}.tmp`;
-  const fd = openSync(temporary, "wx", 0o600);
+  let fd: number | null = null;
+  let added = 0;
   try {
-    // A line the file holds is kept as it is, blank lines apart.
-    eachLine(path, (text) => {
-      if (text !== "") writeSync(fd, `${text}\n`);
+    eachRow(db, mark, high, (r) => {
+      if (monthOf(r.at) !== month || held.has(r.key)) return;
+      if (fd === null) {
+        fd = openSync(temporary, "wx", 0o600);
+        // A line the file holds is kept as it is, blank lines apart.
+        const out = fd;
+        eachLine(path, (text) => {
+          if (text !== "") writeSync(out, `${text}\n`);
+        });
+      }
+      writeSync(fd, `${r.row}\n`);
+      held.add(r.key);
+      added++;
     });
-    for (const r of missing) writeSync(fd, `${r.row}\n`);
+    if (fd === null) return 0;
     fsyncSync(fd);
     closeSync(fd);
+    fd = null;
     renameSync(temporary, path);
   } catch (error) {
-    try {
-      closeSync(fd);
-    } catch {
-      // closed already
-    }
-    try {
-      unlinkSync(temporary);
-    } catch {
-      // never created or already renamed
+    if (fd !== null) {
+      try {
+        closeSync(fd);
+      } catch {
+        // closed already
+      }
+      try {
+        unlinkSync(temporary);
+      } catch {
+        // never created or already renamed
+      }
     }
     throw error;
   }
-  return missing.length;
-}
-
-/** Add `fresh` to its months' files; returns how many lines were added. */
-function copyBatch(fresh: Copied[], root: string): number {
-  const months = new Map<string, Copied[]>();
-  for (const row of fresh) {
-    const month = monthOf(row.at);
-    const held = months.get(month);
-    if (held === undefined) months.set(month, [row]);
-    else held.push(row);
-  }
-  let added = 0;
-  for (const rows of months.values())
-    added += copyMonth(logFile((rows[0] as Copied).at, root), rows);
   return added;
 }
 
 /**
- * Copy the rows written since the last copy into their months' files, in
- * batches, up to the newest row there was when it began; returns how many
- * lines it added. Nothing happens before the database exists.
+ * Copy the rows written since the last copy into their months' files, up
+ * to the newest row there was when it began, each month's file written
+ * once; returns how many lines it added. The database reads a page at a
+ * time. Nothing happens before the database exists.
  */
 export function exportLog(root = stateRoot()): number {
   const db = existingStateDb(root);
@@ -156,26 +182,26 @@ export function exportLog(root = stateRoot()): number {
         seq: number | null;
       } | null
     )?.seq ?? 0;
+  const mark =
+    (
+      db.query("SELECT seq FROM log_export WHERE id = 1").get() as {
+        seq: number;
+      } | null
+    )?.seq ?? 0;
+  if (mark >= high) return 0;
+  const months = new Set<string>();
+  eachRow(db, mark, high, (r) => months.add(monthOf(r.at)));
   let added = 0;
-  for (;;) {
-    const mark =
-      (
-        db.query("SELECT seq FROM log_export WHERE id = 1").get() as {
-          seq: number;
-        } | null
-      )?.seq ?? 0;
-    const fresh =
-      mark >= high
-        ? []
-        : (db
-            .query(
-              `SELECT seq, key, at, row FROM log WHERE seq > ? AND seq <= ? ORDER BY seq LIMIT ${BATCH}`,
-            )
-            .all(mark, high) as Copied[]);
-    if (fresh.length === 0) return added;
-    added += copyBatch(fresh, root);
-    db.query(
-      "INSERT INTO log_export (id, seq) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET seq = excluded.seq",
-    ).run((fresh.at(-1) as Copied).seq);
-  }
+  for (const month of months)
+    added += copyMonth(
+      db,
+      logFile(`${month}-01T00:00:00.000Z`, root),
+      month,
+      mark,
+      high,
+    );
+  db.query(
+    "INSERT INTO log_export (id, seq) VALUES (1, ?) ON CONFLICT (id) DO UPDATE SET seq = excluded.seq",
+  ).run(high);
+  return added;
 }

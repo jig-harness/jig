@@ -787,7 +787,8 @@ expectation.
 
 **The dashboard.** `jig dispatch dashboard` serves one page that reads the
 log when it is opened, filters it by time, repository, stage, account,
-class and reason in one query over the log table, and shows the count of
+class and reason in SQL over the log table, reading the rows and their
+counts in one read transaction, and shows the count of
 each class over the filtered window. A question about yesterday is a filter, not a report: no report
 file is ever generated, and nothing is written to disk but the log itself.
 The server runs while the command runs, started and stopped by a person

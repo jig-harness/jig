@@ -11,7 +11,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExited } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { dashboardData, serveDashboard } from "../dashboard.ts";
-import { writeRow, type LogRow } from "../lib/log.ts";
+import { insertRow, writeRow, type LogRow } from "../lib/log.ts";
+import { stateDb } from "../lib/state.ts";
 import { waitFor } from "./launch-fixtures.ts";
 
 const NOW = Date.parse("2026-11-01T12:00:00.000Z");
@@ -102,6 +103,51 @@ describe("jig dispatch dashboard", () => {
     };
     expect(data.total).toBe(3);
     expect(data.truncated).toBe(false);
+  });
+
+  it("caps the rows at the newest 5000 while the counts and total cover the whole window", () => {
+    const base = Date.parse("2026-10-31T00:00:00.000Z");
+    const bulk = (count: number): string => {
+      const root = mkdtempSync(join(tmpdir(), "dispatch-log-"));
+      const db = stateDb(root);
+      db.transaction(() => {
+        for (let i = 0; i < count; i++)
+          insertRow(
+            db,
+            ended(
+              new Date(base + i * 1000).toISOString(),
+              `r-${i}`,
+              "converged",
+            ),
+          );
+      })();
+      return root;
+    };
+    type Page = {
+      rows: LogRow[];
+      counts: Record<string, number>;
+      total: number;
+      truncated: boolean;
+    };
+    const over = dashboardData(
+      new URLSearchParams(YESTERDAY),
+      NOW,
+      bulk(5001),
+    ) as Page;
+    expect(over.rows).toHaveLength(5000);
+    expect(over.rows[0]?.key).toBe("ended r-5000");
+    expect(over.rows.at(-1)?.key).toBe("ended r-1");
+    expect(over.total).toBe(5001);
+    expect(over.counts).toEqual({ converged: 5001 });
+    expect(over.truncated).toBe(true);
+    const exact = dashboardData(
+      new URLSearchParams(YESTERDAY),
+      NOW,
+      bulk(5000),
+    ) as Page;
+    expect(exact.rows).toHaveLength(5000);
+    expect(exact.total).toBe(5000);
+    expect(exact.truncated).toBe(false);
   });
 
   it("shows only yesterday's rows when filtered to yesterday, with each class counted", () => {

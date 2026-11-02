@@ -20,8 +20,9 @@ The dispatcher keeps its state in one SQLite database.
   month files an earlier version wrote stay, and new rows are added to
   them. A database written by a newer plugin is refused, with its version
   named.
-- **The dashboard queries the log.** `jig dispatch dashboard` filters with
-  one query over the outcome log's table, and reads while a run writes.
+- **The dashboard queries the log.** `jig dispatch dashboard` filters in
+  SQL over the outcome log's table, reads the rows and their counts in one
+  read transaction, and reads while a run writes.
 
 ### Added
 
