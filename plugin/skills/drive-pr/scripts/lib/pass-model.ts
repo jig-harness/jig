@@ -139,10 +139,13 @@ function modelOption(
   const flags = modelFlags(argv);
   for (let i = 1; i < argv.length; i++) {
     const word = argv[i] as string;
+    if (word === "--") break;
     if (flags.has(word) && i + 1 < argv.length)
       return { index: i, width: 2, value: argv[i + 1] as string };
     if (word.startsWith("--model="))
       return { index: i, width: 1, value: word.slice("--model=".length) };
+    if (flags.has("-m") && word.startsWith("-m") && word.length > 2)
+      return { index: i, width: 1, value: word.slice(word[2] === "=" ? 3 : 2) };
   }
   return null;
 }

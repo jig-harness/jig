@@ -1115,7 +1115,8 @@ routing below remain **exact**.
       `${CLAUDE_SKILL_DIR}/../drive-pr/references/terminal-states.md`
       § The single-instance locks). Check the spawned task's output (or an
       `unconfirmed` tab's `tail`) **once**, a few seconds after issuing it —
-      not immediately, and not in a poll loop:
+      not immediately, and not in a poll loop, except to keep a Codex session
+      alive when its host kills children on session exit:
       - Exit `11` on the **per-PR** lock → this PR is already being driven:
         report "a drive is already live on #<PR>" with the holder's details
         and the doctor verdict the refusal names; do not retry. Do not stop a
@@ -1137,7 +1138,9 @@ routing below remain **exact**.
         report it with the exit code and captured output.
       - Exit `0` → the drive already reached a terminal state within the
         window: report its outcome rather than assuming it is running.
-      - Still running → armed; move on without further polling.
+      - Still running → armed; move on without further polling unless the
+        Codex host requires this session to stay alive. In that case, keep
+        polling the same task until the drive ends; never launch it again.
 
       Once armed, name the workspace for the driving stage (same rules as at
       pickup, with `.context/workspace-title.md` still holding the title):

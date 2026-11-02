@@ -220,6 +220,39 @@ describe("effectivePass", () => {
 });
 
 describe("withoutModel", () => {
+  it("replaces attached Codex short model options", () => {
+    for (const option of ["-mold", "-m=old"]) {
+      const argv = ["codex", "exec", option, "prompt"];
+      expect(effectivePass(argv, undefined, configured).model).toBe("old");
+      expect(effectivePass(argv, "gpt-new", configured).argv).toEqual([
+        "codex",
+        "exec",
+        "-m",
+        "gpt-new",
+        "prompt",
+      ]);
+      expect(withoutModel(argv)).toEqual(["codex", "exec", "prompt"]);
+    }
+  });
+
+  it("preserves model-like prompt content after the option terminator", () => {
+    for (const prompt of ["--model=old is an example", "-mold", "--model"]) {
+      const argv = ["codex", "exec", "--", prompt];
+      expect(withoutModel(argv)).toEqual(argv);
+      expect(effectivePass(argv, "gpt-new", configured).argv).toEqual([
+        "codex",
+        "exec",
+        "-m",
+        "gpt-new",
+        "--",
+        prompt,
+      ]);
+      expect(withoutModel(["codex", "exec", "-mold", "--", prompt])).toEqual(
+        argv,
+      );
+    }
+  });
+
   it("drops a claude pass's --model, so a model id is never read as the PR", () => {
     expect(
       withoutModel(["claude", "--model", "claude-sonnet-4-5", "-p", "x"]),
