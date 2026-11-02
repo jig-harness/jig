@@ -34,6 +34,7 @@ between loops.
 
 | Skill | Used when |
 |-------|-----------|
+| `/jig:jig` | an agent needs to know which skill fits, where the plugin's reference is, or how to report a Jig bug |
 | `/jig:reflect` | a session learned something about the instructions, skills or gates |
 | `/jig:promote-memory` | an agent's private lesson has become knowledge the team should share |
 | `/jig:descar` | a document is about to be promoted, or its history has piled up |

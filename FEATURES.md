@@ -259,7 +259,12 @@ issue tracker through a small [tracker interface](GLOSSARY.md) with adapters
 for Linear, GitHub Issues and Jira, so another tracker is a new adapter, not a
 change to the skills. [EXTENDING.md](plugin/EXTENDING.md) lists every point where an
 organization plugs in its own commands, skills, reviewers and stores.
+`/jig:jig` tells an agent which skill fits a task and where a value or a
+practice is documented, from the reference installed with the plugin; when
+Jig itself is wrong, it drafts the bug report for Jig's tracker, with the
+repository's own names left out, for a person to confirm.
 
+- **Skills:** [`jig`](plugin/skills/jig/README.md)
 - **Practice:** [M0](modules/M0-instruction-architecture/),
   [M9](modules/M9-tasks-memory/)
 - **On the roadmap:** a plan-file tracker adapter (roadmap item 12); the

@@ -228,6 +228,7 @@ test("the skills are in families, in the order they are used, each saying how it
     else groups.push([s.family?.name, [s.name]]);
   }
   expect(groups).toEqual([
+    ["Find your way", ["jig"]],
     [
       "Deliver a change",
       [

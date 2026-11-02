@@ -830,10 +830,12 @@ area's paths, the build tools and the database conventions.
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
 `docs`, `promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
-`explain`, `red-team`, `resolve-conflicts`, `audit`) detect
+`explain`, `red-team`, `resolve-conflicts`, `audit`, `jig`) detect
 what they need from the repository; set a field only when detection picks
-the wrong thing. `programmatic-execution`, `red-team` and `audit` read no
-field of their own; `audit` checks all the others. `red-team` reads a
+the wrong thing. `programmatic-execution`, `red-team`, `audit` and `jig` read no
+field of their own; `audit` checks all the others, and `jig`'s bug-report
+draft reads `repository.remote` and `issue_tracker.team` to know which of
+the repository's names to replace. `red-team` reads a
 document's kind from its frontmatter `type:` or its headings (`--kind`
 overrides) and takes the agent command for its fresh runs on the command
 line.
