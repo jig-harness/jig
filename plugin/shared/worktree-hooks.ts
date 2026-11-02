@@ -12,6 +12,7 @@
  */
 import { accessSync, constants, existsSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   spawnSync as guardedSpawnSync,
   withoutLeakyGitEnv,
@@ -134,6 +135,24 @@ export interface HookRun {
   lines: string[];
 }
 
+/** The plugin's startup configuration for Bun, which has no checkout preloads. */
+const TRUSTED_BUNFIG = fileURLToPath(
+  new URL("../gc/bunfig.toml", import.meta.url),
+);
+
+/**
+ * How the supervisor's Bun starts. Its working directory is the checkout
+ * being retired, so it ignores the checkout's environment files and, where
+ * the plugin's trusted configuration is beside this file, reads that instead
+ * of the checkout's `bunfig.toml`, before any of the checkout's code can run.
+ */
+function supervisorStartup(): string[] {
+  return [
+    "--no-env-file",
+    ...(existsSync(TRUSTED_BUNFIG) ? [`--config=${TRUSTED_BUNFIG}`] : []),
+  ];
+}
+
 /**
  * Run `path` in `worktree` under the supervisor, for at most `limitMs`.
  * With `groupFile`, the hook's process group is recorded there, so a caller
@@ -148,6 +167,7 @@ export function superviseHook(
   const result = guardedSpawnSync(
     process.execPath,
     [
+      ...supervisorStartup(),
       "-e",
       SUPERVISOR,
       groupFile ?? "-",

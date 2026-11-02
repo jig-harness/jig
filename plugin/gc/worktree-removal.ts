@@ -53,13 +53,16 @@ export async function parkFindings(
   const previousLog = console.log;
   if (log !== undefined)
     console.log = (...values: unknown[]) => log(values.map(String).join(" "));
-  const clean = withoutLeakyGitEnv();
-  for (const key of Object.keys(process.env))
-    if (!(key in clean)) delete process.env[key];
-  process.env.JIG_CONSUMER_ROOT = worktree;
-  process.chdir(worktree);
   let status: number;
   try {
+    // A session's configuration overrides would point the journal at another
+    // location than the worktree's own, so parking could succeed on an empty one.
+    const clean = withoutLeakyGitEnv();
+    for (const key of Object.keys(process.env))
+      if (!(key in clean) || key.startsWith("JIG__") || key === "JIG_OVERLAY")
+        delete process.env[key];
+    process.env.JIG_CONSUMER_ROOT = worktree;
+    process.chdir(worktree);
     status = await withGitDeadline(deadline, () => journalMain(["park"]));
   } finally {
     console.log = previousLog;
@@ -82,6 +85,12 @@ export interface RemovalSteps {
   runHook(worktree: string, hook: string): void | Promise<void>;
   /** Park the worktree's findings, or refuse while removing it would lose them. */
   park(worktree: string): Promise<void>;
+  /**
+   * Run last, right before the runtime removes the worktree, for a caller that
+   * must refuse a removal the hook's long run made unsafe (an agent started
+   * meanwhile); throws to keep the worktree.
+   */
+  admit?(worktree: string): Promise<void>;
 }
 
 /**
@@ -143,6 +152,7 @@ export async function removeThroughOrca(
     await steps.runHook(worktree, hook);
   }
   await steps.park(worktree);
+  await steps.admit?.(worktree);
   const what = "orca worktree rm";
   const done = await removal.orca([
     "worktree",

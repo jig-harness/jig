@@ -153,13 +153,17 @@ function setup() {
   const tree = join(roots, "topic");
   command(["git", "worktree", "add", "-b", "topic", tree]);
   command(["git", "push", "origin", "topic"]);
-  const head = command(["git", "-C", tree, "rev-parse", "HEAD"]);
-  writeFakeProgram(
-    join(bin, "gh"),
-    `#!/usr/bin/env bun
+  /** The fake `gh` answering a merged pull request at the checkout's current head. */
+  const refreshGh = (): void => {
+    const head = command(["git", "-C", tree, "rev-parse", "HEAD"]);
+    writeFakeProgram(
+      join(bin, "gh"),
+      `#!/usr/bin/env bun
 console.log(JSON.stringify([{ state: "MERGED", headRefOid: ${JSON.stringify(head)}, headRepository: { name: "app" }, headRepositoryOwner: { login: "acme" } }]));
 `,
-  );
+    );
+  };
+  refreshGh();
   writeFakeProgram(join(bin, "lsof"), "#!/bin/sh\nexit 1\n");
   const orca = fakeOrca(bin, root);
   const machine = {
@@ -188,7 +192,17 @@ console.log(JSON.stringify([{ state: "MERGED", headRefOid: ${JSON.stringify(head
       }),
     );
   writeState({});
-  return { root, repo, tree, id, env, command, writeState, makeIdle };
+  return {
+    root,
+    repo,
+    tree,
+    id,
+    env,
+    command,
+    writeState,
+    makeIdle,
+    refreshGh,
+  };
 }
 
 /** Every entry of the worktree and its git directory, eight days old. */
@@ -236,6 +250,57 @@ function line(result: ReturnType<typeof gc>): ReceiptLine {
 
 function idle(f: ReturnType<typeof setup>): void {
   makeIdle(f.tree, join(f.repo, ".git", "worktrees", "topic"));
+}
+
+const FINDING_TITLE = "The setup step assumed a running database";
+
+/** Note one reflection finding in the checkout's journal, through the reflect skill's own command. */
+function noteFinding(f: ReturnType<typeof setup>): void {
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      resolve(import.meta.dir, "../../skills/reflect/scripts/journal.ts"),
+      "note",
+    ],
+    {
+      cwd: f.tree,
+      env: {
+        ...f.env,
+        JIG_CONSUMER_ROOT: f.tree,
+        JIG__REFLECTION__ENABLED: "true",
+      },
+      stdin: new TextEncoder().encode(
+        JSON.stringify({
+          kind: "error",
+          severity: "medium",
+          class: "instruction-missing-precondition",
+          target: { scope: "repository", name: "AGENTS.md" },
+          title: FINDING_TITLE,
+          description:
+            "The instructions never say the database must be started first.",
+          suggested_fix: "Add the start command to the setup section.",
+        }),
+      ),
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 30_000,
+    },
+  );
+  expectSpawnExit(result, 0);
+}
+
+/** Everything under the machine's pending directory, where parked findings go. */
+function pendingText(f: ReturnType<typeof setup>): string {
+  const base = join(f.env.JIG_HOME as string, "pending");
+  if (!existsSync(base)) return "";
+  const text: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true }))
+      if (entry.isDirectory()) walk(join(dir, entry.name));
+      else text.push(readFileSync(join(dir, entry.name), "utf8"));
+  };
+  walk(base);
+  return text.join("\n");
 }
 
 function calls(f: ReturnType<typeof setup>): string[] {
@@ -293,6 +358,68 @@ describe.skipIf(
     ) as OrcaState;
     expect(state.worktrees).toEqual([]);
     expect(calls(f)).toContain(`worktree rm --worktree id:${f.id} --json`);
+  }, 60_000);
+
+  test("collecting preserves an unsent reflection finding outside the removed checkout", () => {
+    const f = setup();
+    idle(f);
+    noteFinding(f);
+    const collected = line(gc(f, ["--collect", "--json"]));
+    expect(collected).toMatchObject({ outcome: "collected" });
+    expect(existsSync(f.tree)).toBe(false);
+    expect(pendingText(f)).toContain(FINDING_TITLE);
+  }, 60_000);
+
+  test("a failed park keeps the checkout and never calls orca worktree rm", () => {
+    const f = setup();
+    idle(f);
+    noteFinding(f);
+    // A file where the pending directory must go makes parking fail.
+    writeFileSync(join(f.env.JIG_HOME as string, "pending"), "");
+    const result = gc(f, ["--collect", "--json"]);
+    expectSpawnExit(result, 1);
+    const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+    expect(receipt.resources[0]).toMatchObject({ outcome: "failed" });
+    expect(existsSync(f.tree)).toBe(true);
+    expect(calls(f)).not.toContainEqual(expect.stringMatching(/ rm /));
+  }, 60_000);
+
+  test("a remove hook the branch changed is not run by unattended collection", () => {
+    const f = setup();
+    const hook = join(f.tree, ".config/worktree-hooks/remove");
+    writeFileSync(
+      hook,
+      `#!/bin/sh\ntouch ${JSON.stringify(join(f.root, "hook-ran"))}\n`,
+    );
+    f.command(["git", "-C", f.tree, "commit", "-am", "change the hook"]);
+    f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
+    f.command(["git", "-C", f.tree, "fetch", "origin"]);
+    f.refreshGh();
+    idle(f);
+    const result = gc(f, ["--collect", "--json"]);
+    const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+    expect(receipt.resources[0]).toMatchObject({
+      outcome: "failed",
+      reason: expect.stringContaining("differs from the base branch's"),
+    });
+    expect(existsSync(join(f.root, "hook-ran"))).toBe(false);
+    expect(existsSync(f.tree)).toBe(true);
+  }, 60_000);
+
+  test("a registry listing the checkout twice refuses collection", () => {
+    const f = setup();
+    idle(f);
+    f.writeState({
+      worktrees: [
+        { id: f.id, path: f.tree, agents: [] },
+        { id: f.id, path: f.tree, agents: [{ state: "working" }] },
+      ],
+    });
+    expect(line(gc(f, ["--collect", "--json"]))).toMatchObject({
+      outcome: "unverified",
+      reason: expect.stringContaining("lists the worktree more than once"),
+    });
+    expect(existsSync(f.tree)).toBe(true);
   }, 60_000);
 
   test("a checkout whose agent Orca reports working is refused with the registry as the reason", () => {

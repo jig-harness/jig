@@ -157,7 +157,7 @@ export function canonicalWorktree(path: string): string {
  * proves nothing, so collection is refused. Null when Orca reports no agent
  * still at work in it.
  */
-async function orcaLiveness(
+export async function orcaLiveness(
   command: string,
   path: string,
 ): Promise<Proof | null> {
@@ -171,12 +171,15 @@ async function orcaLiveness(
   if (result.truncated !== false || !Array.isArray(result.worktrees))
     return unread("answered an incomplete list");
   const own = canonicalWorktree(path);
-  const row = result.worktrees.find(
+  // Every row for the path counts: a second row must not hide an agent the first omits.
+  const rows = result.worktrees.filter(
     (entry: unknown) =>
       isMapping(entry) &&
       typeof entry.path === "string" &&
       canonicalWorktree(entry.path) === own,
   );
+  if (rows.length > 1) return unread("lists the worktree more than once");
+  const row = rows[0];
   if (!isMapping(row)) return unread("does not list the worktree");
   if (!Array.isArray(row.agents)) return unread("lists no agents for it");
   for (const agent of row.agents) {

@@ -82,6 +82,18 @@ worktree stays and the receipt records the failure. The receipt of a
 collected worktree names the hook it ran, or that the repository has none,
 and the park.
 
+The hook comes from the checkout being retired and runs unattended with the
+user's credentials, so it runs only when it is byte-identical to the hook in
+the declared base-branch commit; a branch that added or changed one keeps its
+worktree until a person removes it. The registry is read once more after the
+hook and the park, right before `orca worktree rm`, because the hook may run
+for minutes; an agent Orca started meanwhile keeps the worktree. Orca offers
+no reservation that stops a start between that read and the removal, so that
+last gap stays open. A registry that lists the worktree twice refuses
+collection. Parking and the hook's supervisor start without the session's
+`JIG__` and `JIG_OVERLAY` overrides, and the supervisor's Bun ignores the
+checkout's environment files and `bunfig.toml`.
+
 Reports and collections use the same receipt schema and human formatter.
 `would-collect`, `collected`, `refused`, `finding`, `unverified` and `failed`
 are distinct outcomes. Exit status is 0 for a completed run, including no

@@ -1,5 +1,5 @@
 /** Inventory is safe without the session opener's lifecycle and lock protocol. */
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
 import { GcError } from "../../shared/gc-error.ts";
 import {
@@ -9,12 +9,13 @@ import {
   runOrca,
 } from "../../shared/orca.ts";
 import { run } from "../../shared/proc.ts";
-import { HOOKS_DIR } from "../../shared/worktree-hooks.ts";
+import { HOOKS_DIR, hookPath } from "../../shared/worktree-hooks.ts";
 import { isAbsolute, normalize, relative, sep } from "node:path";
 import { gcGit as git } from "../git.ts";
 import { localSteps, removeThroughOrca } from "../worktree-removal.ts";
 import {
   canonicalWorktree,
+  orcaLiveness,
   runtimeWorktreeProof,
   worktreePolicy,
   worktreeProof,
@@ -83,6 +84,32 @@ function orcaId(resource: Resource): string | null {
     : null;
 }
 /**
+ * Refuse a remove hook that is not the one the declared base-branch commit
+ * holds: a branch that changed it has not had that code reviewed into the
+ * base, and collection would run it with the user's credentials.
+ */
+async function assertBaseHook(
+  repository: string,
+  declaration: string,
+  hook: string,
+): Promise<void> {
+  const tip = / @ ([0-9a-f]{40,64})$/.exec(declaration)?.[1];
+  if (tip === undefined)
+    throw new GcError("the base-branch commit of the declaration is unknown");
+  let base: string;
+  try {
+    base = await git(repository, ["show", `${tip}:${HOOKS_DIR}/remove`]);
+  } catch {
+    throw new GcError(
+      `kept: ${HOOKS_DIR}/remove is not in the base branch, so its code was never reviewed there`,
+    );
+  }
+  if (base !== readFileSync(hook, "utf8").trimEnd())
+    throw new GcError(
+      `kept: ${HOOKS_DIR}/remove differs from the base branch's; remove the worktree by hand`,
+    );
+}
+/**
  * Collect a worktree Orca manages through Orca: the repository's remove hook
  * inside it, its reflection findings parked, then `orca worktree rm`, so its
  * card, terminals and agent records go with it. Never `git worktree remove`.
@@ -91,11 +118,17 @@ async function collectThroughOrca(
   command: string,
   resource: Resource,
   id: string,
+  repository: string,
+  declaration: string,
 ): Promise<Awaited<ReturnType<CollectionKind["collect"]>>> {
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
   };
   try {
+    // The retiring branch supplies the hook, and this runs unattended, so the
+    // hook runs only if the declared base-branch commit holds the same one.
+    const hook = hookPath(resource.id, "remove");
+    if (hook !== null) await assertBaseHook(repository, declaration, hook);
     const removed = await removeThroughOrca({
       worktree: resource.id,
       id,
@@ -105,7 +138,15 @@ async function collectThroughOrca(
           timeoutSec: ORCA_REMOVE_TIMEOUT_SEC,
         }),
       log,
-      steps: localSteps(Date.now() + ORCA_REMOVAL_LIMIT_MS, log),
+      steps: {
+        ...localSteps(Date.now() + ORCA_REMOVAL_LIMIT_MS, log),
+        // The hook may run for minutes, and Orca can start an agent meanwhile.
+        admit: async (worktree) => {
+          const live = await orcaLiveness(command, worktree);
+          if (live !== null)
+            throw new GcError(`kept after the hook: ${live.reason}`);
+        },
+      },
     });
     return {
       outcome: "collected",
@@ -194,7 +235,7 @@ export function worktreesKind(
     collect: async (resource) => {
       const id = orcaId(resource);
       if (orca !== undefined && id !== null)
-        return collectThroughOrca(orca, resource, id);
+        return collectThroughOrca(orca, resource, id, repository, declaration);
       return {
         outcome: "refused",
         reason: "uncoordinated worktrees are report-only",
