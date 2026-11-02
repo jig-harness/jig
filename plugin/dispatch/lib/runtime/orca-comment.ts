@@ -9,8 +9,9 @@ import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
 import { marksIn, withMark } from "./port.ts";
 
+/** The remaining budget in seconds, fractional: a call never outlives the deadline. */
 function seconds(ms: number): number {
-  return Math.max(1, Math.ceil(ms / 1000));
+  return Math.max(0.001, ms / 1000);
 }
 
 type CallAnswer =
@@ -33,7 +34,7 @@ export async function call(
     return {
       ok: false,
       lost: true,
-      why: `orca ${args.slice(0, 2).join(" ")} gave no answer within ${seconds(timeoutMs)}s`,
+      why: `orca ${args.slice(0, 2).join(" ")} gave no answer within ${seconds(timeoutMs).toFixed(3)}s`,
     };
   const envelope = orcaEnvelope(done.stdout);
   if (done.code === 0 && envelope?.ok === true)
@@ -55,7 +56,7 @@ function commentOf(result: unknown): string | null {
 }
 
 /** The comment of the workspace at `path`, or why it could not be read. */
-export async function readComment(
+async function readComment(
   path: string,
   timeoutMs: number,
 ): Promise<{ comment: string } | { lost: boolean; why: string }> {

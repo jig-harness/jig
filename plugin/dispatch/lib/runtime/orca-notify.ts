@@ -11,51 +11,15 @@
  * so (not lost: nothing was written). The dispatched marks the comment holds
  * stay in the one written (`keepMarks`).
  */
-import { orcaCommand, orcaEnvelope } from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
-import { run } from "../../../shared/proc.ts";
 import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
+import { call } from "./orca-comment.ts";
 import {
   keepMarks,
   MAX_COMMENT,
   type RuntimeReceipt,
   withoutMarks,
 } from "./port.ts";
-
-/** The remaining budget in seconds, fractional: a call never outlives the deadline. */
-function seconds(ms: number): number {
-  return Math.max(0.001, ms / 1000);
-}
-
-async function call(
-  args: string[],
-  timeoutMs: number,
-): Promise<
-  { ok: true; result: unknown } | { ok: false; lost: boolean; why: string }
-> {
-  const done = await run(
-    [orcaCommand(process.env) ?? "orca", ...args, "--json"],
-    {
-      timeoutSec: seconds(timeoutMs),
-      stderr: "pipe",
-    },
-  );
-  if (done.timedOut)
-    return {
-      ok: false,
-      lost: true,
-      why: `orca ${args.slice(0, 2).join(" ")} gave no answer within ${seconds(timeoutMs).toFixed(3)}s`,
-    };
-  const envelope = orcaEnvelope(done.stdout);
-  if (done.code === 0 && envelope?.ok === true)
-    return { ok: true, result: envelope.result };
-  return {
-    ok: false,
-    // An answer that is not Orca's envelope says nothing about what was written.
-    lost: envelope === null,
-    why: `orca ${args.slice(0, 2).join(" ")} failed (exit ${done.code}): ${(done.stderr || done.stdout).trim().slice(0, 200)}`,
-  };
-}
 
 /** The card's comment and unread mark in `worktree show`'s answer; `null` when it names neither. */
 function cardOf(
