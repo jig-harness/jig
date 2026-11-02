@@ -19,6 +19,13 @@ gc:
 dispatch:
   # What `jig dispatch` wants after a merge here: Jig's own post-merge pass.
   followup_command: /followup
+  # The dispatcher's state on every pull request it manages (`jig:driving`,
+  # `jig:converged`, `jig:parked`, `jig:stale`, `jig:followed-up`), and a
+  # person's two commands: `jig:drive` arms a drive on a pull request with
+  # no ledger, `jig:hold` keeps every stage off one. The host's
+  # `jig install dispatch --repo <clone> --yes` creates the labels.
+  labels:
+    enabled: true
 gates:
   command: bun run gates
 review:
