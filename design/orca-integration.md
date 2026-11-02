@@ -158,8 +158,9 @@ with the user's permissions, subscribed to `agent.status.changed` and
 in a repository with `.config/jig.yaml`, it runs `jig dispatch --apply
 --repo <path>` for that repository, the invocation the timer makes, so the
 machine file alone decides what a tick starts and the plugin passes no
-flag a person reserves. It shows the tick's one-line receipt as a
-notification: the outbound wake-up channel
+flag a person reserves. It shows the tick's one-line receipt as an in-app
+plugin notification, never as a phone push, since the plugin also ticks on
+`done`: the outbound wake-up channel
 [the dispatcher's design](dark-factory-dispatch.md) leaves for later,
 without a change to the tick. Ticks for one repository run one at a time,
 and a tick starts no sooner than a minute after the last one started. An
