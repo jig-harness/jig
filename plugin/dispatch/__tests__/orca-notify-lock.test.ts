@@ -64,4 +64,15 @@ describe("the launch mark on Orca", () => {
     expect(asked).toEqual(["/ws/app/feat-x"]);
     expect(why).toContain("another writer");
   });
+
+  test("reports no failure when the lock was taken and the mark is in the comment", async () => {
+    const { markComment } = await import("../lib/runtime/orca-comment.ts");
+    const why = await markComment(
+      "/ws/app/feat-x",
+      NOTICES_NAME,
+      1000,
+      async () => ({ value: null }) as never,
+    );
+    expect(why).toBeNull();
+  });
 });

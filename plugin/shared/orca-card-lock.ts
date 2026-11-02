@@ -110,8 +110,9 @@ function ownerGone(pid: number | null): boolean {
  * owner has left behind: a mutex or staging file a live process owns, and the
  * standing content's mutexes, are never touched. Walking the generations and the sweep both stop at
  * `deadline`, so neither a chain of abandoned mutexes nor a large set of
- * leftover files can hold the caller past its wait; what the sweep leaves, any
- * later reclaim of this lock finds and removes.
+ * leftover files can hold the caller past its wait; what the sweep leaves, a
+ * later reclaim of this lock finds and removes, which happens when a later
+ * holder of the lock dies.
  */
 function reclaim(lock: string, deadline: number): void {
   const judged = readLock(lock);

@@ -101,9 +101,9 @@ export async function markComment(
   } catch (error) {
     return `the card's comment lock could not be taken: ${error instanceof Error ? error.message : String(error)}`;
   }
-  return (
-    locked?.value ?? "another writer held the card's comment past the deadline"
-  );
+  return locked === null
+    ? "another writer held the card's comment past the deadline"
+    : locked.value;
 }
 
 /** `markComment`'s read, write and read-back, holding the card's lock; `null` when the mark is in the comment. */
