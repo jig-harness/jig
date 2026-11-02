@@ -158,6 +158,32 @@ Replace the label placeholders with the intended labels. The first checks
 the taxonomy alone; the second also reads the repository's labels through
 the signed-in `gh` command-line client.
 
+## Where models write Jig's code
+
+At run time no model executes or changes Jig's implementation: the
+dispatcher, `jig gc`, the launcher and the drive's loop control are scripts,
+and the sessions they start write the consuming repository's code. Models do
+read Jig's skill instructions (a skill's description every session, the rest
+when the skill runs), and a running session does not modify the installed
+plugin
+([the mechanism map](plugin/MECHANISMS.md#when-a-model-reads-or-writes-jigs-own-code)).
+While Jig is being developed, models write its code all the time, since
+Jig is built with its own tools:
+
+- an implementer building a step of a plan, picked up by `/jig:do-item`;
+- a drive pass fixing what a reviewer flagged, in whatever file the reviewer
+  flagged, the dispatcher's own code included;
+- a follow-up or site-update session (`followup`, `website-update`) editing
+  status pages and the site's copy.
+
+What a part is held to follows from who writes it and who runs it:
+
+| Kind of code | Written by | Read or run at run time by | Held to |
+|--------------|------------|----------------------------|---------|
+| Loop control and machine tools: `plugin/dispatch/`, `plugin/gc/`, `plugin/skills/drive-pr/scripts/` and the gates | models, during development | scripts only | the test rules in [AGENTS.md](AGENTS.md) (a test seen to fail before its pass is trusted); for `drive-pr`, a deadline on every outbound call ([plugin/AGENTS.md](plugin/AGENTS.md#changing-drive-pr)); and the safety contracts the [mechanism map](plugin/MECHANISMS.md) states for each subsystem, such as keeping a resource whose identity cannot be read |
+| Skill instructions: `SKILL.md`, references, lens files, the arbiter's definition | models and people, during development | models: a skill's description every session, its `SKILL.md` when the skill runs, a reference when `SKILL.md` sends the agent there | the context budget; for skill files, the skill-authoring counts [the ratchet](#the-ratchet) keeps from growing (the arbiter's definition, `plugin/agents/review-arbiter.md`, is not a skill file and is outside them); and, for `drive-pr` alone, tests that its scripts' exit codes and its prose agree (`plugin/skills/drive-pr/__tests__/terminal-states*.test.ts`) |
+| A consuming repository's own code and records | models, at run time | that repository's gates and reviewers | that repository's gates, review rounds, and a person's merge |
+
 ## Toolchain
 
 Runnable tooling and gates are written in Bun + TypeScript

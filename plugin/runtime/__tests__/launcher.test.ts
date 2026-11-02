@@ -194,6 +194,24 @@ test("a collection's deadline covers the lock wait it may spend first", () => {
   );
 });
 
+test("a deadline too large to be finite falls back to the default", () => {
+  const huge = "9".repeat(309);
+  expect(collectionDeadlineMs({ JIG_LAUNCHER_DEADLINE_SEC: huge })).toBe(
+    (3600 + 7200) * 1000,
+  );
+  expect(collectionDeadlineMs({ LOCK_TIMEOUT: huge })).toBe(
+    (3600 + 7200) * 1000,
+  );
+  // Finite seconds whose millisecond conversion overflows.
+  const overflowing = `1${"0".repeat(306)}`;
+  expect(collectionDeadlineMs({ LOCK_TIMEOUT: overflowing })).toBe(
+    (3600 + 7200) * 1000,
+  );
+  expect(collectionDeadlineMs({ JIG_LAUNCHER_DEADLINE_SEC: overflowing })).toBe(
+    (3600 + 7200) * 1000,
+  );
+});
+
 test.skipIf(
   skipsOnWindows("powershell", "process groups and signals are POSIX"),
 )(
@@ -242,6 +260,16 @@ test("a collector that finishes keeps its own exit status", async () => {
   expect(
     await runCollector([process.execPath, "-e", "process.exit(3)"], 60_000),
   ).toBe(3);
+});
+
+test("a deadline past the timer's range does not fire at once", async () => {
+  // 2,656,800,000 ms exceeds setTimeout's signed 32-bit limit.
+  expect(
+    await runCollector(
+      [process.execPath, "-e", "process.exit(0)"],
+      2_656_800_000,
+    ),
+  ).toBe(0);
 });
 
 test("no recorded tool, or a tool that cannot answer, is an error naming why", async () => {
@@ -507,5 +535,5 @@ test.skipIf(
     { stdout: "pipe", stderr: "pipe", timeout: 30000 },
   );
   expectSpawnExit(result, 1);
-  expect(result.stderr.toString()).toContain("run jig gc install again");
+  expect(result.stderr.toString()).toContain("run jig install again");
 });
