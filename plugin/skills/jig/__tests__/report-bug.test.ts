@@ -152,7 +152,7 @@ test("a channel inherited from Object.prototype is not a channel", () => {
     ],
     { env: withoutLeakyGitEnv() },
   );
-  expect(run.exitCode).toBe(2);
+  expectSpawnExit(run, 2, "draft --channel constructor");
 });
 
 test("the owner and name are read from SSH and HTTPS addresses", () => {

@@ -306,7 +306,8 @@ export function formUrl(
           .filter(([id]) => omit.includes(id))
           .map(([, label]) => label),
       };
-    omit.push(present[i]![0]);
+    const next = present[i];
+    if (next) omit.push(next[0]);
   }
 }
 
@@ -381,9 +382,9 @@ export function draft(
   const tool = clean(answers.tool);
   const fields = {
     version: facts.version,
-    channel: Object.hasOwn(CHANNELS, answers.channel)
-      ? CHANNELS[answers.channel]!
-      : answers.channel,
+    channel:
+      (Object.hasOwn(CHANNELS, answers.channel) && CHANNELS[answers.channel]) ||
+      answers.channel,
     lastWorking: clean(answers.lastWorking),
     what: clean(answers.what) ?? "",
     expected: clean(answers.expected) ?? "",
