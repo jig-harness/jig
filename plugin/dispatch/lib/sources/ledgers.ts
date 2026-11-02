@@ -77,7 +77,10 @@ const short = (sha: string) => sha.slice(0, 7);
  * head the drive verified, `done` when neither, and `unplaced` while
  * either cannot be told.
  */
-function convergedClass(ledger: Ledger, forge: PrFacts | undefined): Classified {
+function convergedClass(
+  ledger: Ledger,
+  forge: PrFacts | undefined,
+): Classified {
   const verified = ledger.verifiedSha;
   const head = forge?.head ?? null;
   const mergeable = forge?.mergeable ?? null;
@@ -86,9 +89,13 @@ function convergedClass(ledger: Ledger, forge: PrFacts | undefined): Classified 
     why: `stopped 0 (converged), and ${why}, so whether it is stale cannot be told`,
   });
   if (mergeable === "UNKNOWN")
-    return unplaced("the forge is still computing whether it conflicts with its base");
+    return unplaced(
+      "the forge is still computing whether it conflicts with its base",
+    );
   if (mergeable !== "MERGEABLE" && mergeable !== "CONFLICTING")
-    return unplaced(`the forge reports its mergeability as ${String(mergeable)}`);
+    return unplaced(
+      `the forge reports its mergeability as ${String(mergeable)}`,
+    );
   if (head === null || head === "")
     return unplaced("the forge reports no head commit for it");
   const conflicting = mergeable === "CONFLICTING";

@@ -134,8 +134,13 @@ machine file's, else the current one) it prints every action it would take,
 each with the record that wants it and the evidence: a pickup for an item
 assigned to the repository's factory identity, a re-arm for a drive its
 ledger shows stopped on a mechanical state (a usage limit, an answered
-park), a follow-up for a merge, a notification for a drive only a person can
-settle. A stage a running session or a launch record already holds is listed
+park), a re-drive for a converged drive gone stale (its pull request now
+conflicts with its base, or its head moved past the head the drive
+verified), a follow-up for a merge, a notification for a drive only a
+person can settle. A converged pull request its base merely moved past,
+still mergeable at the verified head, is left alone, and one whose
+mergeability the forge is still computing is reported and waits for a
+later run. A stage a running session or a launch record already holds is listed
 as running; a record it cannot read, or a target it cannot place, is
 reported and never planned. Each run writes a receipt under
 `~/.local/state/jig/dispatch/receipts/`, which `jig dispatch receipts`
@@ -157,7 +162,11 @@ does not. Every launch begins with a launch record under
 `~/.local/state/jig/dispatch/launches/`, so a launch whose answer is lost
 holds its slot and is retried only under its own record. A refusal
 `drive.ts` gives (another driver holds the pull request) is the stage's
-answer and is not launched again on the same ledger facts. A record whose
+answer and is not launched again on the same ledger facts. A re-drive is
+launched once per change (the pull request's head, conflicting or not):
+the drive merges the base in through its conflict-resolve round, or
+reviews the new head in its ordinary rounds, and a conflict its repair
+budget cannot settle stops it for a person, as any conflict does. A record whose
 process cannot be checked (another host or boot) holds its slot until a
 person removes its files.
 

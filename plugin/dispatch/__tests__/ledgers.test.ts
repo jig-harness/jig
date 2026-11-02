@@ -90,12 +90,12 @@ describe("classifyLedger", () => {
       "conflicting with its base, and head bbbbbbb past the verified head aaaaaaa",
     );
     // A conflict needs no verified head; a moved head does.
-    expect(converged({ head: verified, mergeable: "CONFLICTING" }, "").class).toBe(
-      "stale",
-    );
-    expect(converged({ head: verified, mergeable: "MERGEABLE" }, "").class).toBe(
-      "unplaced",
-    );
+    expect(
+      converged({ head: verified, mergeable: "CONFLICTING" }, "").class,
+    ).toBe("stale");
+    expect(
+      converged({ head: verified, mergeable: "MERGEABLE" }, "").class,
+    ).toBe("unplaced");
   });
 
   it("cannot place a converged ledger while its pull request's mergeability or head is not known", () => {
