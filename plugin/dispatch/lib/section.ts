@@ -12,12 +12,19 @@ import type { DispatchSection } from "./types.ts";
 const DEFAULT_STATES = ["todo"];
 /** `stalled_after` and `blocked_after`'s default. */
 const DEFAULT_WAIT_MS = 30 * 60_000;
+/** The expectations' defaults: `drive_rounds_flat`, `pickup_within`, `followup_within`. */
+const DEFAULT_ROUNDS_FLAT = 3;
+const DEFAULT_PICKUP_WITHIN_MS = 2 * 3_600_000;
+const DEFAULT_FOLLOWUP_WITHIN_MS = 3_600_000;
 const KEYS = [
   "identity",
   "states",
   "followup_command",
   "stalled_after",
   "blocked_after",
+  "drive_rounds_flat",
+  "pickup_within",
+  "followup_within",
 ];
 
 class SectionError extends Error {}
@@ -49,8 +56,21 @@ function states(value: unknown): string[] {
   return value as string[];
 }
 
-function wait(value: unknown, field: string): number {
-  if (value === undefined || value === null) return DEFAULT_WAIT_MS;
+function rounds(value: unknown): number {
+  if (value === undefined || value === null) return DEFAULT_ROUNDS_FLAT;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
+    throw new SectionError(
+      "dispatch.drive_rounds_flat must be a positive whole number",
+    );
+  return value;
+}
+
+function wait(
+  value: unknown,
+  field: string,
+  fallback = DEFAULT_WAIT_MS,
+): number {
+  if (value === undefined || value === null) return fallback;
   try {
     return duration(value, `dispatch.${field}`);
   } catch (error) {
@@ -77,6 +97,17 @@ export function dispatchSection(
     followupCommand: text(section.followup_command, "followup_command"),
     stalledAfterMs: wait(section.stalled_after, "stalled_after"),
     blockedAfterMs: wait(section.blocked_after, "blocked_after"),
+    driveRoundsFlat: rounds(section.drive_rounds_flat),
+    pickupWithinMs: wait(
+      section.pickup_within,
+      "pickup_within",
+      DEFAULT_PICKUP_WITHIN_MS,
+    ),
+    followupWithinMs: wait(
+      section.followup_within,
+      "followup_within",
+      DEFAULT_FOLLOWUP_WITHIN_MS,
+    ),
   };
 }
 

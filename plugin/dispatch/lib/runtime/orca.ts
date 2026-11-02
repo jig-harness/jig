@@ -17,6 +17,11 @@
  * worktree set --comment … --unread`), then reads the comment back
  * (`orca worktree show`), which is the receipt the tick checks for each
  * message's key (`orca-notify.ts`).
+ *
+ * `steer` finds the agent's terminal by its id (`<tabId>:<leafId>`, as
+ * `orca terminal list` names each terminal's tab and pane), re-reads the
+ * agent's state, the workspace a person has open and the rendered screen,
+ * and types the nudge with `orca terminal send --enter` (`orca-steer.ts`).
  */
 import { realpathSync } from "node:fs";
 import { orcaCommand, orcaFailure, orcaResult } from "../../../shared/orca.ts";
@@ -31,11 +36,12 @@ import {
   openNoticesWorkspace,
   openPullRequestWorkspace,
 } from "./orca-open.ts";
+import { orcaSteer } from "./orca-steer.ts";
 import {
   type AgentSession,
   type Binding,
   type JoinTargets,
-  notYet,
+  NUDGES,
   type SessionRuntime,
   type SessionsReport,
   type Workspace,
@@ -367,6 +373,7 @@ export function orcaRuntime(
     },
     notify: (target, message) =>
       orcaNotify(target, message, deadlines.runtimeTimeoutMs),
-    steer: () => notYet("steer", "build step 6"),
+    steer: (session, nudge) =>
+      orcaSteer(session, NUDGES[nudge], deadlines.runtimeTimeoutMs),
   };
 }
