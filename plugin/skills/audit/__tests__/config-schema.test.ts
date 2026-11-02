@@ -48,6 +48,7 @@ import {
 } from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
+import { DEFAULT_LABELS } from "../../../dispatch/lib/labels.ts";
 import { DEFAULT_SCANNER_APPS } from "../../resolve-review-comments/scripts/lib/scanner-annotations.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import { parseWorkTypes } from "../../do-item/scripts/lib/work-types.ts";
@@ -372,6 +373,9 @@ describe("the reading skills", () => {
       "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
       "verify.retention_days": DEFAULT_RETENTION_DAYS,
       "autonomy.level": DEFAULT_LEVEL,
+      "dispatch.labels.enabled": DEFAULT_LABELS.enabled,
+      "dispatch.labels.prefix": DEFAULT_LABELS.prefix,
+      "dispatch.labels.only_labeled": DEFAULT_LABELS.onlyLabeled,
     });
   });
 

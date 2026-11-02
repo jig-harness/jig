@@ -5,7 +5,8 @@
  * its terminal state and what it means, its takeovers and re-arms, its
  * parked decisions in their framed form, the issues filed and the deferred
  * entries not yet filed; then what the dispatcher launched, refused and
- * notified on this machine. `--json` prints the gathered report instead.
+ * notified on this machine, and how many pull requests carry each dispatch
+ * label at its latest run. `--json` prints the gathered report instead.
  */
 import { join } from "node:path";
 import { framedDecisionLines } from "./state/park-frame.ts";
@@ -115,6 +116,17 @@ export function renderMorningReport(r: MorningReport): string {
         (d) =>
           `  ${d.at} ${d.repo} ${d.kind} ${d.what} ${d.target}: ${d.detail}`,
       ),
+    );
+  if (r.dispatchLabels.length > 0)
+    lines.push(
+      "",
+      "Dispatch labels at the latest run (pull requests per label):",
+      ...r.dispatchLabels.map((l) => {
+        const counts = Object.entries(l.counts)
+          .map(([name, n]) => `${name} ${n}`)
+          .join(", ");
+        return `  ${l.at} ${l.repo}: ${counts === "" ? "none" : counts}`;
+      }),
     );
   if (r.unread.length > 0)
     lines.push(

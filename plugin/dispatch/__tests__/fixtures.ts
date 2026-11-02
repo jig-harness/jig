@@ -77,6 +77,40 @@ if (single !== null) {
   process.stderr.write("gh: Not Found (HTTP 404)\\n");
   process.exit(1);
 }
+if (args[0] === "pr" && args[1] === "edit") {
+  // A pull request's labels changed in prs-open.json or prs-merged.json; refused while label-edit-fail exists, or for a label labels-repo.json lacks.
+  if (fs.existsSync(F + "/label-edit-fail")) { process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
+  const n = Number(args[2]);
+  const values = (flag) => args.flatMap((a, i) => (a === flag ? args[i + 1].split(",") : []));
+  const add = values("--add-label");
+  const remove = values("--remove-label");
+  if (fs.existsSync(F + "/labels-repo.json")) {
+    const have = JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8"));
+    const absent = add.find((l) => !have.includes(l));
+    if (absent !== undefined) { process.stderr.write("could not add label: '" + absent + "' not found\\n"); process.exit(1); }
+  }
+  for (const state of ["open", "merged"]) {
+    const file = F + "/prs-" + state + ".json";
+    const all = JSON.parse(fs.readFileSync(file, "utf8"));
+    for (const p of all.filter((p) => p.number === n)) {
+      const names = (p.labels ?? []).map((l) => l.name).filter((l) => !remove.includes(l));
+      for (const l of add) if (!names.includes(l)) names.push(l);
+      p.labels = names.map((name) => ({ name }));
+    }
+    fs.writeFileSync(file, JSON.stringify(all));
+  }
+  out("https://github.com/${SLUG}/pull/" + n + "\\n");
+}
+if (args[0] === "label" && args[1] === "list")
+  out((fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : []).map((name) => ({ name })));
+if (args[0] === "label" && args[1] === "create") {
+  // One label added to labels-repo.json; refused while label-create-fail exists.
+  if (fs.existsSync(F + "/label-create-fail")) { process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
+  const have = fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : [];
+  have.push(args[2]);
+  fs.writeFileSync(F + "/labels-repo.json", JSON.stringify(have));
+  out("");
+}
 if (args[0] === "api" && /\\/contents\\/\\.config\\/jig\\.yaml\\?ref=main$/.test(args[1] ?? "")) {
   if (!fs.existsSync(F + "/jig.yaml")) { process.stderr.write("gh: Not Found (HTTP 404)\\n"); process.exit(1); }
   out({ encoding: "base64", content: fs.readFileSync(F + "/jig.yaml").toString("base64") });
@@ -239,7 +273,14 @@ export const openPr = (
   headRefName: head,
   headRefOid: HEAD_SHA,
   mergeable: "MERGEABLE",
+  labels: [] as Array<{ name: string }>,
   ...extra,
+});
+
+/** A pull request as the listing returns it, carrying `labels`. */
+export const labeled = <T extends object>(pr: T, ...labels: string[]) => ({
+  ...pr,
+  labels: labels.map((name) => ({ name })),
 });
 
 /** A merged pull request as `gh pr list --json` returns it. */

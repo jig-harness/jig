@@ -5,7 +5,10 @@
  * open pull requests (each with its head commit and its mergeability with
  * its base, read with it) and the pull requests merged since a date, and, for
  * Control, a pull request's unresolved review threads and whether a closed
- * one merged. Each read
+ * one merged. Where the repository turns dispatch labels on, each listing
+ * and view carries the pull requests' labels too, and a pull request's
+ * labels are changed with one `gh pr edit` call; with them off, no label
+ * is read or written. Each read
  * returns what it was asked for or throws with the reason, so a population
  * read in part is never planned from.
  */
@@ -105,7 +108,16 @@ interface ListedPr {
   headRefOid?: string;
   /** An open pull request's mergeability with its base: `MERGEABLE`, `CONFLICTING`, or `UNKNOWN` while the forge computes it. */
   mergeable?: string;
+  /** Its labels' names, when the read asked for them. */
+  labels?: string[];
 }
+
+/** Whether a read carries the pull requests' labels: only where the repository turns dispatch labels on. */
+interface LabelRead {
+  labels: boolean;
+}
+
+const NO_LABELS: LabelRead = { labels: false };
 
 /** The fields every listing reads. */
 const LISTED = ["number", "url", "title", "headRefName", "createdAt"];
@@ -113,8 +125,18 @@ const LISTED = ["number", "url", "title", "headRefName", "createdAt"];
 /** What an open pull request adds: its head commit and its mergeability. */
 const OPEN_FIELDS = ["headRefOid", "mergeable"];
 
+/** A pull request's label names, or why they do not read. */
+function labelNames(value: unknown, what: string): string[] {
+  if (
+    !Array.isArray(value) ||
+    value.some((l) => !isRecord(l) || typeof l.name !== "string")
+  )
+    throw new ForgeReadError(`${what}'s labels are unreadable`);
+  return value.map((l) => (l as { name: string }).name);
+}
+
 /** One pull request of a listing or a view, or why it does not read. */
-function listedPr(p: unknown, what: string): ListedPr {
+function listedPr(p: unknown, what: string, read = NO_LABELS): ListedPr {
   if (
     !isRecord(p) ||
     typeof p.number !== "number" ||
@@ -132,13 +154,19 @@ function listedPr(p: unknown, what: string): ListedPr {
     ...text("mergedAt"),
     ...text("headRefOid"),
     ...text("mergeable"),
+    ...(read.labels ? { labels: labelNames(p.labels, what) } : {}),
   };
 }
 
-async function listPrs(slug: string, extra: string[]): Promise<ListedPr[]> {
+async function listPrs(
+  slug: string,
+  extra: string[],
+  read: LabelRead,
+): Promise<ListedPr[]> {
   const fields = [...LISTED];
   if (extra.includes("merged")) fields.push("mergedAt");
   if (extra.includes("open")) fields.push(...OPEN_FIELDS);
+  if (read.labels) fields.push("labels");
   const out = parsed(
     await gh([
       "pr",
@@ -160,12 +188,20 @@ async function listPrs(slug: string, extra: string[]): Promise<ListedPr[]> {
     throw new ForgeReadError(
       `${slug} lists ${PR_LIMIT} or more pull requests, more than one read holds`,
     );
-  return out.map((p, i) => listedPr(p, `pull request ${i} of the listing`));
+  return out.map((p, i) =>
+    listedPr(p, `pull request ${i} of the listing`, read),
+  );
 }
 
-/** Every open pull request of the repository, each with its head commit and mergeability. */
-export async function openPullRequests(slug: string): Promise<ListedPr[]> {
-  return listPrs(slug, ["open"]);
+/**
+ * Every open pull request of the repository in one listing, each with its
+ * head commit and mergeability, and its labels when `read` asks for them.
+ */
+export async function openPullRequests(
+  slug: string,
+  read = NO_LABELS,
+): Promise<ListedPr[]> {
+  return listPrs(slug, ["open"], read);
 }
 
 /**
@@ -175,6 +211,7 @@ export async function openPullRequests(slug: string): Promise<ListedPr[]> {
 export async function openPullRequest(
   slug: string,
   pr: number,
+  read = NO_LABELS,
 ): Promise<ListedPr> {
   const out = parsed(
     await gh([
@@ -184,23 +221,33 @@ export async function openPullRequest(
       "--repo",
       slug,
       "--json",
-      [...LISTED, ...OPEN_FIELDS, "state"].join(","),
+      [
+        ...LISTED,
+        ...OPEN_FIELDS,
+        "state",
+        ...(read.labels ? ["labels"] : []),
+      ].join(","),
     ]),
     "the pull request view",
   );
   const state = field(out, "state");
   if (state !== "OPEN")
     throw new ForgeReadError(`PR #${pr} reads ${String(state)}`);
-  return listedPr(out, `PR #${pr}'s view`);
+  return listedPr(out, `PR #${pr}'s view`, read);
 }
 
 /** Every pull request merged at or after `since` (ISO 8601). */
 export async function mergedSince(
   slug: string,
   since: string,
+  read = NO_LABELS,
 ): Promise<MergedPr[]> {
   const day = since.slice(0, 10);
-  const listed = await listPrs(slug, ["merged", "--search", `merged:>=${day}`]);
+  const listed = await listPrs(
+    slug,
+    ["merged", "--search", `merged:>=${day}`],
+    read,
+  );
   for (const p of listed)
     if (p.mergedAt === undefined || !Number.isFinite(Date.parse(p.mergedAt)))
       throw new ForgeReadError(
@@ -215,6 +262,7 @@ export async function mergedSince(
       head: p.headRefName,
       mergedAt: p.mergedAt as string,
       ...(p.createdAt === undefined ? {} : { createdAt: p.createdAt }),
+      ...(p.labels === undefined ? {} : { labels: p.labels }),
     }))
     .sort((a, b) => a.number - b.number);
 }
@@ -284,4 +332,67 @@ export async function mergedNotClosed(
   if (state === "MERGED") return true;
   if (state === "CLOSED") return false;
   throw new ForgeReadError(`PR #${pr} reads ${String(state)}`);
+}
+
+/**
+ * Change a pull request's labels in one call: `add` added, `remove`
+ * removed, every other label left as it is. Throws with the forge's reason
+ * (a label that does not exist, no permission).
+ */
+export async function editLabels(
+  slug: string,
+  pr: number,
+  add: readonly string[],
+  remove: readonly string[],
+): Promise<void> {
+  await gh([
+    "pr",
+    "edit",
+    String(pr),
+    "--repo",
+    slug,
+    ...add.flatMap((l) => ["--add-label", l]),
+    ...remove.flatMap((l) => ["--remove-label", l]),
+  ]);
+}
+
+/** The names of every label the repository has. */
+export async function repositoryLabels(slug: string): Promise<string[]> {
+  const out = parsed(
+    await gh([
+      "label",
+      "list",
+      "--repo",
+      slug,
+      "--limit",
+      String(PR_LIMIT),
+      "--json",
+      "name",
+    ]),
+    "the label listing",
+  );
+  const names = labelNames(out, slug);
+  if (names.length >= PR_LIMIT)
+    throw new ForgeReadError(
+      `${slug} has ${PR_LIMIT} or more labels, more than one read holds`,
+    );
+  return names;
+}
+
+/** Create one label; throws with the forge's reason (no permission). */
+export async function createLabel(
+  slug: string,
+  label: { name: string; color: string; description: string },
+): Promise<void> {
+  await gh([
+    "label",
+    "create",
+    label.name,
+    "--repo",
+    slug,
+    "--color",
+    label.color,
+    "--description",
+    label.description,
+  ]);
 }

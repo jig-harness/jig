@@ -126,6 +126,7 @@ person about the stops only a person can settle:
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch [--apply] [--repo <path>]... [--json]
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch install [--interval 5m] [--yes] [--uninstall]
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch install --repo <path>... [--yes]
 ```
 
 `dispatch --help`, `dispatch install --help`, `dispatch receipts --help`,
@@ -288,6 +289,27 @@ while a workspace is still unread, a new message is appended to its comment
 rather than replacing it. The answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.
+
+**Dispatch labels** (`dispatch.labels` in the repository's
+[configuration](CONFIGURATION.md#dispatch), off by default) make the
+dispatcher's state visible on each pull request, from any forge client,
+and let a person steer it the same way. Each `--apply` run sets each
+managed pull request's state label (`jig:driving`, `jig:converged`,
+`jig:parked`, `jig:stale`, `jig:followed-up` under the default prefix)
+from its drive ledger, writing only where the labels disagree, so a label
+changed by hand, or left behind by a drive that was killed, is corrected
+at the next run; no state label is ever read to decide what to start. Two
+labels are a person's commands, which the dispatcher reads and never
+adds: `jig:drive` on a pull request with no drive ledger arms a drive on
+it (the `rearm` stage, once per head commit) and is replaced by the state
+label once the ledger exists, and `jig:hold` keeps every stage off the
+pull request while it is there, reported at every run and removed only by
+a person. With `only_labeled`, the dispatcher reads only the pull requests
+that carry a label of the set. The labels must exist first: `dispatch
+install --repo <path>` lists the missing ones, and with `--yes` creates
+them where the signed-in account may and lists the rest with the command a
+person runs. A label write the forge refuses is reported in the receipt,
+and the run does not fail.
 
 **The outcome log.** Every launch record that ends gets one row in the
 [outcome log](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), a

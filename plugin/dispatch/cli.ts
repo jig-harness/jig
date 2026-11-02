@@ -7,7 +7,8 @@
  * repository: the drives' re-arms and takeovers, and the pickups where the
  * session runtime binds an interactive session to its account.
  * `jig dispatch install` writes the timer that runs `--apply` every
- * interval; `jig dispatch result` is how a dispatched interactive session
+ * interval, and `install --repo` creates the dispatch labels a repository
+ * that turns them on still lacks; `jig dispatch result` is how a dispatched interactive session
  * records how it ended; `jig dispatch marker` is how a follow-up command
  * claims a merged pull request's follow-up, checks its claim and marks it
  * done; `jig dispatch dashboard` serves one page over the outcome log while
@@ -38,6 +39,7 @@ import {
 import { DEFAULT_PORT, dashboardMain } from "./dashboard.ts";
 import { clearMain } from "./clear.ts";
 import { installDispatch } from "./install.ts";
+import { installLabels } from "./install-labels.ts";
 import { StateVersionError } from "./lib/state.ts";
 import { logMain } from "./log-command.ts";
 import {
@@ -153,10 +155,15 @@ const installation = (wholeMinutes: boolean) =>
       uninstall: option("--uninstall", {
         description: message`Remove the job instead.`,
       }),
+      repos: multiple(
+        option("--repo", pathValue, {
+          description: message`Prepare this repository instead of the timer: list the dispatch labels its default branch's dispatch.labels turns on and it does not have yet; --yes creates them, and lists for a person those the account may not create. Repeat it for more.`,
+        }),
+      ),
     }),
     {
-      brief: message`Install the timer that runs dispatch --apply.`,
-      description: message`Previews the scheduler job that runs jig dispatch --apply every interval; --yes writes it.`,
+      brief: message`Install the timer that runs dispatch --apply, or a repository's dispatch labels.`,
+      description: message`Previews the scheduler job that runs jig dispatch --apply every interval; --yes writes it. With --repo, previews the dispatch labels the repository lacks; --yes creates them.`,
     },
   );
 
@@ -403,7 +410,22 @@ function subcommandMain(
       comment: args.comment ?? null,
       repo: args.repo ?? null,
     });
-  // `install`. A removal needs no machine file: a broken one must not keep the timer installed.
+  return installMain(args, script);
+}
+
+type Install = Extract<Subcommand, { action: "install" }>;
+
+/** `install`: the timer, or with `--repo` the repositories' labels. */
+function installMain(args: Install, script: string): Promise<number> {
+  if (args.repos.length > 0) {
+    if (args.uninstall || args.intervalMs !== undefined)
+      throw new ExitError(
+        2,
+        "jig dispatch install --repo prepares a repository's labels: it takes no --uninstall or --interval",
+      );
+    return installLabels(args.repos, args.confirm);
+  }
+  // A removal needs no machine file: a broken one must not keep the timer installed.
   return installDispatch(
     {
       intervalMs: args.intervalMs ?? null,

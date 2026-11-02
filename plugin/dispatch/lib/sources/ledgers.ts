@@ -31,6 +31,11 @@
  * `unplaced`: reported, never planned. So is a converged one whose
  * mergeability the forge is still computing, or whose head or verified head
  * is not known: whether it is stale cannot be told this tick.
+ *
+ * Where the repository turns dispatch labels on, each drive carries its
+ * pull request's labels, and a pull request with no ledger that carries the
+ * `drive` command label is `unarmed`: a person asked for a drive, and the
+ * plan arms one. No state label is read here.
  */
 import { stallThresholdMs } from "../../../skills/drive-pr/scripts/lib/doctor.ts";
 import { parkAnswers } from "../../../skills/drive-pr/scripts/lib/driver/rearm.ts";
@@ -39,6 +44,7 @@ import type {
   LedgerSnapshot,
 } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { readLedgerSnapshot } from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
+import { hasCommand, type LabelConfig } from "../labels.ts";
 import { minutesBetween } from "../text.ts";
 import { framedDecisionLines } from "../../../skills/drive-pr/scripts/lib/state/park-frame.ts";
 import type {
@@ -252,6 +258,8 @@ export interface OpenPr {
   headRefOid?: string;
   /** Its mergeability with its base, as the forge reports it with the pull request. */
   mergeable?: string;
+  /** Its labels, where the read asked for them. */
+  labels?: string[];
 }
 
 /** Why a snapshot holds no ledger this reader can classify; `null` when it holds one, `""` when it holds none. */
@@ -288,25 +296,50 @@ async function parkOf(
       };
 }
 
-/** One pull request's drive; `null` when it carries no ledger. */
-async function driveOf(
+/** A pull request with no ledger whose `drive` label asks for one: the plan arms it once per head commit. */
+function unarmed(
   pr: OpenPr,
-  slug: string,
-  login: string | null,
-  nowMs: number,
-  windowMs: number,
-): Promise<DrivenPr | null> {
+  base: Omit<DrivenPr, "class" | "why" | "evidence">,
+  labels: LabelConfig | null,
+): DrivenPr | null {
+  if (labels === null || !hasCommand(labels, pr.labels, "drive")) return null;
+  return {
+    ...base,
+    class: "unarmed",
+    why: "no drive ledger, and a person's drive label asks for one: arm a drive on any account",
+    evidence: { ledger: "none", headSha: pr.headRefOid ?? null },
+  };
+}
+
+/** What every drive of a pull request carries: the pull request, and its labels where they are read. */
+function baseOf(
+  pr: OpenPr,
+  labels: LabelConfig | null,
+): Omit<DrivenPr, "class" | "why" | "evidence"> {
   const base = {
     number: pr.number,
     url: pr.url,
     title: pr.title,
     head: pr.headRefName,
   };
+  return labels === null ? base : { ...base, labels: pr.labels ?? [] };
+}
+
+/** One pull request's drive; `null` when it carries no ledger and no label asks for one. */
+async function driveOf(
+  pr: OpenPr,
+  slug: string,
+  login: string | null,
+  nowMs: number,
+  windowMs: number,
+  labels: LabelConfig | null,
+): Promise<DrivenPr | null> {
+  const base = baseOf(pr, labels);
   const snapshot = await readLedgerSnapshot(String(pr.number), login, slug);
   if (typeof snapshot === "string")
     return { ...base, class: "unplaced", why: snapshot, evidence: {} };
   const why = unreadable(snapshot);
-  if (why === "") return null;
+  if (why === "") return unarmed(pr, base, labels);
   if (why !== null || snapshot.canonical?.parsed.kind !== "ledger")
     return { ...base, class: "unplaced", why: why ?? "", evidence: {} };
   const ledger = snapshot.canonical.parsed.ledger;
@@ -340,18 +373,20 @@ function waitingOf(
 
 /**
  * The open pull requests that carry a ledger, each classified; a pull
- * request with no ledger the drive trusts is not a drive and is left out.
+ * request with no ledger the drive trusts is not a drive and is left out,
+ * unless `labels` are on and it carries the `drive` label (`unarmed`).
  */
 export async function readDrives(
   slug: string,
   login: string | null,
   prs: readonly OpenPr[],
   nowMs: number,
+  labels: LabelConfig | null = null,
 ): Promise<DrivenPr[]> {
   const window = stallThresholdMs();
   const out: DrivenPr[] = [];
   for (const pr of prs) {
-    const drive = await driveOf(pr, slug, login, nowMs, window);
+    const drive = await driveOf(pr, slug, login, nowMs, window, labels);
     if (drive !== null) out.push(drive);
   }
   return out;

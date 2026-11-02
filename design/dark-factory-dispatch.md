@@ -160,7 +160,7 @@ guards keep one stage from starting twice:
 | Record | Read through | What the tick takes from it |
 | --- | --- | --- |
 | The tracker | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
-| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers | the drives to re-arm, take over or report; the follow-ups wanted, running or failed |
+| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels | the drives to re-arm, take over or report; the follow-ups wanted, running or failed |
 | The session runtime | in Orca, `orca worktree ps --json` | which workspace holds which item or pull request, and whether an agent in it is working or waiting |
 
 **The tracker.** The interface gains one read, `assignedIssues(identity,
@@ -251,6 +251,53 @@ it (see Guards against a second launch), so a marker whose launch record
 this machine no longer has is still found and reported. A merge
 the cap keeps from starting at once stays wanted until a later tick starts
 it; nothing about it depends on a time window between ticks.
+
+**Labels** (optional). A repository may turn on dispatch labels
+(`dispatch.labels`, off by default, every name under a prefix the
+repository picks, `jig:` by default), which put the tick's view of each
+pull request where a person sees it from any forge client and take a
+person's commands the same way. With them on, the open pull requests are
+listed with their labels in the same one listing, and the merged ones
+with theirs; with them off, no label is read or written.
+
+- **States**, written by the tick alone: `driving` (a driver runs, or the
+  drive stopped on a state the tick re-arms), `converged`, `parked` (a
+  person settles it: a park, a stop with no exit or one only a person
+  settles, a person's own stop), `stale`, and `followed-up` (a merged pull
+  request whose follow-up is done). The ledger is the truth: after the
+  plan, each managed pull request's state is derived from its ledger
+  again and set as its one state label, in one forge call per pull
+  request whose labels disagree and none where they agree. A label a
+  person edited, or one a killed drive left behind, is corrected at the
+  next tick. A ledger the tick cannot read leaves the labels as they are.
+  Only the states listed here are kept by this projection, so a state a
+  later stage owns, which no ledger produces, is never touched by it.
+- **Commands**, written by a person and read by the tick: `drive` on an
+  open pull request with no ledger asks for one, and the plan arms a drive
+  on it as a re-arm (`drive.ts <PR> -- <pass>` on an admitted account),
+  once per head commit, so an arm that ends without leaving a ledger is
+  reported rather than launched at every tick; once a ledger exists, the
+  command has been carried out and the label is replaced by the state
+  label, and a `drive` label on a pull request that already has a ledger
+  is reported and replaced the same way, never arming a second driver.
+  `hold` keeps every stage off its pull request (re-arm, takeover, arm,
+  follow-up, notification) while it is there; each action it keeps off is
+  reported, and the fresh read before a launch refuses one a `hold`
+  appeared on since the plan.
+- **Only labelled pull requests.** With `only_labeled` on, a pull request
+  that carries no label of the set is never read for a ledger, launched,
+  notified or followed up; what puts one under the dispatcher is a
+  person's `drive`, and the state labels keep it there. Membership reads
+  any label of the set; which stage is planned never reads one. With it
+  off, every open pull request is still read, so a drive a person armed by
+  hand on an unlabelled pull request is found and gets its label.
+
+The labels must exist before the tick writes them: `jig dispatch install
+--repo <path>` lists the missing ones and, with `--yes`, creates them
+where the signed-in account may and lists the rest for a person. The tick
+writes labels only with `--apply`, for a repository the machine file
+lists; a write the forge refuses is reported in the receipt and tried
+again at the next tick, never a failed tick.
 
 **The session runtime.** Each workspace is joined to an item or a pull
 request by the pull request the runtime links to it, by the issue it links
@@ -584,7 +631,14 @@ which a directory shared between accounts could not.
 - **Pass the flags the skills reserve for a person**: `--window-reopened`
   and `clear-lease`.
 - **Write to the tracker.** The item's own state is the claim, and `do-item`
-  sets it. The one thing it writes to the forge is the follow-up marker.
+  sets it. What it writes to the forge is the follow-up marker and, where a
+  repository turns dispatch labels on, the state labels.
+- **Read a state label to decide a launch.** A state label is derived from
+  the ledger and written; what the tick starts comes from the ledger alone.
+- **Add a `drive` or `hold` label, or remove a person's `hold`.** Both are
+  a person's commands. `drive` is removed only once it has been carried
+  out, its pull request's ledger existing, by the state label that
+  replaces it; `hold` stays until a person removes it.
 - **Compose a prompt for a stuck session.** It sends only the fixed nudges
   of Control's closed set; anything else a session needs goes to a person.
 
@@ -883,8 +937,9 @@ session runs. Its values are split as configuration always is:
   identity per tracker (`identity`), the states that mean "ready to pick
   up" (`states`), the follow-up command (`followup_command`, `/followup` in
   Jig; a consumer repository names its own post-merge command),
-  `stalled_after`, `blocked_after`, and the expectations
-  `drive_rounds_flat`, `pickup_within` and `followup_within`.
+  `stalled_after`, `blocked_after`, the expectations
+  `drive_rounds_flat`, `pickup_within` and `followup_within`, and the
+  dispatch labels (`labels`: `enabled`, `prefix`, `only_labeled`).
 
 A repository's `dispatch` section is read from its default branch as the
 forge holds it, fetched afresh at every tick, never from a workspace's
@@ -1005,6 +1060,23 @@ One pull request each, in this order; each is usable on its own.
    `jig dispatch log --jsonl` and the month files hold the same rows as the
    database. Usable alone: a stop between two writes no longer needs a
    repair at the next tick.
+10. **Labels as the visible protocol.** The label set under the
+   repository's prefix (see Labels), off by default; the open and merged
+   listings carry the labels where they are on; the projection after the
+   plan, one write per pull request whose labels disagree, counted in the
+   receipt; `drive` arming a pull request with no ledger once per head
+   commit, and `hold` keeping every stage off its pull request;
+   `only_labeled`; `jig dispatch install --repo` creating the missing
+   labels; the morning report's counts by label. Tests: a state label
+   changed by hand carries the ledger's label again after one tick; a
+   `drive` label on a pull request with no ledger gets one drive across
+   three ticks and becomes the state label once the ledger exists; a
+   `hold` keeps a re-armable drive from being re-armed and the receipt
+   says so; with `only_labeled`, an unlabelled pull request with a ledger
+   is never read or launched; with the labels off, no label is read or
+   written. Waits on step 3. Usable alone: a person sees from a phone what
+   the dispatcher holds each pull request as, adopts one with a label and
+   stands the dispatcher down from another.
 
 ## Left out
 

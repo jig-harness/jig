@@ -6,7 +6,10 @@
  * later tick, or that the runtime can only report, is left out: it is the
  * tick's standing state, which `jig dispatch` itself prints. A refusal
  * repeated tick after tick for the same reason is listed once, at its
- * latest.
+ * latest. Where a repository turns dispatch labels on, its latest receipt
+ * in the window also gives how many pull requests carry each label: the
+ * state the projection set from each ledger, and the commands a person put
+ * on them.
  */
 import { readReceipt, receiptPaths } from "../../../../dispatch/receipts.ts";
 
@@ -23,8 +26,19 @@ export interface DispatchEntry {
   detail: string;
 }
 
+/** One repository's dispatch labels at its latest run in the window. */
+export interface DispatchLabels {
+  /** When that run started. */
+  at: string;
+  repo: string;
+  /** How many pull requests carry each label, by its full name. */
+  counts: Record<string, number>;
+}
+
 export interface DispatchSince {
   entries: DispatchEntry[];
+  /** Each repository's label counts at its latest run, where it turns dispatch labels on. */
+  labels: DispatchLabels[];
   /** What could not be read, each a sentence. */
   unread: string[];
 }
@@ -163,14 +177,54 @@ function paths(root?: string): string[] | string {
   }
 }
 
-/** One receipt's entries into `entries`; a repository entry that does not read goes into `unread`. */
+/** A repository's label counts in one receipt; `null` when it has no labels part, `undefined` when that part does not read. */
+function labelCounts(
+  receipt: Receipt,
+  repo: Repo,
+): DispatchLabels | null | undefined {
+  const l = repo.labels;
+  if (l === undefined) return null;
+  if (!labelsReadable(l)) return undefined;
+  const names = [
+    ...l.states.map((s) => s?.state),
+    ...l.commands.map((c) => c?.command),
+  ].filter((n): n is string => typeof n === "string" && n !== "unknown");
+  const counts: Record<string, number> = {};
+  for (const name of names.map((n) => `${l.prefix}${n}`))
+    counts[name] = (counts[name] ?? 0) + 1;
+  return { at: receipt.startedAt, repo: repo.slug ?? repo.path, counts };
+}
+
+/** Whether a receipt's labels part has the fields this report reads. */
+function labelsReadable(l: unknown): l is NonNullable<Repo["labels"]> {
+  if (typeof l !== "object" || l === null) return false;
+  const o = l as Record<string, unknown>;
+  return (
+    typeof o.prefix === "string" &&
+    Array.isArray(o.states) &&
+    Array.isArray(o.commands)
+  );
+}
+
+/** One receipt's entries into `entries`, and its label counts into `labels`; a repository entry that does not read goes into `unread`. */
 function collect(
   receipt: Receipt,
   path: string,
   entries: Map<string, DispatchEntry>,
   unread: string[],
+  labels: Map<string, DispatchLabels>,
 ): void {
   for (const repo of receipt.repos) {
+    const counted = labelCounts(receipt, repo);
+    if (counted === undefined)
+      unread.push(
+        `the dispatch receipt ${path} has a repository entry whose labels do not read`,
+      );
+    else if (counted !== null) {
+      const seen = labels.get(counted.repo);
+      if (seen === undefined || seen.at <= counted.at)
+        labels.set(counted.repo, counted);
+    }
     if (!readable(repo)) {
       unread.push(
         `the dispatch receipt ${path} has a repository entry whose launches or notifications do not read`,
@@ -185,18 +239,21 @@ function collect(
 /** The dispatcher's launches, refusals and notifications since `since` (milliseconds), oldest first. */
 export function dispatchSince(since: number, root?: string): DispatchSince {
   const listed = paths(root);
-  if (typeof listed === "string") return { entries: [], unread: [listed] };
+  if (typeof listed === "string")
+    return { entries: [], labels: [], unread: [listed] };
   const unread: string[] = [];
   const entries = new Map<string, DispatchEntry>();
+  const labels = new Map<string, DispatchLabels>();
   for (const path of listed) {
     const receipt = readReceipt(path);
     if (receipt === null)
       unread.push(`the dispatch receipt ${path} does not read`);
     else if (publishedAt(receipt) >= since)
-      collect(receipt, path, entries, unread);
+      collect(receipt, path, entries, unread, labels);
   }
   return {
     entries: [...entries.values()].sort((a, b) => a.at.localeCompare(b.at)),
+    labels: [...labels.values()].sort((a, b) => a.repo.localeCompare(b.repo)),
     unread,
   };
 }

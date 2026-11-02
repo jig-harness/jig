@@ -2,6 +2,7 @@
  * What one tick reads, plans and reports. Every record is read fresh each
  * tick; nothing here is kept between ticks except what the receipt says.
  */
+import type { LabelConfig } from "./labels.ts";
 
 /** The records a tick reads, by who owns them. */
 export type RecordName = "tracker" | "forge" | "runtime";
@@ -30,6 +31,8 @@ export interface DispatchSection {
   pickupWithinMs: number;
   /** How long a follow-up may run before it has ended. */
   followupWithinMs: number;
+  /** The dispatch labels (`dispatch.labels`): off by default. */
+  labels: LabelConfig;
 }
 
 /** One repository as the tick dispatches for it. */
@@ -70,6 +73,7 @@ export type LedgerClass =
   | "parked"
   | "refused"
   | "needs-person"
+  | "unarmed"
   | "unplaced";
 
 /** How a pickup that needs nothing reads: its last session ended, or its claimed item is idle but not yet stalled. */
@@ -110,6 +114,8 @@ export interface DrivenPr {
   waiting?: WaitingPark[];
   /** For a `stale` ledger: what its stop does not fix. */
   stale?: StaleCause;
+  /** Its labels, read only where the repository turns dispatch labels on. */
+  labels?: string[];
 }
 
 /** One pull request merged since the follow-up stage's start. */
@@ -120,6 +126,8 @@ export interface MergedPr {
   head: string;
   mergedAt: string;
   createdAt?: string;
+  /** Its labels, read only where the repository turns dispatch labels on. */
+  labels?: string[];
 }
 
 /** A follow-up marker comment on a merged pull request, as the tick reads it. */
@@ -296,10 +304,49 @@ export interface RepoReport {
   notifications: NotifyOutcome[];
   /** What `--apply` nudged, where the machine file enables `steer`; empty otherwise. */
   steers?: SteerOutcome[];
+  /** The dispatch labels' part, where the repository turns them on. */
+  labels?: LabelReport;
   /** Targets that need nothing from the tick, by class: a pull request's ledger class, a pickup's, or a follow-up's. */
   quiet: Array<{
     target: string;
     class: LedgerClass | PickupClass | FollowupClass;
     why: string;
   }>;
+}
+
+/** A command label a pull request carries, and what the tick made of it. */
+export interface LabelCommand {
+  target: string;
+  command: "drive" | "hold";
+  note: string;
+}
+
+/** What the projection did with one pull request whose labels disagreed with its ledger. */
+export interface LabelWrite {
+  target: string;
+  add: string[];
+  remove: string[];
+  /**
+   * `written`: the forge took the change; `failed`: it refused it (a label
+   * that does not exist, no permission), reported and tried again at the
+   * next tick; `would`: a run without `--apply`, or for a repository the
+   * machine file does not list, writes nothing; `waits`: the tick's time
+   * was spent.
+   */
+  outcome: "written" | "failed" | "would" | "waits";
+  detail: string;
+}
+
+/** One repository's dispatch labels in a tick. */
+export interface LabelReport {
+  prefix: string;
+  onlyLabeled: boolean;
+  /** Under `only_labeled`: the open pull requests left unread, which carry no label of the set. */
+  unlabeled: number;
+  /** Each pull request the projection manages, and the state its ledger maps to (`null`: none; `unknown`: left as it is). */
+  states: Array<{ target: string; state: string | null }>;
+  commands: LabelCommand[];
+  /** The stages a `hold` label kept off. */
+  held: Array<{ target: string; stage: Stage; reason: string }>;
+  writes: LabelWrite[];
 }
