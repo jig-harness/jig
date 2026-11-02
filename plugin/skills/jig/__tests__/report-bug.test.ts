@@ -135,6 +135,31 @@ test("a filesystem remote yields its owner and name", () => {
   });
 });
 
+test("a file URL and a bare relative path read like the filesystem path", () => {
+  const want = { owner: "acme-co", name: "storefront" };
+  expect(remoteOwnerName("file:///srv/acme-co/storefront.git")).toEqual(want);
+  expect(remoteOwnerName("acme-co/storefront.git")).toEqual(want);
+});
+
+test("the fallback address fills each form field from a draft body", () => {
+  const fields = {
+    version: "1.2.3",
+    channel: "marketplace",
+    lastWorking: undefined,
+    what: "it parked",
+    expected: "it converges",
+    tools: "Claude Code on Linux",
+  };
+  const parsed = new URL(fallbackUrl({ title: "t", body: body(fields) }).url);
+  expect(fallbackUrl({ title: "t", body: body(fields) }).split).toBe(true);
+  expect(parsed.searchParams.get("version")).toBe("1.2.3");
+  expect(parsed.searchParams.get("channel")).toBe("marketplace");
+  expect(parsed.searchParams.get("what")).toBe("it parked");
+  expect(parsed.searchParams.get("expected")).toBe("it converges");
+  expect(parsed.searchParams.has("last-working")).toBe(false);
+  expect(fallbackUrl({ title: "t", body: "edited" }).split).toBe(false);
+});
+
 test("a nested remote namespace is redacted whole", () => {
   expect(
     remoteOwnerName("git@gitlab.example:private-org/team/service.git"),

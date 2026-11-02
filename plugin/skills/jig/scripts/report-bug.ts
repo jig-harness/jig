@@ -135,7 +135,7 @@ function word(text: string): RegExp {
 
 /**
  * The owner and name a git remote address carries (`git@host:o/n.git`,
- * `https://host/o/n`, `/srv/o/n.git`). The owner is the whole namespace, so a
+ * `https://host/o/n`, `/srv/o/n.git`, `file:///srv/o/n.git`, `o/n.git`). The owner is the whole namespace, so a
  * nested address (`git@host:org/team/n.git`) keeps `org/team`; for a
  * filesystem path it is the directory holding the repository.
  */
@@ -143,7 +143,10 @@ export function remoteOwnerName(
   address: string,
 ): { owner: string; name: string } | null {
   const trimmed = address.trim();
-  const local = /^(?:\.{1,2})?\/(.+)$/.exec(trimmed)?.[1];
+  const local =
+    /^file:\/\/[^/\s]*\/(.+)$/i.exec(trimmed)?.[1] ??
+    /^(?:\.{1,2})?\/(.+)$/.exec(trimmed)?.[1] ??
+    (/^[^:\s]+\/[^:\s]+$/.test(trimmed) ? trimmed : undefined);
   const path =
     /^[a-z][a-z0-9+.-]*:\/\/[^/\s]*\/(.+)$/i.exec(trimmed)?.[1] ??
     /^[^/\s]*:(.+)$/.exec(trimmed)?.[1] ??
@@ -644,18 +647,55 @@ function asDraft(value: unknown): Draft | null {
   };
 }
 
+/** The form fields a draft body carries, by the headings `body` writes. */
+const BODY_FIELDS: [string, string][] = [
+  ["version", "Plugin version"],
+  ["channel", "Where you installed it from"],
+  ["last-working", "Last version it worked in"],
+  ["what", "What happened"],
+  ["expected", "What you expected"],
+  ["tools", "Agent tool and operating system"],
+];
+
+/**
+ * The fields of a body written by `body`, or null when a person's edit
+ * removed or reordered a heading.
+ */
+function splitBody(text: string): Record<string, string> | null {
+  const heads = BODY_FIELDS.map(([, label]) => `### ${label}\n\n`);
+  const fields: Record<string, string> = {};
+  let at = 0;
+  for (const [i, head] of heads.entries()) {
+    const start = text.indexOf(head, at);
+    const id = BODY_FIELDS[i]?.[0];
+    if (start < 0 || !id || (i === 0 && start !== 0)) return null;
+    const from = start + head.length;
+    const next = heads[i + 1];
+    const end = next ? text.indexOf(`\n\n${next}`, from) : text.length;
+    if (end < 0) return null;
+    const value = text.slice(from, end).trim();
+    if (value !== NO_RESPONSE) fields[id] = value;
+    at = end;
+  }
+  return fields;
+}
+
 /**
  * The bug form's address built from the title and body now in `d`, so edits a
- * person made to the draft file are what the form carries: the body goes in
- * the "What happened" field. `omitted` names each field the address leaves
- * out because it would be too long, for the person to paste.
+ * person made to the draft file are what the form carries: each section of
+ * the body goes in its field, and a body whose sections an edit removed goes
+ * whole in "What happened". `omitted` names each field the address leaves
+ * out because it would be too long, for the person to paste; `split` says
+ * whether every field was filled from the body.
  */
 export function fallbackUrl(d: Pick<Draft, "title" | "body">): {
   url: string;
   omitted: string[];
+  split: boolean;
 } {
-  const { url, omitted } = formUrl(d.title, { what: d.body });
-  return { url, omitted };
+  const fields = splitBody(d.body);
+  const { url, omitted } = formUrl(d.title, fields ?? { what: d.body });
+  return { url, omitted, split: fields !== null };
 }
 
 /**
@@ -715,7 +755,7 @@ function reportFilingFailure(d: Draft, run: ReturnType<typeof gh>): never {
   fail(
     1,
     reason,
-    `Open the form instead: ${form.url}${paste}\nThe form also asks for the plugin version and where you installed it from.`,
+    `Open the form instead: ${form.url}${paste}${form.split ? "" : "\nThe form's other required fields (plugin version, where you installed it from, what you expected) are not filled: copy them from the draft's body."}`,
   );
 }
 
