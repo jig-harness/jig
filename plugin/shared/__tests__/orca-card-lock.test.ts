@@ -196,6 +196,35 @@ describe("the card's comment lock", () => {
     expect(readdirSync(root)).toEqual([]);
   });
 
+  test("recovery over a long chain of abandoned mutexes stops at the caller's deadline", async () => {
+    const root = scratchRoot();
+    const lock = cardLockPath(WORKSPACE, root);
+    const stale = `${deadPid()}\nleft\n`;
+    writeFileSync(lock, stale);
+    const id = createHash("sha256").update(stale).digest("hex").slice(0, 16);
+    const dead = deadPid();
+    for (let generation = 1; generation <= 300; generation++)
+      writeFileSync(`${lock}.reclaim-${id}-${generation}`, `${dead}\nx\n`);
+    const before = readdirSync(root).sort();
+    expect(
+      await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 0 }),
+    ).toBeNull();
+    expect(readdirSync(root).sort()).toEqual(before);
+  });
+
+  test("the sweep after a reclaim leaves a live publisher's staging file alone and removes a dead one's", async () => {
+    const root = scratchRoot();
+    const lock = cardLockPath(WORKSPACE, root);
+    const stale = `${deadPid()}\nleft\n`;
+    writeFileSync(lock, stale);
+    const id = createHash("sha256").update(stale).digest("hex").slice(0, 16);
+    const live = `${lock}.reclaim-${id}-2.init-${process.pid}-abc`;
+    writeFileSync(live, "staging");
+    writeFileSync(`${lock}.reclaim-${id}-2.init-${deadPid()}-def`, "staging");
+    await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 1000 });
+    expect(readdirSync(root)).toEqual([live.slice(root.length + 1)]);
+  });
+
   test("reclaiming a dead owner's lock leaves nothing behind", async () => {
     const root = scratchRoot();
     writeFileSync(cardLockPath(WORKSPACE, root), `${deadPid()}\nleft\n`);

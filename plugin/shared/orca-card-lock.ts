@@ -105,15 +105,19 @@ function ownerGone(pid: number | null): boolean {
  * at the lock path no writer can publish there, and only a reclaimer removes a
  * lock it did not take, so the file judged under the mutex is the file removed.
  * Once the judged content is gone no reclaimer can act on it again (a lock's
- * token is never reused), so its mutexes are swept.
+ * token is never reused), so its completed mutexes are swept, and the staging
+ * files of publishers that are gone; a live publisher's staging file is never
+ * touched. Walking the generations stops at `deadline`, so a chain of
+ * abandoned mutexes cannot hold the caller past its wait.
  */
-function reclaim(lock: string): void {
+function reclaim(lock: string, deadline: number): void {
   const judged = readLock(lock);
   if (judged === null || !ownerGone(pidOf(judged))) return;
   const id = createHash("sha256").update(judged).digest("hex").slice(0, 16);
   const prefix = `${basename(lock)}.reclaim-${id}-`;
   const content = `${process.pid}\n${randomUUID()}\n`;
   for (let generation = 1; ; generation++) {
+    if (performance.now() >= deadline) return;
     const mutex = join(dirname(lock), `${prefix}${generation}`);
     if (publish(mutex, content)) break;
     const held = readLock(mutex);
@@ -123,10 +127,20 @@ function reclaim(lock: string): void {
     if (readLock(lock) === judged) rmSync(lock, { force: true });
   } finally {
     for (const name of readdirSync(dirname(lock))) {
-      if (name.startsWith(prefix))
+      if (name.startsWith(prefix) && sweepable(name.slice(prefix.length)))
         rmSync(join(dirname(lock), name), { force: true });
     }
   }
+}
+
+/**
+ * Whether the rest of a mutex file's name, after the prefix, names a completed
+ * mutex (a generation number) or a staging file whose publisher is gone.
+ */
+function sweepable(rest: string): boolean {
+  if (/^\d+$/.test(rest)) return true;
+  const staged = /^\d+\.init-(\d+)-/.exec(rest);
+  return staged !== null && ownerGone(Number(staged[1]));
 }
 
 /**
@@ -166,7 +180,7 @@ export async function withCardLock<T>(
   const content = `${process.pid}\n${token}\n`;
   const deadline = performance.now() + (options.waitMs ?? CARD_LOCK_WAIT_MS);
   while (!tryTake(lock, content)) {
-    reclaim(lock);
+    reclaim(lock, deadline);
     if (performance.now() >= deadline) return null;
     await new Promise((done) => setTimeout(done, POLL_MS));
   }
