@@ -4,11 +4,22 @@ export interface WorktreeRequest {
   state: "OPEN" | "MERGED" | "CLOSED";
   head: string;
 }
+/**
+ * Ignored paths, split by whether a detected package manager's dependency
+ * directory accounts for them: `rebuildable` is derived from a tracked
+ * lockfile and vetoes nothing; `other` is everything else, and any entry
+ * still vetoes collection as local state with no independent preservation
+ * proof.
+ */
+export interface IgnoredContent {
+  rebuildable: string[];
+  other: string[];
+}
 export interface WorktreeEvidence {
   dirty: boolean;
   hiddenIndexChanges: boolean;
   operation: string | null;
-  ignoredContent: boolean;
+  ignoredContent: IgnoredContent;
   requests: WorktreeRequest[] | null;
   localOnlyCommits: boolean | null;
   mergedHeadCovers: boolean | null;
@@ -34,10 +45,10 @@ export function localWorktreeVeto(
   if (facts.hiddenIndexChanges)
     return live("index flags hide possible changes from git status");
   if (facts.operation) return live(`in-progress ${facts.operation}`);
-  if (facts.ignoredContent)
+  if (facts.ignoredContent.other.length)
     return {
       state: "finding",
-      reason: "ignored local content has no independent preservation proof",
+      reason: `ignored local content (${facts.ignoredContent.other.join(", ")}) has no independent preservation proof`,
     };
   return null;
 }

@@ -5,12 +5,14 @@ import { layeredConfig, remoteName } from "../../shared/consumer.ts";
 import { readDrivenTree, type DrivenTree } from "../../shared/driven-tree.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { GcError } from "../../shared/gc-error.ts";
+import { detectPackageManager } from "../../shared/detect/package-manager.ts";
 import { orcaFailure, orcaResult, runOrca } from "../../shared/orca.ts";
 import { gcGit as git } from "../git.ts";
 import type { Proof } from "../types.ts";
 import {
   classifyWorktree,
   localWorktreeVeto,
+  type IgnoredContent,
   type WorktreeEvidence,
   type WorktreeRequest,
 } from "./worktree-evidence.ts";
@@ -80,6 +82,25 @@ async function operation(admin: string): Promise<string | null> {
     }
   }
   return null;
+}
+/**
+ * Ignored paths that a detected package manager's dependency directory
+ * accounts for, wherever it sits (a monorepo's nested `node_modules` counts
+ * too): rebuildable from the lockfile `detectPackageManager` found, never
+ * meaningful local state. No field declares an override, since every
+ * ecosystem that module recognises needs none; a lockfile-less ecosystem's
+ * own rebuildable directory would be grounds to add one.
+ */
+function classifyIgnored(root: string, paths: string[]): IgnoredContent {
+  const dependencyDirectory = detectPackageManager(root).found !== null;
+  const rebuildable: string[] = [];
+  const other: string[] = [];
+  for (const path of paths) {
+    if (dependencyDirectory && path.split("/").includes("node_modules"))
+      rebuildable.push(path);
+    else other.push(path);
+  }
+  return { rebuildable, other };
 }
 async function mergedHeadCoverage(
   root: string,
@@ -252,13 +273,20 @@ export async function worktreeProof(
       .split("\0")
       .some((entry) => /^[a-zS] /.test(entry)),
     operation: await operation(admin),
-    ignoredContent: !!(await git(path, [
-      "ls-files",
-      "--others",
-      "--ignored",
-      "--exclude-standard",
-      "-z",
-    ])),
+    ignoredContent: classifyIgnored(
+      path,
+      (
+        await git(path, [
+          "ls-files",
+          "--others",
+          "--ignored",
+          "--exclude-standard",
+          "-z",
+        ])
+      )
+        .split("\0")
+        .filter((entry) => entry !== ""),
+    ),
     requests: null,
     localOnlyCommits: null,
     mergedHeadCovers: null,
@@ -267,14 +295,21 @@ export async function worktreeProof(
     idleMs: null,
     coordinated,
   };
+  // Every return below carries the paths set aside as rebuildable, whatever
+  // the outcome, so the receipt says what was judged rebuildable even for a
+  // worktree that goes on to report `would-collect`.
+  const attach = (proof: Proof): Proof =>
+    facts.ignoredContent.rebuildable.length
+      ? { ...proof, details: { rebuildable: facts.ignoredContent.rebuildable } }
+      : proof;
   const local = localWorktreeVeto(facts);
-  if (local) return local;
+  if (local) return attach(local);
   facts.requests =
     driven === null
       ? await requests(path, policy.remote, name)
       : await drivenRequests(path, driven);
   if (facts.requests.some((pr) => pr.state === "OPEN"))
-    return classifyWorktree(facts, idleDays * 86_400_000);
+    return attach(classifyWorktree(facts, idleDays * 86_400_000));
   facts.localOnlyCommits = await localOnlyCommits(path, head);
   if (facts.localOnlyCommits)
     facts.mergedHeadCovers = await mergedHeadCoverage(
@@ -291,5 +326,5 @@ export async function worktreeProof(
     (await git(path, ["rev-parse", "--abbrev-ref", "HEAD"])) !== name
   )
     throw new GcError("Worktree identity changed during the proof");
-  return classifyWorktree(facts, idleDays * 86_400_000);
+  return attach(classifyWorktree(facts, idleDays * 86_400_000));
 }

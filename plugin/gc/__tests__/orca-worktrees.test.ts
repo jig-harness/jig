@@ -339,6 +339,76 @@ describe.skipIf(
     expect(calls(f)).not.toContainEqual(expect.stringMatching(/ rm /));
   }, 60_000);
 
+  test("a dependency directory alone does not veto; the worktree still reaches would-collect", () => {
+    const f = setup();
+    // A lockfile must be tracked, like `.gitignore` itself, so neither counts
+    // as untracked content that would veto before the ignored-content check.
+    writeFileSync(join(f.tree, ".gitignore"), "node_modules/\n");
+    writeFileSync(join(f.tree, "package-lock.json"), "{}\n");
+    f.command(["git", "-C", f.tree, "add", "-A"]);
+    f.command(["git", "-C", f.tree, "commit", "-m", "track a lockfile"]);
+    f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
+    f.command(["git", "-C", f.tree, "fetch", "origin"]);
+    f.refreshGh();
+    // Both a top-level and a monorepo's nested dependency directory count.
+    mkdirSync(join(f.tree, "node_modules", ".bin"), { recursive: true });
+    writeFileSync(join(f.tree, "node_modules", ".bin", "tsc"), "");
+    mkdirSync(join(f.tree, "website", "node_modules"), { recursive: true });
+    writeFileSync(join(f.tree, "website", "node_modules", "pkg.js"), "");
+    idle(f);
+    expect(line(gc(f, ["--json"]))).toMatchObject({
+      outcome: "would-collect",
+      reason: expect.stringContaining(
+        "the runtime's registry shows no agent at work in it",
+      ),
+      details: {
+        runtime: "orca",
+        orca: f.id,
+        rebuildable: expect.arrayContaining([
+          "node_modules/.bin/tsc",
+          "website/node_modules/pkg.js",
+        ]),
+      },
+    });
+  }, 60_000);
+
+  test("another ignored path beside the dependency directory still is a finding naming it", () => {
+    const f = setup();
+    writeFileSync(join(f.tree, ".gitignore"), "node_modules/\n.env\n");
+    writeFileSync(join(f.tree, "package-lock.json"), "{}\n");
+    f.command(["git", "-C", f.tree, "add", "-A"]);
+    f.command(["git", "-C", f.tree, "commit", "-m", "track a lockfile"]);
+    f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
+    f.command(["git", "-C", f.tree, "fetch", "origin"]);
+    f.refreshGh();
+    mkdirSync(join(f.tree, "node_modules"), { recursive: true });
+    writeFileSync(join(f.tree, "node_modules", "pkg.js"), "");
+    writeFileSync(join(f.tree, ".env"), "SECRET=1\n");
+    const receipt = line(gc(f, ["--json"]));
+    expect(receipt.outcome).toBe("finding");
+    expect(receipt.reason).toContain(".env");
+    expect(receipt.reason).not.toContain("node_modules");
+    expect(receipt.details).toMatchObject({
+      rebuildable: ["node_modules/pkg.js"],
+    });
+  }, 60_000);
+
+  test("an ignored path with no recognisable package manager is still a finding", () => {
+    const f = setup();
+    writeFileSync(join(f.tree, ".gitignore"), ".env\n");
+    f.command(["git", "-C", f.tree, "add", "-A"]);
+    f.command(["git", "-C", f.tree, "commit", "-m", "track a gitignore"]);
+    f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
+    f.command(["git", "-C", f.tree, "fetch", "origin"]);
+    f.refreshGh();
+    writeFileSync(join(f.tree, ".env"), "SECRET=1\n");
+    const receipt = line(gc(f, ["--json"]));
+    expect(receipt.outcome).toBe("finding");
+    expect(receipt.reason).toContain(".env");
+    expect(receipt.details).toMatchObject({ runtime: "orca" });
+    expect(receipt.details).not.toHaveProperty("rebuildable");
+  }, 60_000);
+
   test("collecting an idle Orca checkout runs the remove hook, parks, and removes it through Orca", () => {
     const f = setup();
     idle(f);
