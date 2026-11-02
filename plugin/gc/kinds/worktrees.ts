@@ -1,5 +1,4 @@
 /** Inventory is safe without the session opener's lifecycle and lock protocol. */
-import { spawnSync } from "node:child_process";
 import {
   accessSync,
   constants,
@@ -18,7 +17,10 @@ import {
   runOrca,
 } from "../../shared/orca.ts";
 import { run } from "../../shared/proc.ts";
-import { withoutLeakyGitEnv } from "../../shared/guarded-git-spawn.ts";
+import {
+  spawnSync,
+  withoutLeakyGitEnv,
+} from "../../shared/guarded-git-spawn.ts";
 import { HOOKS_DIR, hookPath } from "../../shared/worktree-hooks.ts";
 import { isAbsolute, join, normalize, relative, sep } from "node:path";
 import { gcGit as git } from "../git.ts";
@@ -101,12 +103,14 @@ function orcaId(resource: Resource): string | null {
  * cannot change. A helper a hook starts from the checkout, and the checkout's
  * Bun startup file, are the branch's own: a `bunfig.toml` that differs from the
  * base branch's is refused, since it could preload code into the hook's Bun.
+ * The base commit decides whether a hook exists: null when neither it nor the
+ * checkout holds one.
  */
 async function snapshotBaseHooks(
   repository: string,
   declaration: string,
   worktree: string,
-): Promise<{ hook: string; dir: string }> {
+): Promise<{ hook: string; dir: string } | null> {
   const tip = / @ ([0-9a-f]{40,64})$/.exec(declaration)?.[1];
   if (tip === undefined)
     throw new GcError("the base-branch commit of the declaration is unknown");
@@ -117,10 +121,14 @@ async function snapshotBaseHooks(
     "--",
     `${HOOKS_DIR}/remove`,
   ]).catch(() => "");
-  if (held === "")
+  if (held === "") {
+    // The base branch decides whether a teardown is required; a checkout that
+    // brings a hook of its own the base never reviewed is still refused.
+    if (hookPath(worktree, "remove") === null) return null;
     throw new GcError(
       `kept: ${HOOKS_DIR}/remove is not in the base branch, so its code was never reviewed there`,
     );
+  }
   const startup = join(worktree, "bunfig.toml");
   if (existsSync(startup)) {
     const local = await git(repository, [
@@ -196,8 +204,7 @@ async function collectThroughOrca(
   try {
     // The retiring branch supplies the hook, and this runs unattended, so the
     // hook that runs is the declared base-branch commit's, never the branch's.
-    if (hookPath(resource.id, "remove") !== null)
-      snapshot = await snapshotBaseHooks(repository, declaration, resource.id);
+    snapshot = await snapshotBaseHooks(repository, declaration, resource.id);
     const base = snapshot;
     const removed = await removeThroughOrca({
       worktree: resource.id,

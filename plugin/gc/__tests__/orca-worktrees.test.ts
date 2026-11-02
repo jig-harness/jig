@@ -406,6 +406,28 @@ describe.skipIf(
     expect(readFileSync(join(f.root, "hook-ran"), "utf8")).toContain(f.tree);
   }, 60_000);
 
+  test("a branch that deletes the remove hook still gets the base branch's run", () => {
+    const f = setup();
+    f.command([
+      "git",
+      "-C",
+      f.tree,
+      "rm",
+      "-q",
+      ".config/worktree-hooks/remove",
+    ]);
+    f.command(["git", "-C", f.tree, "commit", "-m", "delete the hook"]);
+    f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
+    f.command(["git", "-C", f.tree, "fetch", "origin"]);
+    f.refreshGh();
+    idle(f);
+    expect(line(gc(f, ["--collect", "--json"]))).toMatchObject({
+      outcome: "collected",
+      reason: expect.stringContaining("ran .config/worktree-hooks/remove"),
+    });
+    expect(readFileSync(join(f.root, "hook-ran"), "utf8")).toContain(f.tree);
+  }, 60_000);
+
   test("a helper the branch added beside the remove hook is never run by collection", () => {
     const f = setup();
     writeFileSync(
