@@ -63,7 +63,7 @@ const BOUNDARY = /^\s*[╭┌╰└]?[─━═]{3,}[╮┐╯┘]?\s*$/;
 const MARKER = /^[>❯]$/;
 /** What a menu or a question looks like on an agent's screen. */
 const MENU =
-  /^\s*[❯>]\s*\d+[.)]\s|\(y\/n\)|\[y\/n\]|esc to cancel|enter to (confirm|select)|do you want|would you like/i;
+  /(?:^\s*[❯>]\s*\d+[.)]\s)|\(y\/n\)|\[y\/n\]|esc to cancel|enter to (confirm|select)|do you want|would you like/i;
 /** How many of the screen's last lines the input box must be among. */
 const PROMPT_ZONE = 10;
 
@@ -96,7 +96,7 @@ function unframedBox(lines: readonly string[]): string[] {
  * is the bare input marker; whatever else it holds is draft text.
  */
 export function screenNotReady(lines: readonly string[]): string | null {
-  const shown = lines.map((l) => l.replace(/\s+$/, ""));
+  const shown = lines.map((l) => l.trimEnd());
   while (shown.length > 0 && shown.at(-1) === "") shown.pop();
   if (shown.some((l) => MENU.test(l)))
     return "a menu or a question is on the screen";

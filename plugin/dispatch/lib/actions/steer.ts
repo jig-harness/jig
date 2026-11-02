@@ -318,7 +318,8 @@ export function planSteers(input: SteerInput): {
       actions.push(...unansweredWhileWaiting(input, r, sent, episode));
       continue;
     }
-    const reset = episode.resetAt === null ? NaN : Date.parse(episode.resetAt);
+    const reset =
+      episode.resetAt === null ? Number.NaN : Date.parse(episode.resetAt);
     if (!(reset <= input.nowMs)) {
       running.push({
         target,

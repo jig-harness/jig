@@ -287,7 +287,7 @@ function monthFiles(root: string, fromMs: number, toMs: number): string[] {
       const end = Date.UTC(Number(m[1]), Number(m[2]), 1);
       return end > fromMs && start <= toMs;
     })
-    .sort()
+    .sort((a, b) => a.localeCompare(b))
     .map((name) => join(root, name));
 }
 

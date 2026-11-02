@@ -110,9 +110,9 @@ export function dashboardData(
   const window = readRows(filter.fromMs, filter.toMs, root);
   const rows = filterRows(window, filter);
   const values = (pick: (r: LogRow) => string | null) =>
-    [
-      ...new Set(window.map(pick).filter((v): v is string => v !== null)),
-    ].sort();
+    [...new Set(window.map(pick).filter((v): v is string => v !== null))].sort(
+      (a, b) => a.localeCompare(b),
+    );
   return {
     from: new Date(filter.fromMs).toISOString(),
     to: new Date(filter.toMs).toISOString(),
