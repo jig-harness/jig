@@ -263,8 +263,10 @@ with theirs; with them off, no label is read or written.
 - **States**, written by the tick alone: `driving` (a driver runs, or the
   drive stopped on a state the tick re-arms), `converged`, `parked` (a
   person settles it: a park, a stop with no exit or one only a person
-  settles, a person's own stop), `stale`, and `followed-up` (a merged pull
-  request whose follow-up is done). The ledger is the truth: after the
+  settles, a person's own stop), `stale`, `held` (an open pull request
+  waiting its turn in a serialized area, below, whatever its ledger
+  says), and `followed-up` (a merged pull request whose follow-up is
+  done). The ledger is the truth: after the
   plan, each managed pull request's state is derived from its ledger
   again and set as its one state label, in one forge call per pull
   request whose labels disagree and none where they agree. A label a
@@ -299,6 +301,48 @@ with theirs; with them off, no label is read or written.
   the scope again there. With `only_labeled` off, every open pull request
   is still read, so a drive a person armed by hand on an unlabelled pull
   request is found and gets its label.
+
+**Serialized areas** (optional). An area of the repository's change-area
+catalog (`drive.change_areas_catalog`, [M3](../modules/M3-change-area-catalog/README.md))
+marked `serialize: true` is one whose pull requests conflict with each
+other whenever two of them move at once, so the tick drives them one at a
+time. Once per tick, from one observation of each fact: the catalog is
+read from the default branch as the forge holds it, as the `dispatch`
+section is, so a pull request cannot unserialize its own area; each open
+pull request read for a drive gets its changed files from the forge, page
+by page; a pull request touches an area when one of its files matches the
+area's own globs (its seeds, never the `impliedBy` closure: contention is
+two changes in the same files). The pull requests that touch one
+serialized area make its group, ordered by closeness to merge, read from
+the ledger and the forge and never judged: converged and mergeable first,
+then a drive in progress (a running driver, or this machine's launch
+record still holding it), then the fewest unresolved review threads, then
+the most rounds, then the oldest by creation, then the lowest number, so
+the order is the same at every tick until a fact changes. The first leads
+the group and is planned as any pull request is. Every other member is
+**held**: no re-arm, takeover or re-drive, each such action reported as
+`held: serialized behind #N in <area>`; its notifications go on. A pull
+request in two groups is held unless it leads both; the order is one total
+order, so the first pull request of all leads every group it is in and no
+two groups wait on each other. When the leader merges or leaves the group,
+the next tick promotes the next, which the re-drive of a stale converged
+drive then launches once per change. A drive in progress ranks above
+review progress so that a leader mid-drive, whose threads rise and fall
+with each round, keeps its place: otherwise the next tick could promote
+another and start a second drive in the group. Only the dispatcher's
+launches are held: a drive a person arms on a held pull request is not
+stopped, and the tick reports that the group has two drives. A pull
+request whose files do not read, or a group in which a member's ledger or
+threads do not read, is unplaced for the tick with every member of the
+group: no re-arm, no label written, read again at the next tick; a catalog
+that does not read unplaces every drive's re-arm the same way. The tick
+writes a held pull request's state label as `held` where the labels are
+on, and an event row when each hold begins and ends, the end carrying how
+long it waited (the hold's start is a row of the state database, `holds`).
+The catalog grows through a person: the conflict history report
+(`history.ts --propose-serialize` in `resolve-conflicts`) prints the
+catalog lines for the hotspots that lie in one area alone, and writes
+nothing.
 
 The labels must exist before the tick writes them: `jig install dispatch
 --repo <path>` lists the missing ones and, with `--yes`, creates them
@@ -458,8 +502,8 @@ implementation:
   step that opens a workspace, and the tool then calls the moved code, so
   the pickups in step 4 reuse it rather than a copy;
 - `launch` for a **headless pass** (a drive re-arm or takeover) as
-  `orca terminal create --worktree <selector> --title <stage> --command
-  <wrapper>`, the account's configuration directory set in the command's
+  `orca terminal create --worktree <selector> --title <tab title> --command
+  <wrapper>` (the title as Naming what it starts gives it), the account's configuration directory set in the command's
   environment (below); for an **interactive session** (a pickup, a
   follow-up) as `orca agent launch --agent <id> --worktree <selector>
   --prompt "<skill> <key>"`, with the model and effort from the item's
@@ -479,9 +523,10 @@ implementation:
   rather than starting a second agent, is checked when the pickup stage is
   built, and until it does, a lost interactive launch is not retried;
 - `notify` as a workspace marked unread with the message as its comment
-  (`orca worktree set --comment <message> --unread`, the comment read back
-  with `orca worktree show`), appended to the comment while the workspace
-  is still unread (see Notifications), which Orca's phone app shows. A workspace's comment carries a kickoff
+  (`orca worktree set --comment <message> --unread`, the comment read
+  first and read back with `orca worktree show`), appended to the comment while the workspace
+  is still unread (see Notifications) and keeping the comment's dispatched
+  marks, which Orca's phone app shows. A workspace's comment carries a kickoff
   prompt until its agent starts, so the tick never writes one on a
   workspace that may yet start an agent with it. The target is the item's
   or pull request's workspace when its agent has started; otherwise
@@ -505,6 +550,37 @@ implementation:
 
 A second runtime is a second implementation of the same methods, with
 nothing in the tick changed.
+
+#### Naming what it starts
+
+A person looking at the board should tell what the dispatcher started
+from what they started themselves. One convention, in the interface
+itself (`plugin/dispatch/lib/runtime/port.ts`), gives every runtime the
+same strings, so a later runtime names things as Orca does:
+
+- **The name** of a workspace the dispatcher creates: a short mark, the
+  stage, the key (`⚙ dispatched · pickup #123`, `⚙ dispatched · rearm
+  #456`, `⚙ dispatched · followup #789`; the notices workspace is
+  `⚙ dispatched · notices`). It reads at a glance and a search for the
+  mark finds every one. On Orca it is the `--name` of `orca worktree
+  create`, which Orca shows as the workspace's name and makes its folder's
+  name from; the branch is still the one the branch rule names.
+- **The mark** in the workspace's comment: the name and the launch
+  record's id (`⚙ dispatched · rearm #456 · launch <id>`), on a line of its
+  own, one per stage and key, a later launch's replacing the earlier one.
+  A workspace the dispatcher creates gets it as its comment; one it reuses
+  keeps its name, and `launch` adds the mark to its comment before the
+  session starts, keeping what the comment holds and never adding a
+  launch's mark twice. A notification that rewrites the comment keeps its
+  marks. A mark the runtime refuses to write does not hold the launch
+  back: the receipt says so.
+- **The tab title** of a launch: `jig dispatch · rearm #456`.
+
+The launch record keeps the same mark. A skill may rename a workspace to
+what the work became; the mark outlives the name, so the comment and the
+record still say the dispatcher started it, and the morning report lists
+the workspaces of the night by the mark on their launch records, each with
+the name it carries now.
 
 ### Admission by account
 
@@ -649,6 +725,10 @@ which a directory shared between accounts could not.
   replaces it; `hold` stays until a person removes it.
 - **Compose a prompt for a stuck session.** It sends only the fixed nudges
   of Control's closed set; anything else a session needs goes to a person.
+- **Add a serialized area, or stop a person's drive on a held pull
+  request.** What is serialized is the catalog's, changed by a person; the
+  tick never infers contention from a conflict it just saw. A hold keeps
+  only the dispatcher's own launches off.
 
 ### Notifications
 
@@ -1085,6 +1165,40 @@ One pull request each, in this order; each is usable on its own.
    written. Waits on step 3. Usable alone: a person sees from a phone what
    the dispatcher holds each pull request as, adopts one with a label and
    stands the dispatcher down from another.
+11. **Name what the dispatcher starts.** The naming convention in the
+   runtime interface (see Naming what it starts): a workspace the
+   dispatcher creates named for its stage and key, with the mark and the
+   launch record's id as its comment; a reused one keeping its name, the
+   mark added to its comment once at launch; the terminal tab and the
+   notices workspace named as the dispatcher's; the mark kept on the
+   launch record and through a notification's rewrite of the comment; the
+   morning report's dispatched workspaces, by the mark on their launch
+   records, with the name each carries now. Tests: a pickup, a re-arm and
+   a follow-up each open a workspace named with the mark, the stage and
+   the key, or mark the one they reuse, under a tab that names the
+   dispatcher; a workspace renamed after its launch is still listed by the
+   morning report; a notification keeps the mark; a mark Orca refuses to
+   write leaves the launch as it was. Waits on step 3. Usable alone: a
+   person tells a dispatched workspace from their own at a glance on the
+   board.
+12. **Serialize contended pull requests.** `serialize: true` on an area of
+   the change-area catalog, validated like the other fields; each open
+   pull request's changed files read once per tick; the groups by
+   serialized area, their order and their leaders (see Serialized areas);
+   a held pull request's re-arm, takeover and re-drive reported as held,
+   its state label `held`, and an event row when its hold begins and
+   ends; `history.ts --propose-serialize` printing the catalog lines for
+   the hotspots one area holds. Tests: three converged pull requests on one
+   serialized area, all conflicting after a merge to main, get one
+   re-drive per tick in the fixed order, the other two reported held with
+   no launch; when the leader merges, the next tick promotes the next and
+   re-drives it once; a pull request outside every serialized area is
+   driven beside a held group, and a person's drive on a held pull request
+   is reported, not stopped; the history report with
+   `--propose-serialize` prints a catalog line for a hotspot and writes
+   nothing. Waits on steps 7 and 10. Usable alone: a night of pull
+   requests that all touch the migrations no longer re-drives each of them
+   after every merge.
 
 ## Left out
 

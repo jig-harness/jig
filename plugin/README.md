@@ -107,7 +107,8 @@ The plugin also ships `jig`, a command line for the tools that run on the
 machine rather than in a session. Its components are
 [resource collection](#machine-resource-collection) (`jig gc`) and
 [the dispatcher](#the-dispatcher) (`jig dispatch`), and the same commands
-install, remove, report on and run each of them. The first install runs
+install, remove, report on and run each of them; `jig upgrade` and
+`jig doctor` keep the plugin itself current and check it. The first install runs
 from the installed plugin copy, with trusted Bun startup, and puts `jig` on
 `PATH`:
 
@@ -122,6 +123,8 @@ list --json` names it). Run it from the repository to register, or add
 ```sh
 jig install   [COMPONENT...] [--repo <path>] [--yes]
 jig uninstall [COMPONENT...] [--repo <path>] [--machine] [--yes]
+jig upgrade   [--claude | --codex] [--channel latest|stable] [--source <marketplace>] [--jobs-only] [--json]
+jig doctor    [COMPONENT...] [--json]
 jig status    [COMPONENT...] [--json]
 jig receipts  COMPONENT [<date> | <run-id>]
 jig run       [COMPONENT...]
@@ -145,6 +148,36 @@ jig run       [COMPONENT...]
   kept; the dispatcher's stays until `--machine`.
   `--machine` removes each component's job as well, and, with no component
   named, the `jig` command too.
+- **`jig upgrade`** updates the plugin in Claude Code and Codex, whichever
+  is on `PATH`, to the newest release of the [channel](#release-channels)
+  each follows, and installs it in one that lacks it (following `stable`,
+  unless `--channel latest` says otherwise). Then the installed plugin copy,
+  now the new release, refreshes what runs it: each installed job's
+  launcher copy and its job (the systemd units, the launchd job or the
+  crontab line), and the `jig` command's launcher copy and script, so a
+  change to the launcher in a release reaches them. A job keeps the
+  environment, schedule and programs its install recorded; only what the
+  release writes differently changes, nothing is written where nothing
+  differs, and a job that was enabled or running stays so. Every command
+  that changes state is printed before it runs (read-only queries, such as
+  a version or a plugin list, are not), and `--json` prints what became of each
+  harness and job. `--jobs-only` refreshes the jobs and the command without
+  updating the plugin, for after a tool updated it on its own. Each tool
+  command is limited to `JIG_SETUP_TIMEOUT_SECONDS` (default 300).
+- **`jig doctor`** checks the machine and the repository it runs in, and
+  names the command that fixes each failure: Bun's version against the one
+  Jig tests; `claude` and `codex` resolving outside every git checkout (a
+  job never records an agent tool inside one, so a development shim ahead
+  of the real tool on `PATH` leaves the jobs without it); the plugin in
+  each harness and the channel it follows; the `jig` command's launcher
+  copy; for each component, or those named, its machine file, its job's
+  launcher copy against the installed plugin's, the programs its job names
+  and its last run's receipt, and for the dispatcher that Orca resolves
+  where its timer runs; and the audit's
+  [configuration fit](skills/audit/README.md#what-it-does) of the
+  repository, offline (the audit itself also reads the forge and the
+  tracker). Outside a repository that check is skipped. It exits 1 when
+  any check fails; `--json` prints every check.
 - **`jig status`** says whether each component's job is installed, where,
   its schedule and next run, and its last run's receipt.
 - **`jig receipts gc`** (or `dispatch`) lists the receipts of earlier runs;
@@ -349,7 +382,8 @@ pull request's or item's workspace, and the workspace is marked unread,
 which Orca's phone app shows; a target with no workspace that can take a
 comment (none, or one whose comment may still be its agent's kickoff
 prompt) goes to the repository's notices workspace, a branch of the default
-branch (`jig-dispatch-notices`) into which no agent is launched. A message
+branch (`jig-dispatch-notices`), named `⚙ dispatched · notices`, into which
+no agent is launched. A message
 counts as sent only once the workspace's comment, read back, carries its key
 line (`[jig dispatch: …]`), and is never sent again while its cause stands;
 while a workspace is still unread, a new message is appended to its comment
@@ -357,13 +391,31 @@ rather than replacing it. The answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.
 
+**What it starts is named as the dispatcher's**, so a person tells it from
+their own work at a glance on the board. A workspace the dispatcher creates
+is named for the stage and the key (`⚙ dispatched · pickup #123`,
+`⚙ dispatched · rearm #456`, `⚙ dispatched · followup #789`; with Orca,
+the folder's name follows it, while the branch stays the one the branch
+rule names), and its comment carries the
+[dispatched mark](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
+that name and the launch record's id (`⚙ dispatched · rearm #456 · launch
+<id>`). A workspace it reuses keeps its name, and the mark is added to its
+comment, once, on a line of its own after what the comment holds (a later
+launch's mark replaces an earlier one's for the same stage and key). Each
+session's terminal tab reads `jig dispatch · <stage> <key>`. A session may
+rename its workspace to what the work became; the mark outlives the name,
+since the launch record keeps it too and a notification that rewrites the
+comment keeps it, and the morning report (`drives.ts --report`) lists the
+workspaces the dispatcher launched into by the mark on their launch records,
+each with the name it carries now.
+
 **Dispatch labels** (`dispatch.labels` in the repository's
 [configuration](CONFIGURATION.md#dispatch), off by default) make the
 dispatcher's state visible on each pull request, from any forge client,
 and let a person steer it the same way. Each `--apply` run sets each
 managed pull request's state label (`jig:driving`, `jig:converged`,
-`jig:parked`, `jig:stale`, `jig:followed-up` under the default prefix)
-from its drive ledger, writing only where the labels disagree, so a label
+`jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up` under the
+default prefix) from its drive ledger and the serialized areas below, writing only where the labels disagree, so a label
 changed by hand, or left behind by a drive that was killed, is corrected
 at the next run; no state label is ever read to decide what to start. Two
 labels are a person's commands, which the dispatcher reads and never
@@ -377,6 +429,31 @@ dispatch --repo <path>` lists the missing ones beside the timer, and with
 `--yes` creates them where the signed-in account may and lists the rest
 with the command a person runs. A label write the forge refuses is reported in the receipt,
 and the run does not fail.
+
+**Serialized areas.** Some pull requests conflict with each other whenever
+two move at once: two migrations, two edits to one schema. An area of the
+repository's [change-area catalog](skills/change-areas/README.md#the-catalog)
+marked `serialize: true` has its pull requests driven one at a time. Each
+run reads the catalog from the default branch, as it reads the `dispatch`
+section, and each open pull request's changed files from the forge; the
+pull requests whose files match a serialized area's own globs make its
+group, ordered by how close each is to merge, from the ledger and the
+forge alone: converged and mergeable first, then a drive in progress, then
+the fewest unresolved review threads, then the most rounds, then the
+oldest. The first leads and is planned as any pull request is; the rest
+get no re-arm, takeover or re-drive, are reported as
+`held: serialized behind #N in <area>`, carry `jig:held` where the labels
+are on, and leave an event row in the outcome log when each hold begins
+and ends, the end with how long it waited, so the dashboard shows what
+contention cost. When the leader merges or leaves the group, the next run
+promotes the next, which a conflict with the new base re-drives once. A
+pull request in two serialized areas waits unless it leads both. Only the
+dispatcher's own launches wait: a drive a person arms on a held pull
+request runs, and the run reports that the group has two drives. The run
+never adds an area: the conflict report proposes them
+(`history.ts --propose-serialize` in
+[resolve-conflicts](skills/resolve-conflicts/README.md#where-past-merges-conflicted)),
+and a person adds the line.
 
 **The outcome log.** Every launch record that ends gets one row in the
 [outcome log](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), a
@@ -603,18 +680,20 @@ codex plugin add jig@jig
 
 **Both at once**, from a checkout of this repository (it installs for each tool
 it finds on `PATH`, following `stable` unless `--channel latest` says
-otherwise, and updates when already installed):
+otherwise, and updates when already installed). Once
+[the `jig` command](#the-jig-command) is on `PATH`, `jig upgrade` does the
+same and more:
 
 ```sh
 bun tools/plugin/setup.ts
 bun tools/plugin/setup.ts --channel latest
 ```
 
-**Check** what is installed (exit 1 when the plugin is missing or disabled
-for a tool that is on `PATH`):
+**Check** what is installed: `jig doctor` reports the plugin in each tool
+and the channel it follows, beside its other checks, and exits 1 when one
+fails. Without the `jig` command, the tools list their plugins:
 
 ```sh
-bun tools/plugin/setup.ts --check
 claude plugin list        # shows jig@jig, enabled
 codex plugin list         # same for Codex
 ```
@@ -1013,7 +1092,8 @@ Paths inside the cache change with each release, so never store them.
 ## Update, pin or remove
 
 - **Update** to the newest version of the channel the machine follows:
-  `bun tools/plugin/setup.ts`, or by hand
+  `jig upgrade`, which also refreshes the installed jobs
+  ([the `jig` command](#the-jig-command)), or by hand
   `claude plugin marketplace update jig && claude plugin update jig@jig --scope user`
   and `codex plugin marketplace upgrade jig && codex plugin add jig@jig`.
   A tool installs a version only when the plugin's `version` changes, up or
@@ -1031,8 +1111,8 @@ Paths inside the cache change with each release, so never store them.
   the source. It receives each version as soon as its release commit lands,
   before that commit's gates have passed, along with the development files.
   It is for working on Jig; every other machine follows a
-  [channel](#release-channels). `bun tools/plugin/setup.ts` says so on a
-  machine that follows `main`.
+  [channel](#release-channels). `jig upgrade` says so on a machine that
+  follows `main`.
 - **Remove**: `claude plugin uninstall jig@jig` and
   `codex plugin remove jig@jig` (add
   `claude plugin marketplace remove jig --scope user` /
@@ -1101,9 +1181,13 @@ codex plugin marketplace add https://github.com/jig-harness/jig.git --ref latest
 codex plugin add jig@jig
 ```
 
-`bun tools/plugin/setup.ts --channel latest` (or `stable`) on a machine
-registered at the other channel stops and prints the removal command; run it,
-then run setup again.
+`jig upgrade --channel latest` (or `stable`) on a machine registered at the
+other channel stops and prints the removal command for each tool. Switch one
+tool at a time (`--claude`, then `--codex`): run its removal command, then
+`jig upgrade --claude --channel latest`, which installs it again. The `jig`
+command runs the plugin copy a tool names, so it needs one tool that still
+has the plugin; with neither, install with the commands above, or with
+`bun tools/plugin/setup.ts --channel latest` from a checkout.
 
 ### Automatic updates
 
@@ -1114,8 +1198,13 @@ then run setup again.
   versions a day; turn it on if you want each one as it ships.
 - **Codex** refreshes a Git marketplace on
   `codex plugin marketplace upgrade jig`, then installs the new version on
-  `codex plugin add jig@jig`. `bun tools/plugin/setup.ts` runs both; run it
-  on a schedule if you want updates without asking.
+  `codex plugin add jig@jig`. `jig upgrade` runs both; run it on a
+  schedule if you want updates without asking.
+- **The installed jobs** run a launcher copied out of the plugin, which an
+  update a tool makes on its own does not refresh. `jig upgrade` refreshes
+  them after its own update, `jig upgrade --jobs-only` after one a tool
+  made, and `jig doctor` says when a copy differs from the installed
+  plugin's.
 
 A session keeps the version it started with; a new session uses the update.
 
@@ -1137,7 +1226,7 @@ runs as you:
 
 ## Troubleshooting
 
-- **The skill is not in the `/` menu.** Run `bun tools/plugin/setup.ts --check`
+- **The skill is not in the `/` menu.** Run `jig doctor`
   (or `claude plugin list` / `codex plugin list`). If it is installed, the
   session started before the install: run `/reload-plugins` (Claude Code) or
   start a new session.
@@ -1146,7 +1235,12 @@ runs as you:
   Check with `git ls-remote https://github.com/jig-harness/jig.git`, which
   needs no login. If the error names the ref, check the channel's name: the
   channels are `stable` and `latest`.
-- **"Already added from a different source"**, or setup saying the
+- **A scheduled job fails, or stops with "Cannot find the installed jig
+  plugin".** Run `jig doctor`: it names the check that fails (an agent
+  tool on `PATH` inside a git checkout, a Bun or agent tool the job names
+  that has moved, a launcher copy older than the installed plugin, the last
+  run's exit) and the command that fixes it.
+- **"Already added from a different source"**, or `jig upgrade` saying the
   marketplace is registered elsewhere: the machine follows another channel
   or address. See [switching channels](#release-channels).
 - **"Jig configuration not found"** — the agent is working in a

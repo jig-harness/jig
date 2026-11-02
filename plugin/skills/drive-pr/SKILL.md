@@ -167,6 +167,18 @@ consumer polling `--json` for one of these states will never see it there.
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
+In an [Orca](https://www.onorca.dev) worktree, `drive.ts` shows a stop a
+person must settle on the workspace card: a park, a usage-limit stop and
+every failure stop (an operational failure, a usage error, the round budget
+spent, a failed reviewer check, an unworkable conflict, an unclean converged
+worktree, a stall, a recurring pass deadline) mark the card unread with the
+stop's one-line reason as its comment, the park's question first among them;
+on a card still unread, the reason is appended to the comment a person has
+not read yet. A converged drive, a closed pull request, a stop a person asked
+for and a drive another driver holds move nothing
+(`scripts/lib/driver/orca-card.ts`). Outside Orca nothing is called, and an
+Orca failure only warns; the exit is the stop's own either way.
+
 `CONVERGED` on a PR that is **still an unmarked draft** is not returned as-is:
 `drive.ts` marks it Ready first and re-gates once (§ Drafts are driven). Its
 witnesses are all sound on a draft — the reviewer that produced them reads
@@ -2729,6 +2741,14 @@ bun "${CLAUDE_SKILL_DIR}/scripts/mark-ready.ts" [PR] --round N --reason "round N
 `--round N` applies `pull_requests.mark_ready`: before the configured round,
 or when the repository marks Ready only at convergence or never, it prints
 `not-due` and does nothing.
+
+When it prints `marked`, move the Orca workspace card to the review stage with
+the pull request linked, as `drive.ts` does itself; outside Orca it does
+nothing, and an Orca failure only warns (exit `0`):
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-review --pr <PR>
+```
 
 **At convergence, in an interactive round.** When § 1's gate answers
 `CONVERGED` (exit 3) on a PR that is still a draft, there is no round to work,

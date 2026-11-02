@@ -1553,11 +1553,13 @@ make, use the entry's term instead.
   unlike Jig's practice modules, which are documented practices.
 - **Lifecycle verb (of the `jig` command)** — a command that acts the same
   way on every *component* of the `jig` command, rather than doing one
-  component's own work: `jig install`, `jig uninstall`, `jig status`,
-  `jig receipts` and `jig run`. With no component named, it acts on all of
-  them, except that `jig install` and `jig run` leave out a component whose
-  opt-in is missing, and `jig receipts` always names one component; each
-  component's own work stays under its name (`jig gc --collect`).
+  component's own work: `jig install`, `jig uninstall`, `jig upgrade`,
+  `jig doctor`, `jig status`, `jig receipts` and `jig run`. With no
+  component named, it acts on all of them, except that `jig install` and
+  `jig run` leave out a component whose opt-in is missing, `jig receipts`
+  always names one component, and `jig upgrade` names none: it updates the
+  plugin itself, then refreshes every installed job. Each component's own
+  work stays under its name (`jig gc --collect`).
 - **Type guard** — a function that checks at run time that a value has a
   given shape, and tells the type checker so when it does. Data read from
   outside the program (JSON, a configuration file) is checked by one before
@@ -1849,15 +1851,36 @@ make, use the entry's term instead.
   pull request or item has no workspace that can take one. It never
   launches an agent into it; it only writes its comment and marks it
   unread for a person to read.
+- **Dispatched mark** — the line that says the *dispatcher* started a
+  session in a workspace: a short mark, the stage, the key and the *launch
+  record*'s id (`⚙ dispatched · rearm #456 · launch <id>`). It is kept in
+  the workspace's comment and on the launch record, and a workspace the
+  dispatcher creates is named by its first part (`⚙ dispatched · rearm
+  #456`). A session may rename the workspace to what the work became; the
+  mark outlives the name, so the morning report still lists the workspace
+  as dispatched.
 - **Dispatch labels** — the pull-request labels through which the
   *dispatcher* and a person see and steer each other, off unless a
   repository turns them on, all under one prefix the repository picks
   (`jig:` by default). The dispatcher keeps a state label on each pull
-  request it manages (driving, converged, parked, stale, followed-up),
-  derived from the drive ledger at every *tick* and never read to decide
-  what to start. A person adds the commands: `drive` asks the
-  dispatcher to drive a pull request that has no drive yet, and `hold`
-  stands it down from a pull request until the person removes the label.
+  request it manages (driving, converged, parked, stale, *held*,
+  followed-up), derived from the drive ledger and the *serialized areas* at
+  every *tick* and never read to decide what to start. A person adds the
+  commands: `drive` asks the dispatcher to drive a pull request that has
+  no drive yet, and `hold` stands it down from a pull request until the
+  person removes the label.
+- **Serialized area** — an area of a *change-area catalog* marked
+  `serialize: true`: its pull requests conflict with each other whenever
+  two of them move at once (a migrations folder, a schema), so the
+  *dispatcher* drives them one at a time, the one closest to merge first.
+  A person adds the mark, usually after the conflict history report
+  proposes it for a *conflict hotspot*; the dispatcher never adds one.
+- **Held (pull request)** — a pull request in a *serialized area* waiting
+  for the one ahead of it to merge: the *dispatcher* starts no drive on it
+  until it leads, reports it as `held: serialized behind #N in <area>`
+  and, with *dispatch labels* on, labels it `held`. A drive a person arms
+  on it still runs. Not the same as a person's `hold` label, which stands
+  the dispatcher down from a pull request altogether.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
   it started ended, a table of its state database with a text copy of one
   file per month: one row per session with its stage, repository,

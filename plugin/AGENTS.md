@@ -63,7 +63,12 @@ here reaches every repository at once.
   `runtime/`. Installed jobs and the `jig` command run copies of
   `runtime/launcher.ts` that earlier releases wrote, so `jig.ts`,
   `gc/bunfig.toml` and the jobs' command lines (`gc --scheduled`,
-  `dispatch --apply`) keep their place and meaning.
+  `dispatch --apply`) keep their place and meaning. `jig upgrade` of one
+  release runs the next release's `jig upgrade --jobs-only --json` and
+  reads the `jobs` list it prints, so that command line and that report
+  keep their meaning too, and a job is rewritten only from what
+  `runtime/installed-job.ts` reads back from the form `jobFiles` writes:
+  change one, change the other.
 - **Skills call each other by sibling path** (`../<skill>/scripts/…`), never
   through a path in the consumer repository.
 - **A runtime-specific capability names its fallback**

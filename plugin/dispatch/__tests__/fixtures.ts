@@ -5,15 +5,16 @@
  * file on the default branch, the pull request listings, and a comment's
  * update or removal on whichever pull request holds it); a fake `orca`
  * answering `repo list` and `worktree ps` from files, listing the worktrees
- * it creates there, and keeping a workspace's comment and unread mark
- * (`worktree set`, `worktree show`) in that file; and the GitHub
+ * it creates there under the name asked for, and keeping a workspace's
+ * comment, unread mark and name (`worktree set`, `worktree show`) in that
+ * file; and the GitHub
  * tracker adapter's issue nodes served as a GraphQL endpoint the adapter
  * reaches through `JIG_GITHUB_GRAPHQL_URL`. The tick runs as a child with
  * its own home, so its receipts and lock never touch the real ones.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import {
   conn,
@@ -113,6 +114,22 @@ if (args[0] === "label" && args[1] === "create") {
   fs.writeFileSync(F + "/labels-repo.json", JSON.stringify(have));
   out("");
 }
+const files = args[0] === "api" ? /^repos\\/[^/]+\\/[^/]+\\/pulls\\/(\\d+)\\/files\\?per_page=(\\d+)&page=(\\d+)$/.exec(args[1] ?? "") : null;
+if (files !== null) {
+  // The files files-<pr>.json lists, one page at a time; refused while files-<pr>-fail exists.
+  if (fs.existsSync(F + "/files-" + files[1] + "-fail")) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
+  const all = fs.existsSync(F + "/files-" + files[1] + ".json") ? JSON.parse(fs.readFileSync(F + "/files-" + files[1] + ".json", "utf8")) : [];
+  const per = Number(files[2]);
+  const page = Number(files[3]);
+  out(all.slice((page - 1) * per, page * per).map((filename) => ({ filename })));
+}
+const contents = args[0] === "api" ? /\\/contents\\/(.+)\\?ref=main$/.exec(args[1] ?? "") : null;
+if (contents !== null && contents[1] !== ".config/jig.yaml") {
+  // Another file of the default branch, as repo-files/<path> holds it.
+  const file = F + "/repo-files/" + decodeURIComponent(contents[1]);
+  if (!fs.existsSync(file)) { process.stderr.write("gh: Not Found (HTTP 404)\\n"); process.exit(1); }
+  out({ encoding: "base64", content: fs.readFileSync(file).toString("base64") });
+}
 if (args[0] === "api" && /\\/contents\\/\\.config\\/jig\\.yaml\\?ref=main$/.test(args[1] ?? "")) {
   if (!fs.existsSync(F + "/jig.yaml")) { process.stderr.write("gh: Not Found (HTTP 404)\\n"); process.exit(1); }
   out({ encoding: "base64", content: fs.readFileSync(F + "/jig.yaml").toString("base64") });
@@ -153,19 +170,23 @@ if (args[0] === "terminal" && args[1] === "send") {
   answer({ accepted: true });
 }
 if (args[0] === "worktree" && args[1] === "create") {
-  // A real worktree of the clone, on a branch Orca names after the worktree.
+  // A real worktree of the clone, its folder and branch named after the worktree's name as Orca sanitizes it (a taken one gets a suffix), shown under the name asked for.
   const name = args[args.indexOf("--name") + 1];
   const base = args[args.indexOf("--base-branch") + 1];
   const clone = JSON.parse(fs.readFileSync(F + "/orca-repos.json", "utf8")).repos[0].path;
-  const path = require("node:path").join(F, "..", "worktrees", name.replace(/[^A-Za-z0-9.-]/g, "-"));
-  const made = Bun.spawnSync(["git", "-C", clone, "worktree", "add", "-q", "-b", "orca/" + name, path, base], { stderr: "pipe" });
+  const slug = name.replace(/[^A-Za-z0-9.-]+/g, "-").replace(/^-+|-+$/g, "");
+  let folder = slug;
+  for (let n = 2; fs.existsSync(require("node:path").join(F, "..", "worktrees", folder)); n++) folder = slug + "-" + n;
+  const path = require("node:path").join(F, "..", "worktrees", folder);
+  const made = Bun.spawnSync(["git", "-C", clone, "worktree", "add", "-q", "-b", "orca/" + folder, path, base], { stderr: "pipe" });
   if (made.exitCode !== 0) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "git", message: made.stderr.toString() } })); process.exit(1); }
   // Listed by worktree ps from then on, on the branch git says it holds.
   const ps = JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8"));
-  ps.worktrees.push({ worktreeId: "repo-1::" + path, repoId: "repo-1", path, branch: "", gitBranch: true, isArchived: false, linkedPR: null, linkedIssue: null, linkedLinearIssue: null, linkedItems: [], comment: "", unread: false, unverifiableTerminalCount: 0, agents: [] });
+  const comment = args.includes("--comment") ? args[args.indexOf("--comment") + 1] : "";
+  ps.worktrees.push({ worktreeId: "repo-1::" + path, repoId: "repo-1", path, branch: "", gitBranch: true, isArchived: false, displayName: name, linkedPR: null, linkedIssue: null, linkedLinearIssue: null, linkedItems: [], comment, unread: false, unverifiableTerminalCount: 0, agents: [] });
   ps.totalCount = ps.worktrees.length;
   fs.writeFileSync(F + "/orca-ps.json", JSON.stringify(ps));
-  answer({ worktree: { id: "repo-1::" + path, path, branch: "refs/heads/orca/" + name } });
+  answer({ worktree: { id: "repo-1::" + path, path, branch: "refs/heads/orca/" + folder } });
 }
 if (args[0] === "worktree" && (args[1] === "set" || args[1] === "show")) {
   // A workspace's comment and unread mark, kept in its worktree ps row.
@@ -173,12 +194,15 @@ if (args[0] === "worktree" && (args[1] === "set" || args[1] === "show")) {
   const ps = JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8"));
   const row = ps.worktrees.find((w) => w.path === path);
   if (!row) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "not_found" } })); process.exit(1); }
+  // A write Orca refuses while orca-set-fail exists.
+  if (args[1] === "set" && fs.existsSync(F + "/orca-set-fail")) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "refused" } })); process.exit(1); }
   if (args[1] === "set" && !fs.existsSync(F + "/orca-set-noop")) {
     if (args.includes("--comment")) row.comment = args[args.indexOf("--comment") + 1];
     if (args.includes("--unread")) row.unread = true;
+    if (args.includes("--display-name")) row.displayName = args[args.indexOf("--display-name") + 1];
     fs.writeFileSync(F + "/orca-ps.json", JSON.stringify(ps));
   }
-  answer({ worktree: { id: row.worktreeId, path: row.path, comment: row.comment } });
+  answer({ worktree: { id: row.worktreeId, path: row.path, comment: row.comment, isUnread: row.unread === true, displayName: row.displayName } });
 }
 if (args[0] === "worktree" && args[1] === "ps") {
   const ps = JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8"));
@@ -258,6 +282,8 @@ export interface OrcaRow {
   unverifiableTerminalCount?: number;
   comment?: string;
   unread?: boolean;
+  /** The name Orca shows for it; its branch when absent. */
+  name?: string;
 }
 
 /** The head commit an open pull request reports unless a test names another. */
@@ -334,6 +360,10 @@ export interface World {
   setComments(pr: number, comments: unknown[]): void;
   setWorkspaces(rows: OrcaRow[]): void;
   setConfig(yaml: string | null): void;
+  /** The files a pull request changes, as the forge lists them. */
+  setFiles(pr: number, files: string[]): void;
+  /** A file the default branch holds beside `.config/jig.yaml`. */
+  setRepoFile(path: string, text: string): void;
   /** Run `jig dispatch` with `args` (or the script `entry` in its place); resolves to its exit and output. */
   dispatch(
     args: string[],
@@ -512,6 +542,7 @@ export function world(): World {
           linkedItems: [],
           comment: r.comment ?? "",
           unread: r.unread ?? false,
+          displayName: r.name ?? r.branch,
           unverifiableTerminalCount: r.unverifiableTerminalCount ?? 0,
           agents: (r.agents ?? []).map((a, j) => ({
             paneKey: a.paneKey ?? `pane-${i}-${j}`,
@@ -524,6 +555,11 @@ export function world(): World {
         totalCount: rows.length,
         truncated: false,
       }),
+    setFiles: (pr, files) => write(`files-${pr}.json`, files),
+    setRepoFile: (path, text) => {
+      mkdirSync(dirname(join(dir, "repo-files", path)), { recursive: true });
+      writeFileSync(join(dir, "repo-files", path), text);
+    },
     setConfig: (yaml) => {
       if (yaml === null) rmSync(join(dir, "jig.yaml"), { force: true });
       else write("jig.yaml", yaml);

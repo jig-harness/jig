@@ -352,12 +352,30 @@ act:
 | Action | Authority |
 |---|---|
 | Tracker status, closing comment, filing follow-up items (here or for a consumer) | on its own |
+| Moving the merged work's Orca workspace card to `completed` | on its own |
 | Fixing what the pass found in Jig's documents or the site's hand-written text | on its own: one follow-up pull request for all of it, opened as a draft (CONTRIBUTING.md) |
 | Read-only checks: `status.ts`, `tag.ts` (without `--rerun`), `site-diff.ts`, `drives.ts`, `gh run` | on its own |
 | Running the release workflow, creating or replacing a release tag | ask first |
 | Re-running a failed deploy | ask first |
 | Stopping a live driver, deleting a branch | ask first |
 | Anything in another repository, or anything near the origin-reference boundary | a person decides |
+
+Then show the merge on Orca's workspace board, where the work ran in an Orca
+worktree: the card of the worktree that holds `headRefName` (Step 0) moves to
+`completed`, with what arm B found the release still owes as its comment, in
+one line (for example `merged; release 0.121.0 waits on the release run`, or
+`merged; released as v0.121.0`). Find that worktree in
+`git worktree list --porcelain` (the entry whose `branch` is
+`refs/heads/<headRefName>`) and skip this when none holds it. Outside Orca
+the script does nothing, and an Orca failure only warns (exit `0`). Write
+the line alone to `.context/card-comment.md` with the file editor, never
+into the command: the report can carry quotes, backticks and `$(…)`, and the
+shell would run them. `"$(cat …)"` is substituted once and not expanded
+again:
+
+```bash
+bun --cwd "<that worktree>" "$PWD/plugin/shared/orca-board.ts" completed --comment "$(cat "$PWD/.context/card-comment.md")"
+```
 
 Close with what is left for a person, by name. When every arm is NOT OWED,
 say so in one line: an honest "nothing is owed" is a result. Then settle the

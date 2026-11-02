@@ -610,7 +610,7 @@ routing below remain **exact**.
    progress; anywhere else it does nothing, and it never fails the step:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/orca-board.ts" in-progress
+   bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-progress
    ```
 
    Then name the workspace for the stage. With a runtime that can rename its workspaces (Orca), this renames it, for
@@ -975,7 +975,7 @@ routing below remain **exact**.
    elsewhere nothing happens.
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/orca-board.ts" in-review --pr <PR>
+   bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-review --pr <PR>
    ```
 
    Orca also ships its own Linear skill (`orca-linear`) whose completion

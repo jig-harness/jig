@@ -1,5 +1,5 @@
 /** Validate driver options, acquire ownership and keep its resources alive through the round loop. */
-import { fail, isDigits, shellQuote } from "./../cli.ts";
+import { ExitError, fail, isDigits, shellQuote } from "./../cli.ts";
 import { parseDriverOptions, applyPassTimeout } from "./options.ts";
 
 import {
@@ -68,6 +68,8 @@ import { pickUpDrive } from "./takeover-complete.ts";
 import { armCommand, quotaRefusal, readDriveState } from "./rearm.ts";
 
 import { armLedger, ledgerIdentity, ledgerSettlement } from "./ledger.ts";
+
+import { cardAfterDrive } from "./orca-card.ts";
 
 import {
   type EffectivePass,
@@ -145,8 +147,32 @@ async function stateUnderLocks(
   return quotaRefusal(state, agent, windowReopened) ?? state;
 }
 
+/**
+ * Run the drive; whatever ends it once the PR is known (a return, a refusal,
+ * a thrown failure) goes through `cardAfterDrive`, which moves nothing for a
+ * dry run and for the stops no person settles.
+ */
 export async function main(): Promise<number> {
+  const ctx = { pr: "", dryRun: false };
+  let exit: number;
+  try {
+    exit = await drive(ctx);
+  } catch (error) {
+    if (ctx.pr !== "")
+      await cardAfterDrive(
+        ctx.pr,
+        error instanceof ExitError ? error.code : 1,
+        ctx.dryRun,
+      );
+    throw error;
+  }
+  if (ctx.pr !== "") await cardAfterDrive(ctx.pr, exit, ctx.dryRun);
+  return exit;
+}
+
+async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
+  ctx.dryRun = options.dryRun;
   let { pr, keepDraft, handoffAt } = options;
   const { maxRounds, dryRun, botsOnly, passTimeout, forward } = options;
   const { takeOver, windowReopened } = options;
@@ -186,6 +212,7 @@ export async function main(): Promise<number> {
   if (pr === "") fail(1, "drive.ts: could not resolve a PR number");
   requireCanonicalPr(pr);
   process.env.PR = pr;
+  ctx.pr = pr;
   // The authoritative, out-of-band statement of which PR this drive is about.
   // drive-status.ts refuses to run when a pass resolves a different one, which
   // is what makes driver/pass agreement an assertion rather than an inference
@@ -506,7 +533,8 @@ export async function main(): Promise<number> {
     deadlineRetryBudget,
     firstPassNotice,
   });
-  return await settlement.done(roundsExit);
+  const exit = await settlement.done(roundsExit);
+  return exit;
 }
 
 /**

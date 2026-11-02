@@ -45,7 +45,6 @@ import {
   pullRequestLabels,
   openPullRequests,
   repoTarget,
-  unresolvedThreadCount,
 } from "./lib/forge.ts";
 import {
   applySteers,
@@ -53,7 +52,11 @@ import {
   readNudges,
   settlePending,
 } from "./lib/actions/steer.ts";
-import { observeOpened, sampleThreads } from "./lib/expectations.ts";
+import {
+  observeOpened,
+  sampleThreads,
+  tickThreadReader,
+} from "./lib/expectations.ts";
 import { logEnded } from "./lib/log-ended.ts";
 import { observeWalls } from "./lib/session-walls.ts";
 import type { Tracker } from "../skills/do-item/scripts/lib/tracker/port.ts";
@@ -67,6 +70,7 @@ import { outOfTime, rotated } from "./lib/actions/launch.ts";
 import {
   heldPullRequests,
   planLabels,
+  type ProjectionInput,
   writeLabels,
 } from "./lib/actions/labels.ts";
 import { carriesSet, hasCommand, type LabelConfig } from "./lib/labels.ts";
@@ -98,6 +102,7 @@ import type {
   SessionsReport,
 } from "./lib/runtime/port.ts";
 import { readSection } from "./lib/section.ts";
+import { observeContention } from "./lib/sources/contention.ts";
 import { readDrives } from "./lib/sources/ledgers.ts";
 import { readPickups } from "./lib/sources/tracker.ts";
 import { failureText } from "./lib/text.ts";
@@ -242,7 +247,25 @@ async function gatherRepo(
   });
 
   const { created } = forge;
-  await observeRunning(context, repo, report, drives, sessions, created);
+  const threads = tickThreadReader(repo.slug);
+  await observeRunning(
+    context,
+    repo,
+    report,
+    drives,
+    sessions,
+    created,
+    threads,
+  );
+  const serialized = await observeContention(
+    repo,
+    values,
+    report,
+    forge,
+    allRecords(context),
+    nowMs,
+    threads,
+  );
   const held = heldPullRequests(labels, [...open, ...merged]);
   const { inScope } = forge;
   planRepo(context, repo.slug, report, {
@@ -255,6 +278,7 @@ async function gatherRepo(
     sessions,
     created,
     held,
+    serialized,
     ...(labels?.onlyLabeled === true ? { inScope } : {}),
   });
   if (labels?.onlyLabeled === true) report.inScope = [...inScope];
@@ -273,6 +297,7 @@ async function gatherRepo(
   await projectLabels(context, repo.slug, report, labels, {
     ...forge,
     listed: entry !== null,
+    serialized,
   });
   return report;
 }
@@ -426,7 +451,10 @@ async function projectLabels(
   slug: string,
   report: RepoReport,
   labels: LabelConfig | null,
-  forge: ForgeRead & { listed: boolean },
+  forge: ForgeRead & {
+    listed: boolean;
+    serialized: NonNullable<ProjectionInput["serialized"]>;
+  },
 ): Promise<void> {
   if (labels === null || !forge.ok) return;
   const followedUp = new Set(
@@ -441,6 +469,7 @@ async function projectLabels(
     drives: forge.drives,
     merged: forge.merged.filter((p) => !forge.disputed.has(p.number)),
     followedUp,
+    serialized: forge.serialized,
   });
   const apply = context.apply;
   planned.report.held = report.labels?.held ?? [];
@@ -561,11 +590,10 @@ async function observeRunning(
   drives: Awaited<ReturnType<typeof readDrives>>,
   sessions: SessionsReport,
   created: ReadonlyMap<number, string>,
+  threads: (pr: number) => Promise<number>,
 ): Promise<void> {
   const records = allRecords(context);
-  await sampleThreads(records, repo.slug, drives, (pr) =>
-    unresolvedThreadCount(repo.slug, pr),
-  );
+  await sampleThreads(records, repo.slug, drives, threads);
   observeOpened(records, repo.slug, sessions, created);
   const timeoutSec = Math.ceil(
     (context.options.machine?.runtimeTimeoutMs ?? 60_000) / 1000,
@@ -719,6 +747,7 @@ function planRepo(
   holdBack(nudged, input.held ?? new Set(), input.inScope);
   report.actions.push(...nudged.actions);
   report.withheld = plan.withheld;
+  report.serialized?.held.push(...plan.serialHeld);
   report.running.push(...steers.running);
   report.unplaced.push(...plan.unplaced);
   report.quiet.push(...plan.quiet);

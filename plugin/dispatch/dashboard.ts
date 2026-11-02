@@ -348,7 +348,7 @@ async function load() {
     const head = el("div", "head");
     head.append(el("span", "", new Date(r.at).toLocaleString()), el("span", "what", (r.class ?? ("event: " + r.event))), el("span", "", r.stage + " " + r.target), el("span", "", r.repo));
     if (r.account) head.append(el("span", "", r.account));
-    if (r.kind === "ended") { head.append(el("span", "", minutes(r.durationMs))); if (r.rounds !== null) head.append(el("span", "", r.rounds + " round(s)")); if (r.model) head.append(el("span", "", r.model)); }
+    if (r.kind === "ended") { head.append(el("span", "", minutes(r.durationMs))); if (r.rounds !== null) head.append(el("span", "", r.rounds + " round(s)")); if (r.model) head.append(el("span", "", r.model)); } else if (typeof r.durationMs === "number") head.append(el("span", "", "waited " + minutes(r.durationMs)));
     card.append(head, el("div", "reason", r.reason));
     return card;
   }));
