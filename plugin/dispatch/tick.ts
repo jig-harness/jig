@@ -22,6 +22,12 @@
  * tick keeps is a row of the state database (lib/state.ts); at the end of
  * the tick the outcome log's new rows are copied into its month files
  * (lib/log-export.ts).
+ *
+ * Where a repository turns dispatch labels on (lib/labels.ts), the open
+ * pull requests are listed with their labels, a person's `hold` keeps
+ * every stage off a pull request and `drive` asks for an arm, and, last,
+ * each managed pull request's state label is set from its ledger
+ * (lib/actions/labels.ts). With them off, no label is read or written.
  */
 import { passTimeoutSeconds } from "../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
@@ -36,6 +42,7 @@ import {
   mergedNotClosed,
   mergedSince,
   openPullRequest,
+  pullRequestLabels,
   openPullRequests,
   repoTarget,
   unresolvedThreadCount,
@@ -50,9 +57,19 @@ import { observeOpened, sampleThreads } from "./lib/expectations.ts";
 import { logEnded } from "./lib/log-ended.ts";
 import { observeWalls } from "./lib/session-walls.ts";
 import type { Tracker } from "../skills/do-item/scripts/lib/tracker/port.ts";
-import { type ApplyState, applyDrives } from "./lib/actions/drive.ts";
+import {
+  type ApplyState,
+  applyDrives,
+  type FreshDrive,
+} from "./lib/actions/drive.ts";
 import { applyFollowups } from "./lib/actions/followup.ts";
-import { rotated } from "./lib/actions/launch.ts";
+import { outOfTime, rotated } from "./lib/actions/launch.ts";
+import {
+  heldPullRequests,
+  planLabels,
+  writeLabels,
+} from "./lib/actions/labels.ts";
+import { carriesSet, hasCommand, type LabelConfig } from "./lib/labels.ts";
 import { applyNotices } from "./lib/actions/notify.ts";
 import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
@@ -73,7 +90,7 @@ import {
   type ReadRecord,
 } from "./lib/launches.ts";
 import { type MachineConfig, machineRepository } from "./lib/machine-config.ts";
-import { type PlanInput, planTick } from "./lib/plan.ts";
+import { holdBack, type PlanInput, planTick } from "./lib/plan.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type {
   JoinTargets,
@@ -199,41 +216,9 @@ async function gatherRepo(
   const { keys } = tracked;
 
   // The forge: the open pull requests and their ledgers, and the merges.
-  let open: Awaited<ReturnType<typeof openPullRequests>> = [];
-  let drives: Awaited<ReturnType<typeof readDrives>> = [];
-  let merged: MarkedPr[] = [];
-  let login: string | null = null;
-  try {
-    open = await openPullRequests(repo.slug);
-    login = await resolveLogin();
-    drives = await readDrives(repo.slug, login, open, nowMs);
-    const since = report.followupSince as string;
-    if (section.followupCommand !== null)
-      merged = await withMarkers(
-        repo.slug,
-        login,
-        await mergedSince(repo.slug, since),
-      );
-    report.records.push({
-      record: "forge",
-      source: `gh ${repo.slug}`,
-      ok: true,
-      detail: `${open.length} open pull request(s), ${drives.length} with a drive ledger; ${
-        section.followupCommand === null
-          ? "no dispatch.followup_command: no follow-ups"
-          : `${merged.length} merged since ${since}`
-      }`,
-    });
-  } catch (error) {
-    report.records.push({
-      record: "forge",
-      source: `gh ${repo.slug}`,
-      ok: false,
-      detail: `the pull requests cannot be read: ${failureText(error)}`,
-    });
-    drives = [];
-    merged = [];
-  }
+  const labels = section.labels.enabled ? section.labels : null;
+  const forge = await readForge(repo, report, section, labels, nowMs);
+  const { open, drives, merged, login } = forge;
 
   // The runtime: which of them a session holds.
   const join: JoinTargets = {
@@ -256,10 +241,10 @@ async function gatherRepo(
     }${bindingNote(runtime, section)}`,
   });
 
-  const created = new Map<number, string>();
-  for (const p of [...open, ...merged])
-    if (p.createdAt !== undefined) created.set(p.number, p.createdAt);
+  const { created } = forge;
   await observeRunning(context, repo, report, drives, sessions, created);
+  const held = heldPullRequests(labels, [...open, ...merged]);
+  const { inScope } = forge;
   planRepo(context, repo.slug, report, {
     slug: repo.slug,
     section,
@@ -269,7 +254,10 @@ async function gatherRepo(
     merged,
     sessions,
     created,
+    held,
+    ...(labels?.onlyLabeled === true ? { inScope } : {}),
   });
+  if (labels?.onlyLabeled === true) report.inScope = [...inScope];
   await logRepo(context, repo.slug, report, drives);
   if (context.apply !== null)
     await applyStages(context.apply, new Set(entry?.stages ?? []), report, {
@@ -282,7 +270,185 @@ async function gatherRepo(
       join,
       sessions,
     });
+  await projectLabels(context, repo.slug, report, labels, {
+    ...forge,
+    listed: entry !== null,
+  });
   return report;
+}
+
+/** What the forge gave one repository's tick. */
+interface ForgeRead {
+  /** Whether the pull requests read in full. */
+  ok: boolean;
+  open: Awaited<ReturnType<typeof openPullRequests>>;
+  /** The open pull requests read for a ledger: under `only_labeled`, the labelled ones. */
+  read: Set<number>;
+  /** Under `only_labeled`, the pull requests in scope this tick: the only ones anything is done on, whatever a launch record says. */
+  inScope: Set<number>;
+  /** Under `only_labeled`, the pull requests whose scope this tick's listings disagree on: unplaced, nothing done or written on them. */
+  disputed: Set<number>;
+  /** When each pull request was created, from every observation of it, in scope or not: pickup bookkeeping reads it. */
+  created: Map<number, string>;
+  drives: Awaited<ReturnType<typeof readDrives>>;
+  merged: MarkedPr[];
+  login: string | null;
+}
+
+/**
+ * The forge's part of a repository's tick: the open pull requests (with
+ * their labels where `labels` is on, in the same listing) and their ledgers,
+ * and the merges. Under `only_labeled`, a pull request that carries no
+ * label of the set is never read for a ledger, and a merge that carries
+ * none wants no follow-up; the scope itself is decided once, by
+ * `decideScope`.
+ */
+async function readForge(
+  repo: RepoTarget,
+  report: RepoReport,
+  section: DispatchSection,
+  labels: LabelConfig | null,
+  nowMs: number,
+): Promise<ForgeRead> {
+  const read = { labels: labels !== null };
+  const managed = <T extends { labels?: string[] }>(prs: T[]): T[] =>
+    labels?.onlyLabeled === true
+      ? prs.filter((p) => carriesSet(labels, p.labels ?? []))
+      : prs;
+  const out: ForgeRead = {
+    ok: false,
+    open: [],
+    read: new Set(),
+    inScope: new Set(),
+    disputed: new Set(),
+    created: new Map(),
+    drives: [],
+    merged: [],
+    login: null,
+  };
+  const remember = (prs: readonly { number: number; createdAt?: string }[]) => {
+    for (const p of prs)
+      if (p.createdAt !== undefined) out.created.set(p.number, p.createdAt);
+  };
+  try {
+    out.open = await openPullRequests(repo.slug, read);
+    remember(out.open);
+    out.login = await resolveLogin();
+    const toRead = managed(out.open);
+    const unlabeled = out.open.length - toRead.length;
+    out.drives = await readDrives(repo.slug, out.login, toRead, nowMs, labels);
+    const since = report.followupSince as string;
+    out.read = new Set(toRead.map((p) => p.number));
+    const listed =
+      section.followupCommand === null
+        ? []
+        : await mergedSince(repo.slug, since, read);
+    remember(listed);
+    out.merged = await withMarkers(repo.slug, out.login, managed(listed));
+    if (labels?.onlyLabeled === true)
+      decideScope(out, report, labels, [out.open, listed]);
+    out.ok = true;
+    report.records.push({
+      record: "forge",
+      source: `gh ${repo.slug}`,
+      ok: true,
+      detail: `${out.open.length} open pull request(s), ${out.drives.length} with a drive ledger${labelNote(labels, unlabeled)}; ${
+        section.followupCommand === null
+          ? "no dispatch.followup_command: no follow-ups"
+          : `${out.merged.length} merged since ${since}`
+      }`,
+    });
+  } catch (error) {
+    report.records.push({
+      record: "forge",
+      source: `gh ${repo.slug}`,
+      ok: false,
+      detail: `the pull requests cannot be read: ${failureText(error)}`,
+    });
+    out.drives = [];
+    out.merged = [];
+    out.inScope = new Set();
+    out.disputed = new Set();
+  }
+  return out;
+}
+
+/**
+ * Under `only_labeled`, the scope is decided once per tick, from the
+ * listings that hold each pull request (the open one, the merged one): a
+ * pull request is in scope when each of them finds a label of the set on
+ * it. One they disagree on is unplaced for this tick, as any record the
+ * tick cannot place: reported, no action and no label written on it, its
+ * notice records kept, and read again at the next tick. A launch's fresh
+ * read is the observation that launch acts on, so it decides again there.
+ */
+function decideScope(
+  out: ForgeRead,
+  report: RepoReport,
+  labels: LabelConfig,
+  listings: ReadonlyArray<ReadonlyArray<{ number: number; labels?: string[] }>>,
+): void {
+  const seen = new Map<number, Set<boolean>>();
+  for (const listing of listings)
+    for (const p of listing) {
+      const views = seen.get(p.number) ?? new Set<boolean>();
+      views.add(carriesSet(labels, p.labels ?? []));
+      seen.set(p.number, views);
+    }
+  for (const [n, views] of seen) {
+    if (views.size > 1) {
+      out.disputed.add(n);
+      report.unplaced.push({
+        target: `PR #${n}`,
+        record: "forge",
+        reason:
+          "the open and the merged listing disagree on whether it carries a dispatch label, so whether it is in scope cannot be told this tick",
+      });
+    } else if (views.has(true)) out.inScope.add(n);
+  }
+}
+
+function labelNote(labels: LabelConfig | null, unlabeled: number): string {
+  if (labels === null) return "";
+  return labels.onlyLabeled
+    ? ` (dispatch labels on, only labelled pull requests: ${unlabeled} carry no label of the set and are not read)`
+    : " (dispatch labels on)";
+}
+
+/**
+ * The projection, last in a repository's tick: each managed pull request's
+ * state label set from its ledger, written only with `--apply` for a
+ * repository the machine file lists, and only where its labels disagree.
+ * Nothing where the labels are off, or the pull requests did not read.
+ */
+async function projectLabels(
+  context: TickContext,
+  slug: string,
+  report: RepoReport,
+  labels: LabelConfig | null,
+  forge: ForgeRead & { listed: boolean },
+): Promise<void> {
+  if (labels === null || !forge.ok) return;
+  const followedUp = new Set(
+    report.quiet
+      .filter((q) => q.class === "followup-done")
+      .map((q) => Number(q.target.replace(/^PR #/, ""))),
+  );
+  const planned = planLabels({
+    config: labels,
+    open: forge.open.filter((p) => !forge.disputed.has(p.number)),
+    read: forge.read,
+    drives: forge.drives,
+    merged: forge.merged.filter((p) => !forge.disputed.has(p.number)),
+    followedUp,
+  });
+  const apply = context.apply;
+  planned.report.held = report.labels?.held ?? [];
+  planned.report.writes = await writeLabels(slug, planned.changes, {
+    apply: apply !== null && forge.listed,
+    late: () => (apply === null ? null : outOfTime(apply)),
+  });
+  report.labels = planned.report;
 }
 
 /** What `--apply` acts on for one repository, as its tick read it. */
@@ -310,20 +476,33 @@ async function applyStages(
 ): Promise<void> {
   const { repo, runtime, section, tracked, login, join } = inputs;
   const fresh = () => readSessions(runtime, repo, join);
+  const labels = section.labels.enabled ? section.labels : null;
+  const drive: FreshDrive = {
+    read: async (pr) => {
+      // The pull request read again too: a stale drive's head and mergeability are its facts, and a hold label may have appeared.
+      const listed = await openPullRequest(repo.slug, pr, {
+        labels: labels !== null,
+      });
+      if (
+        labels?.onlyLabeled === true &&
+        !carriesSet(labels, listed.labels ?? [])
+      )
+        return null;
+      const [again] = await readDrives(
+        repo.slug,
+        login,
+        [listed],
+        Date.now(),
+        labels,
+      );
+      return again ?? null;
+    },
+    held: (pr) => labels !== null && hasCommand(labels, pr.labels, "hold"),
+  };
   const stages = [
     async () => {
       if (enabled.has("rearm"))
-        await applyDrives(apply, repo, report, inputs.sessions, async (pr) => {
-          // The pull request read again too: a stale drive's head and mergeability are its facts.
-          const listed = await openPullRequest(repo.slug, pr);
-          const [again] = await readDrives(
-            repo.slug,
-            login,
-            [listed],
-            Date.now(),
-          );
-          return again ?? null;
-        });
+        await applyDrives(apply, repo, report, inputs.sessions, drive);
     },
     async () => {
       const { tracker, keys } = tracked;
@@ -343,6 +522,18 @@ async function applyStages(
           login,
           merged: inputs.merged,
           sessions: fresh,
+          ...(labels === null
+            ? {}
+            : {
+                holdReason: async (pr: number) => {
+                  const now = await pullRequestLabels(repo.slug, pr);
+                  if (hasCommand(labels, now, "hold"))
+                    return "a person's hold label is on it now";
+                  return labels.onlyLabeled && !carriesSet(labels, now)
+                    ? "it carries no dispatch label now"
+                    : null;
+                },
+              }),
         });
     },
   ];
@@ -519,10 +710,28 @@ function planRepo(
     nudges,
     nowMs,
   });
-  report.actions.push(...steers.actions);
+  // The nudges stand down for a held or not-known-labelled pull request like every other action.
+  const nudged = {
+    actions: steers.actions,
+    held: plan.held,
+    withheld: plan.withheld,
+  };
+  holdBack(nudged, input.held ?? new Set(), input.inScope);
+  report.actions.push(...nudged.actions);
+  report.withheld = plan.withheld;
   report.running.push(...steers.running);
   report.unplaced.push(...plan.unplaced);
   report.quiet.push(...plan.quiet);
+  if (input.section.labels.enabled)
+    report.labels = {
+      prefix: input.section.labels.prefix,
+      onlyLabeled: input.section.labels.onlyLabeled,
+      unlabeled: 0,
+      states: [],
+      commands: [],
+      held: plan.held,
+      writes: [],
+    };
   if (input.claimed === null) return;
   updateIdle(repo, plan.idleNow, nowMs, undefined, plan.idleKeep);
   // An item the read left out (who assigned it could not be read, or not by a

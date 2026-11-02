@@ -48,6 +48,12 @@ import {
 } from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { DEFAULT_REMOTE } from "../../../shared/consumer.ts";
+import {
+  BOARD_CONFIG_KEYS,
+  BOARD_STAGES,
+  COLUMN_ID,
+} from "../../../shared/orca-board.ts";
+import { DEFAULT_LABELS } from "../../../dispatch/lib/labels.ts";
 import { DEFAULT_SCANNER_APPS } from "../../resolve-review-comments/scripts/lib/scanner-annotations.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import { parseWorkTypes } from "../../do-item/scripts/lib/work-types.ts";
@@ -264,6 +270,16 @@ describe("the reading skills", () => {
     expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
   });
 
+  test("map the board stages the Orca card moves through", () => {
+    expect(field("orca.board")?.keys).toEqual(
+      BOARD_STAGES.map((s) => BOARD_CONFIG_KEYS[s]),
+    );
+    expect(field("orca.board")?.values_type).toEqual({
+      type: "string",
+      pattern: COLUMN_ID.source,
+    });
+  });
+
   test("accept the spec adapters the resolver has", () => {
     expect(field("specs.adapters")?.items).toEqual({
       type: "enum",
@@ -372,6 +388,9 @@ describe("the reading skills", () => {
       "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
       "verify.retention_days": DEFAULT_RETENTION_DAYS,
       "autonomy.level": DEFAULT_LEVEL,
+      "dispatch.labels.enabled": DEFAULT_LABELS.enabled,
+      "dispatch.labels.prefix": DEFAULT_LABELS.prefix,
+      "dispatch.labels.only_labeled": DEFAULT_LABELS.onlyLabeled,
     });
   });
 

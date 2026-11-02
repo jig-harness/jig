@@ -7,7 +7,9 @@
  * them as cards on a workspace board and opens terminal tabs in them. A
  * session runs under Orca when a terminal Orca opened started it: Orca then
  * puts its command in `ORCA_CLI_COMMAND`, or its directory in
- * `ORCA_CLI_BIN_DIR`. Outside Orca nothing here makes a call.
+ * `ORCA_CLI_BIN_DIR`. A run that no Orca terminal started, such as `jig gc`
+ * under the machine's scheduler, finds it only where its configuration names
+ * it. Outside Orca, and with none configured, nothing here makes a call.
  */
 import { join } from "node:path";
 import { swallow } from "./errors.ts";
@@ -30,14 +32,22 @@ export const runOrca: OrcaRunner = (command, args) =>
   run([command, ...args], { timeoutSec: ORCA_CALL_TIMEOUT_SEC });
 
 /**
- * Orca's command when this session runs in a terminal Orca opened; null
- * otherwise. From the directory alone, the command is the one Orca installs
- * there: `orca-ide` on Linux, `orca` elsewhere.
+ * Orca's command when this session runs in a terminal Orca opened, else the
+ * `configured` one; null when neither names it. From the directory alone, the
+ * command is the one Orca installs there: `orca-ide` on Linux, `orca`
+ * elsewhere.
  */
 export function orcaCommand(
   env: Env,
   platform: NodeJS.Platform = process.platform,
+  configured?: string,
 ): string | null {
+  const fromEnv = orcaEnvCommand(env, platform);
+  if (fromEnv !== null) return fromEnv;
+  return configured?.trim() || null;
+}
+
+function orcaEnvCommand(env: Env, platform: NodeJS.Platform): string | null {
   const command = env.ORCA_CLI_COMMAND?.trim();
   if (command) return command;
   const dir = env.ORCA_CLI_BIN_DIR?.trim();
@@ -54,18 +64,18 @@ export function orcaTabCommand(
   platform: NodeJS.Platform = process.platform,
 ): string | null {
   if (detectHarness(env)?.wrapper !== "orca") return null;
-  return orcaCommand(env, platform);
+  return orcaEnvCommand(env, platform);
 }
 
 /** One Orca call's answer, read from its JSON envelope. */
 export type OrcaEnvelope =
   | { ok: true; result: Record<string, unknown> }
-  | { ok: false; code: string | null };
+  | { ok: false; code: string | null; message: string | null };
 
 interface RawEnvelope {
   ok?: unknown;
   result?: unknown;
-  error?: { code?: unknown };
+  error?: { code?: unknown; message?: unknown };
 }
 
 /** `stdout` parsed as a JSON object; null when it is not one. */
@@ -88,7 +98,23 @@ export function orcaEnvelope(stdout: string): OrcaEnvelope | null {
     return { ok: true, result: raw.result as Record<string, unknown> };
   if (raw?.ok !== false) return null;
   const code = raw.error?.code;
-  return { ok: false, code: typeof code === "string" ? code : null };
+  const message = raw.error?.message;
+  return {
+    ok: false,
+    code: typeof code === "string" ? code : null,
+    message: typeof message === "string" ? message : null,
+  };
+}
+
+/** Orca's message for an error, with its code when the message is only the code. */
+export function orcaErrorText(error: {
+  code?: string | null;
+  message?: string | null;
+}): string {
+  const code = error.code ?? "";
+  const message = error.message ?? "";
+  if (message === "" || message === code) return code || "unknown error";
+  return code === "" ? message : `${message} (${code})`;
 }
 
 /** The `result` of a call that exited 0 with a successful envelope; null for anything else. */

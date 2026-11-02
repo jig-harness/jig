@@ -23,7 +23,7 @@ import {
   world,
 } from "./fixtures.ts";
 import { account, driveRuns, machineFile, waitFor } from "./launch-fixtures.ts";
-import { orcaCalls, withOrigin } from "./pickup-fixtures.ts";
+import { notifyWrites, orcaCalls, withOrigin } from "./pickup-fixtures.ts";
 
 const CONFIG = `issue_tracker:
   adapter: github
@@ -109,7 +109,7 @@ describe("jig dispatch --apply notifies a person", () => {
       expect(notifications(later)).toEqual([
         expect.objectContaining({ target: "PR #7", outcome: "suppressed" }),
       ]);
-    expect(orcaCalls(w, "worktree", "set")).toHaveLength(1);
+    expect(notifyWrites(w)).toHaveLength(1);
     expect(driveRuns(w)).toEqual([]);
 
     // The person answers on the pull request, from the phone or anywhere.
@@ -133,7 +133,7 @@ describe("jig dispatch --apply notifies a person", () => {
     ]);
     expect(notifications(answered)).toEqual([]);
     await waitFor("the re-armed drive", () => driveRuns(w).length === 1);
-    expect(orcaCalls(w, "worktree", "set")).toHaveLength(1);
+    expect(notifyWrites(w)).toHaveLength(1);
   });
 
   it("sends a message again when the workspace's comment did not take it", async () => {
@@ -194,14 +194,46 @@ describe("jig dispatch --apply notifies a person", () => {
     expect(notices).not.toBe(ws);
     expect(sent[1]?.workspace).toBe(notices);
     expect(shown(w, ws).comment).toBe("Fix the flaky retry test");
+    // Named as the dispatcher's, and its comment, rewritten by the message, keeps the mark.
+    const [create] = orcaCalls(w, "worktree", "create");
+    expect(create?.[create.indexOf("--name") + 1]).toBe(
+      "⚙ dispatched · notices",
+    );
     const { comment, unread } = shown(w, notices);
     expect(unread).toBe(true);
+    expect(comment.split("\n")[0]).toBe("⚙ dispatched · notices");
     expect(comment).toContain("PR #7 parked");
     expect(comment).toContain(`[jig dispatch: ${SLUG} PR #8 stopped 7`);
-    expect(orcaCalls(w, "worktree", "set")).toHaveLength(1);
+    expect(notifyWrites(w)).toHaveLength(1);
 
     await tick(w);
     expect(orcaCalls(w, "worktree", "create")).toHaveLength(1);
-    expect(orcaCalls(w, "worktree", "set")).toHaveLength(1);
+    expect(notifyWrites(w)).toHaveLength(1);
+  });
+
+  it("keeps a suppression record while its pull request is outside the label scope", async () => {
+    const { w, ws } = fixture();
+    w.setConfig(`${CONFIG}dispatch:
+  labels: { enabled: true, only_labeled: true }
+`);
+    const labelled = {
+      ...openPr(7, "feature/7-parked"),
+      labels: [{ name: "jig:drive" }],
+    };
+    w.setPrs("open", [labelled]);
+    expect(notifications(await tick(w))).toEqual([
+      expect.objectContaining({ target: "PR #7", outcome: "sent" }),
+    ]);
+
+    // The label comes off: the cause is not observed to change, only unread.
+    w.setPrs("open", [openPr(7, "feature/7-parked")]);
+    await tick(w);
+
+    w.setPrs("open", [labelled]);
+    expect(notifications(await tick(w))).toEqual([
+      expect.objectContaining({ target: "PR #7", outcome: "suppressed" }),
+    ]);
+    expect(notifyWrites(w)).toHaveLength(1);
+    expect(shown(w, ws).unread).toBe(true);
   });
 });

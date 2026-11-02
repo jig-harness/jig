@@ -15,6 +15,7 @@ import {
   NotACheckoutError,
   primaryCheckout,
 } from "./checkout.ts";
+import { orcaCommand } from "../shared/orca.ts";
 import { baseDeclaration } from "./git.ts";
 import { receiptsKind } from "./kinds/receipts.ts";
 import { scratchKind } from "./kinds/scratch.ts";
@@ -68,8 +69,16 @@ function repositoryKinds(
         source,
         days,
         policy,
+        machineOrca(machine),
       );
     });
+}
+/**
+ * Orca's command as the machine entry names it. The environment never names
+ * it here, an Orca terminal's included: it cannot widen deletion authority.
+ */
+function machineOrca(machine: MachineConfig): string | undefined {
+  return orcaCommand({}, process.platform, machine.orca?.command) ?? undefined;
 }
 type Entry = RepositoryEntry | { path: string };
 interface PlanOptions {

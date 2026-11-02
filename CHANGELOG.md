@@ -349,6 +349,85 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.125.0] - 2026-11-02
+
+### Added
+
+- `jig upgrade` updates the plugin in Claude Code and Codex, whichever is on `PATH`, to the newest release of the channel each follows, and installs it in one that lacks it (following `stable` unless `--channel latest` says otherwise). Then the newly installed copy refreshes what runs it: each installed job's launcher copy and its job (the systemd units, the launchd job or the crontab line), and the `jig` command's launcher copy and script, so a change to the launcher in a release reaches them. A job keeps the environment, schedule and programs its install recorded, nothing is written where nothing differs, and a job that was enabled or running stays so. Every command that changes state is printed before it runs; `--json` prints what became of each tool and job, and `--jobs-only` refreshes the jobs after a tool updated the plugin on its own. See [the plugin's README](plugin/README.md#the-jig-command).
+- `jig doctor` checks the machine and the repository it runs in, and names the command that fixes each failure: Bun's version against the one Jig tests, `claude` and `codex` resolving outside every git checkout, the plugin in each tool and the channel it follows, the `jig` command's and each job's launcher copy against the installed plugin's, the programs each job names, each component's machine file and last run, Orca for the dispatcher, and the audit's configuration fit of the repository, offline. It exits 1 when a check fails; `--json` prints every check.
+
+### Changed
+
+- `bun tools/plugin/setup.ts` runs the plugin's own install and update code and is for the first install from a checkout, before `jig` is on `PATH`; afterwards `jig upgrade` and `jig doctor` do its work and more. A tool that fails no longer stops the other: setup reports it, goes on to the next, and exits 1 instead of 2; arguments it cannot take still exit 2. On a machine that follows `main`, its advice names `jig upgrade`.
+
+## [0.124.0] - 2026-11-02
+
+### Added
+
+- The dispatcher names what it starts, so a dispatched workspace is told from a person's at a glance on the board. A workspace it creates is named for the stage and the key (`⚙ dispatched · pickup #123`, `⚙ dispatched · rearm #456`, `⚙ dispatched · followup #789`), and its comment carries the [dispatched mark](GLOSSARY.md), that name and the launch record's id; a workspace it reuses keeps its name and gets the mark added to its comment once. Each session's terminal tab reads `jig dispatch · <stage> <key>`, and the notices workspace is `⚙ dispatched · notices`. The launch record keeps the mark, and a notification that rewrites a comment keeps it, so a workspace a session renamed is still known as dispatched. The convention lives in the dispatcher's runtime interface (`dispatch/lib/runtime/port.ts`), one place every runtime takes its names from.
+- The morning report (`drives.ts --report`) lists the workspaces the dispatcher launched into since the report's time, found by the mark on their launch records, each with the name it carries now and whether its comment still carries the mark (`dispatchedWorkspaces` with `--json`).
+
+### Changed
+
+- A workspace the dispatcher creates takes its Orca name, and so its folder's name, from the dispatched name rather than from its branch; the branch is still the one the repository's branch rule names.
+
+## [0.123.0] - 2026-11-02
+
+### Added
+
+- `jig gc`'s worktrees kind tells a worktree Orca manages from a plain one
+  and collects it through Orca. With `gc.orca.command` in the machine's
+  `~/.jig/jig.yaml` (an absolute path, since the scheduled run is not in an
+  Orca terminal), the inventory reads `orca worktree list --json` for the
+  repository and marks each checkout `runtime: orca` or `none`. An Orca
+  checkout's idle proof also reads Orca's registry (`orca worktree ps
+--json`): an agent Orca reports working or waiting in it keeps it, and a
+  registry that cannot be read refuses collection. An idle one is collected
+  the way the Orca workspace tool removes one: the repository's remove hook
+  inside it, its reflection findings parked, then `orca worktree rm`, so its
+  card, terminals and agent records go with it; the receipt names the hook
+  and the park. A plain worktree stays report-only.
+  The remove hook that runs is the declared base-branch commit's copy of the
+  hooks directory, never the retiring branch's; parking refuses while a
+  `JIG__` or `JIG_OVERLAY` override is set; the registry and the process
+  holders are read again right before removal, after the hook; and a registry
+  that lists a worktree twice refuses collection.
+
+## [0.122.0] - 2026-11-02
+
+The dispatcher shows its state on each pull request as a label, and takes
+a person's commands the same way.
+
+### Added
+
+- **Dispatch labels** (`dispatch.labels` in `.config/jig.yaml`, off by
+  default). With `enabled: true`, every `jig dispatch --apply` run keeps
+  one state label on each pull request it manages, derived from its drive
+  ledger: `jig:driving`, `jig:converged`, `jig:parked`, `jig:stale`, and
+  `jig:followed-up` once a merged pull request's follow-up is done. A run
+  writes only where the labels disagree, one forge call per pull request,
+  so a label changed by hand comes back at the next run; the dispatcher
+  never reads a state label to decide what to start. `prefix` replaces
+  `jig:` for a repository whose label taxonomy has its own convention.
+  A run without `--apply` reports what it would write, and a write the
+  forge refuses is reported in the receipt without failing the run.
+- **Commands a person gives with a label.** `jig:drive` on a pull
+  request with no drive ledger arms a drive on it (the machine file's
+  `rearm` stage, once per head commit), and is replaced by the state label
+  once the ledger exists. `jig:hold` keeps every stage off its pull request
+  while it is there; each run reports it, and only a person removes it.
+- **`only_labeled: true`** limits the dispatcher to the pull requests that
+  carry a label of the set: one with none is never read, re-armed or
+  followed up.
+- **`jig install dispatch --repo <path> [--yes]`** lists the dispatch
+  labels a repository lacks beside the timer, and with `--yes` creates them where the
+  signed-in account may, listing the rest with the command a person runs.
+  Run it once after turning the labels on: the labels must exist before a
+  run writes them.
+- **The morning report** (`drives.ts --report`) gives, for each repository
+  with the labels on, how many pull requests its latest run projected each
+  label for (`dispatchLabels` in `--json`).
+
 ## [0.121.0] - 2026-11-02
 
 ### Added
@@ -1304,7 +1383,7 @@ A pull request can be driven from any working tree of its clone, from the clone'
   board when it runs in an Orca worktree: the card moves to In progress at
   pickup, and to In review with the pull request linked once the pull
   request opens. Outside Orca nothing changes and no Orca call is made
-  ([plugin/skills/do-item/scripts/orca-board.ts](plugin/skills/do-item/scripts/orca-board.ts)).
+  ([plugin/shared/orca-board.ts](plugin/shared/orca-board.ts)).
 
 ## [0.85.3] - 2026-10-26
 
@@ -4668,7 +4747,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.121.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.125.0...HEAD
+[0.125.0]: https://github.com/jig-harness/jig/compare/v0.124.0...v0.125.0
+[0.124.0]: https://github.com/jig-harness/jig/compare/v0.123.0...v0.124.0
+[0.123.0]: https://github.com/jig-harness/jig/compare/v0.122.0...v0.123.0
+[0.122.0]: https://github.com/jig-harness/jig/compare/v0.121.0...v0.122.0
 [0.121.0]: https://github.com/jig-harness/jig/compare/v0.120.3...v0.121.0
 [0.120.3]: https://github.com/jig-harness/jig/compare/v0.120.2...v0.120.3
 [0.120.2]: https://github.com/jig-harness/jig/compare/v0.120.1...v0.120.2

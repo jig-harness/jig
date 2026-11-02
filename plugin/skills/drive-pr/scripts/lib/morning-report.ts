@@ -14,7 +14,10 @@
  * entries not yet filed. Every other open pull request the account authored
  * is listed too, for its deferred entries. Then what the dispatcher (`jig
  * dispatch`) did on this machine since the same time, from its receipts:
- * its launches, refusals and notifications (`morning-report-dispatch.ts`).
+ * its launches, refusals and notifications (`morning-report-dispatch.ts`);
+ * and the workspaces it launched into, found by the dispatched mark on
+ * their launch records, each with the name it carries now, read from the
+ * session runtime under its deadline (`dispatch/lib/dispatched.ts`).
  * Of a clone's own state and the
  * ledger, the newer speaks for a pull request both describe: the ledger
  * when another clone wrote a later generation of it, else the state, which
@@ -28,6 +31,10 @@
  */
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  type DispatchedWorkspace,
+  dispatchedSince,
+} from "../../../../dispatch/lib/dispatched.ts";
 import { swallow } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { deferredEntries } from "../../../resolve-review-comments/scripts/lib/deferred-section.ts";
@@ -35,6 +42,7 @@ import { fail } from "./cli.ts";
 import { stallThresholdMs } from "./doctor.ts";
 import {
   type DispatchEntry,
+  type DispatchLabels,
   dispatchSince,
 } from "./morning-report-dispatch.ts";
 import { renderMorningReport } from "./morning-report-render.ts";
@@ -108,6 +116,10 @@ export interface MorningReport {
   pullRequests: ReportPullRequest[];
   /** What the dispatcher launched, refused and notified on this machine since the report's time. */
   dispatch: DispatchEntry[];
+  /** How many pull requests carry each dispatch label, per repository, at its latest run. */
+  dispatchLabels: DispatchLabels[];
+  /** The workspaces the dispatcher launched into since the report's time, by the mark on their launch records, with the name each carries now. */
+  dispatchedWorkspaces: DispatchedWorkspace[];
   /** What could not be read, each a sentence. */
   unread: string[];
 }
@@ -612,12 +624,16 @@ export async function gatherMorningReport(opts: {
   }
   const dispatched = dispatchSince(since);
   unread.push(...dispatched.unread);
+  const workspaces = await dispatchedSince(since);
+  unread.push(...workspaces.unread);
   return {
     now: opts.now.toISOString(),
     since: opts.since,
     sinceSource: opts.sinceSource,
     pullRequests,
     dispatch: dispatched.entries,
+    dispatchLabels: dispatched.labels,
+    dispatchedWorkspaces: workspaces.workspaces,
     unread,
   };
 }

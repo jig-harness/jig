@@ -130,6 +130,8 @@ interface Supervision {
   captureBytes?: number;
   /** Names the child on stderr when it is stopped. */
   announce?: string;
+  /** The child's environment, in place of the launcher's own. */
+  env?: NodeJS.ProcessEnv;
 }
 
 /** The longest delay `setTimeout` takes; a longer one fires at once. */
@@ -169,6 +171,7 @@ function supervise(command: string[], options: Supervision): Promise<Outcome> {
     const child = spawn(command[0] as string, command.slice(1), {
       stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit",
       detached: true,
+      ...(options.env === undefined ? {} : { env: options.env }),
     });
     const signal = (name: NodeJS.Signals) => {
       try {
@@ -259,10 +262,16 @@ export async function listPlugins(
   program: string,
   timeoutMs = 30_000,
   maxBytes = 4 * 1024 * 1024,
+  env?: NodeJS.ProcessEnv,
 ): Promise<unknown> {
   const { code, stopped, stdout, stderr } = await supervise(
     [program, "plugin", "list", "--json"],
-    { deadlineMs: timeoutMs, graceMs: 0, captureBytes: maxBytes },
+    {
+      deadlineMs: timeoutMs,
+      graceMs: 0,
+      captureBytes: maxBytes,
+      ...(env === undefined ? {} : { env }),
+    },
   );
   if (stopped === "deadline")
     throw new LauncherError(`did not answer within ${timeoutMs / 1000}s`);

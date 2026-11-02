@@ -155,8 +155,11 @@ Built in this order:
 3. **`doctor` and `upgrade`**: `tools/plugin/setup.ts`'s install, update
    and check move into the plugin as `jig upgrade` and `jig doctor`, moved
    and not copied: `tools/plugin/setup.ts` keeps only a call into the
-   plugin's code, so a first install from a checkout still works. `doctor`
-   also runs the audit's configuration-fit check.
+   plugin's code, so a first install from a checkout still works. After
+   the plugin, `jig upgrade` has the newly installed copy refresh each
+   installed job's launcher copy and job, and the `jig` command, keeping
+   what each install recorded. `doctor` also runs the audit's
+   configuration-fit check, offline.
 4. **The timers keep the plugin current**: the launcher runs the installed
    copy's `jig upgrade --scheduled` before each job and resolves the entry
    again, so the job runs the copy the upgrade installed. The upgrade is on
@@ -469,7 +472,9 @@ per step:
   Coordinate tool-state creators with collection admission before enabling
   retirement; its legacy reaper lock excludes only other reapers.
   Validate its weekly job through the installed command before starting
-  the later kinds. Worktree collection stays disabled until this integration.
+  the later kinds. Worktree collection stays disabled until this
+  integration, except for a worktree Orca manages, which `jig gc` collects
+  through Orca.
 - **Containers, volumes and images**, keyed to the compose projects the
   worktrees derive, and the machine-level dangling images and build cache.
 - **Branches** merged as the forge records it (squash merges included) or
@@ -800,11 +805,8 @@ processes the repository.
     whole process group. Supervise it there too, once what the host must
     provide is decided: `bun` for the shared supervisor, as the Herdr tool
     asks of its hosts, or a supervisor in the host's own shell;
-  - `do-item` shows pickup and the opened pull request on Orca's
-    workspace board (`plugin/skills/do-item/scripts/orca-board.ts`); the review and merge
-    stages are not shown yet (`drive-pr` converged, the merge's follow-up
-    moving the card to `completed`), and the tracker's GitHub issues could
-    be linked with `--issue`;
+  - the board card (`plugin/shared/orca-board.ts`) could link the
+    tracker's GitHub issue with `--issue`;
   - a worktree created in the Orca app gets Orca's branch name and Orca's
     own setup hook, not the repository's convention and create hook; say in
     M12's mappings how a repository's `orca.yaml` setup script and Orca's

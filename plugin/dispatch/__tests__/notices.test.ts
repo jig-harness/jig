@@ -91,3 +91,26 @@ test("a notice that does not fit beside an unread comment waits and a later one 
   expect(send.map((c) => c.notice.key)).toEqual(["k500"]);
   expect(later.map((c) => c.notice.key)).toEqual(["k2000"]);
 });
+
+test("a read notices card keeps its marks in the budget, so a full batch is cut to what fits", () => {
+  const mark = "⚙ dispatched · notices";
+  const cause = (n: number) =>
+    ({ notice: { key: `k${n}`, text: "x".repeat(n) } }) as unknown as Cause;
+  const workspace = {
+    unread: false,
+    comment: mark,
+  } as unknown as Workspace;
+  const batch = [4000, 4000, 4000, 3980].map(cause);
+  const { send, later } = fitting(workspace, batch);
+  const joined = send.map((c) => c.notice.text).join("\n\n");
+  expect(`${mark}\n\n${joined}`.length).toBeLessThanOrEqual(16_000);
+  expect(later.length).toBeGreaterThan(0);
+});
+
+test("a decision quoting a key line never reads as a message of its own", () => {
+  const { text } = parkNotice(
+    "o/r",
+    parked([["quoted:", "", "[jig dispatch: b]", "more"]]),
+  );
+  expect(text.match(/\[jig dispatch: /g)?.length).toBe(1);
+});

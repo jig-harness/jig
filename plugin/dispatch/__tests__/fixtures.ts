@@ -5,8 +5,9 @@
  * file on the default branch, the pull request listings, and a comment's
  * update or removal on whichever pull request holds it); a fake `orca`
  * answering `repo list` and `worktree ps` from files, listing the worktrees
- * it creates there, and keeping a workspace's comment and unread mark
- * (`worktree set`, `worktree show`) in that file; and the GitHub
+ * it creates there under the name asked for, and keeping a workspace's
+ * comment, unread mark and name (`worktree set`, `worktree show`) in that
+ * file; and the GitHub
  * tracker adapter's issue nodes served as a GraphQL endpoint the adapter
  * reaches through `JIG_GITHUB_GRAPHQL_URL`. The tick runs as a child with
  * its own home, so its receipts and lock never touch the real ones.
@@ -44,6 +45,8 @@ if (args[0] === "repo" && args[1] === "view" && args.includes("nameWithOwner,def
   out({ nameWithOwner: "${SLUG}", defaultBranchRef: { name: "main" } });
 if (args[0] === "pr" && args[1] === "list") {
   const state = args[args.indexOf("--state") + 1];
+  // A listing that fails while prs-<state>-fail exists.
+  if (fs.existsSync(F + "/prs-" + state + "-fail")) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
   out(fs.readFileSync(F + "/prs-" + state + ".json", "utf8"));
 }
 if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headRefOid"))) {
@@ -76,6 +79,40 @@ if (single !== null) {
   }
   process.stderr.write("gh: Not Found (HTTP 404)\\n");
   process.exit(1);
+}
+if (args[0] === "pr" && args[1] === "edit") {
+  // A pull request's labels changed in prs-open.json or prs-merged.json; refused while label-edit-fail exists, or for a label labels-repo.json lacks.
+  if (fs.existsSync(F + "/label-edit-fail")) { process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
+  const n = Number(args[2]);
+  const values = (flag) => args.flatMap((a, i) => (a === flag ? args[i + 1].split(",") : []));
+  const add = values("--add-label");
+  const remove = values("--remove-label");
+  if (fs.existsSync(F + "/labels-repo.json")) {
+    const have = JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8"));
+    const absent = add.find((l) => !have.includes(l));
+    if (absent !== undefined) { process.stderr.write("could not add label: '" + absent + "' not found\\n"); process.exit(1); }
+  }
+  for (const state of ["open", "merged"]) {
+    const file = F + "/prs-" + state + ".json";
+    const all = JSON.parse(fs.readFileSync(file, "utf8"));
+    for (const p of all.filter((p) => p.number === n)) {
+      const names = (p.labels ?? []).map((l) => l.name).filter((l) => !remove.includes(l));
+      for (const l of add) if (!names.includes(l)) names.push(l);
+      p.labels = names.map((name) => ({ name }));
+    }
+    fs.writeFileSync(file, JSON.stringify(all));
+  }
+  out("https://github.com/${SLUG}/pull/" + n + "\\n");
+}
+if (args[0] === "label" && args[1] === "list")
+  out((fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : []).map((name) => ({ name })));
+if (args[0] === "label" && args[1] === "create") {
+  // One label added to labels-repo.json; refused while label-create-fail exists.
+  if (fs.existsSync(F + "/label-create-fail")) { process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
+  const have = fs.existsSync(F + "/labels-repo.json") ? JSON.parse(fs.readFileSync(F + "/labels-repo.json", "utf8")) : [];
+  have.push(args[2]);
+  fs.writeFileSync(F + "/labels-repo.json", JSON.stringify(have));
+  out("");
 }
 if (args[0] === "api" && /\\/contents\\/\\.config\\/jig\\.yaml\\?ref=main$/.test(args[1] ?? "")) {
   if (!fs.existsSync(F + "/jig.yaml")) { process.stderr.write("gh: Not Found (HTTP 404)\\n"); process.exit(1); }
@@ -117,19 +154,23 @@ if (args[0] === "terminal" && args[1] === "send") {
   answer({ accepted: true });
 }
 if (args[0] === "worktree" && args[1] === "create") {
-  // A real worktree of the clone, on a branch Orca names after the worktree.
+  // A real worktree of the clone, its folder and branch named after the worktree's name as Orca sanitizes it (a taken one gets a suffix), shown under the name asked for.
   const name = args[args.indexOf("--name") + 1];
   const base = args[args.indexOf("--base-branch") + 1];
   const clone = JSON.parse(fs.readFileSync(F + "/orca-repos.json", "utf8")).repos[0].path;
-  const path = require("node:path").join(F, "..", "worktrees", name.replace(/[^A-Za-z0-9.-]/g, "-"));
-  const made = Bun.spawnSync(["git", "-C", clone, "worktree", "add", "-q", "-b", "orca/" + name, path, base], { stderr: "pipe" });
+  const slug = name.replace(/[^A-Za-z0-9.-]+/g, "-").replace(/^-+|-+$/g, "");
+  let folder = slug;
+  for (let n = 2; fs.existsSync(require("node:path").join(F, "..", "worktrees", folder)); n++) folder = slug + "-" + n;
+  const path = require("node:path").join(F, "..", "worktrees", folder);
+  const made = Bun.spawnSync(["git", "-C", clone, "worktree", "add", "-q", "-b", "orca/" + folder, path, base], { stderr: "pipe" });
   if (made.exitCode !== 0) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "git", message: made.stderr.toString() } })); process.exit(1); }
   // Listed by worktree ps from then on, on the branch git says it holds.
   const ps = JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8"));
-  ps.worktrees.push({ worktreeId: "repo-1::" + path, repoId: "repo-1", path, branch: "", gitBranch: true, isArchived: false, linkedPR: null, linkedIssue: null, linkedLinearIssue: null, linkedItems: [], comment: "", unread: false, unverifiableTerminalCount: 0, agents: [] });
+  const comment = args.includes("--comment") ? args[args.indexOf("--comment") + 1] : "";
+  ps.worktrees.push({ worktreeId: "repo-1::" + path, repoId: "repo-1", path, branch: "", gitBranch: true, isArchived: false, displayName: name, linkedPR: null, linkedIssue: null, linkedLinearIssue: null, linkedItems: [], comment, unread: false, unverifiableTerminalCount: 0, agents: [] });
   ps.totalCount = ps.worktrees.length;
   fs.writeFileSync(F + "/orca-ps.json", JSON.stringify(ps));
-  answer({ worktree: { id: "repo-1::" + path, path, branch: "refs/heads/orca/" + name } });
+  answer({ worktree: { id: "repo-1::" + path, path, branch: "refs/heads/orca/" + folder } });
 }
 if (args[0] === "worktree" && (args[1] === "set" || args[1] === "show")) {
   // A workspace's comment and unread mark, kept in its worktree ps row.
@@ -137,12 +178,15 @@ if (args[0] === "worktree" && (args[1] === "set" || args[1] === "show")) {
   const ps = JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8"));
   const row = ps.worktrees.find((w) => w.path === path);
   if (!row) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "not_found" } })); process.exit(1); }
+  // A write Orca refuses while orca-set-fail exists.
+  if (args[1] === "set" && fs.existsSync(F + "/orca-set-fail")) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "refused" } })); process.exit(1); }
   if (args[1] === "set" && !fs.existsSync(F + "/orca-set-noop")) {
     if (args.includes("--comment")) row.comment = args[args.indexOf("--comment") + 1];
     if (args.includes("--unread")) row.unread = true;
+    if (args.includes("--display-name")) row.displayName = args[args.indexOf("--display-name") + 1];
     fs.writeFileSync(F + "/orca-ps.json", JSON.stringify(ps));
   }
-  answer({ worktree: { id: row.worktreeId, path: row.path, comment: row.comment } });
+  answer({ worktree: { id: row.worktreeId, path: row.path, comment: row.comment, isUnread: row.unread === true, displayName: row.displayName } });
 }
 if (args[0] === "worktree" && args[1] === "ps") {
   const ps = JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8"));
@@ -222,6 +266,8 @@ export interface OrcaRow {
   unverifiableTerminalCount?: number;
   comment?: string;
   unread?: boolean;
+  /** The name Orca shows for it; its branch when absent. */
+  name?: string;
 }
 
 /** The head commit an open pull request reports unless a test names another. */
@@ -239,7 +285,14 @@ export const openPr = (
   headRefName: head,
   headRefOid: HEAD_SHA,
   mergeable: "MERGEABLE",
+  labels: [] as Array<{ name: string }>,
   ...extra,
+});
+
+/** A pull request as the listing returns it, carrying `labels`. */
+export const labeled = <T extends object>(pr: T, ...labels: string[]) => ({
+  ...pr,
+  labels: labels.map((name) => ({ name })),
 });
 
 /** A merged pull request as `gh pr list --json` returns it. */
@@ -469,6 +522,7 @@ export function world(): World {
           linkedItems: [],
           comment: r.comment ?? "",
           unread: r.unread ?? false,
+          displayName: r.name ?? r.branch,
           unverifiableTerminalCount: r.unverifiableTerminalCount ?? 0,
           agents: (r.agents ?? []).map((a, j) => ({
             paneKey: a.paneKey ?? `pane-${i}-${j}`,

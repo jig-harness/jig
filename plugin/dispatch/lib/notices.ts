@@ -44,12 +44,17 @@ function boundedKey(key: string): string {
   return `${key.slice(0, MAX_KEY - digest.length - 2)}… ${digest}`;
 }
 
+/** Text with the key line's opening broken, so quoted text never reads as a message of its own. */
+function unTagged(text: string): string {
+  return text.replaceAll(TAG, "[jig dispatch - ");
+}
+
 /** A message: its key line, then its lines, cut to `MAX_TEXT`; the `tail` lines are never cut. */
 function notice(fullKey: string, lines: string[], tail: string[] = []): Notice {
   const key = boundedKey(fullKey);
   const head = keyLine(key);
-  const body = lines.join("\n");
-  const end = tail.length === 0 ? "" : `\n${tail.join("\n")}`;
+  const body = unTagged(lines.join("\n"));
+  const end = tail.length === 0 ? "" : `\n${unTagged(tail.join("\n"))}`;
   const room = MAX_TEXT - head.length - 1 - end.length;
   return {
     key,

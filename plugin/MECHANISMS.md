@@ -136,7 +136,7 @@ development and shipped as a version.
 |------|---------------------|--------------------------|--------------------|--------------|
 | [Gates](#gates-and-the-validation-plan) | `gates.command`; CI | implementer before the push; drive pass every round | the session that ran them; CI's required check | the session whose change failed them |
 | [Change areas](#gates-and-the-validation-plan) | `skills/change-areas/scripts/` | review, drive pass, fix-ci, through the plan | the session that read the plan (exit 2) | whoever maintains the catalog |
-| [`jig` command and timers](#the-jig-command-and-its-timers) | `jig.ts`, `runtime/verbs.ts`, `gc/install.ts`, `dispatch/install.ts`, `runtime/launcher.ts` | none | the scheduler's own log; a person | a Jig change |
+| [`jig` command and timers](#the-jig-command-and-its-timers) | `jig.ts`, `runtime/verbs.ts`, `gc/install.ts`, `dispatch/install.ts`, `runtime/launcher.ts`, `runtime/upgrade.ts`, `runtime/doctor.ts` | none | `jig doctor`; the scheduler's own log; a person | a Jig change |
 | [Resource collection](#resource-collection-jig-gc) | `gc/` | none | its receipts (`jig receipts gc`) | a person; a Jig change |
 | [Dispatcher's tick](#the-dispatchers-tick) | `dispatch/tick.ts`, `dispatch/run.ts` | the sessions it starts | its receipt; the morning report | a person; a Jig change |
 | [Dispatcher's records](#the-dispatchers-records-receipts-outcome-log-dashboard-notifications) | `dispatch/receipts.ts`, `dispatch/lib/log.ts`, `dispatch/dashboard.ts`, `dispatch/lib/notices.ts` | a dispatched session records its result | the dashboard; the morning report | a person, through `/jig:reflect` |
@@ -204,13 +204,26 @@ development and shipped as a version.
   `codex plugin list --json`) for the installed plugin copy, so an update
   reaches the job and the command without a new install
   (`runtime/launcher.ts`). It refuses to run a script that lives inside a git
-  checkout, which a worktree cleanup could remove. The plugin itself is
-  updated by the agent tool ([automatic updates](README.md#automatic-updates)),
-  not by Jig.
-- **Reasoned.** None. A person installs the timers; no session is involved.
+  checkout, which a worktree cleanup could remove. `jig upgrade` has each
+  agent tool update the plugin on the channel it follows
+  (`runtime/harness.ts`), printing each command first, then runs the newly
+  installed copy's `jig upgrade --jobs-only`, which refreshes each job's
+  launcher copy and rewrites the job from what it holds, keeping its
+  environment, schedule and programs, and the `jig` command the same way
+  (`runtime/refresh.ts`, `runtime/installed-job.ts`). It writes nothing
+  where nothing differs. A tool that updates the plugin on its own
+  ([automatic updates](README.md#automatic-updates)) leaves the launcher
+  copies as they were. `jig doctor` (`runtime/doctor.ts`) checks Bun, the
+  agent tools, the plugin in each tool, each launcher copy, the programs
+  each job names, each component's own needs (`Component.doctor`), the
+  last receipts and the repository's configuration fit, and names a fix for
+  each failure; it changes nothing.
+- **Reasoned.** None. A person installs, upgrades and checks; no session is
+  involved.
 - **If it fails.** A job that cannot find the installed copy stops with a
-  message naming what to run; the scheduler's own log holds it. A person
-  reads it. A defect is a Jig change.
+  message naming what to run; the scheduler's own log holds it, and
+  `jig doctor` names the check that fails and its fix. A person reads it.
+  A defect is a Jig change.
 
 ### Resource collection (`jig gc`)
 
@@ -256,7 +269,17 @@ development and shipped as a version.
   machine file names starts nothing (`dispatch/lib/accounts.ts`); a launch
   record already claimed is not started twice (exit 3). The tick writes
   nothing to the tracker: the session's own claim does
-  (`dispatch/lib/actions/pickup.ts`).
+  (`dispatch/lib/actions/pickup.ts`). It names each workspace it creates
+  and each tab it opens as the dispatcher's, and keeps the
+  [dispatched mark](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  in the workspace's comment and on the launch record, by one convention
+  every runtime takes (`dispatch/lib/runtime/port.ts`). Where a repository turns
+  [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  on, the tick reads the pull requests' labels with them, reads `drive`
+  and `hold` as a person's commands, and last sets each managed pull
+  request's state label from its ledger (`dispatch/lib/labels.ts`,
+  `dispatch/lib/actions/labels.ts`); it never reads a state label to
+  decide what to start.
 - **Reasoned.** None inside the tick. It starts reasoned parts: a drive's
   passes (through `drive.ts`), a pickup's `/jig:do-item` session, and the
   repository's `dispatch.followup_command`. Its one keystroke into a
@@ -264,7 +287,10 @@ development and shipped as a version.
   state becomes a notification.
 - **Boundary.** Because it reads the `dispatch` section from the default
   branch, a change a model makes on a branch reaches the dispatcher only
-  once a person has merged it.
+  once a person has merged it. A `drive` label starts a drive and a `hold`
+  label stops every stage: the tick does not check who added either, so
+  whoever the forge lets label pull requests (on GitHub, triage access or
+  more, a workflow's token included) can give these commands.
 - **If it fails.** The receipt records what it could not read, and the
   [morning report](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   (`skills/drive-pr/scripts/drives.ts --report`) lists launches it refused

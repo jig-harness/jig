@@ -5,14 +5,18 @@ import { join } from "node:path";
 import { collectionDeadlineMs } from "../../runtime/launcher.ts";
 import { driveHold } from "../lib/actions/drive-hold.ts";
 import {
+  type LaunchAttempt,
   type LaunchExit,
   type LaunchRecord,
   type ProcessIdentity,
+  claimRecord,
   pruneLaunches,
   readLaunches,
+  recordExit,
   type ReadRecord,
   writeRecord,
 } from "../lib/launches.ts";
+import { markedSince } from "../lib/launch-report.ts";
 import { stateDb, closeStateDb } from "../lib/state.ts";
 import type { DrivenPr } from "../lib/types.ts";
 import { dispatchJobSpec } from "../install.ts";
@@ -163,6 +167,30 @@ describe("retention", () => {
     ).toEqual(["20260101T000000Z-aaaaaaaa"]);
   });
 
+  it("keeps the latest arm of a pull request with no ledger, per head, past the retention", () => {
+    const dir = root();
+    const arm = (id: string, head: string, at: string) =>
+      ended(
+        record(id, { createdAt: at, facts: `no ledger, head ${head}` }),
+        0,
+        at,
+      );
+    const old = arm(
+      "20260101T000000Z-aaaaaaaa",
+      "h1",
+      "2026-01-01T00:00:00.000Z",
+    );
+    const again = arm(
+      "20260102T000000Z-bbbbbbbb",
+      "h1",
+      "2026-01-02T00:00:00.000Z",
+    );
+    // Only the earlier record of the same head goes; the latest stays as evidence.
+    expect(
+      pruneLaunches([old, again], Date.parse("2027-01-01"), 7, dir),
+    ).toEqual(["20260101T000000Z-aaaaaaaa"]);
+  });
+
   it("keeps an unreleased pickup until it is released", () => {
     const dir = root();
     const pickup = (released: boolean) =>
@@ -228,5 +256,112 @@ describe("the timer's job", () => {
   it("holds every duration inside a timer's range", () => {
     expect(() => duration("720h", "x")).toThrow("at most 24d");
     expect(duration("576h", "x")).toBe(576 * 3_600_000);
+  });
+});
+
+describe("the marked records a report reads", () => {
+  const mark = "⚙ dispatched · rearm #7 · launch 20260101T000000Z-aaaaaaaa";
+  const sent: LaunchAttempt = {
+    at: "2026-01-01T00:00:00.000Z",
+    outcome: "sent",
+    detail: "",
+  };
+
+  it("holds every marked record of the window, each with how its launch went", () => {
+    const dir = root();
+    writeRecord(
+      record("20260101T000000Z-aaaaaaaa", { mark, attempts: [sent] }),
+      dir,
+    );
+    // Claimed by its wrapper, though the tick never saved the launch's answer.
+    writeRecord(record("20260101T000001Z-bbbbbbbb", { mark }), dir);
+    expect(claimRecord("20260101T000001Z-bbbbbbbb", WHO, dir)).toBe(true);
+    writeRecord(
+      record("20260101T000002Z-cccccccc", {
+        mark,
+        attempts: [{ ...sent, outcome: "lost" }],
+      }),
+      dir,
+    );
+    writeRecord(
+      record("20260101T000003Z-dddddddd", {
+        mark,
+        attempts: [{ ...sent, outcome: "failed" }],
+      }),
+      dir,
+    );
+    // Ended before any launch, as a follow-up whose marker could not be given back.
+    writeRecord(record("20260101T000004Z-eeeeeeee", { mark }), dir);
+    recordExit(
+      "20260101T000004Z-eeeeeeee",
+      { at: "2026-01-01T00:00:00.000Z", code: null, signal: null },
+      dir,
+    );
+    // Outside the window, and written before records kept the mark.
+    writeRecord(
+      record("20250101T000000Z-ffffffff", {
+        mark,
+        attempts: [sent],
+        createdAt: "2025-01-01T00:00:00.000Z",
+      }),
+      dir,
+    );
+    writeRecord(
+      record("20260101T000005Z-abababab", { mark: null, attempts: [sent] }),
+      dir,
+    );
+    const { records, unreadable } = markedSince(
+      Date.parse("2026-01-01T00:00:00.000Z"),
+      dir,
+    );
+    expect(unreadable).toEqual([]);
+    expect(records.map((r) => [r.record.id, r.launch])).toEqual([
+      ["20260101T000000Z-aaaaaaaa", "started"],
+      ["20260101T000001Z-bbbbbbbb", "started"],
+      ["20260101T000002Z-cccccccc", "lost"],
+      ["20260101T000003Z-dddddddd", "not started"],
+      ["20260101T000004Z-eeeeeeee", "not started"],
+    ]);
+  });
+
+  it("lists a launch by the night it was recorded, not by when it was replayed", () => {
+    const dir = root();
+    writeRecord(
+      record("20251231T000000Z-99999999", {
+        mark,
+        createdAt: "2025-12-31T00:00:00.000Z",
+        attempts: [
+          { ...sent, at: "2025-12-31T00:00:01.000Z", outcome: "lost" },
+          { ...sent, at: "2026-01-01T00:00:05.000Z" },
+        ],
+      }),
+      dir,
+    );
+    const { records } = markedSince(
+      Date.parse("2026-01-01T00:00:00.000Z"),
+      dir,
+    );
+    expect(records).toEqual([]);
+    const night = markedSince(Date.parse("2025-12-31T00:00:00.000Z"), dir);
+    expect(night.records.map((r) => [r.record.id, r.launch])).toEqual([
+      ["20251231T000000Z-99999999", "started"],
+    ]);
+  });
+
+  it("does not take a claim that does not read as proof of a launch, and names it", () => {
+    const dir = root();
+    writeRecord(record("20260101T000000Z-aaaaaaaa", { mark }), dir);
+    stateDb(dir)
+      .query("UPDATE launches SET claim = '{}' WHERE id = ?")
+      .run("20260101T000000Z-aaaaaaaa");
+    const { records, unreadable } = markedSince(
+      Date.parse("2026-01-01T00:00:00.000Z"),
+      dir,
+    );
+    expect(records.map((r) => [r.record.id, r.launch])).toEqual([
+      ["20260101T000000Z-aaaaaaaa", "not started"],
+    ]);
+    expect(unreadable).toHaveLength(1);
+    expect(unreadable[0]).toContain("claim of launch record");
   });
 });

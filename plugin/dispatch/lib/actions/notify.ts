@@ -19,7 +19,8 @@
  *   dispatcher's own (a workspace's comment carries a kickoff prompt until
  *   its agent starts, and the tick never overwrites one). Otherwise the
  *   repository's notices workspace (`NOTICES_BRANCH`), opened once from the
- *   default branch, its comment naming what each message is about.
+ *   default branch and named as the dispatcher's (`NOTICES_NAME`), its
+ *   comment naming what each message is about.
  * - **One comment per workspace.** The causes for one workspace in a tick
  *   are joined into one message; while the workspace is still unread from
  *   an earlier notification, the new causes are appended to its comment
@@ -41,10 +42,14 @@ import {
   type OutcomeClass,
 } from "../log.ts";
 import { carries, holdsNotice } from "../notices.ts";
-import type {
-  RuntimeReceipt,
-  SessionsReport,
-  Workspace,
+import {
+  keepMarks,
+  MAX_COMMENT,
+  NOTICES_NAME,
+  type RuntimeReceipt,
+  type SessionsReport,
+  type Workspace,
+  withoutMarks,
 } from "../runtime/port.ts";
 import { inTransaction, stateDb } from "../state.ts";
 import { failureText } from "../text.ts";
@@ -61,7 +66,7 @@ import { type ApplyState, openWithinBudget, outOfTime } from "./launch.ts";
 /** The branch of a repository's notices workspace. */
 const NOTICES_BRANCH = "jig-dispatch-notices";
 
-/** The comments the dispatcher's own opens give a workspace. */
+/** The comments the dispatcher's opens gave a workspace before its comments carried the dispatched mark. */
 const OWN_COMMENT =
   /(driven|picked up) by jig dispatch$|^jig dispatch notices$/;
 
@@ -116,13 +121,18 @@ function suppress(
   });
 }
 
-/** Whether the tick may write a workspace's comment: no kickoff prompt can be waiting in it. */
+/**
+ * Whether the tick may write a workspace's comment: no kickoff prompt can be
+ * waiting in it. Its dispatched marks are the dispatcher's own, and stay
+ * when it writes.
+ */
 function takesComment(w: Workspace): boolean {
+  const own = withoutMarks(w.comment);
   return (
     w.agents.length > 0 ||
-    w.comment.trim() === "" ||
-    holdsNotice(w.comment) ||
-    OWN_COMMENT.test(w.comment.trim())
+    own === "" ||
+    holdsNotice(own) ||
+    OWN_COMMENT.test(own)
   );
 }
 
@@ -189,6 +199,7 @@ async function noticesWorkspace(
   if (found !== undefined) return noticesBlocked(found) ?? found;
   const opened = await openWithinBudget(state, repo, {
     notices: NOTICES_BRANCH,
+    dispatched: { name: NOTICES_NAME, mark: NOTICES_NAME },
   });
   if ("waits" in opened) return opened.waits;
   if ("refused" in opened)
@@ -208,21 +219,21 @@ async function noticesWorkspace(
   return noticesBlocked(read) ?? read;
 }
 
-/** The most characters one comment holds: it travels as one process argument, which a platform bounds. */
-const MAX_COMMENT = 16_000;
-
 /** The causes that fit one comment after the unread text, which is kept whole; one that does not fit waits until it is read, and a later one that fits still goes. */
 export function fitting(
   workspace: Workspace,
   causes: Cause[],
 ): { send: Cause[]; later: Cause[] } {
-  const unread = workspace.unread && holdsNotice(workspace.comment);
-  let used = unread ? workspace.comment.length : 0;
+  const unread = workspace.unread && workspace.comment.trim() !== "";
+  // A read comment is replaced, behind the dispatched marks it keeps.
+  let used = unread
+    ? workspace.comment.length
+    : keepMarks(workspace.comment, "").length;
   const send: Cause[] = [];
   const later: Cause[] = [];
   for (const c of causes) {
     const next = used + c.notice.text.length + 2;
-    if ((unread || send.length > 0) && next > MAX_COMMENT) {
+    if ((used > 0 || send.length > 0) && next > MAX_COMMENT) {
       later.push(c);
       continue;
     }
@@ -232,12 +243,9 @@ export function fitting(
   return { send, later };
 }
 
-/** The message for a workspace: its comment whole while it is still unread from an earlier notification, then the causes' texts. */
-function messageFor(workspace: Workspace, causes: Cause[]): string {
-  const texts = causes.map((c) => c.notice.text);
-  if (!(workspace.unread && holdsNotice(workspace.comment)))
-    return texts.join("\n\n");
-  return [workspace.comment, ...texts].join("\n\n");
+/** The message for a workspace: the causes' texts; the runtime appends them to a comment still unread. */
+function messageFor(causes: Cause[]): string {
+  return causes.map((c) => c.notice.text).join("\n\n");
 }
 
 /** `notify`'s answer; a call that throws is an answer lost. */
@@ -300,7 +308,7 @@ async function sendTo(
     ),
   );
   if (send.length === 0) return out;
-  const receipt = await deliver(state, workspace, messageFor(workspace, send));
+  const receipt = await deliver(state, workspace, messageFor(send));
   for (const c of send) {
     const why = notArrived(receipt, c);
     if (why === null) suppress(c, workspace.path);
@@ -344,9 +352,24 @@ function prune(
   root: string,
 ): void {
   if (!report.records.every((r) => r.ok)) return;
-  const unplaced = new Set(report.unplaced.map((u) => u.target));
+  const unplaced = new Set([
+    ...report.unplaced.map((u) => u.target),
+    ...(report.withheld ?? []),
+  ]);
+  // Under `only_labeled` a pull request not observed in scope was never
+  // read for a ledger, so the cause's absence says nothing: its record stands.
+  const inScope =
+    report.inScope === undefined
+      ? null
+      : new Set(report.inScope.map((n) => `PR #${n}`));
+  const outside = (target: string): boolean =>
+    inScope !== null && /^PR #\d+$/.test(target) && !inScope.has(target);
   const gone = [...sent.values()].filter(
-    (s) => !keys.has(s.key) && !unplaced.has(s.target) && !s.lasting,
+    (s) =>
+      !keys.has(s.key) &&
+      !unplaced.has(s.target) &&
+      !outside(s.target) &&
+      !s.lasting,
   );
   if (gone.length === 0) return;
   const db = stateDb(root);

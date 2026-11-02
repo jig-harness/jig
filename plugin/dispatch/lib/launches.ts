@@ -8,7 +8,8 @@
  * ever overwrites another's:
  *
  * - `record`, the tick's: the action, the pull request, the account, the
- *   random token, the workspace and the runtime's answer to each launch;
+ *   random token, the workspace, the dispatched mark its workspace carries
+ *   and the runtime's answer to each launch;
  * - `claim`, the wrapper's (`run.ts`): the process identity it ran under
  *   (host, boot id, process id and the process's start time), set by an
  *   update that only fills an empty column, so exactly one wrapper ever
@@ -119,6 +120,13 @@ export interface LaunchRecord {
   redrive?: StaleCause | null;
   /** The vendor session id the tick minted for an interactive session and passed to its agent; `null` when none was. */
   sessionId?: string | null;
+  /**
+   * The dispatched mark the launch's workspace was named and marked with
+   * (`dispatchedMark` in `runtime/port.ts`): the stage, the key and this
+   * record's id. It joins a workspace a skill renamed to its launch.
+   * `null` on a record written before the mark was kept.
+   */
+  mark?: string | null;
   /** A drive's unresolved-thread count at each ledger round, recorded the first tick that sees the round (the `thread_samples` table). */
   samples?: ThreadSample[];
   /** When a tick first saw a pickup's workspace hold a pull request; its expectation of opening one is met for good. */
@@ -323,7 +331,7 @@ function optionalSeconds(value: unknown): boolean {
 /** The fields a later version added, each absent or of its type. */
 function optionalFields(value: Record<string, unknown>): boolean {
   return (
-    ["agentId", "model", "effort", "command", "sessionId"].every((k) =>
+    ["agentId", "model", "effort", "command", "sessionId", "mark"].every((k) =>
       optionalText(value[k]),
     ) &&
     [value.marker, value.round].every(
@@ -367,10 +375,11 @@ function normalized(value: LaunchRecord): LaunchRecord {
 /** What Control keeps on a record, at its defaults where it was never written. */
 function controlFields(
   value: LaunchRecord,
-): Pick<LaunchRecord, "round" | "sessionId"> {
+): Pick<LaunchRecord, "round" | "sessionId" | "mark"> {
   return {
     round: value.round ?? null,
     sessionId: value.sessionId ?? null,
+    mark: value.mark ?? null,
   };
 }
 
@@ -418,7 +427,7 @@ function isExit(value: unknown): value is LaunchExit {
 }
 
 /** One record's row as the table holds it. */
-interface LaunchRow {
+export interface LaunchRow {
   id: string;
   record: string;
   claim: string | null;
@@ -427,7 +436,7 @@ interface LaunchRow {
 }
 
 /** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
-function recordOf(
+export function recordOf(
   row: LaunchRow,
   root: string,
   control?: Map<string, ControlRows>,
@@ -539,7 +548,7 @@ export function readResult(
 }
 
 /** A row's claim: `undefined` when none, `null` when it does not read. */
-function claimOf(row: LaunchRow): ProcessIdentity | null | undefined {
+export function claimOf(row: LaunchRow): ProcessIdentity | null | undefined {
   const value = parseJson(row.claim, `the claim of launch record ${row.id}`);
   if (value === undefined) return undefined;
   return isIdentity(value) ? value : null;
@@ -776,15 +785,43 @@ function latestRefusals(records: ReadRecord[]): Set<string> {
  * change a pull request has been re-driven for keeps one.
  */
 function latestRedrives(records: ReadRecord[]): Set<string> {
+  return latestIdsBy(records, (r) =>
+    isDrive(r.record) && r.record.redrive
+      ? `${r.record.repo}#${String(r.record.pr)}\0${r.record.redrive.change}`
+      : null,
+  );
+}
+
+/** The ids of the latest record under each key `keyOf` gives; a record it gives `null` is not kept. */
+function latestIdsBy(
+  records: ReadRecord[],
+  keyOf: (r: ReadRecord) => string | null,
+): Set<string> {
   const latest = new Map<string, ReadRecord>();
   for (const r of records) {
-    if (!isDrive(r.record) || !r.record.redrive) continue;
-    const key = `${r.record.repo}#${String(r.record.pr)}\0${r.record.redrive.change}`;
+    const key = keyOf(r);
+    if (key === null) continue;
     const seen = latest.get(key);
     if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
       latest.set(key, r);
   }
   return new Set([...latest.values()].map((r) => r.record.id));
+}
+
+/** The facts a launch carries when it armed a pull request that had no drive ledger. */
+export const UNARMED_FACTS = "no ledger, head ";
+
+/**
+ * The ids of each pull request's latest arm record per head commit: an arm
+ * is not repeated at the same head, and the record is the only evidence of
+ * that when the arm left no ledger, so it outlives the retention.
+ */
+function latestArms(records: ReadRecord[]): Set<string> {
+  return latestIdsBy(records, (r) =>
+    isDrive(r.record) && r.record.facts?.startsWith(UNARMED_FACTS)
+      ? `${r.record.repo}#${String(r.record.pr)}\0${r.record.facts}`
+      : null,
+  );
 }
 
 /**
@@ -821,6 +858,7 @@ export function pruneLaunches(
   const kept = latestRefusals(records);
   for (const id of latestPickups(records)) kept.add(id);
   for (const id of latestRedrives(records)) kept.add(id);
+  for (const id of latestArms(records)) kept.add(id);
   const removed = records
     .filter(({ record, state }) => {
       const at = kept.has(record.id) ? null : finishedAt(record, state);
