@@ -170,7 +170,7 @@ describe("the card's comment lock", () => {
     expect(readFileSync(counter, "utf8")).toBe("60");
   });
 
-  test("a reclaim mutex held by a live reclaimer is left alone, an abandoned one is removed", async () => {
+  test("a reclaim mutex held by a live reclaimer is left alone, one whose reclaimer is gone is removed, however new", async () => {
     const root = scratchRoot();
     const lock = cardLockPath(WORKSPACE, root);
     writeFileSync(lock, `${deadPid()}\nleft\n`);
@@ -181,6 +181,10 @@ describe("the card's comment lock", () => {
     expect(existsSync(lock)).toBe(true);
     const old = new Date(Date.now() - 60_000);
     utimesSync(`${lock}.reclaim`, old, old);
+    expect(
+      await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 150 }),
+    ).toBeNull();
+    writeFileSync(`${lock}.reclaim`, `${deadPid()}\nrival\n`);
     expect(
       await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 2000 }),
     ).toEqual({ value: "x" });

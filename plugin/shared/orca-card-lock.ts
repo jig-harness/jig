@@ -14,7 +14,8 @@
  * workspace's path and created exclusively, holding its owner's pid and a
  * token. Release removes it only while it still holds that token. A lock
  * whose owner is no longer running is removed by one reclaimer at a time,
- * under a short mutex file beside it.
+ * under a mutex file beside it that is itself taken over only when the
+ * process it names is gone.
  * The lock is published whole (linked into place from a private file), so
  * an interrupted acquisition leaves no empty lock. A writer that cannot take the lock within its
  * deadline gets `null` and skips its write: the board is a convenience.
@@ -28,8 +29,8 @@ import {
   linkSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -67,15 +68,20 @@ function defaultRoot(): string {
   return join(homedir(), ".local", "state", "jig", "orca-card-locks");
 }
 
-/** The pid a lock file records; `null` when it cannot be read. */
-function ownerOf(file: string): number | null {
+/** The content of a lock file; `null` when it cannot be read. */
+function readLock(file: string): string | null {
   try {
-    const pid = Number(readFileSync(file, "utf8").split("\n")[0]);
-    return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+    return readFileSync(file, "utf8");
   } catch (error) {
     swallow(error, "an unreadable lock file names no owner");
     return null;
   }
+}
+
+/** The pid a lock file's content records; `null` when it names none. */
+function pidOf(content: string): number | null {
+  const pid = Number(content.split("\n")[0]);
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
 }
 
 /** Only a recorded owner the process table no longer has makes a lock stale. */
@@ -89,40 +95,55 @@ function ownerGone(pid: number | null): boolean {
   }
 }
 
-/** Milliseconds after which a reclaim mutex is taken to be abandoned. */
-const RECLAIM_ABANDONED_MS = 10_000;
+/**
+ * Remove `file` only while it still holds `expected`. The file is moved to a
+ * private name first and its content checked there, so a replacement that
+ * appeared since `expected` was read is restored rather than unlinked by path.
+ */
+function removeIfContent(file: string, expected: string): void {
+  const moved = `${file}.gone-${process.pid}-${randomUUID()}`;
+  try {
+    renameSync(file, moved);
+  } catch (error) {
+    swallow(error, "already removed by whoever held it");
+    return;
+  }
+  try {
+    if (readFileSync(moved, "utf8") !== expected) {
+      try {
+        linkSync(moved, file);
+      } catch (error) {
+        swallow(error, "a newer file took the path; the moved one is dropped");
+      }
+    }
+  } finally {
+    rmSync(moved, { force: true });
+  }
+}
 
 /**
  * Remove a stale lock while holding the reclaim mutex, so one reclaimer at a
  * time judges and removes it. While the stale file stands at the lock path no
  * writer can publish there, and only a reclaimer ever removes a lock it did not
- * take, so the file judged under the mutex is the file removed: a live
- * holder's lock is never in the way. The mutex is held for two file reads and
- * one removal, with no waiting; a mutex older than `RECLAIM_ABANDONED_MS`
- * belongs to a reclaimer that died inside that stretch and is removed.
+ * take, so the file judged under the mutex is the file removed. A mutex is
+ * abandoned only when the process it names is gone, never by its age: a live
+ * reclaimer keeps its exclusion however long it is suspended. Every removal
+ * checks the content it judged.
  */
-function reclaim(lock: string, abandonedMs = RECLAIM_ABANDONED_MS): void {
-  if (!ownerGone(ownerOf(lock))) return;
+function reclaim(lock: string): void {
+  const judged = readLock(lock);
+  if (judged === null || !ownerGone(pidOf(judged))) return;
   const mutex = `${lock}.reclaim`;
   const content = `${process.pid}\n${randomUUID()}\n`;
   if (!publish(mutex, content)) {
-    try {
-      if (Date.now() - statSync(mutex).mtimeMs > abandonedMs) {
-        rmSync(mutex, { force: true });
-      }
-    } catch (error) {
-      swallow(error, "the reclaimer holding the mutex finished first");
-    }
+    const held = readLock(mutex);
+    if (held !== null && ownerGone(pidOf(held))) removeIfContent(mutex, held);
     return;
   }
   try {
-    if (ownerGone(ownerOf(lock))) rmSync(lock, { force: true });
+    if (readLock(lock) === judged) removeIfContent(lock, judged);
   } finally {
-    try {
-      if (readFileSync(mutex, "utf8") === content) rmSync(mutex);
-    } catch (error) {
-      swallow(error, "the mutex was already removed as abandoned");
-    }
+    removeIfContent(mutex, content);
   }
 }
 
