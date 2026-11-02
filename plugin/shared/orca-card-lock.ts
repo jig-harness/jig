@@ -104,13 +104,15 @@ function ownerGone(pid: number | null): boolean {
  * a file a live process owns when it is touched. While the stale file stands
  * at the lock path no writer can publish there, and only a reclaimer removes a
  * lock it did not take, so the file judged under the mutex is the file removed.
- * Once the judged content is gone no reclaimer can act on it again (a lock's
- * token is never reused), so its completed mutexes are swept, and the staging
- * files of publishers that are gone; a live publisher's staging file is never
- * touched. Walking the generations and the sweep both stop at `deadline`, so
- * neither a chain of abandoned mutexes nor a large set of leftover files can
- * hold the caller past its wait; what the sweep leaves, a later reclaim of the
- * same content finds and removes.
+ * Once content is no longer what stands at the lock path no reclaimer can act
+ * on it again (a lock's token is never reused), so the sweep covers every
+ * content of this lock, not only the one judged: the completed mutexes of
+ * content that no longer stands, and the staging files of publishers that are
+ * gone. A live publisher's staging file and the standing content's mutexes are
+ * never touched. Walking the generations and the sweep both stop at
+ * `deadline`, so neither a chain of abandoned mutexes nor a large set of
+ * leftover files can hold the caller past its wait; what the sweep leaves, any
+ * later reclaim of this lock finds and removes.
  */
 function reclaim(lock: string, deadline: number): void {
   const judged = readLock(lock);
@@ -128,11 +130,25 @@ function reclaim(lock: string, deadline: number): void {
   try {
     if (readLock(lock) === judged) rmSync(lock, { force: true });
   } finally {
-    for (const name of readdirSync(dirname(lock))) {
-      if (performance.now() >= deadline) break;
-      if (name.startsWith(prefix) && sweepable(name.slice(prefix.length)))
-        rmSync(join(dirname(lock), name), { force: true });
-    }
+    sweep(lock, deadline);
+  }
+}
+
+/** Remove the completed mutexes and dead publishers' staging files of every content of `lock`. */
+function sweep(lock: string, deadline: number): void {
+  const family = `${basename(lock)}.reclaim-`;
+  const standing = readLock(lock);
+  const standingId =
+    standing === null
+      ? null
+      : createHash("sha256").update(standing).digest("hex").slice(0, 16);
+  for (const name of readdirSync(dirname(lock))) {
+    if (performance.now() >= deadline) break;
+    const [, id, rest] = name.startsWith(family)
+      ? (/^([0-9a-f]{16})-(.*)$/.exec(name.slice(family.length)) ?? [])
+      : [];
+    if (id !== undefined && id !== standingId && sweepable(rest ?? ""))
+      rmSync(join(dirname(lock), name), { force: true });
   }
 }
 

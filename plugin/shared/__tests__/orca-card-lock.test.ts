@@ -276,6 +276,21 @@ describe("the card's comment lock", () => {
     expect(readdirSync(root)).toEqual([live.slice(root.length + 1)]);
   });
 
+  test("a later reclaim of other content removes the leftovers of a retired prefix", async () => {
+    const root = scratchRoot();
+    const lock = cardLockPath(WORKSPACE, root);
+    const retired = createHash("sha256")
+      .update(`${deadPid()}\nearlier\n`)
+      .digest("hex")
+      .slice(0, 16);
+    for (let generation = 2; generation <= 20; generation++)
+      writeFileSync(`${lock}.reclaim-${retired}-${generation}`, "1\nx\n");
+    const stale = `${deadPid()}\nleft\n`;
+    writeFileSync(lock, stale);
+    await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 1000 });
+    expect(readdirSync(root)).toEqual([]);
+  });
+
   test("reclaiming a dead owner's lock leaves nothing behind", async () => {
     const root = scratchRoot();
     writeFileSync(cardLockPath(WORKSPACE, root), `${deadPid()}\nleft\n`);
