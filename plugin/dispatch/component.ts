@@ -106,7 +106,7 @@ function orcaCheck(job: InstalledJob | null): DoctorCheck {
 
 async function doctor({ job }: DoctorContext): Promise<DoctorCheck[]> {
   const id = "dispatch:machine-file";
-  const path = machineConfigPath();
+  const path = machineConfigPath(job?.env ?? process.env);
   let file: DoctorCheck;
   try {
     file =

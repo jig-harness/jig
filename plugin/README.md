@@ -650,7 +650,6 @@ and the channel it follows, beside its other checks, and exits 1 when one
 fails. Without the `jig` command, the tools list their plugins:
 
 ```sh
-jig doctor
 claude plugin list        # shows jig@jig, enabled
 codex plugin list         # same for Codex
 ```
