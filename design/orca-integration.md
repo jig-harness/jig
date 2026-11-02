@@ -6,7 +6,7 @@ headless server a phone reaches, with subscription accounts, a workspace
 board and scheduled automations. Jig's tooling already reaches it in
 places built on their own: the
 [Orca workspace tool](../tools/orca/README.md) behind the launcher,
-`do-item`'s [board updates](../plugin/skills/do-item/scripts/orca-board.ts)
+`do-item`'s [board updates](../plugin/shared/orca-board.ts)
 and workspace names, and the [dispatcher](../GLOSSARY.md)'s
 [session runtime](../GLOSSARY.md), Orca first
 ([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)).
@@ -55,7 +55,7 @@ today. What changes is that every stage of the execution line moves the
 card, so the board tells the truth without anyone dragging a card:
 
 - `do-item` moves the card to `in-progress` at pickup and `in-review` when
-  it opens the pull request (built);
+  it opens the pull request;
 - `drive-pr` marks a Ready pull request's card `in-review`, and a park, a
   usage-limit stop and a failure stop mark the card unread with the stop's
   one-line reason as the comment, so the phone shows what needs a person;
