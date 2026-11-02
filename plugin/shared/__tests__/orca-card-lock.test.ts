@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   existsSync,
   mkdtempSync,
@@ -209,6 +209,33 @@ describe("the card's comment lock", () => {
     expect(
       await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 0 }),
     ).toBeNull();
+    expect(readdirSync(root).sort()).toEqual(before);
+  });
+
+  test("recovery whose budget runs out part-way through the chain stops walking and removes nothing", async () => {
+    const root = scratchRoot();
+    const lock = cardLockPath(WORKSPACE, root);
+    const stale = `${deadPid()}\nleft\n`;
+    writeFileSync(lock, stale);
+    const id = createHash("sha256").update(stale).digest("hex").slice(0, 16);
+    const dead = deadPid();
+    for (let generation = 1; generation <= 300; generation++)
+      writeFileSync(`${lock}.reclaim-${id}-${generation}`, `${dead}\nx\n`);
+    const before = readdirSync(root).sort();
+    const real = performance.now.bind(performance);
+    const start = real();
+    // The budget is open for the deadline and the first generations, then spent.
+    let reads = 0;
+    const clock = spyOn(performance, "now").mockImplementation(() =>
+      ++reads <= 6 ? start : start + 10_000,
+    );
+    try {
+      expect(
+        await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 1000 }),
+      ).toBeNull();
+    } finally {
+      clock.mockRestore();
+    }
     expect(readdirSync(root).sort()).toEqual(before);
   });
 
