@@ -171,7 +171,8 @@ export interface LabelChange {
  * What must change on one pull request so its labels agree with
  * `projected`; `null` when they already do. `consumeDrive` removes the
  * `drive` command, which a pull request with a readable ledger has had
- * carried out. `hold` is never touched.
+ * carried out; it stays while the state is `unknown`, so the pull request
+ * keeps its membership of the set until a state can replace it. `hold` is never touched.
  */
 export function labelChange(
   config: LabelConfig,
@@ -181,7 +182,11 @@ export function labelChange(
   consumeDrive: boolean,
 ): LabelChange | null {
   const { add, remove } = stateChange(config, labels, projected);
-  if (consumeDrive && hasCommand(config, labels, "drive"))
+  if (
+    consumeDrive &&
+    projected !== "unknown" &&
+    hasCommand(config, labels, "drive")
+  )
     remove.push(labelName(config, "drive"));
   return add.length === 0 && remove.length === 0 ? null : { pr, add, remove };
 }

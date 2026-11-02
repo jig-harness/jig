@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "bun:test";
 import { planLabels } from "../lib/actions/labels.ts";
-import { DEFAULT_LABELS } from "../lib/labels.ts";
+import { DEFAULT_LABELS, labelChange } from "../lib/labels.ts";
 import { holdBack } from "../lib/plan.ts";
 import type { Action } from "../lib/types.ts";
 
@@ -25,7 +25,7 @@ describe("planLabels", () => {
   it("projects a pull request listed open and merged once, as merged", () => {
     const labels = ["jig:driving"];
     const pr = { number: 5, labels } as never;
-    const { report } = planLabels({
+    const { report, changes } = planLabels({
       config: DEFAULT_LABELS,
       open: [pr],
       read: new Set([5]),
@@ -33,6 +33,19 @@ describe("planLabels", () => {
       merged: [pr],
       followedUp: new Set(),
     } as never);
-    expect(report.states.filter((s) => s.target === "PR #5")).toHaveLength(1);
+    expect(report.states.filter((s) => s.target === "PR #5")).toEqual([
+      { target: "PR #5", state: "unknown" },
+    ]);
+    expect(changes).toEqual([]);
+  });
+});
+
+describe("labelChange", () => {
+  it("keeps the drive label while the state cannot be projected", () => {
+    const labels = ["jig:drive"];
+    expect(labelChange(DEFAULT_LABELS, 7, labels, "unknown", true)).toBeNull();
+    expect(
+      labelChange(DEFAULT_LABELS, 7, labels, { state: "driving" }, true),
+    ).toEqual({ pr: 7, add: ["jig:driving"], remove: ["jig:drive"] });
   });
 });

@@ -246,9 +246,7 @@ async function gatherRepo(
     if (p.createdAt !== undefined) created.set(p.number, p.createdAt);
   await observeRunning(context, repo, report, drives, sessions, created);
   const held = heldPullRequests(labels, [...open, ...merged]);
-  const outOfScope = new Set(
-    open.filter((p) => !forge.read.has(p.number)).map((p) => p.number),
-  );
+  const { outOfScope } = forge;
   planRepo(context, repo.slug, report, {
     slug: repo.slug,
     section,
@@ -287,6 +285,8 @@ interface ForgeRead {
   open: Awaited<ReturnType<typeof openPullRequests>>;
   /** The open pull requests read for a ledger: under `only_labeled`, the labelled ones. */
   read: Set<number>;
+  /** The pull requests, open or merged, that `only_labeled` left out: nothing is done on them, whatever a launch record says. */
+  outOfScope: Set<number>;
   drives: Awaited<ReturnType<typeof readDrives>>;
   merged: MarkedPr[];
   login: string | null;
@@ -315,6 +315,7 @@ async function readForge(
     ok: false,
     open: [],
     read: new Set(),
+    outOfScope: new Set(),
     drives: [],
     merged: [],
     login: null,
@@ -325,13 +326,16 @@ async function readForge(
     const toRead = managed(out.open);
     out.drives = await readDrives(repo.slug, out.login, toRead, nowMs, labels);
     const since = report.followupSince as string;
-    if (section.followupCommand !== null)
-      out.merged = await withMarkers(
-        repo.slug,
-        out.login,
-        managed(await mergedSince(repo.slug, since, read)),
-      );
     out.read = new Set(toRead.map((p) => p.number));
+    for (const p of out.open)
+      if (!out.read.has(p.number)) out.outOfScope.add(p.number);
+    if (section.followupCommand !== null) {
+      const listed = await mergedSince(repo.slug, since, read);
+      const inScope = managed(listed);
+      for (const p of listed)
+        if (!inScope.includes(p)) out.outOfScope.add(p.number);
+      out.merged = await withMarkers(repo.slug, out.login, inScope);
+    }
     out.ok = true;
     report.records.push({
       record: "forge",
@@ -473,14 +477,14 @@ async function applyStages(
           ...(labels === null
             ? {}
             : {
-                holdReason: async (pr: number) =>
-                  hasCommand(
-                    labels,
-                    await pullRequestLabels(repo.slug, pr),
-                    "hold",
-                  )
-                    ? "a person's hold label is on it now"
-                    : null,
+                holdReason: async (pr: number) => {
+                  const now = await pullRequestLabels(repo.slug, pr);
+                  if (hasCommand(labels, now, "hold"))
+                    return "a person's hold label is on it now";
+                  return labels.onlyLabeled && !carriesSet(labels, now)
+                    ? "it carries no dispatch label now"
+                    : null;
+                },
               }),
         });
     },
@@ -659,12 +663,9 @@ function planRepo(
     nowMs,
   });
   // The nudges stand down for a held or out-of-scope pull request like every other action.
-  holdBack(
-    { actions: steers.actions, held: plan.held },
-    input.held ?? new Set(),
-    input.outOfScope ?? new Set(),
-  );
-  report.actions.push(...steers.actions);
+  const nudged = { actions: steers.actions, held: plan.held };
+  holdBack(nudged, input.held ?? new Set(), input.outOfScope ?? new Set());
+  report.actions.push(...nudged.actions);
   report.running.push(...steers.running);
   report.unplaced.push(...plan.unplaced);
   report.quiet.push(...plan.quiet);
