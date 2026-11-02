@@ -7,7 +7,7 @@
  * carries the mark. What the morning report lists as dispatched.
  */
 import { stateRoot } from "../receipts.ts";
-import { type LaunchRecord, markedSince } from "./launches.ts";
+import { type LaunchRecord, type LaunchSeen, markedSince } from "./launches.ts";
 import { orcaRuntime } from "./runtime/orca.ts";
 import {
   marksIn,
@@ -33,6 +33,8 @@ export interface DispatchedWorkspace {
   marked: boolean | null;
   /** Why `name` is `null`, in a few words. */
   note: string | null;
+  /** How the launch went, as its record says: `started`, `lost` or `not started`. */
+  launch: LaunchSeen;
 }
 
 const NO_JOIN = { keys: null, branchPattern: "", pullRequests: [] } as const;
@@ -52,9 +54,10 @@ function carriesMark(comment: string, mark: string): boolean {
 }
 
 /**
- * The launch records with a mark written at or after `since`
- * (milliseconds), oldest first, each with the name its workspace carries
- * now; `unread` names what could not be read.
+ * Every launch record with a mark written at or after `since`
+ * (milliseconds), oldest first, each with how its launch went and the name
+ * its workspace carries now; `unread` names what could not be read. No
+ * record is left out for how its launch went: the entry says it.
  */
 export async function dispatchedSince(
   since: number,
@@ -76,14 +79,14 @@ export async function dispatchedSince(
   // One read of the runtime per repository.
   const lists = new Map<string, Workspace[] | string>();
   const out: DispatchedWorkspace[] = [];
-  for (const r of read.records) {
+  for (const { record: r, launch } of read.records) {
     let listed = lists.get(r.repo);
     if (listed === undefined) {
       listed = await workspacesOf(runtime, r.repo, r.repoPath);
       lists.set(r.repo, listed);
       if (typeof listed === "string") unread.push(listed);
     }
-    out.push(entryOf(r, listed, runtime.name));
+    out.push(entryOf(r, launch, listed, runtime.name));
   }
   return { workspaces: out, unread };
 }
@@ -91,6 +94,7 @@ export async function dispatchedSince(
 /** One record's entry, its workspace looked up among the runtime's (`listed`, or why they could not be read). */
 function entryOf(
   r: LaunchRecord,
+  launch: LaunchSeen,
   listed: Workspace[] | string,
   runtime: string,
 ): DispatchedWorkspace {
@@ -100,6 +104,7 @@ function entryOf(
     record: r.id,
     mark: r.mark ?? "",
     path: r.workspace?.path ?? null,
+    launch,
   };
   const unknown = (note: string) => ({
     ...base,

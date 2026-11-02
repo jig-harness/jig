@@ -95,13 +95,14 @@ function pullRequestLines(p: ReportPullRequest): string[] {
   return lines;
 }
 
-/** One dispatched workspace: its mark, then the name it carries now and whether its comment still carries the mark. */
+/** One dispatched workspace: its mark, the name it carries now and whether its comment still carries the mark, and how its launch went when it did not start. */
 function dispatchedLine(d: DispatchedWorkspace): string {
   const now =
     d.name === null
       ? `name unknown: ${d.note ?? "not read"}`
       : `now named "${d.name}"${d.marked ? "" : ", its comment no longer carries the mark"}`;
-  return `  ${d.at} ${d.repo} ${d.mark}: ${now}${d.path === null ? "" : ` (${d.path})`}`;
+  const launch = d.launch === "started" ? "" : `; launch ${d.launch}`;
+  return `  ${d.at} ${d.repo} ${d.mark}: ${now}${d.path === null ? "" : ` (${d.path})`}${launch}`;
 }
 
 export function renderMorningReport(r: MorningReport): string {

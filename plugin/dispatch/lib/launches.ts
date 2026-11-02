@@ -729,20 +729,37 @@ export async function readLaunches(root = stateRoot()): Promise<{
 }
 
 /**
- * The records written at or after `since` (milliseconds) that carry a
- * dispatched mark and were launched, oldest first, for a reader that never
- * creates the database; a row that does not read is left out and named. A
- * record launched when it has a sent attempt or a wrapper's claim, since a
- * tick that died after the wrapper started but before the attempt was saved
- * still started a session (a wrapper records its exit only after claiming);
- * one that ended before any launch was attempted, an exit written by a
- * follow-up's failed cleanup included, started none, so it is not one. The window is read by the indexed
- * creation time, not by scanning the history.
+ * How a record's launch went, as far as the record says: `started` when the
+ * runtime answered that it started the session or the wrapper claimed the
+ * record (the wrapper ran, though the tick may have died before it saved
+ * the answer); `lost` when an answer was lost and nothing shows the wrapper
+ * ran; `not started` otherwise (no launch was called, or the runtime
+ * answered that it started nothing).
+ */
+export type LaunchSeen = "started" | "lost" | "not started";
+
+function launchSeen(record: LaunchRecord, row: LaunchRow): LaunchSeen {
+  if (row.claim !== null || record.attempts.some((a) => a.outcome === "sent"))
+    return "started";
+  return record.attempts.some((a) => a.outcome === "lost")
+    ? "lost"
+    : "not started";
+}
+
+/**
+ * Every record written at or after `since` (milliseconds) that carries a
+ * dispatched mark, oldest first, with how its launch went, for a reader that
+ * never creates the database; a row that does not read is left out and
+ * named. No record is left out for how its launch went: the reader says it.
+ * The window is read by the indexed creation time.
  */
 export function markedSince(
   since: number,
   root = stateRoot(),
-): { records: LaunchRecord[]; unreadable: string[] } {
+): {
+  records: Array<{ record: LaunchRecord; launch: LaunchSeen }>;
+  unreadable: string[];
+} {
   const db = existingStateDb(root);
   if (db === null) return { records: [], unreadable: [] };
   const all = db
@@ -750,19 +767,14 @@ export function markedSince(
       "SELECT id, record, claim, exit, result FROM launches WHERE created_at >= ? ORDER BY id",
     )
     .all(new Date(since).toISOString()) as LaunchRow[];
-  const records: LaunchRecord[] = [];
+  const records: Array<{ record: LaunchRecord; launch: LaunchSeen }> = [];
   const unreadable: string[] = [];
   for (const row of all) {
     const record = recordOf(row, root, new Map());
     if (record === null)
       unreadable.push(`launch record ${row.id} in ${statePath(root)}`);
-    else if (
-      Date.parse(record.createdAt) >= since &&
-      record.mark &&
-      (record.attempts.some((a) => a.outcome !== "failed") ||
-        row.claim !== null)
-    )
-      records.push(record);
+    else if (Date.parse(record.createdAt) >= since && record.mark)
+      records.push({ record, launch: launchSeen(record, row) });
   }
   return { records, unreadable };
 }

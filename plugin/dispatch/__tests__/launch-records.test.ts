@@ -259,7 +259,7 @@ describe("the timer's job", () => {
   });
 });
 
-describe("the records a report counts as launched", () => {
+describe("the marked records a report reads", () => {
   const mark = "⚙ dispatched · rearm #7 · launch 20260101T000000Z-aaaaaaaa";
   const sent: LaunchAttempt = {
     at: "2026-01-01T00:00:00.000Z",
@@ -267,22 +267,39 @@ describe("the records a report counts as launched", () => {
     detail: "",
   };
 
-  it("holds the records of the window that were launched, and not one abandoned before a launch", () => {
+  it("holds every marked record of the window, each with how its launch went", () => {
     const dir = root();
     writeRecord(
       record("20260101T000000Z-aaaaaaaa", { mark, attempts: [sent] }),
       dir,
     );
+    // Claimed by its wrapper, though the tick never saved the launch's answer.
     writeRecord(record("20260101T000001Z-bbbbbbbb", { mark }), dir);
+    expect(claimRecord("20260101T000001Z-bbbbbbbb", WHO, dir)).toBe(true);
     writeRecord(
       record("20260101T000002Z-cccccccc", {
+        mark,
+        attempts: [{ ...sent, outcome: "lost" }],
+      }),
+      dir,
+    );
+    writeRecord(
+      record("20260101T000003Z-dddddddd", {
         mark,
         attempts: [{ ...sent, outcome: "failed" }],
       }),
       dir,
     );
+    // Ended before any launch, as a follow-up whose marker could not be given back.
+    writeRecord(record("20260101T000004Z-eeeeeeee", { mark }), dir);
+    recordExit(
+      "20260101T000004Z-eeeeeeee",
+      { at: "2026-01-01T00:00:00.000Z", code: null, signal: null },
+      dir,
+    );
+    // Outside the window, and written before records kept the mark.
     writeRecord(
-      record("20250101T000000Z-dddddddd", {
+      record("20250101T000000Z-ffffffff", {
         mark,
         attempts: [sent],
         createdAt: "2025-01-01T00:00:00.000Z",
@@ -290,7 +307,7 @@ describe("the records a report counts as launched", () => {
       dir,
     );
     writeRecord(
-      record("20260101T000003Z-eeeeeeee", { mark: null, attempts: [sent] }),
+      record("20260101T000005Z-abababab", { mark: null, attempts: [sent] }),
       dir,
     );
     const { records, unreadable } = markedSince(
@@ -298,24 +315,12 @@ describe("the records a report counts as launched", () => {
       dir,
     );
     expect(unreadable).toEqual([]);
-    expect(records.map((r) => r.id)).toEqual(["20260101T000000Z-aaaaaaaa"]);
-  });
-
-  it("holds a record with no saved attempt when the wrapper claimed it, and not one whose cleanup failed before any launch", () => {
-    const dir = root();
-    writeRecord(record("20260101T000000Z-aaaaaaaa", { mark }), dir);
-    writeRecord(record("20260101T000001Z-bbbbbbbb", { mark }), dir);
-    writeRecord(record("20260101T000002Z-cccccccc", { mark }), dir);
-    expect(claimRecord("20260101T000000Z-aaaaaaaa", WHO, dir)).toBe(true);
-    recordExit(
-      "20260101T000001Z-bbbbbbbb",
-      { at: "2026-01-01T00:00:00.000Z", code: null, signal: null },
-      dir,
-    );
-    const { records } = markedSince(
-      Date.parse("2026-01-01T00:00:00.000Z"),
-      dir,
-    );
-    expect(records.map((r) => r.id)).toEqual(["20260101T000000Z-aaaaaaaa"]);
+    expect(records.map((r) => [r.record.id, r.launch])).toEqual([
+      ["20260101T000000Z-aaaaaaaa", "started"],
+      ["20260101T000001Z-bbbbbbbb", "started"],
+      ["20260101T000002Z-cccccccc", "lost"],
+      ["20260101T000003Z-dddddddd", "not started"],
+      ["20260101T000004Z-eeeeeeee", "not started"],
+    ]);
   });
 });

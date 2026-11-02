@@ -138,6 +138,7 @@ describe("drives.ts --report: the dispatched workspaces", () => {
         path: "/ws/7",
         name: "Retry budget",
         marked: true,
+        launch: "started",
       }),
     ]);
     const text = await report(forge, orca, ["--since", "12h"]);
