@@ -319,7 +319,7 @@ test.skipIf(onWindows)(
     const result = m.jig(["doctor"]);
     expectSpawnExit(result, 1);
     expect(result.stdout.toString()).toMatch(
-      /FAIL {2}command:launcher: .*gone\/bun does not exist\n {6}fix: bun --no-env-file \S*--config=\S*bunfig\.toml\S* \S*jig\.ts\S* install --yes\n/,
+      /FAIL {2}command:launcher: .*gone\/bun does not exist\n {6}fix: \S*bun\S* --no-env-file \S*--config=\S*bunfig\.toml\S* \S*jig\.ts\S* install --yes\n/,
     );
   },
 );
@@ -351,7 +351,7 @@ test.skipIf(onWindows)(
     const result = m.jig(["doctor"]);
     expectSpawnExit(result, 1);
     expect(result.stdout.toString()).toMatch(
-      /FAIL {2}command:launcher: .*names no agent tool\n {6}fix: bun --no-env-file \S*--config=\S*bunfig\.toml\S* \S*jig\.ts\S* install --yes\n/,
+      /FAIL {2}command:launcher: .*names no agent tool\n {6}fix: \S*bun\S* --no-env-file \S*--config=\S*bunfig\.toml\S* \S*jig\.ts\S* install --yes\n/,
     );
   },
 );

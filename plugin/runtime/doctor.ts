@@ -295,7 +295,7 @@ async function commandCheck(
   const call = installed === null ? null : launcherCall(installed.command);
   // The launcher is the thing that is broken, so the repair runs the plugin copy this doctor runs from.
   const fix = [
-    "bun",
+    shellQuote(process.execPath),
     "--no-env-file",
     shellQuote(`--config=${join(dirname(script), "gc", "bunfig.toml")}`),
     shellQuote(script),
