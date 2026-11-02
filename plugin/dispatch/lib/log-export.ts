@@ -21,9 +21,9 @@ import {
   readSync,
   renameSync,
   unlinkSync,
-  writeSync,
 } from "node:fs";
 import type { Database } from "bun:sqlite";
+import { writeAllSync } from "../../skills/drive-pr/scripts/lib/state/fsutil.ts";
 import { stateRoot } from "../receipts.ts";
 import { logFile, monthOf, parseLine } from "./log.ts";
 import { existingStateDb } from "./state.ts";
@@ -136,10 +136,10 @@ function copyMonth(
         // A line the file holds is kept as it is, blank lines apart.
         const out = fd;
         eachLine(path, (text) => {
-          if (text !== "") writeSync(out, `${text}\n`);
+          if (text !== "") writeAllSync(out, `${text}\n`);
         });
       }
-      writeSync(fd, `${r.row}\n`);
+      writeAllSync(fd, `${r.row}\n`);
       held.add(r.key);
       added++;
     });
