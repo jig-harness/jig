@@ -314,9 +314,11 @@ decision for a person (AGENTS.md, HITL decisions): flag it.
 ### F. Cleanup
 
 `jig gc` ([resource GC](../../../design/resource-gc.md)) reports worktrees
-and drive state and does not yet delete them or inventory local branches; this
-repository's `gc.kinds` registers no scratch prefixes, so it does not see
-`.context/` notes. Until a collector covers a leftover, it stays owed here.
+and drive state, deletes only a worktree Orca manages, and only on a machine
+whose `gc.orca.command` names Orca
+([plugin/gc/README.md](../../../plugin/gc/README.md#worktrees-orca-manages)),
+and does not inventory local branches; this repository's `gc.kinds`
+registers no scratch prefixes, so it does not see `.context/` notes. Until a collector covers a leftover, it stays owed here.
 
 | Thing | Check | Teardown |
 |---|---|---|
