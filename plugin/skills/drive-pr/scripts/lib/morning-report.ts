@@ -35,6 +35,7 @@ import { fail } from "./cli.ts";
 import { stallThresholdMs } from "./doctor.ts";
 import {
   type DispatchEntry,
+  type DispatchLabels,
   dispatchSince,
 } from "./morning-report-dispatch.ts";
 import { renderMorningReport } from "./morning-report-render.ts";
@@ -108,6 +109,8 @@ export interface MorningReport {
   pullRequests: ReportPullRequest[];
   /** What the dispatcher launched, refused and notified on this machine since the report's time. */
   dispatch: DispatchEntry[];
+  /** How many pull requests carry each dispatch label, per repository, at its latest run. */
+  dispatchLabels: DispatchLabels[];
   /** What could not be read, each a sentence. */
   unread: string[];
 }
@@ -618,6 +621,7 @@ export async function gatherMorningReport(opts: {
     sinceSource: opts.sinceSource,
     pullRequests,
     dispatch: dispatched.entries,
+    dispatchLabels: dispatched.labels,
     unread,
   };
 }

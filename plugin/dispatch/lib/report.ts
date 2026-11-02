@@ -2,6 +2,8 @@
 import type { TickReceipt } from "../receipts.ts";
 import type {
   Evidence,
+  LabelReport,
+  LabelWrite,
   LaunchOutcome,
   NotifyOutcome,
   RepoReport,
@@ -61,7 +63,28 @@ function repoLines(r: RepoReport, apply: boolean): string[] {
     lines.push(`  unplaced ${u.target} (${u.record}): ${u.reason}`);
   for (const q of r.quiet)
     lines.push(`  ${q.class.padEnd(17)} ${q.target}: ${q.why}`);
+  lines.push(...labelLines(r.labels));
   return lines;
+}
+
+/** The dispatch labels' part: the count, each command label, what a hold kept off, and each write. */
+function labelLines(l: LabelReport | undefined): string[] {
+  if (l === undefined) return [];
+  const count = (o: LabelWrite["outcome"]) =>
+    l.writes.filter((w) => w.outcome === o).length;
+  const unread = l.onlyLabeled
+    ? `, ${l.unlabeled} open pull request(s) with no label of the set not read`
+    : "";
+  return [
+    `  labels   ${l.prefix} on${l.onlyLabeled ? ", only labelled pull requests" : ""}: ${l.states.length} managed, ${count("written")} relabelled, ${count("failed")} refused, ${count("would")} would be relabelled${unread}`,
+    ...l.commands.map((c) => `  ${c.command.padEnd(8)} ${c.target}: ${c.note}`),
+    ...l.held.map(
+      (h) => `  held     ${h.stage.padEnd(8)} ${h.target}: ${h.reason}`,
+    ),
+    ...l.writes.map(
+      (w) => `  label    ${w.outcome.padEnd(8)} ${w.target}: ${w.detail}`,
+    ),
+  ];
 }
 
 export function formatReceipt(receipt: TickReceipt, path: string): string {

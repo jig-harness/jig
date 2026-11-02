@@ -256,7 +256,13 @@ development and shipped as a version.
   machine file names starts nothing (`dispatch/lib/accounts.ts`); a launch
   record already claimed is not started twice (exit 3). The tick writes
   nothing to the tracker: the session's own claim does
-  (`dispatch/lib/actions/pickup.ts`).
+  (`dispatch/lib/actions/pickup.ts`). Where a repository turns
+  [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  on, the tick reads the pull requests' labels with them, reads `drive`
+  and `hold` as a person's commands, and last sets each managed pull
+  request's state label from its ledger (`dispatch/lib/labels.ts`,
+  `dispatch/lib/actions/labels.ts`); it never reads a state label to
+  decide what to start.
 - **Reasoned.** None inside the tick. It starts reasoned parts: a drive's
   passes (through `drive.ts`), a pickup's `/jig:do-item` session, and the
   repository's `dispatch.followup_command`. Its one keystroke into a
@@ -264,7 +270,10 @@ development and shipped as a version.
   state becomes a notification.
 - **Boundary.** Because it reads the `dispatch` section from the default
   branch, a change a model makes on a branch reaches the dispatcher only
-  once a person has merged it.
+  once a person has merged it. A `drive` label starts a drive and a `hold`
+  label stops every stage: the tick does not check who added either, so
+  whoever the forge lets label pull requests (on GitHub, triage access or
+  more, a workflow's token included) can give these commands.
 - **If it fails.** The receipt records what it could not read, and the
   [morning report](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   (`skills/drive-pr/scripts/drives.ts --report`) lists launches it refused

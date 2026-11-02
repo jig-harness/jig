@@ -9,8 +9,12 @@
  * A notification is planned whatever sessions run for its target: telling
  * a person never competes with a session, so only a runtime answer it
  * cannot trust leaves it out.
+ *
+ * A pull request a person's `hold` label stands the dispatcher down from
+ * gets no action of any stage: each one the records want is reported as
+ * held instead, and planned again once the label is gone.
  */
-import { driveHold, factsOf } from "./actions/drive-hold.ts";
+import { type DriveHold, driveHold, factsOf } from "./actions/drive-hold.ts";
 import { holding, liveAgents } from "./holding.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { planDrift } from "./expectations.ts";
@@ -51,6 +55,10 @@ export interface PlanInput {
   launches: ReadRecord[];
   /** Since when each claimed item has been idle (the idle clock). */
   idleSince: ReadonlyMap<string, number>;
+  /** The pull requests that carry a person's `hold` label. */
+  held?: ReadonlySet<number>;
+  /** Under `only_labeled`: the pull requests read and found labelled. An action on any other pull request is withheld. */
+  inScope?: ReadonlySet<number>;
   nowMs: number;
 }
 
@@ -59,6 +67,10 @@ type Plan = Pick<RepoReport, "actions" | "running" | "unplaced" | "quiet"> & {
   idleNow: string[];
   /** The claimed items whose clock is left as it is. */
   idleKeep: string[];
+  /** The actions a `hold` label kept off. */
+  held: Array<{ target: string; stage: Stage; reason: string }>;
+  /** The targets `only_labeled` withheld actions from: their notice records stand. */
+  withheld: string[];
 };
 
 /** The ledger classes that need nothing from the tick but a line in the report. */
@@ -79,7 +91,7 @@ const NOTIFY: ReadonlyMap<LedgerClass, NotifyCause> = new Map([
 
 export function planTick(input: PlanInput): Plan {
   const { sessions } = input;
-  const plan: Plan = planPickups(input);
+  const plan: Plan = { ...planPickups(input), held: [], withheld: [] };
 
   /** One wanted stage for one target, minus what is running. */
   function want(action: Action, joined: (w: Workspace) => boolean): void {
@@ -156,7 +168,42 @@ export function planTick(input: PlanInput): Plan {
   });
   plan.actions.push(...drift.actions);
   plan.running.push(...drift.running);
+  holdBack(plan, input.held ?? new Set(), input.inScope);
   return plan;
+}
+
+/**
+ * Move every action on a pull request a `hold` label carries out of the
+ * plan, into its report. Under `only_labeled` (`inScope` given) an action
+ * on a pull request not positively known to be labelled is withheld, so a
+ * listing that failed or never held the pull request leaves it alone.
+ */
+export function holdBack(
+  plan: Pick<Plan, "actions" | "held"> & { withheld?: string[] },
+  held: ReadonlySet<number>,
+  inScope?: ReadonlySet<number>,
+): void {
+  if (held.size === 0 && inScope === undefined) return;
+  const targets = new Set([...held].map((n) => `PR #${n}`));
+  const scoped =
+    inScope === undefined ? null : new Set([...inScope].map((n) => `PR #${n}`));
+  const kept: Action[] = [];
+  for (const action of plan.actions)
+    if (
+      scoped !== null &&
+      /^PR #\d+$/.test(action.target) &&
+      !scoped.has(action.target)
+    )
+      plan.withheld?.push(action.target);
+    else if (targets.has(action.target)) {
+      plan.held.push({
+        target: action.target,
+        stage: action.stage,
+        reason: `a person's hold label stands the dispatcher down from it; without it the tick would ${action.stage}: ${action.reason}`,
+      });
+      plan.withheld?.push(action.target);
+    } else kept.push(action);
+  plan.actions = kept;
 }
 
 type Want = (action: Action, joined: (w: Workspace) => boolean) => void;
@@ -208,6 +255,21 @@ function stoppedOurs(pr: DrivenPr, launches: ReadRecord[]): boolean {
   );
 }
 
+/** The launch-record holds that leave a drive quiet, by the class the report gives it. */
+const QUIET_HOLDS: ReadonlyMap<DriveHold["kind"], LedgerClass> = new Map([
+  ["refused", "refused"],
+  ["redriven", "stale"],
+  ["armed", "unarmed"],
+]);
+
+/** Why the plan wants a drive's action, in one sentence. */
+function wantReason(pr: DrivenPr, takeover: string | null): string {
+  if (takeover !== null)
+    return `drive ledger silent, and this machine's launch record ${takeover} started its driver: take it over (drive.ts --take-over decides)`;
+  const source = pr.class === "unarmed" ? "drive label" : "drive ledger";
+  return `${source} ${pr.class}: ${pr.why}`;
+}
+
 /** One driven pull request: quiet, unplaced, held by a launch record, or wanted. */
 function planDrive(
   slug: string,
@@ -227,12 +289,9 @@ function planDrive(
     });
     return;
   }
-  if (hold.kind === "refused") {
-    plan.quiet.push({ target, class: "refused", why: hold.why });
-    return;
-  }
-  if (hold.kind === "redriven") {
-    plan.quiet.push({ target, class: "stale", why: hold.why });
+  const quiet = QUIET_HOLDS.get(hold.kind);
+  if (quiet !== undefined && "why" in hold) {
+    plan.quiet.push({ target, class: quiet, why: hold.why });
     return;
   }
   const takeover = hold.kind === "takeover" ? hold.record.record.id : null;
@@ -251,10 +310,7 @@ function planDrive(
       stage,
       target,
       record: "forge",
-      reason:
-        takeover === null
-          ? `drive ledger ${pr.class}: ${pr.why}`
-          : `drive ledger silent, and this machine's launch record ${takeover} started its driver: take it over (drive.ts --take-over decides)`,
+      reason: wantReason(pr, takeover),
       evidence: { url: pr.url, head: pr.head, ...pr.evidence },
       ...stageFields(slug, pr, cause, launches),
       ...(takeover === null ? {} : { takeover }),
