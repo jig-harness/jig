@@ -1,10 +1,10 @@
 # Glossary
 
 Plain-language definitions of every term of art used in jig. Terms are
-capitalized as commonly written; cross-references are _italicized_.
+capitalized as commonly written; cross-references are *italicized*.
 
 Where several words compete for one idea, the entry's term is the one to use
-and its _Avoid_ line names the rivals. When you meet a rival in a change you
+and its *Avoid* line names the rivals. When you meet a rival in a change you
 make, use the entry's term instead.
 
 ## Core ideas
@@ -13,16 +13,16 @@ make, use the entry's term instead.
   agents as first-class participants: the repo is organized so agents can find
   the rules, run the checks, and improve the process — not just emit code.
 - **Scaffolding** — everything in a repo that exists to guide agents (and
-  humans): instruction files, _skills_, _rules_, glossaries, checkers. Not the
+  humans): instruction files, *skills*, *rules*, glossaries, checkers. Not the
   product code itself.
 - **Software factory** — a way of producing software in which work enters in a
   standard form, passes through the same stations and checks every time, and
   comes out measured, so output stays predictable as volume grows. When AI
   agents run the stations, the factory depends on the repository's
-  _scaffolding_ for context, verification and kept knowledge; Jig provides the
+  *scaffolding* for context, verification and kept knowledge; Jig provides the
   practices to build that scaffolding and skills that run the stations. See
   [FACTORY.md](FACTORY.md).
-- **Station** — one fixed step of a _software factory_, with its input, its
+- **Station** — one fixed step of a *software factory*, with its input, its
   output and who runs it: a skill, an agent or a person. Design and planning
   runs a feature through a pipeline of stations (research, PRD, architecture,
   …); execution runs one work item through a line of them, from pick-up to a
@@ -34,41 +34,41 @@ make, use the entry's term instead.
   instruction file links, and a check keeps every owner it names resolvable.
   Stages are named, never numbered. See
   [M6](modules/M6-feature-delivery-pipeline/README.md#the-lifecycle-map).
-  _Avoid_: a skills list grouped by category as the answer to "what comes
+  *Avoid*: a skills list grouped by category as the answer to "what comes
   next".
 - **SSoT (single source of truth)** — the one authoritative place a fact or
-  rule is defined. Everything else _points_ to it or is _generated_ from it,
+  rule is defined. Everything else *points* to it or is *generated* from it,
   so copies can't quietly disagree.
 - **Drift** — the gap that grows when two copies of the same fact evolve
   independently (a doc says one thing, the code does another). Jig's
-  recurring answer: make one copy the _SSoT_ and gate or generate the rest.
-- **Projection** — a consumer-specific view _generated_ from an _SSoT_ (a CI
+  recurring answer: make one copy the *SSoT* and gate or generate the rest.
+- **Projection** — a consumer-specific view *generated* from an *SSoT* (a CI
   path-filter, a review-gate table, a tracker-label set derived from a
-  change-area catalog). Because it is generated and _freshness-gated_, it
+  change-area catalog). Because it is generated and *freshness-gated*, it
   cannot silently disagree with its source.
 - **Module** — Jig's unit of adoption: one practice area (e.g.,
   "generated-artifact freshness") packaged with its invariant, maturity
   levels, templates, and reference code. Modules adopt independently.
 - **Maturity level** — how deeply a module is adopted: **Lite** (minimum
   useful), **Standard** (production teams), **Strict** (regulated/compliance
-  posture). Brownfield projects climb one level at a time. _Avoid_: tier
-  (_tiered review_ and deploy tiers use it), rung (a step of the
-  _enforcement ladder_).
+  posture). Brownfield projects climb one level at a time. *Avoid*: tier
+  (*tiered review* and deploy tiers use it), rung (a step of the
+  *enforcement ladder*).
 - **Profile** — a recommended composition of modules and maturity levels for a
   project shape: Solo/Lite, Team/Standard, Regulated/Strict.
 - **Consumer repository** — a repository that uses Jig in any of its ways:
-  through the _plugin_'s skills, by adopting modules, or by taking one
+  through the *plugin*'s skills, by adopting modules, or by taking one
   reference pattern. Where it configures Jig, it gives its own values (its
-  _consumer overlay_). Jig states the general pattern; a consumer repository
+  *consumer overlay*). Jig states the general pattern; a consumer repository
   holds one concrete, tested implementation of it, and what it learns comes
-  back as _backflow_. Short form: consumer. _Avoid_: instance, downstream
+  back as *backflow*. Short form: consumer. *Avoid*: instance, downstream
   repository, target repository, adopting repository.
 - **Invariant** — the tool-independent statement of a practice ("every
   committed generated file has a drift check"), as opposed to any particular
   tool that implements it.
 - **Disposition** — a written behavioral default ("systematic over
   improvised", "no backward compatibility yet") paired with the explicit
-  condition under which it flips (its _flip condition_). A disposition
+  condition under which it flips (its *flip condition*). A disposition
   without a flip condition becomes dogma.
 - **Tool delta** — a runtime-specific instruction file (`CLAUDE.md`,
   `.cursorrules`, …) carrying only what is specific to that runtime, with the
@@ -78,18 +78,18 @@ make, use the entry's term instead.
   file and checked for freshness is a projection of it, not a copy.
 - **Always-loaded context** — everything an agent runtime puts in context
   before the agent acts, in every session: the chained instruction files,
-  rules with no path scope, the _discovery metadata_ of every skill and
-  agent, and the instructions _MCP_ servers send. Each runtime and reviewer
-  that reads it has a _context budget_.
-- **Context budget** — how much of the _always-loaded context_ one consumer
+  rules with no path scope, the *discovery metadata* of every skill and
+  agent, and the instructions *MCP* servers send. Each runtime and reviewer
+  that reads it has a *context budget*.
+- **Context budget** — how much of the *always-loaded context* one consumer
   takes in (Codex: the first 32,768 bytes of the instruction chain by
   default). Text past a consumer's budget does not reach it, usually without
   a warning, so it counts as not delivered.
-- **Discovery metadata** — the name and description of a _skill_ or agent
+- **Discovery metadata** — the name and description of a *skill* or agent
   that a runtime lists in every session so the model can choose it, paid
   for whether or not it is ever used.
 - **Context window** — the amount of text a language model can take in at
-  once, counted in _tokens_: the instructions, the conversation and every
+  once, counted in *tokens*: the instructions, the conversation and every
   file it has read share it.
 - **Token** — the unit a language model reads and is billed in, a word or
   part of one; English prose runs at about 4 characters a token.
@@ -108,7 +108,7 @@ make, use the entry's term instead.
   See [M0](modules/M0-instruction-architecture/README.md#invariant).
 - **Host-injected tool** — a tool a launcher or workspace app adds to an
   agent session without any file in the repository registering it (often an
-  _MCP_ server). Searching the repository does not find it and its
+  *MCP* server). Searching the repository does not find it and its
   configuration cannot gate it, so it is a convenience, never a dependency.
 - **Artifact class** — the kind of file a standard governs, decided by what
   the file does rather than where it lives: runtime code (services, workers,
@@ -125,11 +125,11 @@ make, use the entry's term instead.
 - **Quality gate** — a check that must pass before work proceeds (formatting,
   linting, type checks, tests, build).
 - **Enforcement ladder** — the ordered places a rule can live: written
-  convention → editor/local script → _agent-runtime hook_ → _git hook_ →
-  _CI_ → mandatory review step. Each rung is harder to bypass. Jig treats "which rung is this
+  convention → editor/local script → *agent-runtime hook* → *git hook* →
+  *CI* → mandatory review step. Each rung is harder to bypass. Jig treats "which rung is this
   rule on, and what promotes it?" as a first-class question — and the rung is
-  what the _auditor_ scores. _Avoid_: level for a rung (a module's
-  _maturity level_ uses it).
+  what the *auditor* scores. *Avoid*: level for a rung (a module's
+  *maturity level* uses it).
 - **Convention-only** — a rule that exists only as prose or habit, with no
   mechanical check. A tracked state, not a resting place.
 - **Git hook** — a script that runs automatically at a git event
@@ -138,13 +138,13 @@ make, use the entry's term instead.
 - **Agent-runtime hook** — a command an agent runtime (Claude Code, Codex)
   runs at its own events: before or after a tool call, when a prompt is
   submitted, when a session starts, resumes or compacts. It sees what no
-  _git hook_ can (the command about to run, the prompt, the session's
+  *git hook* can (the command about to run, the prompt, the session's
   transcript) and is the softer rung: it runs only where it is registered
-  and trusted, so _CI_ re-checks whatever it enforces. The _turn budget_
-  guard in Jig's _plugin_ is an example.
+  and trusted, so *CI* re-checks whatever it enforces. The *turn budget*
+  guard in Jig's *plugin* is an example.
 - **CI (continuous integration)** — the service that runs checks on every
   push/PR (GitHub Actions, GitLab CI, …). In Jig's model, CI is the
-  _authority_: local hooks are conveniences that can be bypassed; CI closes
+  *authority*: local hooks are conveniences that can be bypassed; CI closes
   the hole.
 - **Grep gate** — a deliberately simple check that searches the codebase for a
   forbidden or required pattern. Cheap, fast, and good enough for many rules;
@@ -178,14 +178,14 @@ make, use the entry's term instead.
   that could run a script ([M1](modules/M1-gates-enforcement-ladder/README.md)).
 - **Push protection** — the forge's own secret scan on a push, which rejects
   a push carrying a credential before it lands. The outermost layer of a
-  secret scan, behind the pre-commit hook and the blocking _CI_ scan over a change's
+  secret scan, behind the pre-commit hook and the blocking *CI* scan over a change's
   commits ([M1](modules/M1-gates-enforcement-ladder/README.md)).
-- **Quiet mode** — the form of a _quality gate_ command written for an agent
-  to read: on success it prints a summary (a _verdict line_ and the last few
+- **Quiet mode** — the form of a *quality gate* command written for an agent
+  to read: on success it prints a summary (a *verdict line* and the last few
   lines), on failure the full output, and it keeps the gate's own exit
   status, which a filter in a pipe would replace with its own
   ([M12](modules/M12-parallel-agent-ergonomics/README.md#core-pieces)).
-  _Avoid_: silent mode (a flag that hides warnings or diagnostics, which
+  *Avoid*: silent mode (a flag that hides warnings or diagnostics, which
   quiet mode keeps).
 - **Verdict line** — the one line per part that a gate run ends with, naming
   the part and its outcome (passed, failed with its exit status, could not
@@ -210,20 +210,20 @@ make, use the entry's term instead.
 - **Generated artifact** — a committed file produced by a script from some
   source of truth (an API spec from route definitions, an index from a docs
   tree). Must never be edited by hand.
-- **Freshness gate (drift check)** — the check that fails when a _generated
-  artifact_ no longer matches what its generator would produce — proof the
+- **Freshness gate (drift check)** — the check that fails when a *generated
+  artifact* no longer matches what its generator would produce — proof the
   committed copy is stale.
-- **Freshness triad** — the three mechanisms every committed _generated
-  artifact_ ships with: a regenerate script, a CI drift check, and a
+- **Freshness triad** — the three mechanisms every committed *generated
+  artifact* ships with: a regenerate script, a CI drift check, and a
   pre-commit auto-regenerate-and-stage hook.
 - **Generated-file inventory** — the one declaration of every committed
-  _generated artifact_: its outputs, its source, its regenerate command and
+  *generated artifact*: its outputs, its source, its regenerate command and
   its check. One generic runner runs every declared check in CI, so a
   generator cannot ship without its check and none needs a CI step of its
   own. It is a standalone file or the `generated:` entries of a
-  _change-area catalog_.
-- **Regeneration after merge** — regenerating a _generated artifact_ on the
-  push to the _integration branch_ instead of demanding it fresh on every
+  *change-area catalog*.
+- **Regeneration after merge** — regenerating a *generated artifact* on the
+  push to the *integration branch* instead of demanding it fresh on every
   pull request: for a derivation the merge need not wait for, and as the
   backstop for two pull requests each fresh on its own and stale once both
   merged. The regenerated commit reaches the protected branch through a
@@ -231,7 +231,7 @@ make, use the entry's term instead.
   commit carries a CI-skip marker.
 - **Generator coverage check** — a check that the set of inputs a generator
   reads equals the set that exists, for a generator that selects its inputs
-  by a list it maintains. A _freshness gate_ proves the artifact equals the
+  by a list it maintains. A *freshness gate* proves the artifact equals the
   generator's output and cannot see an input the generator never reads.
 - **One-way derivation** — the rule that an artifact which disagrees with
   its source is regenerated, never edited to match: the source layer emits
@@ -250,18 +250,18 @@ make, use the entry's term instead.
   exception with a reason
   ([M2](modules/M2-generated-artifact-freshness/README.md)).
 - **Tally (versus constraint)** — the test for a number in prose. A
-  _constraint_ (a limit, a budget, `3 retries`) is part of what the text
-  means and stays; a _tally_ describes an adjacent list (`the 6 passes`,
+  *constraint* (a limit, a budget, `3 retries`) is part of what the text
+  means and stays; a *tally* describes an adjacent list (`the 6 passes`,
   `120 skills`) and is a hand-written cache of it, which drifts when the
-  list changes: it is dropped, or registered in a _facts registry_ and
-  checked by a _commit-nothing check_.
+  list changes: it is dropped, or registered in a *facts registry* and
+  checked by a *commit-nothing check*.
 - **Facts registry** — the one declaration of each derivable fact prose
   states: its source (globs over the repository's files, or a command) and
-  the phrasings a stated copy may take. A _commit-nothing check_ re-derives
+  the phrasings a stated copy may take. A *commit-nothing check* re-derives
   each fact on every run and fails when a stated copy disagrees; a fact
   nobody states has nothing to check.
 - **Measured marker** — the inline comment `<!-- measured -->` that exempts
-  a line from the advisory lint over unchecked _tallies_: the number is a
+  a line from the advisory lint over unchecked *tallies*: the number is a
   constraint or a measurement that stays on purpose. A note after the word
   may say how it was measured.
 - **Ephemeral replay** — the strongest drift check for schema-like
@@ -274,7 +274,7 @@ make, use the entry's term instead.
   registry of them prevents ad-hoc, invisible exceptions.
 - **Escape hatch** — a documented, legitimate way to bypass a gate (e.g.
   `git commit --no-verify` in an emergency), always paired with a higher
-  rung — usually _CI_ — that re-checks, so the bypass changes nothing about
+  rung — usually *CI* — that re-checks, so the bypass changes nothing about
   what merges.
 - **Advisory gate** — a gate that reports failures without blocking, run
   that way while its precision is being proven. Every advisory gate carries
@@ -289,16 +289,16 @@ make, use the entry's term instead.
   GritQL rules as plugins.
 - **Failure channel** — one of the three ways a failure travels, decided by
   the situation rather than the author's taste: an expected outcome the
-  caller branches on is returned as the _result type_, a failure that crosses
-  a module boundary is thrown as a _domain error_, and a bug is raised as a
-  _defect_. See [M15](modules/M15-contracts-errors/README.md).
+  caller branches on is returned as the *result type*, a failure that crosses
+  a module boundary is thrown as a *domain error*, and a bug is raised as a
+  *defect*. See [M15](modules/M15-contracts-errors/README.md).
 - **Result type** — the one tagged union a function returns when an expected
   outcome can go either way: a success arm holding the value, or an error arm
   whose error carries a tag the caller branches on. One type per repository;
   a second shape for the same idea is a second channel.
 - **Domain error** — a typed error carrying a registered code and the
   metadata the code declares (severity, message key, recovery hint). It is
-  what crosses a module boundary, and the only error the _error boundary_
+  what crosses a module boundary, and the only error the *error boundary*
   maps by its code.
 - **Defect** — a bug or a broken invariant, raised through one primitive
   (`invariant(condition, message)` or a defect error type) so that "defect"
@@ -307,7 +307,7 @@ make, use the entry's term instead.
   flow.
 - **Error boundary** — the one place errors reach a caller: the handler that
   maps each error to a fixed response shape (code, message key, severity,
-  recovery hint, _correlation id_: the complete public field set), turns an
+  recovery hint, *correlation id*: the complete public field set), turns an
   error it does not know into an opaque generic code, and sends no internal
   detail on a server-side failure. A command-line tool's boundary writes an
   exit status per outcome and one line on standard error instead.
@@ -321,10 +321,10 @@ make, use the entry's term instead.
 - **Error-code registry** — the one place every error code a system can emit
   is declared, with its metadata and in one format. Every other copy of the
   codes (a client's code union, a locale's message catalog, the public
-  reference) is a _generated artifact_ of it, and no code is constructed
+  reference) is a *generated artifact* of it, and no code is constructed
   anywhere else. See [M15](modules/M15-contracts-errors/README.md).
 - **Orphan code** — a registered error code that nothing outside the
-  _error-code registry_ references: dead weight in every generated copy, and
+  *error-code registry* references: dead weight in every generated copy, and
   a code a client handles that can never arrive. Its mirror, a **reverse
   orphan**, is a code-shaped literal in a hand-written document that no
   registry entry declares. An audit reports both.
@@ -353,7 +353,7 @@ make, use the entry's term instead.
   accepts: a maximum length, pattern or format on a string, a maximum on a
   number, a maximum item count on an array, a closed shape on an object, a
   type on everything. The count of unbounded fields in a contract is held
-  under a _ratchet_.
+  under a *ratchet*.
 - **Dead code** — code nothing uses: files no entry point reaches, exports no
   module imports, dependencies no file loads.
 - **Cyclomatic and cognitive complexity** — two counts of how hard a function
@@ -365,30 +365,30 @@ make, use the entry's term instead.
   happened, required by a commit-msg hook and re-verified by a gate the
   committer can't skip.
 - **Change-area catalog** — one machine-readable file mapping path patterns to
-  named _change-areas_ and their implications (which CI jobs run, which reviews
-  are mandatory, which deploy tier applies). It is the _SSoT_ every consumer
-  reads via generated _projections_, instead of each re-hardcoding its own
+  named *change-areas* and their implications (which CI jobs run, which reviews
+  are mandatory, which deploy tier applies). It is the *SSoT* every consumer
+  reads via generated *projections*, instead of each re-hardcoding its own
   path-lists that then disagree.
-- **Seed area** — a _change-area catalog_ area that a changed file matches
+- **Seed area** — a *change-area catalog* area that a changed file matches
   directly, through its `paths` or a generator's `source`: what the change
   touched. The seeds together with every area their `impliedBy` relation
   reaches, the closure, are the change's consequences; each projection reads
   one of the two.
 - **Validation profile** — a named gate depth for a coding agent's own
-  pre-commit/push checks, declared in the _change-area catalog_ under
+  pre-commit/push checks, declared in the *change-area catalog* under
   `profiles:` from shallowest to deepest (for example `shallow`, which skips
   the code gates of an area with no code to gate or with code that never
   ships, and `deep`, which runs them all). An area may name its profile; one
   that names none gets the deepest — the same fail-closed default as a file
   matching no area at all.
-- **Self-check paradox** — the situation where a _check_ validates the same
+- **Self-check paradox** — the situation where a *check* validates the same
   data its own trigger condition is computed from (e.g. a catalog's structural
-  check, triggered by resolving changed paths _through_ that catalog). The
+  check, triggered by resolving changed paths *through* that catalog). The
   fix is to run the self-check independently of the thing it's checking —
   unconditionally, or on a hand-written, literal path match — never on a
   selection computed from it; otherwise a change that breaks the check's own
   trigger skips the check along with it.
-- **Code-bearing** — a _change-area catalog_ area classification: changing
+- **Code-bearing** — a *change-area catalog* area classification: changing
   it means a heavy build/test job must run. Modeled as a checker-side
   deny-list of explicitly non-code-bearing area ids (docs, spike, and
   similar) — never `category` values, since `category` is grouping metadata
@@ -396,65 +396,65 @@ make, use the entry's term instead.
   code-bearing by default, so a newly added area fails toward the heavy gate
   instead of silently skipping it the way an allow-list would. This
   deny-list is deliberately generous and must not double as the reachability
-  target of _area-class-resolved_ — see **Code-bearing anchor**, below. Of a
+  target of *area-class-resolved* — see **Code-bearing anchor**, below. Of a
   commit or a range: one that changes a path verification builds or tests;
-  the _verified pointer_ watchdog's lag counts only these
+  the *verified pointer* watchdog's lag counts only these
   ([M10](modules/M10-environments-deploy/README.md#the-watchdog-decides-by-cause)).
-- **Code-bearing anchor** — a _change-area catalog_ area explicitly
-  designated as one that directly ships — a deployed service _or_ a
+- **Code-bearing anchor** — a *change-area catalog* area explicitly
+  designated as one that directly ships — a deployed service *or* a
   published package, not deployment-only (a library-shaped area can anchor
-  via a release/publish reference) — _or_, for a non-shipping code-bearing
+  via a release/publish reference) — *or*, for a non-shipping code-bearing
   area such as a repo-owned test harness, linter, or build tool, one backed
   by an enabled heavy-gate/build CI job running on its own paths — used only
-  as the target of _area-class-resolved_'s `impliedBy`-closure check.
-  Modeled the opposite way from the _code-bearing_ deny-list on purpose: a
-  small, hand-maintained allow-list, default-_exclusive_, so it stays a
+  as the target of *area-class-resolved*'s `impliedBy`-closure check.
+  Modeled the opposite way from the *code-bearing* deny-list on purpose: a
+  small, hand-maintained allow-list, default-*exclusive*, so it stays a
   genuinely narrower target — reachability against the default-inclusive
   deny-list would be tautological, since closure is reflexive and every
   non-denied area trivially reaches itself. Each anchor carries a
-  source-controlled _reference_ external to the catalog — a deployment
+  source-controlled *reference* external to the catalog — a deployment
   manifest or package-publish step for an anchor that ships, or the CI job
   reference for a non-shipping one — proving the reference exists and was
   reviewed — not that the area is currently live.
 - **Regex-mirror guard** — the pattern that keeps a hand-written, fast CI
-  regex ("did any code change?") honest against the _change-area catalog_ it
+  regex ("did any code change?") honest against the *change-area catalog* it
   duplicates. Two directional checks compare path prefixes — every regex
   alternative's prefix belongs to some catalog area, and every
-  _code-bearing_ catalog area is matched by the regex — and a third checks
+  *code-bearing* catalog area is matched by the regex — and a third checks
   that every tracked file the regex calls code-bearing matches an area. That
   is prefix synchronization over tracked files, not proof that every path
   the regex could match is in the catalog: a not-yet-tracked file under a
   broad prefix can still match no area.
-- **Area-class-resolved** — the _change-area catalog_ strict-maturity
-  criterion proving a _regex-mirror guard_'s bidirectional sync is
+- **Area-class-resolved** — the *change-area catalog* strict-maturity
+  criterion proving a *regex-mirror guard*'s bidirectional sync is
   insufficient on its own: a file can match a real, schema-valid area whose
   `impliedBy` closure never reaches a **code-bearing anchor**, and still
   pass a sync check that only asks "does this file match some area?" The
   criterion requires every file the regex classifies as code to resolve,
   through the closure, to the anchor set — checking against the broader
-  _code-bearing_ deny-list instead would make the criterion tautological.
+  *code-bearing* deny-list instead would make the criterion tautological.
 - **Fix-and-stage** — the pre-commit hook pattern where an auto-fixer
   (formatter, regenerator) runs and its output is re-staged automatically,
   so the commit lands already clean instead of failing.
-- **Area class** — a repo-chosen boolean partition of _change-areas_ used to
+- **Area class** — a repo-chosen boolean partition of *change-areas* used to
   scope a check to "the areas that matter for this question" (e.g. which
   areas require the heavy build, which gate a deploy). Not a schema field
   itself — each class is defined by a rule over existing schema fields — but
   a check that consumes a class must cite its rule, so two implementations
-  can't silently disagree about membership. _Code area_ and _deploy-critical
-  area_ are the two instances used by the _change-area catalog_'s
+  can't silently disagree about membership. *Code area* and *deploy-critical
+  area* are the two instances used by the *change-area catalog*'s
   regex-mirror guard.
-- **Code area** — the _area class_ answering "must the heavy build run for a
+- **Code area** — the *area class* answering "must the heavy build run for a
   change here?", defined by explicit non-code-bearing area ids
   on a deny-list, never by `category` (which is grouping metadata). Used by
   `checkFilterCoverage` to decide which areas a fast
-  CI shortcut regex must never miss. Not identical to _deploy-critical
-  area_ — a CI-infra area can be code-bearing without ever being deployed.
-- **Deploy-critical area** — the _area class_ of every area whose
+  CI shortcut regex must never miss. Not identical to *deploy-critical
+  area* — a CI-infra area can be code-bearing without ever being deployed.
+- **Deploy-critical area** — the *area class* of every area whose
   `deployTier` is not `none`, read directly off the schema field (unlike
-  _code area_, which is repo-chosen). Used by `checkFilterCodeAreaCoverage`
+  *code area*, which is repo-chosen). Used by `checkFilterCodeAreaCoverage`
   to decide whether a file's resolved areas actually gate a deploy.
-- **Pipeline economy** — spending _CI_ only where its answer changes a merge
+- **Pipeline economy** — spending *CI* only where its answer changes a merge
   decision, without letting a saving turn a failure into a pass (module M13).
   It decides how cheaply and how fast checks run, never which checks exist.
 - **Aggregator job** — the one CI job a repository requires before merging,
@@ -484,14 +484,14 @@ make, use the entry's term instead.
   key-affecting environment can reach. Two pipelines that differ in one such
   variable, or in a credential whose value selects the store (an absent
   secret reads as an empty string), write and read namespaces of their own,
-  and the only symptom is one pipeline's _hit rate_ at zero.
+  and the only symptom is one pipeline's *hit rate* at zero.
 - **Cache mount** — a directory a container build keeps across builds for
   one build step alone (BuildKit's `RUN --mount=type=cache`). Nothing of it
   is committed to the image, so every step that reads it declares it; M13's
   cache-mount check fails a step that does not.
 - **Hit rate** — hits over hits plus misses among one run's cacheable tasks,
   reported in the run's summary. The number that shows a declared cache
-  storing nothing, or a split _cache namespace_, which nothing else reports.
+  storing nothing, or a split *cache namespace*, which nothing else reports.
 - **Runner class** — the size of machine a CI job runs on (its cores and
   memory), bought by the minute at a rate per class and named by a provider
   or vendor label. Chosen per job from its measured work; the jobs that only
@@ -504,7 +504,7 @@ make, use the entry's term instead.
   number that makes a per-push leg comparable with CI.
 - **Verification leg** — one of the places a check runs for one change: the
   editor, a pre-commit or pre-push hook, a remote sandbox, CI. CI is the
-  _authoritative leg_, the only one a merge waits for; the others give
+  *authoritative leg*, the only one a merge waits for; the others give
   earlier feedback and select no more work than CI does for the same
   change (module M13).
 - **Reopen condition** — the checkable statement, written with a decision,
@@ -513,7 +513,7 @@ make, use the entry's term instead.
   re-checked.
 - **Cost ledger** — the record of every decision that changed what a
   pipeline spends, each with its measurement before and after and its
-  _reopen condition_. M13's cost-ledger check fails an entry that lacks
+  *reopen condition*. M13's cost-ledger check fails an entry that lacks
   them or whose after-measurement is past its due date.
 
 ## Process
@@ -538,12 +538,12 @@ make, use the entry's term instead.
 - **ADR (architecture decision record)** — a short numbered document capturing
   one significant decision, its context, and its consequences. Append-only
   history: superseded ADRs are marked, not rewritten.
-- **Skeleton file / tissue** — a _skeleton file_ holds an architectural contract
+- **Skeleton file / tissue** — a *skeleton file* holds an architectural contract
   (layer rules, a published interface, the schema of record), is owned by
-  people and is read-only for agents; everything else is _tissue_, the
+  people and is read-only for agents; everything else is *tissue*, the
   implementation agents may change freely. Skeleton files are listed in an
   inventory, and a change to one needs recorded authority: an edit to the
-  inventory, or a commit trailer naming an approved _ADR_
+  inventory, or a commit trailer naming an approved *ADR*
   ([skeleton-file gate](modules/M5-adr-practice/reference/skeleton-gate/README.md)).
   Unrelated to the "skeleton" templates, which are starting points to copy.
 - **Frontmatter** — the machine-readable metadata block at the top of a
@@ -554,7 +554,7 @@ make, use the entry's term instead.
   resolving contradictions between documents (e.g. generated ground truth >
   decision records > feature docs). Turns "which doc wins?" from a judgment
   call into a lookup.
-- **Path-scoped rule** — a _frontmatter_ rule that applies only to the
+- **Path-scoped rule** — a *frontmatter* rule that applies only to the
   documents under a path prefix, for a subtree whose vocabulary differs from
   the rest (a runbook directory that must name its service, an archive that
   may hold only archived documents). It can narrow the tree's vocabulary,
@@ -562,8 +562,8 @@ make, use the entry's term instead.
 - **Orphan document** — a document no other document lists under `related:`
   in its frontmatter. Ordinary Markdown links are not counted, so an orphan
   may still be linked from a page body; it is a candidate for a declared
-  relation or for retiring, not proof that nothing leads to it. An _orphan
-  report_ lists them as a warning, never a failure
+  relation or for retiring, not proof that nothing leads to it. An *orphan
+  report* lists them as a warning, never a failure
   ([index generator](plugin/skills/docs/scripts/index/README.md#orphan-report)).
 - **Sticky stamping** — how a generator dates the documents it writes: the
   `last_updated` date advances, in UTC, only when the output changed, and
@@ -581,8 +581,8 @@ make, use the entry's term instead.
   deferral. The static gate checks that a deferral names an item; a scheduled
   check asks the tracker whether the item has closed since
   ([M4's deferral check](plugin/skills/docs/scripts/deferral-references/README.md)).
-- **PRD (product requirements document)** — the document defining _what_ a
-  feature does for users and why — deliberately separate from _how_ (the
+- **PRD (product requirements document)** — the document defining *what* a
+  feature does for users and why — deliberately separate from *how* (the
   architecture doc).
 - **Spec resolver and spec adapter** — the read-only step that turns what a
   work item says must be built (requirements, acceptance criteria and tasks,
@@ -594,12 +594,12 @@ make, use the entry's term instead.
   only inside the repository, never a file Git ignores, and fetches no web
   link ([design](design/spec-link.md)).
 - **PR (pull request)** — a proposed change to a repository, opened so it can
-  be reviewed and checked before it is merged into the _integration branch_.
+  be reviewed and checked before it is merged into the *integration branch*.
   Most of Jig's execution process runs around one.
 - **Draft PR** — a pull request opened in "not ready for review" state so CI
   and the reviewers that read drafts can run before it is marked Ready, which
   summons the reviewers that wait for Ready. A human marks it Ready, or a
-  _PR drive loop_ does at the point the _pull-request policy_ names.
+  *PR drive loop* does at the point the *pull-request policy* names.
 - **Integration branch** — the branch pull requests land on (often `main`),
   where everyone's changes meet. Jig's tools read it from the
   repository's default branch unless configuration names another.
@@ -614,9 +614,9 @@ make, use the entry's term instead.
 - **Forge** — the service that hosts a repository and its pull requests,
   reviews and checks (GitHub, GitLab, …).
 - **Stacked pull request** — a pull request based on another open pull
-  request's branch instead of the _integration branch_, so dependent work can
-  be reviewed before what it builds on merges. A _native_ stack records the
-  final target in the _forge_'s own stack metadata; a plain _branch chain_
+  request's branch instead of the *integration branch*, so dependent work can
+  be reviewed before what it builds on merges. A *native* stack records the
+  final target in the *forge*'s own stack metadata; a plain *branch chain*
   records it nowhere, and tools have to walk the chain of bases to find it.
 - **Pull-request policy** — a repository's declared rules for how pull
   requests are shaped: whether they may stack, how branches are named,
@@ -630,7 +630,7 @@ make, use the entry's term instead.
   writes into a file where it could not combine two sides' changes. A file
   that still holds one is not resolved.
 - **Integration side** — in a merge, rebase or cherry-pick that stopped on
-  conflicts, the side that carries the _integration branch_'s changes, as
+  conflicts, the side that carries the *integration branch*'s changes, as
   opposed to the side carrying the work being brought in. Git's own names,
   "ours" and "theirs", swap meaning between a merge and a rebase, so
   Jig's conflict tooling names each side by this role instead.
@@ -641,7 +641,7 @@ make, use the entry's term instead.
 - **Merge replay** — merging the two parents of a past merge commit again,
   without a working tree (`git merge-tree`), to see what conflicted then and
   why. Jig's conflict report replays every merge in a range of time and gives
-  each conflicting region a _cause_: a fact every change edits in one place
+  each conflicting region a *cause*: a fact every change edits in one place
   (a count, a list, a version), or two changes to the same lines.
 - **Live conflict record** — the line of JSON Jig's conflict tooling appends,
   for each conflicted file, when a merge, rebase, cherry-pick or revert
@@ -649,10 +649,10 @@ make, use the entry's term instead.
   review-loop round started the resolution. It keeps the conflicts a merge replay cannot see, because a
   rebase leaves no merge commit to merge again.
 - **Changelog** — a file listing each release's notable changes, newest
-  first, written for the people who use the _released artifact_ it belongs
+  first, written for the people who use the *released artifact* it belongs
   to. Jig's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
   one heading per plugin version, and an **Unreleased** heading for changes
-  that no release carries yet. Jig's is written from _change notes_ by the
+  that no release carries yet. Jig's is written from *change notes* by the
   release step, never by hand.
 - **Change note** — a small file a pull request adds with its changelog
   entry and the release it needs, in place of an edit to the changelog and the
@@ -688,12 +688,12 @@ make, use the entry's term instead.
   operations, scope expansions). Kept in an explicit registry.
 - **BWC (backward compatibility)** — keeping old interfaces working when
   things change. Jig treats "when do we start paying for BWC?" as an
-  explicit _disposition_ with a flip condition (e.g., first real customer
+  explicit *disposition* with a flip condition (e.g., first real customer
   data), not an unstated assumption.
 - **De-scarring** — cleaning a finished document of review findings,
   corrections, and reviewer dialogue ("scars") so it reads cleanly; the
   history stays in PRs, issues, and git — not in the artifact.
-- **Scar class** — one of the four kinds of scar _de-scarring_ removes from a
+- **Scar class** — one of the four kinds of scar *de-scarring* removes from a
   promoted document: review dialogue (S1), a correction-in-place ledger (S2), a
   completed-work ledger (S3), and an archaeological layer of superseded states
   (S4).
@@ -701,15 +701,15 @@ make, use the entry's term instead.
   who never saw the old state decide wrongly without it? If yes, the sentence
   stays, rewritten as a present-tense constraint.
 - **Closure invariant** — the rule that a finished row may leave a plan,
-  checklist or backlog only when its _closure anchor_ is verified: the issue it
+  checklist or backlog only when its *closure anchor* is verified: the issue it
   names is closed and opening it confirms the gap is truly resolved, or the
   thing it delivered is present in the source of truth. No anchor, the row
-  stays and the missing anchor is reported. Part of _de-scarring_
+  stays and the missing anchor is reported. Part of *de-scarring*
   ([scar classes](plugin/skills/descar/references/scar-classes.md)).
 - **Completeness register** — a maintained statement of current coverage, such
   as a list of every requirement a contract must address with a `covered` mark
   on each. Its rows are live claims people rely on, not finished-task residue,
-  so _de-scarring_ corrects a stale row in place and never deletes it
+  so *de-scarring* corrects a stale row in place and never deletes it
   ([scar classes](plugin/skills/descar/references/scar-classes.md)).
 - **Design brief bundle** — the numbered set of Markdown files and images
   handed to an external design session as its only input.
@@ -721,7 +721,7 @@ make, use the entry's term instead.
   repository fixes. The next handback compares that delivery, the repository's
   accepted version and the newly returned version in a three-way merge.
 - **Claude Design** — a hosted design tool, and the one external design
-  session a _design brief bundle_ is prepared for so far. The design work
+  session a *design brief bundle* is prepared for so far. The design work
   happens there, not in the repository; Jig's
   `design-brief-builder` skill prepares the inputs and audits them
   ([design-brief-builder](plugin/skills/design-brief-builder/SKILL.md)).
@@ -746,7 +746,7 @@ make, use the entry's term instead.
   citations in the margin, escaping, and a freshness guard that compares the
   citations against the commit the facts were checked at.
 - **Archify** — an open-source tool that draws architecture diagrams from typed
-  JSON sources. An _explainer sheet_ embeds its static drawing as a figure, and
+  JSON sources. An *explainer sheet* embeds its static drawing as a figure, and
   the sheet's freshness guard checks the figure against its diagram source
   ([explainer sheet](plugin/skills/explain/references/explainer-sheet.md#figures)).
 - **Precedent pass** — the mechanical search of a repository's ADRs, policy
@@ -761,11 +761,11 @@ make, use the entry's term instead.
   (ASD-STE100), first written for aircraft maintenance manuals: one meaning per
   word, short sentences, active verbs. A prose linter can check text against
   its structural rules, for example text that asks a human to decide.
-- **Flag label** — an issue-tracker label that _drives process_ rather than
+- **Flag label** — an issue-tracker label that *drives process* rather than
   just categorizing (e.g., "has-migration" → a mandatory review gate fires).
 - **Label taxonomy** — the one file that lists every label an issue may
-  carry, in families (types, _flag labels_, _label groups_, _label
-  categories_), with the rules between them, so labels are chosen from a
+  carry, in families (types, *flag labels*, *label groups*, *label
+  categories*), with the rules between them, so labels are chosen from a
   closed vocabulary and checked before an issue is written
   ([M9](modules/M9-tasks-memory/README.md);
   [file-issue](plugin/skills/file-issue/README.md#the-label-taxonomy)).
@@ -774,20 +774,20 @@ make, use the entry's term instead.
   its title prefix, with one question asked only in an interactive session
   where none of those identifies it; it sets how much each delivery station
   does for the item, never which stations exist, and never lowers a depth a
-  _flag label_, a catalog review or a gate raises
+  *flag label*, a catalog review or a gate raises
   ([design](design/work-types.md)).
-- **Label group** — a family of a _label taxonomy_ an issue carries at most
+- **Label group** — a family of a *label taxonomy* an issue carries at most
   one label of, such as a size or a repository; a required group, exactly
   one.
-- **Label category** — a family of a _label taxonomy_ whose labels share a
+- **Label category** — a family of a *label taxonomy* whose labels share a
   prefix (`area:billing`, `area:search`) and of which an issue may carry
   several. An open category accepts any name matching a pattern after the
   prefix.
 - **Facet** — a label that refines another and means nothing without it,
   such as the stakeholder label beside a human-in-the-loop flag; the
-  _label taxonomy_ says which label it requires, and the label validator
+  *label taxonomy* says which label it requires, and the label validator
   rejects it alone.
-- **Sensitivity flag** — a _flag label_ marking a change that carries extra
+- **Sensitivity flag** — a *flag label* marking a change that carries extra
   obligations, such as a database migration, a published contract, personal
   data or a manual operational step. `decide` reads them under fixed names:
   `has-migration`, `api-change`, `dpa-relevant` (personal data covered by a
@@ -800,28 +800,28 @@ make, use the entry's term instead.
   ([do-item](plugin/skills/do-item/SKILL.md)). An epic is defined by its role
   (an outcome too large for one pull request, and the unit progress is
   reported on), not by how many children it has, and it closes on an
-  _acceptance verdict_, never on a count of open children
+  *acceptance verdict*, never on a count of open children
   ([M9](modules/M9-tasks-memory/README.md#work-item-rules)).
 - **Acceptance verdict** — the recorded outcome of reviewing whether an
-  _epic_'s designed scope is delivered: accepting (with or without follow-ups)
-  or rejecting. An accepting verdict, or a _waiver_, is what lets an epic close
+  *epic*'s designed scope is delivered: accepting (with or without follow-ups)
+  or rejecting. An accepting verdict, or a *waiver*, is what lets an epic close
   ([M9](modules/M9-tasks-memory/README.md#an-epic-closes-on-an-accepted-verdict)).
-- **Waiver** — a person's recorded decision, on the _epic_ itself, to close it
-  without an _acceptance verdict_. It stands in for a review nobody ran and
+- **Waiver** — a person's recorded decision, on the *epic* itself, to close it
+  without an *acceptance verdict*. It stands in for a review nobody ran and
   never overrides a rejecting one.
-- **Tail** — an open child of an _epic_ that the epic was never scoped to
+- **Tail** — an open child of an *epic* that the epic was never scoped to
   finish, such as a legal sign-off, an operator step or review debt. At
   closure a tail is linked back and given a comment naming the epic, then
   unparented and moved to the standing destination for its kind.
-- **Epic census** — the read-only count of how a repository's started _epics_
-  stand, kept by the fleet-health sensor: _finished-but-open_ (every child is
-  closed, the epic is not), _tail-blocked_ (nearly all delivered, one or two
-  children still open) and _orphan-risk_ (no children, project, owner or
+- **Epic census** — the read-only count of how a repository's started *epics*
+  stand, kept by the fleet-health sensor: *finished-but-open* (every child is
+  closed, the epic is not), *tail-blocked* (nearly all delivered, one or two
+  children still open) and *orphan-risk* (no children, project, owner or
   repository). It changes nothing; it points at the epics the closure step
-  should look at, and closing one still takes an _acceptance verdict_ or a
-  _waiver_ ([M11](modules/M11-process-observability/README.md)).
+  should look at, and closing one still takes an *acceptance verdict* or a
+  *waiver* ([M11](modules/M11-process-observability/README.md)).
 - **Shipping item** — the work item whose own pull request carries a change,
-  as opposed to the _epic_ that contains it. A _flag label_ that fires a gate
+  as opposed to the *epic* that contains it. A *flag label* that fires a gate
   goes on the shipping item.
 - **Severity mapping** — the one table that turns a finding's severity into
   the tracker priority it is filed with, shared by every
@@ -833,15 +833,15 @@ make, use the entry's term instead.
   ([tools/launcher/README.md](tools/launcher/README.md)).
 - **Worktree** — a git feature giving one repository multiple working
   directories, letting several agents work different branches of the same repo
-  in parallel on one machine. _Avoid_: workspace for the checkout itself; a
-  workspace is what a _workspace provider_ opens around a worktree.
+  in parallel on one machine. *Avoid*: workspace for the checkout itself; a
+  workspace is what a *workspace provider* opens around a worktree.
 - **Worktree namespace** — the data namespace (a database schema, a
-  database, a key prefix) a _worktree_ derives from its own identity, so
+  database, a key prefix) a *worktree* derives from its own identity, so
   worktrees sharing one database server never share tables. Created with an
   owner and an expiry, reaped by that owner once the worktree is gone or the
   expiry has passed, and never the production namespace, which carries no
   prefix.
-- **Worktree scratch** — working files the agents of one _worktree_ keep in
+- **Worktree scratch** — working files the agents of one *worktree* keep in
   a gitignored directory of it (`.context/` in Jig's skills). Every agent in
   that worktree shares it, each file with one writer or as an append-only log
   under a lock; they outlive one session but only a session in that same
@@ -851,7 +851,7 @@ make, use the entry's term instead.
 - **Collection kind** — one class of resource a machine's garbage collector
   knows how to judge and remove (worktrees, scratch directories, container
   volumes, merged branches, tool state, registered processes), shipped with
-  its own _lifecycle predicate_. A repository enables a kind and supplies the
+  its own *lifecycle predicate*. A repository enables a kind and supplies the
   facts it needs; it cannot register a command in its place
   ([resource GC design](design/resource-gc.md)).
 - **Lifecycle predicate** — the test that proves a resource is no longer in
@@ -862,22 +862,22 @@ make, use the entry's term instead.
   a report-only run included: the kinds it evaluated, each resource with its
   outcome (collected with its proof and size, would be collected, refused
   with its reason, unverified) and the exit status.
-- **Machine-local store** — a folder outside every _worktree_, one per clone
+- **Machine-local store** — a folder outside every *worktree*, one per clone
   and at a path the user can move, where tools keep what the worktrees of one
-  machine share: locks, _leases_, a review loop's records, a working copy of
+  machine share: locks, *leases*, a review loop's records, a working copy of
   a brief. Not a memory tier: it must hold no work state the tracker lacks,
   so that deleting it costs a rebuild and loses no decision
   ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md#the-machine-local-store)).
 - **Handoff** — the note one session leaves so another can carry on: what is
   done, what remains, what was decided, what is uncertain, and the command
-  that resumes the work. It goes on the tracker item, never in _worktree
-  scratch_ ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md#handoffs)).
+  that resumes the work. It goes on the tracker item, never in *worktree
+  scratch* ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md#handoffs)).
 - **Monorepo** — one repository holding many applications/packages, usually
   with a shared task runner and shared quality gates.
 - **Verified pointer** — a branch or tag that a delivery pipeline advances only
   when post-merge verification passes, so "merged" and "verified" stay distinct
   facts. Deploys ship the verified pointer, not the latest commit; a watchdog
-  decides why the pointer lags the default branch, heals a _dropped trigger_
+  decides why the pointer lags the default branch, heals a *dropped trigger*
   within a budget of attempts, and pages on the faults a person must repair
   (heals that keep ending without a verdict, a pointer that did not move after
   a passing verification, a stalled runner queue, divergence, an observation
@@ -886,26 +886,26 @@ make, use the entry's term instead.
 - **Dropped trigger** — a push the CI provider never turned into a run, or a
   run that ended without a verdict (cancelled, timed out, never started), so
   the gates never decided and nothing failed. The one cause of a lagging
-  _verified pointer_ a watchdog heals on its own, by dispatching verification
+  *verified pointer* a watchdog heals on its own, by dispatching verification
   at the tip once a grace window has passed, until a budget of such
   dispatches at the same tip is spent.
-- **Back-merge** — the recovery for a _verified pointer_ that diverged from
+- **Back-merge** — the recovery for a *verified pointer* that diverged from
   its branch: a merge commit on the integration branch whose tree is the
   branch's own and whose second parent is the pointer's tip. It restores the
   ancestry a fast-forward needs without merging any of the diverged content;
   forcing the pointer back is never the recovery.
 - **Cadence registry** — the one file listing every scheduled job and how
   often it must produce a result, with the grace it may be late by and the
-  number of failures in a row that make it _red_. A scheduled workflow missing
+  number of failures in a row that make it *red*. A scheduled workflow missing
   from it is a job nobody watches, so a check fails it. See
   [M11](modules/M11-process-observability/README.md#heartbeat-a-stopped-schedule-is-stale-never-green).
 - **Stale (job)** — the class of a scheduled job with no result inside its
   cadence plus grace, or none at all, unless its failures in a row already
-  make it _red_: it stopped running, was disabled, only
+  make it *red*: it stopped running, was disabled, only
   ever got cancelled, hung, or never ran. The job's last result is old, not
   current, so a stale job is never green, and a watcher fails for it as for a
   red one. A cancelled or skipped run is not a result.
-- **Dead-man's switch** — a check that alarms when an expected signal does _not_
+- **Dead-man's switch** — a check that alarms when an expected signal does *not*
   arrive. The heartbeat watcher reports to an external monitor on success and
   on failure; if the watcher itself stops, the report goes missing and the
   monitor raises the incident. Reporting only on failure would make a dead
@@ -915,18 +915,18 @@ make, use the entry's term instead.
   tag, which can be moved to other bytes, a digest always names the same
   content, so a deploy that names one ships exactly what was verified.
 - **Build once** — the practice of building an artifact a single time and
-  promoting those same bytes, by _digest_, through every environment, with
+  promoting those same bytes, by *digest*, through every environment, with
   per-environment settings supplied at deploy time rather than compiled in.
 - **GitOps** — running deployments from git: a controller (such as Argo CD or
   Flux) keeps an environment matching what a git ref holds, so a deploy is a
   commit to that ref and a rollback is a revert.
 - **Rendered state (release-state ref)** — the fully generated deployment
-  manifests for an environment, with _digests_ filled in, kept on a ref of
-  their own that a _GitOps_ controller reads and only one dedicated machine
+  manifests for an environment, with *digests* filled in, kept on a ref of
+  their own that a *GitOps* controller reads and only one dedicated machine
   identity writes, so the source line's release pointer stays a pure
   fast-forward of verified commits.
 - **Trusted ref** — the ref a promotion's own workflow definition and gate
-  code are loaded from: the _verified pointer_, never whichever branch the
+  code are loaded from: the *verified pointer*, never whichever branch the
   person starting the promotion happened to pick, since a manually started
   workflow runs the copy of itself that lives on the chosen branch.
 - **Post-deploy identity check** — the step that ends every deploy: the live
@@ -942,8 +942,8 @@ make, use the entry's term instead.
   rather than hand-made fixtures or a copy of production.
 - **Reaper (symmetric teardown)** — the scheduled job that removes what the
   delivery system created once it has expired or lost its creator: a
-  preview deployment, an _ephemeral environment_, a test tenant, a
-  _worktree namespace_. Teardown is symmetric with creation: whatever
+  preview deployment, an *ephemeral environment*, a test tenant, a
+  *worktree namespace*. Teardown is symmetric with creation: whatever
   creates a resource writes its owner and its expiry at creation, and the
   reaper keyed to that owner reads them back. A destructive reaper reports
   by default, acts only on an explicit opt-in, and refuses production.
@@ -961,40 +961,40 @@ make, use the entry's term instead.
 - **Test tier** — a class of test suite with its own trigger and time
   budget: **unit** tests (one piece of code, no real services) on every
   push, **integration** tests (code against real services such as a
-  database) when their paths change, and _end-to-end tests_: the full sweep
+  database) when their paths change, and *end-to-end tests*: the full sweep
   nightly or on demand, and the tests of journeys nothing else checks on
   every push to the default branch ([M14](modules/M14-testing-strategy/README.md)).
 - **End-to-end test (E2E)** — a test that drives the whole running system
-  through its real interfaces, as a user or client would. The slowest _test
-  tier_, so the full sweep, whose journeys other checks already cover, runs
+  through its real interfaces, as a user or client would. The slowest *test
+  tier*, so the full sweep, whose journeys other checks already cover, runs
   on a schedule rather than per change; end-to-end tests that are the only
   check of a critical journey run on every push to the default branch,
   before the `verified` pointer moves.
 - **False green** — a check that reports success while the thing it claims
-  to check is broken: a suite that skipped itself, a _test double_ that
+  to check is broken: a suite that skipped itself, a *test double* that
   accepts anything, a test that was never seen to fail.
 - **Skip tripwire** — a check at the end of a CI job that reads the test
   runner's machine-readable report and fails the job when the suites it
   exists for executed zero tests (the test cases not skipped), so a suite
   that skipped itself, or a selection that matched nothing, cannot report a
-  _false green_ ([M14](modules/M14-testing-strategy/README.md)).
+  *false green* ([M14](modules/M14-testing-strategy/README.md)).
 - **Flaky test** — a test that sometimes passes and sometimes fails on the
   same code, because of timing, shared state or an unreliable dependency.
-- **Flaky-test quarantine** — setting a _flaky test_ aside so its failures
+- **Flaky-test quarantine** — setting a *flaky test* aside so its failures
   stop blocking merges while it is fixed, without hiding them: the test keeps
   running and reporting, and the quarantine list is reviewed and short
   ([M14](modules/M14-testing-strategy/README.md) lists it as future work).
 - **Stale test** — a test whose failure predates the change under work and
   was not caused by it: its subject moved, its premise no longer matches the
   code, or the base it was last green on has changed since. Known only by
-  reproducing the failure with a _fresh-base probe_; fixed inline when the
+  reproducing the failure with a *fresh-base probe*; fixed inline when the
   fix is cheap, otherwise deleted with a tracker item recording what it
   covered ([M14](modules/M14-testing-strategy/README.md)).
 - **Fresh-base probe** — running a failing check again on a freshly fetched
-  base branch, in a throwaway _worktree_, before the failure is attributed to
+  base branch, in a throwaway *worktree*, before the failure is attributed to
   a change. The failing test passes on the base (the failure is the
   change's), fails there, read from that test case's own result in the
-  runner's report rather than from its name in the output (a _stale test_),
+  runner's report rather than from its name in the output (a *stale test*),
   or the probe cannot decide (the fetch failed, no worktree, a different
   failure), and a failed fetch is never read as a pass
   ([M14](modules/M14-testing-strategy/README.md); `fix-ci` ships it as
@@ -1008,7 +1008,7 @@ make, use the entry's term instead.
   points at a run rather than a sentence
   ([design](design/verify-and-debug.md)).
 - **Hypothesis ledger** — the written list of guesses tried while debugging
-  one failure: each guess, the change made to test it, the _evidence record_
+  one failure: each guess, the change made to test it, the *evidence record*
   of the result and whether it held, written before the change is made. It
   is what a bounded debugging attempt hands over when its budget runs out
   ([design](design/verify-and-debug.md)).
@@ -1041,7 +1041,7 @@ make, use the entry's term instead.
   contract type with fixed defaults, which a test overrides field by field;
   a change to the type fails the type check, or the completeness lint an
   ecosystem needs for that (Go's `exhaustruct`), instead of a test. Unlike a
-  _test-data factory_, it makes values in the test process rather than
+  *test-data factory*, it makes values in the test process rather than
   seeding a database.
 
 ## Review & learning
@@ -1051,9 +1051,9 @@ make, use the entry's term instead.
   against them before it's ever allowed to block anything.
 - **Review lens** — one additive, numbered check taught to a reviewer (a
   prompt module or checklist bullet), typically born from a documented miss.
-  A repository numbers its own (`LENS-NNN`); a _seed lens_'s `jig.` id
+  A repository numbers its own (`LENS-NNN`); a *seed lens*'s `jig.` id
   (`jig.swallowed-failure`) serves as its number.
-- **Seed lens** — a _review lens_ Jig ships rather than one a repository grew
+- **Seed lens** — a *review lens* Jig ships rather than one a repository grew
   from its own misses: the review form of one rule a Jig module states, for
   the part of the rule no gate can check.
 - **Tiered review** — a review that runs cheap pattern checks first, contract
@@ -1067,7 +1067,7 @@ make, use the entry's term instead.
   [M6](modules/M6-feature-delivery-pipeline/README.md)'s pipeline gets one
   before the next stage consumes its artifact; Jig's `red-team` skill runs it
   for requirements and architecture documents.
-- **Review persona** — one point of view a _red-team review_ reads a
+- **Review persona** — one point of view a *red-team review* reads a
   document from, written as a brief: who the reader stands for, what they
   look for, and what a finding from them must carry (a security auditor, a
   reader who knows no engineering terms, …). Not the user personas a PRD
@@ -1080,16 +1080,16 @@ make, use the entry's term instead.
   analysis, or a recorded reason the finding stands.
 - **Miss→lens flywheel** — the improvement loop: an external reviewer or human
   catches what the automated reviewer missed → the miss is classified, filed,
-  and reconstructed as an _eval fixture_ → a new _lens_ is added → validated →
+  and reconstructed as an *eval fixture* → a new *lens* is added → validated →
   measured. Generalizes to any evaluable agent behavior.
 - **Eval fixture / corpus** — a pinned historical case (exact commit + expected
   findings) that a reviewer or agent is re-run against, turning past misses
-  into a regression test for the process itself. A fixture pins the _pre-fix_
+  into a regression test for the process itself. A fixture pins the *pre-fix*
   state and joins the blocking corpus only after a live run validates it.
 - **Lever** — a durably numbered miss-and-its-answer (`L-NNNN`), filed once and
-  referenced forever: a _lens_, an _eval fixture_, and a parity metric all point
-  back to it. Numbering is guarded for uniqueness like _ADR_ numbers.
-- **Audit catalog** — the one list of the _drift-prone areas_ no gate fully
+  referenced forever: a *lens*, an *eval fixture*, and a parity metric all point
+  back to it. Numbering is guarded for uniqueness like *ADR* numbers.
+- **Audit catalog** — the one list of the *drift-prone areas* no gate fully
   covers, each with an owner, a cadence, the tooling that audits it (or
   `manual`), the date it was last audited and the work it left open. An area
   audited only by hand is tracked there as a gap in tooling. It records the
@@ -1097,21 +1097,21 @@ make, use the entry's term instead.
   repository has adopted Jig.
 - **Drift-prone area** — a part of a repository or its systems that can go
   wrong without any gate failing, such as a diagram that no longer matches the
-  code or settings kept in a hosted service. See _drift_.
-- **Deep-review tracker** — an optional table beside the _audit catalog_ that
+  code or settings kept in a hosted service. See *drift*.
+- **Deep-review tracker** — an optional table beside the *audit catalog* that
   versions the list of dimensions a deep review covers and queues a re-review
   of every area last reviewed under an older version.
-- **Review harness** — an automated reviewer built as prompt _lenses_ over a
+- **Review harness** — an automated reviewer built as prompt *lenses* over a
   reusable engine, not a fixed static analyzer. Split into a repo-agnostic
   **core** (a tool registry of reviewers, a required verify step, and
   containment guards that keep it from flooding a PR or running untrusted code)
   and a repo-specific **config** (which reviewers, which lenses, which posture).
 - **Comment-resolution loop** — the discipline that every PR review thread
   reaches a terminal state before merge — **accepted** (fixed here; some
-  teams write _addressed_), **rejected** (the reviewer was wrong, with a
+  teams write *addressed*), **rejected** (the reviewer was wrong, with a
   reason), **won't fix** (right, but deliberately declined, with a reason),
-  **deferred** (with a filed follow-up), or _moot_ — each leaving an audit
-  trail. Scope expansion and overruling a human thread stay _HITL_.
+  **deferred** (with a filed follow-up), or *moot* — each leaving an audit
+  trail. Scope expansion and overruling a human thread stay *HITL*.
   Jig ships it as the `resolve-review-comments` skill.
 - **Code scanning alert** — a finding a static-analysis tool (CodeQL,
   SonarQube Cloud, Semgrep, …) reports to GitHub's code scanning, which keeps
@@ -1119,18 +1119,18 @@ make, use the entry's term instead.
   with a reason. On a pull request GitHub also opens a review thread for it, a
   **code-scanning thread**; resolving that thread leaves the alert open, so the
   comment-resolution loop settles both.
-- **PR drive loop** — the procedure that wraps the _comment-resolution loop_
+- **PR drive loop** — the procedure that wraps the *comment-resolution loop*
   for unattended work on one pull request. The comment-resolution loop already
-  repeats _review rounds_ until the reviewers settle; the drive loop runs each
-  round as a fresh agent process and adds a _lease_ that fences the working
+  repeats *review rounds* until the reviewers settle; the drive loop runs each
+  round as a fresh agent process and adds a *lease* that fences the working
   tree so two agent sessions never reply to the same thread, labels for
-  _self-inflicted findings_, checks for findings that appear only in a
+  *self-inflicted findings*, checks for findings that appear only in a
   reviewer's summary, repair rounds for red CI and conflicts with the base,
   and round state that survives between invocations. It stops in exactly one
-  _terminal state_ and never merges. Jig ships it as the `drive-pr`
+  *terminal state* and never merges. Jig ships it as the `drive-pr`
   skill, and the `do-item` skill starts it when it opens a pull request.
-- **Attach (a pull request)** — putting a _worktree_ on a pull request's head
-  before a _PR drive loop_ drives it from there: its head branch checked out
+- **Attach (a pull request)** — putting a *worktree* on a pull request's head
+  before a *PR drive loop* drives it from there: its head branch checked out
   when no other worktree of the clone holds that branch, otherwise its head
   commit checked out on a **detached head** (git's name for a checkout of a
   commit rather than of a branch, since git lets only one worktree hold a
@@ -1142,7 +1142,7 @@ make, use the entry's term instead.
   drive labels every finding this way: by the later rounds most findings are
   self-inflicted, and the answer to one is to check the earlier fix's whole
   effect, not just the flagged line.
-- **Decline ladder** — the filter that, from a configured _review round_
+- **Decline ladder** — the filter that, from a configured *review round*
   onward, makes a finding the triage rubric would accept clear a higher bar
   (severity, category, priority tier) before it earns another fix. It can turn
   an acceptance into a decline, never the reverse, and the bar lives only in the
@@ -1153,7 +1153,7 @@ make, use the entry's term instead.
   one field of a pipe-delimited header) and how its words map onto Jig's
   `blocker`, `high`, `medium` and `low`. Read only from comments that login
   posted; a finding no format reads has an unknown severity, which leaves the
-  _decline ladder_ inert for it where the repository's review-triage file
+  *decline ladder* inert for it where the repository's review-triage file
   lists `severity` under `fail_open.inert_when_unknown`
   ([severity formats](plugin/EXTENDING.md#severity-formats)).
 - **Human-decided span** — a part of a pull request that records a person's
@@ -1163,11 +1163,11 @@ make, use the entry's term instead.
   "must", a limit, an exception, a condition) without that person's approval;
   such a finding is escalated or parked
   ([triage rubric](plugin/skills/resolve-review-comments/references/triage-rubric.md#guardrails)).
-- **Terminal state** — one of the named end states a _PR drive loop_ stops
+- **Terminal state** — one of the named end states a *PR drive loop* stops
   in (converged, pull request merged or closed, round limit reached, waiting
   on a human, …), each reported with a documented exit code, so a script or a
   person can tell from the exit alone what to do next.
-- **Re-arm and takeover (of a drive)** — how a _PR drive loop_ that
+- **Re-arm and takeover (of a drive)** — how a *PR drive loop* that
   stopped is picked up again. A **re-arm** starts the drive afresh from its
   saved state once the reason it stopped is gone: a usage limit another
   billing account is not behind, or every decision it parked answered by a
@@ -1177,8 +1177,8 @@ make, use the entry's term instead.
   ([drive-pr](plugin/skills/drive-pr/README.md#picking-up-a-stopped-drive)).
 - **Permission mode (of a pass)** — the setting of an agent tool that
   decides which of its actions ask a person first. Claude Code's
-  `default` mode asks before most edits and commands; a pass of a _PR
-  drive loop_ runs with no person at a terminal to answer, so whatever
+  `default` mode asks before most edits and commands; a pass of a *PR
+  drive loop* runs with no person at a terminal to answer, so whatever
   would ask is denied instead, writes under protected paths such as
   `.claude/skills/**` among them (the `auto` mode lets a classifier approve
   some of these instead). `bypassPermissions` skips those prompts, though
@@ -1189,7 +1189,7 @@ make, use the entry's term instead.
   do not stop it; only Claude Code's deny rules and hooks still do. A repository chooses it for its passes with
   `drive.pass_args`
   ([configuration](plugin/CONFIGURATION.md#drive)).
-- **Drive ledger** — the resumable part of a _PR drive loop_'s saved state
+- **Drive ledger** — the resumable part of a *PR drive loop*'s saved state
   (its round, what it parked for a person and why, what it replied to and
   pushed, who drove it and when it last wrote), kept as one hidden-marker
   comment on the pull request itself, so a drive started in another clone or
@@ -1198,37 +1198,37 @@ make, use the entry's term instead.
   claim** on the pull request, the earliest claim wins, and every driver
   reads the claims each round and stops when a newer one is there
   ([drive-pr](plugin/skills/drive-pr/README.md#where-its-state-lives)).
-- **Park and framed decision (of a drive)** — a _PR drive loop_ **parks** an
+- **Park and framed decision (of a drive)** — a *PR drive loop* **parks** an
   item when its decision is a person's: it records it and stops counting it
-  as live work. A park is reserved for the decision classes of the _HITL_
+  as live work. A park is reserved for the decision classes of the *HITL*
   registry, and carries a **framed decision**: the question in one sentence,
   each option with what it changes and costs, the recommended option, the
   class, the steps a person must take and what the agent already did. Any
   other decision the agent takes itself and records where a person can
   reverse it
   ([ADR-0010](docs/adr/ADR-0010-parking-is-reserved-for-registry-classes.md)).
-- **Decision class** — one row of the _HITL_ registry, named by a short
+- **Decision class** — one row of the *HITL* registry, named by a short
   slug (`merge`, `scope`, `human-thread`, …): a kind of decision that must
   stay a person's. A repository lists its classes in
-  `autonomy.park_classes`, and a _PR drive loop_ may park only under one of
+  `autonomy.park_classes`, and a *PR drive loop* may park only under one of
   them (for a review thread, the class the review arbiter ruled for it)
   ([configuration](plugin/CONFIGURATION.md#autonomy)).
 - **Autonomy level** — how far an agent may decide without asking a person:
   `attended`, the default, `unattended`, or `wide`, which also takes
-  _provisional decisions_. A repository sets it and caps it with its
+  *provisional decisions*. A repository sets it and caps it with its
   ceiling, `autonomy.max_level`; a person's own configuration may choose a
   level up to that ceiling, and `autonomy.off_hours` may set a wider one for
   a drive's passes during the windows of a schedule in the machine's local
-  time (**off-hours**). The level changes nothing the _HITL_ registry
+  time (**off-hours**). The level changes nothing the *HITL* registry
   reserves. `wide` and off-hours are documented as available only once a
   working repository has validated them
   ([configuration](plugin/CONFIGURATION.md#autonomy)).
-- **Provisional decision** — a decision only the `wide` _autonomy level_
+- **Provisional decision** — a decision only the `wide` *autonomy level*
   takes without a person, where the review arbiter or `decide` would
-  otherwise escalate a call no _decision class_ reserves: a review thread
+  otherwise escalate a call no *decision class* reserves: a review thread
   answered with a reply outcome (`rejected`, `wont-fix` or `deferred`, never
   a fix) marked `**provisional**`, or a `decide` ruling marked so. It is
-  recorded, listed first in the _morning report_, and reversed by a comment
+  recorded, listed first in the *morning report*, and reversed by a comment
   from an owner, member or collaborator, after which the drive parks it for
   that person; unresolving the thread alone reverses nothing. It is
   admissible because the merge stays a person's
@@ -1236,7 +1236,7 @@ make, use the entry's term instead.
 - **Morning report** — what `drives.ts --report` prints for a person after
   an unattended night: for each pull request this clone drove or the
   account authored or drove, its terminal state and what it means, the
-  _provisional decisions_ first, takeovers and re-arms, parked decisions,
+  *provisional decisions* first, takeovers and re-arms, parked decisions,
   issues filed and deferred findings not yet filed
   ([drive-pr](plugin/skills/drive-pr/README.md)).
 - **Transparent follow-up** — a review bot's comment after a reply the drive
@@ -1250,13 +1250,13 @@ make, use the entry's term instead.
 - **CI hold** — an opt-in label on a pull request that the repository's
   continuous-integration workflows honour: while it is present they skip
   their expensive jobs and a required check fails or is cancelled (the
-  _held-head check_); removing it runs every required check again on the
-  same head, and only results that started after the removal count. A _PR
-  drive loop_ applies it between review rounds and removes it at
+  *held-head check*); removing it runs every required check again on the
+  same head, and only results that started after the removal count. A *PR
+  drive loop* applies it between review rounds and removes it at
   convergence. The practice is
   [M13's](modules/M13-pipeline-economy/README.md#7-hold); drive-pr's
   `ci.hold_label` is its driver side.
-- **Drive mailbox** — the one way to reach a running _PR drive loop_ from
+- **Drive mailbox** — the one way to reach a running *PR drive loop* from
   outside it: append-only files in the working tree into which a person, or
   the session that started the drive, writes a note or a directive, and
   which only the driver answers. A note is context a pass may read; a
@@ -1264,7 +1264,7 @@ make, use the entry's term instead.
   scripts, whatever a pass does
   ([drive-pr](plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)).
 - **Held-head check** — the step of a required check that fails, or cancels
-  its own run, while a pull request carries the _CI hold_ label, so a held
+  its own run, while a pull request carries the *CI hold* label, so a held
   head is visibly not mergeable from the moment the label lands until the
   release; its message names the label to remove. M13's workflow-convention
   lint accepts it in one shape only.
@@ -1281,39 +1281,39 @@ make, use the entry's term instead.
   trying to move that same acquisition there cannot replace the nonempty
   directory, so it cannot remove a newer holder's lock. Windows retains this
   shape because a directory move there can replace an ordinary file.
-  _Avoid_: directory guard.
+  *Avoid*: directory guard.
 - **Control channel** — the way a person, or the session that started it,
   reaches an agent running unattended without killing it, kept with that
-  agent's worktree (in its _worktree scratch_, or in the runner that started
+  agent's worktree (in its *worktree scratch*, or in the runner that started
   it). Its **directives**
   (hold the push, pause, stop, resume) are a closed set, enforced by code at
   fixed checkpoints, and a directive that cannot be read counts as in force;
   its **notes** are free text the agent may read and never has to obey.
   `drive-pr` ships one as the drive mailbox, an inbox file in the
   worktree scratch that any sender appends to
-  ([M12](modules/M12-parallel-agent-ergonomics/README.md)). _Avoid_: mailbox
+  ([M12](modules/M12-parallel-agent-ergonomics/README.md)). *Avoid*: mailbox
   for the general idea.
-- **Review Arbiter** — the judgment-only agent the _comment-resolution loop_
+- **Review Arbiter** — the judgment-only agent the *comment-resolution loop*
   hands a contested finding to when the triage rubric cannot settle it. It
   reads the code, rules fix now, reject, won't fix, defer or escalate, and
   never edits; only an escalation reaches a human.
 - **Standing rejection** — the prepared answer to a review finding that
-  contradicts a settled project stance: the finding is closed as _rejected_
+  contradicts a settled project stance: the finding is closed as *rejected*
   with a link to the one place the stance is written, however small the
   asked-for edit. A **standing review stance** is such a stance; the
   instructions reviewers read point to its source and never restate it.
 - **Moot (as a resolution)** — the terminal state for a review finding whose
   anchored code no longer exists: deleted or rewritten by a later commit.
-  Distinct from _rejected_ on purpose — rejected asserts the reviewer was
+  Distinct from *rejected* on purpose — rejected asserts the reviewer was
   **wrong**, moot asserts it may have been **right about code that is gone**.
-  Collapsing the two feeds a _miss→lens flywheel_ false positives the reviewer
+  Collapsing the two feeds a *miss→lens flywheel* false positives the reviewer
   never committed, training away findings it got right. Still needs a trail
   naming what superseded it.
 - **Post-merge stage** — the step after a pull request merges that settles
   what the merge still owes: for each class of residual obligation (the
   tracker state, deferred findings, out-of-tree actions, temporary
-  scaffolding, live verification, the next step) it records _owed_ (filed or
-  done) or _not owed_ (with the evidence that settled it). "Nothing found" is
+  scaffolding, live verification, the next step) it records *owed* (filed or
+  done) or *not owed* (with the evidence that settled it). "Nothing found" is
   not evidence
   ([M7](modules/M7-pr-lifecycle-review/README.md#core-pieces)).
 - **Declared verdict** — the resolution state written by the author, in a
@@ -1328,12 +1328,12 @@ make, use the entry's term instead.
   can be tested against the gate it feeds, instead of being re-improvised in
   every workflow that calls the gate.
 - **Review round** — one pass of the review loop: reviewers comment, the author
-  resolves, the push re-triggers the reviewers. Because resolving _causes_ the
+  resolves, the push re-triggers the reviewers. Because resolving *causes* the
   next round, "no open threads" is not the loop's stop condition; a round that is
   settled — every expected reviewer has reported — with nothing left is.
 - **Convergence (review loop)** — the point where a review loop may stop: the
   reviewer completed on the exact head commit, its recorded reviewed commit
-  equals that head, and no unresolved thread or _summary-only finding_ remains.
+  equals that head, and no unresolved thread or *summary-only finding* remains.
   Checked mechanically, not judged by feel ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
 - **Sticky comment (reviewer summary)** — the single summary comment an
   automated reviewer keeps and updates on a pull request, found by a marker
@@ -1341,29 +1341,29 @@ make, use the entry's term instead.
   and any findings it could not attach to a line
   ([configuration](plugin/CONFIGURATION.md)).
 - **Summary-only finding** — a review finding that appears only in the
-  reviewer's _sticky comment_ because it could not be anchored to a diff line,
+  reviewer's *sticky comment* because it could not be anchored to a diff line,
   so it creates no thread. A loop that counted only threads would report
-  _convergence_ with a real finding unanswered; the drive enumerates these and
+  *convergence* with a real finding unanswered; the drive enumerates these and
   answers each with a top-level comment
   ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
 - **Precision bar** — the pre-committed threshold of measured precision an
-  automated reviewer (or _lens_) must clear before it may be promoted from
+  automated reviewer (or *lens*) must clear before it may be promoted from
   comment-only to blocking. Recorded up front so "advisory forever" is visible.
 - **Parity report (parity tracker)** — the periodic measurement of a reviewer
   against oracles (external reviewers, humans): recall, precision, and a
-  `missed_blockers` count. Drives whether a _lens_ is kept, promoted past the
-  _precision bar_, or killed — and whether a vendor can be dropped.
+  `missed_blockers` count. Drives whether a *lens* is kept, promoted past the
+  *precision bar*, or killed — and whether a vendor can be dropped.
 - **Reflection** — the cycle that accumulates end-of-session feedback into an
-  inbox and processes it into _proposed_ scaffolding changes, which a human
-  approves before anything is edited (self-modifying rules stay _HITL_).
+  inbox and processes it into *proposed* scaffolding changes, which a human
+  approves before anything is edited (self-modifying rules stay *HITL*).
 - **Reflection store** — where reflection's records accumulate, shared by
-  every repository that reflects into it: an append-only log of _findings_
-  (what a session learned about the scaffolding) and _decisions_ about them,
+  every repository that reflects into it: an append-only log of *findings*
+  (what a session learned about the scaffolding) and *decisions* about them,
   from which a finding's status is computed. Any store answering the same
   contract (`check`, `append`, `list`, `diagnose`) will do; a folder of files
   is the default.
 - **Reflection journal** — a worktree's own file of findings captured as they
-  happen and not yet sent to the _reflection store_, so capturing one never
+  happen and not yet sent to the *reflection store*, so capturing one never
   depends on the store being reachable.
 - **Unhelpful content** — a kind of reflection finding: instruction text, in
   an instructions file or a skill, that cost an agent context without helping
@@ -1386,22 +1386,22 @@ make, use the entry's term instead.
   it survives the session and reaches other agents.
 - **Skill** — a packaged, named procedure an agent can invoke (a review
   checklist, a migration workflow). The unit of codified "how we do this
-  here." _Avoid_: command, slash command: `/jig:<name>` is how a skill is
+  here." *Avoid*: command, slash command: `/jig:<name>` is how a skill is
   invoked, not what it is.
-- **Reference (skill reference)** — a file a _skill_ keeps beside its
+- **Reference (skill reference)** — a file a *skill* keeps beside its
   `SKILL.md` (by convention under `references/`) that the agent reads only
   when `SKILL.md` sends it there, so detail costs context only in the
   invocations that need it.
-- **Negative trigger** — the part of a _skill_'s description that says when
+- **Negative trigger** — the part of a *skill*'s description that says when
   not to use it ("not for X; use Y instead"). Only the description is read
   before a skill is chosen, so a negative trigger elsewhere cannot prevent a
   wrong choice.
 - **Exact / judgment section label** — a bold label opening a section of a
-  _skill_: **exact** means run the named command as written, **judgment**
+  *skill*: **exact** means run the named command as written, **judgment**
   means reach the stated outcome by the means that fit. Not yet a rule
-  ([M0](modules/M0-instruction-architecture/README.md#status)). _Avoid_:
-  confusing **judgment** here with the _Judgment tier_, which is a _model
-  tier_.
+  ([M0](modules/M0-instruction-architecture/README.md#status)). *Avoid*:
+  confusing **judgment** here with the *Judgment tier*, which is a *model
+  tier*.
 - **Rule (conditional rule)** — an instruction file that loads into agent
   context only when files matching its path patterns are being edited — the
   scoped counterpart of an always-loaded instruction file.
@@ -1409,25 +1409,25 @@ make, use the entry's term instead.
   implementation to gather facts; part of tiered model routing (expensive
   models decide, cheap models explore).
 - **Model tier** — the cost class of model an agent or skill runs on, named by
-  role: _Judgment_, Strategic, Execution or _Scout_. Derived from the model
+  role: *Judgment*, Strategic, Execution or *Scout*. Derived from the model
   family it declares, not from how important its job sounds. See the
   [model routing policy](modules/M0-instruction-architecture/reference/model-routing-policy.md).
-  _Avoid_: model level (a _maturity level_ is something else).
-- **Route** — the agent, _model tier_ and reasoning effort chosen for the
+  *Avoid*: model level (a *maturity level* is something else).
+- **Route** — the agent, *model tier* and reasoning effort chosen for the
   implementer of one piece of work at its pickup; derived from the item's
-  _work type_, size, _flag labels_ and the _change-area catalog_'s flags and
+  *work type*, size, *flag labels* and the *change-area catalog*'s flags and
   mandatory reviews, by rules a repository keeps as data, with the rule behind
   each part, the source (the rules, or the person who chose instead, whose
   choice always wins) and whether it was applied recorded on the pull request
   ([design](design/agent-routing.md)).
-- **Judgment tier** — the narrowest _model tier_: the top reasoning model,
-  admitted only for a _decision layer_ that is judgment-only, low-volume and
+- **Judgment tier** — the narrowest *model tier*: the top reasoning model,
+  admitted only for a *decision layer* that is judgment-only, low-volume and
   high-leverage, and that a mechanical rule already tried and failed to
   settle.
 - **Decision layer** — the one contested call inside a larger procedure, split
-  out so that it alone runs on an expensive _model tier_ while the evidence
-  gathering and ranking around it run on cheaper ones. The unit the _Judgment
-  tier_ is assigned to, rather than a whole skill or agent.
+  out so that it alone runs on an expensive *model tier* while the evidence
+  gathering and ranking around it run on cheaper ones. The unit the *Judgment
+  tier* is assigned to, rather than a whole skill or agent.
 - **Family alias** — a model name that selects a model family rather than
   one release (`opus`, `sonnet`). A pin written with it ordinarily resolves to
   the family's current release, though not always: a session already on an
@@ -1442,10 +1442,10 @@ make, use the entry's term instead.
   never itself a pin.
 - **Cost per completed task** — what a piece of agent work costs from start to
   a finished, accepted result: every token stream billed, every turn, retry
-  and review round. The measure a move between _model tiers_ on cost grounds
+  and review round. The measure a move between *model tiers* on cost grounds
   must compare; list price per token is not it.
-- **Model roster** — the list of which agent or skill runs on which _model
-  tier_, generated from their metadata and checked for drift, never kept by
+- **Model roster** — the list of which agent or skill runs on which *model
+  tier*, generated from their metadata and checked for drift, never kept by
   hand.
 - **Auditor** — Jig's runnable assessment: parallel surveys of a
   repository, stack detection, per-module maturity scoring, and a prioritized
@@ -1458,61 +1458,61 @@ make, use the entry's term instead.
   recommendations the team declined, each with a reason and a condition for
   revisiting it. The next audit compares against it.
 - **Audit sheet** — the self-contained HTML page an audit ends in, rendered
-  from the _audit record_ and a _report source_ (the agent's JSON summary,
+  from the *audit record* and a *report source* (the agent's JSON summary,
   recommendations, drift and what it examined): the maturity map against the
   team's profile, the moves to start with, and a choice per recommendation
   that the team copies to an agent as one block of decisions
   ([audit sheet](plugin/skills/audit/references/report-sheet.md)).
 - **Popover** — a small panel beside a mark on a page that explains it in
   plain words, shown while the pointer rests on the mark or the keyboard
-  focus is on it, and hidden again on Escape. The _audit sheet_ gives one to
+  focus is on it, and hidden again on Escape. The *audit sheet* gives one to
   each criterion's mark in its maturity map and to each module's chip.
-- **Audit guide** — the part of the _audit sheet_ that explains Jig to a
+- **Audit guide** — the part of the *audit sheet* that explains Jig to a
   reader who has never met it: the idea and the enforcement ladder, the
   modules, the profiles and their targets, how the audit works and how to
   read the sheet. It is one section of the same file, which the sheet's
   script opens as a view of its own.
 - **Uncovered gap** — a maturity criterion within the target of the team's
   profile that does not meet its bar, which no recommendation of the audit
-  moves, no held decline and no _left on purpose_ entry leaves on purpose.
-  The _audit sheet_ marks and lists each one, so every gap is either
+  moves, no held decline and no *left on purpose* entry leaves on purpose.
+  The *audit sheet* marks and lists each one, so every gap is either
   addressed or visibly left.
 - **Left on purpose** — a gap within the target that the auditor chose not
-  to recommend work for now, listed in the _report source_ with the reason
-  and when to revisit it. The _audit sheet_ shows it in its own list rather
-  than as an _uncovered gap_. Unlike a decline, the team did not decide it.
+  to recommend work for now, listed in the *report source* with the reason
+  and when to revisit it. The *audit sheet* shows it in its own list rather
+  than as an *uncovered gap*. Unlike a decline, the team did not decide it.
 - **Not examined** (audit) — the score of a maturity criterion beyond the
   target of the profile the audit was run for, which the audit chose not to
   examine so its effort goes to the criteria the target asks for. It meets no
   bar, is never a gap, and a later audit reports it as examined rather than
   as fixed.
 - **Applied recommendation** — a recommendation carried out after the audit
-  that made it, in the same session or later, marked in the _report source_
-  with the pull request or commit that applied it. The _audit sheet_ shows it
-  as done and asks for no decision on it; the _audit record_ still scores the
+  that made it, in the same session or later, marked in the *report source*
+  with the pull request or commit that applied it. The *audit sheet* shows it
+  as done and asks for no decision on it; the *audit record* still scores the
   commit it audited.
-- **Explored profile** — a profile the _audit sheet_ is rendered against to
+- **Explored profile** — a profile the *audit sheet* is rendered against to
   see how the repository would read under it, without changing the profile
-  the _audit record_ holds. The sheet labels it explored, not recorded.
+  the *audit record* holds. The sheet labels it explored, not recorded.
 - **Alternative profile** — the other profile the facts could support when
   they sit near a boundary (deploys, but one person commits), which the
-  _audit sheet_ shows beside the suggested one with how many modules would
+  *audit sheet* shows beside the suggested one with how many modules would
   be at their target under it.
 - **Profile signal** — an observed fact suggesting a project has outgrown
   the profile it aims for, such as more contributors, a new deploy
-  environment or a compliance document. The _audit sheet_ shows it beside the
+  environment or a compliance document. The *audit sheet* shows it beside the
   profile as a reason to revisit that choice, never as a finding.
-- **Conditional target** — a level a _profile_ asks of a module only when
+- **Conditional target** — a level a *profile* asks of a module only when
   the team says a stated condition holds ("several agents work the repository
   in parallel workspaces"), because the need depends on how the team works,
-  not on its size. The _audit record_ lists the ones that apply
-  (`profile_conditions`), and the _audit sheet_ lets the team tick them.
+  not on its size. The *audit record* lists the ones that apply
+  (`profile_conditions`), and the *audit sheet* lets the team tick them.
 - **Calibration note** — what an audit prints when the team says one of its
   judgements is wrong: a recommendation, or a criterion's score. It gives the
   criterion's statement, recorded score and evidence beside the team's note,
   for the agent to re-examine; the score itself is never changed by it.
 - **Trend** (audit) — each module's maturity level across the audit records
-  a repository committed over time, oldest first, shown in the _audit sheet_
+  a repository committed over time, oldest first, shown in the *audit sheet*
   for the modules whose level changed.
 - **Probe** — a precondition of a maturity criterion that a script can test
   from the repository's files ("some CI configuration exists"). When it does
@@ -1534,7 +1534,7 @@ make, use the entry's term instead.
 - **Turn budget** — the number of agentic turns (API round-trips: one request
   to the model and its reply, which may hold several content blocks) an agent
   runtime allows one prompt before it aborts the session outright, with no
-  handoff written. The plugin's turn-budget guard, an _agent-runtime hook_,
+  handoff written. The plugin's turn-budget guard, an *agent-runtime hook*,
   counts the round-trips off the transcript and tells the agent to wrap up
   within a margin of the cap.
 - **Shared code (`plugin/shared/`)** — the plugin's code that more than one
@@ -1546,7 +1546,7 @@ make, use the entry's term instead.
   script reports failures the same way.
 - **Component (of the `jig` command)** — one of the machine-level tools the
   plugin's `jig` command joins into one command line: resource collection
-  (`jig gc`) and the _dispatcher_ (`jig dispatch`). Each defines its command
+  (`jig gc`) and the *dispatcher* (`jig dispatch`). Each defines its command
   beside its code, and `jig` combines them, so help and shell completion
   cover every component the same way. A program, unlike Jig's practice
   modules, which are documented practices.
@@ -1566,10 +1566,10 @@ make, use the entry's term instead.
   own marketplace.
 - **Dark factory** — a delivery loop that runs with nobody watching: work is
   picked up, implemented, reviewed and driven to its merge decision by agents,
-  and a person is involved only at the decisions the _HITL_ registry reserves.
+  and a person is involved only at the decisions the *HITL* registry reserves.
   Jig is built toward one; the merge stays a person's.
 - **Provisional decision** — a decision an agent takes under the `wide`
-  _autonomy level_ because nobody is there to ask, marked as such where it
+  *autonomy level* because nobody is there to ask, marked as such where it
   is taken and listed first in the morning report, so a person can reverse
   it before the merge. Under `wide`, a drive that parked re-arms once every
   unanswered item is provisionally decided, where the item's class allows
@@ -1599,7 +1599,7 @@ make, use the entry's term instead.
   leave out).
 - **Ruleset** — GitHub's set of rules for a branch or tag (a pull request
   required, checks that must pass, no force pushes), with a list of
-  _bypass actors_: the people, teams or apps allowed past the rules. The
+  *bypass actors*: the people, teams or apps allowed past the rules. The
   older branch protection grants its exceptions one rule at a time (who may
   push, who may skip the required pull request); a ruleset's bypass actor
   passes every rule in that ruleset, so rules an actor must not pass go in a
@@ -1609,7 +1609,7 @@ make, use the entry's term instead.
   installed on. A workflow mints a token for it that lasts an hour, so no
   person's credential is stored.
 - **Deployment environment** — a named set of secrets in a CI system that
-  only some branches may use; GitHub Actions calls it an _environment_. A key kept in an
+  only some branches may use; GitHub Actions calls it an *environment*. A key kept in an
   environment restricted to `main` cannot be read by a workflow running on
   any other branch.
 - **Composite action** — a GitHub Actions action whose `action.yml` combines
@@ -1618,7 +1618,7 @@ make, use the entry's term instead.
   with `uses: owner/repo/path@ref`; GitHub then fetches it at the pinned
   ref, so a workflow can run that repository's scripts without checking it
   out.
-- **App manifest** — a file describing a _GitHub App_ (its name, its
+- **App manifest** — a file describing a *GitHub App* (its name, its
   permissions, whether it has a webhook) that GitHub turns into a new App
   when a person posts it, so the App is created with exactly the
   permissions written down rather than ones picked by hand.
@@ -1672,7 +1672,7 @@ make, use the entry's term instead.
   version in it.
 - **Configuration layer** — one source of configuration values, read in a
   fixed order so a later one overrides an earlier one: a person's own file
-  for every repository, then the repository's _consumer overlay_, then
+  for every repository, then the repository's *consumer overlay*, then
   environment variables for one run. Sections merge field by field; any
   other value replaces the earlier one whole.
 - **Configuration schema** — the machine-readable list of every field the
@@ -1691,7 +1691,7 @@ make, use the entry's term instead.
   (`ps`, `sh`), how file permissions work. Windows does not follow it, so
   code that relies on it needs a separate path there.
 - **WSL (Windows Subsystem for Linux)** — a Linux system that runs inside
-  Windows. Tools that need _POSIX_ run there unchanged.
+  Windows. Tools that need *POSIX* run there unchanged.
 - **PATHEXT** — the Windows environment variable listing the file endings
   (`.exe`, `.cmd`, `.bat`, …) that count as runnable programs. Windows finds
   a command typed without an ending by trying each one in turn, so `claude`
@@ -1700,7 +1700,7 @@ make, use the entry's term instead.
 - **Job Object** — a Windows grouping of processes that the system can end
   together. A process a job member starts directly joins the job unless the
   job allows it to break away, and ending the job stops every process in it,
-  which a _POSIX_ process group does not guarantee. Work a member asks
+  which a *POSIX* process group does not guarantee. Work a member asks
   another service to start (through WMI's `Win32_Process.Create`, for one)
   is not in the job and survives it.
 - **Hard link** — another filesystem name for the same file. Creating the name
@@ -1713,21 +1713,21 @@ make, use the entry's term instead.
   system of agents is built from. A **deterministic part** is a script with
   no model in it: given the same records it does the same thing, and it
   refuses or reports what it cannot read rather than guess (a gate, the
-  _dispatcher_'s _tick_, a tracker script, a release step). A **reasoned
+  *dispatcher*'s *tick*, a tracker script, a release step). A **reasoned
   part** is a model session working from instructions and deciding (a
-  skill's session, a pass of a _PR drive loop_, an implementer, the _Review
-  Arbiter_, an audit's score where no _probe_ decides). In Jig the reasoned
+  skill's session, a pass of a *PR drive loop*, an implementer, the *Review
+  Arbiter*, an audit's score where no *probe* decides). In Jig the reasoned
   parts decide and a deterministic part writes the shared record, checking
   what it is given. See
   [plugin/MECHANISMS.md](plugin/MECHANISMS.md).
 - **Issue** — one unit of work in the issue tracker: what `/jig:do-item` picks
-  up and a pull request closes. Skills say _item_ for short. _Avoid_: ticket,
+  up and a pull request closes. Skills say *item* for short. *Avoid*: ticket,
   card, task.
 - **Issue key** — the short name a tracker gives an issue, which branch
   names, commit messages and pull requests carry to link work to it:
   `ENG-123` on Linear (the team's prefix and a number), `PROJ-123` on Jira
   (the project's key and a number), `#123` on GitHub Issues (a number
-  within one repository). Each _tracker adapter_ defines
+  within one repository). Each *tracker adapter* defines
   its key's shape, how a key appears in a branch name (`eng-123-…`,
   `123-…`) and in a file name (`ENG-123`, `issue-123`). Write a key quoted
   on a command line: an unquoted `#` starts a shell comment.
@@ -1754,103 +1754,103 @@ make, use the entry's term instead.
   is paid once instead of once per issue
   ([work-batch](plugin/skills/work-batch/README.md)).
 - **Batch anchor** — what a batch is drawn from: an area of the
-  _change-area catalog_, a path in the repository, an epic, or one issue
+  *change-area catalog*, a path in the repository, an epic, or one issue
   whose area's other open issues join it.
-- **Solo-only issue** — an issue that never joins a _batch_ because it
-  carries a _sensitivity flag_, the human-in-the-loop label or the
+- **Solo-only issue** — an issue that never joins a *batch* because it
+  carries a *sensitivity flag*, the human-in-the-loop label or the
   manual-operations label: each starts a review gate or a human step that
   would apply to every other change in the pull request.
 - **Launcher** — the program an issue tracker's "open in coding agent" button
   runs. Jig's assigns the issue to whoever opened it, saves the whole
   issue to a file the agent reads, chooses the repository from the issue's
-  label and opens a workspace for the agent through a _workspace provider_.
+  label and opens a workspace for the agent through a *workspace provider*.
 - **Workspace runtime** — the app or terminal tool that creates an agent's
-  workspace, usually a git _worktree_, and runs the agent session in it.
+  workspace, usually a git *worktree*, and runs the agent session in it.
   Jig's practices name none; its tooling targets Herdr first and also
   supports others, Orca and Conductor among them
   ([ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
 - **SSH (Secure Shell)** — the standard way to log in to another machine
-  and run commands there over an encrypted connection; a _workspace runtime_
+  and run commands there over an encrypted connection; a *workspace runtime*
   can use it to run an agent's workspace on a remote host.
-- **Workspace provider** — the part of the _launcher_ that opens the agent's
-  workspace in one _workspace runtime_. Providers differ only in that last
+- **Workspace provider** — the part of the *launcher* that opens the agent's
+  workspace in one *workspace runtime*. Providers differ only in that last
   step, so adding one does not change the rest of the launcher; which exist
   and which are planned is in the
   [launcher's README](tools/launcher/README.md#providers).
 - **Dispatcher** — the program that starts the stages of the execution
   line with nobody at the keyboard: a pickup for an item assigned to the
-  _factory identity_, a restart of a stopped review drive, the follow-up
-  after a merge. It runs as a _tick_ on a timer, starts sessions through a
-  _session runtime_, and never merges or answers a parked question. It
+  *factory identity*, a restart of a stopped review drive, the follow-up
+  after a merge. It runs as a *tick* on a timer, starts sessions through a
+  *session runtime*, and never merges or answers a parked question. It
   reports every stage, restarts stopped drives and tells a person about
   each stop only a person settles today, and starts pickups and follow-ups
-  where its _session runtime_ can bind a session to the account it bills;
+  where its *session runtime* can bind a session to the account it bills;
   the rest is [ROADMAP.md](ROADMAP.md) item 33. It is Jig's first
-  _control plane_.
-- **Tick** — one run of the _dispatcher_: read the tracker, the pull
+  *control plane*.
+- **Tick** — one run of the *dispatcher*: read the tracker, the pull
   requests' drive ledgers and the running sessions, work out which stages
   are wanted and not running, report them, and start them only when told
   to. What is wanted comes from those records alone; the dispatcher keeps
   only what it did: what it started and how each ended, a receipt per
   tick, and the account walls and repeat suppressions those imply, so
   stopping it loses nothing and the next tick finds the same facts.
-- **Launch record** — the _dispatcher_'s record of one session it started,
+- **Launch record** — the *dispatcher*'s record of one session it started,
   written before the launch: what it starts, on which pull request or item,
   on which subscription account, and a random token. The wrapper that runs
   the session adds the process it runs as and, when it ends, the stage's
   exit. A launch whose answer is lost still has its record, so it holds its
-  stage and its account's _slot_, and is never followed by a second launch.
-- **Slot** — one session the _dispatcher_ may hold on a subscription
+  stage and its account's *slot*, and is never followed by a second launch.
+- **Slot** — one session the *dispatcher* may hold on a subscription
   account at once. Each account has a cap of slots (two by default); a
-  _launch record_ that is pending, running or unknown holds one.
-- **Wall** — a subscription account's usage limit, as the _dispatcher_
+  *launch record* that is pending, running or unknown holds one.
+- **Wall** — a subscription account's usage limit, as the *dispatcher*
   records it once a session it started stops on it: the account is left
   out of every launch until the wall's reset. A later write never moves the
   reset earlier.
-- **Session runtime** — the interface the _dispatcher_ starts agent
+- **Session runtime** — the interface the *dispatcher* starts agent
   sessions through: list the sessions in a repository's workspaces, open a
   workspace, launch a session on a subscription account, notify a person.
   Orca is its first implementation
   ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)); a
-  _workspace runtime_ becomes another by implementing the same methods.
+  *workspace runtime* becomes another by implementing the same methods.
 - **Factory identity** — the tracker user a repository assigns an item to
-  when the _dispatcher_ should pick it up. An item assigned to it and in
+  when the *dispatcher* should pick it up. An item assigned to it and in
   one of the repository's dispatch states is started, when a person with
   write access made the assignment. The `do-item` session claims it
   (assigns it to itself and moves it to the in-progress state, refusing an
   item someone already holds), which keeps an item from being picked up twice
   in all but a race between two claims, which the dispatcher reports.
-- **Stalled pickup** — an item the _factory identity_ claimed (in its
+- **Stalled pickup** — an item the *factory identity* claimed (in its
   in-progress state) that has had no running session for longer than the
-  repository's `dispatch.stalled_after`. The _dispatcher_ reports it and
+  repository's `dispatch.stalled_after`. The *dispatcher* reports it and
   never starts it again: a second session would be a second implementer on
   a claimed item, so a person settles it.
 - **Double claim** — an item more than one running session works on at
-  once: two workspaces, or a workspace beside a launch the _dispatcher_
+  once: two workspaces, or a workspace beside a launch the *dispatcher*
   still holds for another one. The dispatcher reports it and starts
   nothing for it.
 - **Follow-up marker** — a hidden-marker comment on a merged pull request
   that claims its follow-up, so one run settles the merge: the
-  _dispatcher_ posts one before it starts the follow-up's session, and a
+  *dispatcher* posts one before it starts the follow-up's session, and a
   follow-up a person runs by hand posts one too and marks it done when it
   succeeds. Of two, the earlier comment wins, and the later run stands
   down. Only a marker from the dispatcher's own account or from an owner,
   member or collaborator of the repository counts.
-- **Notices workspace** — the workspace the _dispatcher_ keeps per
+- **Notices workspace** — the workspace the *dispatcher* keeps per
   repository, on a branch of the default branch, for the notifications whose
   pull request or item has no workspace that can take one. It never
   launches an agent into it; it only writes its comment and marks it
   unread for a person to read.
 - **Dispatch labels** — the pull-request labels through which the
-  _dispatcher_ and a person see and steer each other, off unless a
+  *dispatcher* and a person see and steer each other, off unless a
   repository turns them on, all under one prefix the repository picks
   (`jig:` by default). The dispatcher keeps a state label on each pull
   request it manages (driving, converged, parked, stale, followed-up),
-  derived from the drive ledger at every _tick_ and never read to decide
+  derived from the drive ledger at every *tick* and never read to decide
   what to start. A person adds the commands: `drive` asks the
   dispatcher to drive a pull request that has no drive yet, and `hold`
   stands it down from a pull request until the person removes the label.
-- **Outcome log** — the _dispatcher_'s permanent record of how each session
+- **Outcome log** — the *dispatcher*'s permanent record of how each session
   it started ended, a table of its state database with a text copy of one
   file per month: one row per session with its stage, repository,
   account, duration and an outcome class from the closed list the
@@ -1864,17 +1864,17 @@ make, use the entry's term instead.
   it; it is never rendered into a report file.
 - **Stage drift** — a running stage falling short of what it is expected to
   achieve: a review drive whose open threads do not fall across rounds, a
-  pickup that has not opened a pull request in time. The _dispatcher_
+  pickup that has not opened a pull request in time. The *dispatcher*
   reports drift and tells a person once; it never acts on it.
-- **Nudge** — a fixed prompt the _dispatcher_ may send by itself, from a
+- **Nudge** — a fixed prompt the *dispatcher* may send by itself, from a
   closed set with one entry: "continue" to a session it started that is
   waiting at its prompt after a usage limit that has since reset. Anything else a stuck
   session needs goes to a person.
-- **Waiting episode** — one stretch of a session the _dispatcher_ started
+- **Waiting episode** — one stretch of a session the *dispatcher* started
   waiting at its prompt behind a usage limit, kept on that session's launch
   record: the wall's observation time and reset, and whether the session's
   last record is still the wall. A new observation time starts a new
-  episode; the _nudge_ is sent at most once per episode.
+  episode; the *nudge* is sent at most once per episode.
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of
@@ -1882,7 +1882,7 @@ make, use the entry's term instead.
   has it.
 - **Worktree hooks** — the commands a repository runs when one of its
   worktrees is created (set it up) and before one is removed (nudge a
-  reflection, keep unsent findings): _M12_'s lifecycle. In Herdr they are the
+  reflection, keep unsent findings): *M12*'s lifecycle. In Herdr they are the
   executables `.config/worktree-hooks/create` and `remove`
   ([Herdr workspace tool](tools/herdr/README.md#the-worktree-hooks)).
 - **Deep link** — a web-style address (`<app>://…`) that opens a desktop
@@ -1891,16 +1891,16 @@ make, use the entry's term instead.
 - **Test shard** — one slice of a test suite's files, run as its own CI job
   so a long suite finishes in a fraction of the time on parallel machines.
 - **Validation plan** — the checks a change must pass, worked out from the files
-  it touches: local checks, verification checks, whether a _remote test box_ is
+  it touches: local checks, verification checks, whether a *remote test box* is
   needed, and which review skills to run. A repository supplies it as a command
   that reads changed files on stdin and prints JSON
   (`drive.validation_plan_command`); without one the plan is the gate command
   alone ([drive-pr](plugin/skills/drive-pr/README.md)). The
   [change-areas](plugin/skills/change-areas/README.md) skill prints one from
-  the _change-area catalog_.
+  the *change-area catalog*.
 - **Remote test box (Testbox)** — a disposable machine, warmed for one run, that
   re-runs a repository's heavy test and build checks away from the laptop. A
-  _validation plan_ says when one is required; Jig's drive uses each box
+  *validation plan* says when one is required; Jig's drive uses each box
   once, because a reused box can sync stale state
   ([drive-pr](plugin/skills/drive-pr/SKILL.md)).
 - **Lockfile** — the file a package manager writes to pin the exact version of
@@ -1941,9 +1941,9 @@ make, use the entry's term instead.
   ([design/website.md](design/website.md)).
 - **Intent chain** — the short statement of why a piece of work exists: the
   epic's intent, the issue's scope and its acceptance criteria. `do-item`
-  writes it to a snapshot file and _Refocus_ puts it back in front of an agent
+  writes it to a snapshot file and *Refocus* puts it back in front of an agent
   ([do-item](plugin/skills/do-item/SKILL.md)).
-- **Refocus** — putting a piece of work's _intent chain_ (why it exists: the
+- **Refocus** — putting a piece of work's *intent chain* (why it exists: the
   epic's intent, the issue's scope and acceptance criteria) back in front of an
   agent after its context is compacted, and at the start of each review round,
   so a long session does not drift from the goal it started with.
@@ -1958,7 +1958,7 @@ make, use the entry's term instead.
   changing service resources through ordinary web requests.
 - **GraphQL** — a query language for web APIs in which the caller names exactly
   the fields it wants. GitHub exposes review threads and merge state through it,
-  and its quota is a separate, easily exhausted budget from _REST_.
+  and its quota is a separate, easily exhausted budget from *REST*.
 - **ETag** — a version tag a web service returns with a resource. Sending it back
   on the next request lets the service answer "not modified" at no quota cost,
   which is how Jig's polling loops watch an idle pull request cheaply
@@ -2018,15 +2018,15 @@ make, use the entry's term instead.
   `workspaces` list, `go.work`, Cargo's `[workspace]`, Gradle's
   `settings.gradle`, uv's `[tool.uv.workspace]`.
 - **Unclassified share** — the part of a repository, in files and in
-  _LOC_, that the code-stats skill could not place: files no kind rule
+  *LOC*, that the code-stats skill could not place: files no kind rule
   matched, or no area rule matched, so they fell to the default area. A large
   share means the repository's `code_stats` configuration needs work.
 - **Code-stats dimensions** — the values the code-stats skill gives every
-  tracked file: its _area_ (what the file is for: product code, tests,
-  tooling, agent scaffolding, docs, build, database, ops), its _kind_ (what
+  tracked file: its *area* (what the file is for: product code, tests,
+  tooling, agent scaffolding, docs, build, database, ops), its *kind* (what
   the file is: code, test, docs, configuration, data, generated, fixture,
-  asset, vendored), its language, and its _module_ (the unit of the
-  repository it belongs to, from the _workspace manifests_). Unrelated to
+  asset, vendored), its language, and its *module* (the unit of the
+  repository it belongs to, from the *workspace manifests*). Unrelated to
   the change-area catalog's areas.
 - **Classify command** — a command a repository supplies to the code-stats
   skill (`code_stats.classify_command`) when globs cannot describe its

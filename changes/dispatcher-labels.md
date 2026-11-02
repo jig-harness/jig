@@ -32,4 +32,5 @@ a person's commands the same way.
   Run it once after turning the labels on: the labels must exist before a
   run writes them.
 - **The morning report** (`drives.ts --report`) gives, for each repository
-  with the labels on, how many pull requests its latest run projected each label for (`dispatchLabels` in `--json`).
+  with the labels on, how many pull requests its latest run projected each
+  label for (`dispatchLabels` in `--json`).
