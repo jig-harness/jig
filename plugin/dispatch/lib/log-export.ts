@@ -150,6 +150,7 @@ function copyMonth(
   });
   const temporary = `${path}.${crypto.randomUUID()}.tmp`;
   let fd: number | null = null;
+  let created = false;
   let added = 0;
   try {
     const [year, number] = month.split("-").map(Number) as [number, number];
@@ -165,6 +166,7 @@ function copyMonth(
         if (monthOf(r.at) !== month || held.has(r.key)) return;
         if (fd === null) {
           fd = openSync(temporary, "wx", 0o600);
+          created = true;
           // A line the file holds is kept as it is, blank lines apart.
           const out = fd;
           eachLine(path, (text) => {
@@ -182,6 +184,7 @@ function copyMonth(
     closeSync(fd);
     fd = null;
     renameSync(temporary, path);
+    created = false;
   } catch (error) {
     if (fd !== null) {
       try {
@@ -189,10 +192,12 @@ function copyMonth(
       } catch {
         // closed already
       }
+    }
+    if (created) {
       try {
         unlinkSync(temporary);
       } catch {
-        // never created or already renamed
+        // already removed
       }
     }
     throw error;

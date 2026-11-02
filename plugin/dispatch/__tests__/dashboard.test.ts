@@ -6,13 +6,19 @@
  * rows once they are written.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExited } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { dashboardData, serveDashboard } from "../dashboard.ts";
 import { insertRow, writeRow, type LogRow } from "../lib/log.ts";
-import { stateDb } from "../lib/state.ts";
+import { closeStateDb, stateDb } from "../lib/state.ts";
 import { waitFor } from "./launch-fixtures.ts";
 
 const NOW = Date.parse("2026-11-01T12:00:00.000Z");
@@ -71,9 +77,14 @@ function fixtureLog(): string {
 }
 
 let stop: (() => void) | null = null;
+const bulkRoots: string[] = [];
 afterEach(() => {
   stop?.();
   stop = null;
+  for (const root of bulkRoots.splice(0)) {
+    closeStateDb(root);
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 /**
@@ -109,6 +120,7 @@ describe("jig dispatch dashboard", () => {
     const base = Date.parse("2026-10-31T00:00:00.000Z");
     const bulk = (count: number): string => {
       const root = mkdtempSync(join(tmpdir(), "dispatch-log-"));
+      bulkRoots.push(root);
       const db = stateDb(root);
       db.transaction(() => {
         for (let i = 0; i < count; i++)
