@@ -1863,11 +1863,24 @@ make, use the entry's term instead.
   *dispatcher* and a person see and steer each other, off unless a
   repository turns them on, all under one prefix the repository picks
   (`jig:` by default). The dispatcher keeps a state label on each pull
-  request it manages (driving, converged, parked, stale, followed-up),
-  derived from the drive ledger at every *tick* and never read to decide
-  what to start. A person adds the commands: `drive` asks the
-  dispatcher to drive a pull request that has no drive yet, and `hold`
-  stands it down from a pull request until the person removes the label.
+  request it manages (driving, converged, parked, stale, *held*,
+  followed-up), derived from the drive ledger and the *serialized areas* at
+  every *tick* and never read to decide what to start. A person adds the
+  commands: `drive` asks the dispatcher to drive a pull request that has
+  no drive yet, and `hold` stands it down from a pull request until the
+  person removes the label.
+- **Serialized area** — an area of a *change-area catalog* marked
+  `serialize: true`: its pull requests conflict with each other whenever
+  two of them move at once (a migrations folder, a schema), so the
+  *dispatcher* drives them one at a time, the one closest to merge first.
+  A person adds the mark, usually after the conflict history report
+  proposes it for a *conflict hotspot*; the dispatcher never adds one.
+- **Held (pull request)** — a pull request in a *serialized area* waiting
+  for the one ahead of it to merge: the *dispatcher* starts no drive on it
+  until it leads, reports it as `held: serialized behind #N in <area>`
+  and, with *dispatch labels* on, labels it `held`. A drive a person arms
+  on it still runs. Not the same as a person's `hold` label, which stands
+  the dispatcher down from a pull request altogether.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
   it started ended, a table of its state database with a text copy of one
   file per month: one row per session with its stage, repository,

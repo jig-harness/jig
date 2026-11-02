@@ -2,6 +2,7 @@
  * What one tick reads, plans and reports. Every record is read fresh each
  * tick; nothing here is kept between ticks except what the receipt says.
  */
+import type { SerialReport } from "./contention.ts";
 import type { LabelConfig } from "./labels.ts";
 
 /** The records a tick reads, by who owns them. */
@@ -310,6 +311,8 @@ export interface RepoReport {
   steers?: SteerOutcome[];
   /** The dispatch labels' part, where the repository turns them on. */
   labels?: LabelReport;
+  /** Serialization's part, where the change-area catalog serializes an area. */
+  serialized?: SerialReport;
   /** Targets that need nothing from the tick, by class: a pull request's ledger class, a pickup's, or a follow-up's. */
   quiet: Array<{
     target: string;

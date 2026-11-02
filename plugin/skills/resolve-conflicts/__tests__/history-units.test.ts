@@ -61,6 +61,7 @@ describe("the command line", () => {
     expect(parseArgs([], now)).toEqual({
       json: false,
       limit: 25,
+      proposeSerialize: false,
       since: now - 30 * 86_400_000,
       until: null,
       label: "the last 30 days (2026-09-19 to 2026-10-19)",

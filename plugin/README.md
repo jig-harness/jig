@@ -420,8 +420,8 @@ each with the name it carries now.
 dispatcher's state visible on each pull request, from any forge client,
 and let a person steer it the same way. Each `--apply` run sets each
 managed pull request's state label (`jig:driving`, `jig:converged`,
-`jig:parked`, `jig:stale`, `jig:followed-up` under the default prefix)
-from its drive ledger, writing only where the labels disagree, so a label
+`jig:parked`, `jig:stale`, `jig:held`, `jig:followed-up` under the
+default prefix) from its drive ledger and the serialized areas below, writing only where the labels disagree, so a label
 changed by hand, or left behind by a drive that was killed, is corrected
 at the next run; no state label is ever read to decide what to start. Two
 labels are a person's commands, which the dispatcher reads and never
@@ -435,6 +435,31 @@ dispatch --repo <path>` lists the missing ones beside the timer, and with
 `--yes` creates them where the signed-in account may and lists the rest
 with the command a person runs. A label write the forge refuses is reported in the receipt,
 and the run does not fail.
+
+**Serialized areas.** Some pull requests conflict with each other whenever
+two move at once: two migrations, two edits to one schema. An area of the
+repository's [change-area catalog](skills/change-areas/README.md#the-catalog)
+marked `serialize: true` has its pull requests driven one at a time. Each
+run reads the catalog from the default branch, as it reads the `dispatch`
+section, and each open pull request's changed files from the forge; the
+pull requests whose files match a serialized area's own globs make its
+group, ordered by how close each is to merge, from the ledger and the
+forge alone: converged and mergeable first, then a drive in progress, then
+the fewest unresolved review threads, then the most rounds, then the
+oldest. The first leads and is planned as any pull request is; the rest
+get no re-arm, takeover or re-drive, are reported as
+`held: serialized behind #N in <area>`, carry `jig:held` where the labels
+are on, and leave an event row in the outcome log when each hold begins
+and ends, the end with how long it waited, so the dashboard shows what
+contention cost. When the leader merges or leaves the group, the next run
+promotes the next, which a conflict with the new base re-drives once. A
+pull request in two serialized areas waits unless it leads both. Only the
+dispatcher's own launches wait: a drive a person arms on a held pull
+request runs, and the run reports that the group has two drives. The run
+never adds an area: the conflict report proposes them
+(`history.ts --propose-serialize` in
+[resolve-conflicts](skills/resolve-conflicts/README.md#where-past-merges-conflicted)),
+and a person adds the line.
 
 **The outcome log.** Every launch record that ends gets one row in the
 [outcome log](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), a

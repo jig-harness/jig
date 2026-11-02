@@ -641,7 +641,14 @@ bun "${CLAUDE_SKILL_DIR}/scripts/history.ts"               # the last 30 days
 bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --days 90
 bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --since 2026-01-01 --until 2026-03-31
 bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --all --json
+bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --propose-serialize  # areas to serialize
 ```
+
+`--propose-serialize` prints, instead of the report, each area of the
+change-area catalog (`drive.change_areas_catalog`) that a hotspot lies in
+alone and that is not yet serialized, as the `serialize: true` line to add,
+with the hotspots behind it; hotspots no single area holds are listed
+apart. It writes nothing: show the lines to the person, who decides.
 
 A bare date (`YYYY-MM-DD`) is a day in UTC: `--since` starts at its
 midnight, and `--until` ends after it. A time carries its offset from UTC

@@ -16,7 +16,9 @@
  * - **event**: once per cause, timed when the tick observed it, for what
  *   the tick observed rather than what ended (a stalled pickup, a double
  *   claim, a stage drifting from its expectation, a session waiting, a stop
- *   it notified on a stage it did not launch, each nudge sent).
+ *   it notified on a stage it did not launch, each nudge sent, and a pull
+ *   request's hold behind another in a serialized area beginning and
+ *   ending, the end carrying how long it waited: `serial-holds.ts`).
  *
  * A row's key is unique in the table, and a row is written in the same
  * transaction as what it records (a record's end, a suppression record, a
@@ -89,9 +91,11 @@ export interface EventRow {
   /** What was observed: the notification's cause, or `nudge`. */
   event: string;
   account: string | null;
-  /** The class the closed list places it in; `null` for an observation no class names (a drift, a wait, a nudge). */
+  /** The class the closed list places it in; `null` for an observation no class names (a drift, a wait, a nudge, a hold). */
   class: OutcomeClass | null;
   reason: string;
+  /** For the end of a hold: how long the pull request waited. */
+  durationMs?: number;
 }
 
 export type LogRow = EndedRow | EventRow;
