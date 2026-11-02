@@ -56,7 +56,7 @@ export type StateName = (typeof PROJECTED_STATES)[number];
 export const COMMANDS = ["drive", "hold"] as const;
 export type CommandName = (typeof COMMANDS)[number];
 
-/** What each label says, for `jig dispatch install --repo`, which creates them. */
+/** What each label says, for `jig install dispatch --repo`, which creates them. */
 const MEANINGS: Record<StateName | CommandName, string> = {
   driving:
     "A drive runs on this pull request, or the dispatcher re-arms the one that stopped",

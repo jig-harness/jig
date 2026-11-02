@@ -1,5 +1,5 @@
 /**
- * `jig dispatch install --repo <path>... [--yes]`: the dispatch labels a
+ * `jig install dispatch --repo <path> [--yes]`: the dispatch labels a
  * repository needs before the tick writes them. For each repository whose
  * `dispatch` section (read from its default branch, as the tick reads it)
  * turns the labels on, the labels of the set it does not have yet are

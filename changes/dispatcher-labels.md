@@ -26,8 +26,8 @@ a person's commands the same way.
 - **`only_labeled: true`** limits the dispatcher to the pull requests that
   carry a label of the set: one with none is never read, re-armed or
   followed up.
-- **`jig dispatch install --repo <path> [--yes]`** lists the dispatch
-  labels a repository lacks, and with `--yes` creates them where the
+- **`jig install dispatch --repo <path> [--yes]`** lists the dispatch
+  labels a repository lacks beside the timer, and with `--yes` creates them where the
   signed-in account may, listing the rest with the command a person runs.
   Run it once after turning the labels on: the labels must exist before a
   run writes them.

@@ -14,7 +14,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
@@ -35,6 +35,9 @@ import {
   machineFile,
   waitFor,
 } from "./launch-fixtures.ts";
+
+const JIG = resolve(import.meta.dir, "../../jig.ts");
+const ENTRY = resolve(import.meta.dir, "install-labels-entry.ts");
 
 const config = (labels: string) => `issue_tracker:
   adapter: github
@@ -338,23 +341,37 @@ describe("jig dispatch with the labels off", () => {
   }, 60_000);
 });
 
-describe("jig dispatch install --repo", () => {
+describe("jig install dispatch --repo", () => {
   const labelsFile = (w: World) => join(w.dir, "labels-repo.json");
   const created = (calls: string[]) =>
     calls.filter((c) => c.startsWith("label create "));
+  /** The labels part of the install, with or without --yes. */
+  const labelsPart = (w: World, ...args: string[]) =>
+    w.dispatch([w.repo, ...args], ENTRY);
+
+  it("previews the timer and the labels the repository lacks", async () => {
+    const w = fixture(ON);
+    writeFileSync(labelsFile(w), JSON.stringify(["jig:driving"]));
+    const r = await w.dispatch(["install", "dispatch", "--repo", w.repo], JIG);
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("--apply");
+    expect(r.stdout).toContain("jig:converged");
+    expect(r.stdout).not.toContain("jig:driving:");
+    expect(created(ghCalls(w))).toEqual([]);
+  }, 60_000);
 
   it("lists the missing labels, creates them with --yes, and lists for a person those the account may not create", async () => {
     const w = fixture(ON);
     writeFileSync(labelsFile(w), JSON.stringify(["jig:driving", "bug"]));
 
-    const preview = await w.dispatch(["install", "--repo", w.repo]);
+    const preview = await labelsPart(w);
     expectSpawnExit(preview, 0);
     expect(preview.stdout).toContain("jig:converged");
     expect(preview.stdout).not.toContain("jig:driving:");
     expect(created(ghCalls(w, true))).toEqual([]);
 
     writeFileSync(join(w.dir, "label-create-fail"), "");
-    const refused = await w.dispatch(["install", "--repo", w.repo, "--yes"]);
+    const refused = await labelsPart(w, "--yes");
     expectSpawnExit(refused, 1);
     expect(refused.stdout).toContain(
       `gh label create 'jig:hold' --repo ${SLUG}`,
@@ -362,7 +379,7 @@ describe("jig dispatch install --repo", () => {
 
     rmSync(join(w.dir, "label-create-fail"));
     ghCalls(w, true);
-    const made = await w.dispatch(["install", "--repo", w.repo, "--yes"]);
+    const made = await labelsPart(w, "--yes");
     expectSpawnExit(made, 0);
     expect(created(ghCalls(w, true))).toHaveLength(6);
     expect(JSON.parse(readFileSync(labelsFile(w), "utf8")).sort()).toEqual(
@@ -378,14 +395,14 @@ describe("jig dispatch install --repo", () => {
       ].sort(),
     );
 
-    const again = await w.dispatch(["install", "--repo", w.repo, "--yes"]);
+    const again = await labelsPart(w, "--yes");
     expectSpawnExit(again, 0);
     expect(created(ghCalls(w))).toEqual([]);
   }, 60_000);
 
   it("needs no label where the repository turns them off", async () => {
     const w = fixture(OFF);
-    const r = await w.dispatch(["install", "--repo", w.repo, "--yes"]);
+    const r = await labelsPart(w, "--yes");
     expectSpawnExit(r, 0);
     expect(r.stdout).toContain("dispatch.labels is off");
     expect(ghCalls(w).filter((c) => c.startsWith("label "))).toEqual([]);

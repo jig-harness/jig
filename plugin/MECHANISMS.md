@@ -109,7 +109,7 @@ programs that run with nobody at the keyboard are deterministic: the
 dispatcher's [tick](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 (`dispatch/tick.ts`) and the wrapper every session it starts runs in
 (`dispatch/run.ts`), resource collection (`jig gc`), the launcher the
-scheduled jobs run (`gc/launcher.ts`), and the drive's loop control
+scheduled jobs run (`runtime/launcher.ts`), and the drive's loop control
 (`skills/drive-pr/scripts/drive.ts`). They start sessions and read how they
 ended. The only reasoning is inside the sessions they start: a drive pass,
 a pickup's `do-item` session, a follow-up session. Those sessions read
@@ -136,8 +136,8 @@ development and shipped as a version.
 |------|---------------------|--------------------------|--------------------|--------------|
 | [Gates](#gates-and-the-validation-plan) | `gates.command`; CI | implementer before the push; drive pass every round | the session that ran them; CI's required check | the session whose change failed them |
 | [Change areas](#gates-and-the-validation-plan) | `skills/change-areas/scripts/` | review, drive pass, fix-ci, through the plan | the session that read the plan (exit 2) | whoever maintains the catalog |
-| [`jig` command and timers](#the-jig-command-and-its-timers) | `jig.ts`, `gc/install.ts`, `dispatch/install.ts`, `gc/launcher.ts` | none | the scheduler's own log; a person | a Jig change |
-| [Resource collection](#resource-collection-jig-gc) | `gc/` | none | its receipts (`jig gc receipts`) | a person; a Jig change |
+| [`jig` command and timers](#the-jig-command-and-its-timers) | `jig.ts`, `runtime/verbs.ts`, `gc/install.ts`, `dispatch/install.ts`, `runtime/launcher.ts` | none | the scheduler's own log; a person | a Jig change |
+| [Resource collection](#resource-collection-jig-gc) | `gc/` | none | its receipts (`jig receipts gc`) | a person; a Jig change |
 | [Dispatcher's tick](#the-dispatchers-tick) | `dispatch/tick.ts`, `dispatch/run.ts` | the sessions it starts | its receipt; the morning report | a person; a Jig change |
 | [Dispatcher's records](#the-dispatchers-records-receipts-outcome-log-dashboard-notifications) | `dispatch/receipts.ts`, `dispatch/lib/log.ts`, `dispatch/dashboard.ts`, `dispatch/lib/notices.ts` | a dispatched session records its result | the dashboard; the morning report | a person, through `/jig:reflect` |
 | [Follow-up marker](#the-follow-up-marker) | `dispatch/marker.ts`, `dispatch/lib/followup-marker.ts` | the follow-up session | the follow-up session (exit 1, 2 or 3) | a person deletes or marks the marker |
@@ -187,18 +187,23 @@ development and shipped as a version.
 ### The `jig` command and its timers
 
 - **Deterministic.** `jig.ts` is one command-line parser over the
-  components (`gc/cli.ts`, `dispatch/cli.ts`); it refuses a malformed
-  command line with exit 2. `jig gc install` and `jig dispatch install`
-  print the scheduled job first and write it only with `--yes`: a systemd
-  user timer, a launchd job or a crontab line (`gc/scheduler.ts`). Each job
+  components (`gc/component.ts`, `dispatch/component.ts`), each
+  implementing `runtime/component.ts`; it refuses a malformed command line
+  with exit 2. The lifecycle verbs (`runtime/verbs.ts`) reach the
+  components only through that interface. `jig install` prints each
+  scheduled job first and writes it only with `--yes`: a systemd user
+  timer, a launchd job or a crontab line (`runtime/scheduler.ts`), and the
+  `jig` command, `~/.local/bin/jig` (`runtime/path-command.ts`). Each job
   runs a launcher copied under its own state folder,
   `~/.local/state/jig/gc/launcher/` for collection and
   `~/.local/state/jig/dispatch/launcher/` for the dispatcher
-  (`gc/scheduler.ts` joins the job's state root, which `dispatch/install.ts`
-  sets for the dispatcher's job). At each run the launcher asks the agent
-  tool (`claude plugin list --json` or `codex plugin list --json`) for the
-  installed plugin copy, so an update reaches the job without a new install
-  (`gc/launcher.ts`). It refuses to run a script that lives inside a git
+  (`runtime/scheduler.ts` joins the job's state root, which
+  `dispatch/install.ts` sets for the dispatcher's job), and the `jig`
+  command runs its own copy under `~/.local/state/jig/launcher/`. At each
+  run the launcher asks the agent tool (`claude plugin list --json` or
+  `codex plugin list --json`) for the installed plugin copy, so an update
+  reaches the job and the command without a new install
+  (`runtime/launcher.ts`). It refuses to run a script that lives inside a git
   checkout, which a worktree cleanup could remove. The plugin itself is
   updated by the agent tool ([automatic updates](README.md#automatic-updates)),
   not by Jig.
@@ -221,13 +226,13 @@ development and shipped as a version.
 - **Reasoned.** None. Sessions only take part as owners: a scratch creator
   holds shared admission while it creates its folder (`shared/gc-lock.ts`).
 - **If it fails.** Exit 1 and a receipt that records the failure.
-  Nothing notifies anyone: a person reads `jig gc receipts`. A defect is a
+  Nothing notifies anyone: a person reads `jig receipts gc`. A defect is a
   Jig change.
 
 ### The dispatcher's tick
 
 - **Deterministic.** `dispatch/tick.ts`, run every interval by the timer
-  `jig dispatch install` writes. Under a lock it reads, for each
+  `jig install dispatch` writes. Under a lock it reads, for each
   repository, the `dispatch` section from the default branch, the tracker,
   the open pull requests and their drive ledgers, and the session runtime's
   sessions; it plans what is wanted and not running, and with `--apply`
@@ -659,7 +664,7 @@ stops a model. A team that runs passes unattended should know which:
   (`modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet.ts`).
 - **The installed copy.** The scheduled jobs run whichever plugin copy the
   agent tool reports installed, with no check that it matches a released
-  version (`gc/launcher.ts`).
+  version (`runtime/launcher.ts`).
 - **The site's sync record.** In Jig, `website/content-sync.yaml` is written
   by `scripts/website-sync.ts --advance` by instruction; no check stops a
   hand edit.

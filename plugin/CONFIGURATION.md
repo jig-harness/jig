@@ -952,9 +952,12 @@ can be reported but cannot be collected.
 
 These settings live only in the user file (`$JIG_HOME/jig.yaml`, default
 `~/.jig/jig.yaml`); they cannot be set by a repository or environment override.
-Run `bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts gc install` to review the proposed entry, then repeat
-with `--yes` to confirm it and install the scheduler. Installation must run
-from the installed plugin copy, outside a Git checkout.
+Run `jig install gc` to review the proposed entry, then repeat with `--yes`
+to confirm it and install the scheduler (before `jig` is on `PATH`, run
+`bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts install gc`
+from the installed plugin copy; see
+[the `jig` command](README.md#the-jig-command)). Installation must run from
+the installed plugin copy, outside a Git checkout.
 
 | Setting in the user file's `gc` section | Default / meaning |
 |----------------------------------------|-------------------|
@@ -973,9 +976,9 @@ Collection uses the same machine-wide heavy-run lock as gate runs. Scheduled
 and child Bun invocations use the plugin's trusted configuration and disable
 checkout environment files and preloads.
 Report-only runs also write receipts, under
-`~/.local/state/jig/gc/<date>/<run-id>.json`. `gc receipts` lists them;
-`gc receipts <date>` lists a day and `gc receipts <run-id>` prints a run.
-Use `gc --json` for the receipt schema on standard output.
+`~/.local/state/jig/gc/<date>/<run-id>.json`. `jig receipts gc` lists them;
+`jig receipts gc <date>` lists a day and `jig receipts gc <run-id>` prints a
+run. Use `jig gc --json` for the receipt schema on standard output.
 
 The available collectors and remaining rollout work are in
 [the collector's README](gc/README.md).
@@ -1060,8 +1063,8 @@ request whose labels disagree, so a state label a person changed comes
 back at the next run, and the dispatcher never reads a state label to
 decide what to start. A run without `--apply`, or for a repository the
 machine file does not list, writes nothing and reports what it would
-write. The labels must exist before a run writes them: `jig dispatch
-install --repo <path> --yes` creates the missing ones where the signed-in
+write. The labels must exist before a run writes them: `jig install
+dispatch --repo <path> --yes` creates the missing ones where the signed-in
 account may, and lists the rest for a person, as `pull_requests.labels`
 must exist before a pull request opens with them. A write the forge
 refuses is reported and tried again at the next run; it does not fail the
@@ -1074,9 +1077,11 @@ What this machine dispatches, and on whose accounts, lives only in
 `$JIG_HOME/dispatch.yaml` (default `~/.jig/dispatch.yaml`); a repository
 cannot set it, and environment variables cannot override settings inside it.
 `JIG_HOME` selects the directory that contains it. `jig dispatch --apply`, and the
-timer `jig dispatch install` writes, start only what this file enables; a
+timer `jig install dispatch` writes, start only what this file enables; a
 run without `--apply` reads it for the repositories to report on, and
-works without it. An unknown key anywhere in the file is refused.
+works without it. The file is also the dispatcher's opt-in: `jig install`
+with no component named installs its timer only once the file exists. An
+unknown key anywhere in the file is refused.
 
 ```yaml
 repositories:

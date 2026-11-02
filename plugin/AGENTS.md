@@ -56,6 +56,14 @@ here reaches every repository at once.
   links to it ([modules/AGENTS.md](../modules/AGENTS.md#the-module-contract)). A
   template in a skill is licensed MIT No Attribution and listed in the root
   NOTICE (copied here as [NOTICE](NOTICE): `cp NOTICE plugin/`).
+- **The `jig` command's components** (`gc/`, `dispatch/`) each implement
+  `runtime/component.ts` and are registered in `jig.ts`; the lifecycle
+  verbs (`runtime/verbs.ts`) reach them only through that interface, and
+  the scheduler and launcher code the components share lives in
+  `runtime/`. Installed jobs and the `jig` command run copies of
+  `runtime/launcher.ts` that earlier releases wrote, so `jig.ts`,
+  `gc/bunfig.toml` and the jobs' command lines (`gc --scheduled`,
+  `dispatch --apply`) keep their place and meaning.
 - **Skills call each other by sibling path** (`../<skill>/scripts/…`), never
   through a path in the consumer repository.
 - **A runtime-specific capability names its fallback**

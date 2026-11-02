@@ -292,7 +292,7 @@ with theirs; with them off, no label is read or written.
   off, every open pull request is still read, so a drive a person armed by
   hand on an unlabelled pull request is found and gets its label.
 
-The labels must exist before the tick writes them: `jig dispatch install
+The labels must exist before the tick writes them: `jig install dispatch
 --repo <path>` lists the missing ones and, with `--yes`, creates them
 where the signed-in account may and lists the rest for a person. The tick
 writes labels only with `--apply`, for a repository the machine file
@@ -1066,7 +1066,7 @@ One pull request each, in this order; each is usable on its own.
    plan, one write per pull request whose labels disagree, counted in the
    receipt; `drive` arming a pull request with no ledger once per head
    commit, and `hold` keeping every stage off its pull request;
-   `only_labeled`; `jig dispatch install --repo` creating the missing
+   `only_labeled`; `jig install dispatch --repo` creating the missing
    labels; the morning report's counts by label. Tests: a state label
    changed by hand carries the ledger's label again after one tick; a
    `drive` label on a pull request with no ledger gets one drive across
