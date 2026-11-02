@@ -292,3 +292,34 @@ test.skipIf(onWindows)(
     expect(result.stdout.toString()).toContain("jig-gc: failed");
   },
 );
+
+test.skipIf(onWindows)(
+  "jig doctor fails a job whose timer is missing while its service remains, instead of skipping it as absent",
+  () => {
+    const m = machine("systemd");
+    expectSpawnExit(m.jig(["install", "gc", "--yes"]), 0);
+    rmSync(join(m.home, ".config", "systemd", "user", "jig-gc.timer"));
+    const result = m.jig(["doctor", "gc"]);
+    expectSpawnExit(result, 1);
+    expect(result.stdout.toString()).toMatch(
+      /FAIL {2}gc:launcher: the job is only partly installed/,
+    );
+  },
+);
+
+test.skipIf(onWindows)(
+  "jig doctor fails the jig command when the Bun it records no longer exists",
+  () => {
+    const m = machine("systemd");
+    expectSpawnExit(m.jig(["install", "--yes"]), 0);
+    const command = join(m.home, ".local", "bin", "jig");
+    const text = readFileSync(command, "utf8");
+    const bun = /^exec '([^']*)'/m.exec(text)?.[1] as string;
+    writeFileSync(command, text.replaceAll(bun, join(m.root, "gone", "bun")));
+    const result = m.jig(["doctor"]);
+    expectSpawnExit(result, 1);
+    expect(result.stdout.toString()).toMatch(
+      /FAIL {2}command:launcher: .*gone\/bun does not exist/,
+    );
+  },
+);

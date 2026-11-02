@@ -15,6 +15,7 @@
  * offline. A third component's checks come through the same interface.
  */
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { swallow } from "../shared/errors.ts";
 import { decodeJson, isRecord } from "../shared/guards.ts";
@@ -35,14 +36,15 @@ import {
   registeredMarketplace,
 } from "./harness.ts";
 import {
+  commandScriptCall,
   type InstalledJob,
+  jobPresent,
   launcherCall,
   readInstalledJob,
 } from "./installed-job.ts";
 import { installedEntry, listPlugins, outsideCheckout } from "./launcher.ts";
 import {
   commandLauncherDirectory,
-  commandPrograms,
   installedCommandText,
 } from "./path-command.ts";
 import { recordedPrograms } from "./refresh.ts";
@@ -197,6 +199,19 @@ type Runtime = (
 /** The variables the agent tools read their plugin registries from. */
 const REGISTRY_VARIABLES = ["CLAUDE_CONFIG_DIR", "CODEX_HOME"] as const;
 
+/**
+ * The environment an installed job asks its registry in: the caller's own
+ * with the registry variables replaced by the job's, so an override the job
+ * does not record is not inherited from the invoking shell.
+ */
+function registryEnvironment(
+  registry: Record<string, string>,
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const name of REGISTRY_VARIABLES) delete env[name];
+  return { ...env, ...registry };
+}
+
 function installedRuntime(fallback: Programs): Runtime {
   const asked = new Map<string, Promise<string | Error>>();
   return (programs, env) => {
@@ -218,11 +233,15 @@ function installedRuntime(fallback: Programs): Runtime {
         registry === undefined
           ? undefined
           : (program) =>
-              listPlugins(program, undefined, undefined, {
-                ...process.env,
-                ...registry,
-              }),
-        registry?.CODEX_HOME,
+              listPlugins(
+                program,
+                undefined,
+                undefined,
+                registryEnvironment(registry),
+              ),
+        registry === undefined
+          ? undefined
+          : (registry.CODEX_HOME ?? join(homedir(), ".codex")),
       ).then(
         (entry) => join(dirname(entry), "runtime"),
         (error: Error) => error,
@@ -265,12 +284,29 @@ function launcherCheck(
 }
 
 async function commandCheck(runtime: Runtime): Promise<DoctorCheck> {
-  if (installedCommandText() === null)
+  const text = installedCommandText();
+  if (text === null)
     return skip("command:launcher", "the jig command is not installed");
+  const script = commandScriptCall(text);
+  const call = script === null ? null : launcherCall(script.command);
+  if (call === null)
+    return fail(
+      "command:launcher",
+      "cannot read the command the installed jig script runs",
+      "jig install",
+    );
+  const problems = [
+    programProblem(call.bun, false),
+    ...Object.values(call.programs).map((program) =>
+      programProblem(program, true),
+    ),
+  ].filter((problem) => problem !== null);
+  if (problems.length > 0)
+    return fail("command:launcher", problems.join("; "), "jig install");
   return launcherCheck(
     "command:launcher",
     commandLauncherDirectory(),
-    await runtime(commandPrograms()),
+    await runtime(call.programs),
   );
 }
 
@@ -310,17 +346,23 @@ function programsCheck(name: string, job: InstalledJob): DoctorCheck {
     : fail(id, problems.join("; "), fix);
 }
 
-/** The component's installed job, read back from the scheduler; null when none or unreadable. */
+/**
+ * The component's installed job, read back from the scheduler (null when none
+ * or unreadable), and whether any part of it is installed: a job that is
+ * present but unreadable is a broken installation, not an absent one.
+ */
 async function installedJob(
   component: Component,
-): Promise<InstalledJob | null> {
+): Promise<{ job: InstalledJob | null; present: boolean }> {
   try {
-    return readInstalledJob(
-      await snapshotScheduler(detectScheduler(), component.job()),
+    const snapshot = await snapshotScheduler(
+      detectScheduler(),
+      component.job(),
     );
+    return { job: readInstalledJob(snapshot), present: jobPresent(snapshot) };
   } catch (error) {
     swallow(error, "the status check reports a scheduler that cannot be read");
-    return null;
+    return { job: null, present: false };
   }
 }
 
@@ -347,6 +389,7 @@ async function jobChecks(
   component: Component,
   status: ComponentStatus,
   job: InstalledJob | null,
+  present: boolean,
   runtime: Runtime,
 ): Promise<DoctorCheck[]> {
   const { name } = component;
@@ -356,6 +399,14 @@ async function jobChecks(
         `${name}:launcher`,
         status.error,
         `fix what it names so the scheduler can be read, or jig install ${name} --yes`,
+      ),
+    ];
+  if (!status.installed && present)
+    return [
+      fail(
+        `${name}:launcher`,
+        "the job is only partly installed: part of it is in the scheduler, but the scheduler does not report it installed",
+        `jig install ${name} --yes`,
       ),
     ];
   if (!status.installed)
@@ -397,11 +448,11 @@ async function componentChecks(
   component: Component,
   runtime: Runtime,
 ): Promise<DoctorCheck[]> {
-  const job = await installedJob(component);
+  const { job, present } = await installedJob(component);
   const status = await component.status();
   return [
     ...(await ownChecks(component, job)),
-    ...(await jobChecks(component, status, job, runtime)),
+    ...(await jobChecks(component, status, job, present, runtime)),
     lastRunCheck(component.name, status.lastRun),
   ];
 }
@@ -474,6 +525,8 @@ async function configFitCheck(pluginRoot: string): Promise<DoctorCheck> {
   );
   let fit: FitReport;
   try {
+    if (result.timedOut || result.spawnFailed || result.code !== 0)
+      throw new Error("the check did not complete");
     fit = decodeJson(
       result.stdout,
       isFitReport,
