@@ -583,9 +583,15 @@ notifications it sent (a refusal repeated tick after tick is listed once),
 and, for a repository that turns
 [dispatch labels](../../CONFIGURATION.md#dispatch) on, how many pull
 requests its latest run projected each label for (the labels it wanted,
-not read back after its writes).
-`--json` prints the same as data, the dispatcher's part under `dispatch`
-and the label counts under `dispatchLabels`.
+not read back after its writes). It also lists the workspaces the
+dispatcher launched into, found by the dispatched mark on their launch
+records rather than by their names and listed by the night the launch was
+recorded, each with the name it carries now, whether its comment still
+carries the mark, and how its launch went when it did not start, so a
+workspace a session renamed is still there.
+`--json` prints the same as data, the dispatcher's part under `dispatch`,
+the label counts under `dispatchLabels` and the workspaces under
+`dispatchedWorkspaces`.
 
 Where your repository has a pre-merge follow-up step, have its list include
 the pull request's provisional decisions, so the person merging reads each
@@ -638,6 +644,18 @@ it drove, before the merge-ready announcement: `bun "<skill-dir>/scripts/workspa
 reads the workspace's linked pull request and sets it only when it is missing or
 names another one. Run it only in the worktree that drove the pull request. Outside Orca
 it does nothing, and an Orca failure only warns (exit `0`).
+
+The drive also keeps the workspace's card on Orca's board true. When it marks
+the pull request Ready, the card moves to In review with the pull request
+linked. When it stops on something you must look at (a park, a usage-limit
+stop, or a failure stop such as a failed reviewer check, a stall or a spent
+round budget), the card is marked unread with the stop's one-line reason as
+its comment, a park's question first, so Orca Mobile shows what is waiting.
+While the card is still unread, the reason is appended to its comment rather
+than replacing what a person has not read yet.
+Convergence adds no stop update, though the Ready transition can still move the card; [`orca.board`](../../CONFIGURATION.md#orca)
+maps the stages onto custom columns. Outside Orca nothing is called, and an
+Orca failure only warns.
 
 ## What it will never do
 

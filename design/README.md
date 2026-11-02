@@ -67,6 +67,7 @@ with the review.
 | [Routing work to an agent, a model and an effort](agent-routing.md) | 31 |
 | [Driving any pull request from anywhere, with autonomy that fits the hour](dark-factory-driving.md) | 32 |
 | [The dispatcher, a tick that starts the execution line's stages](dark-factory-dispatch.md) | 33 |
+| [Jig in the Orca ecosystem](orca-integration.md) | 34 |
 
 ## Starting a design
 

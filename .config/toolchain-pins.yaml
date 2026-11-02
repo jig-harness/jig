@@ -17,3 +17,5 @@ tools:
       - files: plugin/skills/changelog/action.yml
         step: oven-sh/setup-bun
         with: bun-version
+      # `jig doctor` fails a Bun older than the one Jig tests.
+      - { files: plugin/runtime/doctor.ts, pattern: '^const TESTED_BUN = "(.+)";$' }

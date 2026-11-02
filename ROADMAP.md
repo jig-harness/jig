@@ -242,6 +242,20 @@ join it to the outcome, and a person's choice always able to override it.
 Until then, the workspace launcher's Orca provider hands the agent's start
 to the person; its Herdr provider starts the configured agent.
 
+### 34. Jig in the Orca ecosystem
+
+[Orca](https://www.onorca.dev) is one of the workspace runtimes Jig's
+tooling supports, beside Herdr, the runtime it targets first. On an Orca
+host every stage of the execution line will keep the workspace board true
+(a parked drive's card unread with the question as its comment, a merged
+item's card completed), `jig gc` will collect an Orca-managed worktree
+through Orca so its card and terminals go with it, the dispatcher will read
+each account's usage from Orca's command line once Orca offers it, and a
+small plugin Orca loads will run a dispatcher tick the moment an agent
+stops or waits. Collection goes through the worktrees kind's runtime
+column, which another runtime joins; the board helper and the plugin are
+Orca-bound.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** A reusable reconciler for
@@ -278,9 +292,7 @@ to the person; its Herdr provider starts the configured agent.
   on the server rather than on the launching machine, so two machines never
   start it twice; reflection findings parked on a server's host before a
   removal, which today refuses while unsent ones are there; hooks on a
-  server's host supervised as they are on a machine; the review and merge
-  stages shown on Orca's workspace board, beside the pickup and pull
-  request stages it shows today; the drive, pickup and
+  server's host supervised as they are on a machine; the drive, pickup and
   review skills checked inside Orca worktrees on a server, as item 19 does
   for Herdr; and the tool and the launcher's Orca provider on Windows, where
   the tool's host steps (`sh`, `test`, `mkdir`) need the host's own shell

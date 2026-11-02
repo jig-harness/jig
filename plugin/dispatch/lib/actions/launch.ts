@@ -28,12 +28,15 @@ import {
   OPENS_PER_TICK,
   tickDeadlineMs,
 } from "../machine-config.ts";
-import type {
-  ItemTarget,
-  LaunchStage,
-  NoticesTarget,
-  RuntimeReceipt,
-  SessionRuntime,
+import {
+  dispatchedMark,
+  type ItemTarget,
+  type LaunchStage,
+  type NoticesTarget,
+  type PullRequestTarget,
+  type RuntimeReceipt,
+  type SessionRuntime,
+  tabTitle,
 } from "../runtime/port.ts";
 import { PICKUP_SKILL } from "../session.ts";
 import { failureText } from "../text.ts";
@@ -153,7 +156,7 @@ export type Opened =
 export async function openWithinBudget(
   state: ApplyState,
   repo: RepoTarget,
-  target: ItemTarget | { pr: number; head: string } | NoticesTarget,
+  target: ItemTarget | PullRequestTarget | NoticesTarget,
 ): Promise<Opened> {
   const late = outOfTime(state);
   if (late !== null) return { waits: late };
@@ -192,12 +195,28 @@ function attemptOf(receipt: RuntimeReceipt): LaunchAttempt {
   };
 }
 
+/** What the dispatcher's names call a record's target: the item's key, else `#<pr>`. */
+function nameKey(record: Pick<LaunchRecord, "item" | "pr">): string {
+  return record.item ?? `#${String(record.pr)}`;
+}
+
+/** The mark a record carries: the one it was written with, else the convention's for it. */
+function markOf(record: LaunchRecord): string {
+  return (
+    record.mark ?? dispatchedMark(record.action, nameKey(record), record.id)
+  );
+}
+
 /** What the runtime starts for a record: a drive's headless pass, or a pickup's or a follow-up's interactive session. */
 function stageOf(record: LaunchRecord): LaunchStage {
+  const named = {
+    title: tabTitle(record.action, nameKey(record)),
+    mark: markOf(record),
+  };
   if (record.action === "pickup")
     return {
       kind: "interactive",
-      title: `do-item ${record.item}`,
+      ...named,
       record: record.id,
       skill: PICKUP_SKILL,
       target: record.item as string,
@@ -207,18 +226,14 @@ function stageOf(record: LaunchRecord): LaunchStage {
   if (record.action === "followup")
     return {
       kind: "interactive",
-      title: `follow-up #${record.pr}`,
+      ...named,
       record: record.id,
       skill: record.command ?? "",
       target: String(record.pr),
       model: record.model,
       effort: record.effort,
     };
-  return {
-    kind: "headless",
-    title: `drive #${record.pr}`,
-    record: record.id,
-  };
+  return { kind: "headless", ...named, record: record.id };
 }
 
 /** Call the runtime's `launch` under the record's token, and keep its answer (and agent id) on the record. */
@@ -227,6 +242,8 @@ async function callLaunch(
   record: LaunchRecord,
 ): Promise<LaunchAttempt> {
   const workspace = record.workspace as { id: string; path: string };
+  // A record an older plugin wrote has no mark; the launch marks its workspace, so the record keeps the same one.
+  record.mark = markOf(record);
   let receipt: RuntimeReceipt;
   try {
     receipt = await state.runtime.launch(
@@ -340,7 +357,7 @@ function refused(
 }
 
 /** The workspace a launch runs in, or the outcome that ends it: a budget that waits, an open that failed. */
-export function workspaceOr(
+function workspaceOr(
   action: Action,
   opened: Opened,
   account: string,
@@ -350,6 +367,25 @@ export function workspaceOr(
   if ("refused" in opened)
     return { outcome: refused(action, opened.refused, account) };
   return opened;
+}
+
+/**
+ * The workspace a launch runs in once `opening` settles, with the admitted
+ * account checked again after it, since an open can outlast the account's
+ * wall or login; or the outcome that ends the launch.
+ */
+export async function openedFor(
+  state: ApplyState,
+  action: Action,
+  slots: Slots,
+  opening: Promise<Opened>,
+): Promise<
+  { workspace: { id: string; path: string } } | { outcome: LaunchOutcome }
+> {
+  const opened = workspaceOr(action, await opening, slots.account.name);
+  if ("outcome" in opened) return opened;
+  const stale = await changedWhileOpening(state, action, slots);
+  return stale === null ? opened : { outcome: stale };
 }
 
 /** Whether a pending record's launch can still be replayed: it has a workspace, its last attempt got no answer and an attempt remains. */
@@ -484,7 +520,7 @@ export async function admitAccount(
 }
 
 /** Opening a workspace can outlast the wall or the login the account was admitted under. */
-export async function changedWhileOpening(
+async function changedWhileOpening(
   state: ApplyState,
   action: Action,
   slots: Slots,

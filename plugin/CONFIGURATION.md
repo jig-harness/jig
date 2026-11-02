@@ -522,6 +522,29 @@ shell must not expand; `--title <text>` is for a caller that starts the
 script without a shell. `--id` is left out for a pull request that serves no
 item.
 
+## `orca`
+
+How the skills show a piece of work on [Orca](https://www.onorca.dev)'s
+workspace board, where the session runs in a terminal Orca opened. Each stage
+of the execution line moves the worktree's card: `do-item` to the
+`in_progress` stage at pickup and to `in_review` when it opens the pull
+request, and `drive-pr` to `in_review` when it marks the pull request Ready;
+`completed` is the stage a post-merge step moves it to. A drive that stops where a
+person must look (a park, a usage-limit stop, a failure stop) marks the card
+unread with the stop's one-line reason as its comment, and moves no column.
+A comment never replaces one a person has not read: while the card is
+unread, the new line is appended to its comment, which Jig's dispatcher
+notifications do too, under one lock per card.
+Outside Orca nothing is read or called, and an Orca failure only warns.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `orca.board` | map from a stage (`in_progress`, `in_review`, `completed`) to a board status id | Orca's own columns, `{in_progress: in-progress, in_review: in-review, completed: completed}` | do-item, drive-pr | The column each stage moves the card to, for a board with custom columns. An entry overrides one stage and keeps the rest; a stage outside this set, or a value that is not a status id (letters, digits, `-` and `_`), only warns and moves nothing |
+
+From the repository root, `bun "<plugin>/shared/orca-board.ts" [in-progress|in-review|completed] [--pr <number>] [--unread] [--comment <text>]`
+moves the card by hand, `<plugin>` being the installed plugin's directory.
+The stage is written with a hyphen there, as Orca's default column is named.
+
 ## `work_batch`
 
 How `work-batch` sizes and ranks a batch of small issues for one pull
@@ -899,6 +922,8 @@ These are set per machine or per run, not committed:
 | `JIG_GH_CACHE_DIR` | Where cached GitHub answers are kept; default `~/.cache/jig/gh-cache` |
 | `JIG_GH_CACHE` | `off` disables that cache |
 | `GH_CALL_TIMEOUT` | Seconds one `gh` call may take; default 30 |
+| `JIG_MARKETPLACE` | The marketplace `jig upgrade` (and `tools/plugin/setup.ts`) installs the plugin from in an agent tool that lacks it, instead of Jig's repository; a tool registered from another source is then refused |
+| `JIG_SETUP_TIMEOUT_SECONDS` | Seconds one agent-tool command run by `jig upgrade` or `jig doctor` (and `tools/plugin/setup.ts`) may take before it is stopped; default 300 |
 | `JIG_LOG` | How much the scripts' diagnostics say on standard error: `error`, `warn` (the default), `info` or `debug`. At `debug` a failing script also prints the stack of the failure and its causes, with the last 4,096 bytes of a failed command's error output where the failure carries it (`resolve-review-comments`' `gh` calls), and an error dropped on purpose is printed with the reason |
 | `JIG_LOG_FORMAT` | `text` (the default) writes `<script>: <message>`; `json` writes one JSON object per line with the time, level, script, message and fields |
 | `JIG_TRACE` | `1` enables [trace spans](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) for drive passes, waits and commands; files are written under `~/.local/state/jig/traces/<date>/` and `reap-state.ts` reaps trace days older than 14 days |
@@ -975,6 +1000,8 @@ the installed plugin copy, outside a Git checkout.
 
 The job records Bun's executable, the installed command's path, `HOME`,
 `PATH`, `JIG_HOME`, and any explicit `TMPDIR`, `LOCK_ROOT` or `LOCK_NAME`.
+`jig upgrade` keeps what the job records when it rewrites it for a new
+release; `jig install gc --yes` records them afresh.
 Collection uses the same machine-wide heavy-run lock as gate runs. Scheduled
 and child Bun invocations use the plugin's trusted configuration and disable
 checkout environment files and preloads.
@@ -1304,6 +1331,8 @@ do_item:
 workspace_name:
   template: "{status} {id} {title}"   # [D] JIG-12 Rename workspaces
   statuses: { ready: "[R]", done: "✅" }
+orca:
+  board: { in_review: review, completed: shipped }   # custom board columns
 work_batch:
   point_budget: 16
   size_points: { xs: 1, small: 2, medium: 6 }   # keys: exactly issue_tracker.labels.batch_sizes

@@ -289,3 +289,9 @@ requirements and rollout limits.
 The command chooses collection on machine `gc.collect_day` or under
 `gc.min_free_bytes` pressure; other daily runs report. Removing one repository
 keeps the job while another repository or machine-level kind remains.
+
+Worktree collection through a workspace runtime: Orca is the runtime
+supported so far. It applies on a machine whose `gc.orca.command` names Orca;
+the runtime's agent registry stands in for the opener's lock, an agent that has
+not finished or an unreadable registry keeps the worktree, and the removal goes
+through Orca. See [the Orca binding](../../plugin/gc/README.md#worktrees-orca-manages).

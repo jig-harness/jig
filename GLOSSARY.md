@@ -1553,11 +1553,13 @@ make, use the entry's term instead.
   unlike Jig's practice modules, which are documented practices.
 - **Lifecycle verb (of the `jig` command)** — a command that acts the same
   way on every *component* of the `jig` command, rather than doing one
-  component's own work: `jig install`, `jig uninstall`, `jig status`,
-  `jig receipts` and `jig run`. With no component named, it acts on all of
-  them, except that `jig install` and `jig run` leave out a component whose
-  opt-in is missing, and `jig receipts` always names one component; each
-  component's own work stays under its name (`jig gc --collect`).
+  component's own work: `jig install`, `jig uninstall`, `jig upgrade`,
+  `jig doctor`, `jig status`, `jig receipts` and `jig run`. With no
+  component named, it acts on all of them, except that `jig install` and
+  `jig run` leave out a component whose opt-in is missing, `jig receipts`
+  always names one component, and `jig upgrade` names none: it updates the
+  plugin itself, then refreshes every installed job. Each component's own
+  work stays under its name (`jig gc --collect`).
 - **Type guard** — a function that checks at run time that a value has a
   given shape, and tells the type checker so when it does. Data read from
   outside the program (JSON, a configuration file) is checked by one before
@@ -1849,6 +1851,14 @@ make, use the entry's term instead.
   pull request or item has no workspace that can take one. It never
   launches an agent into it; it only writes its comment and marks it
   unread for a person to read.
+- **Dispatched mark** — the line that says the *dispatcher* started a
+  session in a workspace: a short mark, the stage, the key and the *launch
+  record*'s id (`⚙ dispatched · rearm #456 · launch <id>`). It is kept in
+  the workspace's comment and on the launch record, and a workspace the
+  dispatcher creates is named by its first part (`⚙ dispatched · rearm
+  #456`). A session may rename the workspace to what the work became; the
+  mark outlives the name, so the morning report still lists the workspace
+  as dispatched.
 - **Dispatch labels** — the pull-request labels through which the
   *dispatcher* and a person see and steer each other, off unless a
   repository turns them on, all under one prefix the repository picks

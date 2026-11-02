@@ -259,6 +259,12 @@ function startRef(
 export interface CreateOptions {
   /** What a new branch is cut from; the clone's `origin/HEAD` when absent. */
   base?: string;
+  /**
+   * The name Orca shows for a new worktree, which Orca also makes its
+   * folder's name from; the branch's when absent. The branch is given its
+   * own name after the create whatever this is.
+   */
+  name?: string;
   /** A comment kept in Orca's metadata for the worktree. */
   comment?: string;
   /** More arguments for `orca worktree create`, after the comment (`--activate`, say). */
@@ -278,7 +284,7 @@ function createArgs(
     "--repo",
     `id:${repo.id}`,
     "--name",
-    branch,
+    options.name ?? branch,
     "--base-branch",
     from,
     "--no-parent",

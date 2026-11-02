@@ -5,10 +5,12 @@
  * its terminal state and what it means, its takeovers and re-arms, its
  * parked decisions in their framed form, the issues filed and the deferred
  * entries not yet filed; then what the dispatcher launched, refused and
- * notified on this machine, and how many pull requests its latest run projected each
+ * notified on this machine, the workspaces it launched into with the name
+ * each carries now, and how many pull requests its latest run projected each
  * dispatch label for. `--json` prints the gathered report instead.
  */
 import { join } from "node:path";
+import type { DispatchedWorkspace } from "../../../../dispatch/lib/dispatched.ts";
 import { framedDecisionLines } from "./state/park-frame.ts";
 import type {
   MorningReport,
@@ -93,6 +95,16 @@ function pullRequestLines(p: ReportPullRequest): string[] {
   return lines;
 }
 
+/** One dispatched workspace: its mark, the name it carries now and whether its comment still carries the mark, and how its launch went when it did not start. */
+function dispatchedLine(d: DispatchedWorkspace): string {
+  const now =
+    d.name === null
+      ? `name unknown: ${d.note ?? "not read"}`
+      : `now named "${d.name}"${d.marked ? "" : ", its comment no longer carries the mark"}`;
+  const launch = d.launch === "started" ? "" : `; launch ${d.launch}`;
+  return `  ${d.at} ${d.repo} ${d.mark}: ${now}${d.path === null ? "" : ` (${d.path})`}${launch}`;
+}
+
 export function renderMorningReport(r: MorningReport): string {
   const provisional = r.pullRequests.flatMap((p) =>
     p.provisional.map((d) => provisionalLine(p.number, d)),
@@ -116,6 +128,12 @@ export function renderMorningReport(r: MorningReport): string {
         (d) =>
           `  ${d.at} ${d.repo} ${d.kind} ${d.what} ${d.target}: ${d.detail}`,
       ),
+    );
+  if (r.dispatchedWorkspaces.length > 0)
+    lines.push(
+      "",
+      "Dispatched workspaces (found by the mark on their launch records; the name each carries now):",
+      ...r.dispatchedWorkspaces.map(dispatchedLine),
     );
   if (r.dispatchLabels.length > 0)
     lines.push(

@@ -3,10 +3,10 @@
  * with a resource-collection declaration and a remote, an installed copy of
  * the plugin outside every checkout, and fakes on `PATH` for the platform
  * schedulers (`systemctl`, `crontab`, `launchctl`, which keep their jobs'
- * state in files) and the agent tools (`claude` names the plugin copy a file
- * holds, so a test can move it as a plugin update does). Every command runs
- * as a child with that home, so no test reaches the real scheduler, the real
- * `~/.local/bin` or the real machine files.
+ * state in files) and the agent tools (`agent-fakes.ts`: `claude` names the
+ * plugin copy it has installed, so a test can move it as a plugin update
+ * does). Every command runs as a child with that home, so no test reaches
+ * the real scheduler, the real `~/.local/bin` or the real machine files.
  */
 import {
   cpSync,
@@ -23,6 +23,7 @@ import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../lib/test-helpers/fake-program.ts";
 import { gitEnvironment } from "../gc/git.ts";
 import { dump } from "../shared/yaml.ts";
+import { type AgentState, writeAgentFakes } from "./agent-fakes.ts";
 
 /** The schedulers a machine of this platform can have: both of Linux's, or macOS's. */
 export const SCHEDULERS =
@@ -85,12 +86,20 @@ export interface Machine {
   variant: Variant;
   /** Where the fakes keep the schedulers' state. */
   state: string;
-  /** Runs `<plugin>/jig.ts <args>` from the repository, as an installed copy runs. */
-  jig(args: string[]): Run;
+  /** Runs `<plugin>/jig.ts <args>` from the repository, as an installed copy runs; `env` adds to the machine's. */
+  jig(args: string[], env?: NodeJS.ProcessEnv): Run;
   /** Points the `claude` fake at another plugin copy, as a plugin update does. */
   movePlugin(directory: string): void;
+  /** What the channel offers next: the release an upgrade takes each agent tool to. */
+  release(version: string, path: string): void;
+  /** What each agent tool fake has installed. */
+  agents(): AgentState;
+  /** Each agent tool command run so far, as `<tool> <arguments>`. */
+  agentCalls(): string[];
   /** Whether the scheduler holds the job named `name` (`jig-gc`, `jig-dispatch`). */
   hasJob(name: string): boolean;
+  /** The text that holds the job's command: its systemd service, its launchd job or its crontab line. */
+  jobText(name: string): string;
   /** Writes the dispatcher's machine file, the opt-in its install needs. */
   writeDispatchFile(): void;
 }
@@ -159,21 +168,13 @@ export function machine(variant: Variant): Machine {
     recursive: true,
     filter: (source) => !source.includes("__tests__"),
   });
-  const pluginPath = join(root, "plugin-path");
-  writeFileSync(pluginPath, plugin);
-  writeFakeProgram(
-    join(bin, "claude"),
-    `#!/usr/bin/env bun
-const installPath = require("node:fs").readFileSync(${JSON.stringify(pluginPath)}, "utf8");
-console.log(JSON.stringify([{ id: "jig@jig", scope: "user", installPath }]));
-`,
-  );
-  writeFakeProgram(
-    join(bin, "codex"),
-    `#!/usr/bin/env bun
-console.log(JSON.stringify({ installed: [] }));
-`,
-  );
+  const agents = writeAgentFakes({
+    bin,
+    home,
+    state: join(root, "agents.json"),
+    log: join(root, "agents.log"),
+    installed: { version: "0.2.0", path: plugin },
+  });
   for (const name of ["systemctl", "crontab", "launchctl"])
     writeFakeProgram(join(bin, name), schedulerFake(name, state, units));
   const jobFile = (name: string) =>
@@ -193,7 +194,7 @@ console.log(JSON.stringify({ installed: [] }));
     env,
     variant,
     state,
-    jig: (args) =>
+    jig: (args, extra = {}) =>
       Bun.spawnSync(
         [
           process.execPath,
@@ -202,14 +203,40 @@ console.log(JSON.stringify({ installed: [] }));
           join(plugin, "jig.ts"),
           ...args,
         ],
-        { cwd: repo, env, stdout: "pipe", stderr: "pipe", timeout: 60000 },
+        {
+          cwd: repo,
+          env: { ...env, ...extra },
+          stdout: "pipe",
+          stderr: "pipe",
+          timeout: 60000,
+        },
       ),
-    movePlugin: (directory) => writeFileSync(pluginPath, directory),
+    movePlugin: (directory) =>
+      agents.update((state) => {
+        state.claude.path = directory;
+      }),
+    release: (version, path) =>
+      agents.update((state) => {
+        state.newest = { version, path };
+      }),
+    agents: agents.read,
+    agentCalls: agents.calls,
     hasJob: (name) =>
       variant === "cron"
         ? existsSync(join(state, "crontab")) &&
           readFileSync(join(state, "crontab"), "utf8").includes(`# ${name}\n`)
         : existsSync(jobFile(name)),
+    jobText: (name) =>
+      variant === "cron"
+        ? (readFileSync(join(state, "crontab"), "utf8")
+            .split("\n")
+            .find((line) => line.endsWith(`# ${name}`)) ?? "")
+        : readFileSync(
+            variant === "systemd"
+              ? join(units, `${name}.service`)
+              : jobFile(name),
+            "utf8",
+          ),
     writeDispatchFile: () => {
       const config = join(root, "config-a");
       mkdirSync(config, { recursive: true });

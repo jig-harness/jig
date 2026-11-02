@@ -155,8 +155,11 @@ Built in this order:
 3. **`doctor` and `upgrade`**: `tools/plugin/setup.ts`'s install, update
    and check move into the plugin as `jig upgrade` and `jig doctor`, moved
    and not copied: `tools/plugin/setup.ts` keeps only a call into the
-   plugin's code, so a first install from a checkout still works. `doctor`
-   also runs the audit's configuration-fit check.
+   plugin's code, so a first install from a checkout still works. After
+   the plugin, `jig upgrade` has the newly installed copy refresh each
+   installed job's launcher copy and job, and the `jig` command, keeping
+   what each install recorded. `doctor` also runs the audit's
+   configuration-fit check, offline.
 4. **The timers keep the plugin current**: the launcher runs the installed
    copy's `jig upgrade --scheduled` before each job and resolves the entry
    again, so the job runs the copy the upgrade installed. The upgrade is on
@@ -469,7 +472,9 @@ per step:
   Coordinate tool-state creators with collection admission before enabling
   retirement; its legacy reaper lock excludes only other reapers.
   Validate its weekly job through the installed command before starting
-  the later kinds. Worktree collection stays disabled until this integration.
+  the later kinds. Worktree collection stays disabled until this
+  integration, except for a worktree Orca manages, which `jig gc` collects
+  through Orca.
 - **Containers, volumes and images**, keyed to the compose projects the
   worktrees derive, and the machine-level dangling images and build cache.
 - **Branches** merged as the forge records it (squash merges included) or
@@ -694,6 +699,42 @@ than an unflagged one with the `## Route` section saying why, a `route: yours` p
 delegates with nothing forwarded, and a loop-cost report shows the route
 beside the rounds.
 
+### 34. Jig in the Orca ecosystem
+
+Jig's tooling reaches [Orca](https://www.onorca.dev) in places built
+on their own (the workspace tool behind the launcher, `do-item`'s board
+updates and workspace names, the dispatcher's session runtime), and the
+rest of the execution line does not meet it: a parked drive leaves its
+card where it was, `jig gc` cannot collect an Orca-managed worktree
+without leaving Orca's card and terminals behind, the dispatcher cannot
+read an account's usage from Orca's command line, and Orca's plugin
+system has no Jig in it. [design/orca-integration.md](orca-integration.md)
+has how it works, in classes built in order: what Jig does on its
+own side (every stage moves the workspace card and marks a park unread;
+the worktrees kind collects an Orca-managed checkout through Orca, after
+the remove hook and the reflection park, with Orca's registry in the idle
+proof, once every launch path is covered by admission), what Jig asks of Orca (usage per account from the command line;
+a phone push only when an agent needs input; filed by a person, each
+with its pull request offered), and a worker-only plugin in its own
+repository that runs a `jig dispatch --apply` tick when an agent's status
+changes, with no panel until a panel can receive data. One pull request
+per step, in the design's order; the board step waits on `drive-pr`
+linking the card to its pull request, and the plugin on item 33's tick.
+
+Done when a parked drive's card shows unread with the question as its
+comment and `/followup` moves it to completed, `jig gc --collect` on an
+idle Orca checkout, once every launch path is covered by admission or
+Orca refuses a removal atomically, leaves no card in `orca worktree list
+--json`, the dispatcher's account cap reads `orca account usage --json`
+where Orca has it, and an agent in a Jig repository reaching `waiting`, `blocked` or `done`
+under the plugin has a tick pending from the moment the event arrives, while the plugin's worker lives (a restart loses the pending flag and the machine's timer tick then processes the repository):
+the first event after a minute of quiet starts it at once, an event during
+a running tick or the minute after a start waits for one trailing tick
+that starts once the running tick has finished and a minute has passed
+since the last start, and either stays pending while the machine-wide
+tick lock refuses it and survives an event that arrives while that tick
+processes the repository.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the
@@ -764,11 +805,8 @@ beside the rounds.
     whole process group. Supervise it there too, once what the host must
     provide is decided: `bun` for the shared supervisor, as the Herdr tool
     asks of its hosts, or a supervisor in the host's own shell;
-  - `do-item` shows pickup and the opened pull request on Orca's
-    workspace board (`plugin/skills/do-item/scripts/orca-board.ts`); the review and merge
-    stages are not shown yet (`drive-pr` converged, the merge's follow-up
-    moving the card to `completed`), and the tracker's GitHub issues could
-    be linked with `--issue`;
+  - the board card (`plugin/shared/orca-board.ts`) could link the
+    tracker's GitHub issue with `--issue`;
   - a worktree created in the Orca app gets Orca's branch name and Orca's
     own setup hook, not the repository's convention and create hook; say in
     M12's mappings how a repository's `orca.yaml` setup script and Orca's

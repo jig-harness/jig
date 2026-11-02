@@ -349,6 +349,59 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.126.0] - 2026-11-02
+
+### Added
+
+- The Orca workspace card follows the work through the execution line. When
+  `drive-pr` marks a pull request Ready, the card moves to In review with the
+  pull request linked. When a drive stops on something a person must settle
+  (a park, a usage-limit stop, or a failure stop such as a failed reviewer
+  check, a stall or a spent round budget), the card is marked unread with
+  the stop's one-line reason as its comment, a park's question first, so
+  Orca Mobile shows what is waiting. Outside Orca nothing is called, and an
+  Orca failure only warns
+  ([drive-pr](plugin/skills/drive-pr/README.md)).
+- A card's comment never replaces one a person has not read: while the card
+  is unread, a new comment from the board script or a dispatcher
+  notification is appended to it, the read and the write held under one
+  lock per card; a writer that cannot take the lock within a few seconds
+  warns and writes nothing.
+- `orca.board` in `.config/jig.yaml` maps the board stages (`in_progress`,
+  `in_review`, `completed`) onto a board's custom columns; a repository that
+  sets nothing keeps Orca's own columns
+  ([CONFIGURATION.md](plugin/CONFIGURATION.md#orca)).
+
+### Changed
+
+- The board script moved to the plugin's shared code,
+  `plugin/shared/orca-board.ts`, and gained `--unread` and `--comment`; with
+  either, the stage may be left out. It takes a stage (`in-progress`,
+  `in-review` or `completed`) rather than any column id, which `orca.board`
+  maps.
+
+## [0.125.0] - 2026-11-02
+
+### Added
+
+- `jig upgrade` updates the plugin in Claude Code and Codex, whichever is on `PATH`, to the newest release of the channel each follows, and installs it in one that lacks it (following `stable` unless `--channel latest` says otherwise). Then the newly installed copy refreshes what runs it: each installed job's launcher copy and its job (the systemd units, the launchd job or the crontab line), and the `jig` command's launcher copy and script, so a change to the launcher in a release reaches them. A job keeps the environment, schedule and programs its install recorded, nothing is written where nothing differs, and a job that was enabled or running stays so. Every command that changes state is printed before it runs; `--json` prints what became of each tool and job, and `--jobs-only` refreshes the jobs after a tool updated the plugin on its own. See [the plugin's README](plugin/README.md#the-jig-command).
+- `jig doctor` checks the machine and the repository it runs in, and names the command that fixes each failure: Bun's version against the one Jig tests, `claude` and `codex` resolving outside every git checkout, the plugin in each tool and the channel it follows, the `jig` command's and each job's launcher copy against the installed plugin's, the programs each job names, each component's machine file and last run, Orca for the dispatcher, and the audit's configuration fit of the repository, offline. It exits 1 when a check fails; `--json` prints every check.
+
+### Changed
+
+- `bun tools/plugin/setup.ts` runs the plugin's own install and update code and is for the first install from a checkout, before `jig` is on `PATH`; afterwards `jig upgrade` and `jig doctor` do its work and more. A tool that fails no longer stops the other: setup reports it, goes on to the next, and exits 1 instead of 2; arguments it cannot take still exit 2. On a machine that follows `main`, its advice names `jig upgrade`.
+
+## [0.124.0] - 2026-11-02
+
+### Added
+
+- The dispatcher names what it starts, so a dispatched workspace is told from a person's at a glance on the board. A workspace it creates is named for the stage and the key (`⚙ dispatched · pickup #123`, `⚙ dispatched · rearm #456`, `⚙ dispatched · followup #789`), and its comment carries the [dispatched mark](GLOSSARY.md), that name and the launch record's id; a workspace it reuses keeps its name and gets the mark added to its comment once. Each session's terminal tab reads `jig dispatch · <stage> <key>`, and the notices workspace is `⚙ dispatched · notices`. The launch record keeps the mark, and a notification that rewrites a comment keeps it, so a workspace a session renamed is still known as dispatched. The convention lives in the dispatcher's runtime interface (`dispatch/lib/runtime/port.ts`), one place every runtime takes its names from.
+- The morning report (`drives.ts --report`) lists the workspaces the dispatcher launched into since the report's time, found by the mark on their launch records, each with the name it carries now and whether its comment still carries the mark (`dispatchedWorkspaces` with `--json`).
+
+### Changed
+
+- A workspace the dispatcher creates takes its Orca name, and so its folder's name, from the dispatched name rather than from its branch; the branch is still the one the repository's branch rule names.
+
 ## [0.123.0] - 2026-11-02
 
 ### Added
@@ -1361,7 +1414,7 @@ A pull request can be driven from any working tree of its clone, from the clone'
   board when it runs in an Orca worktree: the card moves to In progress at
   pickup, and to In review with the pull request linked once the pull
   request opens. Outside Orca nothing changes and no Orca call is made
-  ([plugin/skills/do-item/scripts/orca-board.ts](plugin/skills/do-item/scripts/orca-board.ts)).
+  ([plugin/shared/orca-board.ts](plugin/shared/orca-board.ts)).
 
 ## [0.85.3] - 2026-10-26
 
@@ -4725,7 +4778,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.123.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.126.0...HEAD
+[0.126.0]: https://github.com/jig-harness/jig/compare/v0.125.0...v0.126.0
+[0.125.0]: https://github.com/jig-harness/jig/compare/v0.124.0...v0.125.0
+[0.124.0]: https://github.com/jig-harness/jig/compare/v0.123.0...v0.124.0
 [0.123.0]: https://github.com/jig-harness/jig/compare/v0.122.0...v0.123.0
 [0.122.0]: https://github.com/jig-harness/jig/compare/v0.121.0...v0.122.0
 [0.121.0]: https://github.com/jig-harness/jig/compare/v0.120.3...v0.121.0

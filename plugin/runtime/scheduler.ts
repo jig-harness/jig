@@ -131,7 +131,12 @@ function cronCommand(line: string): string {
     throw new GcError("Cron values cannot contain a backslash before %");
   return line.split("%").join("\\%");
 }
-async function execute(command: string[], stdin?: string): Promise<void> {
+async function execute(
+  command: string[],
+  stdin?: string,
+  announce?: (command: string[]) => void,
+): Promise<void> {
+  announce?.(command);
   const result = await run(command, {
     timeoutSec: 30,
     ...(stdin === undefined ? {} : { stdin }),
@@ -160,14 +165,14 @@ async function crontab(): Promise<string> {
  * Where the job's entry point lives. It is outside every plugin release, so
  * the job does not name one: the launcher finds the installed copy per run.
  */
-function launcherDirectory(spec: JobSpec): string {
+export function launcherDirectory(spec: JobSpec): string {
   return join(spec.stateRoot, "launcher");
 }
 /**
  * The agent tools the launcher may ask for the installed plugin copy, by the
  * absolute path found now: a program inside a checkout is never recorded.
  */
-function pluginPrograms(): { claude?: string; codex?: string } {
+export function pluginPrograms(): { claude?: string; codex?: string } {
   const programs: { claude?: string; codex?: string } = {};
   for (const name of ["claude", "codex"] as const) {
     const program = Bun.which(name);
@@ -206,6 +211,20 @@ export function installLauncher(directory: string): void {
     for (const file of staged) rmSync(file.temporary, { force: true });
   }
 }
+/**
+ * The launcher files in `directory` that differ from this copy's (`source`),
+ * a missing one included: what `installLauncher` would replace.
+ */
+export function staleLauncherFiles(
+  directory: string,
+  source: string = import.meta.dir,
+): string[] {
+  return LAUNCHER_FILES.filter(
+    (name) =>
+      readOptional(join(directory, name)) !==
+      readFileSync(join(source, name), "utf8"),
+  );
+}
 /** A `LOCK_TIMEOUT` the heavy-run lock accepts, refused at install otherwise. */
 function lockTimeout(value: string): string {
   if (!/^[0-9]+$/.test(value) || Number(value) > MAX_TIMEOUT_SECONDS)
@@ -226,15 +245,20 @@ function specEnvironment(spec: JobSpec): Record<string, string> {
 /**
  * The command that runs the launcher installed in `directory`, up to the
  * `--` after which the installed `jig.ts` arguments follow: Bun and the agent
- * tools by the absolute paths found now.
+ * tools by their absolute paths, the ones found now unless given (a refresh
+ * keeps the ones a job recorded).
  */
-export function launcherCommand(directory: string): string[] {
+export function launcherCommand(
+  directory: string,
+  programs: { claude?: string; codex?: string } = pluginPrograms(),
+  bun: string = realpathSync(process.execPath),
+): string[] {
   return [
-    realpathSync(process.execPath),
+    bun,
     "--no-env-file",
     `--config=${join(directory, "bunfig.toml")}`,
     join(directory, "launcher.ts"),
-    ...Object.entries(pluginPrograms()).map(
+    ...Object.entries(programs).map(
       ([name, program]) => `--${name}=${program}`,
     ),
     "--",
@@ -286,6 +310,7 @@ async function updateCron(
   files: Record<string, string>,
   remove: boolean,
   spec: JobSpec,
+  announce?: (command: string[]) => void,
 ): Promise<string> {
   const previous = await crontab();
   const retained = previous
@@ -295,6 +320,7 @@ async function updateCron(
   await execute(
     ["crontab", "-"],
     `${retained}${retained ? "\n" : ""}${remove ? "" : files.crontab}`,
+    announce,
   );
   return `crontab: ${spec.name}`;
 }
@@ -384,25 +410,53 @@ export interface SchedulerSnapshot {
   enabled: boolean;
   active: boolean;
 }
-function launcherSnapshot(spec: JobSpec): Record<string, string | null> {
+/** The launcher files in `directory` as they are now, `null` for one that is missing. */
+export function launcherSnapshotIn(
+  directory: string,
+): Record<string, string | null> {
   return Object.fromEntries(
     LAUNCHER_FILES.map((name) => {
-      const path = join(launcherDirectory(spec), name);
+      const path = join(directory, name);
       return [path, readOptional(path)];
     }),
   );
 }
+function launcherSnapshot(spec: JobSpec): Record<string, string | null> {
+  return launcherSnapshotIn(launcherDirectory(spec));
+}
+/**
+ * Runs `write`, which replaces the launcher files in `directory`; a failure
+ * puts back `previous` (what `launcherSnapshotIn` saw before) and says so.
+ */
+export function guardLauncher(
+  directory: string,
+  previous: Record<string, string | null>,
+  write: () => void,
+): void {
+  try {
+    write();
+  } catch (error) {
+    try {
+      restoreLauncher(previous, directory);
+    } catch (restoring) {
+      throw new GcError(
+        `${(error as Error).message}; the previous launcher copy was not restored: ${(restoring as Error).message}`,
+      );
+    }
+    throw error;
+  }
+}
 /** Puts back the launcher files the snapshot saw, each staged then renamed. */
 function restoreLauncher(
   launcher: Record<string, string | null>,
-  spec: JobSpec,
+  directory: string,
 ): void {
   const entries = Object.entries(launcher);
   if (entries.every(([, text]) => text === null)) {
-    rmSync(launcherDirectory(spec), { recursive: true, force: true });
+    rmSync(directory, { recursive: true, force: true });
     return;
   }
-  mkdirSync(launcherDirectory(spec), { recursive: true, mode: 0o700 });
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
   const temporary = (path: string) => `${path}.${process.pid}.tmp`;
   try {
     for (const [path, text] of entries)
@@ -614,7 +668,7 @@ export async function restoreScheduler(
   snapshot: SchedulerSnapshot,
 ): Promise<void> {
   // In place before the restored job can start and run it.
-  restoreLauncher(snapshot.launcher, snapshot.spec);
+  restoreLauncher(snapshot.launcher, launcherDirectory(snapshot.spec));
   if (snapshot.scheduler === "cron") {
     await execute(["crontab", "-"], snapshot.files.crontab ?? "");
     return;
@@ -624,6 +678,82 @@ export async function restoreScheduler(
     if (text === null) rmSync(path, { force: true });
     else writeFileSync(path, text, { mode: 0o600 });
   await startPrevious(snapshot);
+}
+/** Whether `files` (from `jobFiles`) differ from the job the snapshot saw. */
+export function jobChanged(
+  snapshot: SchedulerSnapshot,
+  files: Record<string, string>,
+): boolean {
+  if (snapshot.scheduler === "cron") {
+    const marker = ` ${cronMarker(snapshot.spec)}`;
+    const line = (snapshot.files.crontab ?? "")
+      .split("\n")
+      .find((entry) => entry.endsWith(marker));
+    return `${line}\n` !== files.crontab;
+  }
+  const dir = jobDirectory(snapshot.scheduler);
+  return Object.entries(files).some(
+    ([name, text]) => snapshot.files[join(dir, name)] !== text,
+  );
+}
+/**
+ * Writes `files` in place of the installed job the snapshot saw, leaving
+ * whether it is enabled and running as it was: a refresh changes what the
+ * job runs, never whether it runs. A launchd job that is loaded is booted out
+ * and in again to read its new file. A failure puts the snapshot back, the
+ * launcher files included. `announce` sees each scheduler command first.
+ */
+export async function rewriteJob(
+  snapshot: SchedulerSnapshot,
+  files: Record<string, string>,
+  announce?: (command: string[]) => void,
+): Promise<void> {
+  const { scheduler, spec } = snapshot;
+  try {
+    if (scheduler === "cron") {
+      await updateCron(files, false, spec, announce);
+      return;
+    }
+    const dir = jobDirectory(scheduler);
+    if (scheduler === "systemd") {
+      for (const [name, text] of Object.entries(files))
+        writeFileSync(join(dir, name), text, { mode: 0o600 });
+      await execute(
+        ["systemctl", "--user", "daemon-reload"],
+        undefined,
+        announce,
+      );
+      return;
+    }
+    const path = join(dir, `${spec.label}.plist`);
+    const domain = `gui/${process.getuid?.()}`;
+    if (snapshot.active)
+      await execute(
+        ["launchctl", "bootout", `${domain}/${spec.label}`],
+        undefined,
+        announce,
+      );
+    writeFileSync(path, files[`${spec.label}.plist`] as string, {
+      mode: 0o600,
+    });
+    if (snapshot.active)
+      await execute(
+        ["launchctl", "bootstrap", domain, path],
+        undefined,
+        announce,
+      );
+  } catch (error) {
+    try {
+      await restoreScheduler(snapshot);
+    } catch (restoring) {
+      throw new GcError(
+        `${(error as Error).message}; previous scheduler job not restored: ${(restoring as Error).message}`,
+      );
+    }
+    throw new GcError(
+      `${(error as Error).message}; the previous scheduler job is restored`,
+    );
+  }
 }
 /** The concrete job `spec` names, as a confirmed install would write it. */
 export function jobPreview(spec: JobSpec, remove: boolean): string {

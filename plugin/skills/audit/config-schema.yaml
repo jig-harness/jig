@@ -77,6 +77,7 @@ strict:
   - work_batch.ranking
   - workspace_name
   - workspace_name.statuses
+  - orca.board
   - routing
   - routing.raise
   - verify
@@ -645,6 +646,13 @@ fields:
     keys: [implementing, driving, ready, done]
     read_by: [do-item, drive-pr]
     since: 0.104.0
+
+  orca.board:
+    type: map
+    keys: [in_progress, in_review, completed]
+    values_type: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]*$" }
+    read_by: [do-item, drive-pr]
+    since: 0.126.0
 
   work_batch.point_budget:
     type: integer
