@@ -1,7 +1,8 @@
 // Scope: Jig's own lifecycle map (docs/LIFECYCLE.md), through M6's lifecycle
 // map gate (modules/M6-feature-delivery-pipeline/reference/lifecycle-map):
 // every owner a stage names resolves to a plugin skill, one of Jig's own
-// skills (.claude/skills), a package script, a file or a document; every
+// skills (.claude/skills), a package script, a file, a document or the
+// plugin's `jig` command, which `jig install` puts on PATH; every
 // plugin skill appears in the map; AGENTS.md links the map; and every
 // Markdown document that names a `/jig:` skill names one that exists. The
 // documents that record the past (the changelog, change notes, calibration
@@ -17,6 +18,17 @@ import { runMap } from "../modules/M6-feature-delivery-pipeline/reference/lifecy
 const MAP = "docs/LIFECYCLE.md";
 const HISTORY = ["CHANGELOG.md", "changes", "calibration"];
 const PLANS = ["design/", "ROADMAP.md"];
+
+/** The command lines `jig` registers (`plugin/jig.ts`, `plugin/runtime/verbs.ts`). */
+const JIG_COMMANDS = [
+  "jig gc",
+  "jig dispatch",
+  "jig install",
+  "jig uninstall",
+  "jig status",
+  "jig receipts",
+  "jig run",
+];
 
 export function checkLifecycleMap(root = "."): number {
   const scan = markdownFiles(root, [
@@ -37,7 +49,7 @@ export function checkLifecycleMap(root = "."): number {
         { namespace: "jig", dir: join(root, "plugin/skills") },
         { namespace: "", dir: join(root, ".claude/skills") },
       ],
-      external: [],
+      external: JIG_COMMANDS,
       cover: [join(root, "plugin/skills"), join(root, ".claude/skills")],
       scan,
       linkedFrom: join(root, "AGENTS.md"),
