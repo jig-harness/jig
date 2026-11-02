@@ -53,9 +53,12 @@ resource collection (`jig gc`) and the dispatcher (`jig dispatch`) as its
 `doctor`, `status` and `receipts`. `jig doctor` checks the plugin's
 installation and runs the audit's check that a repository's configuration
 fits it, and `jig upgrade` replaces the setup script a machine runs from a
-Jig checkout. Help for every command and shell completion come from the
-same definitions that parse the command line, and the jobs a machine
-already installed keep running unchanged.
+Jig checkout. The installed timers run that upgrade themselves, at most
+once an hour and on by default, so a machine that runs the dispatcher stays
+on its channel's newest version with nobody at the keyboard; a pinned
+machine receives nothing. Help for every command and shell completion come
+from the same definitions that parse the command line, and the jobs a
+machine already installed keep running unchanged.
 
 ### 3. The kickoff family
 
