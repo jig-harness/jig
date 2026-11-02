@@ -85,6 +85,11 @@ export function orcaCalls(w: World, ...verb: string[]): string[][] {
     .filter((args) => verb.every((v, i) => args[i] === v));
 }
 
+/** The comment writes that notified a person: those that marked the workspace unread, not a launch's mark. */
+export function notifyWrites(w: World): string[][] {
+  return orcaCalls(w, "worktree", "set").filter((a) => a.includes("--unread"));
+}
+
 /** The sessions the fake Claude Code recorded. */
 export function claudeRuns(w: World): Array<{
   argv: string[];

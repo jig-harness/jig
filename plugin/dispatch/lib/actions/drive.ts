@@ -10,7 +10,9 @@
  *    no `hold` label has appeared on it;
  * 2. admit an account (accounts.ts), and check that the wrapper's
  *    environment resolves to that account's identity;
- * 3. use the workspace that holds the pull request, or open one;
+ * 3. use the workspace that holds the pull request, or open one named for
+ *    the stage and the pull request (`dispatched` in `runtime/port.ts`),
+ *    under the launch record's id minted here;
  * 4. write the launch record, then call the runtime's `launch` under the
  *    record's token (launch.ts).
  *
@@ -21,7 +23,11 @@
  */
 import { admittedVendor } from "../accounts.ts";
 import { type LaunchRecord, newRecordId, newToken } from "../launches.ts";
-import type { SessionsReport } from "../runtime/port.ts";
+import {
+  type Dispatched,
+  dispatched,
+  type SessionsReport,
+} from "../runtime/port.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
@@ -37,8 +43,8 @@ import {
   accountBlocked,
   admitAccount,
   type ApplyState,
-  changedWhileOpening,
   type Opened,
+  openedFor,
   openWithinBudget,
   outOfTime,
   replay,
@@ -46,7 +52,6 @@ import {
   rotated,
   startRecord,
   waits,
-  workspaceOr,
 } from "./launch.ts";
 
 export type { ApplyState } from "./launch.ts";
@@ -146,13 +151,14 @@ async function workspaceFor(
   pr: number,
   head: string,
   sessions: SessionsReport,
+  named: Dispatched,
 ): Promise<Opened> {
   const held = sessions.ok
     ? sessions.workspaces.find((w) => w.prs.includes(pr))
     : undefined;
   if (held !== undefined)
     return { workspace: { id: held.id, path: held.path } };
-  return openWithinBudget(state, repo, { pr, head });
+  return openWithinBudget(state, repo, { pr, head, dispatched: named });
 }
 
 /** The ledger's round, which the launch's outcome row counts its rounds from; `null` when the ledger does not say. */
@@ -178,15 +184,17 @@ async function launchOne(
   if ("outcome" in admitted) return admitted.outcome;
   const slots = admitted.slots;
   const pr = fresh as DrivenPr;
-  const opened = workspaceOr(
+  const id = newRecordId(new Date());
+  const kind = action.takeover === undefined ? "rearm" : "takeover";
+  const named = dispatched(kind, `#${pr.number}`, id);
+  const opened = await openedFor(
+    state,
     action,
-    await workspaceFor(state, repo, pr.number, pr.head, sessions),
-    slots.account.name,
+    slots,
+    workspaceFor(state, repo, pr.number, pr.head, sessions, named),
   );
   if ("outcome" in opened) return opened.outcome;
   const { workspace } = opened;
-  const stale = await changedWhileOpening(state, action, slots);
-  if (stale !== null) return stale;
   const pastDeadline = outOfTime(state);
   if (pastDeadline !== null)
     return waits(action, pastDeadline, slots.account.name);
@@ -194,9 +202,9 @@ async function launchOne(
     state,
     {
       version: 1,
-      id: newRecordId(new Date()),
+      id,
       token: newToken(),
-      action: action.takeover === undefined ? "rearm" : "takeover",
+      action: kind,
       repo: repo.slug,
       repoPath: repo.path,
       pr: pr.number,
@@ -219,6 +227,7 @@ async function launchOne(
       marker: null,
       round: roundOf(pr),
       redrive: action.redrive ?? null,
+      mark: named.mark,
     },
     slots,
   );

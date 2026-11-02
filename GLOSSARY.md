@@ -1849,6 +1849,14 @@ make, use the entry's term instead.
   pull request or item has no workspace that can take one. It never
   launches an agent into it; it only writes its comment and marks it
   unread for a person to read.
+- **Dispatched mark** — the line that says the *dispatcher* started a
+  session in a workspace: a short mark, the stage, the key and the *launch
+  record*'s id (`⚙ dispatched · rearm #456 · launch <id>`). It is kept in
+  the workspace's comment and on the launch record, and a workspace the
+  dispatcher creates is named by its first part (`⚙ dispatched · rearm
+  #456`). A session may rename the workspace to what the work became; the
+  mark outlives the name, so the morning report still lists the workspace
+  as dispatched.
 - **Dispatch labels** — the pull-request labels through which the
   *dispatcher* and a person see and steer each other, off unless a
   repository turns them on, all under one prefix the repository picks

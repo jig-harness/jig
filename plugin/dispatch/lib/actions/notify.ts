@@ -19,7 +19,8 @@
  *   dispatcher's own (a workspace's comment carries a kickoff prompt until
  *   its agent starts, and the tick never overwrites one). Otherwise the
  *   repository's notices workspace (`NOTICES_BRANCH`), opened once from the
- *   default branch, its comment naming what each message is about.
+ *   default branch and named as the dispatcher's (`NOTICES_NAME`), its
+ *   comment naming what each message is about.
  * - **One comment per workspace.** The causes for one workspace in a tick
  *   are joined into one message; while the workspace is still unread from
  *   an earlier notification, the new causes are appended to its comment
@@ -41,10 +42,12 @@ import {
   type OutcomeClass,
 } from "../log.ts";
 import { carries, holdsNotice } from "../notices.ts";
-import type {
-  RuntimeReceipt,
-  SessionsReport,
-  Workspace,
+import {
+  NOTICES_NAME,
+  type RuntimeReceipt,
+  type SessionsReport,
+  type Workspace,
+  withoutMarks,
 } from "../runtime/port.ts";
 import { inTransaction, stateDb } from "../state.ts";
 import { failureText } from "../text.ts";
@@ -61,7 +64,7 @@ import { type ApplyState, openWithinBudget, outOfTime } from "./launch.ts";
 /** The branch of a repository's notices workspace. */
 const NOTICES_BRANCH = "jig-dispatch-notices";
 
-/** The comments the dispatcher's own opens give a workspace. */
+/** The comments the dispatcher's opens gave a workspace before its comments carried the dispatched mark. */
 const OWN_COMMENT =
   /(driven|picked up) by jig dispatch$|^jig dispatch notices$/;
 
@@ -116,13 +119,18 @@ function suppress(
   });
 }
 
-/** Whether the tick may write a workspace's comment: no kickoff prompt can be waiting in it. */
+/**
+ * Whether the tick may write a workspace's comment: no kickoff prompt can be
+ * waiting in it. Its dispatched marks are the dispatcher's own, and stay
+ * when it writes.
+ */
 function takesComment(w: Workspace): boolean {
+  const own = withoutMarks(w.comment);
   return (
     w.agents.length > 0 ||
-    w.comment.trim() === "" ||
-    holdsNotice(w.comment) ||
-    OWN_COMMENT.test(w.comment.trim())
+    own === "" ||
+    holdsNotice(own) ||
+    OWN_COMMENT.test(own)
   );
 }
 
@@ -189,6 +197,7 @@ async function noticesWorkspace(
   if (found !== undefined) return noticesBlocked(found) ?? found;
   const opened = await openWithinBudget(state, repo, {
     notices: NOTICES_BRANCH,
+    dispatched: { name: NOTICES_NAME, mark: NOTICES_NAME },
   });
   if ("waits" in opened) return opened.waits;
   if ("refused" in opened)
