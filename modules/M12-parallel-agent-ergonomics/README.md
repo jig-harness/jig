@@ -232,8 +232,8 @@ for drive-pr state and scratch scopes. Scratch is report-only until fixture
 registration covers every holder. Worktree reports evaluate lifecycle evidence. A worktree a
 [workspace runtime](../../GLOSSARY.md) manages is collected through that
 runtime, whose registry of the agents working in it stands in for the session
-opener's shared lock; Orca is the runtime supported so far. Any other worktree's
-collection waits for the operated reaper migration and that lock. The machine policy
+opener's shared lock ([the runtime binding](mappings.md#machine-resource-collection-schedules)).
+Any other worktree's collection waits for the operated reaper migration and that lock. The machine policy
 can tighten a repository declaration and cannot widen it.
 
 ## Maturity levels

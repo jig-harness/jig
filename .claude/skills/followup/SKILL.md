@@ -314,7 +314,7 @@ decision for a person (AGENTS.md, HITL decisions): flag it.
 ### F. Cleanup
 
 `jig gc` ([resource GC](../../../design/resource-gc.md)) reports worktrees
-and drive state, deletes only a worktree Orca manages, and only on a machine
+and drive state, and collects a worktree only if Orca manages it, and only on a machine
 whose `gc.orca.command` names Orca
 ([plugin/gc/README.md](../../../plugin/gc/README.md#worktrees-orca-manages)),
 and does not inventory local branches; this repository's `gc.kinds`
