@@ -349,6 +349,17 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.124.0] - 2026-11-02
+
+### Added
+
+- The dispatcher names what it starts, so a dispatched workspace is told from a person's at a glance on the board. A workspace it creates is named for the stage and the key (`⚙ dispatched · pickup #123`, `⚙ dispatched · rearm #456`, `⚙ dispatched · followup #789`), and its comment carries the [dispatched mark](GLOSSARY.md), that name and the launch record's id; a workspace it reuses keeps its name and gets the mark added to its comment once. Each session's terminal tab reads `jig dispatch · <stage> <key>`, and the notices workspace is `⚙ dispatched · notices`. The launch record keeps the mark, and a notification that rewrites a comment keeps it, so a workspace a session renamed is still known as dispatched. The convention lives in the dispatcher's runtime interface (`dispatch/lib/runtime/port.ts`), one place every runtime takes its names from.
+- The morning report (`drives.ts --report`) lists the workspaces the dispatcher launched into since the report's time, found by the mark on their launch records, each with the name it carries now and whether its comment still carries the mark (`dispatchedWorkspaces` with `--json`).
+
+### Changed
+
+- A workspace the dispatcher creates takes its Orca name, and so its folder's name, from the dispatched name rather than from its branch; the branch is still the one the repository's branch rule names.
+
 ## [0.123.0] - 2026-11-02
 
 ### Added
@@ -4725,7 +4736,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.123.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.124.0...HEAD
+[0.124.0]: https://github.com/jig-harness/jig/compare/v0.123.0...v0.124.0
 [0.123.0]: https://github.com/jig-harness/jig/compare/v0.122.0...v0.123.0
 [0.122.0]: https://github.com/jig-harness/jig/compare/v0.121.0...v0.122.0
 [0.121.0]: https://github.com/jig-harness/jig/compare/v0.120.3...v0.121.0
