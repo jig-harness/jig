@@ -74,6 +74,8 @@ export interface FollowupContext {
   merged: MarkedPr[];
   /** The runtime's answer read afresh, for the read just before a launch. */
   sessions: () => Promise<SessionsReport>;
+  /** Why a person's label stands the dispatcher down from the pull request now, read afresh; `null` when none does. */
+  holdReason?: (pr: number) => Promise<string | null>;
 }
 
 function refused(
@@ -84,12 +86,27 @@ function refused(
   return { ...waits(action, detail, account), outcome: "refused" };
 }
 
+/** Why a person's label stands the dispatcher down now, or that the labels cannot be read; `null` when neither. */
+async function heldNow(
+  ctx: FollowupContext,
+  pr: number,
+): Promise<string | null> {
+  if (ctx.holdReason === undefined) return null;
+  try {
+    return await ctx.holdReason(pr);
+  } catch (error) {
+    return `its labels cannot be read again: ${failureText(error)}`;
+  }
+}
+
 /** Why the follow-up must not be started now; `null` when nothing changed. */
 async function changed(
   repo: RepoTarget,
   ctx: FollowupContext,
   pr: number,
 ): Promise<string | null> {
+  const hold = await heldNow(ctx, pr);
+  if (hold !== null) return hold;
   const markers = await readMarkers(repo.slug, pr, ctx.login);
   if ("unreadable" in markers) return markers.unreadable;
   const trusted = trustedMarkers(markers);
