@@ -131,6 +131,9 @@ const MIGRATIONS: readonly string[] = [
     seq INTEGER NOT NULL
   );
   `,
+  `
+  CREATE INDEX launches_created ON launches (created_at);
+  `,
 ];
 
 /** The schema version this plugin writes. */

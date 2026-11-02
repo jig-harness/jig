@@ -8,6 +8,11 @@
  * once. The whole open runs under
  * `workspace_timeout`: every call is cut to what is left of it, and an open
  * that reaches it stops, its answer lost.
+ *
+ * A workspace the open creates is named by the target's `dispatched` name
+ * (`--name`) and carries its mark as its comment (`--comment`); one it
+ * reattaches to keeps its name and its comment, and `launch` adds the mark
+ * to that comment.
  */
 import { orcaCommand } from "../../../shared/orca.ts";
 import {
@@ -26,7 +31,13 @@ import {
   withLimit,
 } from "../../../shared/orca-workspace/runner.ts";
 import { failureText } from "../text.ts";
-import type { ItemTarget, RuntimeReceipt } from "./port.ts";
+import type {
+  Dispatched,
+  ItemTarget,
+  NoticesTarget,
+  PullRequestTarget,
+  RuntimeReceipt,
+} from "./port.ts";
 
 function portOn(ctx: Context): OpenPort {
   const orca = orcaCommand(process.env) ?? "orca";
@@ -60,14 +71,14 @@ function itemLink(target: ItemTarget): string[] {
 
 export function openPullRequestWorkspace(
   repo: { id: string; path: string },
-  target: { pr: number; head: string },
+  target: PullRequestTarget,
   timeoutMs: number,
 ): Promise<RuntimeReceipt> {
   return open(
     repo,
     {
       branch: target.head,
-      comment: `PR #${target.pr}, driven by jig dispatch`,
+      dispatched: target.dispatched,
       createFlags: ["--pr", String(target.pr)],
     },
     timeoutMs,
@@ -75,18 +86,18 @@ export function openPullRequestWorkspace(
 }
 
 /**
- * The repository's notices workspace: `branch`, cut from the repository's
- * base when new, with nothing linked. The dispatcher writes only its
- * comment and never launches an agent into it.
+ * The repository's notices workspace: its branch, cut from the
+ * repository's base when new, with nothing linked. The dispatcher writes
+ * only its comment and never launches an agent into it.
  */
 export function openNoticesWorkspace(
   repo: { id: string; path: string },
-  branch: string,
+  target: NoticesTarget,
   timeoutMs: number,
 ): Promise<RuntimeReceipt> {
   return open(
     repo,
-    { branch, comment: "jig dispatch notices", createFlags: [] },
+    { branch: target.notices, dispatched: target.dispatched, createFlags: [] },
     timeoutMs,
   );
 }
@@ -101,7 +112,7 @@ export function openItemWorkspace(
     repo,
     {
       branch: target.branch,
-      comment: `${target.item}, picked up by jig dispatch`,
+      dispatched: target.dispatched,
       createFlags: itemLink(target),
     },
     timeoutMs,
@@ -110,7 +121,7 @@ export function openItemWorkspace(
 
 async function open(
   repo: { id: string; path: string },
-  options: { branch: string; comment: string; createFlags: string[] },
+  options: { branch: string; dispatched: Dispatched; createFlags: string[] },
   timeoutMs: number,
 ): Promise<RuntimeReceipt> {
   const lines: string[] = [];
@@ -120,7 +131,13 @@ async function open(
   );
   const started = Date.now();
   try {
-    const opened = openBranch(portOn(ctx), { repo, ...options });
+    const opened = openBranch(portOn(ctx), {
+      repo,
+      branch: options.branch,
+      name: options.dispatched.name,
+      comment: options.dispatched.mark,
+      createFlags: options.createFlags,
+    });
     return {
       ok: true,
       detail: `${opened.reattached ? "reattached" : "opened"} ${opened.worktree.path}${opened.hookRan ? ", create hook ran" : ""}`,
