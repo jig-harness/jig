@@ -239,6 +239,30 @@ describe("the card's comment lock", () => {
     expect(readdirSync(root).sort()).toEqual(before);
   });
 
+  test("the sweep after a reclaim stops at the caller's deadline and leaves the rest for a later reclaim", async () => {
+    const root = scratchRoot();
+    const lock = cardLockPath(WORKSPACE, root);
+    const stale = `${deadPid()}\nleft\n`;
+    writeFileSync(lock, stale);
+    const id = createHash("sha256").update(stale).digest("hex").slice(0, 16);
+    for (let generation = 2; generation <= 300; generation++)
+      writeFileSync(`${lock}.reclaim-${id}-${generation}`, "1\nx\n");
+    const real = performance.now.bind(performance);
+    const start = real();
+    // The budget covers the deadline and taking the first generation, then is spent.
+    let reads = 0;
+    const clock = spyOn(performance, "now").mockImplementation(() =>
+      ++reads <= 2 ? start : start + 10_000,
+    );
+    try {
+      await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 1000 });
+    } finally {
+      clock.mockRestore();
+    }
+    expect(existsSync(lock)).toBe(false);
+    expect(readdirSync(root).length).toBeGreaterThan(250);
+  });
+
   test("the sweep after a reclaim leaves a live publisher's staging file alone and removes a dead one's", async () => {
     const root = scratchRoot();
     const lock = cardLockPath(WORKSPACE, root);

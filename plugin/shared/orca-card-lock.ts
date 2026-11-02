@@ -107,8 +107,10 @@ function ownerGone(pid: number | null): boolean {
  * Once the judged content is gone no reclaimer can act on it again (a lock's
  * token is never reused), so its completed mutexes are swept, and the staging
  * files of publishers that are gone; a live publisher's staging file is never
- * touched. Walking the generations stops at `deadline`, so a chain of
- * abandoned mutexes cannot hold the caller past its wait.
+ * touched. Walking the generations and the sweep both stop at `deadline`, so
+ * neither a chain of abandoned mutexes nor a large set of leftover files can
+ * hold the caller past its wait; what the sweep leaves, a later reclaim of the
+ * same content finds and removes.
  */
 function reclaim(lock: string, deadline: number): void {
   const judged = readLock(lock);
@@ -127,6 +129,7 @@ function reclaim(lock: string, deadline: number): void {
     if (readLock(lock) === judged) rmSync(lock, { force: true });
   } finally {
     for (const name of readdirSync(dirname(lock))) {
+      if (performance.now() >= deadline) break;
       if (name.startsWith(prefix) && sweepable(name.slice(prefix.length)))
         rmSync(join(dirname(lock), name), { force: true });
     }
