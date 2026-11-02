@@ -464,8 +464,11 @@ development and shipped as a version.
 
 - **Deterministic.** `skills/do-item/scripts/tracker.ts claim` starts an
   issue for the tracker identity: it refuses an item already in progress or
-  assigned to someone else (exit 3) and stands down when a re-read shows
-  another claim landed first (exit 4). `work-batch` claims each issue of its
+  assigned to someone else (exit 3) and, after writing, stands down when a
+  re-read finds another assignee, no longer finds this identity assigned,
+  or finds no issue or a state other than `in_progress` (exit 4). Two
+  concurrent claims by the same tracker identity can both return `claimed`.
+  `work-batch` claims each issue of its
   batch with the same command. `skills/do-item/scripts/determine_route.ts`
   derives the implementer's agent, model tier and effort from the item's
   labels and the repository's `routing` rules, with the rule behind each
@@ -509,11 +512,11 @@ development and shipped as a version.
   the base branch, so a branch cannot switch it off. After the merge, the
   release step (`skills/changelog/scripts/release.ts`, run by the skill's
   action in CI) writes the notes in, moves the version and deletes the
-  notes; tags follow once the release commit's checks pass
-  (`skills/changelog/scripts/tag.ts`). In Jig, the release workflow pushes
-  the release commit with a token only the release job can mint: `main`'s
-  ruleset lets only that App, and the repository's administrators, push
-  past it.
+  notes; `skills/changelog/scripts/tag.ts` plans the tags, which are created
+  once the release commit's checks pass. In Jig, the release workflow's
+  `push` job mints the App token and pushes the release commit, and its
+  `tag-push` job mints a token to create the tags: `main`'s ruleset lets
+  only that App, and the repository's administrators, push past it.
 - **Reasoned.** `do-item` writes the note before it opens the pull request;
   drive passes and `resolve-review-comments` keep it true through review;
   `resolve-conflicts` converts a branch's changelog edits into a note.
