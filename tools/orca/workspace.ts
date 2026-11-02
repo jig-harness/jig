@@ -39,7 +39,6 @@ import { cli, strictOptions } from "../../lib/cli.ts";
 import {
   COMMAND_ALLOWANCE,
   HOOK_TIMEOUT_MS,
-  HOOKS_DIR,
   OPEN_LIMIT_MS,
 } from "../../plugin/shared/orca-workspace/limits.ts";
 import {
@@ -56,6 +55,11 @@ import {
   assertLinkedWorktree,
   findGitWorktree,
 } from "../herdr/git.ts";
+import {
+  type RemovalSteps,
+  removeThroughOrca,
+  WorktreeRemovalError,
+} from "../../plugin/gc/worktree-removal.ts";
 import { KICKOFF_KEY } from "../herdr/kickoff.ts";
 import { PARK_TIMEOUT_MS, parkJournal } from "../herdr/lifecycle.ts";
 import { UsageError } from "../herdr/options.ts";
@@ -67,6 +71,7 @@ import {
 } from "../herdr/runner.ts";
 import {
   onServer,
+  orcaArgv,
   orcaCall,
   orcaErrorText,
   portOf,
@@ -370,30 +375,31 @@ export async function removeWorkspace(
     throw new OrcaError(
       `${options.branch} is checked out at ${path}, which Orca${onServer(ws.target)} does not list; remove that checkout with git worktree remove`,
     );
-  const hook = hookOf(ws, path, "remove");
-  if (hook !== null) {
-    ws.host.log(`… running ${HOOKS_DIR}/remove`);
-    ws.runHook(ws.host, path, hook);
+  const steps: RemovalSteps = {
+    hook: (worktree) => hookOf(ws, worktree, "remove"),
+    runHook: (worktree, hook) => ws.runHook(ws.host, worktree, hook),
+    park: async (worktree) => {
+      if (ws.ssh === undefined) await parkJournal(ws.host, worktree);
+      else assertNoUnsentFindings(ws, worktree, ws.ssh);
+    },
+  };
+  try {
+    await removeThroughOrca({
+      worktree: path,
+      id: row.id,
+      force: options.force,
+      orca: async (args) => {
+        const done = ws.orca.run(orcaArgv(ws.target, args));
+        return { code: done.status, stdout: done.stdout, stderr: done.stderr };
+      },
+      log: (line) => ws.host.log(line),
+      steps,
+    });
+  } catch (error) {
+    if (error instanceof WorktreeRemovalError)
+      throw new OrcaError(error.message);
+    throw error;
   }
-  if (ws.ssh === undefined) await parkJournal(ws.host, path);
-  else assertNoUnsentFindings(ws, path, ws.ssh);
-  const what = "orca worktree rm";
-  const envelope = orcaCall(
-    ws,
-    [
-      "worktree",
-      "rm",
-      "--worktree",
-      `id:${row.id}`,
-      ...(options.force ? ["--force"] : []),
-    ],
-    what,
-  );
-  if (!envelope.ok)
-    throw new OrcaError(
-      `${what}: ${orcaErrorText(envelope.error)}${options.force ? "" : " (uncommitted changes: commit them, or pass --force to discard them)"}`,
-    );
-  ws.host.log(`✓ removed ${path}`);
   return path;
 }
 
