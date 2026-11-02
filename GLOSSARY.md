@@ -1828,8 +1828,10 @@ make, use the entry's term instead.
   account, duration and an outcome class from the closed list the
   dispatcher's design defines, among them converged, quota wall, parked
   for a person, stalled and died; a stop no class in that list fits is
-  logged as `unknown` with its last state, never dropped. One dashboard filters it; it is
-  never rendered into a report file.
+  logged as `unknown` with its last state, never dropped. Beside those
+  rows it holds one event row per cause the dispatcher observed (a stalled
+  pickup, a double claim, a stage drift, a nudge). One dashboard filters
+  it; it is never rendered into a report file.
 - **Stage drift** — a running stage falling short of what it is expected to
   achieve: a review drive whose open threads do not fall across rounds, a
   pickup that has not opened a pull request in time. The *dispatcher*
@@ -1838,6 +1840,11 @@ make, use the entry's term instead.
   closed set with one entry: "continue" to a session it started that is
   waiting at its prompt after a usage limit that has since reset. Anything else a stuck
   session needs goes to a person.
+- **Waiting episode** — one stretch of a session the *dispatcher* started
+  waiting at its prompt behind a usage limit, kept on that session's launch
+  record: the wall's observation time and reset, and whether the session's
+  last record is still the wall. A new observation time starts a new
+  episode; the *nudge* is sent at most once per episode.
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of

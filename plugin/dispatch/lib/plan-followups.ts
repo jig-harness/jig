@@ -54,6 +54,7 @@ function failed(
   pr: MarkedPr,
   marker: FollowupMarker,
   why: string,
+  launched: boolean,
 ): Action {
   return {
     stage: "notify",
@@ -63,6 +64,8 @@ function failed(
     evidence: { url: pr.url, marker: marker.id, by: marker.login },
     cause: "followup-failed",
     notice: followupFailedNotice(input.slug, pr, marker.id, why),
+    // The ended row of a follow-up this machine ran holds the failure; one it has no record of has no row.
+    ...(launched ? { launched: true as const } : {}),
   };
 }
 
@@ -154,6 +157,7 @@ function planTickMarker(
       ended === "failed"
         ? `its session under launch record ${id} ended without recording done`
         : `marker comment ${marker.id} names launch record ${id}, and neither that record nor its outcome is on this machine`,
+      ended === "failed",
     ),
   );
 }

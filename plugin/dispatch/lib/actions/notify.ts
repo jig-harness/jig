@@ -23,17 +23,34 @@
  *   are joined into one message; while the workspace is still unread from
  *   an earlier notification, the new causes are appended to its comment
  *   rather than replacing what a person has not read.
+ * - **One event row per cause.** When a cause's suppression record is
+ *   written, its event row goes into the outcome log (`log.ts`), timed at
+ *   that record and keyed by the same facts, and the record gains a logged
+ *   mark; a cause about a stage this machine launched has its ended row
+ *   instead.
  *
  * The answer to a park stays a comment on the pull request (`answer <key>:
  * …`), which the next tick reads as a re-armable ledger: nothing comes back
  * through the notification.
  */
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { join } from "node:path";
 import { swallow } from "../../../shared/errors.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { publishOnce, stateRoot } from "../../receipts.ts";
+import {
+  appendRow,
+  driveClass,
+  type LogRow,
+  type OutcomeClass,
+} from "../log.ts";
 import { carries, holdsNotice } from "../notices.ts";
 import type {
   RuntimeReceipt,
@@ -64,6 +81,10 @@ interface Suppression {
   key: string;
   at: string;
   workspace: string;
+  /** The event row the cause owes the outcome log, kept so a stop before the append cannot lose it. */
+  event?: LogRow;
+  /** Set for a cause notified once for the life of its key: the cause going away does not release it. */
+  lasting?: boolean;
 }
 
 function noticesRoot(root: string): string {
@@ -315,20 +336,66 @@ async function sendTo(
 }
 
 /**
+ * An outcome-log write that failed: kept for a later tick to retry, and
+ * reported so the tick fails and the receipt says what the dashboard lacks.
+ */
+function outcomeLogFailed(
+  report: RepoReport,
+  what: string,
+  error: unknown,
+): void {
+  report.unplaced.push({
+    target: "the outcome log",
+    record: "runtime",
+    reason: `${what} did not reach the log and waits for a later tick: ${failureText(error)}`,
+  });
+}
+
+/**
  * Drop the suppression records of `repo` whose cause this tick no longer
  * names, when every record was read whole and the target is not one the
- * tick could not place: the facts that made the cause have changed.
+ * tick could not place: the facts that made the cause have changed. A
+ * drift is notified once per launch and expectation, so its record stays.
  */
 function prune(
   report: RepoReport,
   keys: ReadonlySet<string>,
   sent: Map<string, Suppression & { file: string }>,
+  root: string,
 ): void {
   if (!report.records.every((r) => r.ok)) return;
   const unplaced = new Set(report.unplaced.map((u) => u.target));
   for (const [key, s] of sent)
-    if (!keys.has(key) && !unplaced.has(s.target))
+    if (!keys.has(key) && !unplaced.has(s.target) && s.lasting !== true) {
+      if (s.event !== undefined && !existsSync(loggedMark(s.file))) {
+        // The cause is gone before its row was appended: append it from the record.
+        try {
+          appendRow(s.event, root);
+        } catch (error) {
+          outcomeLogFailed(report, `the event row of ${key}`, error);
+          continue;
+        }
+      }
       rmSync(s.file, { force: true });
+      rmSync(s.file.replace(/\.json$/, ".logged"), { force: true });
+    }
+}
+
+/** Append the event row of each stored suppression a stop kept from the log, whether or not its cause is still named. */
+function recoverEvents(
+  sent: Map<string, Suppression & { file: string }>,
+  root: string,
+  report: RepoReport,
+): void {
+  for (const [key, s] of sent) {
+    if (s.event === undefined || existsSync(loggedMark(s.file))) continue;
+    try {
+      appendRow(s.event, root);
+      publishOnce(loggedMark(s.file), `${s.at}\n`);
+    } catch (error) {
+      outcomeLogFailed(report, `the event row of ${key}`, error);
+    }
+  }
 }
 
 /** The causes for each target workspace; a cause with none reachable is reported as waiting. */
@@ -358,6 +425,84 @@ async function groupByTarget(
   return groups;
 }
 
+/** The stage a cause is about, for its event row. */
+function stageOf(cause: Cause): string {
+  if (typeof cause.evidence.stage === "string") return cause.evidence.stage;
+  if (cause.cause === "followup-failed") return "followup";
+  if (cause.cause === "stalled" || cause.cause === "double-claim")
+    return "pickup";
+  return "rearm";
+}
+
+/** The class the closed list places a cause in; `null` for an observation no class names. */
+function classOf(cause: Cause): OutcomeClass | null {
+  switch (cause.cause) {
+    case "double-claim":
+      return "double claim";
+    case "stalled":
+      return "stalled";
+    case "parked":
+      return "parked for a person";
+    case "followup-failed":
+      return "gates failed";
+    case "stopped-unknown":
+      return "unknown";
+    case "needs-person": {
+      const exit = cause.evidence.exit;
+      return typeof exit === "number"
+        ? driveClass(exit, null).class
+        : "unknown";
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * The cause's event row in the outcome log, timed at its suppression
+ * record, then that record's logged mark: a cause about a stage this
+ * machine launched has its ended row instead, and gets none.
+ */
+function logEvent(
+  repo: string,
+  cause: Cause,
+  at: string,
+  root: string,
+  report: RepoReport,
+): void {
+  const file = fileOf(repo, cause.notice.key, root);
+  if (cause.launched === true || existsSync(loggedMark(file))) return;
+  try {
+    appendRow(eventRow(repo, cause, at), root);
+    publishOnce(loggedMark(file), `${at}\n`);
+  } catch (error) {
+    outcomeLogFailed(report, `the event row of ${cause.notice.key}`, error);
+  }
+}
+
+/** The event row for a cause timed at `at`. */
+function eventRow(repo: string, cause: Cause, at: string): LogRow {
+  return {
+    kind: "event",
+    key: `event ${cause.notice.key}`,
+    at,
+    repo,
+    stage: stageOf(cause),
+    target: cause.target,
+    event: cause.cause,
+    account:
+      typeof cause.evidence.account === "string"
+        ? cause.evidence.account
+        : null,
+    class: classOf(cause),
+    reason: cause.reason,
+  };
+}
+
+function loggedMark(file: string): string {
+  return file.replace(/\.json$/, ".logged");
+}
+
 /** `--apply` for one repository's notifications. */
 export async function applyNotices(
   state: ApplyState,
@@ -368,14 +513,17 @@ export async function applyNotices(
   const root = state.root ?? stateRoot();
   const causes = report.actions.filter(isCause);
   const sent = readSuppressions(repo.slug, root);
-  prune(report, new Set(causes.map((c) => c.notice.key)), sent);
+  recoverEvents(sent, root, report);
+  prune(report, new Set(causes.map((c) => c.notice.key)), sent, root);
   const due = causes.filter((c) => !sent.has(c.notice.key));
   for (const c of causes) {
     const earlier = sent.get(c.notice.key);
-    if (earlier !== undefined)
-      report.notifications.push(
-        outcomeFor(c, "suppressed", earlier.workspace, `sent ${earlier.at}`),
-      );
+    if (earlier === undefined) continue;
+    // A tick that stopped between the suppression and its row writes the row now.
+    logEvent(repo.slug, c, earlier.at, root, report);
+    report.notifications.push(
+      outcomeFor(c, "suppressed", earlier.workspace, `sent ${earlier.at}`),
+    );
   }
   if (due.length === 0) return;
   if (!sessions.ok) {
@@ -383,17 +531,22 @@ export async function applyNotices(
       report.notifications.push(outcomeFor(c, "waits", null, sessions.reason));
     return;
   }
-  const suppressed = (c: Cause, workspace: string) =>
+  const suppressed = (c: Cause, workspace: string) => {
+    const at = new Date().toISOString();
     suppress(
       {
         repo: repo.slug,
         target: c.target,
         key: c.notice.key,
-        at: new Date().toISOString(),
+        at,
         workspace,
+        ...(c.launched === true ? {} : { event: eventRow(repo.slug, c, at) }),
+        ...(c.cause === "drifting" ? { lasting: true } : {}),
       },
       root,
     );
+    logEvent(repo.slug, c, at, root, report);
+  };
   const groups = await groupByTarget(
     state,
     repo,

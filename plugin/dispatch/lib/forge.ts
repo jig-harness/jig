@@ -2,7 +2,9 @@
  * The forge reads a tick makes for one repository, through the signed-in
  * `gh` command-line client and under its deadline: which repository a
  * checkout is, the repository's `.config/jig.yaml` on its default branch, its
- * open pull requests and the pull requests merged since a date. Each read
+ * open pull requests and the pull requests merged since a date, and, for
+ * Control, a pull request's unresolved review threads and whether a closed
+ * one merged. Each read
  * returns what it was asked for or throws with the reason, so a population
  * read in part is never planned from.
  */
@@ -96,11 +98,12 @@ interface ListedPr {
   url: string;
   title: string;
   headRefName: string;
+  createdAt?: string;
   mergedAt?: string;
 }
 
 async function listPrs(slug: string, extra: string[]): Promise<ListedPr[]> {
-  const fields = ["number", "url", "title", "headRefName"];
+  const fields = ["number", "url", "title", "headRefName", "createdAt"];
   if (extra.includes("merged")) fields.push("mergedAt");
   const out = parsed(
     await gh([
@@ -137,6 +140,7 @@ async function listPrs(slug: string, extra: string[]): Promise<ListedPr[]> {
       url: typeof p.url === "string" ? p.url : "",
       title: typeof p.title === "string" ? p.title : "",
       headRefName: p.headRefName,
+      ...(typeof p.createdAt === "string" ? { createdAt: p.createdAt } : {}),
       ...(typeof p.mergedAt === "string" ? { mergedAt: p.mergedAt } : {}),
     };
   });
@@ -167,6 +171,74 @@ export async function mergedSince(
       title: p.title,
       head: p.headRefName,
       mergedAt: p.mergedAt as string,
+      ...(p.createdAt === undefined ? {} : { createdAt: p.createdAt }),
     }))
     .sort((a, b) => a.number - b.number);
+}
+
+/** One page of a pull request's review threads: whether each is resolved. */
+const THREADS_QUERY = `query DispatchThreads($owner: String!, $name: String!, $pr: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $pr) {
+      reviewThreads(first: 100) { pageInfo { hasNextPage } nodes { isResolved } }
+    }
+  }
+}`;
+
+function field(value: unknown, key: string): unknown {
+  return isRecord(value) ? value[key] : undefined;
+}
+
+/**
+ * How many of a pull request's review threads are unresolved. A pull
+ * request with more threads than one page holds throws, as any read in
+ * part does: the count would be a guess.
+ */
+export async function unresolvedThreadCount(
+  slug: string,
+  pr: number,
+): Promise<number> {
+  const [owner, name] = slug.split("/");
+  const out = parsed(
+    await gh([
+      "api",
+      "graphql",
+      "-f",
+      `query=${THREADS_QUERY}`,
+      "-f",
+      `owner=${owner}`,
+      "-f",
+      `name=${name}`,
+      "-F",
+      `pr=${pr}`,
+    ]),
+    "the review threads answer",
+  );
+  const threads = field(
+    field(field(field(out, "data"), "repository"), "pullRequest"),
+    "reviewThreads",
+  );
+  const nodes = field(threads, "nodes");
+  if (!Array.isArray(nodes))
+    throw new ForgeReadError(`PR #${pr}'s review threads did not read`);
+  if (field(field(threads, "pageInfo"), "hasNextPage") === true)
+    throw new ForgeReadError(
+      `PR #${pr} has more review threads than one read holds`,
+    );
+  return nodes.filter((n) => field(n, "isResolved") === false).length;
+}
+
+/** Whether a pull request merged (true) or was closed unmerged (false); throws while it is open or unreadable. */
+export async function mergedNotClosed(
+  slug: string,
+  pr: number,
+): Promise<boolean> {
+  const out = parsed(
+    await gh(["pr", "view", String(pr), "--repo", slug, "--json", "state"]),
+    "the pull request view",
+  );
+  const state = field(out, "state");
+  if (state === "MERGED") return true;
+  if (state === "CLOSED") return false;
+  throw new ForgeReadError(`PR #${pr} reads ${String(state)}`);
 }

@@ -68,10 +68,16 @@ function followupPrompt(record: LaunchRecord): string {
   ].join("\n");
 }
 
-/** The session's command line: Claude Code with the route's model and effort, on the prompt. */
+/**
+ * The session's command line: Claude Code with the vendor session id the
+ * tick minted (so the quota adapters can read this session's own wall),
+ * the route's model and effort, on the prompt.
+ */
 export function sessionArgv(record: LaunchRecord): string[] {
+  const session = record.sessionId ?? null;
   return [
     "claude",
+    ...(session === null ? [] : ["--session-id", session]),
     ...(record.model === null ? [] : ["--model", record.model]),
     ...(record.effort === null ? [] : ["--effort", record.effort]),
     record.action === "followup"
