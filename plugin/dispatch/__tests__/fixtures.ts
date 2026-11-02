@@ -46,6 +46,20 @@ if (args[0] === "pr" && args[1] === "list") {
   const state = args[args.indexOf("--state") + 1];
   out(fs.readFileSync(F + "/prs-" + state + ".json", "utf8"));
 }
+if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headRefOid"))) {
+  // One open pull request read again, as prs-open.json lists it.
+  const listed = JSON.parse(fs.readFileSync(F + "/prs-open.json", "utf8")).find((p) => p.number === Number(args[2]));
+  if (listed === undefined) { process.stderr.write("gh: no pull requests found\\n"); process.exit(1); }
+  out({ ...listed, state: "OPEN" });
+}
+if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("reviewThreads"))) {
+  // A pull request's unresolved review threads, as many as threads-<pr> says.
+  const pr = (args.find((a) => a.startsWith("pr=")) ?? "pr=0").slice(3);
+  const file = F + "/threads-" + pr;
+  if (!fs.existsSync(file)) { process.stderr.write("gh: no threads for " + pr + "\\n"); process.exit(1); }
+  const open = Number(fs.readFileSync(file, "utf8"));
+  out({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: Array.from({ length: open }, () => ({ isResolved: false })) } } } } });
+}
 const single = args[0] === "api" && args.includes("-X") ? /issues\\/comments\\/(\\d+)$/.exec(args.find((a) => /issues\\/comments\\/\\d+$/.test(a)) ?? "") : null;
 if (single !== null) {
   // A comment's update or removal, on whichever pull request's file holds it.
@@ -90,6 +104,18 @@ if (args[0] === "terminal" && args[1] === "create") {
 }
 if (args[0] === "terminal" && args[1] === "show")
   answer({ terminal: { handle: args[args.indexOf("--terminal") + 1], tabId: "tab-1", leafId: "leaf-1" } });
+if (args[0] === "terminal" && args[1] === "list") {
+  // The terminals orca-terminals.json lists; none when it does not exist.
+  const terminals = fs.existsSync(F + "/orca-terminals.json") ? JSON.parse(fs.readFileSync(F + "/orca-terminals.json", "utf8")) : [];
+  answer({ terminals, hostScope: { hostIds: ["local"], omittedHostIds: [] } });
+}
+if (args[0] === "terminal" && args[1] === "read")
+  // The rendered screen orca-screen.json holds.
+  answer({ terminal: { handle: args[args.indexOf("--terminal") + 1], status: "running", source: "screen", tail: JSON.parse(fs.readFileSync(F + "/orca-screen.json", "utf8")), truncated: false, nextCursor: null } });
+if (args[0] === "terminal" && args[1] === "send") {
+  fs.appendFileSync(F + "/orca-sends.jsonl", JSON.stringify({ terminal: args[args.indexOf("--terminal") + 1], text: args[args.indexOf("--text") + 1], enter: args.includes("--enter") }) + "\\n");
+  answer({ accepted: true });
+}
 if (args[0] === "worktree" && args[1] === "create") {
   // A real worktree of the clone, on a branch Orca names after the worktree.
   const name = args[args.indexOf("--name") + 1];
@@ -142,8 +168,27 @@ fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
   cwd: process.cwd(),
   configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
   token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
+  codexHome: process.env.CODEX_HOME ?? null,
+  anthropicKey: process.env.ANTHROPIC_API_KEY ?? null,
+  openaiKey: process.env.OPENAI_API_KEY ?? null,
 }) + "\\n");
 process.exit(fs.existsSync(F + "/drive-exit") ? Number(fs.readFileSync(F + "/drive-exit", "utf8")) : 0);
+`;
+
+/** The Codex a pickup's wrapper starts in tests: it records how it was started and runs until \`claude-exit\` appears. */
+const FAKE_CODEX = `#!/usr/bin/env bun
+const fs = require("node:fs");
+const F = process.env.DISPATCH_FAKE_DIR;
+fs.appendFileSync(F + "/codex-runs.jsonl", JSON.stringify({
+  argv: process.argv.slice(2),
+  cwd: process.cwd(),
+  codexHome: process.env.CODEX_HOME ?? null,
+  configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
+  token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
+}) + "\\n");
+const until = Date.now() + 60000;
+while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(50);
+process.exit(0);
 `;
 
 /** The Claude Code a pickup's wrapper starts in tests: it records how it was started and runs until \`claude-exit\` appears. */
@@ -179,12 +224,22 @@ export interface OrcaRow {
   unread?: boolean;
 }
 
-/** An open pull request as `gh pr list --json` returns it. */
-export const openPr = (number: number, head: string) => ({
+/** The head commit an open pull request reports unless a test names another. */
+export const HEAD_SHA = "a".repeat(40);
+
+/** An open pull request as `gh pr list --json` returns it: at `HEAD_SHA` and mergeable, unless `extra` says otherwise. */
+export const openPr = (
+  number: number,
+  head: string,
+  extra: { headRefOid?: string; mergeable?: string } = {},
+) => ({
   number,
   url: `https://github.com/${SLUG}/pull/${number}`,
   title: `Pull request ${number}`,
   headRefName: head,
+  headRefOid: HEAD_SHA,
+  mergeable: "MERGEABLE",
+  ...extra,
 });
 
 /** A merged pull request as `gh pr list --json` returns it. */
@@ -259,6 +314,7 @@ export function world(): World {
   writeFakeProgram(join(bin, "gh"), WRAPPER(join(dir, "..", "bin", "gh")));
   writeFakeProgram(join(bin, "orca"), FAKE_ORCA);
   writeFakeProgram(join(bin, "claude"), FAKE_CLAUDE);
+  writeFakeProgram(join(bin, "codex"), FAKE_CODEX);
   writeFileSync(join(root, "fake-drive.js"), FAKE_DRIVE);
   const write = (name: string, value: unknown) =>
     writeFileSync(

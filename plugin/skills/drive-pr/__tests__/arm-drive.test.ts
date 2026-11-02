@@ -243,17 +243,19 @@ describe("the way a drive is armed", () => {
     });
   });
 
-  it("prints the command only for print, and in a session that is not Claude Code's", () => {
+  it("prints the command only for print, and in a session of no agent tool with a documented pass", () => {
     expect(chooseWay("print", IN_ORCA, "linux")).toMatchObject({
       way: "print",
     });
-    const codex = chooseWay(
+    const none = chooseWay(
       "auto",
-      { CODEX_HOME: "/x", ORCA_CLI_COMMAND: "/opt/orca/bin/orca" },
+      { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" },
       "linux",
     );
-    expect(codex).toMatchObject({ way: "print" });
-    expect(JSON.stringify(codex)).toContain("this session runs codex");
+    expect(none).toMatchObject({ way: "print" });
+    expect(JSON.stringify(none)).toContain(
+      "the documented pass commands are Claude Code's and Codex's",
+    );
   });
 });
 

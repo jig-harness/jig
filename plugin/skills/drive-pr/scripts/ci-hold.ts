@@ -7,6 +7,7 @@ import { retryAttempts } from "../../../shared/retry.ts";
  * compare-and-set token. A repository without a hold label has nothing to
  * own: `ensure`, `release` and `rollback` print `disabled` and succeed, and
  * `final-ready` proves the required checks on the exact head directly.
+ * A conflicting PR runs no CI, so there `ensure` holds nothing (`conflicting`).
  *
  * Usage:
  *   ci-hold.ts ensure [PR] --expect-head SHA
@@ -31,6 +32,7 @@ import {
   type PrSnapshot,
   parseCheckRuns,
   parsePrSnapshot,
+  reportsConflict,
   requiredCiStartedAt,
   requirementsWithoutRun,
 } from "./lib/ci-hold.ts";
@@ -432,20 +434,6 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     persisted.eventId === latest?.id
       ? persisted.checkRunWatermark
       : 0;
-  if (
-    latest?.event === "unlabeled" &&
-    !(
-      persisted?.phase === "released" &&
-      persisted.head === head &&
-      persisted.eventId === latest.id
-    )
-  ) {
-    await writeCiState(pr, null);
-    console.error(
-      `ci-hold: the latest '${holdLabel()}' removal is not a release owned by this drive; refusing to re-add it`,
-    );
-    return 4;
-  }
   const observed = completedHoldPrecondition(
     runs,
     policy.requiredChecks,
@@ -454,6 +442,17 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     watermark,
     persisted?.phase === "released" && persisted.source === "external",
   );
+  // GitHub runs no `pull_request` workflow while the PR conflicts with its
+  // base, so these checks cannot complete until a push clears the conflict.
+  // That push goes ahead unheld, and its head runs full CI.
+  if (
+    !observed &&
+    reportsConflict(await ghCall(["pr", "view", pr, "--json", "mergeable"]))
+  ) {
+    console.error("ci-hold: the PR conflicts with its base; pushing unheld");
+    process.stdout.write("conflicting\n");
+    return 0;
+  }
   if (!observed) {
     console.error(
       latest?.event === "unlabeled"

@@ -1,4 +1,5 @@
 /** dispatch receipts: validation, retention per repository, the tick lock. */
+import { closeStateDb } from "../lib/state.ts";
 import { afterEach, describe, expect, it } from "bun:test";
 import {
   mkdirSync,
@@ -30,8 +31,10 @@ function root(): string {
   return dir;
 }
 afterEach(() => {
-  for (const dir of roots.splice(0))
+  for (const dir of roots.splice(0)) {
+    closeStateDb(dir);
     rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 function receipt(day: string, repoPath: string, since: string): TickReceipt {

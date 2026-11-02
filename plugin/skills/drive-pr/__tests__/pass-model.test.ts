@@ -148,13 +148,41 @@ describe("effectivePass", () => {
   });
 
   it("leaves another pass command to choose its own model", () => {
+    const other = ["other-agent", "run", "/jig:drive-pr 7"];
+    expect(effectivePass(other, undefined, configured)).toEqual({
+      argv: other,
+      model: null,
+      source: "chosen by the pass command (other-agent)",
+    });
+    expect(() => effectivePass(other, "sonnet", configured)).toThrow(
+      PassModelUsageError,
+    );
+  });
+
+  it("runs a Codex pass on its own model, else routing.models.codex's execution tier after exec, else Codex's own", () => {
     const codex = ["codex", "exec", "/jig:drive-pr 7"];
-    expect(effectivePass(codex, undefined, configured)).toEqual({
+    const routed = () => ({
+      model: "gpt-example",
+      source: "routing.models.codex.execution",
+    });
+    const none = () => ({ model: null, source: "Codex's own configuration" });
+    expect(effectivePass(codex, undefined, configured, routed)).toEqual({
+      argv: ["codex", "exec", "-m", "gpt-example", "/jig:drive-pr 7"],
+      model: "gpt-example",
+      source: "routing.models.codex.execution",
+    });
+    expect(effectivePass(codex, undefined, configured, none)).toEqual({
       argv: codex,
       model: null,
-      source: "chosen by the pass command (codex)",
+      source: "Codex's own configuration",
     });
-    expect(() => effectivePass(codex, "sonnet", configured)).toThrow(
+    const own = ["codex", "exec", "-m", "gpt-own", "/jig:drive-pr 7"];
+    expect(effectivePass(own, undefined, configured, routed)).toEqual({
+      argv: own,
+      model: "gpt-own",
+      source: "the pass command's own model",
+    });
+    expect(() => effectivePass(codex, "sonnet", configured, routed)).toThrow(
       PassModelUsageError,
     );
   });
@@ -172,8 +200,13 @@ describe("withoutModel", () => {
     expect(
       withoutModel(["claude", "--model", "a", "--model=b", "-p", "x"]),
     ).toEqual(["claude", "-p", "x"]);
-    expect(withoutModel(["codex", "--model", "4"])).toEqual([
+    expect(withoutModel(["codex", "exec", "-m", "4", "x"])).toEqual([
       "codex",
+      "exec",
+      "x",
+    ]);
+    expect(withoutModel(["other-agent", "--model", "4"])).toEqual([
+      "other-agent",
       "--model",
       "4",
     ]);

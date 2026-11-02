@@ -9,6 +9,10 @@
  *   is never fought: the pull request is reported, not launched again. A
  *   refusal `16` is the account's wall instead (see walls.ts), which keeps
  *   that account out of admission until its reset;
+ * - a `stale` ledger this machine already re-drove for the same change (the
+ *   same head, conflicting or not), however that launch ended, is reported,
+ *   not launched again: a re-drive is launched once per change, so a drive
+ *   that converges again without settling it does not start a loop;
  * - a `silent` ledger whose driver this machine's record started (the
  *   driver's run began while the record's wrapper was running, and the record
  *   did not end on a refusal) is a takeover of that record, even while the
@@ -31,6 +35,7 @@ export type DriveHold =
   | { kind: "none" }
   | { kind: "held"; record: ReadRecord; why: string }
   | { kind: "refused"; record: ReadRecord; why: string }
+  | { kind: "redriven"; record: ReadRecord; why: string }
   | { kind: "takeover"; record: ReadRecord };
 
 /** The ledger facts a launch acts on; a refusal on the same facts is final. */
@@ -121,5 +126,21 @@ export function driveHold(pr: DrivenPr, records: ReadRecord[]): DriveHold {
   const holding = mine.find((r) => holds(r.state));
   if (holding !== undefined)
     return { kind: "held", record: holding, why: describe(holding) };
-  return standingRefusal(pr, mine) ?? { kind: "none" };
+  return standingRefusal(pr, mine) ?? redriven(pr, mine) ?? { kind: "none" };
+}
+
+/** The record that already re-drove a stale ledger for the change it shows now, if any. */
+function redriven(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
+  const stale = pr.class === "stale" ? pr.stale : undefined;
+  if (stale === undefined) return null;
+  const earlier = mine.findLast(
+    (r) => r.record.redrive?.change === stale.change,
+  );
+  return earlier === undefined
+    ? null
+    : {
+        kind: "redriven",
+        record: earlier,
+        why: `stale (${stale.cause}), and launch record ${earlier.record.id} already re-drove it for this change; it is not launched again until its head or its mergeability changes`,
+      };
 }

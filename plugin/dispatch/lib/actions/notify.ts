@@ -6,7 +6,8 @@
  * the runtime's `notify`.
  *
  * - **Once per cause.** A cause counts as sent, and its suppression record
- *   is written under `~/.local/state/jig/dispatch/notices/`, only once the
+ *   is written (the state database's `notices` table, keyed by the
+ *   repository and the cause's key), only once the
  *   runtime's receipt shows the target's comment carrying its key; a cause
  *   whose key the comment already carries is recorded as sent without being
  *   sent again. A suppression record is dropped when its cause leaves a
@@ -23,23 +24,29 @@
  *   are joined into one message; while the workspace is still unread from
  *   an earlier notification, the new causes are appended to its comment
  *   rather than replacing what a person has not read.
+ * - **One event row per cause.** A cause's event row goes into the outcome
+ *   log (`log.ts`) in the same transaction as its suppression record, timed
+ *   at that record and keyed by the same facts; a cause about a stage this
+ *   machine launched has its ended row instead.
  *
  * The answer to a park stays a comment on the pull request (`answer <key>:
  * …`), which the next tick reads as a re-armable ledger: nothing comes back
  * through the notification.
  */
-import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { swallow } from "../../../shared/errors.ts";
-import { isRecord } from "../../../shared/guards.ts";
-import { publishOnce, stateRoot } from "../../receipts.ts";
+import { stateRoot } from "../../receipts.ts";
+import {
+  driveClass,
+  insertRow,
+  type LogRow,
+  type OutcomeClass,
+} from "../log.ts";
 import { carries, holdsNotice } from "../notices.ts";
 import type {
   RuntimeReceipt,
   SessionsReport,
   Workspace,
 } from "../runtime/port.ts";
+import { inTransaction, stateDb } from "../state.ts";
 import { failureText } from "../text.ts";
 import type {
   Action,
@@ -64,57 +71,49 @@ interface Suppression {
   key: string;
   at: string;
   workspace: string;
+  /** Set for a cause notified once for the life of its key: the cause going away does not release it. */
+  lasting: boolean;
 }
 
-function noticesRoot(root: string): string {
-  return join(root, "notices");
-}
-
-function fileOf(repo: string, key: string, root: string): string {
-  const digest = createHash("sha256")
-    .update(`${repo}\n${key}`)
-    .digest("hex")
-    .slice(0, 32);
-  return join(noticesRoot(root), `${digest}.json`);
-}
-
-/** The suppression records of `repo`, by key, with their files. */
+/** The suppression records of `repo`, by key. */
 function readSuppressions(
   repo: string,
   root: string,
-): Map<string, Suppression & { file: string }> {
-  const out = new Map<string, Suppression & { file: string }>();
-  let names: string[];
-  try {
-    names = readdirSync(noticesRoot(root));
-  } catch (error) {
-    swallow(error, "no notification has been sent yet");
-    return out;
-  }
-  for (const name of names.filter((n) => /^[a-f\d]{32}\.json$/.test(n))) {
-    const file = join(noticesRoot(root), name);
-    try {
-      const value: unknown = JSON.parse(readFileSync(file, "utf8"));
-      if (
-        isRecord(value) &&
-        value.repo === repo &&
-        typeof value.key === "string" &&
-        typeof value.target === "string"
-      )
-        out.set(value.key, { ...(value as unknown as Suppression), file });
-    } catch (error) {
-      swallow(error, `${name} is not a suppression record`);
-    }
-  }
-  return out;
+): Map<string, Suppression> {
+  const rows = stateDb(root)
+    .query(
+      "SELECT repo, key, target, workspace, at, lasting FROM notices WHERE repo = ?",
+    )
+    .all(repo) as Array<Omit<Suppression, "lasting"> & { lasting: number }>;
+  return new Map(rows.map((r) => [r.key, { ...r, lasting: r.lasting === 1 }]));
 }
 
-function suppress(record: Suppression, root: string): void {
-  mkdirSync(noticesRoot(root), { recursive: true, mode: 0o700 });
-  publishOnce(
-    fileOf(record.repo, record.key, root),
-    `${JSON.stringify(record, null, 2)}\n`,
-  );
+/**
+ * Write a cause's suppression record, and its event row with it in one
+ * transaction; the record that is already there stands.
+ */
+function suppress(
+  record: Suppression,
+  event: LogRow | null,
+  root: string,
+): void {
+  const db = stateDb(root);
+  inTransaction(db, () => {
+    const written = db
+      .query(
+        `INSERT INTO notices (repo, key, target, workspace, at, lasting)
+         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (repo, key) DO NOTHING`,
+      )
+      .run(
+        record.repo,
+        record.key,
+        record.target,
+        record.workspace,
+        record.at,
+        record.lasting ? 1 : 0,
+      );
+    if (written.changes === 1 && event !== null) insertRow(db, event);
+  });
 }
 
 /** Whether the tick may write a workspace's comment: no kickoff prompt can be waiting in it. */
@@ -315,20 +314,46 @@ async function sendTo(
 }
 
 /**
+ * A suppression record and its event row that could not be written: the
+ * next tick finds the cause's key in the target's comment and writes them
+ * then. Reported so the tick fails and the receipt says what the dashboard
+ * lacks.
+ */
+function outcomeLogFailed(
+  report: RepoReport,
+  what: string,
+  error: unknown,
+): void {
+  report.unplaced.push({
+    target: "the outcome log",
+    record: "runtime",
+    reason: `${what} and its event row were not written and wait for a later tick: ${failureText(error)}`,
+  });
+}
+
+/**
  * Drop the suppression records of `repo` whose cause this tick no longer
  * names, when every record was read whole and the target is not one the
- * tick could not place: the facts that made the cause have changed.
+ * tick could not place: the facts that made the cause have changed. A
+ * drift is notified once per launch and expectation, so its record stays.
  */
 function prune(
   report: RepoReport,
   keys: ReadonlySet<string>,
-  sent: Map<string, Suppression & { file: string }>,
+  sent: Map<string, Suppression>,
+  root: string,
 ): void {
   if (!report.records.every((r) => r.ok)) return;
   const unplaced = new Set(report.unplaced.map((u) => u.target));
-  for (const [key, s] of sent)
-    if (!keys.has(key) && !unplaced.has(s.target))
-      rmSync(s.file, { force: true });
+  const gone = [...sent.values()].filter(
+    (s) => !keys.has(s.key) && !unplaced.has(s.target) && !s.lasting,
+  );
+  if (gone.length === 0) return;
+  const db = stateDb(root);
+  const drop = db.query("DELETE FROM notices WHERE repo = ? AND key = ?");
+  inTransaction(db, () => {
+    for (const s of gone) drop.run(s.repo, s.key);
+  });
 }
 
 /** The causes for each target workspace; a cause with none reachable is reported as waiting. */
@@ -358,6 +383,58 @@ async function groupByTarget(
   return groups;
 }
 
+/** The stage a cause is about, for its event row. */
+function stageOf(cause: Cause): string {
+  if (typeof cause.evidence.stage === "string") return cause.evidence.stage;
+  if (cause.cause === "followup-failed") return "followup";
+  if (cause.cause === "stalled" || cause.cause === "double-claim")
+    return "pickup";
+  return "rearm";
+}
+
+/** The class the closed list places a cause in; `null` for an observation no class names. */
+function classOf(cause: Cause): OutcomeClass | null {
+  switch (cause.cause) {
+    case "double-claim":
+      return "double claim";
+    case "stalled":
+      return "stalled";
+    case "parked":
+      return "parked for a person";
+    case "followup-failed":
+      return "gates failed";
+    case "stopped-unknown":
+      return "unknown";
+    case "needs-person": {
+      const exit = cause.evidence.exit;
+      return typeof exit === "number"
+        ? driveClass(exit, null).class
+        : "unknown";
+    }
+    default:
+      return null;
+  }
+}
+
+/** The event row for a cause timed at `at`. */
+function eventRow(repo: string, cause: Cause, at: string): LogRow {
+  return {
+    kind: "event",
+    key: `event ${cause.notice.key}`,
+    at,
+    repo,
+    stage: stageOf(cause),
+    target: cause.target,
+    event: cause.cause,
+    account:
+      typeof cause.evidence.account === "string"
+        ? cause.evidence.account
+        : null,
+    class: classOf(cause),
+    reason: cause.reason,
+  };
+}
+
 /** `--apply` for one repository's notifications. */
 export async function applyNotices(
   state: ApplyState,
@@ -368,14 +445,14 @@ export async function applyNotices(
   const root = state.root ?? stateRoot();
   const causes = report.actions.filter(isCause);
   const sent = readSuppressions(repo.slug, root);
-  prune(report, new Set(causes.map((c) => c.notice.key)), sent);
+  prune(report, new Set(causes.map((c) => c.notice.key)), sent, root);
   const due = causes.filter((c) => !sent.has(c.notice.key));
   for (const c of causes) {
     const earlier = sent.get(c.notice.key);
-    if (earlier !== undefined)
-      report.notifications.push(
-        outcomeFor(c, "suppressed", earlier.workspace, `sent ${earlier.at}`),
-      );
+    if (earlier === undefined) continue;
+    report.notifications.push(
+      outcomeFor(c, "suppressed", earlier.workspace, `sent ${earlier.at}`),
+    );
   }
   if (due.length === 0) return;
   if (!sessions.ok) {
@@ -383,17 +460,30 @@ export async function applyNotices(
       report.notifications.push(outcomeFor(c, "waits", null, sessions.reason));
     return;
   }
-  const suppressed = (c: Cause, workspace: string) =>
-    suppress(
-      {
-        repo: repo.slug,
-        target: c.target,
-        key: c.notice.key,
-        at: new Date().toISOString(),
-        workspace,
-      },
-      root,
-    );
+  const suppressed = (c: Cause, workspace: string) => {
+    const at = new Date().toISOString();
+    try {
+      suppress(
+        {
+          repo: repo.slug,
+          target: c.target,
+          key: c.notice.key,
+          at,
+          workspace,
+          lasting: c.cause === "drifting",
+        },
+        // A cause about a stage this machine launched has its ended row instead.
+        c.launched === true ? null : eventRow(repo.slug, c, at),
+        root,
+      );
+    } catch (error) {
+      outcomeLogFailed(
+        report,
+        `the suppression record of ${c.notice.key}`,
+        error,
+      );
+    }
+  };
   const groups = await groupByTarget(
     state,
     repo,

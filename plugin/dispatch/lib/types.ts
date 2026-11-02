@@ -7,7 +7,7 @@
 export type RecordName = "tracker" | "forge" | "runtime";
 
 /** The stages a tick can start, as the plan names them. */
-export type Stage = "pickup" | "rearm" | "followup" | "notify";
+export type Stage = "pickup" | "rearm" | "followup" | "notify" | "steer";
 
 /** Evidence as the report prints it: field, value. */
 export type Evidence = Record<string, string | number | boolean | null>;
@@ -24,6 +24,12 @@ export interface DispatchSection {
   stalledAfterMs: number;
   /** How long a dispatched session may wait before it is reported. */
   blockedAfterMs: number;
+  /** A drive drifts when its unresolved threads at the latest recorded round are not below the count this many recorded rounds earlier. */
+  driveRoundsFlat: number;
+  /** How long a pickup may run before it has opened a pull request. */
+  pickupWithinMs: number;
+  /** How long a follow-up may run before it has ended. */
+  followupWithinMs: number;
 }
 
 /** One repository as the tick dispatches for it. */
@@ -56,6 +62,7 @@ export interface WantedItem {
 export type LedgerClass =
   | "driven"
   | "silent"
+  | "stale"
   | "done"
   | "stopped-by-person"
   | "stopped-unknown"
@@ -79,6 +86,16 @@ export interface WaitingPark {
   lines: string[];
 }
 
+/**
+ * Why a converged drive is stale: `cause` in words, for the report and the
+ * outcome log; `change` names the pull request's state that made it so (its
+ * head and whether it conflicts), for which a re-drive is launched once.
+ */
+export interface StaleCause {
+  cause: string;
+  change: string;
+}
+
 /** One open pull request whose comments hold a drive ledger. */
 export interface DrivenPr {
   number: number;
@@ -91,6 +108,8 @@ export interface DrivenPr {
   evidence: Evidence;
   /** For a `parked` ledger: the decisions still unanswered. */
   waiting?: WaitingPark[];
+  /** For a `stale` ledger: what its stop does not fix. */
+  stale?: StaleCause;
 }
 
 /** One pull request merged since the follow-up stage's start. */
@@ -100,6 +119,7 @@ export interface MergedPr {
   title: string;
   head: string;
   mergedAt: string;
+  createdAt?: string;
 }
 
 /** A follow-up marker comment on a merged pull request, as the tick reads it. */
@@ -141,7 +161,9 @@ export type NotifyCause =
   | "parked"
   | "needs-person"
   | "stopped-unknown"
-  | "followup-failed";
+  | "followup-failed"
+  | "drifting"
+  | "nudge-unanswered";
 
 /**
  * A notification's message: `key` names the facts its suppression record
@@ -166,12 +188,18 @@ export interface Action {
   facts?: string;
   /** For a takeover: the launch record whose driver it replaces. */
   takeover?: string;
+  /** For a re-drive of a stale converged drive: why it is stale. */
+  redrive?: StaleCause;
   /** For a notification: its cause. */
   cause?: NotifyCause;
   /** For a notification: the message, with the key that suppresses a repeat. */
   notice?: Notice;
   /** For a notification: the workspace path a launch record names, when the target joins no workspace by itself. */
   workspace?: string;
+  /** For a notification about a stage this machine launched, whose ended row the outcome log already holds: no event row is written for it. */
+  launched?: true;
+  /** For a nudge: the launch record, the agent it goes to, and the waiting episode it answers. */
+  nudge?: { record: string; agent: string; episode: string; account: string };
 }
 
 /** What `--apply` did with one planned launch. */
@@ -217,6 +245,23 @@ export interface NotifyOutcome {
   detail: string;
 }
 
+/** What `--apply` did with one nudge (the `steer` stage). */
+export interface SteerOutcome {
+  target: string;
+  record: string;
+  /** The waiting episode it answers: the wall's observation time. */
+  episode: string;
+  /**
+   * `sent`: the runtime's receipt shows the text was delivered;
+   * `unknown`: a send was attempted and its answer is lost; `refused`: a
+   * check before the send failed or could not be read, so nothing was
+   * sent; `reported`: the runtime cannot steer, so the nudge is reported
+   * and not sent.
+   */
+  outcome: "sent" | "unknown" | "refused" | "reported";
+  detail: string;
+}
+
 /** A wanted stage the runtime reports already running. */
 export interface Running {
   target: string;
@@ -249,6 +294,8 @@ export interface RepoReport {
   launches: LaunchOutcome[];
   /** What `--apply` notified, where the machine file enables `notify`; empty otherwise. */
   notifications: NotifyOutcome[];
+  /** What `--apply` nudged, where the machine file enables `steer`; empty otherwise. */
+  steers?: SteerOutcome[];
   /** Targets that need nothing from the tick, by class: a pull request's ledger class, a pickup's, or a follow-up's. */
   quiet: Array<{
     target: string;

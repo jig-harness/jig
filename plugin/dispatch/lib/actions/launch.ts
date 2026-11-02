@@ -53,6 +53,14 @@ export interface ApplyState {
   table: Slots[];
   /** The account of the most recent launch record, where the turn resumes. */
   last: string | null;
+  /**
+   * The pass deadline every drive this tick launches runs under, in seconds
+   * (`0` for none): the one the tick reads (`DRIVE_PR_PASS_TIMEOUT`, else
+   * the drive's default), written on the launch record and handed to
+   * `drive.ts` as `--pass-timeout`, so the deadline admission judged is the
+   * one the pass gets.
+   */
+  passDeadlineSec: number;
   /** The workspaces this tick has opened so far, within `OPENS_PER_TICK`. */
   opened?: number;
   /** When the tick began, for its overall deadline. */
@@ -226,6 +234,7 @@ async function callLaunch(
       stageOf(record),
       record.account,
       record.token,
+      record.sessionId ?? undefined,
     );
   } catch (error) {
     receipt = { ok: false, lost: true, detail: failureText(error) };
@@ -343,6 +352,15 @@ export function workspaceOr(
   return opened;
 }
 
+/** Whether a pending record's launch can still be replayed: it has a workspace, its last attempt got no answer and an attempt remains. */
+export function retryable(record: LaunchRecord): boolean {
+  return (
+    record.workspace !== null &&
+    record.attempts.at(-1)?.outcome !== "sent" &&
+    record.attempts.length < MAX_ATTEMPTS
+  );
+}
+
 /** The pending records of `repo` whose launch got no answer and may be replayed once, of the actions `kinds` names. */
 export function replayable(
   state: ApplyState,
@@ -354,10 +372,8 @@ export function replayable(
       ({ record, state: s }) =>
         record.repo === repo &&
         s.kind === "pending" &&
-        record.workspace !== null &&
         kinds.includes(record.action) &&
-        record.attempts.at(-1)?.outcome !== "sent" &&
-        record.attempts.length < MAX_ATTEMPTS,
+        retryable(record),
     )
     .map((r) => r.record);
 }
@@ -424,15 +440,20 @@ function admission(
     return admitRearm(
       state.table,
       state.last,
+      { kind: "interactive" },
       excluded,
-      `an interactive ${action.stage} session`,
     );
   if (action.takeover === undefined)
-    return admitRearm(state.table, state.last, excluded);
+    return admitRearm(
+      state.table,
+      state.last,
+      { kind: "pass", deadlineSec: state.passDeadlineSec },
+      excluded,
+    );
   const replaced = state.records.find((r) => r.record.id === action.takeover);
   return replaced === undefined
     ? { waits: `the launch record ${action.takeover} it replaces is gone` }
-    : admitTakeover(state.table, replaced);
+    : admitTakeover(state.table, replaced, state.passDeadlineSec);
 }
 
 /**

@@ -84,6 +84,11 @@ that a skill hands a narrow job to):
 |-------|--------------|--------------|
 | [review-arbiter](agents/review-arbiter.md) | Rules on contested review findings the triage rubric cannot settle (fix now, reject, won't fix, defer or escalate to a human); reads code, never edits | `jig:review-arbiter` (Claude Code; see [Codex notes](#codex-notes)) |
 
+Which of these parts are scripts with no model in them, which are a model
+deciding, who owns each record the skills share and who notices when one
+fails is mapped in [MECHANISMS.md](MECHANISMS.md), by mechanism rather than
+by stage.
+
 Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
 [machine resource collection](#machine-resource-collection) ·
 [the dispatcher](#the-dispatcher) ·
@@ -134,23 +139,33 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch install [--interval 5m] [--yes] [--uninstall]
 ```
 
-`dispatch --help`, `dispatch install --help` and `dispatch receipts --help`
+`dispatch --help`, `dispatch install --help`, `dispatch receipts --help`,
+`dispatch dashboard --help`, `dispatch log --help` and `dispatch clear --help`
 list the options of each form. For each repository (`--repo`, else the
 machine file's, else the current one) it prints every action it would take,
 each with the record that wants it and the evidence: a pickup for an item
 assigned to the repository's factory identity, a re-arm for a drive its
 ledger shows stopped on a mechanical state (a usage limit, an answered
-park), a follow-up for a merge, a notification for a drive only a person can
-settle. A stage a running session or a launch record already holds is listed
+park), a re-drive for a converged drive gone stale (its pull request now
+conflicts with its base, or its head moved past the head the drive
+verified), a follow-up for a merge, a notification for a drive only a
+person can settle. A converged pull request its base merely moved past,
+still mergeable at the verified head, is left alone, and one whose
+mergeability the forge is still computing is reported and waits for a
+later run. A stage a running session or a launch record already holds is listed
 as running; a record it cannot read, or a target it cannot place, is
 reported and never planned. Each run writes a receipt under
 `~/.local/state/jig/dispatch/receipts/`, which `jig dispatch receipts`
-lists.
+lists. What the dispatcher keeps between runs (the launch records, the
+records that keep a notification or a nudge from going twice, and the
+outcome log) is one SQLite database beside them, `state.sqlite`; a
+database written by a newer plugin is refused, with its version named,
+until the plugin is updated.
 
 **`--apply`** starts what the machine file
 ([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))
 enables for each repository: the `rearm` stage, and the `pickup`,
-`followup` and `notify` stages below. With `rearm`, each re-arm
+`followup`, `notify` and `steer` stages below. With `rearm`, each re-arm
 of a stopped drive, and each takeover of a wedged driver this machine
 started, runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
 of the pull request's workspace, opened from the pull request when none
@@ -159,13 +174,47 @@ the pass to an account the machine file lists, through that account's
 configuration directory, and only while the account has a free slot and no
 recorded usage-limit wall; before the launch the dispatcher checks that the
 directory resolves to the account's identity, and starts nothing when it
-does not. Every launch begins with a launch record under
-`~/.local/state/jig/dispatch/launches/`, so a launch whose answer is lost
+does not. Every launch begins with a launch record in the state database,
+so a launch whose answer is lost
 holds its slot and is retried only under its own record. A refusal
 `drive.ts` gives (another driver holds the pull request) is the stage's
-answer and is not launched again on the same ledger facts. A record whose
+answer and is not launched again on the same ledger facts. A re-drive is
+launched once per change (the pull request's head, conflicting or not):
+the drive merges the base in through its conflict-resolve round, or
+reviews the new head in its ordinary rounds, and a conflict its repair
+budget cannot settle stops it for a person, as any conflict does. A record whose
 process cannot be checked (another host or boot) holds its slot until a
-person removes its files.
+person clears it:
+
+```sh
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch clear <record>
+```
+
+which refuses a record whose session is still running.
+
+**The account picks the agent.** Each account in the machine file names its
+`vendor`, and that decides the agent every session on it runs in: a re-arm
+admitted on a `claude` account runs Claude Code's pass command with
+`CLAUDE_CONFIG_DIR` set to the account's directory, one on a `codex` account
+runs Codex's documented pass command
+([drive-pr](skills/drive-pr/README.md#how-to-start-it)) with `CODEX_HOME`
+set to it, and in either the other directory variable and every credential
+variable (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)
+are removed, so a drive stopped on a Claude Code account's usage limit is
+re-armed on a Codex account at the next run. A repository never names an
+agent: it names a model per runtime in `routing.models`, which a pass reads
+for its vendor (the execution tier of `routing.models.codex` for a Codex
+pass, `drive.pass_model` for Claude Code's) and a pickup reads through its
+route. Every drive runs under the pass deadline the run read
+(`DRIVE_PR_PASS_TIMEOUT` in its environment, else the drive's 90 minutes),
+written on its launch record and handed to `drive.ts` as `--pass-timeout`.
+A Codex pass has no turn cap of its own, so a `codex` account is not
+admitted for a drive while that deadline is `0`; an account of any other
+vendor, which the drive documents no pass command for, is accepted by the
+machine file and never admitted. Each run reports both at its top
+(`accepted, not admitted`, with the reason) and in its receipt
+(`accountsNotAdmitted`). The `review-arbiter` agent and the turn-budget
+hook stay Claude Code's ([Codex notes](#codex-notes)).
 
 **Pickups** (the `pickup` stage) start one `do-item` session per item
 assigned to the factory identity in a dispatch state, once: just before
@@ -195,11 +244,15 @@ the configuration directory of the account the host has selected, which a
 person can switch at any moment. So with Orca every pickup is reported,
 with that reason, and nothing is opened or started. The launch path is
 built behind the runtime's answer: a terminal tab running the dispatcher's
-wrapper, which binds the session through the account's configuration
-directory as it does a drive's pass, and reads the agent's id back as the
-terminal's tab and pane, the id `orca worktree ps` reports agents under.
-It switches on once Orca is shown to report a session started that way as
-an agent.
+wrapper, which starts the agent of the account's vendor (Claude Code, or
+Codex on the route's `routing.models.codex` model and `routing.efforts.codex`
+effort), binds it through the account's configuration directory as it does
+a drive's pass, and reads the agent's id back as the terminal's tab and
+pane, the id `orca worktree ps` reports agents under. Orca reports a Codex
+session started that way as an agent under that id, but Codex first asks
+whether to trust a folder it has not seen, and nobody answers; that it
+reports a Claude Code session started that way is not shown. It switches on
+once both are settled.
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed
@@ -247,6 +300,100 @@ rather than replacing it. The answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.
 
+**The outcome log.** Every launch record that ends gets one row in the
+[outcome log](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), a
+table of the state database written in the same transaction as the
+record's end, which never expires: the stage, the repository, the item or pull request, the account,
+the model, the duration, a drive's rounds, and an outcome class from a
+closed list, with a reason that carries the stage's own answer (the exit,
+the recorded result, or the last state):
+
+| Class | What ended there |
+| --- | --- |
+| converged | a drive's convergence (exit `0`); a pickup's or follow-up's result `done` |
+| merged | a drive whose pull request merged while it ran (exit `5`) |
+| quota wall | a usage limit: exit `16`, or a session that ended with no result while its wall stood |
+| parked for a person | a park (exit `8`) |
+| stalled | the drive's stall (exit `14`) or its round limit (`6`); a driver replaced by a takeover |
+| died | a process gone without an exit; a session that ended with no result |
+| refused | a stage's own refusal or a stop it was given (exits `2`, `4`, `11`, `13`, `18`, `19`, `20`; `5` on a closed pull request) |
+| gates failed | a stage that ran to its end without achieving it (exits `1`, `7`, `9`, `12`, `15`; a result `failed`) |
+| double claim | an item more than one session joins to (an event row) |
+| unknown | anything else, with its last state |
+
+What the tick observes rather than what ends is an event row, once per
+cause: a stalled pickup, a double claim, a stage drifting from its
+expectation, a session waiting, a stop it notified on a drive it did not
+launch, and each nudge with whether it arrived. A stop the classifier cannot
+place is logged as `unknown`, never dropped, so a reason that recurs among
+those rows is what a new class is made from.
+
+**The log as text.** The log prints as text, one line a row, or with
+`--jsonl` as JSON lines:
+
+```sh
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch log [--since <date>] [--jsonl]
+```
+
+Every run also adds the rows it wrote to a copy, one file per month,
+`~/.local/state/jig/dispatch/log-<year>-<month>.jsonl`, which never
+expires: the archive that outlives any change to the database, kept
+current with nobody running anything.
+
+**Expectations and drift.** Each stage the dispatcher launched carries an
+expectation while it runs: a drive's unresolved review threads fall (the
+tick records the count on the launch record at each ledger round it sees,
+and the drive drifts when the latest is not below the count
+`dispatch.drive_rounds_flat` recorded rounds earlier); a pickup opens a
+pull request within `dispatch.pickup_within`; a follow-up ends within
+`dispatch.followup_within`. A stage outside its expectation is reported as
+drifting with the evidence (the counts per round, the time since launch,
+the item's state), and, where the machine file enables `notify` and the run
+applies, notified once, which writes it to the log: a run that only reports
+leaves no row for it. It is never acted on: the stage keeps running and keeps its slot, and whether to stop it is a
+person's call.
+
+**The one nudge** (the `steer` stage). When an interactive session the
+dispatcher launched meets its account's usage limit, the tick reads the
+wall from that session's own record (the launch passes Claude Code the
+session id it minted) and keeps it on the launch record and as the
+account's wall. Once the wall has reset, and the runtime reports the session
+waiting with the wall still its last record, the tick types the one nudge
+in the closed set, `Your usage limit has reset. Continue` (what a person
+types by hand), once per wall: in the same call, the runtime re-reads the
+agent's state, that no person has the workspace open, and the screen, which
+must show the agent's empty input line and no menu or question; any check
+that fails sends nothing. A session still waiting after its nudge, or a
+nudge not known to have arrived, is notified, never nudged again. No other
+nudge exists: every other stuck state is a notification. With Orca, the
+nudge goes to the terminal whose tab and pane make the agent's id, through
+`orca terminal read --screen` and `orca terminal send --enter`; since Orca
+starts no interactive session yet, there is nothing to nudge until it does.
+
+**The dashboard.** One page over the log, served while the command runs:
+
+```sh
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch dashboard [--port <n>]
+```
+
+It listens on the machine file's `dashboard.listen`, an address in the
+private or loopback ranges (a Tailscale address of the host, say), and
+prints a URL whose token every request needs. The page reads the log when
+it asks for rows, filters them by time (today, yesterday, seven or thirty
+days, or a range), repository, stage, account, class and reason, and counts
+each class over the window; it writes nothing and generates no report. A
+question about yesterday is the Yesterday filter. Nothing installs or keeps
+it running: start it from a terminal on the host (Orca's phone app reaches
+one), open the URL on the phone, and stop it with Ctrl-C.
+
+**When a class recurs.** The tick tunes none of its own dials. A class that
+keeps showing on the dashboard (quota walls at the same hour, pickups that
+drift past `pickup_within`, a reason recurring among the `unknown` rows) is
+a finding about the scaffolding: record it with
+[`reflect`](skills/reflect/README.md), and
+[`review-reflections`](skills/review-reflections/README.md) is where a
+person approves the change, a cap, an expectation, a skill's step.
+
 **The morning routine.** Nothing needs restarting after a night: the timer
 ran every tick. Read the morning report,
 `drives.ts --report` ([drive-pr](skills/drive-pr/README.md)), which lists
@@ -255,8 +402,9 @@ machine since the last report. Answer each park from the phone: open the
 unread workspace, read the framed decision, and comment `answer <key>: …` on
 the pull request; the next tick re-arms the drive. Settle what a
 notification says only a person can (a failed follow-up's marker, a stalled
-pickup, a stop with its handoff), then merge what converged: the dispatcher
-never merges.
+pickup, a stop with its handoff, a drifting stage), then merge what
+converged: the dispatcher never merges. To see how the night went, open the
+dashboard on Yesterday.
 
 **`jig dispatch install`** previews the timer that runs `--apply` every
 interval (the machine file's `interval`, five minutes by default), and
@@ -738,10 +886,17 @@ them together.
   [`agents/review-arbiter.md`](agents/review-arbiter.md) as its
   instructions, or define the arbiter once as a Codex custom agent from that
   file.
-- **The drive's default pass command** starts Claude Code
-  (`claude -p "/jig:drive-pr <PR>"`). To drive with Codex, put a Codex
-  command after the `--` in the
-  [start command](skills/drive-pr/README.md#how-to-start-it).
+- **The drive has a pass command for each.** Claude Code's
+  (`claude -p "/jig:drive-pr <PR>"`) is the default; Codex's
+  (`codex exec --dangerously-bypass-approvals-and-sandbox "Use the
+  jig:drive-pr skill: /jig:drive-pr <PR>"`) is the one a drive armed from a
+  Codex session runs, and the one the dispatcher runs on a Codex account
+  ([start command](skills/drive-pr/README.md#how-to-start-it)). A Codex
+  pass runs on the execution tier of `routing.models.codex`, else Codex's
+  own configured model; `drive.pass_model` is Claude Code's. Since the
+  turn-budget hook counts nothing under Codex, a Codex pass has no turn cap
+  of its own: the pass deadline (`DRIVE_PR_PASS_TIMEOUT`, 90 minutes by
+  default) is what ends one that runs on, so keep it on for a Codex drive.
 
 ## Call a skill's scripts from repository code
 

@@ -1256,6 +1256,13 @@ make, use the entry's term instead.
   convergence. The practice is
   [M13's](modules/M13-pipeline-economy/README.md#7-hold); drive-pr's
   `ci.hold_label` is its driver side.
+- **Drive mailbox** — the one way to reach a running *PR drive loop* from
+  outside it: append-only files in the working tree into which a person, or
+  the session that started the drive, writes a note or a directive, and
+  which only the driver answers. A note is context a pass may read; a
+  directive (hold the push, pause, stop) is enforced by the drive's own
+  scripts, whatever a pass does
+  ([drive-pr](plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)).
 - **Held-head check** — the step of a required check that fails, or cancels
   its own run, while a pull request carries the *CI hold* label, so a held
   head is visibly not mergeable from the moment the label lands until the
@@ -1702,6 +1709,17 @@ make, use the entry's term instead.
   instructions and tool list that a skill or session hands one narrow job to.
   A plugin can ship subagents beside its skills; Claude Code loads them,
   Codex reads them only from its own agent folders.
+- **Deterministic part and reasoned part** — the two kinds of part a
+  system of agents is built from. A **deterministic part** is a script with
+  no model in it: given the same records it does the same thing, and it
+  refuses or reports what it cannot read rather than guess (a gate, the
+  *dispatcher*'s *tick*, a tracker script, a release step). A **reasoned
+  part** is a model session working from instructions and deciding (a
+  skill's session, a pass of a *PR drive loop*, an implementer, the *Review
+  Arbiter*, an audit's score where no *probe* decides). In Jig the reasoned
+  parts decide and a deterministic part writes the shared record, checking
+  what it is given. See
+  [plugin/MECHANISMS.md](plugin/MECHANISMS.md).
 - **Issue** — one unit of work in the issue tracker: what `/jig:do-item` picks
   up and a pull request closes. Skills say *item* for short. *Avoid*: ticket,
   card, task.
@@ -1824,12 +1842,17 @@ make, use the entry's term instead.
   launches an agent into it; it only writes its comment and marks it
   unread for a person to read.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
-  it started ended: one row per session with its stage, repository,
+  it started ended, a table of its state database with a text copy of one
+  file per month: one row per session with its stage, repository,
   account, duration and an outcome class from the closed list the
   dispatcher's design defines, among them converged, quota wall, parked
   for a person, stalled and died; a stop no class in that list fits is
-  logged as `unknown` with its last state, never dropped. One dashboard filters it; it is
-  never rendered into a report file.
+  logged as `unknown` with its last state, never dropped. Beside those
+  rows it holds one event row per notification it delivered and per nudge
+  it attempted (for a stalled pickup, a double claim or a stage drift),
+  except for a notification about the stop of a session it started, which
+  its row for that session already covers. One dashboard filters
+  it; it is never rendered into a report file.
 - **Stage drift** — a running stage falling short of what it is expected to
   achieve: a review drive whose open threads do not fall across rounds, a
   pickup that has not opened a pull request in time. The *dispatcher*
@@ -1838,6 +1861,11 @@ make, use the entry's term instead.
   closed set with one entry: "continue" to a session it started that is
   waiting at its prompt after a usage limit that has since reset. Anything else a stuck
   session needs goes to a person.
+- **Waiting episode** — one stretch of a session the *dispatcher* started
+  waiting at its prompt behind a usage limit, kept on that session's launch
+  record: the wall's observation time and reset, and whether the session's
+  last record is still the wall. A new observation time starts a new
+  episode; the *nudge* is sent at most once per episode.
 - **Kickoff** — the first prompt an agent is given in a new workspace,
   usually the pickup skill and the issue key. The
   [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of

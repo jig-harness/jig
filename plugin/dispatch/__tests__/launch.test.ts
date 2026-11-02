@@ -40,8 +40,11 @@ const CONFIG = `issue_tracker:
 `;
 
 const HEAD = "feature/7-parked";
+/** The drive's flags and pass, under the drive's default pass deadline the tick admitted it with. */
 const PASS = [
   "--bots-only",
+  "--pass-timeout",
+  "5400",
   "--",
   "claude",
   "-p",

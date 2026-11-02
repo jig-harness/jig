@@ -240,6 +240,13 @@ PR-global `verifiedSha` or exits 0.
 With a hold label, the PR-open head runs full CI. Before the first
 intermediate fix push, `finish-round.ts` waits until every required check has
 completed, adds the label, and records the resulting GitHub timeline-event id.
+When no hold label is live or owned and the checks the hold waits for have
+not completed, `ensure` reads the PR's mergeability. GitHub runs no
+`pull_request` CI on a PR that conflicts with its base, so on a `CONFLICTING`
+answer `ensure` prints `conflicting` and the push goes ahead without the
+label; the push that clears the conflict runs full CI. An `UNKNOWN` or
+unreadable answer keeps the wait (exit `4`), and a label that is live,
+externally owned or mid-recovery is handled before that read.
 The repository's synchronize workflows are expected to honour the label: they
 skip their expensive jobs while a required check fails or is cancelled, so the
 held head is visibly non-green rather than falsely mergeable; the posting
@@ -309,8 +316,21 @@ it, or read `state` from the `--json` report, which is unambiguous either way.
 bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- claude -p "/jig:drive-pr --bots-only 123"
 ```
 
+That is Claude Code's pass command. Codex's is the other documented one: it
+names the skill in its prompt, since Codex runs a skill the prompt names, and
+runs without a sandbox or approvals, since a pass pushes, calls the forge and
+has nobody to ask:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- codex exec --dangerously-bypass-approvals-and-sandbox "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 123"
+```
+
 Each round is a **fresh agent process**, so a long converge never depends on one
-session's context surviving. That is the preferred unattended mode.
+session's context surviving. That is the preferred unattended mode. A Codex
+pass has no turn cap of its own (§ Handing off before you degrade): the pass
+deadline (`DRIVE_PR_PASS_TIMEOUT`, `--pass-timeout`, 90 minutes by default)
+is what ends one that runs on, so do not switch the deadline off (`0`) for a
+Codex drive.
 
 **The pass model.** A Claude Code pass (`claude …`) runs on the model the
 driver decides: `--pass-model <model>` for this run, else the pass command's
@@ -321,8 +341,11 @@ routing tier (`execution`, `strategic`, resolved through
 and where it came from (an own `--model` the configuration resolves to is
 named as that setting's; one that names no model is reported as none), the
 `drives.ts` row names it, and every re-arm or takeover command the driver
-prints carries it. Another agent tool's pass command chooses its own model,
-and `--pass-model` is refused for it (exit `2`).
+prints carries it. A Codex pass (`codex …`) runs on its own `-m`, else the
+execution tier of `routing.models.codex`, added after `exec`, else Codex's
+own configured model; `drive.pass_model` is Claude Code's and is not read for
+it. Any other pass command chooses its own model, and `--pass-model` is
+refused for every pass command but Claude Code's (exit `2`).
 
 **The pass arguments.** A Claude Code pass command can carry extra words
 before `-p`, such as `--permission-mode bypassPermissions`, without which a
@@ -336,7 +359,8 @@ takeover command does, runs as written. The driver log's `pass args:` and
 `permission mode:` lines and the `drives.ts` row name them (`inherited` when
 the command sets no mode: Claude Code's own settings then decide). Another agent tool's pass command ignores
 `drive.pass_args`, and the log says so; `--pass-args` is refused for it
-(exit `2`). A `drive.pass_args` that is not a list of words stops the drive
+(exit `2`). A Codex pass's `permission mode:` is read from its own words:
+`no sandbox, no approvals` for the documented command. A `drive.pass_args` that is not a list of words stops the drive
 (exit `1`), naming the field.
 
 **The attach.** Once it holds the tree's driver lock and the PR's,
@@ -1043,11 +1067,16 @@ could forge or forget.
    `handles.list` (list) and `handles.stop` (stop). Then end the turn. After handing over, do
    not touch the drive's state, threads, or worktree: the driver owns them.
 
-Today the one documented pass command is Claude Code's `claude -p`. In
-another agent tool (Codex, for one), do not arm: `arm-drive.ts` answers
-`print` there, so print the command and say why, as `/jig:do-item` does,
-and do not substitute a guessed pass command. A person can put their own
-tool's command after the `--` and run it.
+The documented pass commands are Claude Code's `claude -p` and Codex's
+`codex exec` (§ Running it), and `arm-drive.ts` builds the one of the agent
+tool this session runs in. In a Codex session it opens a terminal tab where
+Orca can and otherwise answers `print`, since the background way is Claude
+Code's background execution: print the command and say why, as
+`/jig:do-item` does. `--pass-model` and `--pass-args` are Claude Code's and
+are refused there (exit `2`). In any other agent tool, do not arm:
+`arm-drive.ts` answers `print` with Claude Code's command, so print it, say
+why, and do not substitute a guessed pass command. A person can put their
+own tool's command after the `--` and run it.
 
 ### Driver pass: you are headless and one-shot
 
@@ -2572,7 +2601,9 @@ That is the whole of step 6. It performs, in this exact order:
    refused to reply to (e.g. `commentsTruncated` — § 4 below);
 2. `bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure` — in a repository with a hold label, after observing
    all required PR-open checks, adds or confirms this drive's durable
-   ownership of the label (without one, prints `disabled`);
+   ownership of the label (without one, prints `disabled`; with the label
+   absent, those checks incomplete and the PR reading `CONFLICTING`, where
+   they cannot run, prints `conflicting` and holds nothing);
 3. `bun "${CLAUDE_SKILL_DIR}/scripts/guarded-push.ts"` — the push, with the PR's liveness re-checked at the
    instant of the push and an explicit refspec at its own head branch;
 4. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" stamp-held` — stamps the pushed SHA onto the holds *this*
@@ -2609,7 +2640,7 @@ returned, which is the case this rule covers.
 |---|---|---|
 | `0` | Pushed, stamped, head-synced, batch drained | Continue to step 7 |
 | `3` | Refused *before* pushing: dirty tree, unconcluded git operation, unreadable tree | Commit or discard the leftovers, resolve or abort the reported Git operation, then re-run |
-| `4` | Refused *before* pushing, in a repository with a CI hold (`bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure`): the PR-open required checks have not completed, the head moved, an interrupted hold release is still waiting for its full CI, or a hold label someone else owns is present | Read the `ci-hold:` line, wait for the checks it names, then re-run; leave an externally owned hold label to whoever added it |
+| `4` | Refused *before* pushing, in a repository with a CI hold (`bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure`): the required checks the hold waits for have not completed on a PR not read as conflicting with its base (an unreadable mergeability included), the head moved, an interrupted hold release is still waiting for its full CI, or a hold label someone else owns is present | Read the `ci-hold:` line, wait for the checks it names, then re-run; leave an externally owned hold label to whoever added it |
 | `5` | The PR is no longer open | Two cases, both terminal: `guarded-push.ts` itself refused because the PR was already closed/merged (nothing was pushed), or the push succeeded and the PR closed/merged during the head-sync wait that follows it (`report.pushed` is `true`). Either way, stop — do not resolve anything against it. See [terminal-states.md](references/terminal-states.md) |
 | `2` | Usage error: an unknown flag, an extra argument, or no PR could be resolved | Fix the invocation and re-run; nothing ran |
 | `6` | Pushed and stamped, but at least one held item was **refused** | Each refusal is named with the refusing script's own exit code and diagnostic. Reconcile it via § 3 — re-hold if the reply still stands, resolve under whatever outcome actually applies if it does not — then re-run |
@@ -3061,7 +3092,8 @@ Under Claude Code, the plugin's turn-budget hook
 round-trips off the transcript and injects a wrap-up instruction some turns
 short of the cap. Under Codex it counts nothing: Codex's transcript is not in
 the format it reads, so it reports could not check and no warning ever comes
-([plugin README § Codex notes](../../README.md#codex-notes)). **When such a
+([plugin README § Codex notes](../../README.md#codex-notes)): a Codex pass
+has no turn cap, and the pass deadline is what ends one that runs on. **When such a
 warning fires, finish only the step in flight, run `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" handoff
 [PR]`, report, and end the turn** — do not open another triage-fix-validate
 cycle inside that margin. Why the counting is an approximation:

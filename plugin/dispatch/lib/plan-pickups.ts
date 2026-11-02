@@ -22,7 +22,12 @@
  */
 import { agentOf, holdingRecords, pickupHold } from "./actions/pickup-hold.ts";
 import { type Holding, holding, liveAgents } from "./holding.ts";
-import { isInteractive, type ReadRecord, targetOf } from "./launches.ts";
+import {
+  isInteractive,
+  type LaunchRecord,
+  type ReadRecord,
+  targetOf,
+} from "./launches.ts";
 import { pickupNotice } from "./notices.ts";
 import {
   type SessionsReport,
@@ -259,6 +264,14 @@ function planClaimed(
   });
 }
 
+/** What the tick read as a waiting session's cause: the usage-limit wall still its last record, if any. */
+function waitCause(record: LaunchRecord): string {
+  const latest = record.episodes?.at(-1);
+  return latest?.last === true
+    ? `, on its account's usage-limit wall since ${latest.observedAt} (resets ${latest.resetAt ?? "at an unknown time"})`
+    : ", with no usage-limit wall read as its cause";
+}
+
 /** Each session this machine launched that has waited past `blocked_after`. */
 function planWaiting(input: PickupInput, plan: PickupPlan): void {
   for (const r of input.launches) {
@@ -271,7 +284,7 @@ function planWaiting(input: PickupInput, plan: PickupPlan): void {
     if (since === null || input.nowMs - since < input.section.blockedAfterMs)
       continue;
     const target = targetOf(record);
-    const reason = `session waiting: its agent has been ${found.agent.state} for ${minutes(input.nowMs - since)} (dispatch.blocked_after ${minutes(input.section.blockedAfterMs)}); it keeps its slot until it ends or a person ends it`;
+    const reason = `session waiting: its agent has been ${found.agent.state} for ${minutes(input.nowMs - since)} (dispatch.blocked_after ${minutes(input.section.blockedAfterMs)})${waitCause(record)}; it keeps its slot until it ends or a person ends it`;
     plan.actions.push({
       stage: "notify",
       target,
@@ -279,6 +292,7 @@ function planWaiting(input: PickupInput, plan: PickupPlan): void {
       reason,
       evidence: {
         record: record.id,
+        stage: record.action,
         agent: record.agentId,
         workspace: found.workspace.path,
         account: record.account,

@@ -40,6 +40,7 @@ export const FIXED: Readonly<Record<string, string>> = {
   "plugin/README.md": "/adopt/plugin/",
   "plugin/CONFIGURATION.md": "/adopt/configuration/",
   "plugin/EXTENDING.md": "/adopt/extending/",
+  "plugin/MECHANISMS.md": "/adopt/mechanisms/",
 };
 
 /** Whether a repository path exists (or, for `isFile`, is a file); the default knows of none. */

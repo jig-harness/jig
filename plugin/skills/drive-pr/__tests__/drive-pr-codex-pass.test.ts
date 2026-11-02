@@ -1,0 +1,140 @@
+/**
+ * drive-pr suite: the documented Codex pass command. `drive.ts` runs it on
+ * the execution tier of `routing.models.codex` (else Codex's own
+ * configuration), refuses Claude Code's `--pass-model` for it, and kills a
+ * Codex pass that outruns the pass deadline, since the turn-budget hook
+ * counts nothing under Codex and nothing else bounds it.
+ */
+
+import { describe, expect, it } from "bun:test";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { passCommand, skillPrompt } from "../scripts/lib/pass-command.ts";
+import { tmpRoot, useDrivePrSuite } from "./drive-pr-harness.ts";
+import { runDrive } from "./drive-loop-harness.ts";
+import { ownTree } from "./drive-pr-pickup-fixtures.ts";
+
+useDrivePrSuite();
+
+const ROUND_READY = {
+  threads: [
+    {
+      id: "PRRT_codex_probe",
+      path: "a.ts",
+      bot: true,
+      comments: [{ author: "example-review[bot]", bot: true, body: "x" }],
+    },
+  ],
+};
+
+const CODEX_PASS = passCommand("codex", 999);
+
+/** The command the dry run says it would run. */
+function wouldRun(stderr: string): string {
+  return /\(dry-run\) would run: (.*)/.exec(stderr)?.[1] ?? "";
+}
+
+async function dryRun(flags: string[], env: Record<string, string> = {}) {
+  return runDrive(
+    ROUND_READY,
+    [
+      "--dry-run",
+      "--no-head-sync",
+      "--bots-only",
+      ...flags,
+      "--",
+      ...CODEX_PASS,
+    ],
+    undefined,
+    { env: { DRIVE_PR_QUOTA_NO_SPAWN_PREP: "1", ...env } },
+  );
+}
+
+describe("the documented Codex pass command", () => {
+  it("runs codex exec without a sandbox or approvals, its prompt naming the skill and carrying the invocation", () => {
+    expect(CODEX_PASS).toEqual([
+      "codex",
+      "exec",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 999",
+    ]);
+    expect(passCommand("claude", 999)).toEqual([
+      "claude",
+      "-p",
+      "/jig:drive-pr --bots-only 999",
+    ]);
+    expect(skillPrompt("codex", "/followup 12")).toBe(
+      "Use the followup skill: /followup 12",
+    );
+  });
+
+  it("runs on the execution tier of routing.models.codex, added after exec", async () => {
+    const r = await dryRun([], {
+      JIG__ROUTING__MODELS__CODEX__EXECUTION: "gpt-example",
+      JIG__ROUTING__MODELS__CODEX__STRATEGIC: "gpt-example-large",
+    });
+    expect(wouldRun(r.stderr)).toStartWith(
+      "codex exec -m gpt-example --dangerously-bypass-approvals-and-sandbox",
+    );
+    expect(r.stderr).toContain(
+      "pass model: gpt-example (routing.models.codex.execution)",
+    );
+    expect(r.stderr).toContain(
+      "permission mode: no sandbox, no approvals (the pass command's --dangerously-bypass-approvals-and-sandbox)",
+    );
+  });
+
+  it("leaves the model to Codex's own configuration when routing.models.codex names none, and ignores drive.pass_model", async () => {
+    const r = await dryRun([], { JIG__DRIVE__PASS_MODEL: "opus" });
+    expect(wouldRun(r.stderr)).toStartWith(
+      "codex exec --dangerously-bypass-approvals-and-sandbox",
+    );
+    expect(wouldRun(r.stderr)).not.toContain("opus");
+    expect(r.stderr).toContain(
+      "pass model: Codex's own configuration; routing.models.codex names no execution model",
+    );
+  });
+
+  it("refuses Claude Code's --pass-model for a Codex pass", async () => {
+    const r = await dryRun(["--pass-model", "opus"]);
+    expectSpawnExit({ ...r, stdout: null }, 2);
+    expect(r.stderr).toContain(
+      "--pass-model applies to a Claude Code pass command",
+    );
+  });
+
+  it("kills a Codex pass that outruns a positive pass deadline", async () => {
+    const bin = join(tmpRoot, "codex-hang-bin");
+    mkdirSync(bin, { recursive: true });
+    writeFakeProgram(
+      join(bin, "codex"),
+      "#!/usr/bin/env bun\nawait Bun.sleep(60_000);\n",
+    );
+    const started = Date.now();
+    const r = await runDrive(
+      ROUND_READY,
+      [
+        "--no-head-sync",
+        "--bots-only",
+        "--pass-timeout",
+        "1",
+        "--",
+        ...CODEX_PASS,
+      ],
+      ownTree("codex-deadline"),
+      {
+        env: {
+          JIG__DRIVE__PASS_DEADLINE_RETRIES: "0",
+          DRIVE_PR_QUOTA_NO_SPAWN_PREP: "1",
+        },
+        extraBinDir: bin,
+      },
+    );
+    expectSpawnExit({ ...r, stdout: null }, 15);
+    expect(r.stderr).toContain("was killed");
+    // Killed at its one-second deadline, long before the pass would have ended.
+    expect(Date.now() - started).toBeLessThan(50_000);
+  }, 120_000);
+});
