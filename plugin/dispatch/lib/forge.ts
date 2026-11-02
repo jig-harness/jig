@@ -136,20 +136,22 @@ export async function pullRequestFiles(
     );
     if (!Array.isArray(out))
       throw new ForgeReadError(`PR #${pr}'s file listing is not a list`);
-    for (const f of out) {
-      const name = field(f, "filename");
-      if (typeof name !== "string" || name === "")
-        throw new ForgeReadError(`PR #${pr}'s file listing is unreadable`);
-      files.push(name);
-      const before = field(f, "previous_filename");
-      if (typeof before === "string" && before !== "") files.push(before);
-    }
+    files.push(...out.flatMap((f) => fileNames(f, pr)));
     if (out.length < FILES_PAGE) return files;
     if (page * FILES_PAGE >= FILES_LIMIT)
       throw new ForgeReadError(
         `PR #${pr} changes ${FILES_LIMIT} or more files, more than the forge lists`,
       );
   }
+}
+
+/** One listed file's names: its path, and the path it was renamed from. */
+function fileNames(f: unknown, pr: number): string[] {
+  const name = field(f, "filename");
+  if (typeof name !== "string" || name === "")
+    throw new ForgeReadError(`PR #${pr}'s file listing is unreadable`);
+  const before = field(f, "previous_filename");
+  return typeof before === "string" && before !== "" ? [name, before] : [name];
 }
 
 interface ListedPr {

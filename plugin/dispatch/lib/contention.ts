@@ -158,18 +158,19 @@ function memberOf(
 
 /** Closest to merge first; a tie is broken by age, then number, so the order is stable. */
 function closer(a: Member, b: Member): number {
-  if (a.mergeable !== b.mergeable) return a.mergeable ? -1 : 1;
-  if (a.driving !== b.driving) return a.driving ? -1 : 1;
-  const threads = (a.threads ?? 0) - (b.threads ?? 0);
-  if (threads !== 0) return threads;
-  if (a.rounds !== b.rounds) return b.rounds - a.rounds;
-  if (
-    a.createdAt !== null &&
-    b.createdAt !== null &&
-    a.createdAt !== b.createdAt
-  )
-    return a.createdAt < b.createdAt ? -1 : 1;
-  return a.pr.number - b.pr.number;
+  const age =
+    a.createdAt === null || b.createdAt === null
+      ? 0
+      : a.createdAt.localeCompare(b.createdAt);
+  const keys = [
+    Number(b.mergeable) - Number(a.mergeable),
+    Number(b.driving) - Number(a.driving),
+    (a.threads ?? 0) - (b.threads ?? 0),
+    b.rounds - a.rounds,
+    age,
+    a.pr.number - b.pr.number,
+  ];
+  return keys.find((k) => k !== 0) ?? 0;
 }
 
 function placeOf(m: Member): string {
