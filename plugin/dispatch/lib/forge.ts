@@ -2,7 +2,8 @@
  * The forge reads a tick makes for one repository, through the signed-in
  * `gh` command-line client and under its deadline: which repository a
  * checkout is, the repository's `.config/jig.yaml` on its default branch, its
- * open pull requests and the pull requests merged since a date, and, for
+ * open pull requests (each with its head commit and its mergeability with
+ * its base, read with it) and the pull requests merged since a date, and, for
  * Control, a pull request's unresolved review threads and whether a closed
  * one merged. Each read
  * returns what it was asked for or throws with the reason, so a population
@@ -100,11 +101,44 @@ interface ListedPr {
   headRefName: string;
   createdAt?: string;
   mergedAt?: string;
+  /** An open pull request's head commit, as the forge reports it. */
+  headRefOid?: string;
+  /** An open pull request's mergeability with its base: `MERGEABLE`, `CONFLICTING`, or `UNKNOWN` while the forge computes it. */
+  mergeable?: string;
+}
+
+/** The fields every listing reads. */
+const LISTED = ["number", "url", "title", "headRefName", "createdAt"];
+
+/** What an open pull request adds: its head commit and its mergeability. */
+const OPEN_FIELDS = ["headRefOid", "mergeable"];
+
+/** One pull request of a listing or a view, or why it does not read. */
+function listedPr(p: unknown, what: string): ListedPr {
+  if (
+    !isRecord(p) ||
+    typeof p.number !== "number" ||
+    typeof p.headRefName !== "string"
+  )
+    throw new ForgeReadError(`${what} is unreadable`);
+  const text = (key: string) =>
+    typeof p[key] === "string" ? { [key]: p[key] as string } : {};
+  return {
+    number: p.number,
+    url: typeof p.url === "string" ? p.url : "",
+    title: typeof p.title === "string" ? p.title : "",
+    headRefName: p.headRefName,
+    ...text("createdAt"),
+    ...text("mergedAt"),
+    ...text("headRefOid"),
+    ...text("mergeable"),
+  };
 }
 
 async function listPrs(slug: string, extra: string[]): Promise<ListedPr[]> {
-  const fields = ["number", "url", "title", "headRefName", "createdAt"];
+  const fields = [...LISTED];
   if (extra.includes("merged")) fields.push("mergedAt");
+  if (extra.includes("open")) fields.push(...OPEN_FIELDS);
   const out = parsed(
     await gh([
       "pr",
@@ -126,29 +160,38 @@ async function listPrs(slug: string, extra: string[]): Promise<ListedPr[]> {
     throw new ForgeReadError(
       `${slug} lists ${PR_LIMIT} or more pull requests, more than one read holds`,
     );
-  return out.map((p, i) => {
-    if (
-      !isRecord(p) ||
-      typeof p.number !== "number" ||
-      typeof p.headRefName !== "string"
-    )
-      throw new ForgeReadError(
-        `pull request ${i} of the listing is unreadable`,
-      );
-    return {
-      number: p.number,
-      url: typeof p.url === "string" ? p.url : "",
-      title: typeof p.title === "string" ? p.title : "",
-      headRefName: p.headRefName,
-      ...(typeof p.createdAt === "string" ? { createdAt: p.createdAt } : {}),
-      ...(typeof p.mergedAt === "string" ? { mergedAt: p.mergedAt } : {}),
-    };
-  });
+  return out.map((p, i) => listedPr(p, `pull request ${i} of the listing`));
 }
 
-/** Every open pull request of the repository. */
+/** Every open pull request of the repository, each with its head commit and mergeability. */
 export async function openPullRequests(slug: string): Promise<ListedPr[]> {
   return listPrs(slug, ["open"]);
+}
+
+/**
+ * One open pull request read again, as the listing reads it, for the fresh
+ * read before a launch; throws when it is no longer open or does not read.
+ */
+export async function openPullRequest(
+  slug: string,
+  pr: number,
+): Promise<ListedPr> {
+  const out = parsed(
+    await gh([
+      "pr",
+      "view",
+      String(pr),
+      "--repo",
+      slug,
+      "--json",
+      [...LISTED, ...OPEN_FIELDS, "state"].join(","),
+    ]),
+    "the pull request view",
+  );
+  const state = field(out, "state");
+  if (state !== "OPEN")
+    throw new ForgeReadError(`PR #${pr} reads ${String(state)}`);
+  return listedPr(out, `PR #${pr}'s view`);
 }
 
 /** Every pull request merged at or after `since` (ISO 8601). */

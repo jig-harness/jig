@@ -46,6 +46,12 @@ if (args[0] === "pr" && args[1] === "list") {
   const state = args[args.indexOf("--state") + 1];
   out(fs.readFileSync(F + "/prs-" + state + ".json", "utf8"));
 }
+if (args[0] === "pr" && args[1] === "view" && args.some((a) => a.includes("headRefOid"))) {
+  // One open pull request read again, as prs-open.json lists it.
+  const listed = JSON.parse(fs.readFileSync(F + "/prs-open.json", "utf8")).find((p) => p.number === Number(args[2]));
+  if (listed === undefined) { process.stderr.write("gh: no pull requests found\\n"); process.exit(1); }
+  out({ ...listed, state: "OPEN" });
+}
 if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("reviewThreads"))) {
   // A pull request's unresolved review threads, as many as threads-<pr> says.
   const pr = (args.find((a) => a.startsWith("pr=")) ?? "pr=0").slice(3);
@@ -199,12 +205,22 @@ export interface OrcaRow {
   unread?: boolean;
 }
 
-/** An open pull request as `gh pr list --json` returns it. */
-export const openPr = (number: number, head: string) => ({
+/** The head commit an open pull request reports unless a test names another. */
+export const HEAD_SHA = "a".repeat(40);
+
+/** An open pull request as `gh pr list --json` returns it: at `HEAD_SHA` and mergeable, unless `extra` says otherwise. */
+export const openPr = (
+  number: number,
+  head: string,
+  extra: { headRefOid?: string; mergeable?: string } = {},
+) => ({
   number,
   url: `https://github.com/${SLUG}/pull/${number}`,
   title: `Pull request ${number}`,
   headRefName: head,
+  headRefOid: HEAD_SHA,
+  mergeable: "MERGEABLE",
+  ...extra,
 });
 
 /** A merged pull request as `gh pr list --json` returns it. */

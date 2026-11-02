@@ -218,7 +218,13 @@ conflict, and a person's push after the drive stopped leaves the new
 head unreviewed; either makes the drive stale, and the drive itself
 already knows what to do on a re-arm (a conflict-resolve round for the
 first, its ordinary rounds for the second). A mergeability the forge is
-still computing leaves the pull request unplaced for that tick.
+still computing leaves the pull request unplaced for that tick, and so
+does a converged ledger that names no verified head on a pull request
+that does not conflict. A re-drive is launched once per change, the pull
+request's head and whether it conflicts: its launch record keeps that
+change, and a later tick that finds the same change reports it however
+that launch ended, so a drive that converges again without settling it
+starts no loop.
 A stopped ledger with no exit has no known origin: `drives.ts --stop`
 records one, and so does the driver's own recovery after a crash, a thrown
 refusal or a signal, so the tick cannot read a person's decision into it.

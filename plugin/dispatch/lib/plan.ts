@@ -172,8 +172,12 @@ function stageFields(
   pr: DrivenPr,
   cause: NotifyCause | undefined,
   launches: ReadRecord[],
-): Pick<Action, "facts" | "cause" | "notice" | "launched"> {
-  if (cause === undefined) return { facts: factsOf(pr) };
+): Pick<Action, "facts" | "redrive" | "cause" | "notice" | "launched"> {
+  if (cause === undefined)
+    return {
+      facts: factsOf(pr),
+      ...(pr.stale === undefined ? {} : { redrive: pr.stale }),
+    };
   return {
     cause,
     notice: cause === "parked" ? parkNotice(slug, pr) : stopNotice(slug, pr),
@@ -230,6 +234,10 @@ function planDrive(
   }
   if (hold.kind === "refused") {
     plan.quiet.push({ target, class: "refused", why: hold.why });
+    return;
+  }
+  if (hold.kind === "redriven") {
+    plan.quiet.push({ target, class: "stale", why: hold.why });
     return;
   }
   const takeover = hold.kind === "takeover" ? hold.record.record.id : null;

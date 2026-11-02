@@ -439,6 +439,11 @@ export function endedRow(
 ): EndedRow {
   const { record } = r;
   const placed = classifyEnded(r, endedAt, facts);
+  // A re-drive ends like any re-arm; its reason also names why the drive was stale.
+  const reason =
+    record.redrive == null
+      ? placed.reason
+      : `${placed.reason}; re-drive of a stale converged pull request: ${record.redrive.cause}`;
   const duration = Date.parse(endedAt) - Date.parse(record.createdAt);
   const start = record.round ?? null;
   return {
@@ -457,6 +462,6 @@ export function endedRow(
         ? Math.max(0, endRound - start)
         : null,
     class: placed.class,
-    reason: placed.reason,
+    reason,
   };
 }

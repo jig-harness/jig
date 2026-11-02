@@ -126,6 +126,39 @@ describe("retention", () => {
     expect(pruneLaunches([a, b], Date.parse("2027-01-01"), 7, dir)).toEqual([]);
   });
 
+  it("keeps each change's latest re-drive record past the retention", () => {
+    const dir = root();
+    const redrive = (id: string, change: string, at: string) =>
+      ended(
+        record(id, {
+          createdAt: at,
+          redrive: { cause: "conflicting", change },
+        }),
+        0,
+        at,
+      );
+    const old = redrive(
+      "20260101T000000Z-aaaaaaaa",
+      "c1",
+      "2026-01-01T00:00:00.000Z",
+    );
+    const other = redrive(
+      "20260102T000000Z-bbbbbbbb",
+      "c2",
+      "2026-01-02T00:00:00.000Z",
+    );
+    const again = redrive(
+      "20260103T000000Z-cccccccc",
+      "c1",
+      "2026-01-03T00:00:00.000Z",
+    );
+    // c1 was re-driven twice (a return to an older head): only its latest
+    // record stays; c2's stays as the evidence for c2.
+    expect(
+      pruneLaunches([old, other, again], Date.parse("2027-01-01"), 7, dir),
+    ).toEqual(["20260101T000000Z-aaaaaaaa"]);
+  });
+
   it("keeps an unreleased pickup until it is released", () => {
     const dir = root();
     const pickup = (released: boolean) =>
