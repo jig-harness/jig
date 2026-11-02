@@ -16,6 +16,10 @@
  * The lock is published whole (linked into place from a private file), so
  * an interrupted acquisition leaves no empty lock. A writer that cannot take the lock within its
  * deadline gets `null` and skips its write: the board is a convenience.
+ *
+ * The lock is local to the machine: writers on different hosts of paired
+ * Orca servers do not exclude each other, and a card they both write can
+ * lose the earlier unread addition.
  */
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -104,13 +108,19 @@ function reclaim(lock: string): void {
   }
 }
 
-/** Milliseconds after which a reclaim mutex is taken to be left by a dead reclaimer. */
+/** Milliseconds after which a reclaim mutex that names no owner is taken to be left by a dead reclaimer. */
 const MUTEX_STALE_MS = 10_000;
 
 function breakStaleMutex(mutex: string): void {
   try {
-    if (Date.now() - statSync(mutex).mtimeMs > MUTEX_STALE_MS)
-      rmSync(mutex, { force: true });
+    // A reclaimer still running may only be slow: its mutex is broken once
+    // its process is gone, and by age only when it names no owner.
+    const owner = ownerOf(mutex);
+    const stale =
+      owner === null
+        ? Date.now() - statSync(mutex).mtimeMs > MUTEX_STALE_MS
+        : ownerGone(owner);
+    if (stale) rmSync(mutex, { force: true });
   } catch (error) {
     swallow(error, "the mutex was released meanwhile");
   }

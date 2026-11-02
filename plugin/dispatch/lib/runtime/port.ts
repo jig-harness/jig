@@ -56,6 +56,9 @@ export type SessionsReport =
   | { ok: false; source: string; reason: string };
 
 /** The states in which an agent holds its stage. */
+/** The most characters one comment holds: it travels as one process argument, which a platform bounds. */
+export const MAX_COMMENT = 16_000;
+
 export const RUNNING_STATES: ReadonlySet<string> = new Set([
   "working",
   "waiting",

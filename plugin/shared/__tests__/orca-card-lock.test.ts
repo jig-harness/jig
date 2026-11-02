@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -124,6 +130,33 @@ describe("the card's comment lock", () => {
     const results = await Promise.all([writer(), writer(), writer(), writer()]);
     expect(results.every((r) => r !== null)).toBe(true);
     expect(overlap).toBe(false);
+  });
+
+  test("does not break the reclaim mutex of a reclaimer that is still running, however old", async () => {
+    const root = scratchRoot();
+    const lock = cardLockPath(WORKSPACE, root);
+    writeFileSync(lock, `${deadPid()}\nleft\n`);
+    const mutex = `${lock}.reclaim`;
+    writeFileSync(mutex, `${process.pid}\n`);
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(mutex, old, old);
+    expect(
+      await withCardLock(WORKSPACE, async () => "taken", { root, waitMs: 300 }),
+    ).toBeNull();
+    expect(existsSync(mutex)).toBe(true);
+  });
+
+  test("breaks the reclaim mutex of a reclaimer that exited", async () => {
+    const root = scratchRoot();
+    const lock = cardLockPath(WORKSPACE, root);
+    writeFileSync(lock, `${deadPid()}\nleft\n`);
+    writeFileSync(`${lock}.reclaim`, `${deadPid()}\n`);
+    expect(
+      await withCardLock(WORKSPACE, async () => "taken", {
+        root,
+        waitMs: 1000,
+      }),
+    ).toEqual({ value: "taken" });
   });
 
   test("keys a card by its resolved path", () => {

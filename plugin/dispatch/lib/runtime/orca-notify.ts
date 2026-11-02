@@ -14,7 +14,7 @@ import { orcaCommand, orcaEnvelope } from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
 import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
-import type { RuntimeReceipt } from "./port.ts";
+import { MAX_COMMENT, type RuntimeReceipt } from "./port.ts";
 
 function seconds(ms: number): number {
   return Math.max(1, Math.ceil(ms / 1000));
@@ -60,6 +60,8 @@ function cardOf(
   if (typeof isUnread !== "boolean") return null;
   if (comment !== undefined && comment !== null && typeof comment !== "string")
     return null;
+  // An unread card that names no comment may be hiding text a person has not read.
+  if (isUnread && typeof comment !== "string") return null;
   return { comment: comment ?? null, unread: isUnread };
 }
 
@@ -71,16 +73,26 @@ function commentOf(result: unknown): string | null {
     : null;
 }
 
-/** The key lines a message carries. */
-function keyLines(text: string): string[] {
-  return text.match(/^\[jig dispatch: .*\]$/gm) ?? [];
+/** The entries a message joins: each opens with its key line. */
+function entriesOf(message: string): string[] {
+  return message.split(/\n\n(?=\[jig dispatch: )/);
+}
+
+/** The key line an entry opens with; `null` for text that has none. */
+function keyLineOf(entry: string): string | null {
+  return entry.match(/^\[jig dispatch: .*\]$/m)?.[0] ?? null;
+}
+
+/** Orca reads a value that opens with `-` as a flag of its own. */
+function argumentSafe(comment: string): string {
+  return comment.startsWith("-") ? `Unread notes:\n${comment}` : comment;
 }
 
 /**
- * The comment to write over the card as it is now: appended to a comment
- * still unread, so nothing a person has not read is replaced; the message
- * alone otherwise. `null` when the unread comment already carries every key
- * the message does.
+ * The comment to write over the card as it is now: the entries it does not
+ * carry yet appended to a comment still unread, so nothing a person has not
+ * read is replaced; the message alone otherwise. `null` when the unread
+ * comment already carries every entry.
  */
 function merged(
   card: { comment: string | null; unread: boolean },
@@ -88,15 +100,13 @@ function merged(
 ): string | null {
   if (!card.unread || card.comment === null || card.comment.trim() === "")
     return message;
-  const keys = keyLines(message);
   const carried = card.comment;
-  if (
-    keys.length > 0
-      ? keys.every((k) => carried.includes(k))
-      : carried.includes(message)
-  )
-    return null;
-  return `${carried}\n\n${message}`;
+  const missing = entriesOf(message).filter((entry) => {
+    const key = keyLineOf(entry);
+    return !carried.includes(key ?? entry);
+  });
+  if (missing.length === 0) return null;
+  return `${carried}\n\n${missing.join("\n\n")}`;
 }
 
 export async function orcaNotify(
@@ -164,6 +174,14 @@ async function notifyUnlocked(
     };
   const comment = merged(card, message);
   if (comment !== null) {
+    // The budget the sender computed from an earlier listing; the card read
+    // under the lock is the one the written comment is measured on.
+    if (comment.length > MAX_COMMENT)
+      return {
+        ok: false,
+        lost: false,
+        detail: `${target.path}: the card's unread comment and the message would pass ${MAX_COMMENT} characters; nothing written, it goes once the comment is read`,
+      };
     late = spent();
     if (late !== null) return late;
     const set = await call(
@@ -173,7 +191,7 @@ async function notifyUnlocked(
         "--worktree",
         selector,
         "--comment",
-        comment,
+        argumentSafe(comment),
         "--unread",
       ],
       remaining(),
@@ -196,6 +214,13 @@ async function notifyUnlocked(
       ok: false,
       lost: true,
       detail: `the comment was written, and could not be read back: ${shown.why}`,
+    };
+  late = spent();
+  if (late !== null)
+    return {
+      ...late,
+      lost: true,
+      detail: `the comment was written; the read-back came after the deadline`,
     };
   const read = commentOf(shown.result);
   return read === null

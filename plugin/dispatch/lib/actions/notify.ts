@@ -41,10 +41,11 @@ import {
   type OutcomeClass,
 } from "../log.ts";
 import { carries, holdsNotice } from "../notices.ts";
-import type {
-  RuntimeReceipt,
-  SessionsReport,
-  Workspace,
+import {
+  MAX_COMMENT,
+  type RuntimeReceipt,
+  type SessionsReport,
+  type Workspace,
 } from "../runtime/port.ts";
 import { inTransaction, stateDb } from "../state.ts";
 import { failureText } from "../text.ts";
@@ -208,15 +209,12 @@ async function noticesWorkspace(
   return noticesBlocked(read) ?? read;
 }
 
-/** The most characters one comment holds: it travels as one process argument, which a platform bounds. */
-const MAX_COMMENT = 16_000;
-
 /** The causes that fit one comment after the unread text, which is kept whole; one that does not fit waits until it is read, and a later one that fits still goes. */
 export function fitting(
   workspace: Workspace,
   causes: Cause[],
 ): { send: Cause[]; later: Cause[] } {
-  const unread = workspace.unread && holdsNotice(workspace.comment);
+  const unread = workspace.unread && workspace.comment.trim() !== "";
   let used = unread ? workspace.comment.length : 0;
   const send: Cause[] = [];
   const later: Cause[] = [];
