@@ -160,6 +160,22 @@ test("the fallback address fills each form field from a draft body", () => {
   expect(fallbackUrl({ title: "t", body: "edited" }).split).toBe(false);
 });
 
+test("a body edited to drop a blank line before a heading loses no text", () => {
+  const edited = body({
+    version: "1.2.3",
+    channel: "marketplace",
+    what: "it parked",
+    expected: "it converges",
+    tools: "Claude Code on Linux",
+  }).replace(
+    "it parked\n\n### What you expected",
+    "it parked\n### What you expected",
+  );
+  const r = fallbackUrl({ title: "t", body: edited });
+  expect(r.split).toBe(true);
+  expect(new URL(r.url).searchParams.get("what")).toBe("it parked");
+});
+
 test("a body quoting a form heading is kept whole, not split at the quote", () => {
   const fields = {
     version: "1.2.3",

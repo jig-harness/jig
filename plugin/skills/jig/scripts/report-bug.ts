@@ -680,8 +680,8 @@ function splitBody(text: string): Record<string, string> | null {
   const fields: Record<string, string> = {};
   for (const [i, [id]] of BODY_FIELDS.entries()) {
     const from = (starts[i] ?? 0) + (heads[i]?.length ?? 0);
-    const end = starts[i + 1] ?? text.length + 2;
-    const value = text.slice(from, end - 2).trim();
+    const end = starts[i + 1] ?? text.length;
+    const value = text.slice(from, end).trim();
     if (value !== NO_RESPONSE) fields[id] = value;
   }
   return fields;
