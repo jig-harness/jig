@@ -8,6 +8,7 @@ import {
   body,
   CHANNELS,
   draft,
+  fallbackUrl,
   fileArgs,
   formUrl,
   JIG_REPOSITORY,
@@ -65,8 +66,10 @@ test("the form address fills only fields the form has, and the channels are its 
     what: "w",
     expected: "e",
     tools: "t",
+    channel: "stable",
   });
   const query = new URL(url).searchParams;
+  expect(query.get("channel")).toBe("stable");
   for (const key of query.keys())
     if (key !== "template" && key !== "title") expect(ids).toContain(key);
   const options = /id: channel[\s\S]*?options:\n((?:\s+- .+\n)+)/
@@ -82,6 +85,74 @@ test("a long account leaves what happened out of the address", () => {
   const result = formUrl("x: y", { version: "1", what: long });
   expect(result.complete).toBe(false);
   expect(new URL(result.url).searchParams.has("what")).toBe(false);
+});
+
+test("an oversized field is left out, in a fixed order, until the address fits", () => {
+  const result = formUrl("x: y", {
+    version: "1",
+    what: "w".repeat(9000),
+    expected: "x".repeat(9000),
+  });
+  expect(result.url.length).toBeLessThanOrEqual(8000);
+  expect(result.omitted).toEqual(["What happened", "What you expected"]);
+  const huge = formUrl("t".repeat(9000), { version: "1" });
+  expect(huge.url.length).toBeLessThanOrEqual(8000);
+  expect(huge.omitted).toEqual(["the title"]);
+});
+
+test("the fallback address carries the title and body as they are now", () => {
+  const url = new URL(
+    fallbackUrl({ title: "a: b", body: "edited body", labels: ["bug"] }),
+  );
+  expect(url.searchParams.get("body")).toBe("edited body");
+  expect(url.searchParams.get("title")).toBe("a: b");
+});
+
+test("a nested remote namespace is redacted whole", () => {
+  expect(
+    remoteOwnerName("git@gitlab.example:private-org/team/service.git"),
+  ).toEqual({
+    owner: "private-org/team",
+    name: "service",
+  });
+  const r = replacementsFor({
+    root: "/r",
+    home: "/h",
+    remoteAddress: "https://gitlab.example/private-org/team/service.git",
+  });
+  expect(redact("private-org/team/service", r).text).not.toMatch(/private-org/);
+});
+
+test("a placeholder is never redacted again by a later replacement", () => {
+  const r = replacementsFor({
+    root: "/src/repository",
+    home: "/h",
+    remoteAddress: "git@example.com:owner/repository.git",
+  });
+  expect(redact("/src/repository/app", r).text).toBe("<repository>/app");
+  expect(redact("owner/repository", r).text).toBe("<owner>/<repository-name>");
+});
+
+test("a channel inherited from Object.prototype is not a channel", () => {
+  const run = Bun.spawnSync(
+    [
+      "bun",
+      script,
+      "draft",
+      "--skill",
+      "x",
+      "--symptom",
+      "s",
+      "--what",
+      script,
+      "--expected",
+      "e",
+      "--channel",
+      "constructor",
+    ],
+    { env: withoutLeakyGitEnv() },
+  );
+  expect(run.exitCode).toBe(2);
 });
 
 test("the owner and name are read from SSH and HTTPS addresses", () => {

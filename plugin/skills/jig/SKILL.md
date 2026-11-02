@@ -27,16 +27,16 @@ describes the version that runs. What only Jig's repository holds (the
 practice modules, the glossary, the changelog), read at the installed
 version's tag, `https://github.com/jig-harness/jig/blob/v<version>/…`.
 
-| The question | Where to read |
-|--------------|---------------|
-| Which skill fits this task, and what comes after it | `<plugin>/README.md`: the skills tables, grouped by stage, with a "Works with" column for what starts each skill and what it hands on |
-| How one skill works | `<plugin>/skills/<name>/SKILL.md`, and its `README.md` where it has one |
-| Where a value comes from, its default, which skill reads it | `<plugin>/CONFIGURATION.md`; the values are the repository's `.config/jig.yaml`, the user file `~/.jig/jig.yaml` and `JIG__<SECTION>__<FIELD>` variables, highest last |
-| Which version is installed | `version` in `<plugin>/.claude-plugin/plugin.json` (or `.codex-plugin/plugin.json`) |
-| What a version changed | `CHANGELOG.md` at the version's tag |
-| What a practice module says (M0, M7, …) or what a term means | `modules/` and `GLOSSARY.md` at the version's tag |
-| The machine tools (`jig gc`, `jig dispatch`) | `<plugin>/README.md`, the sections named after each |
-| A skill missing, a configuration error, old behaviour after an update | `<plugin>/README.md`, section "Troubleshooting" |
+| The question                                                          | Where to read                                                                                                                                                          |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Which skill fits this task, and what comes after it                   | `<plugin>/README.md`: the skills tables, grouped by stage, with a "Works with" column for what starts each skill and what it hands on                                  |
+| How one skill works                                                   | `<plugin>/skills/<name>/SKILL.md`, and its `README.md` where it has one                                                                                                |
+| Where a value comes from, its default, which skill reads it           | `<plugin>/CONFIGURATION.md`; the values are the user file `~/.jig/jig.yaml`, the repository's `.config/jig.yaml` and `JIG__<SECTION>__<FIELD>` variables, highest last |
+| Which version is installed                                            | `version` in `<plugin>/.claude-plugin/plugin.json` (or `.codex-plugin/plugin.json`)                                                                                    |
+| What a version changed                                                | `CHANGELOG.md` at the version's tag                                                                                                                                    |
+| What a practice module says (M0, M7, …) or what a term means          | `modules/` and `GLOSSARY.md` at the version's tag                                                                                                                      |
+| The machine tools (`jig gc`, `jig dispatch`)                          | `<plugin>/README.md`, the sections named after each                                                                                                                    |
+| A skill missing, a configuration error, old behaviour after an update | `<plugin>/README.md`, section "Troubleshooting"                                                                                                                        |
 
 ## Which skill
 
@@ -68,14 +68,14 @@ its own `SKILL.md`, README or `CONFIGURATION.md` says it does not, or stops
 with an error from inside the plugin copy, while the repository's
 configuration is valid by `CONFIGURATION.md`. Otherwise it goes elsewhere:
 
-| What it is | Where it goes |
-|------------|---------------|
-| A configuration error (the message names the field and where it was set) | Fix the configuration in the repository |
-| The repository's own gate, test or code failing | The repository's own tracker |
-| A tool the README's "Requirements" lists is missing | Install it |
-| A lesson about how the instructions, skills or gates fit this repository, not a defect | `/jig:reflect`, where the configuration has a `reflection` section |
-| A question, or an idea not yet a defect | [Discussions](https://github.com/jig-harness/jig/discussions) |
-| A security vulnerability | A [private advisory](https://github.com/jig-harness/jig/security/advisories/new), never a public issue |
+| What it is                                                                             | Where it goes                                                                                          |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| A configuration error (the message names the field and where it was set)               | Fix the configuration in the repository                                                                |
+| The repository's own gate, test or code failing                                        | The repository's own tracker                                                                           |
+| A tool the README's "Requirements" lists is missing                                    | Install it                                                                                             |
+| A lesson about how the instructions, skills or gates fit this repository, not a defect | `/jig:reflect`, where the configuration has a `reflection` section                                     |
+| A question, or an idea not yet a defect                                                | [Discussions](https://github.com/jig-harness/jig/discussions)                                          |
+| A security vulnerability                                                               | A [private advisory](https://github.com/jig-harness/jig/security/advisories/new), never a public issue |
 
 In Jig's own repository, file the bug with `/jig:file-issue` instead: it
 applies Jig's label taxonomy.
@@ -98,6 +98,7 @@ confirms every report before it is filed.
    evidence as a comment; a comment is published too, so it waits for the
    person as well. When `gh` cannot search, the script prints the address
    to search by hand.
+
 3. **Find the channel** the plugin was installed from: the `ref` of the
    `jig` entry that `claude plugin marketplace list --json` prints, or the
    `ref` under `[marketplaces.jig]` in Codex's `config.toml`. No ref means
@@ -115,6 +116,7 @@ confirms every report before it is filed.
    the repository's path, the home directory, the owner and name in its
    remote's address and its tracker team's issue keys with placeholders,
    lists what it replaced, and prints the draft.
+
 5. **Read the draft as a stranger would.** Remove what the script cannot
    know: a product, customer or person's name, a private host, a token,
    data the output carried. Edit the `title` and `body` in the draft file;

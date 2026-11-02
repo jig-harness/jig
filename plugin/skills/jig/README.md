@@ -25,7 +25,7 @@ decides whether the fault is Jig's at all (a configuration error, the
 repository's own gate, a missing tool and a lesson for
 [reflect](../reflect/README.md) each go elsewhere), searches for an issue
 that already describes it, and then drafts the report with
-`report-bug.ts`, which has three commands: `search` for an existing issue,
+`report-bug.ts`, which has these commands: `search` for an existing issue,
 `draft` for the report, `file` to file a draft a person confirmed.
 
 ```sh

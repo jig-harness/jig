@@ -27,7 +27,7 @@
  *     --out          write the draft there and print it for a person to
  *                    read; without it the draft is printed as JSON:
  *                    { repository, title, labels, body, url, urlComplete,
- *                    replaced }
+ *                    urlOmitted, replaced }
  *   bun report-bug.ts file <draft file>
  *     File the draft on Jig's tracker and print the new issue's address.
  *
@@ -40,8 +40,10 @@
  * `replaced` (stderr with `--out`) lists what was replaced. `url` is the bug
  * form with the fields filled in, for a machine without a working `gh`.
  *
- * Exit codes: 0 done; 1 `gh` could not search or file (the message gives
- * the address to do it by hand); 2 usage, or a file cannot be read.
+ * When `gh` fails to file, the script searches for an issue of the same title
+ * before offering the form, built from the title and body in the draft file as
+ * they are now. Exit codes: 0 done; 1 `gh` could not search or file (the message
+ * gives the address to do it by hand); 2 usage, or a file cannot be read.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { homedir, platform, release } from "node:os";
@@ -114,8 +116,10 @@ export interface Draft {
   labels: string[];
   body: string;
   url: string;
-  /** Whether `url` carries what happened; when it is too long, the person pastes it into the form. */
+  /** Whether `url` carries every field; when it is too long, the person pastes the omitted ones into the form. */
   urlComplete: boolean;
+  /** The fields `url` leaves out because the address would be too long. */
+  urlOmitted: string[];
   /** What the placeholders replaced, as `<placeholder>: what`, once each. */
   replaced: string[];
 }
@@ -129,12 +133,27 @@ function word(text: string): RegExp {
   return new RegExp(`(?<![\\w-])${literal(text)}(?![\\w-])`, "gi");
 }
 
-/** The owner and name a git remote address carries (`git@host:o/n.git`, `https://host/o/n`). */
+/**
+ * The owner and name a git remote address carries (`git@host:o/n.git`,
+ * `https://host/o/n`). The owner is the whole namespace, so a nested address
+ * (`git@host:org/team/n.git`) keeps `org/team`.
+ */
 export function remoteOwnerName(
   address: string,
 ): { owner: string; name: string } | null {
-  const m = /[:/]([^/:\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(address.trim());
-  return m?.[1] && m[2] ? { owner: m[1], name: m[2] } : null;
+  const trimmed = address.trim();
+  const path =
+    /^[a-z][a-z0-9+.-]*:\/\/[^/\s]*\/(.+)$/i.exec(trimmed)?.[1] ??
+    /^[^/\s]*:(.+)$/.exec(trimmed)?.[1];
+  const parts = path
+    ?.replace(/\/+$/, "")
+    .replace(/\.git$/, "")
+    .split("/")
+    .filter((part) => part !== "");
+  const name = parts?.pop();
+  return parts && parts.length > 0 && name
+    ? { owner: parts.join("/"), name }
+    : null;
 }
 
 /**
@@ -190,19 +209,35 @@ export function replacementsFor(facts: {
   return out;
 }
 
-/** `text` with every replacement applied, and the ones that matched. */
+/**
+ * `text` with every replacement applied, and the ones that matched. Every
+ * pattern is matched against `text` itself, never against another's
+ * placeholder; where matches overlap, the earlier replacement keeps its span.
+ */
 export function redact(
   text: string,
   replacements: readonly Replacement[],
 ): { text: string; matched: Set<string> } {
   const matched = new Set<string>();
-  let out = text;
+  const claimed: { start: number; end: number; placeholder: string }[] = [];
   for (const r of replacements) {
-    const next = out.replace(r.pattern, r.placeholder);
-    if (next !== out) matched.add(`${r.placeholder}: ${r.what}`);
-    out = next;
+    for (const m of text.matchAll(r.pattern)) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (end === start) continue;
+      if (claimed.some((c) => start < c.end && c.start < end)) continue;
+      claimed.push({ start, end, placeholder: r.placeholder });
+      matched.add(`${r.placeholder}: ${r.what}`);
+    }
   }
-  return { text: out, matched };
+  claimed.sort((a, b) => a.start - b.start);
+  let out = "";
+  let at = 0;
+  for (const c of claimed) {
+    out += text.slice(at, c.start) + c.placeholder;
+    at = c.end;
+  }
+  return { text: out + text.slice(at), matched };
 }
 
 function answer(value: string | undefined): string {
@@ -234,20 +269,45 @@ export function body(fields: {
   return `${sections.map(([label, value]) => `### ${label}\n\n${value}`).join("\n\n")}\n`;
 }
 
-/** The bug form's address with its fields filled in, `what` left out when the address would be too long. */
+/** The form fields dropped, in this order, until the address fits. */
+const OMISSION_ORDER: [string, string][] = [
+  ["what", "What happened"],
+  ["expected", "What you expected"],
+  ["tools", "Agent tool and operating system"],
+  ["last-working", "Last version it worked in"],
+  ["title", "the title"],
+];
+
+/**
+ * The bug form's address with its fields filled in. Fields are left out in
+ * `OMISSION_ORDER` until the address fits; `omitted` names each one the
+ * person must paste into the form.
+ */
 export function formUrl(
   title: string,
   fields: Record<string, string | undefined>,
-): { url: string; complete: boolean } {
+): { url: string; complete: boolean; omitted: string[] } {
   const build = (omit: string[]) => {
-    const query = new URLSearchParams({ template: "bug.yml", title });
+    const query = new URLSearchParams({ template: "bug.yml" });
+    if (!omit.includes("title")) query.set("title", title);
     for (const [id, value] of Object.entries(fields))
       if (value && !omit.includes(id)) query.set(id, value);
     return `https://github.com/${JIG_REPOSITORY}/issues/new?${query.toString()}`;
   };
-  const full = build([]);
-  if (full.length <= URL_LIMIT) return { url: full, complete: true };
-  return { url: build(["what"]), complete: false };
+  const omit: string[] = [];
+  const present = OMISSION_ORDER.filter(([id]) => id === "title" || fields[id]);
+  for (let i = 0; ; i++) {
+    const url = build(omit);
+    if (url.length <= URL_LIMIT || i === present.length)
+      return {
+        url,
+        complete: omit.length === 0,
+        omitted: present
+          .filter(([id]) => omit.includes(id))
+          .map(([, label]) => label),
+      };
+    omit.push(present[i]![0]);
+  }
 }
 
 function operatingSystem(): string {
@@ -321,7 +381,9 @@ export function draft(
   const tool = clean(answers.tool);
   const fields = {
     version: facts.version,
-    channel: CHANNELS[answers.channel] ?? answers.channel,
+    channel: Object.hasOwn(CHANNELS, answers.channel)
+      ? CHANNELS[answers.channel]!
+      : answers.channel,
     lastWorking: clean(answers.lastWorking),
     what: clean(answers.what) ?? "",
     expected: clean(answers.expected) ?? "",
@@ -330,6 +392,7 @@ export function draft(
   const title = `${answers.skill}: ${clean(answers.symptom)?.trim() ?? ""}`;
   const form = formUrl(title, {
     version: fields.version,
+    channel: fields.channel,
     "last-working": fields.lastWorking,
     what: fields.what,
     expected: fields.expected,
@@ -342,6 +405,7 @@ export function draft(
     body: body(fields),
     url: form.url,
     urlComplete: form.complete,
+    urlOmitted: form.omitted,
     replaced: [...matched],
   };
 }
@@ -431,7 +495,7 @@ function parseDraft(argv: string[]): Answers & { out?: string | undefined } {
       `--skill must be a skill or command name (lower case, digits, '-'), got ${JSON.stringify(skill)}`,
     );
   const channel = text("channel");
-  if (!(channel in CHANNELS))
+  if (!Object.hasOwn(CHANNELS, channel))
     fail(
       2,
       `--channel must be one of ${Object.keys(CHANNELS).join(", ")}, got ${JSON.stringify(channel)}`,
@@ -499,7 +563,7 @@ function runDraft(argv: string[]): number {
       ...(result.urlComplete
         ? []
         : [
-            "  (What happened is too long for the address: paste it into the form.)",
+            `  (Too long for the address; paste into the form: ${result.urlOmitted.join(", ")}.)`,
           ]),
       "",
     ].join("\n"),
@@ -563,8 +627,64 @@ function asDraft(value: unknown): Draft | null {
     body: value.body,
     url: value.url,
     urlComplete: value.urlComplete !== false,
+    urlOmitted: [],
     replaced: [],
   };
+}
+
+/**
+ * The new-issue address built from the title and body now in `d`, so edits a
+ * person made to the draft file are what the form carries. The body is left
+ * out, for the person to paste, when the address would be too long.
+ */
+export function fallbackUrl(
+  d: Pick<Draft, "title" | "body" | "labels">,
+): string {
+  const build = (withBody: boolean) => {
+    const query = new URLSearchParams({
+      title: d.title,
+      labels: d.labels.join(","),
+    });
+    if (withBody) query.set("body", d.body);
+    return `https://github.com/${JIG_REPOSITORY}/issues/new?${query.toString()}`;
+  };
+  const full = build(true);
+  return full.length <= URL_LIMIT ? full : build(false);
+}
+
+/**
+ * After a failed `gh issue create`, which may have created the issue before
+ * the call failed: the address of an issue of this exact title, `null` when
+ * there is none, `undefined` when the search could not be made.
+ */
+function findFiled(title: string): string | null | undefined {
+  const run = gh([
+    "issue",
+    "list",
+    "--repo",
+    JIG_REPOSITORY,
+    "--state",
+    "all",
+    "--author",
+    "@me",
+    "--search",
+    `${title} in:title`,
+    "--limit",
+    "20",
+    "--json",
+    "number,title,state,url",
+  ]);
+  if (run.status !== 0) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(String(run.stdout));
+    const match = (Array.isArray(parsed) ? parsed : [])
+      .filter(isIssue)
+      .find((i) => i.title === title);
+    return match ? match.url : null;
+  } catch (error) {
+    swallow(error, "search output unreadable; creation outcome unknown");
+    return undefined;
+  }
 }
 
 function runFile(argv: string[]): number {
@@ -584,12 +704,21 @@ function runFile(argv: string[]): number {
   const d = asDraft(parsed);
   if (!d) fail(2, `${path} is not a draft this script wrote`);
   const run = gh(fileArgs(d), d.body);
-  if (run.status !== 0)
-    fail(
-      1,
-      `could not file with gh: ${why(run)}`,
-      `Open the form instead: ${d.url}`,
-    );
+  if (run.status !== 0) {
+    const reason = `could not file with gh: ${why(run)}`;
+    const existing = findFiled(d.title);
+    if (existing === undefined)
+      fail(
+        1,
+        `${reason}\nWhether the issue was created is unknown: search ${searchUrl(d.title)} before filing again.`,
+      );
+    if (existing)
+      fail(
+        1,
+        `${reason}\nThe issue exists already, so do not file it again: ${existing}`,
+      );
+    fail(1, reason, `Open the form instead: ${fallbackUrl(d)}`);
+  }
   process.stdout.write(run.stdout);
   return 0;
 }
