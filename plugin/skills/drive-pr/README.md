@@ -226,9 +226,11 @@ that started after the removal. When someone else removes the label, the
 drive accepts only checks that started strictly after that removal; GitHub
 records the removal to the second, so a run that started in the same second
 has to be rerun. A pull request that conflicts with its base runs no
-`pull_request` CI at all, so while the checks the hold waits for cannot run,
-the drive pushes the conflict resolution without the label, and the push
-that clears the conflict runs full CI. A drive that dies mid-round leaves the label
+`pull_request` CI at all, so when the hold is not yet taken, its checks have
+not completed and GitHub reports the conflict, the drive pushes the
+conflict resolution without the label, and the push that clears the conflict
+runs full CI. A mergeability GitHub has not computed or the drive cannot
+read keeps the wait. A drive that dies mid-round leaves the label
 behind; see [§ The exit states](#the-exit-states--what-you-do-now) for the recovery.
 
 ### Push hold

@@ -240,10 +240,13 @@ PR-global `verifiedSha` or exits 0.
 With a hold label, the PR-open head runs full CI. Before the first
 intermediate fix push, `finish-round.ts` waits until every required check has
 completed, adds the label, and records the resulting GitHub timeline-event id.
-On a PR that conflicts with its base GitHub runs no `pull_request` CI, so
-those checks cannot complete: there `ensure` prints `conflicting` and the
-push goes ahead without the label; the push that clears the conflict runs
-full CI.
+When no hold label is live or owned and the checks the hold waits for have
+not completed, `ensure` reads the PR's mergeability. GitHub runs no
+`pull_request` CI on a PR that conflicts with its base, so on a `CONFLICTING`
+answer `ensure` prints `conflicting` and the push goes ahead without the
+label; the push that clears the conflict runs full CI. An `UNKNOWN` or
+unreadable answer keeps the wait (exit `4`), and a label that is live,
+externally owned or mid-recovery is handled before that read.
 The repository's synchronize workflows are expected to honour the label: they
 skip their expensive jobs while a required check fails or is cancelled, so the
 held head is visibly non-green rather than falsely mergeable; the posting
@@ -2576,9 +2579,9 @@ That is the whole of step 6. It performs, in this exact order:
    refused to reply to (e.g. `commentsTruncated` — § 4 below);
 2. `bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure` — in a repository with a hold label, after observing
    all required PR-open checks, adds or confirms this drive's durable
-   ownership of the label (without one, prints `disabled`; on a PR that
-   conflicts with its base, where those checks cannot run, prints
-   `conflicting` and holds nothing);
+   ownership of the label (without one, prints `disabled`; with the label
+   absent, those checks incomplete and the PR reading `CONFLICTING`, where
+   they cannot run, prints `conflicting` and holds nothing);
 3. `bun "${CLAUDE_SKILL_DIR}/scripts/guarded-push.ts"` — the push, with the PR's liveness re-checked at the
    instant of the push and an explicit refspec at its own head branch;
 4. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" stamp-held` — stamps the pushed SHA onto the holds *this*
@@ -2615,7 +2618,7 @@ returned, which is the case this rule covers.
 |---|---|---|
 | `0` | Pushed, stamped, head-synced, batch drained | Continue to step 7 |
 | `3` | Refused *before* pushing: dirty tree, unconcluded git operation, unreadable tree | Commit or discard the leftovers, resolve or abort the reported Git operation, then re-run |
-| `4` | Refused *before* pushing, in a repository with a CI hold (`bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure`): the required checks the hold waits for have not completed on a PR that does not conflict with its base, the head moved, an interrupted hold release is still waiting for its full CI, or a hold label someone else owns is present | Read the `ci-hold:` line, wait for the checks it names, then re-run; leave an externally owned hold label to whoever added it |
+| `4` | Refused *before* pushing, in a repository with a CI hold (`bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure`): the required checks the hold waits for have not completed on a PR not read as conflicting with its base (an unreadable mergeability included), the head moved, an interrupted hold release is still waiting for its full CI, or a hold label someone else owns is present | Read the `ci-hold:` line, wait for the checks it names, then re-run; leave an externally owned hold label to whoever added it |
 | `5` | The PR is no longer open | Two cases, both terminal: `guarded-push.ts` itself refused because the PR was already closed/merged (nothing was pushed), or the push succeeded and the PR closed/merged during the head-sync wait that follows it (`report.pushed` is `true`). Either way, stop — do not resolve anything against it. See [terminal-states.md](references/terminal-states.md) |
 | `2` | Usage error: an unknown flag, an extra argument, or no PR could be resolved | Fix the invocation and re-run; nothing ran |
 | `6` | Pushed and stamped, but at least one held item was **refused** | Each refusal is named with the refusing script's own exit code and diagnostic. Reconcile it via § 3 — re-hold if the reply still stands, resolve under whatever outcome actually applies if it does not — then re-run |
