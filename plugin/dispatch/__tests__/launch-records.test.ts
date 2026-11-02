@@ -126,6 +126,32 @@ describe("retention", () => {
     expect(pruneLaunches([a, b], Date.parse("2027-01-01"), 7, dir)).toEqual([]);
   });
 
+  it("keeps a pull request's latest re-drive record past the retention", () => {
+    const dir = root();
+    const redrive = (id: string, change: string, at: string) =>
+      ended(
+        record(id, {
+          createdAt: at,
+          redrive: { cause: "conflicting", change },
+        }),
+        0,
+        at,
+      );
+    const old = redrive(
+      "20260101T000000Z-aaaaaaaa",
+      "c1",
+      "2026-01-01T00:00:00.000Z",
+    );
+    const latest = redrive(
+      "20260102T000000Z-bbbbbbbb",
+      "c2",
+      "2026-01-02T00:00:00.000Z",
+    );
+    expect(
+      pruneLaunches([old, latest], Date.parse("2027-01-01"), 7, dir),
+    ).toEqual(["20260101T000000Z-aaaaaaaa"]);
+  });
+
   it("keeps an unreleased pickup until it is released", () => {
     const dir = root();
     const pickup = (released: boolean) =>

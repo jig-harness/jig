@@ -715,6 +715,22 @@ function latestRefusals(records: ReadRecord[]): Set<string> {
 }
 
 /**
+ * The ids of each pull request's latest re-drive record: its change is never
+ * re-driven twice, and the record is the only evidence of that.
+ */
+function latestRedrives(records: ReadRecord[]): Set<string> {
+  const latest = new Map<string, ReadRecord>();
+  for (const r of records) {
+    if (!isDrive(r.record) || !r.record.redrive) continue;
+    const key = `${r.record.repo}#${String(r.record.pr)}`;
+    const seen = latest.get(key);
+    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
+      latest.set(key, r);
+  }
+  return new Set([...latest.values()].map((r) => r.record.id));
+}
+
+/**
  * The ids of each item's latest pickup record: while it is unreleased it is
  * the only thing that keeps the item from being picked up again, so it stays
  * until `releaseEnded` has seen the item leave the dispatch states.
@@ -751,6 +767,7 @@ export function pruneLaunches(
   const removed: string[] = [];
   const kept = latestRefusals(records);
   for (const id of latestPickups(records)) kept.add(id);
+  for (const id of latestRedrives(records)) kept.add(id);
   for (const { record, state } of records) {
     const at = kept.has(record.id) ? null : finishedAt(record, state);
     if (at === null || !Number.isFinite(at) || at > cutoff) continue;
