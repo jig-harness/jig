@@ -68,6 +68,7 @@ describe("the label set", () => {
       "bot/converged",
       "bot/parked",
       "bot/stale",
+      "bot/held",
       "bot/followed-up",
       "bot/drive",
       "bot/hold",
@@ -96,6 +97,9 @@ describe("what the projection changes", () => {
     expect(
       labelChange(ON, 7, ["bug", "jig:parked"], { state: "converged" }, false),
     ).toEqual({ pr: 7, add: ["jig:converged"], remove: ["jig:parked"] });
+    expect(labelChange(ON, 7, ["jig:held"], { state: "stale" }, false)).toEqual(
+      { pr: 7, add: ["jig:stale"], remove: ["jig:held"] },
+    );
   });
 
   it("changes nothing where the labels agree", () => {
@@ -115,10 +119,10 @@ describe("what the projection changes", () => {
 
   it("leaves the state labels alone when the state is unknown, and a label the projection does not own always", () => {
     expect(
-      labelChange(ON, 7, ["jig:stale", "jig:held"], "unknown", false),
+      labelChange(ON, 7, ["jig:stale", "jig:queued"], "unknown", false),
     ).toBeNull();
     expect(
-      labelChange(ON, 7, ["jig:held"], { state: "driving" }, false),
+      labelChange(ON, 7, ["jig:queued"], { state: "driving" }, false),
     ).toEqual({ pr: 7, add: ["jig:driving"], remove: [] });
   });
 });

@@ -1,5 +1,6 @@
 /** A tick's receipt as the terminal reads it. */
 import type { TickReceipt } from "../receipts.ts";
+import type { SerialReport } from "./contention.ts";
 import type {
   Evidence,
   LabelReport,
@@ -63,8 +64,29 @@ function repoLines(r: RepoReport, apply: boolean): string[] {
     lines.push(`  unplaced ${u.target} (${u.record}): ${u.reason}`);
   for (const q of r.quiet)
     lines.push(`  ${q.class.padEnd(17)} ${q.target}: ${q.why}`);
-  lines.push(...labelLines(r.labels));
+  lines.push(...labelLines(r.labels), ...serialLines(r.serialized));
   return lines;
+}
+
+/** Serialization's part: each group in order with its leader, why an order cannot be told, and each hold. */
+function serialLines(s: SerialReport | undefined): string[] {
+  if (s === undefined) return [];
+  return [
+    `  serial   ${s.catalog}: ${s.areas.join(", ") || "no area"} serialized`,
+    ...s.groups.flatMap((g) => [
+      `  serial   ${g.area}: ${
+        g.leader === null
+          ? `no leader (${g.unplaced ?? "order unknown"})`
+          : `${g.leader} leads`
+      }${g.drives === undefined ? "" : `; ${g.drives}`}`,
+      ...g.order.map(
+        (m, i) => `             ${i + 1}. ${m.target}: ${m.place}`,
+      ),
+    ]),
+    ...s.held.map(
+      (h) => `  held     ${h.stage.padEnd(8)} ${h.target}: ${h.reason}`,
+    ),
+  ];
 }
 
 /** The dispatch labels' part: the count, each command label, what a hold kept off, and each write. */

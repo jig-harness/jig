@@ -6,7 +6,7 @@ headless server a phone reaches, with subscription accounts, a workspace
 board and scheduled automations. Jig's tooling already reaches it in
 places built on their own: the
 [Orca workspace tool](../tools/orca/README.md) behind the launcher,
-`do-item`'s [board updates](../plugin/skills/do-item/scripts/orca-board.ts)
+`do-item`'s [board updates](../plugin/shared/orca-board.ts)
 and workspace names, and the [dispatcher](../GLOSSARY.md)'s
 [session runtime](../GLOSSARY.md), Orca first
 ([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)).

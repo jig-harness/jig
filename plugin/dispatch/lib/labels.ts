@@ -5,10 +5,13 @@
  * (`dispatch.labels.prefix`, `jig:` by default).
  *
  * - **States**, written by the tick and nobody else: `driving`,
- *   `converged`, `parked`, `stale`, `followed-up`. The ledger is the truth,
- *   and each tick derives the state from it again, so a state label a
- *   person edited, or one a killed drive left behind, is corrected at the
- *   next tick. Nothing reads a state label to decide what to start.
+ *   `converged`, `parked`, `stale`, `held`, `followed-up`. The ledger is
+ *   the truth, and each tick derives the state from it again, so a state
+ *   label a person edited, or one a killed drive left behind, is corrected
+ *   at the next tick; `held` is the one state the ledger does not give: a
+ *   pull request waiting its turn in a serialized change area carries it
+ *   whatever its ledger says. Nothing reads a state label to decide what to
+ *   start.
  * - **Commands**, read by the tick and never added by it: `drive` adopts a
  *   pull request with no drive ledger (the tick arms a drive on it), and
  *   `hold` stands the dispatcher down from a pull request while it is
@@ -48,6 +51,7 @@ export const PROJECTED_STATES = [
   "converged",
   "parked",
   "stale",
+  "held",
   "followed-up",
 ] as const;
 export type StateName = (typeof PROJECTED_STATES)[number];
@@ -64,6 +68,7 @@ const MEANINGS: Record<StateName | CommandName, string> = {
   parked: "The drive stopped on something only a person settles",
   stale:
     "The drive converged, then the pull request conflicted or moved: the dispatcher re-drives it",
+  held: "Waits its turn in a serialized change area: the dispatcher drives it once it leads",
   "followed-up": "Merged, and its follow-up is done",
   drive: "A person asks the dispatcher to drive this pull request",
   hold: "A person stands the dispatcher down from this pull request",
