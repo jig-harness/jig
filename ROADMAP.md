@@ -252,8 +252,9 @@ item's card completed), `jig gc` will collect an Orca-managed worktree
 through Orca so its card and terminals go with it, the dispatcher will read
 each account's usage from Orca's command line once Orca offers it, and a
 small plugin Orca loads will run a dispatcher tick the moment an agent
-stops or waits. What a second runtime implements to have the same is named
-beside each part.
+stops or waits. Collection goes through the worktrees kind's runtime
+column, which another runtime joins; the board helper and the plugin are
+Orca-bound.
 
 ## Later
 
