@@ -38,7 +38,7 @@ loads. Each class pays off before the next starts.
 | Orca surface | Jig today | What this design adds | Class |
 | --- | --- | --- | --- |
 | Worktree creation and agent launch, on this machine or a paired server | The launcher's `orca` provider and the workspace tool: the branch named as the repository names it, the M12 create hook run once, the agent started once per key | Nothing for a person; the dispatcher's launches reuse it (item 33) | use |
-| The session registry, the account roster and the headless server | The dispatcher reads sessions, caps per account, notifies by comment and unread flag | Usage per account from the command line, which Orca shows in its desktop app only | contribute |
+| The session registry, the account roster and the headless server | The dispatcher reads sessions, caps per account, notifies by comment and unread flag | Usage per account from the command line, which Orca shows in its desktop app and on the phone | contribute |
 | The workspace board and comment | `do-item` names the card and moves it; `drive-pr` links the card to its pull request | Every stage moves the card: Ready, park, stop and merge | use |
 | Setup and archive hooks | The workspace tool runs `.config/worktree-hooks/create` itself | Nothing yet: the plugin only logs a workspace created in the app; running the create hook once there waits on the dispatcher's open rules moving into the plugin ([dispatcher build step 3](dark-factory-dispatch.md#build-order)) | later |
 | Worktree removal | `jig gc`'s worktrees kind reads plain git and is disabled | An Orca-managed worktree is collected through Orca, after the remove hook and the reflection park | use |
@@ -66,7 +66,11 @@ A card holds one comment, so a comment never replaces one a person has not
 read: `--comment` reads the card's comment first and, while the card is
 still unread, appends to it, as the dispatcher's notifications do
 ([dark-factory-dispatch.md](dark-factory-dispatch.md#notifications)); a
-card that is not unread takes the comment as its new one.
+card that is not unread takes the comment as its new one. Orca's comment
+write replaces the whole comment, so the read and the write of one card
+happen under one lock, shared by the skills' helper and the dispatcher's
+notifications and held across both; a writer that cannot take it within a
+short deadline warns and skips, as every board call does on failure.
 
 `orca-board.ts` gains `--unread` and `--comment` and moves to
 `plugin/shared/`, since `do-item`, `drive-pr` and `followup` all call it. A repository with custom
@@ -93,12 +97,16 @@ and an unreadable registry refuses collection, as the gc contract says
 (fail closed). The registry is a snapshot, though: an opener can start an
 agent after the read and before the removal. So an Orca-managed checkout
 stays report-only, as every worktree does today
-([plugin/gc/README.md](../plugin/gc/README.md)), until the openers share
-`gc`'s session admission: the workspace tool's open path and the
-dispatcher's launches. A workspace made directly in Orca's app or command
-line is not opened by Jig, so it stays report-only until a creation event
-can take admission for it. Collection through Orca starts when that is in
-place. The workspace tool's remove steps move into the plugin for
+([plugin/gc/README.md](../plugin/gc/README.md)), until every path that can start an agent in
+it is covered: either each launch and open path takes `gc`'s session
+admission around the launch, or Orca refuses a removal atomically while an
+agent starts. Jig's workspace tool and the dispatcher can take admission,
+but a direct `orca agent launch --worktree` or an open in Orca's app can
+come after the registry read and produces no creation event, and a
+creation-event handler would take admission after the creation, not around
+it. So workspace provenance alone never makes a checkout collectable, and
+a workspace made outside Jig stays report-only. Collection through Orca
+starts when one of the two is in place. The workspace tool's remove steps move into the plugin for
 this, as item 33 moves its open steps, and the `tools/orca` copy is
 deleted in the same pull request.
 
@@ -121,8 +129,11 @@ dispatcher matches to the account in its machine file; a row it cannot
 match is ignored. An `unavailable` row is never read as free: the account
 takes no new launch and no re-arm until a later read succeeds, unless the
 dispatcher holds a recorded wall for it, which then stands. Until the
-command exists, the dispatcher reads usage walls from the drive ledger, as
-`drive-pr`'s quota adapters do.
+command exists, the dispatcher reads usage walls from two sources: the
+drive ledger's quota parks, and the waiting interactive sessions it probes
+through the drive's quota adapters (`detectQuotaBlock`), which read the
+vendor's session records under the account's configuration directory and
+record the account's wall.
 
 **A push only when an agent needs input.** The dispatcher notifies a park
 once, as an unread card with the question as its comment, and Orca's phone
@@ -150,11 +161,13 @@ machine file alone decides what a tick starts and the plugin passes no
 flag a person reserves. It shows the tick's one-line receipt as a
 notification: the outbound wake-up channel
 [the dispatcher's design](dark-factory-dispatch.md) leaves for later,
-without a change to the tick. Ticks for one repository run one at a time
-and start at most a minute apart. An event that arrives while a tick runs
-or inside the minute sets a pending flag; one trailing tick starts when
-the minute ends, so a status change after a tick read its state is
-processed within a minute and never dropped. On `workspace.created` it logs
+without a change to the tick. Ticks for one repository run one at a time,
+and a tick starts no sooner than a minute after the last one started. An
+event that arrives while a tick runs or inside that minute sets a pending
+flag; one trailing tick starts once the running tick has finished and the
+minute has passed, so a status change after a tick read its state is never
+dropped, and the next tick processes it, later than a minute when a tick
+runs long. On `workspace.created` it logs
 the workspace and does nothing else; the table above says when the create
 hook joins. One setting names the `jig` command;
 the plugin calls the installed `jig` plugin and bundles nothing, so Jig's
@@ -175,7 +188,7 @@ One pull request each, in this order; each is usable on its own.
 3. **Collection through the runtime**: the worktrees kind's runtime column,
    the `orca.command` machine entry, the remove steps moved into the
    plugin, the registry in the proof, tests against a fake `orca` command;
-   collection stays report-only until the openers share admission.
+   collection stays report-only until every launch path is covered by admission or Orca refuses a removal atomically.
 4. **The asks**, filed by a person, each with its pull request to Orca
    when a maintainer does not take it.
 5. **The plugin**, after item 33's tick exists: the manifest, the worker,

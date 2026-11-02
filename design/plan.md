@@ -707,7 +707,7 @@ has how it works, in classes built in order: what Jig does on its
 own side (every stage moves the workspace card and marks a park unread;
 the worktrees kind collects an Orca-managed checkout through Orca, after
 the remove hook and the reflection park, with Orca's registry in the idle
-proof, once the openers share collection's admission), what Jig asks of Orca (usage per account from the command line;
+proof, once every launch path is covered by admission), what Jig asks of Orca (usage per account from the command line;
 a phone push only when an agent needs input; filed by a person, each
 with its pull request offered), and a worker-only plugin in its own
 repository that runs a `jig dispatch --apply` tick when an agent's status
@@ -717,10 +717,12 @@ linking the card to its pull request, and the plugin on item 33's tick.
 
 Done when a parked drive's card shows unread with the question as its
 comment and `/followup` moves it to completed, `jig gc --collect` on an
-idle Orca checkout, once the openers share admission, leaves no card in `orca worktree list --json`, the
-dispatcher's account cap reads `orca account usage --json` where Orca has
-it, and an agent in a Jig repository reaching `waiting` under the plugin
-runs a tick within a minute.
+idle Orca checkout, once every launch path is covered by admission or
+Orca refuses a removal atomically, leaves no card in `orca worktree list
+--json`, the dispatcher's account cap reads `orca account usage --json`
+where Orca has it, and an agent in a Jig repository reaching `waiting`
+under the plugin has a trailing tick pending that starts once the running
+tick has finished and a minute has passed since the last start.
 
 ## Later
 
