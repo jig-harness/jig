@@ -16,6 +16,7 @@ release: minor
   inside it, its reflection findings parked, then `orca worktree rm`, so its
   card, terminals and agent records go with it; the receipt names the hook
   and the park. A plain worktree stays report-only.
-  The remove hook runs only when it is identical to the one in the declared
-  base-branch commit, the registry is read again right before removal, and a
+  The remove hook runs only when it and every file beside it in the hooks
+  directory are identical to the declared base-branch commit's, parking
+  refuses while a `JIG__` or `JIG_OVERLAY` override is set, the registry is read again right before removal, and a
   registry that lists a worktree twice refuses collection.

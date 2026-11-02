@@ -1,5 +1,5 @@
 /** Inventory is safe without the session opener's lifecycle and lock protocol. */
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
 import { GcError } from "../../shared/gc-error.ts";
 import {
@@ -10,7 +10,7 @@ import {
 } from "../../shared/orca.ts";
 import { run } from "../../shared/proc.ts";
 import { HOOKS_DIR, hookPath } from "../../shared/worktree-hooks.ts";
-import { isAbsolute, normalize, relative, sep } from "node:path";
+import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { gcGit as git } from "../git.ts";
 import { localSteps, removeThroughOrca } from "../worktree-removal.ts";
 import {
@@ -84,9 +84,11 @@ function orcaId(resource: Resource): string | null {
     : null;
 }
 /**
- * Refuse a remove hook that is not the one the declared base-branch commit
- * holds: a branch that changed it has not had that code reviewed into the
- * base, and collection would run it with the user's credentials.
+ * Refuse a remove hook, or a file beside it, that is not the one the declared
+ * base-branch commit holds: a branch that changed either has not had that code
+ * reviewed into the base, and collection would run it with the user's
+ * credentials. A helper the hook starts from outside the hooks directory is
+ * not covered; hooks keep their helpers beside them.
  */
 async function assertBaseHook(
   repository: string,
@@ -96,17 +98,52 @@ async function assertBaseHook(
   const tip = / @ ([0-9a-f]{40,64})$/.exec(declaration)?.[1];
   if (tip === undefined)
     throw new GcError("the base-branch commit of the declaration is unknown");
-  let base: string;
-  try {
-    base = await git(repository, ["show", `${tip}:${HOOKS_DIR}/remove`]);
-  } catch {
+  const held = await baseHookFiles(repository, tip);
+  if (!held.includes(`${HOOKS_DIR}/remove`))
     throw new GcError(
       `kept: ${HOOKS_DIR}/remove is not in the base branch, so its code was never reviewed there`,
     );
-  }
-  if (base !== readFileSync(hook, "utf8").trimEnd())
+  const worktree = dirname(dirname(dirname(hook)));
+  const local = localHookFiles(worktree);
+  const differs = (name: string): never => {
     throw new GcError(
-      `kept: ${HOOKS_DIR}/remove differs from the base branch's; remove the worktree by hand`,
+      `kept: ${name} differs from the base branch's; remove the worktree by hand`,
+    );
+  };
+  for (const name of local) if (!held.includes(name)) differs(name);
+  for (const name of held) {
+    if (!local.includes(name)) differs(name);
+    const base = await git(repository, ["show", `${tip}:${name}`]);
+    if (base !== readFileSync(join(worktree, name), "utf8").trimEnd())
+      differs(name);
+  }
+}
+/** The files of the hooks directory in the base-branch commit, as repository paths. */
+async function baseHookFiles(
+  repository: string,
+  tip: string,
+): Promise<string[]> {
+  const listing = await git(repository, [
+    "ls-tree",
+    "-r",
+    "--name-only",
+    tip,
+    "--",
+    HOOKS_DIR,
+  ]).catch(() => "");
+  return listing.split("\n").filter((name) => name !== "");
+}
+/** The files of the worktree's hooks directory, as repository paths. */
+function localHookFiles(worktree: string): string[] {
+  return readdirSync(join(worktree, HOOKS_DIR), {
+    recursive: true,
+    withFileTypes: true,
+  })
+    .filter((entry) => !entry.isDirectory())
+    .map((entry) =>
+      relative(worktree, join(entry.parentPath, entry.name))
+        .split(sep)
+        .join("/"),
     );
 }
 /**

@@ -217,7 +217,11 @@ function makeIdle(tree: string, admin: string): void {
   age(admin);
 }
 
-function gc(f: ReturnType<typeof setup>, args: string[]) {
+function gc(
+  f: ReturnType<typeof setup>,
+  args: string[],
+  extraEnv: Record<string, string> = {},
+) {
   return Bun.spawnSync(
     [
       process.execPath,
@@ -233,7 +237,7 @@ function gc(f: ReturnType<typeof setup>, args: string[]) {
     ],
     {
       cwd: f.repo,
-      env: f.env,
+      env: { ...f.env, ...extraEnv },
       stdout: "pipe",
       stderr: "pipe",
       timeout: 60_000,
@@ -403,6 +407,42 @@ describe.skipIf(
       reason: expect.stringContaining("differs from the base branch's"),
     });
     expect(existsSync(join(f.root, "hook-ran"))).toBe(false);
+    expect(existsSync(f.tree)).toBe(true);
+  }, 60_000);
+
+  test("a helper the branch added beside the remove hook is not run by unattended collection", () => {
+    const f = setup();
+    writeFileSync(
+      join(f.tree, ".config/worktree-hooks/helper.sh"),
+      `#!/bin/sh\ntouch ${JSON.stringify(join(f.root, "helper-ran"))}\n`,
+    );
+    f.command(["git", "-C", f.tree, "add", "-A"]);
+    f.command(["git", "-C", f.tree, "commit", "-m", "add a helper"]);
+    f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
+    f.command(["git", "-C", f.tree, "fetch", "origin"]);
+    f.refreshGh();
+    idle(f);
+    const result = gc(f, ["--collect", "--json"]);
+    const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+    expect(receipt.resources[0]).toMatchObject({
+      outcome: "failed",
+      reason: expect.stringContaining("helper.sh differs from the base"),
+    });
+    expect(existsSync(join(f.root, "helper-ran"))).toBe(false);
+    expect(existsSync(f.tree)).toBe(true);
+  }, 60_000);
+
+  test("a session's journal override keeps the checkout, whose findings it may hold", () => {
+    const f = setup();
+    idle(f);
+    const result = gc(f, ["--collect", "--json"], {
+      JIG__REFLECTION__JOURNAL: join(f.root, "elsewhere.jsonl"),
+    });
+    const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+    expect(receipt.resources[0]).toMatchObject({
+      outcome: "failed",
+      reason: expect.stringContaining("JIG__REFLECTION__JOURNAL"),
+    });
     expect(existsSync(f.tree)).toBe(true);
   }, 60_000);
 

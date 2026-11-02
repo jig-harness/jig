@@ -90,9 +90,10 @@ hook and the park, right before `orca worktree rm`, because the hook may run
 for minutes; an agent Orca started meanwhile keeps the worktree. Orca offers
 no reservation that stops a start between that read and the removal, so that
 last gap stays open. A registry that lists the worktree twice refuses
-collection. Parking and the hook's supervisor start without the session's
-`JIG__` and `JIG_OVERLAY` overrides, and the supervisor's Bun ignores the
-checkout's environment files and `bunfig.toml`.
+collection. The hook's supervisor starts without the session's `JIG__` and
+`JIG_OVERLAY` overrides, and its Bun ignores the checkout's environment files
+and `bunfig.toml`. Parking refuses while any of those overrides is set, since
+one may have moved the journal the findings were written to.
 
 Reports and collections use the same receipt schema and human formatter.
 `would-collect`, `collected`, `refused`, `finding`, `unverified` and `failed`

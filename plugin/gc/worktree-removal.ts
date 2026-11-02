@@ -55,12 +55,19 @@ export async function parkFindings(
     console.log = (...values: unknown[]) => log(values.map(String).join(" "));
   let status: number;
   try {
-    // A session's configuration overrides would point the journal at another
-    // location than the worktree's own, so parking could succeed on an empty one.
+    // A session's configuration overrides may have moved the journal its
+    // findings were written to, and parking without them could succeed on an
+    // empty one, so the worktree stays while any is set.
+    const overridden = Object.keys(process.env).filter(
+      (key) => key.startsWith("JIG__") || key === "JIG_OVERLAY",
+    );
+    if (overridden.length > 0)
+      throw new WorktreeRemovalError(
+        `the reflection journal of ${worktree} cannot be established while ${overridden.join(", ")} is set; remove it from a session without the override`,
+      );
     const clean = withoutLeakyGitEnv();
     for (const key of Object.keys(process.env))
-      if (!(key in clean) || key.startsWith("JIG__") || key === "JIG_OVERLAY")
-        delete process.env[key];
+      if (!(key in clean)) delete process.env[key];
     process.env.JIG_CONSUMER_ROOT = worktree;
     process.chdir(worktree);
     status = await withGitDeadline(deadline, () => journalMain(["park"]));

@@ -125,6 +125,17 @@ if (code !== 0) end(code);
 process.exit(0);
 `;
 
+/** `env` without the session's `JIG__` and `JIG_OVERLAY` configuration overrides. */
+function withoutSessionOverrides(
+  env: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(env).filter(
+      ([key]) => !key.startsWith("JIG__") && key !== "JIG_OVERLAY",
+    ),
+  );
+}
+
 /** How a supervised hook run ended, with its output. */
 export interface HookRun {
   /** The supervisor's exit status; null when it was killed. */
@@ -177,7 +188,7 @@ export function superviseHook(
     ],
     {
       cwd: worktree,
-      env: withoutLeakyGitEnv(),
+      env: withoutSessionOverrides(withoutLeakyGitEnv()),
       timeout: limitMs + SUPERVISOR_SLACK_MS,
       maxBuffer: HOOK_OUTPUT_BYTES,
     },
