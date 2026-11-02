@@ -260,6 +260,7 @@ describe("the card's comment lock", () => {
       clock.mockRestore();
     }
     expect(existsSync(lock)).toBe(false);
+    expect(existsSync(`${lock}.reclaim-${id}-1`)).toBe(false);
     expect(readdirSync(root).length).toBeGreaterThan(250);
   });
 

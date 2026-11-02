@@ -120,9 +120,10 @@ function reclaim(lock: string, deadline: number): void {
   const id = createHash("sha256").update(judged).digest("hex").slice(0, 16);
   const prefix = `${basename(lock)}.reclaim-${id}-`;
   const content = `${process.pid}\n${randomUUID()}\n`;
+  let mutex: string;
   for (let generation = 1; ; generation++) {
     if (performance.now() >= deadline) return;
-    const mutex = join(dirname(lock), `${prefix}${generation}`);
+    mutex = join(dirname(lock), `${prefix}${generation}`);
     if (publish(mutex, content)) break;
     const held = readLock(mutex);
     if (held === null || !ownerGone(pidOf(held))) return;
@@ -130,6 +131,7 @@ function reclaim(lock: string, deadline: number): void {
   try {
     if (readLock(lock) === judged) rmSync(lock, { force: true });
   } finally {
+    rmSync(mutex, { force: true });
     sweep(lock, deadline);
   }
 }
