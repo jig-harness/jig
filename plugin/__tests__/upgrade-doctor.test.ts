@@ -338,7 +338,7 @@ test.skipIf(onWindows)(
     expect(out).toMatch(/FAIL {2}config-fit: \.config\/jig\.yaml: config\//);
     expect(out).not.toContain("did not complete");
     expect(out).toMatch(
-      /the whole report: \S*bun\S* --no-env-file \S*--config=\S*bunfig\.toml\S* \S*config-fit\.ts\S* --offline\n/,
+      /the whole report: [^\n]* --no-env-file [^\n]*--config=[^\n]*bunfig\.toml[^\n]*config-fit\.ts[^\n]* --offline\n/,
     );
   },
 );
