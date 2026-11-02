@@ -7,6 +7,7 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -170,24 +171,29 @@ describe("the card's comment lock", () => {
     expect(readFileSync(counter, "utf8")).toBe("60");
   });
 
-  test("a reclaim mutex held by a live reclaimer is left alone, one whose reclaimer is gone is removed, however new", async () => {
+  test("a reclaim mutex held by a live reclaimer is left alone, one whose reclaimer is gone is superseded by the next generation", async () => {
     const root = scratchRoot();
     const lock = cardLockPath(WORKSPACE, root);
-    writeFileSync(lock, `${deadPid()}\nleft\n`);
-    writeFileSync(`${lock}.reclaim`, `${process.pid}\nrival\n`);
+    const stale = `${deadPid()}\nleft\n`;
+    writeFileSync(lock, stale);
+    const id = createHash("sha256").update(stale).digest("hex").slice(0, 16);
+    const mutex = `${lock}.reclaim-${id}-1`;
+    writeFileSync(mutex, `${process.pid}\nrival\n`);
     expect(
       await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 150 }),
     ).toBeNull();
+    expect(readFileSync(mutex, "utf8")).toBe(`${process.pid}\nrival\n`);
     expect(existsSync(lock)).toBe(true);
     const old = new Date(Date.now() - 60_000);
-    utimesSync(`${lock}.reclaim`, old, old);
+    utimesSync(mutex, old, old);
     expect(
       await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 150 }),
     ).toBeNull();
-    writeFileSync(`${lock}.reclaim`, `${deadPid()}\nrival\n`);
+    writeFileSync(mutex, `${deadPid()}\nrival\n`);
     expect(
       await withCardLock(WORKSPACE, async () => "x", { root, waitMs: 2000 }),
     ).toEqual({ value: "x" });
+    expect(readdirSync(root)).toEqual([]);
   });
 
   test("reclaiming a dead owner's lock leaves nothing behind", async () => {

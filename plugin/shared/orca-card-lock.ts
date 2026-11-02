@@ -14,8 +14,8 @@
  * workspace's path and created exclusively, holding its owner's pid and a
  * token. Release removes it only while it still holds that token. A lock
  * whose owner is no longer running is removed by one reclaimer at a time,
- * under a mutex file beside it that is itself taken over only when the
- * process it names is gone.
+ * under a mutex file beside it; a mutex whose owner is gone is superseded by
+ * a next-generation mutex, never moved or removed by another process.
  * The lock is published whole (linked into place from a private file), so
  * an interrupted acquisition leaves no empty lock. A writer that cannot take the lock within its
  * deadline gets `null` and skips its write: the board is a convenience.
@@ -28,13 +28,13 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   linkSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
-  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { swallow } from "./errors.ts";
 
 /** Milliseconds a writer waits for the lock before it skips. */
@@ -96,54 +96,36 @@ function ownerGone(pid: number | null): boolean {
 }
 
 /**
- * Remove `file` only while it still holds `expected`. The file is moved to a
- * private name first and its content checked there, so a replacement that
- * appeared since `expected` was read is restored rather than unlinked by path.
- */
-function removeIfContent(file: string, expected: string): void {
-  const moved = `${file}.gone-${process.pid}-${randomUUID()}`;
-  try {
-    renameSync(file, moved);
-  } catch (error) {
-    swallow(error, "already removed by whoever held it");
-    return;
-  }
-  try {
-    if (readFileSync(moved, "utf8") !== expected) {
-      try {
-        linkSync(moved, file);
-      } catch (error) {
-        swallow(error, "a newer file took the path; the moved one is dropped");
-      }
-    }
-  } finally {
-    rmSync(moved, { force: true });
-  }
-}
-
-/**
- * Remove a stale lock while holding the reclaim mutex, so one reclaimer at a
- * time judges and removes it. While the stale file stands at the lock path no
- * writer can publish there, and only a reclaimer ever removes a lock it did not
- * take, so the file judged under the mutex is the file removed. A mutex is
- * abandoned only when the process it names is gone, never by its age: a live
- * reclaimer keeps its exclusion however long it is suspended. Every removal
- * checks the content it judged.
+ * Remove a stale lock while holding a reclaim mutex, so one live reclaimer at
+ * a time judges and removes it. The mutex is named after the content judged
+ * and a generation number, and is never moved or removed by anyone but its
+ * owner: a reclaimer that finds the current generation's owner gone takes the
+ * next generation instead of taking the file over, so no path ever points at
+ * a file a live process owns when it is touched. While the stale file stands
+ * at the lock path no writer can publish there, and only a reclaimer removes a
+ * lock it did not take, so the file judged under the mutex is the file removed.
+ * Once the judged content is gone no reclaimer can act on it again (a lock's
+ * token is never reused), so its mutexes are swept.
  */
 function reclaim(lock: string): void {
   const judged = readLock(lock);
   if (judged === null || !ownerGone(pidOf(judged))) return;
-  const mutex = `${lock}.reclaim`;
+  const id = createHash("sha256").update(judged).digest("hex").slice(0, 16);
+  const prefix = `${basename(lock)}.reclaim-${id}-`;
   const content = `${process.pid}\n${randomUUID()}\n`;
-  if (!publish(mutex, content)) {
+  for (let generation = 1; ; generation++) {
+    const mutex = join(dirname(lock), `${prefix}${generation}`);
+    if (publish(mutex, content)) break;
     const held = readLock(mutex);
-    if (held !== null && ownerGone(pidOf(held))) removeIfContent(mutex, held);
-    return;
+    if (held === null || !ownerGone(pidOf(held))) return;
   }
   try {
-    if (readLock(lock) === judged) removeIfContent(lock, judged);
+    if (readLock(lock) === judged) rmSync(lock, { force: true });
   } finally {
-    removeIfContent(mutex, content);
+    for (const name of readdirSync(dirname(lock))) {
+      if (name.startsWith(prefix))
+        rmSync(join(dirname(lock), name), { force: true });
+    }
   }
 }
 
