@@ -7,7 +7,7 @@
  * carries the mark. What the morning report lists as dispatched.
  */
 import { stateRoot } from "../receipts.ts";
-import { markedSince } from "./launches.ts";
+import { type LaunchRecord, markedSince } from "./launches.ts";
 import { orcaRuntime } from "./runtime/orca.ts";
 import {
   marksIn,
@@ -72,56 +72,52 @@ export async function dispatchedSince(
       ],
     };
   }
-  const unread = [...read.unreadable.map((u) => `${u} does not read`)];
+  const unread = read.unreadable.map((u) => `${u} does not read`);
+  // One read of the runtime per repository.
   const lists = new Map<string, Workspace[] | string>();
   const out: DispatchedWorkspace[] = [];
   for (const r of read.records) {
-    const base = {
-      at: r.createdAt,
-      repo: r.repo,
-      record: r.id,
-      mark: r.mark as string,
-      path: r.workspace?.path ?? null,
-    };
-    if (r.workspace === null) {
-      out.push({
-        ...base,
-        name: null,
-        marked: null,
-        note: "no workspace opened",
-      });
-      continue;
-    }
     let listed = lists.get(r.repo);
     if (listed === undefined) {
       listed = await workspacesOf(runtime, r.repo, r.repoPath);
       lists.set(r.repo, listed);
       if (typeof listed === "string") unread.push(listed);
     }
-    const found =
-      typeof listed === "string"
-        ? undefined
-        : launchedInto(listed, r.workspace);
-    out.push(
-      found === undefined
-        ? {
-            ...base,
-            name: null,
-            marked: null,
-            note:
-              typeof listed === "string"
-                ? `${runtime.name} could not be read`
-                : `${runtime.name} no longer lists it`,
-          }
-        : {
-            ...base,
-            name: found.name,
-            marked: carriesMark(found.comment, base.mark),
-            note: null,
-          },
-    );
+    out.push(entryOf(r, listed, runtime.name));
   }
   return { workspaces: out, unread };
+}
+
+/** One record's entry, its workspace looked up among the runtime's (`listed`, or why they could not be read). */
+function entryOf(
+  r: LaunchRecord,
+  listed: Workspace[] | string,
+  runtime: string,
+): DispatchedWorkspace {
+  const base = {
+    at: r.createdAt,
+    repo: r.repo,
+    record: r.id,
+    mark: r.mark ?? "",
+    path: r.workspace?.path ?? null,
+  };
+  const unknown = (note: string) => ({
+    ...base,
+    name: null,
+    marked: null,
+    note,
+  });
+  if (r.workspace === null) return unknown("no workspace was opened");
+  if (typeof listed === "string")
+    return unknown(`${runtime} could not be read`);
+  const found = launchedInto(listed, r.workspace);
+  if (found === undefined) return unknown(`${runtime} no longer lists it`);
+  return {
+    ...base,
+    name: found.name,
+    marked: carriesMark(found.comment, base.mark),
+    note: null,
+  };
 }
 
 /** The runtime's workspaces of one repository, or why they could not be read. */

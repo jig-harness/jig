@@ -59,17 +59,16 @@ import type {
 import {
   admitAccount,
   type ApplyState,
-  changedWhileOpening,
   dropRecord,
   holdRecord,
   launchHeld,
   type Opened,
+  openedFor,
   openWithinBudget,
   outOfTime,
   reportedUnbound,
   rotated,
   waits,
-  workspaceOr,
 } from "./launch.ts";
 
 /** What a repository's follow-ups need beyond the apply state. */
@@ -273,14 +272,13 @@ async function launchOne(
   const { slots } = admitted;
   const id = newRecordId(new Date());
   const named = dispatched("followup", `#${pr.number}`, id);
-  const opened = workspaceOr(
+  const opened = await openedFor(
+    state,
     action,
-    await workspaceFor(state, repo, ctx, pr, named),
-    slots.account.name,
+    slots,
+    workspaceFor(state, repo, ctx, pr, named),
   );
   if ("outcome" in opened) return opened.outcome;
-  const stale = await changedWhileOpening(state, action, slots);
-  if (stale !== null) return stale;
   const after = await changed(repo, ctx, pr.number);
   if (after !== null) return waits(action, after, slots.account.name);
   const record = newFollowupRecord(

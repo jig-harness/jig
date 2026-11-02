@@ -52,8 +52,8 @@ import {
   accountBlocked,
   admitAccount,
   type ApplyState,
-  changedWhileOpening,
   type Opened,
+  openedFor,
   openWithinBudget,
   outOfTime,
   replay,
@@ -62,7 +62,6 @@ import {
   replayable,
   startRecord,
   waits,
-  workspaceOr,
 } from "./launch.ts";
 import { holdingRecords, pickupHold } from "./pickup-hold.ts";
 
@@ -149,15 +148,14 @@ async function launchOne(
   const slots = admitted.slots;
   const id = newRecordId(new Date());
   const named = dispatched("pickup", action.target, id);
-  const opened = workspaceOr(
+  const opened = await openedFor(
+    state,
     action,
-    await workspaceFor(state, repo, ctx, before.issue, named),
-    slots.account.name,
+    slots,
+    workspaceFor(state, repo, ctx, before.issue, named),
   );
   if ("outcome" in opened) return opened.outcome;
   const { workspace } = opened;
-  const stale = await changedWhileOpening(state, action, slots);
-  if (stale !== null) return stale;
   const after = await changed(state, repo, ctx, action.target);
   if ("why" in after) return waits(action, after.why, slots.account.name);
   const beforeRoute = outOfTime(state);

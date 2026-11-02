@@ -355,7 +355,7 @@ function refused(
 }
 
 /** The workspace a launch runs in, or the outcome that ends it: a budget that waits, an open that failed. */
-export function workspaceOr(
+function workspaceOr(
   action: Action,
   opened: Opened,
   account: string,
@@ -365,6 +365,25 @@ export function workspaceOr(
   if ("refused" in opened)
     return { outcome: refused(action, opened.refused, account) };
   return opened;
+}
+
+/**
+ * The workspace a launch runs in once `opening` settles, with the admitted
+ * account checked again after it, since an open can outlast the account's
+ * wall or login; or the outcome that ends the launch.
+ */
+export async function openedFor(
+  state: ApplyState,
+  action: Action,
+  slots: Slots,
+  opening: Promise<Opened>,
+): Promise<
+  { workspace: { id: string; path: string } } | { outcome: LaunchOutcome }
+> {
+  const opened = workspaceOr(action, await opening, slots.account.name);
+  if ("outcome" in opened) return opened;
+  const stale = await changedWhileOpening(state, action, slots);
+  return stale === null ? opened : { outcome: stale };
 }
 
 /** Whether a pending record's launch can still be replayed: it has a workspace, its last attempt got no answer and an attempt remains. */
@@ -499,7 +518,7 @@ export async function admitAccount(
 }
 
 /** Opening a workspace can outlast the wall or the login the account was admitted under. */
-export async function changedWhileOpening(
+async function changedWhileOpening(
   state: ApplyState,
   action: Action,
   slots: Slots,

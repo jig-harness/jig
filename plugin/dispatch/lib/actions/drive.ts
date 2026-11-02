@@ -43,8 +43,8 @@ import {
   accountBlocked,
   admitAccount,
   type ApplyState,
-  changedWhileOpening,
   type Opened,
+  openedFor,
   openWithinBudget,
   outOfTime,
   replay,
@@ -52,7 +52,6 @@ import {
   rotated,
   startRecord,
   waits,
-  workspaceOr,
 } from "./launch.ts";
 
 export type { ApplyState } from "./launch.ts";
@@ -188,15 +187,14 @@ async function launchOne(
   const id = newRecordId(new Date());
   const kind = action.takeover === undefined ? "rearm" : "takeover";
   const named = dispatched(kind, `#${pr.number}`, id);
-  const opened = workspaceOr(
+  const opened = await openedFor(
+    state,
     action,
-    await workspaceFor(state, repo, pr.number, pr.head, sessions, named),
-    slots.account.name,
+    slots,
+    workspaceFor(state, repo, pr.number, pr.head, sessions, named),
   );
   if ("outcome" in opened) return opened.outcome;
   const { workspace } = opened;
-  const stale = await changedWhileOpening(state, action, slots);
-  if (stale !== null) return stale;
   const pastDeadline = outOfTime(state);
   if (pastDeadline !== null)
     return waits(action, pastDeadline, slots.account.name);
