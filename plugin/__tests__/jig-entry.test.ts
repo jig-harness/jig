@@ -34,7 +34,15 @@ test("a dispatch usage error exits 2 and says why", () => {
   );
 });
 
-const VERBS = ["install", "uninstall", "status", "receipts", "run"];
+const VERBS = [
+  "install",
+  "uninstall",
+  "upgrade",
+  "doctor",
+  "status",
+  "receipts",
+  "run",
+];
 
 test.each([
   [["--help"], [...VERBS, "gc", "dispatch", "completion"]],
@@ -76,6 +84,14 @@ test.each([
     ["COMPONENT", "DATE|RUN-ID"],
   ],
   [["run", "--help"], ["COMPONENT"]],
+  [
+    ["upgrade", "--help"],
+    ["--claude", "--codex", "--channel", "--source", "--jobs-only", "--json"],
+  ],
+  [
+    ["help", "doctor"],
+    ["COMPONENT", "--json"],
+  ],
 ])("jig %p prints help naming its commands and exits 0", (args, names) => {
   const result = jig(...args);
   expectSpawnExit(result, 0);
@@ -111,6 +127,16 @@ test.each([
   [["receipts"], "COMPONENT"],
   [["status", "--yes"], "`--yes`"],
   [["run", "--json"], "`--json`"],
+  [["upgrade", "--channel", "beta"], '"beta"'],
+  [["upgrade", "--claude", "--codex"], "cannot be used together"],
+  [["upgrade", "--source"], "`--source`"],
+  [["upgrade", "--jobs-only", "--claude"], "takes no --claude"],
+  [
+    ["upgrade", "--channel", "latest", "--source", "/src/jig"],
+    "has no channels",
+  ],
+  [["doctor", "bogus"], '"bogus"'],
+  [["doctor", "--yes"], "`--yes`"],
 ])("jig %p is refused with exit 2 and the reason", (args, reason) => {
   const result = jig(...args);
   expectSpawnExit(result, 2);

@@ -25,6 +25,8 @@ const JIG_COMMANDS = [
   "jig dispatch",
   "jig install",
   "jig uninstall",
+  "jig upgrade",
+  "jig doctor",
   "jig status",
   "jig receipts",
   "jig run",

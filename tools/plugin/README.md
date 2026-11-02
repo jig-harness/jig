@@ -6,13 +6,20 @@ directory holds the tooling that makes that so. How to install, configure,
 update and release the plugin is in [plugin/README.md](../../plugin/README.md).
 
 - [setup.ts](setup.ts) installs the `jig` plugin for Claude Code and
-  Codex (whichever is on `PATH`), updates it when already installed, and with
-  `--check` reports what is installed. It prints each command it runs and
-  changes only the tools' user-level plugin settings and caches. Each tool
-  command is limited to `JIG_SETUP_TIMEOUT_SECONDS` (default 300), so a
-  stalled fetch fails instead of hanging an image build. It exits 1 when the
-  plugin is missing or disabled for a tool it found, or when neither tool is
-  on `PATH`.
+  Codex (whichever is on `PATH`) from a checkout of this repository, updates
+  it when already installed, and with `--check` reports what is installed:
+  the first install, before the plugin's `jig` command is on `PATH`. The
+  work is the plugin's own code
+  ([plugin/runtime/harness.ts](../../plugin/runtime/harness.ts)), which
+  `jig upgrade` and `jig doctor` run once `jig` is installed; this script
+  only reads its arguments. It prints each command it runs and changes only
+  the tools' user-level plugin settings and caches. Each tool command is
+  limited to `JIG_SETUP_TIMEOUT_SECONDS` (default 300), so a stalled fetch
+  fails instead of hanging an image build. A tool that fails is reported
+  and the next one still runs. It exits 1 when the plugin is missing or
+  disabled for a tool it found, when a tool failed, or when neither tool is
+  on `PATH`, and 2 for arguments it cannot take.
+  [setup.test.ts](setup.test.ts) runs it against stand-in tools.
 
   ```sh
   bun tools/plugin/setup.ts            # install (following stable) or update
