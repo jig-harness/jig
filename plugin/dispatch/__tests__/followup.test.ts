@@ -8,12 +8,13 @@
  * tick's whose record and outcome are gone is a failed follow-up.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { manualMarker, MARKER, tickMarker } from "../lib/followup-marker.ts";
-import { readRecordFile } from "../lib/launches.ts";
+import { readOutcomes } from "../lib/followup-outcomes.ts";
+import { readRecord } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { mergedPr, SLUG, type World, world } from "./fixtures.ts";
 import {
@@ -91,7 +92,7 @@ describe("jig dispatch --apply follows up a merge", () => {
       }),
     ]);
     const id = String(launches(first)[0]?.record);
-    const record = readRecordFile(id, dispatchState(w));
+    const record = readRecord(id, dispatchState(w));
     expect(record?.action).toBe("followup");
     expect(record?.pr).toBe(9);
     expect(record?.workspace?.path).toBe(ws);
@@ -146,15 +147,10 @@ describe("jig dispatch --apply follows up a merge", () => {
     expect(quiet(fourth)).toContainEqual(
       expect.objectContaining({ target: "PR #9", class: "followup-done" }),
     );
-    expect(
-      existsSync(
-        join(
-          dispatchState(w),
-          "followups",
-          `${SLUG.replace("/", "__")}-9.json`,
-        ),
-      ),
-    ).toBe(true);
+    expect(readOutcomes(SLUG, dispatchState(w)).get(9)).toMatchObject({
+      record: id,
+      outcome: "done",
+    });
   });
 
   it("reports the follow-up and posts no marker where Orca cannot bind the session", async () => {

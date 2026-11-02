@@ -1,12 +1,12 @@
 /**
- * The outcome log, under `~/.local/state/jig/dispatch/`: one file per month
- * (`log-<year>-<month>.jsonl`), one row per line, which nothing removes.
- * Receipts and launch records are working records and expire with the
- * machine file's retention; the log is what the factory learns from, read
- * by people and by `jig dispatch dashboard`, and never planned from.
+ * The outcome log, the state database's `log` table (`state.ts`): one row
+ * per launch record that ended and per cause the tick observed, which
+ * nothing removes. Receipts and launch records are working records and
+ * expire with the machine file's retention; the log is what the factory
+ * learns from, read by people, by `jig dispatch dashboard` and by
+ * `jig dispatch log`, and never planned from.
  *
- * Two kinds of row, each with its key and its time, in the file of the
- * month its time falls in:
+ * Two kinds of row, each with its key and its time:
  *
  * - **ended**: one per launch record, when the record ends, timed at its
  *   end: the stage, the repository, the item or pull request, the account,
@@ -18,27 +18,16 @@
  *   claim, a stage drifting from its expectation, a session waiting, a stop
  *   it notified on a stage it did not launch, each nudge sent).
  *
- * A row is one line written in one append. Before it appends, the writer
- * settles an unterminated last line (one that parses keeps it and gains its
- * newline, one that does not is cut off), and looks for the row's key among
- * the file's rows (read once per process, then only what was appended), so a retry after a tick that stopped between the
- * append and its mark writes nothing twice. A reader skips any line that
- * does not parse as a row.
+ * A row's key is unique in the table, and a row is written in the same
+ * transaction as what it records (a record's end, a suppression record, a
+ * nudge's delivery mark): the two land together or not at all, so a tick
+ * that stops between them leaves nothing for the next one to repair. Each
+ * row is kept as the JSON line the text copy (`log-export.ts`) and
+ * `jig dispatch log --jsonl` print, beside the columns the dashboard
+ * filters on.
  */
-import {
-  closeSync,
-  fstatSync,
-  ftruncateSync,
-  mkdirSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-  readSync,
-  statSync,
-  writeSync,
-} from "node:fs";
+import type { Database } from "bun:sqlite";
 import { join } from "node:path";
-import { StringDecoder } from "node:string_decoder";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { stateRoot } from "../receipts.ts";
@@ -48,6 +37,7 @@ import {
   type ReadRecord,
   targetOf,
 } from "./launches.ts";
+import { existingStateDb, stateDb } from "./state.ts";
 
 /**
  * The closed list of outcome classes. An answer that fits more than one
@@ -106,13 +96,15 @@ export interface EventRow {
 
 export type LogRow = EndedRow | EventRow;
 
-const FILE = /^log-(\d{4})-(\d{2})\.jsonl$/;
-
-/** The month file a time falls in. */
+/** The month's text copy a time falls in (`log-export.ts`). */
 export function logFile(at: string, root = stateRoot()): string {
+  return join(root, `log-${monthOf(at)}.jsonl`);
+}
+
+/** A time's month, `<year>-<month>` in UTC. */
+export function monthOf(at: string): string {
   const d = new Date(at);
-  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
-  return join(root, `log-${d.getUTCFullYear()}-${month}.jsonl`);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 function isClass(value: unknown): value is OutcomeClass {
@@ -143,177 +135,77 @@ function isRow(value: unknown): value is LogRow {
   );
 }
 
-function parseLine(line: string): LogRow | null {
+/** A line of the text copy as a row; `null` for a line that is not one. */
+export function parseLine(line: string): LogRow | null {
   try {
     const value: unknown = JSON.parse(line);
     return isRow(value) ? value : null;
   } catch (error) {
-    // A torn or foreign line is not a row; readers skip it.
     swallow(error, "a line of the outcome log that is not a row is skipped");
     return null;
   }
 }
 
-/** The longest unterminated last line kept when it parses; a longer one is cut off. */
-const MAX_LINE_BYTES = 8 * 1024 * 1024;
-
-/** The offset just after the file's last newline before `size`; 0 when it has none. */
-function lineStart(fd: number, size: number): number {
-  const chunk = Buffer.alloc(64 * 1024);
-  let end = size;
-  while (end > 0) {
-    const start = Math.max(0, end - chunk.length);
-    const read = readSync(fd, chunk, 0, end - start, start);
-    const at = chunk.subarray(0, read).lastIndexOf(0x0a);
-    if (at !== -1) return start + at + 1;
-    end = start;
-  }
-  return 0;
+/** The class a row counts under: its class, else (an observation no class names) its event. */
+export function bucket(row: LogRow): string {
+  if (row.class !== null) return row.class;
+  return row.kind === "event" ? `event: ${row.event}` : "unknown";
 }
 
 /**
- * Settle an unterminated last line: one that parses keeps it and gains its
- * newline, one that does not is cut off whole. Returns the file's size after.
+ * Write `row` into the log, unless a row with its key is already there:
+ * true when this call wrote it. Called inside the transaction that writes
+ * what the row records, it lands with it or not at all.
  */
-function settleLastLine(fd: number, size: number): number {
-  if (size === 0) return 0;
-  const last = Buffer.alloc(1);
-  readSync(fd, last, 0, 1, size - 1);
-  if (last.toString() === "\n") return size;
-  const start = lineStart(fd, size);
-  if (size - start <= MAX_LINE_BYTES) {
-    const buffer = Buffer.alloc(size - start);
-    readSync(fd, buffer, 0, buffer.length, start);
-    if (parseLine(buffer.toString("utf8")) !== null) {
-      writeSync(fd, "\n", size);
-      return size + 1;
-    }
-  }
-  ftruncateSync(fd, start);
-  return start;
+export function insertRow(db: Database, row: LogRow): boolean {
+  const done = db
+    .query(
+      `INSERT INTO log (key, kind, at, at_ms, repo, stage, account, bucket, reason, row)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (key) DO NOTHING`,
+    )
+    .run(
+      row.key,
+      row.kind,
+      row.at,
+      Date.parse(row.at),
+      row.repo,
+      row.stage,
+      row.account,
+      bucket(row),
+      row.reason,
+      JSON.stringify(row),
+    );
+  return done.changes === 1;
 }
 
-/** The keys of a month file's rows up to `size`, which ends on a line boundary. */
-interface KeyIndex {
-  ino: number;
-  size: number;
-  keys: Set<string>;
+/** Write `row` on its own: true when this call wrote it. */
+export function writeRow(row: LogRow, root = stateRoot()): boolean {
+  return insertRow(stateDb(root), row);
 }
 
-/** What this process has read of each month file; a file that shrank or was replaced is read again whole. */
-const indexes = new Map<string, KeyIndex>();
-
-/**
- * Add to `keys` the keys of the rows of the file open as `fd` from byte
- * `from` (a line start) to `size`. It reads through the descriptor already
- * held and in chunks, so a failure is the caller's (a lookup that cannot read
- * is not an absent key) and no call holds the whole file.
- */
-function indexKeys(fd: number, from: number, size: number, keys: Set<string>) {
-  const chunk = Buffer.alloc(1024 * 1024);
-  const decoder = new StringDecoder("utf8");
-  const add = (line: string) => {
-    const key = parseLine(line)?.key;
-    if (key !== undefined) keys.add(key);
-  };
-  let carry = "";
-  let at = from;
-  while (at < size) {
-    const read = readSync(fd, chunk, 0, Math.min(chunk.length, size - at), at);
-    if (read === 0) break;
-    at += read;
-    const lines = (carry + decoder.write(chunk.subarray(0, read))).split("\n");
-    carry = lines.pop() ?? "";
-    lines.forEach(add);
-  }
-  carry += decoder.end();
-  if (carry !== "") add(carry);
-}
-
-/**
- * Whether the month file open as `fd` already holds a row with `key`. A file
- * is read whole once per process and only what was appended since after that,
- * so a run of appends does not read the month again for each.
- */
-function holdsKey(path: string, fd: number, size: number, key: string) {
-  const ino = fstatSync(fd).ino;
-  let index = indexes.get(path);
-  if (index === undefined || index.ino !== ino || index.size > size) {
-    indexes.delete(path);
-    index = { ino, size: 0, keys: new Set() };
-  }
-  if (index.size < size) {
-    indexKeys(fd, index.size, size, index.keys);
-    index.size = size;
-  }
-  indexes.set(path, index);
-  return index.keys.has(key);
-}
-
-/**
- * Append `row` to its month's file, unless a row with its key is already in
- * the file: true when this call wrote it.
- */
-export function appendRow(row: LogRow, root = stateRoot()): boolean {
-  mkdirSync(root, { recursive: true, mode: 0o700 });
-  const path = logFile(row.at, root);
-  const fd = openSync(path, "a+", 0o600);
-  try {
-    const size = settleLastLine(fd, statSync(path).size);
-    if (holdsKey(path, fd, size, row.key)) return false;
-    // The index stops at `size`: the next call reads this row, and any a
-    // concurrent writer appended, as the part of the file after it.
-    writeSync(fd, `${JSON.stringify(row)}\n`, size);
-    return true;
-  } finally {
-    closeSync(fd);
-  }
-}
-
-/** The month files whose month overlaps `[fromMs, toMs]`, oldest first. */
-function monthFiles(root: string, fromMs: number, toMs: number): string[] {
-  let names: string[];
-  try {
-    names = readdirSync(root);
-  } catch (error) {
-    swallow(error, "no outcome log yet");
-    return [];
-  }
-  return names
-    .filter((name) => {
-      const m = FILE.exec(name);
-      if (m === null) return false;
-      const start = Date.UTC(Number(m[1]), Number(m[2]) - 1, 1);
-      const end = Date.UTC(Number(m[1]), Number(m[2]), 1);
-      return end > fromMs && start <= toMs;
-    })
-    .sort((a, b) => a.localeCompare(b))
-    .map((name) => join(root, name));
-}
-
-/** Every row timed within `[fromMs, toMs]`, in file order; a line that does not parse is skipped. */
+/** Every row timed within `[fromMs, toMs]`, in the order they were written; none before the database exists. */
 export function readRows(
   fromMs = Number.NEGATIVE_INFINITY,
   toMs = Number.POSITIVE_INFINITY,
   root = stateRoot(),
 ): LogRow[] {
-  const rows: LogRow[] = [];
-  for (const path of monthFiles(root, fromMs, toMs)) {
-    let text: string;
-    try {
-      text = readFileSync(path, "utf8");
-    } catch (error) {
-      swallow(error, `${path} does not read`);
-      continue;
-    }
-    for (const line of text.split("\n")) {
-      const row = parseLine(line);
-      if (row === null) continue;
-      const at = Date.parse(row.at);
-      if (at >= fromMs && at <= toMs) rows.push(row);
-    }
-  }
-  return rows;
+  const db = existingStateDb(root);
+  if (db === null) return [];
+  const rows = db
+    .query("SELECT row FROM log WHERE at_ms >= ? AND at_ms <= ? ORDER BY seq")
+    .all(
+      Number.isFinite(fromMs) ? fromMs : Number.MIN_SAFE_INTEGER,
+      Number.isFinite(toMs) ? toMs : Number.MAX_SAFE_INTEGER,
+    ) as Array<{ row: string }>;
+  return rowsOf(rows);
+}
+
+/** The rows a query over the log table selected, as rows; one whose text does not read as a row is left out. */
+export function rowsOf(selected: Array<{ row: string }>): LogRow[] {
+  return selected
+    .map((r) => parseLine(r.row))
+    .filter((r): r is LogRow => r !== null);
 }
 
 /** `drive.ts`'s exits, by the class the closed list places them in (all but `5`, which reads the pull request). */

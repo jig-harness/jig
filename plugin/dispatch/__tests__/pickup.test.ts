@@ -6,10 +6,10 @@
  * Stalled pickups and double claims are reported, never launched.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { readRecordFile } from "../lib/launches.ts";
+import { readRecord, readResult } from "../lib/launches.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { updateIdle } from "../lib/idle.ts";
 import { assignedIssue, SLUG, type World, world } from "./fixtures.ts";
@@ -72,7 +72,7 @@ describe("jig dispatch --apply picks up assigned items", () => {
       account: "a",
     });
     const id = String(launched?.record);
-    const record = readRecordFile(id, dispatchState(w));
+    const record = readRecord(id, dispatchState(w));
     expect(record?.agentId).toBe("tab-1:leaf-1");
     expect(record?.item).toBe("#12");
     const [create] = orcaCalls(w, "worktree", "create");
@@ -127,7 +127,9 @@ describe("jig dispatch --apply picks up assigned items", () => {
   it("does not pick an item up again once its session ended without claiming it", async () => {
     const w = fixture();
     const id = String(launches(await applyTick(w, true))[0]?.record);
-    const path = readRecordFile(id, dispatchState(w))?.workspace?.path ?? "";
+    const path = readRecord(id, dispatchState(w))?.workspace?.path ?? "";
+    // The wrapper claims its record before it starts the session.
+    await waitFor("the session", () => claudeRuns(w).length === 1);
     w.setWorkspaces([
       {
         branch: "12-issue-12",
@@ -216,7 +218,7 @@ describe("jig dispatch --apply picks up assigned items", () => {
   it("reports a session waiting past blocked_after, which keeps its slot", async () => {
     const w = fixture();
     const id = String(launches(await applyTick(w, true))[0]?.record);
-    const path = readRecordFile(id, dispatchState(w))?.workspace?.path ?? "";
+    const path = readRecord(id, dispatchState(w))?.workspace?.path ?? "";
     await waitFor("the session", () => claudeRuns(w).length === 1);
     w.setWorkspaces([
       {
@@ -255,7 +257,7 @@ describe("jig dispatch result", () => {
   it("records a session's answer once, under its own record's token only", async () => {
     const w = fixture();
     const id = String(launches(await applyTick(w, true))[0]?.record);
-    const token = readRecordFile(id, dispatchState(w))?.token ?? "";
+    const token = readRecord(id, dispatchState(w))?.token ?? "";
 
     const foreign = await w.dispatch(["result", id, "not-its-token", "done"]);
     expectSpawnExit(foreign, 2);
@@ -266,9 +268,7 @@ describe("jig dispatch result", () => {
     const second = await w.dispatch(["result", id, token, "failed"]);
     expectSpawnExit(second, 3);
     expect(second.stderr).toContain("already has a result (done)");
-    expect(existsSync(join(dispatchState(w), "launches", `${id}.result`))).toBe(
-      true,
-    );
+    expect(readResult(id, dispatchState(w))).toBe("done");
 
     writeFileSync(join(w.dir, "claude-exit"), "");
     await waitFor("the exit", () => exitWritten(w, id));

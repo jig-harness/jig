@@ -128,8 +128,9 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch install [--interval 5m] [--yes] [--uninstall]
 ```
 
-`dispatch --help`, `dispatch install --help`, `dispatch receipts --help`
-and `dispatch dashboard --help` list the options of each form. For each repository (`--repo`, else the
+`dispatch --help`, `dispatch install --help`, `dispatch receipts --help`,
+`dispatch dashboard --help`, `dispatch log --help` and `dispatch clear --help`
+list the options of each form. For each repository (`--repo`, else the
 machine file's, else the current one) it prints every action it would take,
 each with the record that wants it and the evidence: a pickup for an item
 assigned to the repository's factory identity, a re-arm for a drive its
@@ -144,7 +145,11 @@ later run. A stage a running session or a launch record already holds is listed
 as running; a record it cannot read, or a target it cannot place, is
 reported and never planned. Each run writes a receipt under
 `~/.local/state/jig/dispatch/receipts/`, which `jig dispatch receipts`
-lists.
+lists. What the dispatcher keeps between runs (the launch records, the
+records that keep a notification or a nudge from going twice, and the
+outcome log) is one SQLite database beside them, `state.sqlite`; a
+database written by a newer plugin is refused, with its version named,
+until the plugin is updated.
 
 **`--apply`** starts what the machine file
 ([`~/.jig/dispatch.yaml`](CONFIGURATION.md#the-machines-dispatch-file))
@@ -158,8 +163,8 @@ the pass to an account the machine file lists, through that account's
 configuration directory, and only while the account has a free slot and no
 recorded usage-limit wall; before the launch the dispatcher checks that the
 directory resolves to the account's identity, and starts nothing when it
-does not. Every launch begins with a launch record under
-`~/.local/state/jig/dispatch/launches/`, so a launch whose answer is lost
+does not. Every launch begins with a launch record in the state database,
+so a launch whose answer is lost
 holds its slot and is retried only under its own record. A refusal
 `drive.ts` gives (another driver holds the pull request) is the stage's
 answer and is not launched again on the same ledger facts. A re-drive is
@@ -168,7 +173,13 @@ the drive merges the base in through its conflict-resolve round, or
 reviews the new head in its ordinary rounds, and a conflict its repair
 budget cannot settle stops it for a person, as any conflict does. A record whose
 process cannot be checked (another host or boot) holds its slot until a
-person removes its files.
+person clears it:
+
+```sh
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch clear <record>
+```
+
+which refuses a record whose session is still running.
 
 **Pickups** (the `pickup` stage) start one `do-item` session per item
 assigned to the factory identity in a dispatch state, once: just before
@@ -251,9 +262,9 @@ the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.
 
 **The outcome log.** Every launch record that ends gets one row in the
-[outcome log](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
-`~/.local/state/jig/dispatch/log-<year>-<month>.jsonl`, which never
-expires: the stage, the repository, the item or pull request, the account,
+[outcome log](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), a
+table of the state database written in the same transaction as the
+record's end, which never expires: the stage, the repository, the item or pull request, the account,
 the model, the duration, a drive's rounds, and an outcome class from a
 closed list, with a reason that carries the stage's own answer (the exit,
 the recorded result, or the last state):
@@ -277,6 +288,18 @@ expectation, a session waiting, a stop it notified on a drive it did not
 launch, and each nudge with whether it arrived. A stop the classifier cannot
 place is logged as `unknown`, never dropped, so a reason that recurs among
 those rows is what a new class is made from.
+
+**The log as text.** The log prints as text, one line a row, or with
+`--jsonl` as JSON lines:
+
+```sh
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch log [--since <date>] [--jsonl]
+```
+
+Every run also adds the rows it wrote to a copy, one file per month,
+`~/.local/state/jig/dispatch/log-<year>-<month>.jsonl`, which never
+expires: the archive that outlives any change to the database, kept
+current with nobody running anything.
 
 **Expectations and drift.** Each stage the dispatcher launched carries an
 expectation while it runs: a drive's unresolved review threads fall (the

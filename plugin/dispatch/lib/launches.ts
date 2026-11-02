@@ -1,26 +1,26 @@
 /**
- * Launch records, under `~/.local/state/jig/dispatch/launches/`: one per
- * session the dispatcher started, written by the tick before it calls the
- * runtime's `launch`, so a launch whose answer is lost still holds its
- * stage and its account's slot.
+ * Launch records, in the state database's `launches` table (`state.ts`):
+ * one per session the dispatcher started, written by the tick before it
+ * calls the runtime's `launch`, so a launch whose answer is lost still holds
+ * its stage and its account's slot.
  *
- * A record is three files, each written by one writer, so no write ever
- * races another:
+ * A record is one row, whose columns each have one writer, so no write
+ * ever overwrites another's:
  *
- * - `<id>.json`, the tick's: the action, the pull request, the account, the
+ * - `record`, the tick's: the action, the pull request, the account, the
  *   random token, the workspace and the runtime's answer to each launch;
- * - `<id>.claim`, the wrapper's (`run.ts`): the process identity it ran
- *   under (host, boot id, process id and the process's start time),
- *   published whole by a hard link, so exactly one wrapper ever claims a
- *   record;
- * - `<id>.exit`, the wrapper's again: the stage's exit, once it ended;
- * - `<id>.result`, an interactive session's own answer (`done` or
- *   `failed`), written once by `jig dispatch result` under the record's
- *   token.
+ * - `claim`, the wrapper's (`run.ts`): the process identity it ran under
+ *   (host, boot id, process id and the process's start time), set by an
+ *   update that only fills an empty column, so exactly one wrapper ever
+ *   claims a record;
+ * - `exit`, the wrapper's again: the stage's exit, once it ended; the first
+ *   one written stands;
+ * - `result`, an interactive session's own answer (`done` or `failed`),
+ *   written once by `jig dispatch result` under the record's token.
  *
- * A record's state is read from those files and the process table:
+ * A record's state is read from those columns and the process table:
  *
- * | Files | State |
+ * | Columns | State |
  * | --- | --- |
  * | an exit | ended, with the stage's exit |
  * | a claim whose process is alive under the same identity | alive |
@@ -30,35 +30,25 @@
  *
  * Pending, alive and unknown records hold their stage and their account's
  * slot; an unknown or a pending record whose launch cannot be retried
- * holds them until a person removes its files. An interactive session's
- * record is also read beside its agent (`actions/pickup-hold.ts`): while
- * its wrapper is alive, the record ends when the runtime reports the agent
- * finished.
+ * holds them until a person clears it (`jig dispatch clear`). An
+ * interactive session's record is also read beside its agent
+ * (`actions/pickup-hold.ts`): while its wrapper is alive, the record ends
+ * when the runtime reports the agent finished.
  *
- * What Control adds to the tick's part, while the record runs and when it
- * ends: a drive's unresolved-thread count per ledger round (`samples`), an
- * interactive session's vendor session id (`sessionId`) and the usage-limit
- * walls it waited on (`episodes`), and, once it ended, the time its outcome
- * row carries (`endedAt`) and the mark that the row was appended
- * (`logged`).
+ * What Control adds while the record runs and when it ends: a drive's
+ * unresolved-thread count per ledger round (`samples`, the
+ * `thread_samples` table), an interactive session's vendor session id
+ * (`sessionId`) and the usage-limit walls it waited on (`episodes`, the
+ * `waiting_episodes` table), and, once it ended, the time its outcome row
+ * carries (`endedAt`), written in the same transaction as that row.
  */
-import {
-  closeSync,
-  fsyncSync,
-  mkdirSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
-import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { type ProcessRow, processTable } from "../../shared/process-table.ts";
-import { publishOnce, stateRoot } from "../receipts.ts";
+import { stateRoot } from "../receipts.ts";
+import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
 import type { StaleCause } from "./types.ts";
 
 /** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up session. */
@@ -127,16 +117,14 @@ export interface LaunchRecord {
   redrive?: StaleCause | null;
   /** The vendor session id the tick minted for an interactive session and passed to its agent; `null` when none was. */
   sessionId?: string | null;
-  /** A drive's unresolved-thread count at each ledger round, recorded the first tick that sees the round. */
+  /** A drive's unresolved-thread count at each ledger round, recorded the first tick that sees the round (the `thread_samples` table). */
   samples?: ThreadSample[];
   /** When a tick first saw a pickup's workspace hold a pull request; its expectation of opening one is met for good. */
   openedAt?: string;
-  /** The usage-limit walls an interactive session was seen waiting on, oldest first. */
+  /** The usage-limit walls an interactive session was seen waiting on, oldest first (the `waiting_episodes` table). */
   episodes?: WaitingEpisode[];
-  /** When the record ended, as its outcome row is timed; set before the row is appended, so a retry writes the same row. */
+  /** When the record ended, as its outcome row is timed; written in the same transaction as that row, so a record with it has its row. */
   endedAt?: string;
-  /** Set once the record's outcome row is in the outcome log. */
-  logged?: boolean;
 }
 
 /** A drive's unresolved review threads at one ledger round. */
@@ -208,13 +196,9 @@ export interface ReadRecord {
   result: SessionResult | null;
 }
 
-function launchesRoot(root = stateRoot()): string {
-  return join(root, "launches");
-}
-
 const ID = /^\d{8}T\d{6}Z-[a-f\d]{8}$/;
 
-/** Whether `id` has a launch record id's shape, and so names no other path. */
+/** Whether `id` has a launch record id's shape. */
 export function isRecordId(id: string): boolean {
   return ID.test(id);
 }
@@ -231,41 +215,36 @@ export function newToken(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
 
-type RecordFile = "json" | "claim" | "exit" | "result";
-const RECORD_FILES: readonly RecordFile[] = ["json", "claim", "exit", "result"];
-
-function file(id: string, kind: RecordFile, root: string) {
-  return join(launchesRoot(root), `${id}.${kind}`);
-}
-
-/** Write `text` to `path` whole: a reader sees the old file or the new one. */
-export function writeWhole(path: string, text: string): void {
-  const temporary = `${path}.${crypto.randomUUID()}.tmp`;
-  const fd = openSync(temporary, "wx", 0o600);
-  try {
-    writeFileSync(fd, text);
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(temporary, path);
-}
-
-/** Write (or rewrite) the tick's part of a record. */
+/**
+ * Write (or rewrite) the tick's part of a record. The samples and episodes
+ * live in their own tables, written where they are observed.
+ */
 export function writeRecord(record: LaunchRecord, root = stateRoot()): void {
-  mkdirSync(launchesRoot(root), { recursive: true, mode: 0o700 });
-  writeWhole(
-    file(record.id, "json", root),
-    `${JSON.stringify(record, null, 2)}\n`,
-  );
+  const { samples: _samples, episodes: _episodes, ...tick } = record;
+  stateDb(root)
+    .query(
+      `INSERT INTO launches (id, repo, action, pr, item, created_at, record)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET record = excluded.record`,
+    )
+    .run(
+      record.id,
+      record.repo,
+      record.action,
+      record.pr,
+      record.item,
+      record.createdAt,
+      JSON.stringify(tick),
+    );
 }
 
-function readJson(path: string): unknown {
+/** A column's JSON, `undefined` when the column is empty, `null` when it does not parse. */
+function parseJson(text: string | null, what: string): unknown {
+  if (text === null) return undefined;
   try {
-    return JSON.parse(readFileSync(path, "utf8"));
+    return JSON.parse(text);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    swallow(error, `${path} does not read`);
+    swallow(error, `${what} does not read`);
     return null;
   }
 }
@@ -343,10 +322,7 @@ function optionalFields(value: Record<string, unknown>): boolean {
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
     optionalTime(value.endedAt) &&
-    (value.logged === undefined || typeof value.logged === "boolean") &&
     optionalTime(value.openedAt) &&
-    optionalList(value.samples, isSample) &&
-    optionalList(value.episodes, isEpisode) &&
     isRedrive(value.redrive)
   );
 }
@@ -359,33 +335,6 @@ function isRedrive(value: unknown): boolean {
     (isMapping(value) &&
       typeof value.cause === "string" &&
       typeof value.change === "string")
-  );
-}
-
-function optionalList(
-  value: unknown,
-  check: (item: unknown) => boolean,
-): boolean {
-  return value === undefined || (Array.isArray(value) && value.every(check));
-}
-
-function isSample(value: unknown): boolean {
-  return (
-    isMapping(value) &&
-    typeof value.round === "number" &&
-    typeof value.threads === "number" &&
-    typeof value.at === "string"
-  );
-}
-
-function isEpisode(value: unknown): boolean {
-  return (
-    isMapping(value) &&
-    typeof value.observedAt === "string" &&
-    (value.resetAt === null || typeof value.resetAt === "string") &&
-    typeof value.evidence === "string" &&
-    typeof value.last === "boolean" &&
-    typeof value.readAt === "string"
   );
 }
 
@@ -406,19 +355,13 @@ function normalized(value: LaunchRecord): LaunchRecord {
   };
 }
 
-/** What Control keeps on a record, at its defaults where an earlier version wrote none. */
+/** What Control keeps on a record, at its defaults where it was never written. */
 function controlFields(
   value: LaunchRecord,
-): Pick<
-  LaunchRecord,
-  "round" | "sessionId" | "samples" | "episodes" | "logged"
-> {
+): Pick<LaunchRecord, "round" | "sessionId"> {
   return {
     round: value.round ?? null,
     sessionId: value.sessionId ?? null,
-    samples: value.samples ?? [],
-    episodes: value.episodes ?? [],
-    logged: value.logged === true,
   };
 }
 
@@ -465,13 +408,72 @@ function isExit(value: unknown): value is LaunchExit {
   );
 }
 
-export function readRecordFile(
+/** One record's row as the table holds it. */
+interface LaunchRow {
+  id: string;
+  record: string;
+  claim: string | null;
+  exit: string | null;
+  result: string | null;
+}
+
+/** The tick's part of a row, with its samples and episodes; `null` when it does not read as a record. */
+function recordOf(row: LaunchRow, root: string): LaunchRecord | null {
+  const value = parseJson(row.record, `launch record ${row.id}`);
+  // A record whose embedded id names another row would read that row's claim and exit.
+  if (!isLaunchRecord(value) || value.id !== row.id) return null;
+  return { ...normalized(value), ...controlRows(row.id, root) };
+}
+
+interface EpisodeRow {
+  observed_at: string;
+  reset_at: string | null;
+  evidence: string;
+  last: number;
+  read_at: string;
+}
+
+/** A record's thread samples and waiting episodes, in the order they were first written. */
+function controlRows(
+  id: string,
+  root: string,
+): Pick<LaunchRecord, "samples" | "episodes"> {
+  const db = stateDb(root);
+  const samples = db
+    .query(
+      "SELECT round, threads, at FROM thread_samples WHERE launch = ? ORDER BY rowid",
+    )
+    .all(id) as ThreadSample[];
+  const episodes = (
+    db
+      .query(
+        `SELECT observed_at, reset_at, evidence, last, read_at
+         FROM waiting_episodes WHERE launch = ? ORDER BY rowid`,
+      )
+      .all(id) as EpisodeRow[]
+  ).map((e) => ({
+    observedAt: e.observed_at,
+    resetAt: e.reset_at,
+    evidence: e.evidence,
+    last: e.last === 1,
+    readAt: e.read_at,
+  }));
+  return { samples, episodes };
+}
+
+function launchRow(id: string, root: string): LaunchRow | null {
+  return stateDb(root)
+    .query("SELECT id, record, claim, exit, result FROM launches WHERE id = ?")
+    .get(id) as LaunchRow | null;
+}
+
+/** A record by its id; `null` when there is none, or it does not read. */
+export function readRecord(
   id: string,
   root = stateRoot(),
 ): LaunchRecord | null {
-  const value = readJson(file(id, "json", root));
-  // A record whose embedded id names another file would read that file's claim and exit.
-  return isLaunchRecord(value) && value.id === id ? normalized(value) : null;
+  const row = launchRow(id, root);
+  return row === null ? null : recordOf(row, root);
 }
 
 /**
@@ -483,31 +485,29 @@ export function recordResult(
   result: SessionResult,
   root = stateRoot(),
 ): boolean {
-  mkdirSync(launchesRoot(root), { recursive: true, mode: 0o700 });
-  return publishOnce(
-    file(id, "result", root),
-    `${JSON.stringify({ at: new Date().toISOString(), result }, null, 2)}\n`,
-  );
+  const done = stateDb(root)
+    .query(
+      "UPDATE launches SET result = ?, result_at = ? WHERE id = ? AND result IS NULL",
+    )
+    .run(result, new Date().toISOString(), id);
+  return done.changes === 1;
 }
 
-/** A record's recorded answer; `null` when none, or when it does not read. */
+function asResult(value: string | null): SessionResult | null {
+  return value === "done" || value === "failed" ? value : null;
+}
+
+/** A record's recorded answer; `null` when none. */
 export function readResult(
   id: string,
   root = stateRoot(),
 ): SessionResult | null {
-  const value = readJson(file(id, "result", root));
-  if (!isMapping(value)) return null;
-  return value.result === "done" || value.result === "failed"
-    ? value.result
-    : null;
+  return asResult(launchRow(id, root)?.result ?? null);
 }
 
-/** The claim a wrapper published for a record: `undefined` when none, `null` when it does not read. */
-function readClaim(
-  id: string,
-  root = stateRoot(),
-): ProcessIdentity | null | undefined {
-  const value = readJson(file(id, "claim", root));
+/** A row's claim: `undefined` when none, `null` when it does not read. */
+function claimOf(row: LaunchRow): ProcessIdentity | null | undefined {
+  const value = parseJson(row.claim, `the claim of launch record ${row.id}`);
   if (value === undefined) return undefined;
   return isIdentity(value) ? value : null;
 }
@@ -537,19 +537,18 @@ export async function ownIdentity(): Promise<ProcessIdentity | null> {
 }
 
 /**
- * Claim a record for this wrapper: true when this call published the
- * claim, false when another wrapper had claimed it first.
+ * Claim a record for this wrapper: true when this call wrote the claim,
+ * false when another wrapper had claimed it first or the record is gone.
  */
 export function claimRecord(
   id: string,
   identity: ProcessIdentity,
   root = stateRoot(),
 ): boolean {
-  mkdirSync(launchesRoot(root), { recursive: true, mode: 0o700 });
-  return publishOnce(
-    file(id, "claim", root),
-    `${JSON.stringify(identity, null, 2)}\n`,
-  );
+  const done = stateDb(root)
+    .query("UPDATE launches SET claim = ? WHERE id = ? AND claim IS NULL")
+    .run(JSON.stringify(identity), id);
+  return done.changes === 1;
 }
 
 /** Record the stage's exit; the first one written stands. */
@@ -558,7 +557,9 @@ export function recordExit(
   exit: LaunchExit,
   root = stateRoot(),
 ): void {
-  publishOnce(file(id, "exit", root), `${JSON.stringify(exit, null, 2)}\n`);
+  stateDb(root)
+    .query("UPDATE launches SET exit = ? WHERE id = ? AND exit IS NULL")
+    .run(JSON.stringify(exit), id);
 }
 
 /** Whether a claimed process is the one running now under its pid. */
@@ -593,38 +594,50 @@ function claimState(
     : { kind: "died", process: identity };
 }
 
-/** The ids among `ids` whose exit says the account's wall could not be recorded. */
-export function unrecordedWalls(ids: string[], root = stateRoot()): string[] {
-  return ids.filter((id) => {
-    const exit = readJson(file(id, "exit", root));
-    return isExit(exit) && exit.wallUnrecorded === true;
-  });
+/** A row's exit, when it has one that reads. */
+function exitOf(row: Pick<LaunchRow, "id" | "exit">): LaunchExit | null {
+  const exit = parseJson(row.exit, `the exit of launch record ${row.id}`);
+  return isExit(exit) ? exit : null;
 }
 
-/** One record's state, read from its files and `rows` (one process-table read per tick). */
+/** The ids among `ids` whose exit says the account's wall could not be recorded. */
+export function unrecordedWalls(ids: string[], root = stateRoot()): string[] {
+  const db = existingStateDb(root);
+  if (db === null || ids.length === 0) return [];
+  const wanted = new Set(ids);
+  const rows = db
+    .query("SELECT id, exit FROM launches WHERE exit IS NOT NULL")
+    .all() as Array<Pick<LaunchRow, "id" | "exit">>;
+  return rows
+    .filter((r) => wanted.has(r.id) && exitOf(r)?.wallUnrecorded === true)
+    .map((r) => r.id);
+}
+
+const NO_PROCESS: ProcessIdentity = {
+  host: "",
+  bootId: "",
+  pid: 0,
+  start: "",
+  claimedAt: "",
+};
+
+/** One record's state, read from its row and `rows` (one process-table read per tick). */
 function stateOf(
-  record: LaunchRecord,
+  row: LaunchRow,
   rows: ProcessRow[] | null,
-  root = stateRoot(),
   boot = bootId(),
 ): LaunchState {
-  const exit = readJson(file(record.id, "exit", root));
-  const claim = readClaim(record.id, root);
-  if (isExit(exit) && exit.wallUnrecorded === true)
-    // The wall was never written: the account stays held until a person removes the files.
+  const exit = exitOf(row);
+  const claim = claimOf(row);
+  if (exit?.wallUnrecorded === true)
+    // The wall was never written: the account stays held until a person clears the record.
     return {
       kind: "unknown",
       reason: "it ended on its account's wall, which could not be recorded",
       wallUnrecorded: true,
-      process: claim ?? {
-        host: "",
-        bootId: "",
-        pid: 0,
-        start: "",
-        claimedAt: "",
-      },
+      process: claim ?? NO_PROCESS,
     };
-  if (isExit(exit))
+  if (exit !== null)
     return {
       kind: "ended",
       exit: { ...exit, signal: exit.signal ?? null },
@@ -635,43 +648,33 @@ function stateOf(
     return {
       kind: "unknown",
       reason: "its claim does not read",
-      process: { host: "", bootId: "", pid: 0, start: "", claimedAt: "" },
+      process: NO_PROCESS,
     };
   return claimState(claim, rows, boot);
 }
 
-/** Every record with its state, oldest first; a file that does not read is left out and named. */
+/** Every record with its state, oldest first; a row that does not read is left out and named. */
 export async function readLaunches(root = stateRoot()): Promise<{
   records: ReadRecord[];
   unreadable: string[];
 }> {
-  let names: string[];
-  try {
-    names = readdirSync(launchesRoot(root));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT")
-      return { records: [], unreadable: [] };
-    throw error;
-  }
-  const ids = names
-    .filter((n) => n.endsWith(".json"))
-    .map((n) => n.slice(0, -".json".length))
-    .filter((id) => ID.test(id))
-    .sort();
-  const rows = ids.length === 0 ? [] : await processTable();
+  const all = stateDb(root)
+    .query("SELECT id, record, claim, exit, result FROM launches ORDER BY id")
+    .all() as LaunchRow[];
+  const rows = all.length === 0 ? [] : await processTable();
   const boot = bootId();
   const records: ReadRecord[] = [];
   const unreadable: string[] = [];
-  for (const id of ids) {
-    const record = readRecordFile(id, root);
+  for (const row of all) {
+    const record = recordOf(row, root);
     if (record === null) {
-      unreadable.push(file(id, "json", root));
+      unreadable.push(`launch record ${row.id} in ${statePath(root)}`);
       continue;
     }
     records.push({
       record,
-      state: stateOf(record, rows, root, boot),
-      result: readResult(id, root),
+      state: stateOf(row, rows, boot),
+      result: asResult(row.result),
     });
   }
   return { records, unreadable };
@@ -757,7 +760,7 @@ function finishedAt(record: LaunchRecord, state: LaunchState): number | null {
   return state.kind === "died" ? Date.parse(record.createdAt) : null;
 }
 
-/** Remove an ended or died record's files once older than the retention. */
+/** Remove the rows of ended or died records older than the retention, in one transaction. */
 export function pruneLaunches(
   records: ReadRecord[],
   nowMs: number,
@@ -765,22 +768,25 @@ export function pruneLaunches(
   root = stateRoot(),
 ): string[] {
   const cutoff = nowMs - days * 86_400_000;
-  const removed: string[] = [];
   const kept = latestRefusals(records);
   for (const id of latestPickups(records)) kept.add(id);
   for (const id of latestRedrives(records)) kept.add(id);
-  for (const { record, state } of records) {
-    const at = kept.has(record.id) ? null : finishedAt(record, state);
-    if (at === null || !Number.isFinite(at) || at > cutoff) continue;
-    for (const kind of RECORD_FILES)
-      rmSync(file(record.id, kind, root), { force: true });
-    removed.push(record.id);
-  }
+  const removed = records
+    .filter(({ record, state }) => {
+      const at = kept.has(record.id) ? null : finishedAt(record, state);
+      return at !== null && Number.isFinite(at) && at <= cutoff;
+    })
+    .map(({ record }) => record.id);
+  if (removed.length === 0) return removed;
+  const db = stateDb(root);
+  const remove = db.query("DELETE FROM launches WHERE id = ?");
+  inTransaction(db, () => {
+    for (const id of removed) remove.run(id);
+  });
   return removed;
 }
 
-/** Remove a record the runtime answered it started nothing for. */
+/** Remove a record: one the runtime answered it started nothing for, or one a person cleared. */
 export function removeRecord(id: string, root = stateRoot()): void {
-  for (const kind of RECORD_FILES)
-    rmSync(file(id, kind, root), { force: true });
+  stateDb(root).query("DELETE FROM launches WHERE id = ?").run(id);
 }

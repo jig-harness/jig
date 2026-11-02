@@ -4,13 +4,7 @@
  * records and walls written straight into the child's state directory, and
  * polling for what the wrapper leaves behind.
  */
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { dump } from "../../shared/yaml.ts";
 import {
@@ -20,6 +14,7 @@ import {
   recordExit,
   writeRecord,
 } from "../lib/launches.ts";
+import { existingStateDb } from "../lib/state.ts";
 import type { World } from "./fixtures.ts";
 
 export interface Account {
@@ -155,16 +150,18 @@ export function terminalCreates(w: World): string[][] {
     .filter((args) => args[0] === "terminal" && args[1] === "create");
 }
 
-/** The ids of the launch records in the child's state directory. */
+/** The ids of the launch records in the child's state database. */
 export function recordIds(w: World): string[] {
-  const dir = join(dispatchState(w), "launches");
-  return existsSync(dir)
-    ? readdirSync(dir)
-        .filter((n) => n.endsWith(".json"))
-        .map((n) => n.slice(0, -".json".length))
-    : [];
+  const rows = existingStateDb(dispatchState(w))
+    ?.query("SELECT id FROM launches ORDER BY id")
+    .all() as Array<{ id: string }> | undefined;
+  return (rows ?? []).map((r) => r.id);
 }
 
+/** Whether the wrapper recorded the stage's exit on the record `id`. */
 export function exitWritten(w: World, id: string): boolean {
-  return existsSync(join(dispatchState(w), "launches", `${id}.exit`));
+  const row = existingStateDb(dispatchState(w))
+    ?.query("SELECT exit FROM launches WHERE id = ?")
+    .get(id) as { exit: string | null } | null | undefined;
+  return typeof row?.exit === "string";
 }

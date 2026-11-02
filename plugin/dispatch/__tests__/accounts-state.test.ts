@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -10,7 +10,7 @@ import {
   slotTable,
 } from "../lib/accounts.ts";
 import { writeWall } from "../lib/walls.ts";
-import type { ReadRecord } from "../lib/launches.ts";
+import { type ReadRecord, recordExit, writeRecord } from "../lib/launches.ts";
 import type { MachineAccount } from "../lib/machine-config.ts";
 
 const account = (
@@ -148,15 +148,16 @@ describe("account admission state", () => {
       root,
     );
     expect(table[0]?.wallUnrecorded).toBe(false);
-    mkdirSync(join(root, "launches"), { recursive: true });
-    writeFileSync(
-      join(root, "launches", `${record.record.id}.exit`),
-      JSON.stringify({
+    writeRecord(record.record, root);
+    recordExit(
+      record.record.id,
+      {
         at: "2026-01-01T00:00:00.000Z",
         code: 16,
         signal: null,
         wallUnrecorded: true,
-      }),
+      },
+      root,
     );
     refreshWalls(table, [record], Date.now(), root);
     expect(table[0]?.wallUnrecorded).toBe(true);

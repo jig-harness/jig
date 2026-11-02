@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectionDeadlineMs } from "../../gc/launcher.ts";
@@ -13,6 +13,7 @@ import {
   type ReadRecord,
   writeRecord,
 } from "../lib/launches.ts";
+import { stateDb } from "../lib/state.ts";
 import type { DrivenPr } from "../lib/types.ts";
 import { dispatchJobSpec } from "../install.ts";
 import { duration } from "../lib/machine-config.ts";
@@ -181,7 +182,7 @@ describe("retention", () => {
 });
 
 describe("reading records", () => {
-  it("leaves out a record that is incomplete or names another file", async () => {
+  it("leaves out a record that is incomplete or names another row", async () => {
     const dir = root();
     const good = record("20260101T000000Z-aaaaaaaa");
     writeRecord(good, dir);
@@ -189,12 +190,13 @@ describe("reading records", () => {
     const { createdAt: _drop, ...partial } = record(
       "20260101T000002Z-cccccccc",
     );
-    writeFileSync(
-      join(dir, "launches", "20260101T000002Z-cccccccc.json"),
-      JSON.stringify(partial),
+    const raw = stateDb(dir).query(
+      `INSERT INTO launches (id, repo, action, pr, item, created_at, record)
+       VALUES (?, 'o/a', 'rearm', 7, NULL, '2026-01-01T00:00:00.000Z', ?)`,
     );
-    writeFileSync(
-      join(dir, "launches", "20260101T000003Z-dddddddd.json"),
+    raw.run("20260101T000002Z-cccccccc", JSON.stringify(partial));
+    raw.run(
+      "20260101T000003Z-dddddddd",
       JSON.stringify(record("20260101T000000Z-aaaaaaaa")),
     );
     const read = await readLaunches(dir);

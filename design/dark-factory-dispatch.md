@@ -34,11 +34,10 @@ execution line only. Its first [session runtime](../GLOSSARY.md) is Orca
 computes the stages that are wanted and not running, and, when told to,
 starts each one as an agent session. A timer runs the tick every few
 minutes. What is *wanted* is always derived from those records, never from
-the dispatcher's memory; the dispatcher keeps only what it did: a launch
-record per session it started (what, where, on which account, and how it
-ended), a receipt per tick, and the account walls and repeat suppressions
-those imply. Stopping it loses nothing, and there is no resident
-process to supervise: the "daemon" is the timer.
+the dispatcher's memory. What the dispatcher keeps is what it did and what
+it saw its sessions do (see What the tick keeps, and where): stopping it
+loses nothing, and there is no resident process to supervise: the
+"daemon" is the timer.
 
 ```mermaid
 flowchart LR
@@ -296,8 +295,8 @@ for a while. An item or pull request gets at most one action per tick.
 
 A launched stage runs for minutes or hours in its session, long after the
 tick that started it has ended, so the tick never sees its exit directly.
-Every launch therefore begins with a launch record under
-`~/.local/state/jig/dispatch/launches/`, which the tick writes before it
+Every launch therefore begins with a launch record in the state database
+(see What the tick keeps, and where), which the tick writes before it
 calls the runtime's `launch` (the action, the item or pull request, the
 account, and a random token minted for that launch). From that write on,
 the record holds its stage and its account slot, so a launch whose answer
@@ -313,7 +312,8 @@ its launch is retried only under its own token, which the tick hands
 `launch` as the launch's key (see The session runtime interface), never as
 a fresh launch. A record still pending at a later tick, with its launch's
 answer lost and no keyed retry that produced one, is an unknown, reported,
-holding its stage and slot until a person clears it. The next
+holding its stage and slot until a person clears it (`jig dispatch clear
+<record>`, which refuses a record whose process is alive). The next
 tick reads the records: a record whose process is alive under that same
 identity holds its stage; one that ended carries the stage's answer; one
 whose identity cannot be checked (another boot, an unreadable process
@@ -618,7 +618,7 @@ nothing from the phone but that comment.
 
 ### Receipts
 
-Every tick writes one receipt under `~/.local/state/jig/dispatch/`, as
+Every tick writes one receipt under `~/.local/state/jig/dispatch/receipts/`, as
 `jig gc` does: the records it read and from where, each planned action with
 its reason, each launch with the runtime's answer, each notification. A
 tick removes receipts and ended launch records older than the machine
@@ -635,6 +635,49 @@ receipts` lists them; once item 32's morning report is built, it lists the
 launches, refusals and notifications since the last report beside the
 drives' own.
 
+### What the tick keeps, and where
+
+Everything the tick keeps lives under `~/.local/state/jig/dispatch/`. What
+it joins, dedupes and queries from tick to tick is one SQLite database
+there, `state.sqlite`, opened with Bun's built-in `bun:sqlite`, one table
+per kind of record, each row under a unique key:
+
+- **Launch records**: one row per session the dispatcher started, keyed by
+  the record's id; the tick writes its part before the launch, and the
+  wrapper's process identity, the stage's exit and an interactive
+  session's result are each a column written once, by an update that
+  fills only an empty column, so one wrapper claims a record and the first
+  exit and result stand.
+- **Thread samples** (a drive's expectation): one row per launch record and
+  ledger round, written the first tick that sees the round.
+- **Waiting episodes**: one row per interactive session and wall it met,
+  keyed by the wall's observation time.
+- **Suppression records** of notifications: one row per repository and
+  cause, dropped when the cause goes.
+- **Nudge records**: one row per session and waiting episode, written
+  pending before the send, its delivery marked once after.
+- **Follow-up outcome records**: one row per repository and merged pull
+  request, the latest attempt's.
+- **Idle clocks** of claimed items: one row per repository and item.
+- **The outcome log**: one row per key, which nothing removes, written in
+  the same transaction as what it records (see Control).
+
+The receipts stay files, one per tick, since a receipt is a run's
+narrative for a person and for the morning report. The account walls stay
+files, under `walls/`, since the drive's quota adapters write them from a
+pass, outside the tick. The tick lock and the rotation cursor
+(`tick-index`) stay files beside them. The outcome log also keeps a text
+copy, one file per month (`log-<year>-<month>.jsonl`), the archive that
+outlives any change to the database's schema.
+
+One tick writes at a time, under the tick lock. The wrapper's claim and
+exit and a session's result are single writes that SQLite's own write lock
+orders against a tick's. The database runs in write-ahead logging mode,
+so the dashboard and `jig dispatch log` read while a tick writes. Its
+schema carries a version: a database at an older one is migrated forward
+in one transaction, and one a newer plugin wrote is refused, with its
+version named, by every command that opens it.
+
 ### Control: observe, record, report, steer
 
 The dispatcher starts stages; it also has to show how they went, so that
@@ -645,10 +688,9 @@ mechanical nudge.
 
 **The outcome log.** Receipts and launch records are working records and
 expire with the machine file's retention; what the factory learns from
-must not. The tick appends rows to an outcome log under
-`~/.local/state/jig/dispatch/`, one file per month (`log-<year>-<month>.jsonl`),
-which nothing removes. Every row carries its key and its time, and goes
-into the file of the month its time falls in. It holds these kinds of row:
+must not. The tick writes rows to an outcome log, the state database's
+`log` table, which nothing removes. Every row carries its key and its
+time. It holds these kinds of row:
 
 - **An ended row**, one per launch record, when the record ends, timed at
   the record's end: the stage, the repository, the item or pull request, the account, the model
@@ -698,17 +740,18 @@ place is logged as `unknown`, never dropped, so the list grows from
 evidence: a reason that recurs among the `unknown` rows becomes a class in
 a later change.
 
-Each launch record gains a `logged` mark, set once its ended row is
-appended, and keeps the row's time from when the record ends, so a retry
-writes the same row into the same month's file. A tick that stopped
-between the append and the mark finds the record's key among the last
-rows of that file, which are in append order, before it appends; an event
-row keeps its time on its suppression record and is checked the same way.
-A row is one line written in one append. A reader skips any line that
-does not parse as a row, and before it appends, the tick settles an
-unterminated last line: one that parses is kept and given its newline,
-one that does not is cut off, so a torn write never becomes a completed
-line. The follow-up's outcome record (see Receipts) stays
+A row is written in the same transaction as what it records: an ended row
+with its launch record's end (the time the row carries), an event row with
+its suppression record, a nudge's row with its delivery mark. The two land
+together or not at all, so a tick that stops between them leaves nothing
+for the next one to repair, and a row's key, unique in the table, writes
+no cause twice. At the end of every tick, the rows written since the last
+copy are added to the text copy, each to the file of the month its time
+falls in, unless the file already holds a row with that key: the file is
+written whole with them and renamed into place, so a tick that stops
+mid-copy leaves the copy as it was and the next adds the same rows once.
+`jig dispatch log [--since <date>] [--jsonl]` prints the log as text,
+`--jsonl` as the lines the month files hold. The follow-up's outcome record (see Receipts) stays
 what it is: it settles whether a merged pull request still wants a
 follow-up, and the tick reads it; the ended row for the same launch is the
 analysis record, read only by people and the dashboard, and the tick never
@@ -743,9 +786,9 @@ stop it is a person's call. Stages the dispatcher did not launch carry no
 expectation.
 
 **The dashboard.** `jig dispatch dashboard` serves one page that reads the
-log when it is opened and filters it by time, repository, stage, account,
-class and reason, and shows the count of each class over the filtered
-window. A question about yesterday is a filter, not a report: no report
+log when it is opened, filters it by time, repository, stage, account,
+class and reason in one query over the log table, and shows the count of
+each class over the filtered window. A question about yesterday is a filter, not a report: no report
 file is ever generated, and nothing is written to disk but the log itself.
 The server runs while the command runs, started and stopped by a person
 (from a terminal on the host, which Orca's phone app reaches); nothing
@@ -943,6 +986,24 @@ One pull request each, in this order; each is usable on its own.
    that outruns a positive deadline is terminated. Waits on step 3 and on
    step 4 for the interactive launch. Usable alone: a drive stopped on a Claude
    wall restarts on a Codex account.
+9. **Keep the dispatcher's state in SQLite.** The launch records, the
+   thread samples, the waiting episodes, the suppression and nudge
+   records, the follow-up outcomes, the idle clocks and the outcome log
+   move into one database (see What the tick keeps, and where), each a
+   table with a unique key, and the outcome log's row is written in the
+   same transaction as what it records; the dashboard filters with one
+   query; `jig dispatch log` prints the log as text, and each tick keeps
+   its month files current; `jig dispatch clear` removes a launch record
+   only a person can settle. The receipts and the walls stay files. A
+   machine that ran an earlier version starts a new database: no machine
+   has kept state worth carrying over. Tests: a tick killed between a
+   launch record's end and its row leaves, after the next tick, exactly one
+   row; the dashboard open while a tick writes shows the new rows on
+   refresh and never an error; the first tick creates the database, and a
+   database a newer plugin wrote is refused with its version named;
+   `jig dispatch log --jsonl` and the month files hold the same rows as the
+   database. Usable alone: a stop between two writes no longer needs a
+   repair at the next tick.
 
 ## Left out
 

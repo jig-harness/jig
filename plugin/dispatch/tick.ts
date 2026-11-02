@@ -17,8 +17,11 @@
  * and each waiting interactive session's wall is read (expectations.ts,
  * session-walls.ts), so the plan can report the stages that drift and the
  * sessions a nudge is due for; after it, each launch record that ended gets
- * its row in the outcome log (log.ts, log-ended.ts), before any expired
- * record is removed.
+ * its row in the outcome log (log.ts, log-ended.ts), in the transaction that
+ * writes its end, before any expired record is removed. Every record the
+ * tick keeps is a row of the state database (lib/state.ts); at the end of
+ * the tick the outcome log's new rows are copied into its month files
+ * (lib/log-export.ts).
  */
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { parseTrackerConfig } from "../skills/do-item/scripts/lib/tracker/config.ts";
@@ -54,13 +57,10 @@ import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
 import { lastAccount, slotTable } from "./lib/accounts.ts";
 import { readMarkers } from "./lib/followup-marker.ts";
-import {
-  readOutcomes,
-  settleFollowups,
-  unreadableOutcomes,
-} from "./lib/followup-outcomes.ts";
+import { readOutcomes, settleFollowups } from "./lib/followup-outcomes.ts";
 import { readIdle, updateIdle } from "./lib/idle.ts";
 import { hasEnded } from "./lib/log.ts";
+import { exportLog } from "./lib/log-export.ts";
 import {
   pruneLaunches,
   readLaunches,
@@ -493,7 +493,6 @@ function planRepo(
   const plan = planTick({
     ...input,
     outcomes: readOutcomes(repo),
-    unreadableOutcomes: unreadableOutcomes(repo),
     launches: records,
     idleSince: readIdle(repo),
     nowMs,
@@ -591,9 +590,9 @@ async function settleOutcomes(
     },
   );
   if (unlogged.length > 0) receipt.unloggedOutcomes = unlogged;
-  // A record that ended without its outcome row in the log is kept.
+  // A record that ended without its outcome row in the log is kept: its end is written with the row.
   pruneLaunches(
-    records.filter((r) => !hasEnded(r) || r.record.logged === true),
+    records.filter((r) => !hasEnded(r) || r.record.endedAt !== undefined),
     context.nowMs,
     days ?? 30,
   );
@@ -622,6 +621,17 @@ async function readSessions(
       source: runtime.name,
       reason: `the runtime could not be read: ${failureText(error)}`,
     };
+  }
+}
+
+/** Copy the outcome log's new rows into its month files; false, with the reason on the receipt, when the copy failed. */
+function copyLog(receipt: TickReceipt): boolean {
+  try {
+    exportLog();
+    return true;
+  } catch (error) {
+    receipt.logCopyFailed = `the outcome log's month files were not brought up to date, and the next tick copies the rows again: ${failureText(error)}`;
+    return false;
   }
 }
 
@@ -715,7 +725,8 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     for (const path of order)
       receipt.repos.push(await gatherRepo(path, context));
     const failed = await settleOutcomes(receipt, context, days);
-    receipt.exitStatus = failed || withheld !== undefined ? 1 : 0;
+    const copied = copyLog(receipt);
+    receipt.exitStatus = failed || !copied || withheld !== undefined ? 1 : 0;
     receipt.completed = true;
     receipt.finishedAt = new Date().toISOString();
     const path = writeReceipt(receipt);

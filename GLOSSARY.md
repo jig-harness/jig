@@ -1824,7 +1824,8 @@ make, use the entry's term instead.
   launches an agent into it; it only writes its comment and marks it
   unread for a person to read.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
-  it started ended: one row per session with its stage, repository,
+  it started ended, a table of its state database with a text copy of one
+  file per month: one row per session with its stage, repository,
   account, duration and an outcome class from the closed list the
   dispatcher's design defines, among them converged, quota wall, parked
   for a person, stalled and died; a stop no class in that list fits is

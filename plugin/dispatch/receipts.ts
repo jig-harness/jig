@@ -44,10 +44,12 @@ export interface TickReceipt {
   exitStatus: number;
   /** Why `--apply` was asked for with a machine file and nothing was started. */
   applyWithheld?: string;
-  /** Launch record files that do not read, left out of every count. */
+  /** Launch records that do not read, left out of every count. */
   unreadableLaunches?: string[];
   /** Outcome rows that could not be written for records of repositories this tick did not read. */
   unloggedOutcomes?: string[];
+  /** Why the outcome log's text copy was not brought up to date. */
+  logCopyFailed?: string;
   repos: RepoReport[];
 }
 
@@ -209,7 +211,7 @@ const FINISHED = "finished";
  * never exists empty and only one writer can create it. False when
  * something already is there.
  */
-export function publishOnce(path: string, text: string): boolean {
+function publishOnce(path: string, text: string): boolean {
   const temporary = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
   writeFileSync(temporary, text, { mode: 0o600 });
   try {

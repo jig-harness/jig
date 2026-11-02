@@ -1084,22 +1084,25 @@ dashboard:
 | `dashboard.listen` | None; the address `jig dispatch dashboard` listens on: a numeric address in the loopback or private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7`, `fe80::/10`) with an optional port (`8765` when none is named; `--port` overrides it). A host name or any other address is refused. Without it, the dashboard does not start |
 
 Durations are a whole number with `s`, `m` or `h`. What a run keeps lives
-under `~/.local/state/jig/dispatch/`: `receipts/`, `launches/` (one record
-per launch, written before it, with a pickup session's own result beside
-it), `walls/` (each account's usage-limit wall, which lifts at its latest
-recorded reset), `idle/` (since when each claimed item has had no
-running session, for `stalled_after`), `followups/` (each dispatched
-follow-up's outcome, done or failed, kept whatever `receipts_days` says),
-`notices/` (a record per notification sent, dropped once its cause
-is gone, except a drift's, which stays for the life of its launch and
-expectation so a launch that recovers and drifts again does not notify
-twice), `nudges/` (a record per nudge attempted, with whether it
-arrived) and the outcome log, `log-<year>-<month>.jsonl` (a row per launch
-that ended, per notification delivered and per nudge attempted, which nothing removes;
-a notification about the stop of a launch it started has no row of its own, because that
-launch's ended row covers it). A launch record a run
-cannot check (claimed on another host or before a reboot) holds its
-account's slot until a person removes its files from `launches/`.
+under `~/.local/state/jig/dispatch/`. The files there are `receipts/` (one
+per run), `walls/` (each account's usage-limit wall, which lifts at its
+latest recorded reset) and the outcome log's text copy,
+`log-<year>-<month>.jsonl`, which nothing removes. Everything else is one
+SQLite database, `state.sqlite`: the launch records (one per launch,
+written before it, with a pickup session's own result), since when each
+claimed item has had no running session (for `stalled_after`), each
+dispatched follow-up's outcome (done or failed, kept whatever
+`receipts_days` says), a record per notification sent (dropped once its
+cause is gone, except a drift's, which stays for the life of its launch
+and expectation so a launch that recovers and drifts again does not
+notify twice), a record per nudge attempted (with whether it arrived), and
+the outcome log (a row per launch that ended, per notification delivered
+and per nudge attempted, which nothing removes; a notification about the
+stop of a launch it started has no row of its own, because that launch's
+ended row covers it). A database a newer plugin wrote is refused, with its
+version named, until the plugin is updated. A launch record a run cannot
+check (claimed on another host or before a reboot) holds its account's
+slot until a person clears it with `jig dispatch clear <record>`.
 
 ## Complete example
 

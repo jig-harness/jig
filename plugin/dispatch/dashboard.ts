@@ -1,9 +1,10 @@
 /**
  * `jig dispatch dashboard [--port <n>]`: one page over the outcome log
- * (`lib/log.ts`), served while the command runs. It reads the log each time
- * the page asks for rows, and filters them by time, repository, stage,
- * account, class and reason, with the count of each class over the
- * filtered window. A question about yesterday is a filter, not a report:
+ * (`lib/log.ts`), served while the command runs. Each time the page asks
+ * for rows it queries the log table once with its filters (time,
+ * repository, stage, account, class and reason) and counts each class over
+ * the rows that query returns; the database's WAL mode lets it read while a
+ * tick writes. A question about yesterday is a filter, not a report:
  * nothing is generated per run and nothing is written to disk.
  *
  * It listens on the address the machine file names (`dashboard.listen`),
@@ -17,7 +18,8 @@
 import { timingSafeEqual } from "node:crypto";
 import { ExitError } from "../shared/cli.ts";
 import type { Listen } from "./lib/listen.ts";
-import { type LogRow, OUTCOME_CLASSES, readRows } from "./lib/log.ts";
+import { bucket, type LogRow, OUTCOME_CLASSES, rowsOf } from "./lib/log.ts";
+import { existingStateDb } from "./lib/state.ts";
 import { stateRoot } from "./receipts.ts";
 
 /** The port the dashboard listens on when neither `--port` nor the address names one. */
@@ -31,40 +33,60 @@ interface DashboardFilter {
   stage?: string;
   account?: string;
   class?: string;
-  /** Rows whose reason contains this text, any case. */
+  /** Rows whose reason contains this text, whatever the case of its ASCII letters. */
   reason?: string;
 }
 
-/** The class a row counts under: its class, else (an observation no class names) its event. */
-function bucket(row: LogRow): string {
-  if (row.class !== null) return row.class;
-  return row.kind === "event" ? `event: ${row.event}` : "unknown";
+/** The rows a filter keeps, newest first: one query over the log table. */
+function filterRows(root: string, f: DashboardFilter): LogRow[] {
+  const db = existingStateDb(root);
+  if (db === null) return [];
+  const rows = db
+    .query(
+      `SELECT row FROM log
+       WHERE at_ms >= ?1 AND at_ms <= ?2
+         AND (?3 IS NULL OR repo = ?3)
+         AND (?4 IS NULL OR stage = ?4)
+         AND (?5 IS NULL OR account = ?5)
+         AND (?6 IS NULL OR bucket = ?6)
+         AND (?7 IS NULL OR instr(lower(reason), lower(?7)) > 0)
+       ORDER BY at_ms DESC, seq DESC`,
+    )
+    .all(
+      f.fromMs,
+      f.toMs,
+      f.repo ?? null,
+      f.stage ?? null,
+      f.account ?? null,
+      f.class ?? null,
+      f.reason ?? null,
+    ) as Array<{ row: string }>;
+  return rowsOf(rows);
 }
 
-/** Whether a field a filter names (absent: any) holds `value`. */
-function same(wanted: string | undefined, value: string | null): boolean {
-  return wanted === undefined || wanted === value;
-}
-
-function matches(row: LogRow, f: DashboardFilter): boolean {
-  const at = Date.parse(row.at);
-  const reason = f.reason?.toLowerCase();
-  return (
-    at >= f.fromMs &&
-    at <= f.toMs &&
-    same(f.repo, row.repo) &&
-    same(f.stage, row.stage) &&
-    same(f.account, row.account) &&
-    same(f.class, bucket(row)) &&
-    (reason === undefined || row.reason.toLowerCase().includes(reason))
-  );
-}
-
-/** The rows a filter keeps, newest first. */
-function filterRows(rows: LogRow[], f: DashboardFilter): LogRow[] {
-  return rows
-    .filter((r) => matches(r, f))
-    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+/** The values each field takes in the window, for the page's choices. */
+function windowValues(
+  root: string,
+  f: DashboardFilter,
+): Record<"repo" | "stage" | "account" | "bucket", string[]> {
+  const out = { repo: [], stage: [], account: [], bucket: [] } as Record<
+    "repo" | "stage" | "account" | "bucket",
+    string[]
+  >;
+  const db = existingStateDb(root);
+  if (db === null) return out;
+  for (const field of ["repo", "stage", "account", "bucket"] as const)
+    out[field] = (
+      db
+        .query(
+          `SELECT DISTINCT ${field} AS value FROM log
+           WHERE at_ms >= ? AND at_ms <= ? AND ${field} IS NOT NULL`,
+        )
+        .all(f.fromMs, f.toMs) as Array<{ value: string }>
+    )
+      .map((r) => r.value)
+      .sort((a, b) => a.localeCompare(b));
+  return out;
 }
 
 /** How many rows each class (and each observation no class names) holds. */
@@ -107,22 +129,18 @@ export function dashboardData(
   root = stateRoot(),
 ): Record<string, unknown> {
   const filter = parseFilter(params, nowMs);
-  const window = readRows(filter.fromMs, filter.toMs, root);
-  const rows = filterRows(window, filter);
-  const values = (pick: (r: LogRow) => string | null) =>
-    [...new Set(window.map(pick).filter((v): v is string => v !== null))].sort(
-      (a, b) => a.localeCompare(b),
-    );
+  const rows = filterRows(root, filter);
+  const values = windowValues(root, filter);
   return {
     from: new Date(filter.fromMs).toISOString(),
     to: new Date(filter.toMs).toISOString(),
     counts: classCounts(rows),
     rows,
     options: {
-      repo: values((r) => r.repo),
-      stage: values((r) => r.stage),
-      account: values((r) => r.account),
-      class: [...new Set([...OUTCOME_CLASSES, ...values(bucket)])],
+      repo: values.repo,
+      stage: values.stage,
+      account: values.account,
+      class: [...new Set([...OUTCOME_CLASSES, ...values.bucket])],
     },
   };
 }
@@ -200,6 +218,8 @@ export async function dashboardMain(
       2,
       `jig dispatch dashboard needs dashboard.listen in ${machinePath}: an address in the private or loopback ranges the host already trusts (see CONFIGURATION.md § The machine's dispatch file)`,
     );
+  // A database a newer plugin wrote is refused before the page is served.
+  existingStateDb();
   const dashboard = serveDashboard({
     listen,
     ...(port === undefined ? {} : { port }),
