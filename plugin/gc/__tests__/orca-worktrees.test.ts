@@ -136,7 +136,7 @@ function setup() {
   writeFileSync(join(repo, ".config/jig.yaml"), dump({ gc: declaration }));
   writeFileSync(
     join(repo, ".config/worktree-hooks/remove"),
-    `#!/bin/sh\necho "removing $(pwd)" > ${JSON.stringify(join(root, "hook-ran"))}\n`,
+    `#!/bin/sh\necho "removing $(pwd)" > ${JSON.stringify(join(root, "hook-ran"))}\n[ -x "$(dirname "$0")/helper.sh" ] && "$(dirname "$0")/helper.sh"\nexit 0\n`,
   );
   chmodSync(join(repo, ".config/worktree-hooks/remove"), 0o755);
   command(["git", "add", "."]);
@@ -412,6 +412,7 @@ describe.skipIf(
       join(f.tree, ".config/worktree-hooks/helper.sh"),
       `#!/bin/sh\ntouch ${JSON.stringify(join(f.root, "helper-ran"))}\n`,
     );
+    chmodSync(join(f.tree, ".config/worktree-hooks/helper.sh"), 0o755);
     f.command(["git", "-C", f.tree, "add", "-A"]);
     f.command(["git", "-C", f.tree, "commit", "-m", "add a helper"]);
     f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
