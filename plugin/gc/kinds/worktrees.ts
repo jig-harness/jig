@@ -1,5 +1,14 @@
 /** Inventory is safe without the session opener's lifecycle and lock protocol. */
-import { readFileSync, readdirSync, realpathSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { isMapping } from "../../shared/config-layers.ts";
 import { GcError } from "../../shared/gc-error.ts";
 import {
@@ -9,10 +18,12 @@ import {
   runOrca,
 } from "../../shared/orca.ts";
 import { run } from "../../shared/proc.ts";
+import { withoutLeakyGitEnv } from "../../shared/guarded-git-spawn.ts";
 import { HOOKS_DIR, hookPath } from "../../shared/worktree-hooks.ts";
-import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
+import { isAbsolute, join, normalize, relative, sep } from "node:path";
 import { gcGit as git } from "../git.ts";
 import { localSteps, removeThroughOrca } from "../worktree-removal.ts";
+import { processHolder } from "./worktree-git.ts";
 import {
   canonicalWorktree,
   orcaLiveness,
@@ -84,67 +95,87 @@ function orcaId(resource: Resource): string | null {
     : null;
 }
 /**
- * Refuse a remove hook, or a file beside it, that is not the one the declared
- * base-branch commit holds: a branch that changed either has not had that code
- * reviewed into the base, and collection would run it with the user's
- * credentials. A helper the hook starts from outside the hooks directory is
- * not covered; hooks keep their helpers beside them.
+ * The base-branch commit's hooks directory, extracted to a directory of its
+ * own: collection runs that copy, never the retiring branch's, so the hook and
+ * the files beside it are the bytes the base branch holds, which a branch
+ * cannot change. A helper a hook starts from the checkout, and the checkout's
+ * Bun startup file, are the branch's own: a `bunfig.toml` that differs from the
+ * base branch's is refused, since it could preload code into the hook's Bun.
  */
-async function assertBaseHook(
+async function snapshotBaseHooks(
   repository: string,
   declaration: string,
-  hook: string,
-): Promise<void> {
+  worktree: string,
+): Promise<{ hook: string; dir: string }> {
   const tip = / @ ([0-9a-f]{40,64})$/.exec(declaration)?.[1];
   if (tip === undefined)
     throw new GcError("the base-branch commit of the declaration is unknown");
-  const held = await baseHookFiles(repository, tip);
-  if (!held.includes(`${HOOKS_DIR}/remove`))
-    throw new GcError(
-      `kept: ${HOOKS_DIR}/remove is not in the base branch, so its code was never reviewed there`,
-    );
-  const worktree = dirname(dirname(dirname(hook)));
-  const local = localHookFiles(worktree);
-  const differs = (name: string): never => {
-    throw new GcError(
-      `kept: ${name} differs from the base branch's; remove the worktree by hand`,
-    );
-  };
-  for (const name of local) if (!held.includes(name)) differs(name);
-  for (const name of held) {
-    if (!local.includes(name)) differs(name);
-    const base = await git(repository, ["show", `${tip}:${name}`]);
-    if (base !== readFileSync(join(worktree, name), "utf8").trimEnd())
-      differs(name);
-  }
-}
-/** The files of the hooks directory in the base-branch commit, as repository paths. */
-async function baseHookFiles(
-  repository: string,
-  tip: string,
-): Promise<string[]> {
-  const listing = await git(repository, [
+  const held = await git(repository, [
     "ls-tree",
-    "-r",
     "--name-only",
     tip,
     "--",
-    HOOKS_DIR,
+    `${HOOKS_DIR}/remove`,
   ]).catch(() => "");
-  return listing.split("\n").filter((name) => name !== "");
-}
-/** The files of the worktree's hooks directory, as repository paths. */
-function localHookFiles(worktree: string): string[] {
-  return readdirSync(join(worktree, HOOKS_DIR), {
-    recursive: true,
-    withFileTypes: true,
-  })
-    .filter((entry) => !entry.isDirectory())
-    .map((entry) =>
-      relative(worktree, join(entry.parentPath, entry.name))
-        .split(sep)
-        .join("/"),
+  if (held === "")
+    throw new GcError(
+      `kept: ${HOOKS_DIR}/remove is not in the base branch, so its code was never reviewed there`,
     );
+  const startup = join(worktree, "bunfig.toml");
+  if (existsSync(startup)) {
+    const local = await git(repository, [
+      "hash-object",
+      "--no-filters",
+      startup,
+    ]);
+    const base = await git(repository, [
+      "rev-parse",
+      `${tip}:bunfig.toml`,
+    ]).catch(() => "");
+    if (local !== base)
+      throw new GcError(
+        "kept: bunfig.toml differs from the base branch's; remove the worktree by hand",
+      );
+  }
+  const dir = mkdtempSync(join(tmpdir(), "jig-gc-hooks-"));
+  try {
+    const env = withoutLeakyGitEnv();
+    const archive = join(dir, "hooks.tar");
+    const spawned: [string, string[]][] = [
+      [
+        "git",
+        [
+          "-C",
+          repository,
+          "archive",
+          "--format=tar",
+          "-o",
+          archive,
+          tip,
+          "--",
+          HOOKS_DIR,
+        ],
+      ],
+      ["tar", ["-xf", archive, "-C", dir]],
+    ];
+    for (const [file, args] of spawned) {
+      const done = spawnSync(file, args, { env, timeout: 60_000 });
+      if (done.status !== 0)
+        throw new GcError(
+          `could not extract ${HOOKS_DIR} from the base branch`,
+        );
+    }
+    const hook = join(dir, HOOKS_DIR, "remove");
+    accessSync(hook, constants.X_OK);
+    return { hook, dir };
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    throw error instanceof GcError
+      ? error
+      : new GcError(
+          `kept: the base branch's ${HOOKS_DIR}/remove cannot run (${error instanceof Error ? error.message : String(error)})`,
+        );
+  }
 }
 /**
  * Collect a worktree Orca manages through Orca: the repository's remove hook
@@ -161,11 +192,13 @@ async function collectThroughOrca(
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
   };
+  let snapshot: { hook: string; dir: string } | null = null;
   try {
     // The retiring branch supplies the hook, and this runs unattended, so the
-    // hook runs only if the declared base-branch commit holds the same one.
-    const hook = hookPath(resource.id, "remove");
-    if (hook !== null) await assertBaseHook(repository, declaration, hook);
+    // hook that runs is the declared base-branch commit's, never the branch's.
+    if (hookPath(resource.id, "remove") !== null)
+      snapshot = await snapshotBaseHooks(repository, declaration, resource.id);
+    const base = snapshot;
     const removed = await removeThroughOrca({
       worktree: resource.id,
       id,
@@ -177,11 +210,17 @@ async function collectThroughOrca(
       log,
       steps: {
         ...localSteps(Date.now() + ORCA_REMOVAL_LIMIT_MS, log),
-        // The hook may run for minutes, and Orca can start an agent meanwhile.
+        hook: () => base?.hook ?? null,
+        // The hook may run for minutes: Orca can start an agent meanwhile, and
+        // the hook can leave a process in the checkout that outlives it.
         admit: async (worktree) => {
           const live = await orcaLiveness(command, worktree);
           if (live !== null)
             throw new GcError(`kept after the hook: ${live.reason}`);
+          if ((await processHolder(worktree)) !== false)
+            throw new GcError(
+              "kept after the hook: a process holds the worktree, or holders could not be read",
+            );
         },
       },
     });
@@ -199,6 +238,9 @@ async function collectThroughOrca(
       outcome: "failed",
       reason: error instanceof Error ? error.message : String(error),
     };
+  } finally {
+    if (snapshot !== null)
+      rmSync(snapshot.dir, { recursive: true, force: true });
   }
 }
 export function worktreesKind(

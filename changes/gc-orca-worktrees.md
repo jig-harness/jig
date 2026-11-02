@@ -10,13 +10,14 @@ release: minor
   Orca terminal), the inventory reads `orca worktree list --json` for the
   repository and marks each checkout `runtime: orca` or `none`. An Orca
   checkout's idle proof also reads Orca's registry (`orca worktree ps
-  --json`): an agent Orca reports working or waiting in it keeps it, and a
+--json`): an agent Orca reports working or waiting in it keeps it, and a
   registry that cannot be read refuses collection. An idle one is collected
   the way the Orca workspace tool removes one: the repository's remove hook
   inside it, its reflection findings parked, then `orca worktree rm`, so its
   card, terminals and agent records go with it; the receipt names the hook
   and the park. A plain worktree stays report-only.
-  The remove hook runs only when it and every file beside it in the hooks
-  directory are identical to the declared base-branch commit's, parking
-  refuses while a `JIG__` or `JIG_OVERLAY` override is set, the registry is read again right before removal, and a
-  registry that lists a worktree twice refuses collection.
+  The remove hook that runs is the declared base-branch commit's copy of the
+  hooks directory, never the retiring branch's; parking refuses while a
+  `JIG__` or `JIG_OVERLAY` override is set; the registry and the process
+  holders are read again right before removal, after the hook; and a registry
+  that lists a worktree twice refuses collection.

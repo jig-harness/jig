@@ -10,7 +10,15 @@
  * The workspace tools and `jig gc` run them through here, so a hook runs the
  * same way whichever of them opens or removes the worktree.
  */
-import { accessSync, constants, existsSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -152,16 +160,23 @@ const TRUSTED_BUNFIG = fileURLToPath(
 );
 
 /**
- * How the supervisor's Bun starts. Its working directory is the checkout
- * being retired, so it ignores the checkout's environment files and, where
- * the plugin's trusted configuration is beside this file, reads that instead
- * of the checkout's `bunfig.toml`, before any of the checkout's code can run.
+ * How the supervisor's Bun starts, and the directory to remove afterwards. Its
+ * working directory is the checkout being retired, so it ignores the checkout's
+ * environment files and reads the plugin's trusted configuration instead of the
+ * checkout's `bunfig.toml`. Where that file is not beside this one (a bundle
+ * sent to a host holds this module alone), an empty one in a directory of its
+ * own stands in: the startup never falls back to the checkout's.
  */
-function supervisorStartup(): string[] {
-  return [
-    "--no-env-file",
-    ...(existsSync(TRUSTED_BUNFIG) ? [`--config=${TRUSTED_BUNFIG}`] : []),
-  ];
+function supervisorStartup(): { args: string[]; cleanup: string | null } {
+  if (existsSync(TRUSTED_BUNFIG))
+    return {
+      args: ["--no-env-file", `--config=${TRUSTED_BUNFIG}`],
+      cleanup: null,
+    };
+  const dir = mkdtempSync(join(tmpdir(), "jig-bunfig-"));
+  const empty = join(dir, "bunfig.toml");
+  writeFileSync(empty, "");
+  return { args: ["--no-env-file", `--config=${empty}`], cleanup: dir };
 }
 
 /**
@@ -175,10 +190,11 @@ export function superviseHook(
   limitMs: number,
   groupFile?: string,
 ): HookRun {
+  const startup = supervisorStartup();
   const result = guardedSpawnSync(
     process.execPath,
     [
-      ...supervisorStartup(),
+      ...startup.args,
       "-e",
       SUPERVISOR,
       groupFile ?? "-",
@@ -193,6 +209,8 @@ export function superviseHook(
       maxBuffer: HOOK_OUTPUT_BYTES,
     },
   );
+  if (startup.cleanup !== null)
+    rmSync(startup.cleanup, { recursive: true, force: true });
   const lines: string[] = [];
   for (const stream of [result.stdout, result.stderr])
     for (const line of (stream ?? "").split("\n"))

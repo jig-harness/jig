@@ -11,7 +11,6 @@ Run from an installed plugin copy with trusted Bun startup. Replace
 be a shell alias for that full command. The trusted configuration prevents a
 checkout's Bun preloads and environment files from running before collection.
 
-
 ```sh
 jig gc
 jig gc --repo <repository> --kind scratch --json
@@ -43,12 +42,12 @@ user configured (an SSH command, a credential helper) apply as they do to the
 user's own fetches. See
 [configuration](../CONFIGURATION.md#gc).
 
-| Kind | Behavior |
-|------|----------|
-| `tool-state` | Runs drive-pr's existing state reaper in report mode for each configured clone. Receipts retain its full per-family proof. Collection remains disabled until state creators hold shared admission across every state use; the legacy reaper lock excludes only other reapers. |
-| `scratch` | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Where the identity cannot be captured (no readable process table), the record says so and the root is kept as unverified. Missing ownership is a finding. Collection remains disabled until fixture registration proves all holders gone. |
-| `worktrees` | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded. Ignored local content needs preservation evidence. A worktree [Orca](https://www.onorca.dev) manages is marked `runtime: orca` and collected through Orca ([below](#worktrees-orca-manages)); any other eligible worktree remains report-only until the opener shares session admission. |
-| `receipts` | Machine kind; removes receipts past retention while preserving the latest completed report for each repository and kind. Unfinished receipts and runs whose inventory failed never take that place. |
+| Kind         | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tool-state` | Runs drive-pr's existing state reaper in report mode for each configured clone. Receipts retain its full per-family proof. Collection remains disabled until state creators hold shared admission across every state use; the legacy reaper lock excludes only other reapers.                                                                                                                                                                                                               |
+| `scratch`    | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Where the identity cannot be captured (no readable process table), the record says so and the root is kept as unverified. Missing ownership is a finding. Collection remains disabled until fixture registration proves all holders gone.                                                                                    |
+| `worktrees`  | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded. Ignored local content needs preservation evidence. A worktree [Orca](https://www.onorca.dev) manages is marked `runtime: orca` and collected through Orca ([below](#worktrees-orca-manages)); any other eligible worktree remains report-only until the opener shares session admission. |
+| `receipts`   | Machine kind; removes receipts past retention while preserving the latest completed report for each repository and kind. Unfinished receipts and runs whose inventory failed never take that place.                                                                                                                                                                                                                                                                                         |
 
 Scratch creators use `shared/gc-lock.ts` to hold shared admission while
 creating a scope and writing its owner record. Collectors take exclusive
@@ -82,10 +81,14 @@ worktree stays and the receipt records the failure. The receipt of a
 collected worktree names the hook it ran, or that the repository has none,
 and the park.
 
-The hook comes from the checkout being retired and runs unattended with the
-user's credentials, so it runs only when it is byte-identical to the hook in
-the declared base-branch commit; a branch that added or changed one keeps its
-worktree until a person removes it. The registry is read once more after the
+The retiring branch could supply the hook, and it runs unattended with the
+user's credentials, so collection extracts the hooks directory of the declared
+base-branch commit and runs that copy, with the checkout as its working
+directory; what the branch changed or added there is never run. A repository
+whose base branch has no remove hook keeps the worktree, as does one whose
+`bunfig.toml` differs from the base branch's, since that file could preload
+code into the hook's Bun. A helper the hook starts from elsewhere in the
+checkout is the branch's own; keep helpers beside the hook. The registry is read once more after the
 hook and the park, right before `orca worktree rm`, because the hook may run
 for minutes; an agent Orca started meanwhile keeps the worktree. Orca offers
 no reservation that stops a start between that read and the removal, so that
