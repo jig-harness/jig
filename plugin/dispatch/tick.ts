@@ -325,6 +325,7 @@ async function readForge(
     out.open = await openPullRequests(repo.slug, read);
     out.login = await resolveLogin();
     const toRead = managed(out.open);
+    const unlabeled = out.open.length - toRead.length;
     out.drives = await readDrives(repo.slug, out.login, toRead, nowMs, labels);
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));
@@ -332,12 +333,7 @@ async function readForge(
     if (section.followupCommand !== null) {
       const listed = await mergedSince(repo.slug, since, read);
       const inScope = managed(listed);
-      // The later observation of a pull request wins: one that merged
-      // without a label of the set leaves the scope its open listing gave it.
-      const labelled = new Set(inScope.map((p) => p.number));
-      for (const p of listed)
-        if (!labelled.has(p.number)) out.inScope.delete(p.number);
-      for (const n of labelled) out.inScope.add(n);
+      leaveScope(out, listed, inScope);
       out.merged = await withMarkers(repo.slug, out.login, inScope);
     }
     out.ok = true;
@@ -345,7 +341,7 @@ async function readForge(
       record: "forge",
       source: `gh ${repo.slug}`,
       ok: true,
-      detail: `${out.open.length} open pull request(s), ${out.drives.length} with a drive ledger${labelNote(labels, out.open.length - toRead.length)}; ${
+      detail: `${out.open.length} open pull request(s), ${out.drives.length} with a drive ledger${labelNote(labels, unlabeled)}; ${
         section.followupCommand === null
           ? "no dispatch.followup_command: no follow-ups"
           : `${out.merged.length} merged since ${since}`
@@ -363,6 +359,29 @@ async function readForge(
     out.inScope = new Set();
   }
   return out;
+}
+
+/**
+ * The later observation of a pull request wins: one that merged without a
+ * label of the set leaves the scope its open listing gave it, and whatever
+ * that listing gave it goes with the scope, so the projection cannot write
+ * from the stale observation.
+ */
+function leaveScope(
+  out: ForgeRead,
+  listed: readonly { number: number }[],
+  inScope: readonly { number: number }[],
+): void {
+  const labelled = new Set(inScope.map((p) => p.number));
+  const left = new Set(
+    listed.map((p) => p.number).filter((n) => !labelled.has(n)),
+  );
+  for (const n of left) out.inScope.delete(n);
+  for (const n of labelled) out.inScope.add(n);
+  if (left.size === 0) return;
+  out.open = out.open.filter((p) => !left.has(p.number));
+  out.drives = out.drives.filter((d) => !left.has(d.number));
+  for (const n of left) out.read.delete(n);
 }
 
 function labelNote(labels: LabelConfig | null, unlabeled: number): string {

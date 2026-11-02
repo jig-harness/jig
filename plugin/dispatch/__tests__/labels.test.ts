@@ -303,6 +303,22 @@ describe("jig dispatch with only_labeled", () => {
     const r = await tick(w, ["--followup-since", "2026-10-01"]);
     expect(repo(r)?.inScope).toEqual([]);
   }, 60_000);
+
+  it("writes no label for a pull request that merged without one, from the ledger its open listing carried", async () => {
+    const w = fixture(
+      config(
+        "  labels: { enabled: true, only_labeled: true }\n  followup_command: /followup",
+      ),
+    );
+    w.setPrs("open", [labeled(openPr(7, "feature/7"), "jig:driving")]);
+    w.setComments(7, [converged(7)]);
+    w.setPrs("merged", [mergedPr(7, "feature/7", new Date().toISOString())]);
+
+    const r = await tick(w, ["--apply", "--followup-since", "2026-10-01"]);
+    expect(edits(ghCalls(w))).toEqual([]);
+    expect(labelsOf(w, 7)).toEqual(["jig:driving"]);
+    expect(repo(r)?.inScope).toEqual([]);
+  }, 60_000);
 });
 
 describe("jig dispatch with the labels off", () => {
