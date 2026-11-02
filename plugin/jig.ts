@@ -6,7 +6,8 @@
  * It registers the components, resource collection (`gc/component.ts`) and
  * the dispatcher (`dispatch/component.ts`): each defines its own command
  * beside its code, and the lifecycle verbs (`runtime/verbs.ts`: install,
- * uninstall, status, receipts, run) act on them through one interface. All of
+ * uninstall, upgrade, doctor, status, receipts, run) act on them through one
+ * interface. All of
  * it is one Optique parser, so `jig --help`, `jig help <command>`,
  * `<command> --help` and `jig completion <shell>` come from the same
  * definitions that parse.
@@ -64,7 +65,7 @@ export function parseCommandLine(
   parser: typeof program = program,
 ) {
   return runParser(parser, "jig", argv, {
-    brief: message`Jig's machine-level tools: resource collection and the dispatcher, and the commands that install, remove, report on and run them.`,
+    brief: message`Jig's machine-level tools: resource collection and the dispatcher, and the commands that install, upgrade, check, remove, report on and run them.`,
     showChoices: true,
     help: {
       command: true,

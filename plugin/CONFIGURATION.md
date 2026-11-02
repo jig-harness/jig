@@ -897,6 +897,8 @@ These are set per machine or per run, not committed:
 | `JIG_GH_CACHE_DIR` | Where cached GitHub answers are kept; default `~/.cache/jig/gh-cache` |
 | `JIG_GH_CACHE` | `off` disables that cache |
 | `GH_CALL_TIMEOUT` | Seconds one `gh` call may take; default 30 |
+| `JIG_MARKETPLACE` | The marketplace `jig upgrade` (and `tools/plugin/setup.ts`) installs the plugin from in an agent tool that lacks it, instead of Jig's repository; a tool registered from another source is then refused |
+| `JIG_SETUP_TIMEOUT_SECONDS` | Seconds one agent-tool command run by `jig upgrade` or `jig doctor` (and `tools/plugin/setup.ts`) may take before it is stopped; default 300 |
 | `JIG_LOG` | How much the scripts' diagnostics say on standard error: `error`, `warn` (the default), `info` or `debug`. At `debug` a failing script also prints the stack of the failure and its causes, with the last 4,096 bytes of a failed command's error output where the failure carries it (`resolve-review-comments`' `gh` calls), and an error dropped on purpose is printed with the reason |
 | `JIG_LOG_FORMAT` | `text` (the default) writes `<script>: <message>`; `json` writes one JSON object per line with the time, level, script, message and fields |
 | `JIG_TRACE` | `1` enables [trace spans](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) for drive passes, waits and commands; files are written under `~/.local/state/jig/traces/<date>/` and `reap-state.ts` reaps trace days older than 14 days |
@@ -972,6 +974,8 @@ the installed plugin copy, outside a Git checkout.
 
 The job records Bun's executable, the installed command's path, `HOME`,
 `PATH`, `JIG_HOME`, and any explicit `TMPDIR`, `LOCK_ROOT` or `LOCK_NAME`.
+`jig upgrade` keeps what the job records when it rewrites it for a new
+release; `jig install gc --yes` records them afresh.
 Collection uses the same machine-wide heavy-run lock as gate runs. Scheduled
 and child Bun invocations use the plugin's trusted configuration and disable
 checkout environment files and preloads.

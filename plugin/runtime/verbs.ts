@@ -1,10 +1,13 @@
 /**
- * The lifecycle verbs of the `jig` command: `install`, `uninstall`, `status`,
- * `receipts` and `run`. Each acts on the components it names or, with none
- * named, on every registered one, in the order `jig.ts` registers them, and
- * reaches a component only through `Component` (`component.ts`): a third
- * component joins with no change here. A component's own work stays under
- * its name (`jig gc --collect`, `jig dispatch --apply`).
+ * The lifecycle verbs of the `jig` command: `install`, `uninstall`,
+ * `upgrade`, `doctor`, `status`, `receipts` and `run`. Each acts on the
+ * components it names or, with none named, on every registered one, in the
+ * order `jig.ts` registers them, and reaches a component only through
+ * `Component` (`component.ts`): a third component joins with no change here.
+ * `upgrade` acts on the plugin and every installed job (`upgrade.ts`), and
+ * `doctor` checks the machine before the components it names (`doctor.ts`).
+ * A component's own work stays under its name (`jig gc --collect`,
+ * `jig dispatch --apply`).
  *
  * `install` and `run` with no component named leave out a component whose
  * opt-in is missing, and say why; named, it is the component's own install or
@@ -17,7 +20,9 @@ import {
   choice,
   command,
   constant,
+  flag,
   type InferValue,
+  map,
   message,
   multiple,
   object,
@@ -27,6 +32,8 @@ import {
   string,
 } from "../shared/vendor/optique.mjs";
 import type { Component } from "./component.ts";
+import { doctorVerb } from "./doctor.ts";
+import { CHANNELS } from "./harness.ts";
 import { formatStatus } from "./job-status.ts";
 import { collectionDeadlineMs } from "./launcher.ts";
 import {
@@ -35,6 +42,53 @@ import {
   removeCommand,
 } from "./path-command.ts";
 import { checkLauncherResolves } from "./scheduler.ts";
+import { upgradeVerb } from "./upgrade.ts";
+
+/** `jig upgrade`'s command: which harnesses, what a fresh install follows, and the refresh alone. */
+function upgradeCommand() {
+  return command(
+    "upgrade",
+    object({
+      verb: constant("upgrade"),
+      harness: optional(
+        or(
+          map(
+            flag("--claude", {
+              description: message`Only Claude Code, which must be on PATH.`,
+            }),
+            () => "claude" as const,
+          ),
+          map(
+            flag("--codex", {
+              description: message`Only Codex, which must be on PATH.`,
+            }),
+            () => "codex" as const,
+          ),
+        ),
+      ),
+      channel: optional(
+        option("--channel", choice(CHANNELS, { metavar: "CHANNEL" }), {
+          description: message`The release channel a harness that lacks the plugin installs from. A harness registered at another channel is refused, with the command that removes its registration.`,
+        }),
+      ),
+      source: optional(
+        option("--source", string({ metavar: "MARKETPLACE" }), {
+          description: message`The marketplace a harness that lacks the plugin installs from, instead of $JIG_MARKETPLACE or Jig's repository. A harness registered elsewhere is refused.`,
+        }),
+      ),
+      jobsOnly: option("--jobs-only", {
+        description: message`Only refresh the installed jobs and the jig command from this plugin copy, leaving the plugin as it is.`,
+      }),
+      json: option("--json", {
+        description: message`Print what became of each harness and job as JSON; progress goes to standard error.`,
+      }),
+    }),
+    {
+      brief: message`Update the plugin in each agent harness, then refresh the installed jobs.`,
+      description: message`Updates the plugin in Claude Code and Codex, whichever is on PATH, to the newest release of the channel each follows, and installs it where it is missing (following stable unless --channel says otherwise). Then the installed plugin copy refreshes each installed job's launcher copy and job, and the jig command, so a launcher change in the new release reaches them; what the install recorded (environment, schedule, programs) stays. Every command is printed before it runs.`,
+    },
+  );
+}
 
 /** The verbs' commands, for the components named `names`. */
 export function verbCommands(names: readonly string[]) {
@@ -80,6 +134,21 @@ export function verbCommands(names: readonly string[]) {
       {
         brief: message`Remove what install wrote.`,
         description: message`Previews, and with --yes removes, this repository's entry in resource collection; with --machine, each component's job as well.`,
+      },
+    ),
+    upgradeCommand(),
+    command(
+      "doctor",
+      object({
+        verb: constant("doctor"),
+        components,
+        json: option("--json", {
+          description: message`Print the checks as JSON.`,
+        }),
+      }),
+      {
+        brief: message`Check the machine, the plugin, each component and the repository's configuration.`,
+        description: message`Checks Bun's version, that claude and codex resolve outside every git checkout, the plugin in each harness and the channel it follows, the jig command's launcher copy, each component's machine file, launcher copy, programs and last run, and the repository's configuration fit (offline). Each failure names the command that fixes it; exits 1 when any check fails.`,
       },
     ),
     command(
@@ -280,6 +349,10 @@ export async function runVerb(
       console.log("== the jig command ==");
       return removeCommand({ confirm: args.confirm });
     }
+    case "upgrade":
+      return upgradeVerb(args, context);
+    case "doctor":
+      return doctorVerb(args, context);
     case "status":
       return statusVerb(args, components);
     case "receipts":

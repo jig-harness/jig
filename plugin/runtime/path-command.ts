@@ -23,10 +23,13 @@ import {
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { GcError } from "../shared/gc-error.ts";
+import { commandScriptCall, launcherCall } from "./installed-job.ts";
+import type { RefreshResult } from "./refresh.ts";
 import {
   installedScript,
   installLauncher,
   launcherCommand,
+  staleLauncherFiles,
 } from "./scheduler.ts";
 
 /** The line that marks the script as one `jig install` wrote. */
@@ -41,7 +44,7 @@ export function commandPath(
 }
 
 /** The command's own copy of the launcher, outside every plugin release. */
-function commandLauncherDirectory(home = homedir()): string {
+export function commandLauncherDirectory(home = homedir()): string {
   return join(home, ".local", "state", "jig", "launcher");
 }
 
@@ -110,6 +113,33 @@ function onPath(
     .some((entry) => entry !== "" && resolve(entry) === target);
 }
 
+/** Writes the command's script whole: staged beside it, then renamed. */
+function writeScript(path: string, text: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(temporary, text, { mode: 0o755 });
+    renameSync(temporary, path);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
+/** The command's script as `jig install` wrote it; null when absent or not one it wrote. */
+export function installedCommandText(): string | null {
+  const current = readOptional(commandPath());
+  return current?.includes(MARKER) ? current : null;
+}
+
+/** The agent tools the installed command asks for the plugin copy; none without a command. */
+export function commandPrograms(): { claude?: string; codex?: string } {
+  const text = installedCommandText();
+  const script = text === null ? null : commandScriptCall(text);
+  return (
+    (script === null ? null : launcherCall(script.command))?.programs ?? {}
+  );
+}
+
 /**
  * Refuses a file at the command's path that `jig install` did not write,
  * before anything is installed, so a refused install leaves nothing behind.
@@ -152,20 +182,65 @@ export function installCommand(options: {
       "The jig command requires the installed plugin copy, outside every worktree",
     );
   installLauncher(directory);
-  mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.tmp`;
-  try {
-    writeFileSync(temporary, text, { mode: 0o755 });
-    renameSync(temporary, path);
-  } finally {
-    rmSync(temporary, { force: true });
-  }
+  writeScript(path, text);
   console.log(`Wrote ${path}`);
   if (!onPath(dirname(path)))
     console.log(
       `${dirname(path)} is not on PATH: add it to your shell's PATH to run jig by name.`,
     );
   return 0;
+}
+
+/**
+ * Brings the command written by an earlier release to this one's form: its
+ * launcher copy from this plugin copy, and its script in the form
+ * `commandText` writes, keeping the Bun, agent tools and deadline it names.
+ * A command `jig install` did not write, or none, is left alone.
+ */
+export function refreshCommand(
+  platform: NodeJS.Platform = process.platform,
+): Omit<RefreshResult, "target"> {
+  const path = commandPath(platform);
+  const current = readOptional(path);
+  if (current === null || !current.includes(MARKER))
+    return {
+      outcome: "skipped",
+      detail:
+        current === null
+          ? "not installed"
+          : `${path} was not written by jig install`,
+    };
+  const script = commandScriptCall(current);
+  const call = script === null ? null : launcherCall(script.command);
+  if (script === null || call === null)
+    return {
+      outcome: "failed",
+      detail: `cannot read what ${path} runs; jig install --yes writes it again`,
+    };
+  const directory = commandLauncherDirectory();
+  const text = commandText(
+    launcherCommand(directory, call.programs, call.bun),
+    platform,
+    script.deadlineSec,
+  );
+  const stale = staleLauncherFiles(directory);
+  const changed = text !== current;
+  if (stale.length === 0 && !changed)
+    return {
+      outcome: "unchanged",
+      detail: "its launcher copy and script are current",
+    };
+  if (stale.length > 0) installLauncher(directory);
+  if (changed) writeScript(path, text);
+  return {
+    outcome: "refreshed",
+    detail: [
+      stale.length > 0 ? `copied the launcher to ${directory}` : null,
+      changed ? `rewrote ${path}` : null,
+    ]
+      .filter((part) => part !== null)
+      .join("; "),
+  };
 }
 
 /** The removal's preview, then, with `confirm`, the script and its launcher copy. */
