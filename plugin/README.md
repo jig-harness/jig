@@ -78,6 +78,11 @@ that a skill hands a narrow job to):
 |-------|--------------|--------------|
 | [review-arbiter](agents/review-arbiter.md) | Rules on contested review findings the triage rubric cannot settle (fix now, reject, won't fix, defer or escalate to a human); reads code, never edits | `jig:review-arbiter` (Claude Code; see [Codex notes](#codex-notes)) |
 
+Which of these parts are scripts with no model in them, which are a model
+deciding, who owns each record the skills share and who notices when one
+fails is mapped in [MECHANISMS.md](MECHANISMS.md), by mechanism rather than
+by stage.
+
 Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
 [machine resource collection](#machine-resource-collection) ·
 [the dispatcher](#the-dispatcher) ·
