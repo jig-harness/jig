@@ -1095,7 +1095,9 @@ is gone, except a drift's, which stays for the life of its launch and
 expectation so a launch that recovers and drifts again does not notify
 twice), `nudges/` (a record per nudge attempted, with whether it
 arrived) and the outcome log, `log-<year>-<month>.jsonl` (a row per launch
-that ended, per notification delivered and per nudge attempted, which nothing removes). A launch record a run
+that ended, per notification delivered and per nudge attempted, which nothing removes;
+a notification about the stop of a launch it started has no row of its own, because that
+launch's ended row covers it). A launch record a run
 cannot check (claimed on another host or before a reboot) holds its
 account's slot until a person removes its files from `launches/`.
 

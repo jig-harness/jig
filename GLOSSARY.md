@@ -1830,7 +1830,9 @@ make, use the entry's term instead.
   for a person, stalled and died; a stop no class in that list fits is
   logged as `unknown` with its last state, never dropped. Beside those
   rows it holds one event row per notification it delivered and per nudge
-  it attempted (for a stalled pickup, a double claim or a stage drift). One dashboard filters
+  it attempted (for a stalled pickup, a double claim or a stage drift),
+  except for a notification about the stop of a session it started, which
+  its row for that session already covers. One dashboard filters
   it; it is never rendered into a report file.
 - **Stage drift** — a running stage falling short of what it is expected to
   achieve: a review drive whose open threads do not fall across rounds, a
