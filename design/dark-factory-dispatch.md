@@ -263,8 +263,10 @@ with theirs; with them off, no label is read or written.
 - **States**, written by the tick alone: `driving` (a driver runs, or the
   drive stopped on a state the tick re-arms), `converged`, `parked` (a
   person settles it: a park, a stop with no exit or one only a person
-  settles, a person's own stop), `stale`, and `followed-up` (a merged pull
-  request whose follow-up is done). The ledger is the truth: after the
+  settles, a person's own stop), `stale`, `held` (an open pull request
+  waiting its turn in a serialized area, below, whatever its ledger
+  says), and `followed-up` (a merged pull request whose follow-up is
+  done). The ledger is the truth: after the
   plan, each managed pull request's state is derived from its ledger
   again and set as its one state label, in one forge call per pull
   request whose labels disagree and none where they agree. A label a
@@ -299,6 +301,48 @@ with theirs; with them off, no label is read or written.
   the scope again there. With `only_labeled` off, every open pull request
   is still read, so a drive a person armed by hand on an unlabelled pull
   request is found and gets its label.
+
+**Serialized areas** (optional). An area of the repository's change-area
+catalog (`drive.change_areas_catalog`, [M3](../modules/M3-change-area-catalog/README.md))
+marked `serialize: true` is one whose pull requests conflict with each
+other whenever two of them move at once, so the tick drives them one at a
+time. Once per tick, from one observation of each fact: the catalog is
+read from the default branch as the forge holds it, as the `dispatch`
+section is, so a pull request cannot unserialize its own area; each open
+pull request read for a drive gets its changed files from the forge, page
+by page; a pull request touches an area when one of its files matches the
+area's own globs (its seeds, never the `impliedBy` closure: contention is
+two changes in the same files). The pull requests that touch one
+serialized area make its group, ordered by closeness to merge, read from
+the ledger and the forge and never judged: converged and mergeable first,
+then a drive in progress (a running driver, or this machine's launch
+record still holding it), then the fewest unresolved review threads, then
+the most rounds, then the oldest by creation, then the lowest number, so
+the order is the same at every tick until a fact changes. The first leads
+the group and is planned as any pull request is. Every other member is
+**held**: no re-arm, takeover or re-drive, each such action reported as
+`held: serialized behind #N in <area>`; its notifications go on. A pull
+request in two groups is held unless it leads both; the order is one total
+order, so the first pull request of all leads every group it is in and no
+two groups wait on each other. When the leader merges or leaves the group,
+the next tick promotes the next, which the re-drive of a stale converged
+drive then launches once per change. A drive in progress ranks above
+review progress so that a leader mid-drive, whose threads rise and fall
+with each round, keeps its place: otherwise the next tick could promote
+another and start a second drive in the group. Only the dispatcher's
+launches are held: a drive a person arms on a held pull request is not
+stopped, and the tick reports that the group has two drives. A pull
+request whose files do not read, or a group in which a member's ledger or
+threads do not read, is unplaced for the tick with every member of the
+group: no re-arm, no label written, read again at the next tick; a catalog
+that does not read unplaces every drive's re-arm the same way. The tick
+writes a held pull request's state label as `held` where the labels are
+on, and an event row when each hold begins and ends, the end carrying how
+long it waited (the hold's start is a row of the state database, `holds`).
+The catalog grows through a person: the conflict history report
+(`history.ts --propose-serialize` in `resolve-conflicts`) prints the
+catalog lines for the hotspots that lie in one area alone, and writes
+nothing.
 
 The labels must exist before the tick writes them: `jig install dispatch
 --repo <path>` lists the missing ones and, with `--yes`, creates them
@@ -681,6 +725,10 @@ which a directory shared between accounts could not.
   replaces it; `hold` stays until a person removes it.
 - **Compose a prompt for a stuck session.** It sends only the fixed nudges
   of Control's closed set; anything else a session needs goes to a person.
+- **Add a serialized area, or stop a person's drive on a held pull
+  request.** What is serialized is the catalog's, changed by a person; the
+  tick never infers contention from a conflict it just saw. A hold keeps
+  only the dispatcher's own launches off.
 
 ### Notifications
 
@@ -1133,6 +1181,24 @@ One pull request each, in this order; each is usable on its own.
    write leaves the launch as it was. Waits on step 3. Usable alone: a
    person tells a dispatched workspace from their own at a glance on the
    board.
+12. **Serialize contended pull requests.** `serialize: true` on an area of
+   the change-area catalog, validated like the other fields; each open
+   pull request's changed files read once per tick; the groups by
+   serialized area, their order and their leaders (see Serialized areas);
+   a held pull request's re-arm, takeover and re-drive reported as held,
+   its state label `held`, and an event row when its hold begins and
+   ends; `history.ts --propose-serialize` printing the catalog lines for
+   the hotspots one area holds. Tests: three converged pull requests on one
+   serialized area, all conflicting after a merge to main, get one
+   re-drive per tick in the fixed order, the other two reported held with
+   no launch; when the leader merges, the next tick promotes the next and
+   re-drives it once; a pull request outside every serialized area is
+   driven beside a held group, and a person's drive on a held pull request
+   is reported, not stopped; the history report with
+   `--propose-serialize` prints a catalog line for a hotspot and writes
+   nothing. Waits on steps 7 and 10. Usable alone: a night of pull
+   requests that all touch the migrations no longer re-drives each of them
+   after every merge.
 
 ## Left out
 

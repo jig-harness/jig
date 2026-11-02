@@ -81,7 +81,10 @@ mechanical nudge (`steer`, "continue" after a usage limit resets) with no
 open-ended prompt, then the re-drive of a converged pull request the
 forge reports conflicting or whose head moved after the drive verified
 it, then Codex accounts admitted beside Claude Code's, the account's
-vendor choosing the agent a session runs in; the re-arm step waits on the drive
+vendor choosing the agent a session runs in, then the pull requests that
+touch a change area the catalog marks `serialize: true` driven one at a
+time, the one closest to merge first and the rest held, with the conflict
+history report proposing which areas to mark; the re-arm step waits on the drive
 running in a session of its own, and the pickups' launches on an Orca
 session that can be bound to a chosen account (until then the pickups are
 reported, not started). A park's notification carries the park's framed
@@ -106,7 +109,10 @@ account's wall is re-armed on a Codex account with `CODEX_HOME` bound and
 the Claude variables absent, and an account of a vendor with no documented
 pass command is reported and never launched, a Codex pass that outruns a
 positive `DRIVE_PR_PASS_TIMEOUT` is terminated, and a Codex account is
-reported and never launched while that deadline is `0`.
+reported and never launched while that deadline is `0`, and on a
+consumer repository three pull requests that touch one serialized area
+over a night are re-driven one at a time, the held ones carrying the
+`held` label until each leads.
 
 ### 35. One jig command line
 
