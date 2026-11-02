@@ -349,6 +349,17 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.120.3] - 2026-11-02
+
+### Changed
+
+- The dispatcher's README says which launch records `jig dispatch clear`
+  clears and which it refuses, as the command does: it clears an unknown
+  record, a pending one whose launch cannot be retried, or one that does
+  not read and whose claim is not alive, and refuses a running record,
+  readable or not, and, among the records that read, an ended or died one
+  and a pending one that can still be retried.
+
 ## [0.120.2] - 2026-11-02
 
 ### Added
@@ -4646,7 +4657,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.120.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.120.3...HEAD
+[0.120.3]: https://github.com/jig-harness/jig/compare/v0.120.2...v0.120.3
 [0.120.2]: https://github.com/jig-harness/jig/compare/v0.120.1...v0.120.2
 [0.120.1]: https://github.com/jig-harness/jig/compare/v0.120.0...v0.120.1
 [0.120.0]: https://github.com/jig-harness/jig/compare/v0.119.0...v0.120.0
