@@ -319,7 +319,39 @@ test.skipIf(onWindows)(
     const result = m.jig(["doctor"]);
     expectSpawnExit(result, 1);
     expect(result.stdout.toString()).toMatch(
-      /FAIL {2}command:launcher: .*gone\/bun does not exist/,
+      /FAIL {2}command:launcher: .*gone\/bun does not exist\n {6}fix: jig install --yes\n/,
+    );
+  },
+);
+
+test.skipIf(onWindows)(
+  "jig doctor reports a configuration error the check found as the finding, not as an incomplete check",
+  () => {
+    const m = machine("systemd");
+    writeFileSync(
+      join(m.repo, ".config", "jig.yaml"),
+      "autonomy:\n  level: nonsense\n",
+    );
+    const result = m.jig(["doctor"]);
+    expectSpawnExit(result, 1);
+    const out = result.stdout.toString();
+    expect(out).toMatch(/FAIL {2}config-fit: \.config\/jig\.yaml: config\//);
+    expect(out).not.toContain("did not complete");
+  },
+);
+
+test.skipIf(onWindows)(
+  "jig doctor fails the jig command whose script names no agent tool, with the confirmed repair",
+  () => {
+    const m = machine("systemd");
+    expectSpawnExit(m.jig(["install", "--yes"]), 0);
+    const command = join(m.home, ".local", "bin", "jig");
+    const text = readFileSync(command, "utf8");
+    writeFileSync(command, text.replace(/ '--(claude|codex)=[^']*'/g, ""));
+    const result = m.jig(["doctor"]);
+    expectSpawnExit(result, 1);
+    expect(result.stdout.toString()).toMatch(
+      /FAIL {2}command:launcher: .*names no agent tool\n {6}fix: jig install --yes\n/,
     );
   },
 );

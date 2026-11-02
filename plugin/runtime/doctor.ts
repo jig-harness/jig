@@ -293,7 +293,13 @@ async function commandCheck(runtime: Runtime): Promise<DoctorCheck> {
     return fail(
       "command:launcher",
       "cannot read the command the installed jig script runs",
-      "jig install",
+      "jig install --yes",
+    );
+  if (Object.keys(call.programs).length === 0)
+    return fail(
+      "command:launcher",
+      "the installed jig script's command names no agent tool",
+      "jig install --yes",
     );
   const problems = [
     programProblem(call.bun, false),
@@ -302,7 +308,7 @@ async function commandCheck(runtime: Runtime): Promise<DoctorCheck> {
     ),
   ].filter((problem) => problem !== null);
   if (problems.length > 0)
-    return fail("command:launcher", problems.join("; "), "jig install");
+    return fail("command:launcher", problems.join("; "), "jig install --yes");
   return launcherCheck(
     "command:launcher",
     commandLauncherDirectory(),
@@ -525,7 +531,12 @@ async function configFitCheck(pluginRoot: string): Promise<DoctorCheck> {
   );
   let fit: FitReport;
   try {
-    if (result.timedOut || result.spawnFailed || result.code !== 0)
+    // The check exits 1 when its report holds configuration errors; the report is then the answer.
+    if (
+      result.timedOut ||
+      result.spawnFailed ||
+      (result.code !== 0 && result.code !== 1)
+    )
       throw new Error("the check did not complete");
     fit = decodeJson(
       result.stdout,
