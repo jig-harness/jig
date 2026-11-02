@@ -22,8 +22,8 @@
  * `pass-command.ts`), the model is the pass command's own (`-m`, `--model`),
  * else the execution tier of `routing.models.codex`, added after `exec`,
  * else none, and Codex's own configuration decides. `drive.pass_model` and
- * `--pass-model` are Claude Code's: neither is read for a Codex pass, and
- * `--pass-model` is refused there.
+ * `--pass-model` differ: the setting is Claude Code's, while the flag
+ * overrides either vendor and resolves tiers through that vendor's row.
  *
  * Only the model option is read or written: the rest of the pass command
  * stays as the caller gave it, and a pass command of any other tool (a
@@ -63,13 +63,14 @@ export class PassModelUsageError extends Error {}
 
 /**
  * The model `value` names: a routing tier resolved through
- * `routing.models.claude-code`, anything else as written. `where` names the
+ * the selected runtime's `routing.models` row, anything else as written. `where` names the
  * value's origin in the source and in errors.
  */
 export function resolveModelValue(
   value: string,
   where: string,
   overlay: () => Record<string, unknown> = readOptionalOverlay,
+  runtime = PASS_RUNTIME,
 ): PassModel {
   if (!PASS_MODEL_PATTERN.test(value))
     throw new PassModelUsageError(
@@ -77,14 +78,14 @@ export function resolveModelValue(
     );
   const tier = TIERS.find((t) => t === value);
   if (tier === undefined) return { model: value, source: where };
-  const model = parseRoutingModels(overlay())[PASS_RUNTIME]?.[tier];
+  const model = parseRoutingModels(overlay())[runtime]?.[tier];
   if (model === undefined)
     throw new RoutingError(
-      `${where} names the ${tier} tier, but routing.models has no ${PASS_RUNTIME} row to resolve it through`,
+      `${where} names the ${tier} tier, but routing.models has no ${runtime} row to resolve it through`,
     );
   return {
     model,
-    source: `${where}: the ${tier} tier, routing.models.${PASS_RUNTIME}.${tier}`,
+    source: `${where}: the ${tier} tier, routing.models.${runtime}.${tier}`,
   };
 }
 
@@ -169,13 +170,14 @@ function withModel(argv: readonly string[], model: string): string[] {
   return [...rest.slice(0, at), "--model", model, ...rest.slice(at)];
 }
 
-/** `argv`, a Codex pass command with no model of its own, with `-m model` after `exec` (after `codex` when it has none). */
+/** Replace a Codex pass's model with `-m model` after `exec` (after `codex` when it has none). */
 export function withCodexModel(
   argv: readonly string[],
   model: string,
 ): string[] {
-  const at = argv[1] === "exec" ? 2 : 1;
-  return [...argv.slice(0, at), "-m", model, ...argv.slice(at)];
+  const rest = withoutModel(argv);
+  const at = rest[1] === "exec" ? 2 : 1;
+  return [...rest.slice(0, at), "-m", model, ...rest.slice(at)];
 }
 
 /** The pass command the driver runs, and the model it runs on. */
@@ -285,13 +287,20 @@ export function effectivePass(
   if (first === undefined)
     return { argv: [], model: null, source: "no pass command given" };
   const vendor = passVendor(argv);
-  if (vendor !== "claude" && flag !== undefined)
+  if (vendor === null && flag !== undefined)
     throw new PassModelUsageError(
-      vendor === "codex"
-        ? `--pass-model applies to a Claude Code pass command (claude …); a Codex pass runs on its own -m, else routing.models.${CODEX_RUNTIME}.${CODEX_TIER}`
-        : `--pass-model applies to a Claude Code pass command (claude …); '${basename(first)}' chooses its own model`,
+      `--pass-model applies to a Claude Code pass command or a Codex pass command; '${basename(first)}' chooses its own model`,
     );
-  if (vendor === "codex") return codexPass(argv, codex);
+  if (vendor === "codex") {
+    if (flag === undefined) return codexPass(argv, codex);
+    const chosen = resolveModelValue(
+      flag,
+      "--pass-model",
+      readOptionalOverlay,
+      CODEX_RUNTIME,
+    );
+    return { argv: withCodexModel(argv, chosen.model), ...chosen };
+  }
   if (vendor !== "claude")
     return {
       argv: [...argv],

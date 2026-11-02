@@ -182,7 +182,34 @@ describe("effectivePass", () => {
       model: "gpt-own",
       source: "the pass command's own model",
     });
-    expect(() => effectivePass(codex, "sonnet", configured, routed)).toThrow(
+    expect(
+      effectivePass(own, "gpt-override", configured, routed),
+    ).toMatchObject({
+      argv: ["codex", "exec", "-m", "gpt-override", "/jig:drive-pr 7"],
+      model: "gpt-override",
+    });
+  });
+
+  it("replaces all Codex model flags while preserving the prompt and other arguments", () => {
+    const prompt = "Use jig:drive-pr with --model mentioned in prose";
+    const pass = [
+      "codex",
+      "exec",
+      "--model=old",
+      "-m",
+      "other",
+      "--json",
+      prompt,
+    ];
+    expect(effectivePass(pass, "gpt-new", configured).argv).toEqual([
+      "codex",
+      "exec",
+      "-m",
+      "gpt-new",
+      "--json",
+      prompt,
+    ]);
+    expect(() => effectivePass(pass, "two words", configured)).toThrow(
       PassModelUsageError,
     );
   });

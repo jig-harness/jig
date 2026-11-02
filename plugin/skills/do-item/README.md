@@ -81,6 +81,11 @@ The instructions run in Bash on macOS and Linux, and PowerShell on Windows.
 Make Bun, Git and GitHub CLI available to the command tool. Codex substitutes
 the installed skill's absolute path for `${CLAUDE_SKILL_DIR}` before running a command. Generated
 JSON and comment bodies are read from files, so no Git Bash utilities are needed.
+Codex delegates with its subagent tool and the routed agent's instructions,
+falling back to the current session when that tool is unavailable. The drive
+uses Codex's pass command, started in a terminal tab or through its managed
+background command tool; see [how to start it](../drive-pr/README.md#how-to-start-it)
+for session lifetime and model overrides.
 
 Run every TypeScript script through `bun`, from the consumer repository's
 root. For example, using the installed do-item skill directory:

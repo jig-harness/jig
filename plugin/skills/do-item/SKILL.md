@@ -652,7 +652,8 @@ routing below remain **exact**.
 4. **judgment** — **Delegate to the agent**: use the harness's subagent
    tool (Claude Code: the Task tool with `subagent_type` set to the
    `primary_agent` that `determine_agent.ts` printed; elsewhere, its own
-   subagent tool briefed with that agent's definition, or this session,
+   subagent tool briefed with that agent's definition (Codex: `spawn_agent`,
+   then `wait_agent` and `send_message` where exposed), or this session,
    following the same prompt, where there is none). First create the working
    branch named by `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch` (**exact**; see
    [Pull-request policy](#pull-request-policy)), from the integration branch,
@@ -1027,8 +1028,8 @@ routing below remain **exact**.
       spawn nothing. The pass command is the documented one of the agent
       tool this session runs in: Claude Code's (`claude --model <model> -p
       "..."`) or Codex's (`codex exec … "Use the jig:drive-pr skill: …"`,
-      on `routing.models.codex`). A Codex session that cannot open a tab
-      gets `print`, since the background way is Claude Code's. In any other
+      on `routing.models.codex`, overridden by `--pass-model`). A Codex session
+      that cannot open a tab gets `spawn`. In any other
       agent tool the script answers `print`. Do not guess one for another
       agent tool.
 
@@ -1076,25 +1077,27 @@ routing below remain **exact**.
         report what it shows; do not open another tab or spawn the command
         as well.
       - `spawn` → **spawn `command` in the background** (the harness's
-        background execution; do not block the session on it). Spawning is
-        then mandatory: an emitted but unspawned command reintroduces the
+        background execution; Claude Code uses Bash `run_in_background`,
+        Codex uses `exec_command` with a short `yield_time_ms` and retains
+        `session_id` for `write_stdin`). If neither tool is exposed, treat
+        this as `print` and name the limitation. Otherwise spawning is mandatory: an emitted but unspawned command reintroduces the
         human-memory delay this step removes, and a `hitl` issue cleared
-        this run is no reason to withhold it. Pass the Bash call's `timeout`
+        this run is no reason to withhold it. In Claude Code, pass the Bash call's `timeout`
         of `28800000` (8 hours) with `run_in_background`: in an unattended
         session Claude Code stops a background command after 30 minutes
         without it (10 in a `claude -p` run whose prompt is passed as text),
         and after 2 hours unless `BASH_MAX_TIMEOUT_MS` is raised (see
         [drive-pr's README](../drive-pr/README.md#the-background-time-limit)).
-        Report the task handle. When `fallback` is set, `auto` meant a tab
+        Report the task handle. In Codex, poll it for the arm check; if
+        the host kills children when the session ends, keep the session alive
+        until the drive ends or use an external terminal. When `fallback` is set, `auto` meant a tab
         and the drive goes to the background instead: say why (Orca refused
         the tab, a Windows host, or a tab whose drive `drives.ts` did not list
         in time, whose `tail` to report too; a drive that tab did start holds
         the PR's lock, so this spawn then meets step 3's exit `11`).
       - `print` → emit the command only, with `reason`: for an uncleared
         `hitl` checkpoint, starting review rounds would pre-empt the human
-        judgment; from a Codex session that cannot open a tab, the
-        background way is Claude Code's, so a person runs the command; for
-        an agent tool with no documented pass command, a guessed command is
+        judgment; for an agent tool with no documented pass command, a guessed command is
         worse than one left for a human to run.
 
       The drive works the draft immediately (some review bots review
