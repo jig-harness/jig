@@ -124,8 +124,11 @@ export function planLabels(input: ProjectionInput): {
     const change = labelChange(config, number, labels, projected, consumeDrive);
     if (change !== null) changes.push(change);
   };
+  // Merged between the two listings: the merged state wins, as the plan has it.
+  const mergedNumbers = new Set(input.merged.map((m) => m.number));
   for (const pr of input.open) {
     if (!input.read.has(pr.number)) continue;
+    if (mergedNumbers.has(pr.number)) continue;
     const labels = pr.labels ?? [];
     const drive = drives.get(pr.number);
     report.commands.push(...commandsOf(config, pr.number, labels, drive, true));

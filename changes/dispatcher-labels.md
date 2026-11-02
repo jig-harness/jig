@@ -18,7 +18,7 @@ a person's commands the same way.
   `jig:` for a repository whose label taxonomy has its own convention.
   A run without `--apply` reports what it would write, and a write the
   forge refuses is reported in the receipt without failing the run.
-- **Two commands a person gives with a label.** `jig:drive` on a pull
+- **Commands a person gives with a label.** `jig:drive` on a pull
   request with no drive ledger arms a drive on it (the machine file's
   `rearm` stage, once per head commit), and is replaced by the state label
   once the ledger exists. `jig:hold` keeps every stage off its pull request
@@ -32,5 +32,4 @@ a person's commands the same way.
   Run it once after turning the labels on: the labels must exist before a
   run writes them.
 - **The morning report** (`drives.ts --report`) gives, for each repository
-  with the labels on, how many pull requests carried each label at its
-  latest run (`dispatchLabels` in `--json`).
+  with the labels on, how many pull requests its latest run projected each label for (`dispatchLabels` in `--json`).

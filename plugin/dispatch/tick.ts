@@ -42,6 +42,7 @@ import {
   mergedNotClosed,
   mergedSince,
   openPullRequest,
+  pullRequestLabels,
   openPullRequests,
   repoTarget,
   unresolvedThreadCount,
@@ -89,7 +90,7 @@ import {
   type ReadRecord,
 } from "./lib/launches.ts";
 import { type MachineConfig, machineRepository } from "./lib/machine-config.ts";
-import { type PlanInput, planTick } from "./lib/plan.ts";
+import { holdBack, type PlanInput, planTick } from "./lib/plan.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type {
   JoinTargets,
@@ -245,6 +246,9 @@ async function gatherRepo(
     if (p.createdAt !== undefined) created.set(p.number, p.createdAt);
   await observeRunning(context, repo, report, drives, sessions, created);
   const held = heldPullRequests(labels, [...open, ...merged]);
+  const outOfScope = new Set(
+    open.filter((p) => !forge.read.has(p.number)).map((p) => p.number),
+  );
   planRepo(context, repo.slug, report, {
     slug: repo.slug,
     section,
@@ -255,6 +259,7 @@ async function gatherRepo(
     sessions,
     created,
     held,
+    ...(labels?.onlyLabeled === true ? { outOfScope } : {}),
   });
   await logRepo(context, repo.slug, report, drives);
   if (context.apply !== null)
@@ -426,6 +431,11 @@ async function applyStages(
       const listed = await openPullRequest(repo.slug, pr, {
         labels: labels !== null,
       });
+      if (
+        labels?.onlyLabeled === true &&
+        !carriesSet(labels, listed.labels ?? [])
+      )
+        return null;
       const [again] = await readDrives(
         repo.slug,
         login,
@@ -460,6 +470,18 @@ async function applyStages(
           login,
           merged: inputs.merged,
           sessions: fresh,
+          ...(labels === null
+            ? {}
+            : {
+                holdReason: async (pr: number) =>
+                  hasCommand(
+                    labels,
+                    await pullRequestLabels(repo.slug, pr),
+                    "hold",
+                  )
+                    ? "a person's hold label is on it now"
+                    : null,
+              }),
         });
     },
   ];
@@ -636,6 +658,12 @@ function planRepo(
     nudges,
     nowMs,
   });
+  // The nudges stand down for a held or out-of-scope pull request like every other action.
+  holdBack(
+    { actions: steers.actions, held: plan.held },
+    input.held ?? new Set(),
+    input.outOfScope ?? new Set(),
+  );
   report.actions.push(...steers.actions);
   report.running.push(...steers.running);
   report.unplaced.push(...plan.unplaced);

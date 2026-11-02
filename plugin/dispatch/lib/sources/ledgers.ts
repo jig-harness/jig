@@ -303,6 +303,14 @@ function unarmed(
   labels: LabelConfig | null,
 ): DrivenPr | null {
   if (labels === null || !hasCommand(labels, pr.labels, "drive")) return null;
+  // The once-per-head rule needs the commit it arms: without one nothing starts.
+  if (typeof pr.headRefOid !== "string" || pr.headRefOid === "")
+    return {
+      ...base,
+      class: "unplaced",
+      why: "a person's drive label asks for a drive, but the pull request's head commit does not read, so the once-per-head rule cannot be kept; nothing is armed",
+      evidence: {},
+    };
   return {
     ...base,
     class: "unarmed",

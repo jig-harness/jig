@@ -43,7 +43,7 @@ export const DEFAULT_LABELS: LabelConfig = {
  * later stage owns, which no ledger produces) is never added or removed
  * by the projection.
  */
-const PROJECTED_STATES = [
+export const PROJECTED_STATES = [
   "driving",
   "converged",
   "parked",
@@ -53,7 +53,7 @@ const PROJECTED_STATES = [
 export type StateName = (typeof PROJECTED_STATES)[number];
 
 /** The labels a person writes and the tick reads. */
-const COMMANDS = ["drive", "hold"] as const;
+export const COMMANDS = ["drive", "hold"] as const;
 export type CommandName = (typeof COMMANDS)[number];
 
 /** What each label says, for `jig dispatch install --repo`, which creates them. */

@@ -163,6 +163,30 @@ describe("retention", () => {
     ).toEqual(["20260101T000000Z-aaaaaaaa"]);
   });
 
+  it("keeps the latest arm of a pull request with no ledger, per head, past the retention", () => {
+    const dir = root();
+    const arm = (id: string, head: string, at: string) =>
+      ended(
+        record(id, { createdAt: at, facts: `no ledger, head ${head}` }),
+        0,
+        at,
+      );
+    const old = arm(
+      "20260101T000000Z-aaaaaaaa",
+      "h1",
+      "2026-01-01T00:00:00.000Z",
+    );
+    const again = arm(
+      "20260102T000000Z-bbbbbbbb",
+      "h1",
+      "2026-01-02T00:00:00.000Z",
+    );
+    // Only the earlier record of the same head goes; the latest stays as evidence.
+    expect(
+      pruneLaunches([old, again], Date.parse("2027-01-01"), 7, dir),
+    ).toEqual(["20260101T000000Z-aaaaaaaa"]);
+  });
+
   it("keeps an unreleased pickup until it is released", () => {
     const dir = root();
     const pickup = (released: boolean) =>

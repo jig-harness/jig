@@ -32,6 +32,7 @@ import {
   holds,
   isDrive,
   type ReadRecord,
+  UNARMED_FACTS,
 } from "../launches.ts";
 import type { DrivenPr } from "../types.ts";
 
@@ -42,9 +43,6 @@ export type DriveHold =
   | { kind: "redriven"; record: ReadRecord; why: string }
   | { kind: "armed"; record: ReadRecord; why: string }
   | { kind: "takeover"; record: ReadRecord };
-
-/** What an arm of a pull request with no ledger acts on: its head commit, so it is armed once per head. */
-const UNARMED_FACTS = "no ledger, head ";
 
 /** The ledger facts a launch acts on; a refusal on the same facts is final. */
 export function factsOf(pr: DrivenPr): string {

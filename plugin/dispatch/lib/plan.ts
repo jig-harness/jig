@@ -57,6 +57,8 @@ export interface PlanInput {
   idleSince: ReadonlyMap<string, number>;
   /** The pull requests that carry a person's `hold` label. */
   held?: ReadonlySet<number>;
+  /** Open pull requests left out of the read by `only_labeled`: no action targets them. */
+  outOfScope?: ReadonlySet<number>;
   nowMs: number;
 }
 
@@ -164,17 +166,27 @@ export function planTick(input: PlanInput): Plan {
   });
   plan.actions.push(...drift.actions);
   plan.running.push(...drift.running);
-  holdBack(plan, input.held ?? new Set());
+  holdBack(plan, input.held ?? new Set(), input.outOfScope ?? new Set());
   return plan;
 }
 
-/** Move every action on a pull request a `hold` label carries out of the plan, into its report. */
-function holdBack(plan: Plan, held: ReadonlySet<number>): void {
-  if (held.size === 0) return;
+/**
+ * Move every action on a pull request a `hold` label carries out of the
+ * plan, into its report; drop the ones on a pull request `only_labeled`
+ * leaves out of scope.
+ */
+export function holdBack(
+  plan: Pick<Plan, "actions" | "held">,
+  held: ReadonlySet<number>,
+  outOfScope: ReadonlySet<number> = new Set(),
+): void {
+  if (held.size === 0 && outOfScope.size === 0) return;
   const targets = new Set([...held].map((n) => `PR #${n}`));
+  const unscoped = new Set([...outOfScope].map((n) => `PR #${n}`));
   const kept: Action[] = [];
   for (const action of plan.actions)
-    if (targets.has(action.target))
+    if (unscoped.has(action.target)) continue;
+    else if (targets.has(action.target))
       plan.held.push({
         target: action.target,
         stage: action.stage,

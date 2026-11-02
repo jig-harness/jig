@@ -776,15 +776,43 @@ function latestRefusals(records: ReadRecord[]): Set<string> {
  * change a pull request has been re-driven for keeps one.
  */
 function latestRedrives(records: ReadRecord[]): Set<string> {
+  return latestIdsBy(records, (r) =>
+    isDrive(r.record) && r.record.redrive
+      ? `${r.record.repo}#${String(r.record.pr)}\0${r.record.redrive.change}`
+      : null,
+  );
+}
+
+/** The ids of the latest record under each key `keyOf` gives; a record it gives `null` is not kept. */
+function latestIdsBy(
+  records: ReadRecord[],
+  keyOf: (r: ReadRecord) => string | null,
+): Set<string> {
   const latest = new Map<string, ReadRecord>();
   for (const r of records) {
-    if (!isDrive(r.record) || !r.record.redrive) continue;
-    const key = `${r.record.repo}#${String(r.record.pr)}\0${r.record.redrive.change}`;
+    const key = keyOf(r);
+    if (key === null) continue;
     const seen = latest.get(key);
     if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
       latest.set(key, r);
   }
   return new Set([...latest.values()].map((r) => r.record.id));
+}
+
+/** The facts a launch carries when it armed a pull request that had no drive ledger. */
+export const UNARMED_FACTS = "no ledger, head ";
+
+/**
+ * The ids of each pull request's latest arm record per head commit: an arm
+ * is not repeated at the same head, and the record is the only evidence of
+ * that when the arm left no ledger, so it outlives the retention.
+ */
+function latestArms(records: ReadRecord[]): Set<string> {
+  return latestIdsBy(records, (r) =>
+    isDrive(r.record) && r.record.facts?.startsWith(UNARMED_FACTS)
+      ? `${r.record.repo}#${String(r.record.pr)}\0${r.record.facts}`
+      : null,
+  );
 }
 
 /**
@@ -821,6 +849,7 @@ export function pruneLaunches(
   const kept = latestRefusals(records);
   for (const id of latestPickups(records)) kept.add(id);
   for (const id of latestRedrives(records)) kept.add(id);
+  for (const id of latestArms(records)) kept.add(id);
   const removed = records
     .filter(({ record, state }) => {
       const at = kept.has(record.id) ? null : finishedAt(record, state);

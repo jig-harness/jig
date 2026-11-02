@@ -236,6 +236,18 @@ export async function openPullRequest(
   return listedPr(out, `PR #${pr}'s view`, read);
 }
 
+/** One pull request's label names, read now whatever state it is in; throws when they do not read. */
+export async function pullRequestLabels(
+  slug: string,
+  pr: number,
+): Promise<string[]> {
+  const out = parsed(
+    await gh(["pr", "view", String(pr), "--repo", slug, "--json", "labels"]),
+    "the pull request view",
+  );
+  return labelNames(field(out, "labels"), `PR #${pr}`);
+}
+
 /** Every pull request merged at or after `since` (ISO 8601). */
 export async function mergedSince(
   slug: string,

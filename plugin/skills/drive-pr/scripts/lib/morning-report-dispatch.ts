@@ -7,10 +7,12 @@
  * tick's standing state, which `jig dispatch` itself prints. A refusal
  * repeated tick after tick for the same reason is listed once, at its
  * latest. Where a repository turns dispatch labels on, its latest receipt
- * in the window also gives how many pull requests carry each label: the
- * state the projection set from each ledger, and the commands a person put
- * on them.
+ * in the window also gives how many pull requests the run projected each
+ * label for: the state it wanted from each ledger, and the commands a person
+ * put on them. These are the run's wants, not labels read back after its
+ * writes.
  */
+import { COMMANDS, PROJECTED_STATES } from "../../../../dispatch/lib/labels.ts";
 import { readReceipt, receiptPaths } from "../../../../dispatch/receipts.ts";
 
 export interface DispatchEntry {
@@ -31,7 +33,7 @@ export interface DispatchLabels {
   /** When that run started. */
   at: string;
   repo: string;
-  /** How many pull requests carry each label, by its full name. */
+  /** How many pull requests the run projected each label for, by its full name. */
   counts: Record<string, number>;
 }
 
@@ -186,8 +188,8 @@ function labelCounts(
   if (l === undefined) return null;
   if (!labelsReadable(l)) return undefined;
   const names = [
-    ...l.states.map((s) => s?.state),
-    ...l.commands.map((c) => c?.command),
+    ...l.states.map((s) => s.state),
+    ...l.commands.map((c) => c.command),
   ].filter((n): n is string => typeof n === "string" && n !== "unknown");
   const counts: Record<string, number> = {};
   for (const name of names.map((n) => `${l.prefix}${n}`))
@@ -199,11 +201,44 @@ function labelCounts(
 function labelsReadable(l: unknown): l is NonNullable<Repo["labels"]> {
   if (typeof l !== "object" || l === null) return false;
   const o = l as Record<string, unknown>;
+  const member = (m: unknown, key: string, allowed: readonly string[]) =>
+    typeof m === "object" &&
+    m !== null &&
+    typeof (m as Record<string, unknown>).target === "string" &&
+    (allowed.includes((m as Record<string, unknown>)[key] as string) ||
+      (key === "state" && (m as Record<string, unknown>)[key] === null));
   return (
     typeof o.prefix === "string" &&
     Array.isArray(o.states) &&
-    Array.isArray(o.commands)
+    o.states.every((s) =>
+      member(s, "state", [...PROJECTED_STATES, "unknown"]),
+    ) &&
+    Array.isArray(o.commands) &&
+    o.commands.every((c) => member(c, "command", COMMANDS))
   );
+}
+
+/** A repository's latest receipt: its label counts, or `null` counts where that run had the labels off. */
+type Latest = Omit<DispatchLabels, "counts"> & {
+  counts: DispatchLabels["counts"] | null;
+};
+
+/** Keep a repository's latest receipt, a labels-off run included; at the same instant, one that has labels wins. */
+function latestLabels(
+  labels: Map<string, Latest>,
+  repo: Repo,
+  receipt: Receipt,
+  counted: DispatchLabels | null,
+): void {
+  const name = repo.slug ?? repo.path;
+  const at = counted?.at ?? receipt.startedAt;
+  const seen = labels.get(name);
+  if (
+    seen === undefined ||
+    seen.at < at ||
+    (seen.at === at && counted !== null)
+  )
+    labels.set(name, counted ?? { at, repo: name, counts: null });
 }
 
 /** One receipt's entries into `entries`, and its label counts into `labels`; a repository entry that does not read goes into `unread`. */
@@ -212,7 +247,7 @@ function collect(
   path: string,
   entries: Map<string, DispatchEntry>,
   unread: string[],
-  labels: Map<string, DispatchLabels>,
+  labels: Map<string, Latest>,
 ): void {
   for (const repo of receipt.repos) {
     const counted = labelCounts(receipt, repo);
@@ -220,10 +255,8 @@ function collect(
       unread.push(
         `the dispatch receipt ${path} has a repository entry whose labels do not read`,
       );
-    else if (counted !== null) {
-      const seen = labels.get(counted.repo);
-      if (seen === undefined || seen.at <= counted.at)
-        labels.set(counted.repo, counted);
+    else {
+      latestLabels(labels, repo, receipt, counted);
     }
     if (!readable(repo)) {
       unread.push(
@@ -243,7 +276,7 @@ export function dispatchSince(since: number, root?: string): DispatchSince {
     return { entries: [], labels: [], unread: [listed] };
   const unread: string[] = [];
   const entries = new Map<string, DispatchEntry>();
-  const labels = new Map<string, DispatchLabels>();
+  const labels = new Map<string, Latest>();
   for (const path of listed) {
     const receipt = readReceipt(path);
     if (receipt === null)
@@ -253,7 +286,9 @@ export function dispatchSince(since: number, root?: string): DispatchSince {
   }
   return {
     entries: [...entries.values()].sort((a, b) => a.at.localeCompare(b.at)),
-    labels: [...labels.values()].sort((a, b) => a.repo.localeCompare(b.repo)),
+    labels: [...labels.values()]
+      .filter((l): l is DispatchLabels => l.counts !== null)
+      .sort((a, b) => a.repo.localeCompare(b.repo)),
     unread,
   };
 }
