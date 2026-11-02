@@ -348,8 +348,20 @@ function prune(
     ...report.unplaced.map((u) => u.target),
     ...(report.withheld ?? []),
   ]);
+  // Under `only_labeled` a pull request not observed in scope was never
+  // read for a ledger, so the cause's absence says nothing: its record stands.
+  const inScope =
+    report.inScope === undefined
+      ? null
+      : new Set(report.inScope.map((n) => `PR #${n}`));
+  const outside = (target: string): boolean =>
+    inScope !== null && /^PR #\d+$/.test(target) && !inScope.has(target);
   const gone = [...sent.values()].filter(
-    (s) => !keys.has(s.key) && !unplaced.has(s.target) && !s.lasting,
+    (s) =>
+      !keys.has(s.key) &&
+      !unplaced.has(s.target) &&
+      !outside(s.target) &&
+      !s.lasting,
   );
   if (gone.length === 0) return;
   const db = stateDb(root);

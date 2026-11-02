@@ -204,4 +204,30 @@ describe("jig dispatch --apply notifies a person", () => {
     expect(orcaCalls(w, "worktree", "create")).toHaveLength(1);
     expect(orcaCalls(w, "worktree", "set")).toHaveLength(1);
   });
+
+  it("keeps a suppression record while its pull request is outside the label scope", async () => {
+    const { w, ws } = fixture();
+    w.setConfig(`${CONFIG}dispatch:
+  labels: { enabled: true, only_labeled: true }
+`);
+    const labelled = {
+      ...openPr(7, "feature/7-parked"),
+      labels: [{ name: "jig:drive" }],
+    };
+    w.setPrs("open", [labelled]);
+    expect(notifications(await tick(w))).toEqual([
+      expect.objectContaining({ target: "PR #7", outcome: "sent" }),
+    ]);
+
+    // The label comes off: the cause is not observed to change, only unread.
+    w.setPrs("open", [openPr(7, "feature/7-parked")]);
+    await tick(w);
+
+    w.setPrs("open", [labelled]);
+    expect(notifications(await tick(w))).toEqual([
+      expect.objectContaining({ target: "PR #7", outcome: "suppressed" }),
+    ]);
+    expect(orcaCalls(w, "worktree", "set")).toHaveLength(1);
+    expect(shown(w, ws).unread).toBe(true);
+  });
 });

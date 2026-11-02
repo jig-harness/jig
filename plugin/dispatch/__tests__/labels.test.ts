@@ -21,6 +21,7 @@ import {
   HEAD_SHA,
   labeled,
   ledgerComment,
+  mergedPr,
   openPr,
   SLUG,
   stoppedLedger,
@@ -287,6 +288,20 @@ describe("jig dispatch with only_labeled", () => {
     ]);
     expect(repo(r)?.labels?.unlabeled).toBe(1);
     expect(labelsOf(w, 7)).toEqual([]);
+    expect(repo(r)?.inScope).toEqual([9]);
+  }, 60_000);
+
+  it("takes a pull request out of scope when its merge carries no label, whatever its open listing said", async () => {
+    const w = fixture(
+      config(
+        "  labels: { enabled: true, only_labeled: true }\n  followup_command: /followup",
+      ),
+    );
+    w.setPrs("open", [labeled(openPr(7, "feature/7"), "jig:driving")]);
+    w.setPrs("merged", [mergedPr(7, "feature/7", new Date().toISOString())]);
+
+    const r = await tick(w, ["--followup-since", "2026-10-01"]);
+    expect(repo(r)?.inScope).toEqual([]);
   }, 60_000);
 });
 

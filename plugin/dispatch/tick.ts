@@ -259,6 +259,7 @@ async function gatherRepo(
     held,
     ...(labels?.onlyLabeled === true ? { inScope } : {}),
   });
+  if (labels?.onlyLabeled === true) report.inScope = [...inScope];
   await logRepo(context, repo.slug, report, drives);
   if (context.apply !== null)
     await applyStages(context.apply, new Set(entry?.stages ?? []), report, {
@@ -331,7 +332,12 @@ async function readForge(
     if (section.followupCommand !== null) {
       const listed = await mergedSince(repo.slug, since, read);
       const inScope = managed(listed);
-      for (const p of inScope) out.inScope.add(p.number);
+      // The later observation of a pull request wins: one that merged
+      // without a label of the set leaves the scope its open listing gave it.
+      const labelled = new Set(inScope.map((p) => p.number));
+      for (const p of listed)
+        if (!labelled.has(p.number)) out.inScope.delete(p.number);
+      for (const n of labelled) out.inScope.add(n);
       out.merged = await withMarkers(repo.slug, out.login, inScope);
     }
     out.ok = true;

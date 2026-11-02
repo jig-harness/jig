@@ -300,6 +300,8 @@ export interface RepoReport {
   unplaced: Unplaced[];
   /** Targets whose actions a hold label or `only_labeled` withheld this tick: their notice records stand. */
   withheld?: string[];
+  /** Under `only_labeled`: the pull requests read and found labelled; a notice record for any other pull request stands. */
+  inScope?: number[];
   /** What `--apply` launched, retried or held back; empty without it. */
   launches: LaunchOutcome[];
   /** What `--apply` notified, where the machine file enables `notify`; empty otherwise. */
