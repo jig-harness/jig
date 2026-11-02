@@ -241,9 +241,7 @@ async function gatherRepo(
     }${bindingNote(runtime, section)}`,
   });
 
-  const created = new Map<number, string>();
-  for (const p of [...open, ...merged])
-    if (p.createdAt !== undefined) created.set(p.number, p.createdAt);
+  const { created } = forge;
   await observeRunning(context, repo, report, drives, sessions, created);
   const held = heldPullRequests(labels, [...open, ...merged]);
   const { inScope } = forge;
@@ -288,6 +286,8 @@ interface ForgeRead {
   read: Set<number>;
   /** The pull requests, open or merged, read and found in scope: under `only_labeled`, the only ones anything is done on, whatever a launch record says. */
   inScope: Set<number>;
+  /** When each pull request was created, from every observation of it, in scope or not: pickup bookkeeping reads it. */
+  created: Map<number, string>;
   drives: Awaited<ReturnType<typeof readDrives>>;
   merged: MarkedPr[];
   login: string | null;
@@ -317,12 +317,18 @@ async function readForge(
     open: [],
     read: new Set(),
     inScope: new Set(),
+    created: new Map(),
     drives: [],
     merged: [],
     login: null,
   };
+  const remember = (prs: readonly { number: number; createdAt?: string }[]) => {
+    for (const p of prs)
+      if (p.createdAt !== undefined) out.created.set(p.number, p.createdAt);
+  };
   try {
     out.open = await openPullRequests(repo.slug, read);
+    remember(out.open);
     out.login = await resolveLogin();
     const toRead = managed(out.open);
     const unlabeled = out.open.length - toRead.length;
@@ -332,6 +338,7 @@ async function readForge(
     for (const n of out.read) out.inScope.add(n);
     if (section.followupCommand !== null) {
       const listed = await mergedSince(repo.slug, since, read);
+      remember(listed);
       const inScope = managed(listed);
       leaveScope(out, listed, inScope);
       out.merged = await withMarkers(repo.slug, out.login, inScope);
@@ -357,6 +364,7 @@ async function readForge(
     out.drives = [];
     out.merged = [];
     out.inScope = new Set();
+    out.created = new Map();
   }
   return out;
 }

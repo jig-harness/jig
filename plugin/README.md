@@ -491,9 +491,9 @@ code [resource collection](gc/README.md) uses: a systemd user timer, a
 launchd job or a crontab line; `jig install` with no component named
 installs it too once the machine file exists. Install it on the host that
 runs the sessions (with Orca, the Orca server's host).
-`jig uninstall dispatch --machine --yes` removes it. With `--repo <path>`,
-it also lists the [dispatch labels](#the-dispatcher) that repository turns
-on and lacks, and creates them with `--yes`. The earlier
+`jig uninstall dispatch --machine --yes` removes it. `jig install dispatch
+--repo <path>` also lists the [dispatch labels](#the-dispatcher) that
+repository turns on and lacks, and creates them with `--yes`. The earlier
 `jig dispatch install [--interval 5m] [--yes] [--uninstall]` keeps working,
 and is the one form that sets an interval other than the machine file's.
 
