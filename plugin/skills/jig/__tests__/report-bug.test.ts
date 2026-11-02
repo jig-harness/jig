@@ -476,3 +476,23 @@ test("with no gh, file prints the form address and does not search", () => {
   expect(err).toContain("template=bug.yml");
   expect(err).not.toContain("unknown");
 });
+
+test("with gh not logged in, file prints the form address and does not search", () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-report-bug-"));
+  const draft = join(dir, "draft.json");
+  writeFileSync(
+    draft,
+    JSON.stringify({ title: "t", body: "b", labels: ["bug"], url: "u" }),
+  );
+  const gh = join(dir, "gh");
+  writeFileSync(gh, "#!/bin/sh\nexit 4\n", { mode: 0o755 });
+  const run = Bun.spawnSync([process.execPath, script, "file", draft], {
+    env: { ...process.env, PATH: dir },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expectSpawnExit(run, 1);
+  const err = run.stderr.toString();
+  expect(err).toContain("Open the form instead: https://github.com/");
+  expect(err).not.toContain("unknown");
+});

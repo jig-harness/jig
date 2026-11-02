@@ -474,6 +474,11 @@ function isMissingProgram(error: Error | undefined): boolean {
   return code === "ENOENT" || code === "EACCES";
 }
 
+/** Whether `gh` failed before it could create anything: not started, or not logged in (exit 4). */
+function precedesCreation(run: ReturnType<typeof gh>): boolean {
+  return isMissingProgram(run.error) || run.status === 4;
+}
+
 function why(run: ReturnType<typeof gh>): string {
   if (run.error) return run.error.message;
   return run.stderr.trim() || `gh exited ${run.status}`;
@@ -743,7 +748,7 @@ function findFiled(title: string): string | null | undefined {
 /** Report why `gh issue create` failed and what to do instead; never returns. */
 function reportFilingFailure(d: Draft, run: ReturnType<typeof gh>): never {
   const reason = `could not file with gh: ${why(run)}`;
-  const existing = isMissingProgram(run.error) ? null : findFiled(d.title);
+  const existing = precedesCreation(run) ? null : findFiled(d.title);
   if (existing === undefined)
     fail(
       1,
