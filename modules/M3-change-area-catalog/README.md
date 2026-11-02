@@ -36,7 +36,8 @@ one shared change-area vocabulary, many thin per-consumer projections.
 1. **The catalog** — one YAML file. Each entry is a named *change-area* (a
    kebab-case id) with the globs that define its membership plus its
    implications: owning workspace(s), deploy tier, review skills, tracker
-   labels, post-deploy actions, and an `impliedBy` list — the one relation that
+   labels, post-deploy actions, whether its pull requests must land one at a
+   time (`serialize`), and an `impliedBy` list — the one relation that
    encodes dependencies between areas.
 2. **The resolver** — pure function: a set of changed file paths → the seed
    areas, those whose `paths` or a generator's `source` globs match a changed
@@ -99,6 +100,19 @@ one shared change-area vocabulary, many thin per-consumer projections.
    `source` seeds its owning area, even where the source lies under another
    area's `paths`, so the generator and its check are in that change's plan.
 
+8. **Serialized areas (`serialize: true`)** — an area whose pull requests
+   conflict with each other whenever two of them move at once (a migrations
+   folder, a schema, a generated client) says so, and the tool that drives
+   pull requests unattended drives the ones that touch it one at a time:
+   the one closest to merge first, the rest held until it merges. Without
+   it, every pull request in the area is driven at once, and each merge
+   leaves the others conflicting again. Jig's
+   [dispatcher](../../plugin/README.md#the-dispatcher) reads it; which areas
+   to serialize comes from the measured conflict hotspots, which the
+   conflict history report of
+   [`resolve-conflicts`](../../plugin/skills/resolve-conflicts/README.md#where-past-merges-conflicted)
+   proposes, and a person adds the line.
+
 ## Design rules
 
 - **`impliedBy` is one directed relation, read one way**: "a change to Y also
@@ -117,7 +131,7 @@ one shared change-area vocabulary, many thin per-consumer projections.
   the *closure* answers "what are the consequences?" (deploy tiers,
   post-deploy actions, mandatory reviews in `review.skills`); the
   [*seeds*](../../GLOSSARY.md) answer "what did this change touch?" (tracker
-  labels and flags, `validation:`, `generated:`). Reviews fail toward
+  labels and flags, `validation:`, `generated:`, `serialize`). Reviews fail toward
   coverage: a missed review is a defect, an extra one costs one run. Labels
   and flags fail toward accuracy: they are lasting claims on the issue
   record, so an over-derived one is a lasting false statement. A flag that

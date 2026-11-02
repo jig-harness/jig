@@ -1,11 +1,12 @@
 /**
  * The forge reads a tick makes for one repository, through the signed-in
  * `gh` command-line client and under its deadline: which repository a
- * checkout is, the repository's `.config/jig.yaml` on its default branch, its
- * open pull requests (each with its head commit and its mergeability with
- * its base, read with it) and the pull requests merged since a date, and, for
- * Control, a pull request's unresolved review threads and whether a closed
- * one merged. Where the repository turns dispatch labels on, each listing
+ * checkout is, the repository's `.config/jig.yaml` and change-area catalog
+ * on its default branch, its open pull requests (each with its head commit
+ * and its mergeability with its base, read with it) and the files each one
+ * changes, the pull requests merged since a date, and, for Control and
+ * serialization, a pull request's unresolved review threads and whether a
+ * closed one merged. Where the repository turns dispatch labels on, each listing
  * and view carries the pull requests' labels too, and a pull request's
  * labels are changed with one `gh pr edit` call; with them off, no label
  * is read or written. Each read
@@ -71,10 +72,23 @@ export async function repoTarget(path: string): Promise<RepoTarget> {
 export async function defaultBranchConfig(
   repo: RepoTarget,
 ): Promise<string | null> {
+  return defaultBranchFile(repo, OVERLAY_RELPATH);
+}
+
+/**
+ * One file as the repository's default branch holds it on the forge, by
+ * its repository-relative path; `null` when the branch has no such file.
+ */
+export async function defaultBranchFile(
+  repo: RepoTarget,
+  path: string,
+): Promise<string | null> {
+  const where = `${path} on ${repo.slug}@${repo.defaultBranch}`;
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
   const r = await ghCall(
     [
       "api",
-      `repos/${repo.slug}/contents/${OVERLAY_RELPATH}?ref=${encodeURIComponent(repo.defaultBranch)}`,
+      `repos/${repo.slug}/contents/${encoded}?ref=${encodeURIComponent(repo.defaultBranch)}`,
     ],
     { stderr: "pipe", env: ghRepoEnv() },
   );
@@ -82,7 +96,7 @@ export async function defaultBranchConfig(
     if (/HTTP 404/.test(r.stderr)) return null;
     const tail = r.stderr.trim().split("\n").at(-1) ?? "";
     throw new ForgeReadError(
-      `${OVERLAY_RELPATH} on ${repo.slug}@${repo.defaultBranch} could not be read (gh exited ${r.code}${tail === "" ? "" : `: ${tail}`})`,
+      `${where} could not be read (gh exited ${r.code}${tail === "" ? "" : `: ${tail}`})`,
     );
   }
   const file = parsed(r.stdout, "the contents answer");
@@ -91,10 +105,53 @@ export async function defaultBranchConfig(
     file.encoding !== "base64" ||
     typeof file.content !== "string"
   )
-    throw new ForgeReadError(
-      `${OVERLAY_RELPATH} on ${repo.slug}@${repo.defaultBranch} came back without base64 content`,
-    );
+    throw new ForgeReadError(`${where} came back without base64 content`);
   return Buffer.from(file.content, "base64").toString("utf8");
+}
+
+/** The files one page of a pull request's file listing holds. */
+const FILES_PAGE = 100;
+
+/** The most files the forge lists for one pull request: a listing that reaches it is cut short. */
+const FILES_LIMIT = 3000;
+
+/**
+ * Every file a pull request changes, as the forge lists them, read page by
+ * page; a renamed file counts under both its names. Throws when a page
+ * does not read, or when the pull request changes as many files as the
+ * forge lists at most: a list read in part would place it in too few areas.
+ */
+export async function pullRequestFiles(
+  slug: string,
+  pr: number,
+): Promise<string[]> {
+  const files: string[] = [];
+  for (let page = 1; ; page++) {
+    const out = parsed(
+      await gh([
+        "api",
+        `repos/${slug}/pulls/${pr}/files?per_page=${FILES_PAGE}&page=${page}`,
+      ]),
+      `PR #${pr}'s file listing`,
+    );
+    if (!Array.isArray(out))
+      throw new ForgeReadError(`PR #${pr}'s file listing is not a list`);
+    files.push(...out.flatMap((f) => fileNames(f, pr)));
+    if (out.length < FILES_PAGE) return files;
+    if (page * FILES_PAGE >= FILES_LIMIT)
+      throw new ForgeReadError(
+        `PR #${pr} changes ${FILES_LIMIT} or more files, more than the forge lists`,
+      );
+  }
+}
+
+/** One listed file's names: its path, and the path it was renamed from. */
+function fileNames(f: unknown, pr: number): string[] {
+  const name = field(f, "filename");
+  if (typeof name !== "string" || name === "")
+    throw new ForgeReadError(`PR #${pr}'s file listing is unreadable`);
+  const before = field(f, "previous_filename");
+  return typeof before === "string" && before !== "" ? [name, before] : [name];
 }
 
 interface ListedPr {

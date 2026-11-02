@@ -14,7 +14,7 @@
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import {
   conn,
@@ -113,6 +113,22 @@ if (args[0] === "label" && args[1] === "create") {
   have.push(args[2]);
   fs.writeFileSync(F + "/labels-repo.json", JSON.stringify(have));
   out("");
+}
+const files = args[0] === "api" ? /^repos\\/[^/]+\\/[^/]+\\/pulls\\/(\\d+)\\/files\\?per_page=(\\d+)&page=(\\d+)$/.exec(args[1] ?? "") : null;
+if (files !== null) {
+  // The files files-<pr>.json lists, one page at a time; refused while files-<pr>-fail exists.
+  if (fs.existsSync(F + "/files-" + files[1] + "-fail")) { process.stderr.write("gh: HTTP 502\\n"); process.exit(1); }
+  const all = fs.existsSync(F + "/files-" + files[1] + ".json") ? JSON.parse(fs.readFileSync(F + "/files-" + files[1] + ".json", "utf8")) : [];
+  const per = Number(files[2]);
+  const page = Number(files[3]);
+  out(all.slice((page - 1) * per, page * per).map((filename) => ({ filename })));
+}
+const contents = args[0] === "api" ? /\\/contents\\/(.+)\\?ref=main$/.exec(args[1] ?? "") : null;
+if (contents !== null && contents[1] !== ".config/jig.yaml") {
+  // Another file of the default branch, as repo-files/<path> holds it.
+  const file = F + "/repo-files/" + decodeURIComponent(contents[1]);
+  if (!fs.existsSync(file)) { process.stderr.write("gh: Not Found (HTTP 404)\\n"); process.exit(1); }
+  out({ encoding: "base64", content: fs.readFileSync(file).toString("base64") });
 }
 if (args[0] === "api" && /\\/contents\\/\\.config\\/jig\\.yaml\\?ref=main$/.test(args[1] ?? "")) {
   if (!fs.existsSync(F + "/jig.yaml")) { process.stderr.write("gh: Not Found (HTTP 404)\\n"); process.exit(1); }
@@ -344,6 +360,10 @@ export interface World {
   setComments(pr: number, comments: unknown[]): void;
   setWorkspaces(rows: OrcaRow[]): void;
   setConfig(yaml: string | null): void;
+  /** The files a pull request changes, as the forge lists them. */
+  setFiles(pr: number, files: string[]): void;
+  /** A file the default branch holds beside `.config/jig.yaml`. */
+  setRepoFile(path: string, text: string): void;
   /** Run `jig dispatch` with `args` (or the script `entry` in its place); resolves to its exit and output. */
   dispatch(
     args: string[],
@@ -535,6 +555,11 @@ export function world(): World {
         totalCount: rows.length,
         truncated: false,
       }),
+    setFiles: (pr, files) => write(`files-${pr}.json`, files),
+    setRepoFile: (path, text) => {
+      mkdirSync(dirname(join(dir, "repo-files", path)), { recursive: true });
+      writeFileSync(join(dir, "repo-files", path), text);
+    },
     setConfig: (yaml) => {
       if (yaml === null) rmSync(join(dir, "jig.yaml"), { force: true });
       else write("jig.yaml", yaml);

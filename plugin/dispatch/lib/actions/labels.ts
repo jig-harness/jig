@@ -4,7 +4,10 @@
  * says what was written. A pull request is managed when it was read for a
  * ledger and carries one, or carries a label of the set; a merged one when
  * it carries a label of the set, and only its follow-up's end moves it
- * (`followed-up`). Only a pull request whose labels disagree is written,
+ * (`followed-up`). An open pull request a serialized change area holds
+ * behind another (`contention.ts`) carries `held` whatever its ledger
+ * says, and one whose place there cannot be told this tick keeps the
+ * labels it has. Only a pull request whose labels disagree is written,
  * in one `gh` call; one that agrees costs nothing.
  *
  * Writes happen only with `--apply`, for a repository the machine file
@@ -12,6 +15,7 @@
  * forge refuses (a label that does not exist, no permission) is a record of
  * the receipt, not a failed tick, and the next tick tries again.
  */
+import type { Contention } from "../contention.ts";
 import { editLabels } from "../forge.ts";
 import {
   carriesSet,
@@ -41,6 +45,8 @@ export interface ProjectionInput {
   merged: readonly MergedPr[];
   /** The merged pull requests whose follow-up is done. */
   followedUp: ReadonlySet<number>;
+  /** The pull requests serialization holds, or cannot place, this tick. */
+  serialized?: Pick<Contention, "held" | "unplaced">;
 }
 
 /** The ledger classes whose ledger reads: the `drive` command on them has been carried out. */
@@ -133,7 +139,12 @@ export function planLabels(input: ProjectionInput): {
     const drive = drives.get(pr.number);
     report.commands.push(...commandsOf(config, pr.number, labels, drive, true));
     if (drive === undefined && !carriesSet(config, labels)) continue;
-    project(pr.number, labels, stateOf(drive), READABLE(drive));
+    project(
+      pr.number,
+      labels,
+      serialState(input, pr.number, drive),
+      READABLE(drive),
+    );
   }
   for (const pr of input.merged) {
     const labels = pr.labels ?? [];
@@ -150,6 +161,17 @@ export function planLabels(input: ProjectionInput): {
     );
   }
   return { report, changes };
+}
+
+/** An open pull request's state: `held` while serialization holds it, its ledger's otherwise; left as it is while its place cannot be told. */
+function serialState(
+  input: ProjectionInput,
+  pr: number,
+  drive: DrivenPr | undefined,
+): Projected {
+  if (input.serialized?.unplaced.has(pr) === true) return "unknown";
+  if (input.serialized?.held.has(pr) === true) return { state: "held" };
+  return stateOf(drive);
 }
 
 /** How the projection may write this tick. */

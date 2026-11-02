@@ -31,7 +31,9 @@ that picks up an item assigned to the team's
 usage limit (on another account) or by a question a person has answered,
 a review drive restarted on a converged pull request that has since come
 to conflict with its base or been pushed to, and the follow-up after a
-merge. It runs every few minutes, reports what it
+merge. Pull requests that touch an area the repository marks as contended
+(a migrations folder, a schema) are driven one at a time, the one closest
+to merge first. It runs every few minutes, reports what it
 would start and why before it is allowed to start anything, caps the
 sessions per subscription account (Claude Code's or Codex's, the account
 choosing the agent a session runs in), and reaches a person on their phone for

@@ -12,6 +12,7 @@
  * | `nudges` | session and waiting episode | one nudge per episode, its delivery marked once |
  * | `followup_outcomes` | repository and merged pull request | the latest attempt's outcome |
  * | `idle` | repository and claimed item | the stall clock starts once |
+ * | `holds` | repository and pull request held behind another in a serialized area | the hold's start, written with its event row |
  * | `log` | outcome row | each row once: it is written in the same transaction as what it records |
  *
  * The receipts, the account walls (which the drive's quota adapters write
@@ -133,6 +134,16 @@ const MIGRATIONS: readonly string[] = [
   `,
   `
   CREATE INDEX launches_created ON launches (created_at);
+  `,
+  `
+  CREATE TABLE holds (
+    repo TEXT NOT NULL,
+    pr INTEGER NOT NULL,
+    area TEXT NOT NULL,
+    leader INTEGER NOT NULL,
+    since TEXT NOT NULL,
+    PRIMARY KEY (repo, pr)
+  );
   `,
 ];
 
