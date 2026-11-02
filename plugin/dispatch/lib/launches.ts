@@ -34,6 +34,13 @@
  * record is also read beside its agent (`actions/pickup-hold.ts`): while
  * its wrapper is alive, the record ends when the runtime reports the agent
  * finished.
+ *
+ * What Control adds to the tick's part, while the record runs and when it
+ * ends: a drive's unresolved-thread count per ledger round (`samples`), an
+ * interactive session's vendor session id (`sessionId`) and the usage-limit
+ * walls it waited on (`episodes`), and, once it ended, the time its outcome
+ * row carries (`endedAt`) and the mark that the row was appended
+ * (`logged`).
  */
 import {
   closeSync,
@@ -113,6 +120,44 @@ export interface LaunchRecord {
   command: string | null;
   /** The id of the follow-up marker comment the tick posted for it; `null` until posted, and for any other record. */
   marker: number | null;
+  /** A drive's ledger round when it was launched, which its outcome row's rounds count from; `null` when unknown. */
+  round?: number | null;
+  /** The vendor session id the tick minted for an interactive session and passed to its agent; `null` when none was. */
+  sessionId?: string | null;
+  /** A drive's unresolved-thread count at each ledger round, recorded the first tick that sees the round. */
+  samples?: ThreadSample[];
+  /** When a tick first saw a pickup's workspace hold a pull request; its expectation of opening one is met for good. */
+  openedAt?: string;
+  /** The usage-limit walls an interactive session was seen waiting on, oldest first. */
+  episodes?: WaitingEpisode[];
+  /** When the record ended, as its outcome row is timed; set before the row is appended, so a retry writes the same row. */
+  endedAt?: string;
+  /** Set once the record's outcome row is in the outcome log. */
+  logged?: boolean;
+}
+
+/** A drive's unresolved review threads at one ledger round. */
+export interface ThreadSample {
+  round: number;
+  threads: number;
+  at: string;
+}
+
+/**
+ * A usage-limit wall an interactive session met, read from the session's
+ * own record by the drive's quota adapters: its observation time is the
+ * episode's key, so a later wall is a new episode.
+ */
+export interface WaitingEpisode {
+  observedAt: string;
+  /** When the wall lifts; `null` when the adapter could not resolve it. */
+  resetAt: string | null;
+  /** The vendor's own words, trimmed to one line. */
+  evidence: string;
+  /** Whether the session's last record was still the wall at the latest read. */
+  last: boolean;
+  /** When the tick last read it. */
+  readAt: string;
 }
 
 /** The wrapper's process identity, as `drives.ts` captures a driver's. */
@@ -277,15 +322,55 @@ function isLaunchRecord(value: unknown): value is LaunchRecord {
   );
 }
 
+/** Whether a value is absent or a time. */
+function optionalTime(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === "string" && Number.isFinite(Date.parse(value)))
+  );
+}
+
 /** The fields a later version added, each absent or of its type. */
 function optionalFields(value: Record<string, unknown>): boolean {
   return (
-    ["agentId", "model", "effort", "command"].every((k) =>
+    ["agentId", "model", "effort", "command", "sessionId"].every((k) =>
       optionalText(value[k]),
     ) &&
-    (value.marker === undefined ||
-      value.marker === null ||
-      typeof value.marker === "number")
+    [value.marker, value.round].every(
+      (v) => v === undefined || v === null || typeof v === "number",
+    ) &&
+    optionalTime(value.endedAt) &&
+    (value.logged === undefined || typeof value.logged === "boolean") &&
+    optionalTime(value.openedAt) &&
+    optionalList(value.samples, isSample) &&
+    optionalList(value.episodes, isEpisode)
+  );
+}
+
+function optionalList(
+  value: unknown,
+  check: (item: unknown) => boolean,
+): boolean {
+  return value === undefined || (Array.isArray(value) && value.every(check));
+}
+
+function isSample(value: unknown): boolean {
+  return (
+    isMapping(value) &&
+    typeof value.round === "number" &&
+    typeof value.threads === "number" &&
+    typeof value.at === "string"
+  );
+}
+
+function isEpisode(value: unknown): boolean {
+  return (
+    isMapping(value) &&
+    typeof value.observedAt === "string" &&
+    (value.resetAt === null || typeof value.resetAt === "string") &&
+    typeof value.evidence === "string" &&
+    typeof value.last === "boolean" &&
+    typeof value.readAt === "string"
   );
 }
 
@@ -301,6 +386,23 @@ function normalized(value: LaunchRecord): LaunchRecord {
     effort: value.effort ?? null,
     released: value.released === true,
     ...followupFields(value),
+    ...controlFields(value),
+  };
+}
+
+/** What Control keeps on a record, at its defaults where an earlier version wrote none. */
+function controlFields(
+  value: LaunchRecord,
+): Pick<
+  LaunchRecord,
+  "round" | "sessionId" | "samples" | "episodes" | "logged"
+> {
+  return {
+    round: value.round ?? null,
+    sessionId: value.sessionId ?? null,
+    samples: value.samples ?? [],
+    episodes: value.episodes ?? [],
+    logged: value.logged === true,
   };
 }
 

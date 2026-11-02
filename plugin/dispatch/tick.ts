@@ -7,9 +7,18 @@
  * With it, the re-arms and takeovers a repository's machine-file entry
  * enables are launched within each account's cap (actions/drive.ts), its
  * pickups and follow-ups too where the runtime binds an interactive session
- * to its account (actions/pickup.ts, actions/followup.ts), and its
- * notifications are sent once per cause (actions/notify.ts); everything
- * else is still reported.
+ * to its account (actions/pickup.ts, actions/followup.ts), its nudges are
+ * sent once per waiting episode (actions/steer.ts), and its notifications
+ * are sent once per cause (actions/notify.ts); everything else is still
+ * reported.
+ *
+ * Control runs in every tick, `--apply` or not: before the plan, each
+ * running drive's unresolved threads are recorded at its ledger's round
+ * and each waiting interactive session's wall is read (expectations.ts,
+ * session-walls.ts), so the plan can report the stages that drift and the
+ * sessions a nudge is due for; after it, each launch record that ended gets
+ * its row in the outcome log (log.ts, log-ended.ts), before any expired
+ * record is removed.
  */
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { parseTrackerConfig } from "../skills/do-item/scripts/lib/tracker/config.ts";
@@ -20,10 +29,21 @@ import {
 } from "../skills/do-item/scripts/lib/tracker/keys.ts";
 import {
   defaultBranchConfig,
+  mergedNotClosed,
   mergedSince,
   openPullRequests,
   repoTarget,
+  unresolvedThreadCount,
 } from "./lib/forge.ts";
+import {
+  applySteers,
+  planSteers,
+  readNudges,
+  settlePending,
+} from "./lib/actions/steer.ts";
+import { observeOpened, sampleThreads } from "./lib/expectations.ts";
+import { logEnded } from "./lib/log-ended.ts";
+import { observeWalls } from "./lib/session-walls.ts";
 import type { Tracker } from "../skills/do-item/scripts/lib/tracker/port.ts";
 import { type ApplyState, applyDrives } from "./lib/actions/drive.ts";
 import { applyFollowups } from "./lib/actions/followup.ts";
@@ -39,6 +59,7 @@ import {
   unreadableOutcomes,
 } from "./lib/followup-outcomes.ts";
 import { readIdle, updateIdle } from "./lib/idle.ts";
+import { hasEnded } from "./lib/log.ts";
 import {
   pruneLaunches,
   readLaunches,
@@ -228,6 +249,10 @@ async function gatherRepo(
     }${bindingNote(runtime, section)}`,
   });
 
+  const created = new Map<number, string>();
+  for (const p of [...open, ...merged])
+    if (p.createdAt !== undefined) created.set(p.number, p.createdAt);
+  await observeRunning(context, repo, report, drives, sessions, created);
   planRepo(context, repo.slug, report, {
     slug: repo.slug,
     section,
@@ -236,7 +261,9 @@ async function gatherRepo(
     drives,
     merged,
     sessions,
+    created,
   });
+  await logRepo(context, repo.slug, report, drives);
   if (context.apply !== null)
     await applyStages(context.apply, new Set(entry?.stages ?? []), report, {
       repo,
@@ -314,8 +341,74 @@ async function applyStages(
     },
   ];
   for (const stage of rotated(apply, stages, "stages")) await stage();
+  // The nudges first: a nudge that went unanswered is notified in the same tick.
+  if (enabled.has("steer")) await applySteers(apply, repo.slug, report);
   if (enabled.has("notify"))
     await applyNotices(apply, repo, report, inputs.sessions);
+}
+
+/** This machine's launch records, the ones this tick writes included. */
+function allRecords(context: TickContext): ReadRecord[] {
+  return context.apply?.records ?? context.launches;
+}
+
+/**
+ * What Control reads while this machine's stages run, before the plan: each
+ * running drive's unresolved threads at its ledger's round, and the wall
+ * each waiting interactive session met.
+ */
+async function observeRunning(
+  context: TickContext,
+  repo: RepoTarget,
+  report: RepoReport,
+  drives: Awaited<ReturnType<typeof readDrives>>,
+  sessions: SessionsReport,
+  created: ReadonlyMap<number, string>,
+): Promise<void> {
+  const records = allRecords(context);
+  await sampleThreads(records, repo.slug, drives, (pr) =>
+    unresolvedThreadCount(repo.slug, pr),
+  );
+  observeOpened(records, repo.slug, sessions, created);
+  const timeoutSec = Math.ceil(
+    (context.options.machine?.runtimeTimeoutMs ?? 60_000) / 1000,
+  );
+  for (const reason of await observeWalls(
+    records,
+    repo.slug,
+    sessions,
+    timeoutSec,
+  ))
+    report.unplaced.push({
+      target: "a waiting session",
+      record: "runtime",
+      reason,
+    });
+}
+
+/** The ended rows of this repository's records that ended, read beside its ledgers. */
+async function logRepo(
+  context: TickContext,
+  slug: string,
+  report: RepoReport,
+  drives: Awaited<ReturnType<typeof readDrives>>,
+): Promise<void> {
+  const all = allRecords(context);
+  const failed = await logEnded(
+    all.filter((r) => r.record.repo === slug),
+    {
+      all,
+      drives,
+      merged: (pr) => mergedNotClosed(slug, pr).catch(() => null),
+      nowIso: new Date(context.nowMs).toISOString(),
+    },
+  );
+  for (const reason of failed)
+    report.unplaced.push({
+      target: "the outcome log",
+      record: "runtime",
+      reason,
+    });
 }
 
 /** Each merged pull request with its follow-up markers; a pull request whose comments do not read carries why. */
@@ -407,6 +500,22 @@ function planRepo(
   });
   report.actions.push(...plan.actions);
   report.running.push(...plan.running);
+  const nudges = readNudges(repo);
+  for (const reason of settlePending(nudges))
+    report.unplaced.push({
+      target: "the outcome log",
+      record: "runtime",
+      reason,
+    });
+  const steers = planSteers({
+    slug: repo,
+    launches: records,
+    sessions: input.sessions,
+    nudges,
+    nowMs,
+  });
+  report.actions.push(...steers.actions);
+  report.running.push(...steers.running);
   report.unplaced.push(...plan.unplaced);
   report.quiet.push(...plan.quiet);
   if (input.claimed === null) return;
@@ -454,6 +563,49 @@ function settleRecords(
       nowMs,
     );
   return all.filter((r) => r.record.repo === repo);
+}
+
+/**
+ * Give each record of a repository this tick did not read its ended row
+ * before the record can expire, without a ledger to count rounds by, and
+ * prune the records whose rows are in the log; whether the tick failed.
+ */
+async function settleOutcomes(
+  receipt: TickReceipt,
+  context: TickContext,
+  days: number | undefined,
+): Promise<boolean> {
+  const records = allRecords(context);
+  // A repository this tick read gave its records their rows in `logRepo`,
+  // with its ledgers beside them; the rest get the row without them.
+  const read = new Set(
+    receipt.repos.filter((r) => r.refused === null).map((r) => r.slug),
+  );
+  const unlogged = await logEnded(
+    records.filter((r) => !read.has(r.record.repo)),
+    {
+      all: records,
+      drives: null,
+      merged: async () => null,
+      nowIso: new Date(context.nowMs).toISOString(),
+    },
+  );
+  if (unlogged.length > 0) receipt.unloggedOutcomes = unlogged;
+  // A record that ended without its outcome row in the log is kept.
+  pruneLaunches(
+    records.filter((r) => !hasEnded(r) || r.record.logged === true),
+    context.nowMs,
+    days ?? 30,
+  );
+  return (
+    unlogged.length > 0 ||
+    receipt.repos.some(
+      (r) =>
+        r.refused !== null ||
+        r.records.some((x) => !x.ok) ||
+        r.unplaced.some((u) => u.target === "the outcome log"),
+    )
+  );
 }
 
 /** The runtime's answer; a rejected read is a failed report, never an escape. */
@@ -528,7 +680,6 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     const days = machine?.receiptsDays;
     // An ended follow-up's outcome is written before its record can expire.
     settleFollowups(read.records);
-    pruneLaunches(read.records, now.getTime(), days ?? 30);
     const attempt = applyState(
       options,
       runtime,
@@ -563,9 +714,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       apply === null ? options.repos : rotated(apply, options.repos);
     for (const path of order)
       receipt.repos.push(await gatherRepo(path, context));
-    const failed = receipt.repos.some(
-      (r) => r.refused !== null || r.records.some((x) => !x.ok),
-    );
+    const failed = await settleOutcomes(receipt, context, days);
     receipt.exitStatus = failed || withheld !== undefined ? 1 : 0;
     receipt.completed = true;
     receipt.finishedAt = new Date().toISOString();

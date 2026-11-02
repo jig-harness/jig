@@ -46,6 +46,14 @@ if (args[0] === "pr" && args[1] === "list") {
   const state = args[args.indexOf("--state") + 1];
   out(fs.readFileSync(F + "/prs-" + state + ".json", "utf8"));
 }
+if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("reviewThreads"))) {
+  // A pull request's unresolved review threads, as many as threads-<pr> says.
+  const pr = (args.find((a) => a.startsWith("pr=")) ?? "pr=0").slice(3);
+  const file = F + "/threads-" + pr;
+  if (!fs.existsSync(file)) { process.stderr.write("gh: no threads for " + pr + "\\n"); process.exit(1); }
+  const open = Number(fs.readFileSync(file, "utf8"));
+  out({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: Array.from({ length: open }, () => ({ isResolved: false })) } } } } });
+}
 const single = args[0] === "api" && args.includes("-X") ? /issues\\/comments\\/(\\d+)$/.exec(args.find((a) => /issues\\/comments\\/\\d+$/.test(a)) ?? "") : null;
 if (single !== null) {
   // A comment's update or removal, on whichever pull request's file holds it.
@@ -90,6 +98,18 @@ if (args[0] === "terminal" && args[1] === "create") {
 }
 if (args[0] === "terminal" && args[1] === "show")
   answer({ terminal: { handle: args[args.indexOf("--terminal") + 1], tabId: "tab-1", leafId: "leaf-1" } });
+if (args[0] === "terminal" && args[1] === "list") {
+  // The terminals orca-terminals.json lists; none when it does not exist.
+  const terminals = fs.existsSync(F + "/orca-terminals.json") ? JSON.parse(fs.readFileSync(F + "/orca-terminals.json", "utf8")) : [];
+  answer({ terminals, hostScope: { hostIds: ["local"], omittedHostIds: [] } });
+}
+if (args[0] === "terminal" && args[1] === "read")
+  // The rendered screen orca-screen.json holds.
+  answer({ terminal: { handle: args[args.indexOf("--terminal") + 1], status: "running", source: "screen", tail: JSON.parse(fs.readFileSync(F + "/orca-screen.json", "utf8")), truncated: false, nextCursor: null } });
+if (args[0] === "terminal" && args[1] === "send") {
+  fs.appendFileSync(F + "/orca-sends.jsonl", JSON.stringify({ terminal: args[args.indexOf("--terminal") + 1], text: args[args.indexOf("--text") + 1], enter: args.includes("--enter") }) + "\\n");
+  answer({ accepted: true });
+}
 if (args[0] === "worktree" && args[1] === "create") {
   // A real worktree of the clone, on a branch Orca names after the worktree.
   const name = args[args.indexOf("--name") + 1];

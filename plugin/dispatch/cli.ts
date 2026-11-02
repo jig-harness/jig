@@ -10,7 +10,8 @@
  * interval; `jig dispatch result` is how a dispatched interactive session
  * records how it ended; `jig dispatch marker` is how a follow-up command
  * claims a merged pull request's follow-up, checks its claim and marks it
- * done.
+ * done; `jig dispatch dashboard` serves one page over the outcome log while
+ * it runs.
  */
 import { consumerRoot } from "../shared/consumer.ts";
 import { ExitError } from "../shared/cli.ts";
@@ -33,6 +34,7 @@ import {
   type ValueParser,
   withDefault,
 } from "../shared/vendor/optique.mjs";
+import { DEFAULT_PORT, dashboardMain } from "./dashboard.ts";
 import { installDispatch } from "./install.ts";
 import {
   duration,
@@ -210,12 +212,43 @@ const marker = command(
   },
 );
 
-/** `jig dispatch`: one tick by default, `install`, `receipts`, `result` and `marker` as its subcommands. */
+/** A port between 1 and 65535. */
+const portValue: ValueParser<"sync", number> = {
+  mode: "sync",
+  metavar: "PORT",
+  placeholder: 1,
+  parse: (input) =>
+    /^[1-9][0-9]*$/.test(input) && Number(input) <= 65_535
+      ? { success: true, value: Number(input) }
+      : {
+          success: false,
+          error: message`Expected a port between 1 and 65535, but got ${input}.`,
+        },
+  format: (value) => String(value),
+};
+
+const dashboard = command(
+  "dashboard",
+  object({
+    action: constant("dashboard"),
+    port: optional(
+      option("--port", portValue, {
+        description: message`The port to listen on. Without it, the port dashboard.listen names, else ${String(DEFAULT_PORT)}.`,
+      }),
+    ),
+  }),
+  {
+    brief: message`Serve one page over the outcome log, filtered by time, repository, stage, account and class.`,
+    description: message`Listens on the machine file's dashboard.listen, an address in the private or loopback ranges, until stopped; prints its URL with the token a request needs. It reads the log when the page asks and writes nothing.`,
+  },
+);
+
+/** `jig dispatch`: one tick by default, `install`, `receipts`, `result`, `marker` and `dashboard` as its subcommands. */
 const dispatch = (wholeMinutes: boolean) =>
   command(
     "dispatch",
     withDefault(
-      or(installation(wholeMinutes), receipts, result, marker, tick),
+      or(installation(wholeMinutes), receipts, result, marker, dashboard, tick),
       {
         action: "tick",
         apply: false,
@@ -294,14 +327,23 @@ function repositories(options: Tick, machine: MachineConfig | null): string[] {
   return [consumerRoot()];
 }
 
-export async function dispatchMain(
-  args: DispatchArguments,
-  script = "",
-): Promise<number> {
+type Subcommand = Exclude<DispatchArguments, { action: "tick" }>;
+
+/** A subcommand's run: everything but the tick. */
+function subcommandMain(
+  args: Subcommand,
+  script: string,
+): number | Promise<number> {
   if (args.action === "result")
     // An interactive session's own answer, under its launch record's token.
     return resultMain([args.record, args.token, args.outcome]);
   if (args.action === "receipts") return showReceipts(args.runId);
+  if (args.action === "dashboard")
+    return dashboardMain(
+      machineFile()?.dashboardListen ?? null,
+      args.port,
+      machineConfigPath(),
+    );
   if (args.action === "marker")
     return markerMain({
       verb: args.verb,
@@ -309,17 +351,23 @@ export async function dispatchMain(
       comment: args.comment ?? null,
       repo: args.repo ?? null,
     });
-  if (args.action === "install")
-    // A removal needs no machine file: a broken one must not keep the timer installed.
-    return installDispatch(
-      {
-        intervalMs: args.intervalMs ?? null,
-        confirm: args.confirm,
-        uninstall: args.uninstall,
-      },
-      script,
-      args.uninstall ? null : machineFile(),
-    );
+  // `install`. A removal needs no machine file: a broken one must not keep the timer installed.
+  return installDispatch(
+    {
+      intervalMs: args.intervalMs ?? null,
+      confirm: args.confirm,
+      uninstall: args.uninstall,
+    },
+    script,
+    args.uninstall ? null : machineFile(),
+  );
+}
+
+export async function dispatchMain(
+  args: DispatchArguments,
+  script = "",
+): Promise<number> {
+  if (args.action !== "tick") return subcommandMain(args, script);
   const machine = machineFile();
   if (args.apply && machine === null)
     throw new ExitError(

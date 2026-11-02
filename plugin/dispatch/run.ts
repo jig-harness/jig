@@ -20,6 +20,14 @@
  * process's environment; the tick runs it in the wrapper's environment
  * before a launch.
  *
+ *   bun … run.ts quota <session-id> <cwd> <since>
+ *
+ * prints, as JSON, the usage-limit wall the interactive session
+ * `<session-id>` met since `<since>`, read with the drive's quota adapters
+ * from the configuration directory in this process's environment, or
+ * `null` (`lib/quota-probe.ts`); the tick runs it in the session's
+ * account's environment.
+ *
  * A pickup's record starts Claude Code instead, interactively, on
  * `/jig:do-item <key>` with its route's model and effort, and a follow-up's
  * on the repository's follow-up command and the pull request
@@ -47,6 +55,7 @@ import {
   readRecordFile,
   recordExit,
 } from "./lib/launches.ts";
+import { probeWall } from "./lib/quota-probe.ts";
 import { sessionArgv } from "./lib/session.ts";
 import { writeWall } from "./lib/walls.ts";
 
@@ -236,9 +245,20 @@ export async function runMain(argv: string[]): Promise<number> {
     console.log(JSON.stringify(resolveAccountIdentity([argv[1] as string])));
     return 0;
   }
+  if (argv[0] === "quota" && argv.length === 4) {
+    const [, session, cwd, since] = argv as [string, string, string, string];
+    if (!Number.isFinite(Date.parse(since))) {
+      console.error(`jig dispatch run: ${since} is not a date`);
+      return 2;
+    }
+    console.log(
+      JSON.stringify(probeWall(session, cwd, new Date(since), new Date())),
+    );
+    return 0;
+  }
   if (argv.length !== 2) {
     console.error(
-      "usage: run.ts <record> <token> | run.ts identity claude|codex",
+      "usage: run.ts <record> <token> | run.ts identity claude|codex | run.ts quota <session-id> <cwd> <since>",
     );
     return 2;
   }

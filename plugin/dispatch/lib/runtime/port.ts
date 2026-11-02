@@ -4,12 +4,9 @@
  * the first implementation (`orca.ts`); a second is a second implementation
  * of these methods, with nothing in the tick changed.
  *
- * `sessions`, `openWorkspace`, `launch` and `notify` are built; an
- * interactive launch runs only on a runtime that reports it can bind the
- * session to its account (`interactiveBinding`). `steer` is declared with
- * its contract and refuses until the build step that needs it implements
- * it. Every method runs under a deadline, and an answer past it counts as
- * lost.
+ * An interactive launch runs only on a runtime that reports it can bind
+ * the session to its account (`interactiveBinding`). Every method runs
+ * under a deadline, and an answer past it counts as lost.
  */
 import type { IssueKeys } from "../../../skills/do-item/scripts/lib/tracker/keys.ts";
 import type { RepoTarget } from "../types.ts";
@@ -169,13 +166,28 @@ export interface SessionRuntime {
     target: { id: string; path: string },
     message: string,
   ): Promise<RuntimeReceipt>;
-  /** One of the closed set of nudges, sent to a session the runtime reports waiting. */
-  steer(session: string, nudge: string): Promise<RuntimeReceipt>;
+  /**
+   * One of the closed set of nudges (`NUDGES`), sent with Enter to the
+   * agent the runtime reports under `session`. The adapter re-reads, in the
+   * same call and just before it types, that the agent still waits, that
+   * its screen shows the agent's input prompt with an empty input line and
+   * no menu or question, and that no person is attached where the runtime
+   * reports attachment. Its receipt: `ok` when the text was delivered; `ok:
+   * false` with `lost` when a send was attempted and its answer is lost;
+   * `ok: false` without `lost` when a check failed or could not be read,
+   * so nothing was sent.
+   */
+  steer(session: string, nudge: Nudge): Promise<RuntimeReceipt>;
 }
 
-/** A method a later build step implements. */
-export function notYet(method: string, step: string): Promise<never> {
-  return Promise.reject(
-    new Error(`the session runtime's ${method} is not built yet (${step})`),
-  );
-}
+/**
+ * The closed set of nudges, with the text each sends. It has one entry:
+ * **continue**, the prompt a person types by hand after a usage limit
+ * reopens. A nudge joins only when the outcome log shows a mechanical cause
+ * that recurs, with a target the tick can identify and a screen state it
+ * can check; anything else a session needs goes to a person.
+ */
+export const NUDGES = {
+  continue: "Your usage limit has reset. Continue",
+} as const;
+export type Nudge = keyof typeof NUDGES;

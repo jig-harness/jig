@@ -22,6 +22,8 @@
  * runtime_timeout: 1m
  * workspace_timeout: 50m
  * receipts_days: 30
+ * dashboard:
+ *   listen: 100.64.0.7:8765
  * ```
  *
  * An unknown key anywhere is refused, so a misspelt dial never reads as its
@@ -33,8 +35,9 @@ import { isAbsolute, join, resolve } from "node:path";
 import { isMapping, jigHome } from "../../shared/config-layers.ts";
 import { OPEN_LIMIT_MS } from "../../shared/orca-workspace/limits.ts";
 import { load } from "../../shared/yaml.ts";
+import { type Listen, parseListen } from "./listen.ts";
 
-/** The stages a machine file can enable; `steer` is accepted and reported only. */
+/** The stages a machine file can enable. */
 const MACHINE_STAGES = [
   "rearm",
   "pickup",
@@ -73,6 +76,8 @@ export interface MachineConfig {
   runtimeTimeoutMs: number;
   workspaceTimeoutMs: number;
   receiptsDays: number;
+  /** The address `jig dispatch dashboard` listens on (`dashboard.listen`); `null` when the file names none. */
+  dashboardListen: Listen | null;
 }
 
 const DEFAULTS = {
@@ -92,7 +97,9 @@ const TOP_KEYS = [
   "runtime_timeout",
   "workspace_timeout",
   "receipts_days",
+  "dashboard",
 ];
+const DASHBOARD_KEYS = ["listen"];
 const REPOSITORY_KEYS = ["path", "stages", "followup_since"];
 const ACCOUNT_KEYS = [
   "name",
@@ -333,7 +340,25 @@ function parseValues(values: unknown, where: string): MachineConfig {
       "receipts_days",
       DEFAULTS.receiptsDays,
     ),
+    dashboardListen: dashboard(top.dashboard),
   };
+}
+
+/** The dashboard's address; `null` when the file names none. */
+function dashboard(value: unknown): Listen | null {
+  if (value === undefined || value === null) return null;
+  if (!isMapping(value))
+    throw new MachineConfigError("dashboard must be a mapping");
+  only(value, DASHBOARD_KEYS, "dashboard");
+  if (value.listen === undefined || value.listen === null) return null;
+  try {
+    return parseListen(text(value.listen, "dashboard.listen"));
+  } catch (error) {
+    if (error instanceof MachineConfigError) throw error;
+    throw new MachineConfigError(
+      `dashboard.listen: ${(error as Error).message}`,
+    );
+  }
 }
 
 /** The machine file, or `null` when there is none; a file that does not read throws. */
