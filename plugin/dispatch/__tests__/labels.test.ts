@@ -294,33 +294,42 @@ describe("jig dispatch with only_labeled", () => {
     expect(repo(r)?.inScope).toEqual([9]);
   }, 60_000);
 
-  it("takes a pull request out of scope when its merge carries no label, whatever its open listing said", async () => {
+  it("leaves a pull request the listings disagree on unplaced for the tick, and acts once they agree", async () => {
     const w = fixture(
       config(
         "  labels: { enabled: true, only_labeled: true }\n  followup_command: /followup",
       ),
     );
-    w.setPrs("open", [labeled(openPr(7, "feature/7"), "jig:driving")]);
-    w.setPrs("merged", [mergedPr(7, "feature/7", new Date().toISOString())]);
-
-    const r = await tick(w, ["--followup-since", "2026-10-01"]);
-    expect(repo(r)?.inScope).toEqual([]);
-  }, 60_000);
-
-  it("writes no label for a pull request that merged without one, from the ledger its open listing carried", async () => {
-    const w = fixture(
-      config(
-        "  labels: { enabled: true, only_labeled: true }\n  followup_command: /followup",
-      ),
-    );
+    // Listed open with a label of the set, and merged without one, in the same tick.
     w.setPrs("open", [labeled(openPr(7, "feature/7"), "jig:driving")]);
     w.setComments(7, [converged(7)]);
-    w.setPrs("merged", [mergedPr(7, "feature/7", new Date().toISOString())]);
+    const mergedAt = new Date().toISOString();
+    w.setPrs("merged", [mergedPr(7, "feature/7", mergedAt)]);
+    const args = ["--apply", "--followup-since", "2026-10-01"];
 
-    const r = await tick(w, ["--apply", "--followup-since", "2026-10-01"]);
-    expect(edits(ghCalls(w))).toEqual([]);
+    const disputed = await tick(w, args);
+    expect(repo(disputed)?.unplaced).toContainEqual({
+      target: "PR #7",
+      record: "forge",
+      reason:
+        "the open and the merged listing disagree on whether it carries a dispatch label, so whether it is in scope cannot be told this tick",
+    });
+    expect(repo(disputed)?.actions.filter((a) => a.target === "PR #7")).toEqual(
+      [],
+    );
+    expect(repo(disputed)?.labels?.states).toEqual([]);
+    expect(edits(ghCalls(w, true))).toEqual([]);
     expect(labelsOf(w, 7)).toEqual(["jig:driving"]);
-    expect(repo(r)?.inScope).toEqual([]);
+
+    // The merge carries the label too: in scope, and its follow-up is wanted.
+    w.setPrs("merged", [
+      labeled(mergedPr(7, "feature/7", mergedAt), "jig:driving"),
+    ]);
+    const agreed = await tick(w, args);
+    expect(repo(agreed)?.unplaced.map((u) => u.target)).not.toContain("PR #7");
+    expect(repo(agreed)?.actions).toContainEqual(
+      expect.objectContaining({ target: "PR #7", stage: "followup" }),
+    );
   }, 60_000);
 });
 

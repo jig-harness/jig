@@ -284,8 +284,10 @@ interface ForgeRead {
   open: Awaited<ReturnType<typeof openPullRequests>>;
   /** The open pull requests read for a ledger: under `only_labeled`, the labelled ones. */
   read: Set<number>;
-  /** The pull requests, open or merged, read and found in scope: under `only_labeled`, the only ones anything is done on, whatever a launch record says. */
+  /** Under `only_labeled`, the pull requests in scope this tick: the only ones anything is done on, whatever a launch record says. */
   inScope: Set<number>;
+  /** Under `only_labeled`, the pull requests whose scope this tick's listings disagree on: unplaced, nothing done or written on them. */
+  disputed: Set<number>;
   /** When each pull request was created, from every observation of it, in scope or not: pickup bookkeeping reads it. */
   created: Map<number, string>;
   drives: Awaited<ReturnType<typeof readDrives>>;
@@ -298,7 +300,8 @@ interface ForgeRead {
  * their labels where `labels` is on, in the same listing) and their ledgers,
  * and the merges. Under `only_labeled`, a pull request that carries no
  * label of the set is never read for a ledger, and a merge that carries
- * none wants no follow-up.
+ * none wants no follow-up; the scope itself is decided once, by
+ * `decideScope`.
  */
 async function readForge(
   repo: RepoTarget,
@@ -317,6 +320,7 @@ async function readForge(
     open: [],
     read: new Set(),
     inScope: new Set(),
+    disputed: new Set(),
     created: new Map(),
     drives: [],
     merged: [],
@@ -335,14 +339,14 @@ async function readForge(
     out.drives = await readDrives(repo.slug, out.login, toRead, nowMs, labels);
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));
-    for (const n of out.read) out.inScope.add(n);
-    if (section.followupCommand !== null) {
-      const listed = await mergedSince(repo.slug, since, read);
-      remember(listed);
-      const inScope = managed(listed);
-      leaveScope(out, listed, inScope);
-      out.merged = await withMarkers(repo.slug, out.login, inScope);
-    }
+    const listed =
+      section.followupCommand === null
+        ? []
+        : await mergedSince(repo.slug, since, read);
+    remember(listed);
+    out.merged = await withMarkers(repo.slug, out.login, managed(listed));
+    if (labels?.onlyLabeled === true)
+      decideScope(out, report, labels, [out.open, listed]);
     out.ok = true;
     report.records.push({
       record: "forge",
@@ -364,32 +368,45 @@ async function readForge(
     out.drives = [];
     out.merged = [];
     out.inScope = new Set();
+    out.disputed = new Set();
     out.created = new Map();
   }
   return out;
 }
 
 /**
- * The later observation of a pull request wins: one that merged without a
- * label of the set leaves the scope its open listing gave it, and whatever
- * that listing gave it goes with the scope, so the projection cannot write
- * from the stale observation.
+ * Under `only_labeled`, the scope is decided once per tick, from the
+ * listings that hold each pull request (the open one, the merged one): a
+ * pull request is in scope when each of them finds a label of the set on
+ * it. One they disagree on is unplaced for this tick, as any record the
+ * tick cannot place: reported, no action and no label written on it, its
+ * notice records kept, and read again at the next tick. A launch's fresh
+ * read is the observation that launch acts on, so it decides again there.
  */
-function leaveScope(
+function decideScope(
   out: ForgeRead,
-  listed: readonly { number: number }[],
-  inScope: readonly { number: number }[],
+  report: RepoReport,
+  labels: LabelConfig,
+  listings: ReadonlyArray<ReadonlyArray<{ number: number; labels?: string[] }>>,
 ): void {
-  const labelled = new Set(inScope.map((p) => p.number));
-  const left = new Set(
-    listed.map((p) => p.number).filter((n) => !labelled.has(n)),
-  );
-  for (const n of left) out.inScope.delete(n);
-  for (const n of labelled) out.inScope.add(n);
-  if (left.size === 0) return;
-  out.open = out.open.filter((p) => !left.has(p.number));
-  out.drives = out.drives.filter((d) => !left.has(d.number));
-  for (const n of left) out.read.delete(n);
+  const seen = new Map<number, Set<boolean>>();
+  for (const listing of listings)
+    for (const p of listing) {
+      const views = seen.get(p.number) ?? new Set<boolean>();
+      views.add(carriesSet(labels, p.labels ?? []));
+      seen.set(p.number, views);
+    }
+  for (const [n, views] of seen) {
+    if (views.size > 1) {
+      out.disputed.add(n);
+      report.unplaced.push({
+        target: `PR #${n}`,
+        record: "forge",
+        reason:
+          "the open and the merged listing disagree on whether it carries a dispatch label, so whether it is in scope cannot be told this tick",
+      });
+    } else if (views.has(true)) out.inScope.add(n);
+  }
 }
 
 function labelNote(labels: LabelConfig | null, unlabeled: number): string {
@@ -420,10 +437,10 @@ async function projectLabels(
   );
   const planned = planLabels({
     config: labels,
-    open: forge.open,
+    open: forge.open.filter((p) => !forge.disputed.has(p.number)),
     read: forge.read,
     drives: forge.drives,
-    merged: forge.merged,
+    merged: forge.merged.filter((p) => !forge.disputed.has(p.number)),
     followedUp,
   });
   const apply = context.apply;

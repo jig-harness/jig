@@ -288,9 +288,17 @@ with theirs; with them off, no label is read or written.
   that carries no label of the set is never read for a ledger, launched,
   notified or followed up; what puts one under the dispatcher is a
   person's `drive`, and the state labels keep it there. Membership reads
-  any label of the set; which stage is planned never reads one. With it
-  off, every open pull request is still read, so a drive a person armed by
-  hand on an unlabelled pull request is found and gets its label.
+  any label of the set; which stage is planned never reads one. The scope
+  is decided once per tick, from the listings that hold each pull request
+  (the open one and the merged one): in scope when each finds a label of
+  the set on it. A pull request they disagree on (it merged between the two
+  reads, and the label changed with it) is unplaced for that tick, as any
+  record the tick cannot place: reported, no action and no label written
+  on it, its notice records kept, and read again at the next tick. A
+  launch's fresh read is the observation that launch acts on, so it checks
+  the scope again there. With `only_labeled` off, every open pull request
+  is still read, so a drive a person armed by hand on an unlabelled pull
+  request is found and gets its label.
 
 The labels must exist before the tick writes them: `jig install dispatch
 --repo <path>` lists the missing ones and, with `--yes`, creates them
