@@ -284,6 +284,8 @@ const OMISSION_ORDER: [string, string][] = [
   ["tools", "Agent tool and operating system"],
   ["last-working", "Last version it worked in"],
   ["title", "the title"],
+  ["version", "Plugin version"],
+  ["channel", "Where you installed it from"],
 ];
 
 /**
@@ -659,9 +661,12 @@ const BODY_FIELDS: [string, string][] = [
 
 /**
  * The fields of a body written by `body`, or null when a person's edit
- * removed or reordered a heading.
+ * removed or reordered a heading, or when a form heading appears more than
+ * once (an answer quoting one, fenced or not, makes the boundary ambiguous).
  */
 function splitBody(text: string): Record<string, string> | null {
+  for (const [, label] of BODY_FIELDS)
+    if (text.split(`### ${label}\n`).length > 2) return null;
   const heads = BODY_FIELDS.map(([, label]) => `### ${label}\n\n`);
   const fields: Record<string, string> = {};
   let at = 0;

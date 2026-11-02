@@ -160,6 +160,32 @@ test("the fallback address fills each form field from a draft body", () => {
   expect(fallbackUrl({ title: "t", body: "edited" }).split).toBe(false);
 });
 
+test("a body quoting a form heading is kept whole, not split at the quote", () => {
+  const fields = {
+    version: "1.2.3",
+    channel: "marketplace",
+    what: "```md\n### What you expected\n\nsample\n```",
+    expected: "it converges",
+    tools: "Claude Code on Linux",
+  };
+  const r = fallbackUrl({ title: "t", body: body(fields) });
+  expect(r.split).toBe(false);
+  expect(new URL(r.url).searchParams.has("expected")).toBe(false);
+});
+
+test("an oversized version is omitted so the address fits", () => {
+  const fields = {
+    version: "9".repeat(9000),
+    channel: "marketplace",
+    what: "w",
+    expected: "e",
+    tools: "t",
+  };
+  const r = fallbackUrl({ title: "t", body: body(fields) });
+  expect(r.url.length).toBeLessThanOrEqual(8000);
+  expect(r.omitted).toContain("Plugin version");
+});
+
 test("a nested remote namespace is redacted whole", () => {
   expect(
     remoteOwnerName("git@gitlab.example:private-org/team/service.git"),
