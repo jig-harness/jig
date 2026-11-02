@@ -53,6 +53,14 @@ export interface ApplyState {
   table: Slots[];
   /** The account of the most recent launch record, where the turn resumes. */
   last: string | null;
+  /**
+   * The pass deadline every drive this tick launches runs under, in seconds
+   * (`0` for none): the one the tick reads (`DRIVE_PR_PASS_TIMEOUT`, else
+   * the drive's default), written on the launch record and handed to
+   * `drive.ts` as `--pass-timeout`, so the deadline admission judged is the
+   * one the pass gets.
+   */
+  passDeadlineSec: number;
   /** The workspaces this tick has opened so far, within `OPENS_PER_TICK`. */
   opened?: number;
   /** When the tick began, for its overall deadline. */
@@ -425,15 +433,20 @@ function admission(
     return admitRearm(
       state.table,
       state.last,
+      { kind: "interactive" },
       excluded,
-      `an interactive ${action.stage} session`,
     );
   if (action.takeover === undefined)
-    return admitRearm(state.table, state.last, excluded);
+    return admitRearm(
+      state.table,
+      state.last,
+      { kind: "pass", deadlineSec: state.passDeadlineSec },
+      excluded,
+    );
   const replaced = state.records.find((r) => r.record.id === action.takeover);
   return replaced === undefined
     ? { waits: `the launch record ${action.takeover} it replaces is gone` }
-    : admitTakeover(state.table, replaced);
+    : admitTakeover(state.table, replaced, state.passDeadlineSec);
 }
 
 /**
