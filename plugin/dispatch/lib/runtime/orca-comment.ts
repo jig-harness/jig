@@ -14,7 +14,8 @@ function seconds(ms: number): number {
 }
 
 type CallAnswer =
-  { ok: true; result: unknown } | { ok: false; lost: boolean; why: string };
+  | { ok: true; result: unknown }
+  | { ok: false; lost: boolean; why: string };
 
 /** One Orca call with `--json`; an answer past the deadline, or one that is not Orca's envelope, is lost. */
 export async function call(

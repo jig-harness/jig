@@ -9,9 +9,11 @@ import {
   type LaunchExit,
   type LaunchRecord,
   type ProcessIdentity,
+  claimRecord,
   markedSince,
   pruneLaunches,
   readLaunches,
+  recordExit,
   type ReadRecord,
   writeRecord,
 } from "../lib/launches.ts";
@@ -297,5 +299,26 @@ describe("the records a report counts as launched", () => {
     );
     expect(unreadable).toEqual([]);
     expect(records.map((r) => r.id)).toEqual(["20260101T000000Z-aaaaaaaa"]);
+  });
+
+  it("holds a record with no saved attempt when the wrapper claimed it or recorded its exit", () => {
+    const dir = root();
+    writeRecord(record("20260101T000000Z-aaaaaaaa", { mark }), dir);
+    writeRecord(record("20260101T000001Z-bbbbbbbb", { mark }), dir);
+    writeRecord(record("20260101T000002Z-cccccccc", { mark }), dir);
+    expect(claimRecord("20260101T000000Z-aaaaaaaa", WHO, dir)).toBe(true);
+    recordExit(
+      "20260101T000001Z-bbbbbbbb",
+      { at: "2026-01-01T00:00:00.000Z", code: 1, signal: null },
+      dir,
+    );
+    const { records } = markedSince(
+      Date.parse("2026-01-01T00:00:00.000Z"),
+      dir,
+    );
+    expect(records.map((r) => r.id)).toEqual([
+      "20260101T000000Z-aaaaaaaa",
+      "20260101T000001Z-bbbbbbbb",
+    ]);
   });
 });

@@ -64,7 +64,7 @@ function record(fields: Partial<LaunchRecord>): LaunchRecord {
     facts: "",
     createdAt: new Date(Date.now() - 3_600_000).toISOString(),
     workspace: { id: "repo-1::/ws/7", path: "/ws/7" },
-    attempts: [],
+    attempts: [{ at: new Date().toISOString(), outcome: "sent", detail: "" }],
     agentId: null,
     model: null,
     effort: null,
