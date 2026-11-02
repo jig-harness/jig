@@ -14,7 +14,22 @@ export async function ancestry(
   ancestor: string,
 ): Promise<boolean | null> {
   const result = await run(
-    ["git", "-C", root, "merge-base", "--is-ancestor", head, ancestor],
+    [
+      "git",
+      "--no-optional-locks",
+      // A replacement ref would fabricate ancestry between unrelated commits.
+      "--no-replace-objects",
+      "-c",
+      "core.fsmonitor=false",
+      "-c",
+      "core.hooksPath=/dev/null",
+      "-C",
+      root,
+      "merge-base",
+      "--is-ancestor",
+      head,
+      ancestor,
+    ],
     { timeoutSec: 30, env: gitEnvironment() },
   );
   if (result.code === 0) return true;
