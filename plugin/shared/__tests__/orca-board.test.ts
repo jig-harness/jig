@@ -129,6 +129,70 @@ describe("in an Orca terminal", () => {
     expect(mergedComment("  ", true, "b")).toBe("b");
   });
 
+  test("deduplicates a multiline comment as one entry", () => {
+    expect(mergedComment("first\nsecond", true, "first\nsecond")).toBe(
+      "first\nsecond",
+    );
+    expect(mergedComment("x\nfirst\nsecond\ny", true, "first\nsecond")).toBe(
+      "x\nfirst\nsecond\ny",
+    );
+    expect(mergedComment("first", true, "first\nsecond")).toBe(
+      "first\nfirst\nsecond",
+    );
+  });
+
+  test("keeps an unread bulleted comment from reaching Orca as a flag", async () => {
+    const comment = "PR #42 parked: Why?";
+    const written = `Unread notes:\n- investigate release\n${comment}`;
+    const { calls, runner } = orcaAnswering({
+      "worktree current --json": current,
+      [showArgs]: shown({ comment: "- investigate release", isUnread: true }),
+      [setArgs("--unread", "--comment", written)]: set,
+    });
+    expect(
+      await updateBoard({ unread: true, comment }, ORCA, runner, noConfig),
+    ).toBe("orca-board: marked unread, comment appended");
+    expect(calls[2]).toBe(setArgs("--unread", "--comment", written));
+  });
+
+  test("writes nothing when the card's fields have an unexpected shape", async () => {
+    for (const worktree of [
+      { id: ID, comment: "unread decision" },
+      { id: ID, comment: 7, isUnread: false },
+      { id: ID, isUnread: true },
+    ]) {
+      const { calls, runner } = orcaAnswering({
+        "worktree current --json": current,
+        [showArgs]: JSON.stringify({ ok: true, result: { worktree } }),
+      });
+      const line = await updateBoard(
+        { unread: true, comment: "new" },
+        ORCA,
+        runner,
+        noConfig,
+      );
+      expect(line).toContain("nothing set");
+      expect(calls).toEqual(["worktree current --json", showArgs]);
+    }
+  });
+
+  test("warns instead of throwing when the lock cannot be taken", async () => {
+    const { runner } = orcaAnswering({
+      "worktree current --json": current,
+    });
+    const line = await updateBoard(
+      { unread: true, comment: "new" },
+      ORCA,
+      runner,
+      noConfig,
+      async () => {
+        throw new Error("EACCES: mkdir refused");
+      },
+    );
+    expect(line).toContain("⚠");
+    expect(line).toContain("EACCES");
+  });
+
   test("writes nothing when the card cannot be read", async () => {
     const { calls, runner } = orcaAnswering({
       "worktree current --json": current,
@@ -179,7 +243,19 @@ describe("in an Orca terminal", () => {
     const seen: string[][] = [];
     const runner: OrcaRunner = async (_command, args) => {
       seen.push(args);
-      return { code: 0, stdout: current, stderr: "" };
+      return {
+        code: 0,
+        stdout:
+          args[1] === "show"
+            ? JSON.stringify({
+                ok: true,
+                result: {
+                  worktree: { id: ID, comment: null, isUnread: false },
+                },
+              })
+            : current,
+        stderr: "",
+      };
     };
     await updateBoard(
       { stage: "completed", pr: "7", unread: true, comment },

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -86,6 +86,44 @@ describe("the card's comment lock", () => {
         waitMs: 1000,
       }),
     ).toEqual({ value: "taken" });
+  });
+
+  test("takes a lock left empty by an interrupted writer only once it is stale", async () => {
+    // An acquisition publishes the owner record whole, so a lock file is
+    // never seen empty by this implementation; a file left empty by an
+    // older writer names no owner and is not reclaimed on a guess.
+    const root = scratchRoot();
+    writeFileSync(cardLockPath(WORKSPACE, root), "");
+    expect(
+      await withCardLock(WORKSPACE, async () => "taken", { root, waitMs: 100 }),
+    ).toBeNull();
+  });
+
+  test("leaves no staged file behind after acquiring and releasing", async () => {
+    const root = scratchRoot();
+    await withCardLock(WORKSPACE, async () => "x", { root });
+    expect(readdirSync(root)).toEqual([]);
+  });
+
+  test("two reclaimers of one stale lock never both hold the card", async () => {
+    const root = scratchRoot();
+    writeFileSync(cardLockPath(WORKSPACE, root), `${deadPid()}\nleft\n`);
+    let inside = 0;
+    let overlap = false;
+    const writer = () =>
+      withCardLock(
+        WORKSPACE,
+        async () => {
+          inside += 1;
+          if (inside > 1) overlap = true;
+          await new Promise((done) => setTimeout(done, 40));
+          inside -= 1;
+        },
+        { root, waitMs: 5000 },
+      );
+    const results = await Promise.all([writer(), writer(), writer(), writer()]);
+    expect(results.every((r) => r !== null)).toBe(true);
+    expect(overlap).toBe(false);
   });
 
   test("keys a card by its resolved path", () => {

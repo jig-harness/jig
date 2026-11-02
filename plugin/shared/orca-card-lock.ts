@@ -12,9 +12,9 @@
  * The lock is a file under the machine's temporary directory, named after
  * the workspace's path and created exclusively, holding its owner's pid and a
  * token. Release removes it only while it still holds that token. A lock
- * whose owner is no longer running is reclaimed: it is renamed aside, and
- * the file actually moved is judged, so a rival's fresh lock is never
- * removed in its place. A writer that cannot take the lock within its
+ * whose owner is no longer running is reclaimed by one reclaimer at a time.
+ * The lock is published whole (linked into place from a private file), so
+ * an interrupted acquisition leaves no empty lock. A writer that cannot take the lock within its
  * deadline gets `null` and skips its write: the board is a convenience.
  */
 import { createHash, randomUUID } from "node:crypto";
@@ -22,8 +22,8 @@ import {
   linkSync,
   mkdirSync,
   readFileSync,
-  renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,6 +45,7 @@ export interface CardLockOptions {
 export type CardLock = <T>(
   workspace: string,
   body: () => Promise<T>,
+  options?: CardLockOptions,
 ) => Promise<{ value: T } | null>;
 
 /** The lock file for the workspace at `path`. */
@@ -82,34 +83,61 @@ function ownerGone(pid: number | null): boolean {
   }
 }
 
-/** Move a stale lock aside and remove it; a live one moved by a race goes back. */
+/**
+ * Remove a stale lock. Reclaimers take turns through a mutex file, so only
+ * one at a time judges and removes a lock: a lock whose recorded owner is
+ * gone cannot be replaced by anyone else (a new holder needs the path free,
+ * and only a reclaimer frees it), so the file removed is the one judged. A
+ * mutex whose holder died is old enough to break after `MUTEX_STALE_MS`.
+ */
 function reclaim(lock: string): void {
   if (!ownerGone(ownerOf(lock))) return;
-  const aside = `${lock}.reclaim-${process.pid}-${randomUUID()}`;
-  try {
-    renameSync(lock, aside);
-  } catch (error) {
-    swallow(error, "another writer moved or released the lock first");
+  const mutex = `${lock}.reclaim`;
+  if (!publish(mutex, `${process.pid}\n`)) {
+    breakStaleMutex(mutex);
     return;
   }
-  if (!ownerGone(ownerOf(aside))) {
-    try {
-      linkSync(aside, lock);
-    } catch (error) {
-      swallow(error, "a new holder took the slot meanwhile; its lock stands");
-    }
+  try {
+    if (ownerGone(ownerOf(lock))) rmSync(lock, { force: true });
+  } finally {
+    rmSync(mutex, { force: true });
   }
-  rmSync(aside, { force: true });
 }
 
-function tryTake(lock: string, content: string): boolean {
+/** Milliseconds after which a reclaim mutex is taken to be left by a dead reclaimer. */
+const MUTEX_STALE_MS = 10_000;
+
+function breakStaleMutex(mutex: string): void {
   try {
-    writeFileSync(lock, content, { flag: "wx", mode: 0o600 });
+    if (Date.now() - statSync(mutex).mtimeMs > MUTEX_STALE_MS)
+      rmSync(mutex, { force: true });
+  } catch (error) {
+    swallow(error, "the mutex was released meanwhile");
+  }
+}
+
+/**
+ * Create `file` holding `content` exclusively and whole: the content is
+ * written to a private file first and linked into place, so no reader sees
+ * the file empty and a failed write leaves nothing at `file`. False when
+ * `file` exists.
+ */
+function publish(file: string, content: string): boolean {
+  const staged = `${file}.init-${process.pid}-${randomUUID()}`;
+  try {
+    writeFileSync(staged, content, { flag: "wx", mode: 0o600 });
+    linkSync(staged, file);
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     return false;
+  } finally {
+    rmSync(staged, { force: true });
   }
+}
+
+function tryTake(lock: string, content: string): boolean {
+  return publish(lock, content);
 }
 
 /** Take the lock of the workspace at `workspace`, run `body`, release. */

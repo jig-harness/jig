@@ -245,8 +245,13 @@ export function mergedComment(
   comment: string,
 ): string {
   if (!unread || existing === null || existing.trim() === "") return comment;
-  if (existing.split("\n").includes(comment)) return existing;
+  if (`\n${existing}\n`.includes(`\n${comment}\n`)) return existing;
   return `${existing}\n${comment}`;
+}
+
+/** `comment` made safe to pass as Orca's argument: one that opens with `-` would read as a flag. */
+function argumentSafe(comment: string): string {
+  return usableComment(comment) ? comment : `Unread notes:\n${comment}`;
 }
 
 /** The workspace path an Orca worktree id names (`<repo id>::<path>`). */
@@ -274,10 +279,17 @@ async function readCard(
       warning: `⚠ could not read the card's comment ${orcaFailure(done)}`,
     };
   const card = worktree as Record<string, unknown>;
-  return {
-    comment: typeof card.comment === "string" ? card.comment : null,
-    unread: card.isUnread === true,
-  };
+  const { comment, isUnread } = card;
+  const known =
+    typeof isUnread === "boolean" &&
+    (typeof comment === "string" || comment === null || comment === undefined);
+  // A card that names no comment while unread, or whose fields have another
+  // shape, may be hiding text a person has not read.
+  if (!known || (isUnread && typeof comment !== "string"))
+    return {
+      warning: "⚠ the card's comment and unread mark could not be established",
+    };
+  return { comment: comment ?? null, unread: isUnread };
 }
 
 /** Write `update` to the card `id`; returns the line to report. */
@@ -308,19 +320,26 @@ async function writeComment(
   status: string | undefined,
   lock: CardLock,
 ): Promise<string> {
-  const locked = await lock(workspacePath(id), async () => {
-    const card = await readCard(command, runner, id);
-    if ("warning" in card) return `orca-board: ${card.warning}; nothing set`;
-    const comment = mergedComment(card.comment, card.unread, update.comment);
-    return await writeCard(
-      command,
-      runner,
-      id,
-      { ...update, comment },
-      status,
-      comment !== update.comment,
-    );
-  });
+  let locked: { value: string } | null;
+  try {
+    locked = await lock(workspacePath(id), async () => {
+      const card = await readCard(command, runner, id);
+      if ("warning" in card) return `orca-board: ${card.warning}; nothing set`;
+      const comment = argumentSafe(
+        mergedComment(card.comment, card.unread, update.comment),
+      );
+      return await writeCard(
+        command,
+        runner,
+        id,
+        { ...update, comment },
+        status,
+        comment !== update.comment,
+      );
+    });
+  } catch (error) {
+    return `orca-board: ⚠ the card's comment lock failed: ${error instanceof Error ? error.message : String(error)}; nothing set`;
+  }
   return (
     locked?.value ??
     "orca-board: ⚠ another writer held the card's comment past the lock's deadline; nothing set"

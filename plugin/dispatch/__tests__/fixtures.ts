@@ -142,7 +142,7 @@ if (args[0] === "worktree" && (args[1] === "set" || args[1] === "show")) {
     if (args.includes("--unread")) row.unread = true;
     fs.writeFileSync(F + "/orca-ps.json", JSON.stringify(ps));
   }
-  answer({ worktree: { id: row.worktreeId, path: row.path, comment: row.comment } });
+  answer({ worktree: { id: row.worktreeId, path: row.path, comment: row.comment, isUnread: row.unread === true } });
 }
 if (args[0] === "worktree" && args[1] === "ps") {
   const ps = JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8"));

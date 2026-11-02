@@ -18,4 +18,31 @@ describe("notify on Orca", () => {
     expect(receipt).toMatchObject({ ok: false, lost: false });
     expect(receipt.detail).toContain("lock");
   });
+
+  test("takes the lock within the runtime deadline and no longer than it", async () => {
+    let waited = -1;
+    await orcaNotify(
+      { id: "w1", path: "/ws/app/feat-x" },
+      "[jig dispatch: k]\nPR #4 parked",
+      1000,
+      async (_workspace, _body, options) => {
+        waited = options?.waitMs ?? -1;
+        return null;
+      },
+    );
+    expect(waited).toBe(1000);
+  });
+
+  test("a lock that throws is a lost-nothing receipt, not a throw", async () => {
+    const receipt = await orcaNotify(
+      { id: "w1", path: "/ws/app/feat-x" },
+      "[jig dispatch: k]\nPR #4 parked",
+      1000,
+      async () => {
+        throw new Error("EACCES");
+      },
+    );
+    expect(receipt).toMatchObject({ ok: false, lost: false });
+    expect(receipt.detail).toContain("EACCES");
+  });
 });

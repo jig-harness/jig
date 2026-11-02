@@ -50,6 +50,19 @@ async function call(
   };
 }
 
+/** The card's comment and unread mark in `worktree show`'s answer; `null` when it names neither. */
+function cardOf(
+  result: unknown,
+): { comment: string | null; unread: boolean } | null {
+  const worktree = isRecord(result) ? result.worktree : undefined;
+  if (!isRecord(worktree)) return null;
+  const { comment, isUnread } = worktree;
+  if (typeof isUnread !== "boolean") return null;
+  if (comment !== undefined && comment !== null && typeof comment !== "string")
+    return null;
+  return { comment: comment ?? null, unread: isUnread };
+}
+
 /** The comment in `worktree show`'s answer; `null` when it names none. */
 function commentOf(result: unknown): string | null {
   const worktree = isRecord(result) ? result.worktree : undefined;
@@ -58,18 +71,60 @@ function commentOf(result: unknown): string | null {
     : null;
 }
 
+/** The key lines a message carries. */
+function keyLines(text: string): string[] {
+  return text.match(/^\[jig dispatch: .*\]$/gm) ?? [];
+}
+
+/**
+ * The comment to write over the card as it is now: appended to a comment
+ * still unread, so nothing a person has not read is replaced; the message
+ * alone otherwise. `null` when the unread comment already carries every key
+ * the message does.
+ */
+function merged(
+  card: { comment: string | null; unread: boolean },
+  message: string,
+): string | null {
+  if (!card.unread || card.comment === null || card.comment.trim() === "")
+    return message;
+  const keys = keyLines(message);
+  const carried = card.comment;
+  if (
+    keys.length > 0
+      ? keys.every((k) => carried.includes(k))
+      : carried.includes(message)
+  )
+    return null;
+  return `${carried}\n\n${message}`;
+}
+
 export async function orcaNotify(
   target: { id: string; path: string },
   message: string,
   timeoutMs: number,
   lock: CardLock = withCardLock,
 ): Promise<RuntimeReceipt> {
-  // The write and its read-back hold the card's lock, the one every comment
-  // writer takes (`shared/orca-card-lock.ts`), so no writer's read-then-write
-  // falls between them.
-  const locked = await lock(target.path, () =>
-    notifyUnlocked(target, message, timeoutMs),
-  );
+  // One deadline covers the lock's wait and every call after it.
+  const start = performance.now();
+  const remaining = (): number => timeoutMs - (performance.now() - start);
+  // The read, the write and the read-back hold the card's lock, the one
+  // every comment writer takes (`shared/orca-card-lock.ts`), so no writer's
+  // read-then-write falls between them.
+  let locked: { value: RuntimeReceipt } | null;
+  try {
+    locked = await lock(
+      target.path,
+      () => notifyUnlocked(target, message, remaining),
+      { waitMs: Math.max(0, Math.min(timeoutMs, 5000)) },
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      lost: false,
+      detail: `${target.path}: the card's comment lock could not be taken: ${error instanceof Error ? error.message : String(error)}; nothing written`,
+    };
+  }
   return (
     locked?.value ?? {
       ok: false,
@@ -82,25 +137,59 @@ export async function orcaNotify(
 async function notifyUnlocked(
   target: { id: string; path: string },
   message: string,
-  timeoutMs: number,
+  remaining: () => number,
 ): Promise<RuntimeReceipt> {
   const selector = `path:${target.path}`;
-  const set = await call(
-    [
-      "worktree",
-      "set",
-      "--worktree",
-      selector,
-      "--comment",
-      message,
-      "--unread",
-    ],
-    timeoutMs,
+  const spent = (): RuntimeReceipt | null =>
+    remaining() > 0
+      ? null
+      : {
+          ok: false,
+          lost: false,
+          detail: `${target.path}: the runtime's deadline passed before the comment was written; nothing written`,
+        };
+  let late = spent();
+  if (late !== null) return late;
+  const before = await call(
+    ["worktree", "show", "--worktree", selector],
+    remaining(),
   );
-  if (!set.ok) return { ok: false, lost: set.lost, detail: set.why };
+  if (!before.ok) return { ok: false, lost: before.lost, detail: before.why };
+  const card = cardOf(before.result);
+  if (card === null)
+    return {
+      ok: false,
+      lost: false,
+      detail: `${target.path}: orca worktree show named no readable comment and unread mark; nothing written`,
+    };
+  const comment = merged(card, message);
+  if (comment !== null) {
+    late = spent();
+    if (late !== null) return late;
+    const set = await call(
+      [
+        "worktree",
+        "set",
+        "--worktree",
+        selector,
+        "--comment",
+        comment,
+        "--unread",
+      ],
+      remaining(),
+    );
+    if (!set.ok) return { ok: false, lost: set.lost, detail: set.why };
+  }
+  late = spent();
+  if (late !== null)
+    return {
+      ...late,
+      lost: true,
+      detail: `the comment was written; ${late.detail}`,
+    };
   const shown = await call(
     ["worktree", "show", "--worktree", selector],
-    timeoutMs,
+    remaining(),
   );
   if (!shown.ok)
     return {
@@ -108,8 +197,8 @@ async function notifyUnlocked(
       lost: true,
       detail: `the comment was written, and could not be read back: ${shown.why}`,
     };
-  const comment = commentOf(shown.result);
-  return comment === null
+  const read = commentOf(shown.result);
+  return read === null
     ? {
         ok: false,
         lost: true,
@@ -118,6 +207,6 @@ async function notifyUnlocked(
     : {
         ok: true,
         detail: `${target.path} marked unread with the message as its comment`,
-        comment,
+        comment: read,
       };
 }

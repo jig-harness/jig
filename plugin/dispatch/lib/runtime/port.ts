@@ -158,8 +158,10 @@ export interface SessionRuntime {
   ): Promise<RuntimeReceipt>;
   /**
    * A message that reaches a person through the workspace `target`: in
-   * Orca, the workspace's comment set to `message` and the workspace marked
-   * unread, which Orca's phone app shows. Its receipt carries the target's
+   * Orca, `message` appended to the workspace's comment while that is still
+   * unread (read afresh under the comment lock, never from an earlier
+   * listing), else set as the comment, and the workspace marked unread,
+   * which Orca's phone app shows. Its receipt carries the target's
    * comment as the runtime reads it back after the write.
    */
   notify(

@@ -30,6 +30,11 @@ const unreadCard = JSON.stringify({
   result: { worktree: { id: ID, comment: "an earlier note", isUnread: true } },
 });
 
+const readCard = JSON.stringify({
+  ok: true,
+  result: { worktree: { id: ID, comment: null, isUnread: false } },
+});
+
 const HITL_PARKED_EXIT = 8;
 const REVIEWER_FAILED_EXIT = 7;
 
@@ -100,18 +105,28 @@ describe("the stop's comment", () => {
   });
 
   test("each failure stop says what stopped it", () => {
-    for (const code of [
-      1,
-      2,
-      MAX_ROUNDS_EXIT,
-      REVIEWER_FAILED_EXIT,
-      9,
-      WORKTREE_UNCLEAN_EXIT,
-      STALLED_EXIT,
-      PASS_DEADLINE_EXIT,
-    ])
-      expect(stopComment("42", code, null)).toMatch(
-        new RegExp(`^PR #42's drive .+ \\(exit ${code}\\)$`),
+    const causes: Array<[number, string]> = [
+      [1, "stopped on a failure; the drive's log says what failed"],
+      [
+        2,
+        "stopped: a usage error, or a gh that cannot report the pull request",
+      ],
+      [MAX_ROUNDS_EXIT, "used its round budget without converging"],
+      [
+        REVIEWER_FAILED_EXIT,
+        "stopped: the posting reviewer's check did not pass",
+      ],
+      [9, "stopped: it conflicts with its base and has nothing left to work"],
+      [
+        WORKTREE_UNCLEAN_EXIT,
+        "converged, but its worktree holds changes no round shipped",
+      ],
+      [STALLED_EXIT, "stalled: its passes changed nothing"],
+      [PASS_DEADLINE_EXIT, "stopped: its passes kept running out of time"],
+    ];
+    for (const [code, cause] of causes)
+      expect(stopComment("42", code, null)).toBe(
+        `PR #42's drive ${cause} (exit ${code})`,
       );
   });
 
@@ -174,7 +189,7 @@ describe("in an Orca terminal", () => {
       deps: d,
     } = deps({
       "worktree current --json": current,
-      [showArgs]: current,
+      [showArgs]: readCard,
       [setArgs("--unread", "--comment", comment)]: set,
     });
     await cardOnStop("42", REVIEWER_FAILED_EXIT, d);
@@ -189,25 +204,40 @@ describe("in an Orca terminal", () => {
   });
 
   test("an Orca failure only warns", async () => {
-    const { deps: d } = deps({
-      "worktree current --json": JSON.stringify({
-        ok: false,
-        error: { code: "runtime_unavailable" },
-      }),
-    });
-    await cardOnReady("42", d);
-    await cardOnStop("42", STALLED_EXIT, d);
-    const throwing: CardDeps = {
-      ...d,
-      update: async () => {
-        throw new Error("spawn refused");
-      },
-      readState: async () => {
-        throw new Error("state unreadable");
-      },
+    const warnings: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => {
+      warnings.push(args.join(" "));
     };
-    await cardOnReady("42", throwing);
-    await cardOnStop("42", HITL_PARKED_EXIT, throwing);
+    try {
+      const { deps: d } = deps({
+        "worktree current --json": JSON.stringify({
+          ok: false,
+          error: { code: "runtime_unavailable" },
+        }),
+      });
+      await cardOnReady("42", d);
+      await cardOnStop("42", STALLED_EXIT, d);
+      const failedOrca = warnings.length;
+      expect(failedOrca).toBe(2);
+      for (const line of warnings) expect(line).toContain("⚠");
+      const throwing: CardDeps = {
+        ...d,
+        update: async () => {
+          throw new Error("spawn refused");
+        },
+        readState: async () => {
+          throw new Error("state unreadable");
+        },
+      };
+      await cardOnReady("42", throwing);
+      await cardOnStop("42", HITL_PARKED_EXIT, throwing);
+      const thrown = warnings.slice(failedOrca);
+      expect(thrown.some((l) => l.includes("spawn refused"))).toBe(true);
+      expect(thrown.some((l) => l.includes("state unreadable"))).toBe(true);
+    } finally {
+      console.error = original;
+    }
   });
 });
 

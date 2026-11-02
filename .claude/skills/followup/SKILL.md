@@ -365,10 +365,14 @@ one line (for example `merged; release 0.121.0 waits on the release run`, or
 `merged; released as v0.121.0`). Find that worktree in
 `git worktree list --porcelain` (the entry whose `branch` is
 `refs/heads/<headRefName>`) and skip this when none holds it. Outside Orca
-the script does nothing, and an Orca failure only warns (exit `0`):
+the script does nothing, and an Orca failure only warns (exit `0`). Write
+the line alone to `.context/card-comment.md` with the file editor, never
+into the command: the report can carry quotes, backticks and `$(…)`, and the
+shell would run them. `"$(cat …)"` is substituted once and not expanded
+again:
 
 ```bash
-bun --cwd "<that worktree>" "$PWD/plugin/shared/orca-board.ts" completed --comment "<what the release still owes>"
+bun --cwd "<that worktree>" "$PWD/plugin/shared/orca-board.ts" completed --comment "$(cat "$PWD/.context/card-comment.md")"
 ```
 
 Close with what is left for a person, by name. When every arm is NOT OWED,

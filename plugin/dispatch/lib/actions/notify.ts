@@ -232,12 +232,9 @@ export function fitting(
   return { send, later };
 }
 
-/** The message for a workspace: its comment whole while it is still unread from an earlier notification, then the causes' texts. */
-function messageFor(workspace: Workspace, causes: Cause[]): string {
-  const texts = causes.map((c) => c.notice.text);
-  if (!(workspace.unread && holdsNotice(workspace.comment)))
-    return texts.join("\n\n");
-  return [workspace.comment, ...texts].join("\n\n");
+/** The message for a workspace: the causes' texts; the runtime appends them to a comment still unread. */
+function messageFor(causes: Cause[]): string {
+  return causes.map((c) => c.notice.text).join("\n\n");
 }
 
 /** `notify`'s answer; a call that throws is an answer lost. */
@@ -300,7 +297,7 @@ async function sendTo(
     ),
   );
   if (send.length === 0) return out;
-  const receipt = await deliver(state, workspace, messageFor(workspace, send));
+  const receipt = await deliver(state, workspace, messageFor(send));
   for (const c of send) {
     const why = notArrived(receipt, c);
     if (why === null) suppress(c, workspace.path);
