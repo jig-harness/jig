@@ -720,20 +720,34 @@ export function holds(state: LaunchState): boolean {
   );
 }
 
+/** The newest record per key among those `keep` accepts. */
+function latestBy(
+  records: ReadRecord[],
+  keep: (record: LaunchRecord) => boolean,
+  keyOf: (record: LaunchRecord) => string,
+): Map<string, ReadRecord> {
+  const latest = new Map<string, ReadRecord>();
+  for (const r of records) {
+    if (!keep(r.record)) continue;
+    const key = keyOf(r.record);
+    const seen = latest.get(key);
+    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
+      latest.set(key, r);
+  }
+  return latest;
+}
+
 /**
  * The ids of each pull request's latest record when it ended on a refusal of
  * a second driver: the stage's answer for as long as the ledger facts hold.
  */
 function latestRefusals(records: ReadRecord[]): Set<string> {
   // Pull request numbers repeat across repositories: key by both.
-  const latest = new Map<string, ReadRecord>();
-  for (const r of records) {
-    if (!isDrive(r.record)) continue;
-    const key = `${r.record.repo}#${String(r.record.pr)}`;
-    const seen = latest.get(key);
-    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
-      latest.set(key, r);
-  }
+  const latest = latestBy(
+    records,
+    (r) => isDrive(r),
+    (r) => `${r.repo}#${String(r.pr)}`,
+  );
   const ids = new Set<string>();
   for (const { record, state } of latest.values())
     if (
@@ -768,14 +782,11 @@ function latestRedrives(records: ReadRecord[]): Set<string> {
  * until `releaseEnded` has seen the item leave the dispatch states.
  */
 function latestPickups(records: ReadRecord[]): Set<string> {
-  const latest = new Map<string, ReadRecord>();
-  for (const r of records) {
-    if (r.record.action !== "pickup") continue;
-    const key = `${r.record.repo}\0${String(r.record.item)}`;
-    const seen = latest.get(key);
-    if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
-      latest.set(key, r);
-  }
+  const latest = latestBy(
+    records,
+    (r) => r.action === "pickup",
+    (r) => `${r.repo}\0${String(r.item)}`,
+  );
   const ids = new Set<string>();
   for (const { record } of latest.values())
     if (!record.released) ids.add(record.id);

@@ -52,8 +52,8 @@ function record(over: Partial<LaunchRecord> = {}): LaunchRecord {
 }
 
 async function clear(dir: string): Promise<number> {
-  const err = spyOn(console, "error").mockImplementation(() => {});
-  const out = spyOn(console, "log").mockImplementation(() => {});
+  const err = spyOn(console, "error").mockImplementation(() => undefined);
+  const out = spyOn(console, "log").mockImplementation(() => undefined);
   try {
     return await clearMain(ID, dir);
   } finally {

@@ -38,7 +38,7 @@ interface DashboardFilter {
 }
 
 /** The most rows one query returns; the counts still cover every row the filter keeps. */
-export const DASHBOARD_ROWS = 5000;
+const DASHBOARD_ROWS = 5000;
 
 const KEPT = `at_ms >= ?1 AND at_ms <= ?2
          AND (?3 IS NULL OR repo = ?3)
