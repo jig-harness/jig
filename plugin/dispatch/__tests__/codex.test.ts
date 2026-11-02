@@ -86,6 +86,13 @@ async function tick(w: World): Promise<TickReceipt> {
 
 const launches = (r: TickReceipt) => r.repos[0]?.launches ?? [];
 
+/** The record of the run's first launch. */
+function launchedRecord(r: TickReceipt): string {
+  const id = launches(r)[0]?.record;
+  if (typeof id !== "string") throw new TypeError("no launch record");
+  return id;
+}
+
 /** Credentials and directories of other accounts the tick's environment carries, none of which a pass may inherit. */
 function inheritOtherAccounts(w: World): void {
   w.env.CLAUDE_CODE_OAUTH_TOKEN = "a-token-for-another-account";
@@ -121,29 +128,38 @@ describe("jig dispatch --apply on Codex accounts", () => {
     inheritOtherAccounts(w);
 
     const receipt = await tick(w);
-    const [launched] = launches(receipt);
-    expect(launched).toMatchObject({ outcome: "launched", account: "c" });
+    expect(launches(receipt)[0]).toMatchObject({
+      outcome: "launched",
+      account: "c",
+    });
     expect(receipt.accountsNotAdmitted).toBeUndefined();
-    const record = readRecordFile(launched?.record ?? "", dispatchState(w));
-    expect(record).toMatchObject({ vendor: "codex", passTimeoutSec: 5400 });
-    expect(record?.sessionId ?? null).toBeNull();
+    const id = launchedRecord(receipt);
+    expect(readRecordFile(id, dispatchState(w))).toMatchObject({
+      vendor: "codex",
+      passTimeoutSec: 5400,
+      sessionId: null,
+    });
 
     await waitFor("the drive", () => driveRuns(w).length === 1);
-    const [run] = driveRuns(w);
-    expect(run?.argv).toEqual([
-      "7",
-      "--bots-only",
-      "--pass-timeout",
-      "5400",
-      "--",
-      ...CODEX_PASS,
+    expect(driveRuns(w)).toEqual([
+      {
+        argv: [
+          "7",
+          "--bots-only",
+          "--pass-timeout",
+          "5400",
+          "--",
+          ...CODEX_PASS,
+        ],
+        cwd: expect.any(String),
+        codexHome: c.dir,
+        configDir: null,
+        token: null,
+        anthropicKey: null,
+        openaiKey: null,
+      },
     ]);
-    expect(run?.codexHome).toBe(c.dir);
-    expect(run?.configDir).toBeNull();
-    expect(run?.token).toBeNull();
-    expect(run?.anthropicKey).toBeNull();
-    expect(run?.openaiKey).toBeNull();
-    await waitFor("the exit", () => exitWritten(w, launched?.record ?? ""));
+    await waitFor("the exit", () => exitWritten(w, id));
   });
 
   it("reports an account of a vendor with no documented pass command and never launches on it", async () => {
@@ -198,16 +214,24 @@ describe("jig dispatch --apply on Codex accounts", () => {
     w.env.DRIVE_PR_PASS_TIMEOUT = "120";
     const bounded = await tick(w);
     expect(bounded.accountsNotAdmitted).toBeUndefined();
-    const [launched] = launches(bounded);
-    expect(launched).toMatchObject({ outcome: "launched", account: "c" });
+    expect(launches(bounded)[0]).toMatchObject({
+      outcome: "launched",
+      account: "c",
+    });
     await waitFor("the drive", () => driveRuns(w).length === 1);
-    expect(driveRuns(w)[0]?.argv.slice(0, 4)).toEqual([
-      "7",
-      "--bots-only",
-      "--pass-timeout",
-      "120",
+    expect(driveRuns(w)).toMatchObject([
+      {
+        argv: [
+          "7",
+          "--bots-only",
+          "--pass-timeout",
+          "120",
+          "--",
+          ...CODEX_PASS,
+        ],
+      },
     ]);
-    await waitFor("the exit", () => exitWritten(w, launched?.record ?? ""));
+    await waitFor("the exit", () => exitWritten(w, launchedRecord(bounded)));
   });
 });
 
@@ -227,6 +251,7 @@ routing:
 /** The sessions the fake Codex recorded. */
 function codexRuns(w: World): Array<{
   argv: string[];
+  cwd: string;
   codexHome: string | null;
   configDir: string | null;
   token: string | null;
@@ -256,36 +281,42 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
     inheritOtherAccounts(w);
 
     const receipt = await applyTick(w, true);
-    const [launched] = launches(receipt);
-    expect(launched).toMatchObject({
+    expect(launches(receipt)[0]).toMatchObject({
       action: "pickup",
       outcome: "launched",
       account: "c",
+      // An item of no known type takes the strictest row: the strategic tier, at high effort.
+      detail: expect.stringContaining(
+        "route strategic for Codex, high, gpt-example-large",
+      ),
     });
-    const record = readRecordFile(String(launched?.record), dispatchState(w));
-    expect(record?.vendor).toBe("codex");
-    expect(record?.sessionId ?? null).toBeNull();
-    // An item of no known type takes the strictest row: the strategic tier, at high effort.
-    expect(record?.model).toBe("gpt-example-large");
-    expect(record?.effort).toBe("high");
-    expect(launched?.detail).toContain(
-      "route strategic for Codex, high, gpt-example-large",
-    );
+    expect(
+      readRecordFile(launchedRecord(receipt), dispatchState(w)),
+    ).toMatchObject({
+      vendor: "codex",
+      sessionId: null,
+      model: "gpt-example-large",
+      effort: "high",
+    });
 
     await waitFor("the session", () => codexRuns(w).length === 1);
-    const [session] = codexRuns(w);
-    expect(session?.argv.slice(0, 4)).toEqual([
-      "-m",
-      record?.model ?? "",
-      "-c",
-      `model_reasoning_effort="${record?.effort}"`,
+    expect(codexRuns(w)).toEqual([
+      {
+        argv: [
+          "-m",
+          "gpt-example-large",
+          "-c",
+          'model_reasoning_effort="high"',
+          expect.stringMatching(
+            /^Use the jig:do-item skill: \/jig:do-item #12\n/,
+          ),
+        ],
+        cwd: expect.any(String),
+        codexHome: c.dir,
+        configDir: null,
+        token: null,
+      },
     ]);
-    expect(session?.argv.at(-1)).toStartWith(
-      "Use the jig:do-item skill: /jig:do-item #12\n",
-    );
-    expect(session?.codexHome).toBe(c.dir);
-    expect(session?.configDir).toBeNull();
-    expect(session?.token).toBeNull();
     expect(existsSync(join(w.dir, "claude-runs.jsonl"))).toBe(false);
   });
 });

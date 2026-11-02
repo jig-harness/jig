@@ -335,6 +335,12 @@ function optionalTime(value: unknown): boolean {
   );
 }
 
+/** Whether a value is absent, `null`, or a whole number of seconds. */
+function optionalSeconds(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
 /** The fields a later version added, each absent or of its type. */
 function optionalFields(value: Record<string, unknown>): boolean {
   return (
@@ -344,11 +350,7 @@ function optionalFields(value: Record<string, unknown>): boolean {
     [value.marker, value.round].every(
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
-    (value.passTimeoutSec === undefined ||
-      value.passTimeoutSec === null ||
-      (typeof value.passTimeoutSec === "number" &&
-        Number.isSafeInteger(value.passTimeoutSec) &&
-        value.passTimeoutSec >= 0)) &&
+    optionalSeconds(value.passTimeoutSec) &&
     optionalTime(value.endedAt) &&
     (value.logged === undefined || typeof value.logged === "boolean") &&
     optionalTime(value.openedAt) &&

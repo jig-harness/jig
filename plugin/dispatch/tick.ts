@@ -53,7 +53,12 @@ import { rotated } from "./lib/actions/launch.ts";
 import { applyNotices } from "./lib/actions/notify.ts";
 import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
-import { lastAccount, notAdmitted, slotTable } from "./lib/accounts.ts";
+import {
+  lastAccount,
+  type NotAdmitted,
+  notAdmitted,
+  slotTable,
+} from "./lib/accounts.ts";
 import { readMarkers } from "./lib/followup-marker.ts";
 import {
   readOutcomes,
@@ -671,6 +676,22 @@ function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
       });
 }
 
+/**
+ * The machine file's accounts a drive's pass is never admitted on, for the
+ * receipt: a vendor with no documented pass command, or a Codex account
+ * while the pass deadline this run reads is `0`.
+ */
+function accountsReport(
+  machine: MachineConfig | null,
+  apply: ApplyState | null,
+): { accountsNotAdmitted?: NotAdmitted[] } {
+  if (machine === null) return {};
+  const deadline =
+    apply === null ? passTimeoutSeconds() : apply.passDeadlineSec;
+  const refused = notAdmitted(machine.accounts, deadline);
+  return refused.length === 0 ? {} : { accountsNotAdmitted: refused };
+}
+
 export async function runTick(options: TickOptions): Promise<TickResult> {
   const lock = takeTickLock();
   if ("heldBy" in lock) return { held: lock.heldBy };
@@ -693,13 +714,6 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     const withheld =
       attempt !== null && "withheld" in attempt ? attempt.withheld : undefined;
     const apply = attempt !== null && "tick" in attempt ? attempt : null;
-    const refusedAccounts =
-      machine === null
-        ? []
-        : notAdmitted(
-            machine.accounts,
-            apply?.passDeadlineSec ?? passTimeoutSeconds(),
-          );
     const receipt: TickReceipt = {
       version: 1,
       runId: newRunId(now),
@@ -709,9 +723,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       apply: apply !== null,
       exitStatus: 0,
       ...(withheld === undefined ? {} : { applyWithheld: withheld }),
-      ...(refusedAccounts.length === 0
-        ? {}
-        : { accountsNotAdmitted: refusedAccounts }),
+      ...accountsReport(machine, apply),
       unreadableLaunches: read.unreadable,
       repos: [],
     };

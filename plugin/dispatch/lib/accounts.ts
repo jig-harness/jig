@@ -27,6 +27,7 @@
  */
 import { resolve } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
+import { Defect } from "../../shared/errors.ts";
 import { run } from "../../shared/proc.ts";
 import type { AccountVendor } from "../../skills/drive-pr/scripts/lib/identity.ts";
 import {
@@ -80,10 +81,7 @@ export type LaunchKind =
  * Why an account of `vendor` is never admitted for `launch`, whatever its
  * slots; `null` when it may be.
  */
-export function vendorRefusal(
-  vendor: string,
-  launch: LaunchKind,
-): string | null {
+function vendorRefusal(vendor: string, launch: LaunchKind): string | null {
   if (!isPassVendor(vendor))
     return `the drive documents no pass command for its vendor ${vendor}, so it is accepted and not admitted`;
   if (
@@ -99,7 +97,7 @@ export function vendorRefusal(
 export function admittedVendor(account: MachineAccount): AccountVendor {
   const vendor = account.vendor;
   if (!isPassVendor(vendor))
-    throw new Error(
+    throw new Defect(
       `${account.name} was admitted with the vendor ${vendor}, which has no documented pass command`,
     );
   return vendor;

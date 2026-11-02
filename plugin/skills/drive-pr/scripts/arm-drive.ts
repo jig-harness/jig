@@ -199,6 +199,20 @@ function attempt<T>(read: () => T): T | Error {
 /** The flags a failed report's command leaves out, with their values. */
 const PASS_FLAGS = new Set(["--pass-model", "--pass-args"]);
 
+/** The model a failed report's command is built on when the configured one could not be read. */
+function fallbackModel(vendor: AccountVendor): ArmModel {
+  return vendor === "claude"
+    ? {
+        model: DEFAULT_PASS_MODEL,
+        source: "the default, since the configured model could not be read",
+      }
+    : {
+        model: null,
+        source:
+          "Codex's own configuration, since the configured model could not be read",
+      };
+}
+
 /**
  * The arm's inputs, or the `failed` report of the first one that could not
  * be read (exit 2 for a `--pass-model` that names no model or a
@@ -233,17 +247,6 @@ async function readInputs(
       passArgs,
       env: process.env,
     };
-  const fallback: ArmModel =
-    vendor === "claude"
-      ? {
-          model: DEFAULT_PASS_MODEL,
-          source: "the default, since the configured model could not be read",
-        }
-      : {
-          model: null,
-          source:
-            "Codex's own configuration, since the configured model could not be read",
-        };
   const noArgs: PassArgs = {
     words: [],
     source: "none, since the extra pass arguments could not be read",
@@ -258,7 +261,7 @@ async function readInputs(
       { pr, tree: tree instanceof Error ? null : tree, forward },
       armDrive instanceof Error ? null : armDrive,
       {
-        model: model instanceof Error ? fallback : model,
+        model: model instanceof Error ? fallbackModel(vendor) : model,
         passArgs: passArgs instanceof Error ? noArgs : passArgs,
         vendor,
       },
