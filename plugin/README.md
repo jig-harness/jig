@@ -180,11 +180,11 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 ```
 
 which clears only a record the tick cannot settle: an unknown one, a
-pending one whose launch cannot be retried, or one that does not read,
-whatever state its claim shows. It refuses a running record (stop its
-session first), and, among the records that read, an ended or died one
-and a pending one whose launch can still be retried: those the tick
-settles.
+pending one whose launch cannot be retried, or one that does not read
+and whose claim is not alive. It refuses a running record, readable or
+not (stop its session first), and, among the records that read, an ended
+or died one and a pending one whose launch can still be retried: those
+the tick settles.
 
 **The account picks the agent.** Each account in the machine file names its
 `vendor`, and that decides the agent every session on it runs in: a re-arm
