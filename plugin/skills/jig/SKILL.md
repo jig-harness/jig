@@ -2,7 +2,7 @@
 name: jig
 description: "Find your way around the Jig plugin in a repository that uses it: which /jig: skill fits a task and what comes next, where a setting or practice is documented, and how to report a Jig bug as a GitHub issue. Not for doing the work; it names the skill that does."
 argument-hint: "[question | bug]"
-allowed-tools: "Read Bash(bun *) Bash(claude plugin *)"
+allowed-tools: "Read Bash(bun *) Bash(claude plugin *) Bash(jig doctor*)"
 ---
 
 # Jig
@@ -32,11 +32,11 @@ version's tag, `https://github.com/jig-harness/jig/blob/v<version>/…`.
 | Which skill fits this task, and what comes after it                   | `<plugin>/README.md`: the skills tables, grouped by stage, with a "Works with" column for what starts each skill and what it hands on                                  |
 | How one skill works                                                   | `<plugin>/skills/<name>/SKILL.md`, and its `README.md` where it has one                                                                                                |
 | Where a value comes from, its default, which skill reads it           | `<plugin>/CONFIGURATION.md`; the values are the user file `~/.jig/jig.yaml`, the repository's `.config/jig.yaml` and `JIG__<SECTION>__<FIELD>` variables, highest last |
-| Which version is installed                                            | `version` in `<plugin>/.claude-plugin/plugin.json` (or `.codex-plugin/plugin.json`)                                                                                    |
+| Which version is installed                                            | `jig doctor`, which reports the plugin in each tool and the channel it follows; or `version` in `<plugin>/.claude-plugin/plugin.json` (or `.codex-plugin/plugin.json`) |
 | What a version changed                                                | `CHANGELOG.md` at the version's tag                                                                                                                                    |
 | What a practice module says (M0, M7, …) or what a term means          | `modules/` and `GLOSSARY.md` at the version's tag                                                                                                                      |
-| The machine tools (`jig gc`, `jig dispatch`)                          | `<plugin>/README.md`, the sections named after each                                                                                                                    |
-| A skill missing, a configuration error, old behaviour after an update | `<plugin>/README.md`, section "Troubleshooting"                                                                                                                        |
+| The `jig` command, and the machine tools (`jig gc`, `jig dispatch`)   | `<plugin>/README.md`: "The `jig` command" (install, upgrade, doctor, status), then the sections named after each tool                                                  |
+| A skill missing, a configuration error, old behaviour after an update | `jig doctor`, which names the command that fixes each failure, then `<plugin>/README.md`, section "Troubleshooting"                                                    |
 
 ## Which skill
 
@@ -73,6 +73,7 @@ configuration is valid by `CONFIGURATION.md`. Otherwise it goes elsewhere:
 | A configuration error (the message names the field and where it was set)               | Fix the configuration in the repository                                                                |
 | The repository's own gate, test or code failing                                        | The repository's own tracker                                                                           |
 | A tool the README's "Requirements" lists is missing                                    | Install it                                                                                             |
+| A plugin copy that is out of date, a scheduled job that does not run                   | `jig doctor` names the fix; `jig upgrade` updates the plugin                                           |
 | A lesson about how the instructions, skills or gates fit this repository, not a defect | `/jig:reflect`, where the configuration has a `reflection` section                                     |
 | A question, or an idea not yet a defect                                                | [Discussions](https://github.com/jig-harness/jig/discussions)                                          |
 | A security vulnerability                                                               | A [private advisory](https://github.com/jig-harness/jig/security/advisories/new), never a public issue |
@@ -87,7 +88,9 @@ of its bug form. The tracker is public, and filing is publishing: a person
 confirms every report before it is filed.
 
 1. **Reproduce it once** and keep the command, its exit code and its
-   output. Write them to a file.
+   output. Write them to a file. Run `jig doctor` first where the `jig`
+   command is on `PATH`: a failure it names with a fix is setup, not a
+   bug, and one it cannot explain belongs in the report.
 2. **Look for it** among Jig's issues, open and closed:
 
    ```sh
