@@ -9,7 +9,7 @@
  * writer (`orca-board.ts` and the dispatcher's notify) therefore holds this
  * lock across its read and its write.
  *
- * The lock is a file under the machine's temporary directory, named after
+ * The lock is a file under the user's state directory (not the temporary directory, which a launcher can change per process), named after
  * the workspace's path and created exclusively, holding its owner's pid and a
  * token. Release removes it only while it still holds that token. A lock
  * whose owner is no longer running is reclaimed by one reclaimer at a time.
@@ -30,7 +30,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { swallow } from "./errors.ts";
 
@@ -40,7 +40,7 @@ const CARD_LOCK_WAIT_MS = 5000;
 const POLL_MS = 50;
 
 export interface CardLockOptions {
-  /** The directory the locks live in; the machine's temporary directory by default. */
+  /** The directory the locks live in; the user's state directory by default. */
   root?: string;
   waitMs?: number;
 }
@@ -62,7 +62,7 @@ export function cardLockPath(path: string, root = defaultRoot()): string {
 }
 
 function defaultRoot(): string {
-  return join(tmpdir(), "jig-orca-card-locks");
+  return join(homedir(), ".local", "state", "jig", "orca-card-locks");
 }
 
 /** The pid a lock file records; `null` when it cannot be read. */
@@ -92,7 +92,8 @@ function ownerGone(pid: number | null): boolean {
  * one at a time judges and removes a lock: a lock whose recorded owner is
  * gone cannot be replaced by anyone else (a new holder needs the path free,
  * and only a reclaimer frees it), so the file removed is the one judged. A
- * mutex whose holder died is old enough to break after `MUTEX_STALE_MS`.
+ * mutex whose holder is gone is broken; one that names no owner, after
+ * `MUTEX_STALE_MS`.
  */
 function reclaim(lock: string): void {
   if (!ownerGone(ownerOf(lock))) return;
