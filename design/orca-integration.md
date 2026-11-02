@@ -166,17 +166,17 @@ plugin notification, never as a phone push, since the plugin also ticks on
 `done`: the outbound wake-up channel
 [the dispatcher's design](dark-factory-dispatch.md) leaves for later,
 without a change to the tick. Ticks for one repository run one at a time,
-and a tick starts no sooner than a minute after the last one started. An
-event that arrives while a tick runs or inside that minute sets a pending
-flag; one trailing tick starts once the running tick has finished and the
-minute has passed. The plugin counts the events it receives for a
-repository and a tick takes the count when it starts; once the tick has
-processed the repository, the plugin clears the pending flag only if no
-event has arrived since that count, and otherwise keeps it for the trailing
-tick. The tick lock is machine-wide, so a timer tick or another
-repository's tick can refuse the invocation without reading this
-repository: the plugin keeps the flag on a refusal and retries after the
-same minute. While the worker lives, a status change after a tick read its
+and a tick starts no sooner than a minute after the last one started. Every
+event sets a pending flag and is counted before any invocation, whether it
+starts a tick at once, arrives while a tick runs or arrives inside that
+minute; a tick takes the count when it starts, and one trailing tick
+starts once the running tick has finished and the minute has passed.
+Once the tick has processed the repository, the plugin clears the pending
+flag only if no event has arrived since that count, and otherwise keeps it
+for the trailing tick. The tick lock is machine-wide, so a timer tick or
+another repository's tick can refuse any invocation, the first one
+included, without reading this repository: the plugin keeps the flag on a
+refusal and retries after the same minute. While the worker lives, a status change after a tick read its
 state is therefore never dropped, and the next tick that runs processes it,
 later than a minute when a tick runs long or the lock is busy. The flag and
 the count live in the worker's memory: a restart loses a pending tick, and
