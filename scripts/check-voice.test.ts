@@ -118,12 +118,56 @@ describe("the guide's caps", () => {
 
   test("the linter's word rules count as it states them", () => {
     expect(entries("The tool is seamless.\n")).toEqual([
-      'marketing-adjective: "seamless"',
+      'marketing-adjective: "The tool is seamless."',
     ]);
   });
 });
 
+describe("word-rule report context", () => {
+  test.each([
+    ["marketing-adjective", "The tool is seamless."],
+    ["phrasal-verb", "Please spin up the tool."],
+    ["nominalization", "We perform an analysis."],
+  ])(
+    "%s quotes its sentence in the ratchet growth report",
+    (rule, sentence) => {
+      const r = repo(CLEAN, {
+        counters: [
+          {
+            name: "voice",
+            format: "json",
+            command: [process.execPath, SCRIPT, "--json"],
+          },
+        ],
+        configs: [],
+      });
+      r.write("FACTORY.md", `Intro. ${sentence}\n`);
+      const result = r.ratchet();
+      expectSpawnExit(
+        { exitCode: result.code, stdout: result.out, stderr: "" },
+        1,
+      );
+      expect(result.out).toContain(`${rule}: "${sentence}"`);
+    },
+  );
+
+  test("a wrapped word finding quotes the whole sentence", () => {
+    expect(entries("Intro.\n\nThe tool is\nseamless for teams.\n")).toContain(
+      'marketing-adjective: "The tool is seamless for teams."',
+    );
+  });
+});
+
 describe("the sentences are the linter's", () => {
+  test("the dedicated long-sentence fixture exercises parity", () => {
+    const ours = sentences(PLANT).filter((s) => s.words > LINTER_MAX_WORDS);
+    expect(ours).toHaveLength(1);
+    expect(
+      lint(PLANT)[0]
+        .filter((f) => f.rule === "long-sentence")
+        .map((f) => f.match),
+    ).toEqual(ours.map((s) => `${s.words} words`));
+  });
   // At the linter's own cap, the sentence pass finds exactly the sentences
   // the linter's long-sentence rule finds, on the lines it reports them.
   test.each([...VISITOR_DOCUMENTS])("%s", (doc) => {
@@ -135,7 +179,6 @@ describe("the sentences are the linter's", () => {
       .filter((f) => f.rule === "long-sentence")
       .map((f) => `${f.line}: ${f.match}`);
     expect(ours).toEqual(linter);
-    expect(ours.length).toBeGreaterThan(0);
   });
 });
 

@@ -27,7 +27,7 @@
 //   (no flag)  each document's count, for the gates
 //   --json     the counts for the ratchet; under RATCHET_HISTORICAL=1 (the
 //              merge base) a missing document counts zero
-//   --list     every finding of the named documents, or of all four
+//   --list     every finding of the named documents, or of all visitor documents
 // The documents are read from the current directory. Exit 0 when every
 // document was read, 2 when one is missing or a flag is unknown.
 import { existsSync, readFileSync } from "node:fs";
@@ -158,7 +158,8 @@ export function voiceFindings(source: string): {
   words: number;
 } {
   const hard: VoiceFinding[] = [];
-  for (const s of sentences(source)) {
+  const allSentences = sentences(source);
+  for (const s of allSentences) {
     if (s.words > MAX_WORDS)
       hard.push({
         line: s.line,
@@ -175,7 +176,17 @@ export function voiceFindings(source: string): {
   for (const f of linted) {
     // Sentence length and semicolons are measured above, under the guide's caps.
     if (f.rule === "long-sentence" || f.rule === "semicolon") continue;
-    const finding = { line: f.line, entry: `${f.rule}: "${f.match}"` };
+    const paragraph = allSentences.findLast((s) => s.line <= f.line)?.line;
+    const context = allSentences.filter(
+      (s) =>
+        s.line === paragraph &&
+        s.text.toLowerCase().includes(f.match.toLowerCase()),
+    );
+    const quote =
+      f.level === "advisory"
+        ? f.match
+        : context.map((s) => s.text).join(" ") || f.match;
+    const finding = { line: f.line, entry: `${f.rule}: "${quote}"` };
     (f.level === "advisory" ? advice : hard).push(finding);
   }
   const byLine = (a: VoiceFinding, b: VoiceFinding) => a.line - b.line;

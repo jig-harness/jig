@@ -22,6 +22,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -39,6 +40,7 @@ import {
   splitlines,
   upstreamLint,
 } from "../scripts/ste-lint/ste-lint.ts";
+import { parseJsonc } from "../../../../modules/M1-gates-enforcement-ladder/reference/ratchet/ratchet-config.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 const REPO_ROOT = resolve(import.meta.dir, "../../../..");
@@ -526,9 +528,10 @@ describe("advisory only", () => {
     "scripts/check-voice.ts": "voice",
   };
   /** Where Jig keeps the scripts its wiring runs. */
-  const SCRIPT_ROOTS = ["scripts", "tools", "lib", "modules"];
+  const SCRIPT_ROOTS = ["scripts", "tools", "lib", "modules", "plugin"];
   const SCRIPT_SKIP = new Set([
     "node_modules",
+    "__tests__",
     "fixtures",
     "fixture",
     "seeds",
@@ -567,13 +570,17 @@ describe("advisory only", () => {
   }
 
   /** The code under SCRIPT_ROOTS, tests left out: they run the linter on fixtures or to pin it. */
-  function scripts(): string[] {
+  function scripts(root = REPO_ROOT): string[] {
     const found: string[] = [];
     const walk = (dir: string) => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const path = join(dir, entry.name);
         if (entry.isDirectory()) {
-          if (!SCRIPT_SKIP.has(entry.name)) walk(path);
+          if (
+            !SCRIPT_SKIP.has(entry.name) &&
+            path !== join(root, "plugin/skills/decide/scripts/ste-lint")
+          )
+            walk(path);
         } else if (
           /\.(ts|tsx|js|mjs|cjs|sh)$/.test(entry.name) &&
           !entry.name.endsWith(".test.ts")
@@ -581,18 +588,73 @@ describe("advisory only", () => {
           found.push(path);
       }
     };
-    for (const root of SCRIPT_ROOTS) walk(join(REPO_ROOT, root));
+    for (const directory of SCRIPT_ROOTS) walk(join(root, directory));
     return found;
   }
 
-  /** The ratchet wiring's counters. Its comments are whole lines. */
-  function counters(): { name: string; format: string; command?: string[] }[] {
-    const text = readFileSync(join(REPO_ROOT, RATCHET_WIRING), "utf8")
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//"))
-      .join("\n");
-    return JSON.parse(text).counters;
+  /** Read the same JSON-with-comments grammar as the ratchet. */
+  function counters(
+    source = readFileSync(join(REPO_ROOT, RATCHET_WIRING), "utf8"),
+  ): { name: string; format: string; command?: string[] }[] {
+    return (
+      parseJsonc(source) as {
+        counters: { name: string; format: string; command?: string[] }[];
+      }
+    ).counters;
   }
+
+  function isCounter(
+    counter: { format: string; command?: string[] },
+    script: string,
+  ): boolean {
+    return (
+      counter.format === "json" &&
+      JSON.stringify(counter.command) ===
+        JSON.stringify(["bun", script, "--json"])
+    );
+  }
+
+  it("rejects a decoy that names the checker without executing it", () => {
+    expect(
+      isCounter(
+        {
+          format: "json",
+          command: [
+            "bun",
+            "-e",
+            "console.log(JSON.stringify({counts:{}}))",
+            "scripts/check-voice.ts",
+          ],
+        },
+        "scripts/check-voice.ts",
+      ),
+    ).toBe(false);
+  });
+
+  it("reads inline and block comments and trailing commas in counter wiring", () => {
+    expect(
+      counters(
+        '{ /* counters */ "counters": [ { "name": "voice", // name\n "format": "json", "command": ["bun", "scripts/check-voice.ts", "--json",], }, ], }',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("finds a delegated plugin hook that imports the linter", () => {
+    const root = mkdtempSync(join(tmpdir(), "ste-hook-"));
+    try {
+      for (const directory of [...SCRIPT_ROOTS, "plugin/hooks"])
+        mkdirSync(join(root, directory), { recursive: true });
+      writeFileSync(
+        join(root, "plugin/hooks/voice.ts"),
+        'import { lint } from "../skills/decide/scripts/ste-lint/ste-lint.ts"; process.exit(lint("seamless")[0].length ? 1 : 0);',
+      );
+      expect(
+        scripts(root).map((p) => relative(root, p).split(sep).join("/")),
+      ).toContain("plugin/hooks/voice.ts");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
   it("reads a non-empty set of CI, gate, ratchet and hook files and scripts (so a clean scan is real)", () => {
     const files = wiringFiles();
@@ -602,9 +664,15 @@ describe("advisory only", () => {
   });
 
   it("no workflow, gate, package script, ratchet wiring, plugin manifest or hook names the linter", () => {
-    const offenders = wiringFiles().filter((file) =>
-      /ste-lint/.test(readFileSync(file, "utf8")),
-    );
+    const offenders = wiringFiles().filter((file) => {
+      // Support paths supply the implementation to historical measurements;
+      // only a counter command can execute it.
+      const text =
+        relative(REPO_ROOT, file).split(sep).join("/") === RATCHET_WIRING
+          ? JSON.stringify(counters().map((c) => c.command))
+          : readFileSync(file, "utf8");
+      return /ste-lint/.test(text);
+    });
     expect(offenders.map((f) => relative(REPO_ROOT, f))).toEqual([]);
   });
 
@@ -620,8 +688,7 @@ describe("advisory only", () => {
     const wired = counters();
     for (const [script, name] of Object.entries(RATCHET_CALLERS)) {
       const counter = wired.find((c) => c.name === name);
-      expect(counter?.format, script).toBe("json");
-      expect(counter?.command, script).toContain(script);
+      expect(counter && isCounter(counter, script), script).toBe(true);
     }
   });
 });

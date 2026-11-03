@@ -148,7 +148,7 @@ After:
 
 > **Fitted to how the organization works.** A team adopts one module at a
 > time, and no module needs another at its strictest level. The
-> organization's own values live in one configuration file: the command that
+> organization's own values come from configuration: the command that
 > runs its checks, its reviewers, its issue tracker's team and labels. The
 > skills read that file when they run, and the audit checks it against the
 > repository.

@@ -86,9 +86,11 @@ its [M1 ratchet](https://github.com/jig-harness/jig/blob/main/modules/M1-gates-e
 holds the counts.
 
 `../../__tests__/ste-lint.test.ts` holds both halves of the rule in Jig. It
-fails when a wiring file names the linter: a workflow, a hook, a package
-script, the gate list, a plugin manifest or the ratchet wiring. It fails
-when a script in Jig's `scripts/`, `tools/`, `lib/` or `modules/` names the
-linter and is not on the test's list of ratchet callers. And it fails when a
-listed caller is not a `json` counter of the ratchet wiring. The skill's own
-tests run the linter on fixtures.
+fails when a wiring command names the linter: a workflow, a hook, a package
+script, the gate list, a plugin manifest or a ratchet counter. The ratchet's
+support paths may name the implementation so historical measurements use the
+same rules. The test also scans executable code under Jig's `scripts/`,
+`tools/`, `lib/`, `modules/` and `plugin/`, excluding tests and the linter
+itself. A script that names the linter must be on the test's list of ratchet
+callers. Each listed caller must run as `bun <caller> --json` in its named
+ratchet counter. The skill's own tests run the linter on fixtures.
