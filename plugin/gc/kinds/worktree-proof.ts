@@ -1,6 +1,6 @@
 /** Re-read local identity; preserve unknown evidence and the session-lock veto. */
-import { lstatSync, realpathSync } from "node:fs";
-import { isAbsolute, normalize, resolve } from "node:path";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
+import { isAbsolute, join, normalize, resolve } from "node:path";
 import { layeredConfig, remoteName } from "../../shared/consumer.ts";
 import { readDrivenTree, type DrivenTree } from "../../shared/driven-tree.ts";
 import { isMapping } from "../../shared/config-layers.ts";
@@ -84,21 +84,55 @@ async function operation(admin: string): Promise<string | null> {
   return null;
 }
 /**
- * Ignored paths that a detected package manager's dependency directory
- * accounts for, wherever it sits (a monorepo's nested `node_modules` counts
- * too): rebuildable from the lockfile `detectPackageManager` found, never
- * meaningful local state. No field declares an override, since every
- * ecosystem that module recognises needs none; a lockfile-less ecosystem's
- * own rebuildable directory would be grounds to add one.
+ * Whether `directory` (a path under `root`) holds nothing but dependency
+ * directories: the shape of a wholly ignored workspace folder that git
+ * reports as one collapsed entry, hiding the `node_modules` inside it. A
+ * symbolic link or any other file is local state and fails it.
+ */
+function onlyDependencyDirectories(directory: string): boolean {
+  const children = readdirSync(directory);
+  if (children.length === 0) return false;
+  return children.every((child) => {
+    const path = join(directory, child);
+    const stat = lstatSync(path);
+    if (!stat.isDirectory()) return false;
+    return child === "node_modules" || onlyDependencyDirectories(path);
+  });
+}
+/** Whether the root holds a manifest and a recognised lockfile to rebuild from. */
+function rebuildInputs(root: string): boolean {
+  if (detectPackageManager(root).found === null) return false;
+  try {
+    return lstatSync(join(root, "package.json")).isFile();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+/**
+ * Ignored directories that a package manager's dependency directory accounts
+ * for, wherever they sit (a monorepo's nested `node_modules` counts too):
+ * rebuildable from the root's `package.json` and the lockfile
+ * `detectPackageManager` found, never meaningful local state. Only a real
+ * directory counts (git marks one with a trailing slash), so an ignored file
+ * or link named `node_modules` stays local state, as does a collapsed
+ * directory that holds anything beside dependency directories. No field
+ * declares an override, since every ecosystem that module recognises needs
+ * none; a lockfile-less ecosystem's own rebuildable directory would be
+ * grounds to add one.
  */
 function classifyIgnored(root: string, paths: string[]): IgnoredContent {
-  const dependencyDirectory = detectPackageManager(root).found !== null;
+  const inputs = rebuildInputs(root);
   const rebuildable: string[] = [];
   const other: string[] = [];
   for (const path of paths) {
-    if (dependencyDirectory && path.split("/").includes("node_modules"))
-      rebuildable.push(path);
-    else other.push(path);
+    const directory = path.endsWith("/") ? path.slice(0, -1) : null;
+    const dependency =
+      inputs &&
+      directory !== null &&
+      (directory.split("/").pop() === "node_modules" ||
+        onlyDependencyDirectories(join(root, directory)));
+    (dependency ? rebuildable : other).push(path);
   }
   return { rebuildable, other };
 }
