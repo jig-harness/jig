@@ -15,10 +15,12 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  rmSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   realpathSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -307,6 +309,20 @@ function pendingText(f: ReturnType<typeof setup>): string {
   return text.join("\n");
 }
 
+function commitAndPush(
+  f: ReturnType<typeof setup>,
+  message: string,
+  files: Record<string, string>,
+): void {
+  for (const [name, text] of Object.entries(files))
+    writeFileSync(join(f.tree, name), text);
+  f.command(["git", "-C", f.tree, "add", "-A"]);
+  f.command(["git", "-C", f.tree, "commit", "-m", message]);
+  f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
+  f.command(["git", "-C", f.tree, "fetch", "origin"]);
+  f.refreshGh();
+}
+
 function calls(f: ReturnType<typeof setup>): string[] {
   const file = join(f.root, "orca-calls");
   return existsSync(file)
@@ -339,6 +355,119 @@ describe.skipIf(
     expect(calls(f)).not.toContainEqual(expect.stringMatching(/ rm /));
   }, 60_000);
 
+  test("a dependency directory alone does not veto; the worktree still reaches would-collect", () => {
+    const f = setup();
+    // A lockfile must be tracked, like `.gitignore` itself, so neither counts
+    // as untracked content that would veto before the ignored-content check.
+    commitAndPush(f, "track a lockfile", {
+      ".gitignore": "node_modules/\n",
+      "package-lock.json": "{}\n",
+      "package.json": "{}\n",
+    });
+    // Both a top-level and a monorepo's nested dependency directory count.
+    mkdirSync(join(f.tree, "node_modules", ".bin"), { recursive: true });
+    writeFileSync(join(f.tree, "node_modules", ".bin", "tsc"), "");
+    // Git reports a workspace folder holding only ignored content as one
+    // `website/` entry, which still counts for the dependency directory in it.
+    mkdirSync(join(f.tree, "website", "node_modules"), { recursive: true });
+    writeFileSync(join(f.tree, "website", "node_modules", "pkg.js"), "");
+    idle(f);
+    expect(line(gc(f, ["--json"]))).toMatchObject({
+      outcome: "would-collect",
+      reason: expect.stringContaining(
+        "the runtime's registry shows no agent at work in it",
+      ),
+      details: {
+        runtime: "orca",
+        orca: f.id,
+        // A wholly ignored directory is one entry, not every file inside it.
+        rebuildable: expect.arrayContaining(["node_modules/", "website/"]),
+      },
+    });
+  }, 60_000);
+
+  test("another ignored path beside the dependency directory still is a finding naming it", () => {
+    const f = setup();
+    commitAndPush(f, "track a lockfile", {
+      ".gitignore": "node_modules/\n.env\n",
+      "package-lock.json": "{}\n",
+      "package.json": "{}\n",
+    });
+    mkdirSync(join(f.tree, "node_modules"), { recursive: true });
+    writeFileSync(join(f.tree, "node_modules", "pkg.js"), "");
+    writeFileSync(join(f.tree, ".env"), "SECRET=1\n");
+    const receipt = line(gc(f, ["--json"]));
+    expect(receipt.outcome).toBe("finding");
+    expect(receipt.reason).toContain(".env");
+    expect(receipt.reason).not.toContain("node_modules");
+    expect(receipt.details).toMatchObject({
+      rebuildable: ["node_modules/"],
+    });
+  }, 60_000);
+
+  for (const [label, extra] of [
+    ["a file", (dir: string) => writeFileSync(join(dir, "notes.txt"), "x\n")],
+    [
+      "a symbolic link",
+      (dir: string) => symlinkSync("node_modules", join(dir, "alias")),
+    ],
+  ] as const)
+    test(`a collapsed folder holding ${label} beside its dependency directory stays a finding`, () => {
+      const f = setup();
+      commitAndPush(f, "track a lockfile", {
+        ".gitignore": "website/\n",
+        "package-lock.json": "{}\n",
+        "package.json": "{}\n",
+      });
+      mkdirSync(join(f.tree, "website", "node_modules"), { recursive: true });
+      writeFileSync(join(f.tree, "website", "node_modules", "pkg.js"), "");
+      extra(join(f.tree, "website"));
+      idle(f);
+      const receipt = line(gc(f, ["--json"]));
+      expect(receipt.outcome).toBe("finding");
+      expect(receipt.reason).toContain("website/");
+      expect(existsSync(f.tree)).toBe(true);
+      expect(calls(f)).not.toContainEqual(expect.stringMatching(/ rm /));
+    }, 60_000);
+
+  test("an ignored path with no recognisable package manager is still a finding", () => {
+    const f = setup();
+    commitAndPush(f, "track a gitignore", {
+      ".gitignore": ".env\nnode_modules/\n",
+    });
+    writeFileSync(join(f.tree, ".env"), "SECRET=1\n");
+    mkdirSync(join(f.tree, "node_modules"), { recursive: true });
+    writeFileSync(join(f.tree, "node_modules", "pkg.js"), "");
+    const receipt = line(gc(f, ["--json"]));
+    expect(receipt.outcome).toBe("finding");
+    expect(receipt.reason).toContain(".env");
+    expect(receipt.reason).toContain("node_modules");
+    expect(receipt.details).toMatchObject({ runtime: "orca" });
+    expect(receipt.details).not.toHaveProperty("rebuildable");
+  }, 60_000);
+
+  test("a lockfile without a manifest, or a file named node_modules, is still a finding", () => {
+    const f = setup();
+    commitAndPush(f, "track a lockfile", {
+      ".gitignore": "node_modules\n",
+      "package-lock.json": "{}\n",
+    });
+    mkdirSync(join(f.tree, "node_modules"), { recursive: true });
+    writeFileSync(join(f.tree, "node_modules", "pkg.js"), "");
+    idle(f);
+    const bare = line(gc(f, ["--json"]));
+    expect(bare.outcome).toBe("finding");
+    expect(bare.reason).toContain("node_modules");
+    rmSync(join(f.tree, "node_modules"), { recursive: true });
+    commitAndPush(f, "track a manifest", {
+      node_modules: "notes\n",
+      "package.json": "{}\n",
+    });
+    const file = line(gc(f, ["--json"]));
+    expect(file.outcome).toBe("finding");
+    expect(file.reason).toContain("node_modules");
+  }, 60_000);
+
   test("collecting an idle Orca checkout runs the remove hook, parks, and removes it through Orca", () => {
     const f = setup();
     idle(f);
@@ -362,6 +491,29 @@ describe.skipIf(
     ) as OrcaState;
     expect(state.worktrees).toEqual([]);
     expect(calls(f)).toContain(`worktree rm --worktree id:${f.id} --json`);
+  }, 60_000);
+
+  test("collecting a worktree whose only ignored content is a dependency directory still reports it as rebuildable", () => {
+    const f = setup();
+    commitAndPush(f, "track a lockfile", {
+      ".gitignore": "node_modules/\n",
+      "package-lock.json": "{}\n",
+      "package.json": "{}\n",
+    });
+    mkdirSync(join(f.tree, "node_modules"), { recursive: true });
+    writeFileSync(join(f.tree, "node_modules", "pkg.js"), "");
+    idle(f);
+    const collected = line(gc(f, ["--collect", "--json"]));
+    expect(collected).toMatchObject({
+      outcome: "collected",
+      details: {
+        runtime: "orca",
+        hook: expect.stringMatching(/\.config\/worktree-hooks\/remove$/),
+        parked: true,
+        rebuildable: ["node_modules/"],
+      },
+    });
+    expect(existsSync(f.tree)).toBe(false);
   }, 60_000);
 
   test("collecting preserves an unsent reflection finding outside the removed checkout", () => {

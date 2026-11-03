@@ -17,6 +17,8 @@ export interface Proof {
   reason: string;
   /** Missing creator coordination is an explicit collection veto. */
   reportOnly?: string;
+  /** Evidence merged into the receipt line's `details`, whatever the state. */
+  details?: unknown;
 }
 export interface CollectionKind {
   name: KindName;

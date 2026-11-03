@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import {
   existsSync,
   mkdirSync,
@@ -12,7 +12,7 @@ import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts"
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { gcGit, gitEnvironment } from "../git.ts";
 import { ancestry } from "../kinds/worktree-git.ts";
-import { worktreeProof } from "../kinds/worktree-proof.ts";
+import { classifyIgnored, worktreeProof } from "../kinds/worktree-proof.ts";
 
 function repository() {
   const root = mkdtempSync(join(tmpdir(), "gc-git-observation-"));
@@ -306,4 +306,53 @@ test("ancestry ignores a replacement ref that fabricates descent", async () => {
   // Replace the unrelated tip with a commit that descends from `head`.
   f.git("replace", other, second);
   expect(await ancestry(f.repo, head, other)).toBe(false);
+});
+
+test("the ignored-content scan fails once its deadline has passed", () => {
+  const root = mkdtempSync(join(tmpdir(), "gc-ignored-deadline-"));
+  mkdirSync(join(root, "website", "node_modules"), { recursive: true });
+  writeFileSync(join(root, "package.json"), "{}\n");
+  writeFileSync(join(root, "package-lock.json"), "{}\n");
+  expect(() => classifyIgnored(root, ["website/"], Date.now() - 1)).toThrow(
+    "deadline",
+  );
+  expect(classifyIgnored(root, ["website/"]).rebuildable).toEqual(["website/"]);
+});
+
+test("the deadline also covers a direct dependency directory and an empty one", () => {
+  const root = mkdtempSync(join(tmpdir(), "gc-ignored-deadline-"));
+  mkdirSync(join(root, "node_modules"));
+  mkdirSync(join(root, "empty"));
+  writeFileSync(join(root, "package.json"), "{}\n");
+  writeFileSync(join(root, "package-lock.json"), "{}\n");
+  for (const path of ["node_modules/", "empty/"])
+    expect(() => classifyIgnored(root, [path], Date.now() - 1)).toThrow(
+      "deadline",
+    );
+});
+
+test("the deadline expiring mid-traversal stops the walk of a collapsed directory", () => {
+  const root = mkdtempSync(join(tmpdir(), "gc-ignored-deadline-"));
+  mkdirSync(join(root, "website", "packages", "node_modules"), {
+    recursive: true,
+  });
+  writeFileSync(join(root, "package.json"), "{}\n");
+  writeFileSync(join(root, "package-lock.json"), "{}\n");
+  // The clock reads inside the budget for `ticks` checks, then past it. The
+  // walk makes five: one per path, one entering each of `website` and
+  // `packages`, and one per entry in each.
+  const scan = (ticks: number) => {
+    let reads = 0;
+    const clock = spyOn(Date, "now").mockImplementation(() =>
+      ++reads <= ticks ? 0 : 2,
+    );
+    try {
+      return classifyIgnored(root, ["website/"], 1);
+    } finally {
+      clock.mockRestore();
+    }
+  };
+  for (const ticks of [1, 2, 3, 4])
+    expect(() => scan(ticks)).toThrow("deadline");
+  expect(scan(5).rebuildable).toEqual(["website/"]);
 });
