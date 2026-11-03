@@ -458,10 +458,17 @@ describe("FEATURES.md", () => {
 
   test("has an intro and a feature per section, each with prose and a practice", () => {
     expect(f.intro).toMatch(/modules/);
-    expect(f.features.length).toBeGreaterThanOrEqual(10);
+    expect(f.features.length).toBe(13);
     for (const x of f.features) {
       expect(x.body.length, x.title).toBeGreaterThan(120);
       expect(x.practice, x.title).not.toBe("");
+    }
+  });
+
+  test("every feature opens with its problem line, apart from its prose", () => {
+    for (const x of f.features) {
+      expect(x.problem, x.title).toMatch(/^[A-Z].*[.!?]$/);
+      expect(x.body, x.title).not.toContain(x.problem);
     }
   });
 
@@ -502,6 +509,9 @@ Intro.
 
 ## A thing
 
+"The thing went wrong, as a team
+would say it."
+
 Prose about the thing, long enough to count.
 
 - **Skills:** [\`a\`](plugin/skills/a/SKILL.md), [\`b\`](plugin/agents/b.md)
@@ -512,6 +522,7 @@ Prose about the thing, long enough to count.
     expect(one.intro).toBe("Intro.");
     expect(one.features[0]).toMatchObject({
       title: "A thing",
+      problem: "The thing went wrong, as a team would say it.",
       body: "Prose about the thing, long enough to count.",
       skills: ["a", "b"],
       modules: ["M1", "M12"],
@@ -526,32 +537,32 @@ Prose about the thing, long enough to count.
     });
     expect(
       parseFeatures(
-        "# T\n\n## A\n\nProse.\n\n- **Practice:** M1\n- **On the roadmap:** the `x` skill (item 4), which does y (Later)\n",
+        '# T\n\n## A\n\n"A problem."\n\nProse.\n\n- **Practice:** M1\n- **On the roadmap:** the `x` skill (item 4), which does y (Later)\n',
       ).features[0]?.notBuiltEntries,
     ).toEqual([
       { text: "the `x` skill, which does y", items: ["4"], groups: ["Later"] },
     ]);
     expect(() =>
       parseFeatures(
-        "# T\n\n## A\n\nProse.\n\n- **Runs:** x\n- **Practice:** M1\n",
+        '# T\n\n## A\n\n"A problem."\n\nProse.\n\n- **Runs:** x\n- **Practice:** M1\n',
       ),
     ).toThrow(/field must be one of/);
-    expect(() => parseFeatures("# T\n\n## A\n\nProse.\n")).toThrow(
-      /no Practice/,
-    );
+    expect(() =>
+      parseFeatures('# T\n\n## A\n\n"A problem."\n\nProse.\n'),
+    ).toThrow(/no Practice/);
     expect(() =>
       parseFeatures(
-        "# T\n\n## A\n\nProse.\n\n- **Practice:** M1\n\nMore.\n\n- **Runs:** x\n",
+        '# T\n\n## A\n\n"A problem."\n\nProse.\n\n- **Practice:** M1\n\nMore.\n\n- **Runs:** x\n',
       ),
     ).toThrow(/text after its field list/);
     expect(() =>
       parseFeatures(
-        "# T\n\n## A\n\nProse.\n\n- **Skills:** see plugin/skills/a/SKILL.md\n- **Practice:** M1\n",
+        '# T\n\n## A\n\n"A problem."\n\nProse.\n\n- **Skills:** see plugin/skills/a/SKILL.md\n- **Practice:** M1\n',
       ),
     ).toThrow(/more than links/);
     expect(() =>
       parseFeatures(
-        "# T\n\n## A\n\nProse.\n\n- **Skills:** [`b`](plugin/skills/a/SKILL.md)\n- **Practice:** M1\n",
+        '# T\n\n## A\n\n"A problem."\n\nProse.\n\n- **Skills:** [`b`](plugin/skills/a/SKILL.md)\n- **Practice:** M1\n',
       ),
     ).toThrow(/must link/);
     for (const hidden of [
@@ -566,7 +577,8 @@ Prose about the thing, long enough to count.
       "- **Practice:** M1\n  -\n",
     ])
       expect(
-        () => parseFeatures(`# T\n\n## A\n\nProse.\n\n${hidden}`),
+        () =>
+          parseFeatures(`# T\n\n## A\n\n"A problem."\n\nProse.\n\n${hidden}`),
         hidden,
       ).toThrow(/continues a field/);
     for (const before of [
@@ -580,7 +592,7 @@ Prose about the thing, long enough to count.
       expect(
         () =>
           parseFeatures(
-            `# T\n\n## A\n\nProse.\n\n${before}\n- **Practice:** M1\n`,
+            `# T\n\n## A\n\n"A problem."\n\nProse.\n\n${before}\n- **Practice:** M1\n`,
           ),
         before,
       ).toThrow(/in its prose/);
@@ -589,15 +601,37 @@ Prose about the thing, long enough to count.
       "- **Practice:** M1\n  covers M2 (see 1) above)\n",
     ])
       expect(
-        () => parseFeatures(`# T\n\n## A\n\nProse.\n\n${plain}`),
+        () =>
+          parseFeatures(`# T\n\n## A\n\n"A problem."\n\nProse.\n\n${plain}`),
         plain,
       ).not.toThrow();
+  });
+
+  test("refuses a section that does not open with one quoted problem line", () => {
+    const section = (opening: string) =>
+      `# T\n\n## A\n\n${opening}\n\n- **Practice:** M1\n`;
+    for (const bad of [
+      "Prose.",
+      '"Unclosed.\n\nProse.',
+      'Unopened."\n\nProse.',
+      '"A "quote" inside."\n\nProse.',
+      '""\n\nProse.',
+      '"A problem." And more.\n\nProse.',
+    ])
+      expect(() => parseFeatures(section(bad)), bad).toThrow(
+        /must open with its problem line/,
+      );
+    expect(() => parseFeatures(section('"A problem."'))).toThrow(/no prose/);
+    expect(
+      parseFeatures(section('"A problem,\nwrapped."\n\nProse.')).features[0]
+        ?.problem,
+    ).toBe("A problem, wrapped.");
   });
 
   test("refuses an On the roadmap parenthetical that is not a roadmap reference", () => {
     const notBuilt = (text: string) =>
       parseFeatures(
-        `# T\n\n## A\n\nProse.\n\n- **Practice:** M1\n- **On the roadmap:** ${text}\n`,
+        `# T\n\n## A\n\n"A problem."\n\nProse.\n\n- **Practice:** M1\n- **On the roadmap:** ${text}\n`,
       ).features[0];
     expect(notBuilt("missing work ( item 999 )")?.roadmapItems).toEqual([
       "999",

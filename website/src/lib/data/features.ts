@@ -1,7 +1,10 @@
 /**
  * FEATURES.md: what a team gets from Jig, one section per feature. Each
- * section is Markdown prose followed by a list of fields: the skills that run
- * it, the practice (the modules that state it) and what is on the roadmap.
+ * section opens with its problem line, the problem the feature solves as a
+ * team would say it: a paragraph that is one quotation in straight double
+ * quotes, with none inside. Markdown prose follows, then a list of fields:
+ * the skills that run it, the practice (the modules that state it) and what
+ * is on the roadmap.
  * The field list closes the section. On the roadmap is entries separated by
  * semicolons, each naming its roadmap work in parentheses, and its
  * parentheses hold nothing else: items by number ("item 4", "items 14 and
@@ -18,7 +21,9 @@ import {
 
 export interface Feature {
   title: string;
-  /** The prose before the fields, Markdown. */
+  /** The problem line, Markdown, without its quotation marks. */
+  problem: string;
+  /** The prose between the problem line and the fields, Markdown. */
   body: string;
   /** Skill and agent names the Skills field links to, in order. */
   skills: string[];
@@ -181,6 +186,15 @@ function fieldList(
   };
 }
 
+/**
+ * The problem line, the section's first paragraph with its quotation marks
+ * dropped, or "" when that paragraph is not one quotation.
+ */
+function problemLine(paragraph: string): string {
+  const m = /^"([^"]*)"$/.exec(paragraph.replace(/\s*\n\s*/g, " ").trim());
+  return m?.[1]?.trim() ?? "";
+}
+
 function feature(title: string, body: string): Feature {
   const { prose: head, list } = fieldList(title, body);
   const fields = new Map<Field, string>();
@@ -193,11 +207,19 @@ function feature(title: string, body: string): Feature {
   const practice = fields.get("Practice") ?? "";
   if (!practice) throw new Error(`FEATURES.md: "${title}" has no Practice`);
   const notBuilt = fields.get("On the roadmap") ?? "";
-  const prose = paragraphs(head).join("\n\n");
-  if (!prose) throw new Error(`FEATURES.md: "${title}" has no prose`);
+  const [first = "", ...rest] = paragraphs(head);
+  const problem = problemLine(first);
+  const prose = rest.join("\n\n");
+  if (!problem || !prose)
+    throw new Error(
+      problem
+        ? `FEATURES.md: "${title}" has no prose`
+        : `FEATURES.md: "${title}" must open with its problem line, one paragraph in double quotes with none inside: ${first.split("\n")[0] ?? ""}`,
+    );
   const entries = notBuiltEntries(title, notBuilt);
   return {
     title,
+    problem,
     body: prose,
     skills: skillNames(title, fields.get("Skills") ?? ""),
     practice,
@@ -225,6 +247,9 @@ export function parseFeatures(markdown: string): Features {
 export const FEATURE_PLATES: Record<string, PlateName> = {
   "an-audit-of-where-you-stand": "theodolite",
   "a-work-item-carried-from-pickup-to-merge": "crate",
+  // Stands in for the `timer` plate, which design/website.md's plate table
+  // holds as not yet drawn.
+  "a-line-that-runs-with-nobody-at-the-keyboard": "numberer",
   "review-in-tiers-with-an-arbiter-for-contested-findings": "sieves",
   "a-learning-loop-built-into-the-process": "ratchet",
   "decisions-recorded-found-again-and-turned-into-checks": "ledger",

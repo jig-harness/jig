@@ -112,7 +112,7 @@ The parsers and what they read:
 | `skills.ts` | `plugin/README.md` | the `Skill` and `Agent` tables; the paragraph on how skills reach the tracker |
 | `factory.ts` | `FACTORY.md` | its section titles, the jobs, stations and levels tables and their column counts, the paragraphs it finds by their opening words |
 | `readme.ts` | `README.md` | "Jig as a software factory" and "Ways to use" |
-| `features.ts` | `FEATURES.md` | one `##` section per feature; a list of `**Skills:**`, `**Practice:**` and `**On the roadmap:**` fields after the prose, skills by their link paths, modules by id, roadmap items as "item N"; an unknown field or a feature without prose or a practice fails the build |
+| `features.ts` | `FEATURES.md` | one `##` section per feature, opening with its problem line, a paragraph in double quotes; a list of `**Skills:**`, `**Practice:**` and `**On the roadmap:**` fields after the prose, skills by their link paths, modules by id, roadmap items as "item N"; an unknown field, or a feature without a problem line, prose or a practice, fails the build |
 | `adoption.ts` | `adoption/*.md` | the brownfield sections; the greenfield heading that names the phase count |
 | `flywheel.ts` | M8's README | "The flywheel", "The two companion cycles", the "Both cycles" paragraph |
 | `config.ts` | `plugin/CONFIGURATION.md` | the "Configuration layers" table |
