@@ -126,7 +126,8 @@ beats a guessed edit.
   `website/src/lib/data/data.test.ts` with it.
 - Site copy follows the repository's writing rules ([AGENTS.md](../../../AGENTS.md)):
   plain language, terms linked to the glossary, no origin references, no
-  history in the copy.
+  history in the copy. Read the [voice guide](../../../docs/VOICE.md) before
+  editing site copy or a visitor document.
 - Copy whose new wording needs a person's judgement (what Jig claims, what it
   never does) goes in the report as a question, not into an edit.
 

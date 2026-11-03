@@ -272,6 +272,9 @@ merges change it. Three questions:
    fact. A match the merge did not update is OWED, and the diff in 2 cannot
    show it, because that page did not change.
 
+Read the [voice guide](../../../docs/VOICE.md) before writing a fix to the
+site's copy or to a visitor document.
+
 When the site itself changed (`website/`), also check that
 [design/website.md](../../../design/website.md) still describes it and that
 its build order no longer lists what the merge built.
