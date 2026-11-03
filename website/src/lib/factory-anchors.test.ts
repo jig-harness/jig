@@ -15,14 +15,19 @@ const repoRoot = join(import.meta.dir, "../../..");
 const pageFile = (page: string) =>
   join(pagesDir, page === "" ? "index.astro" : `${page}.astro`);
 
-/** A factory page's own source and that of every component it imports. */
+/** A factory page's own source and that of every component it imports, transitively. */
 function renderedSource(page: string): string {
-  const file = pageFile(page);
-  const source = readFileSync(file, "utf8");
-  const parts = [source];
-  for (const m of source.matchAll(/^import \w+ from "(\.[^"]+\.astro)";$/gm)) {
-    parts.push(readFileSync(resolve(dirname(file), m[1] ?? ""), "utf8"));
-  }
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  const read = (file: string) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const source = readFileSync(file, "utf8");
+    parts.push(source);
+    for (const m of source.matchAll(/^import \w+ from "(\.[^"]+\.astro)";$/gm))
+      read(resolve(dirname(file), m[1] ?? ""));
+  };
+  read(pageFile(page));
   return parts.join("\n");
 }
 
@@ -86,8 +91,10 @@ describe("RENAMED_PAGES", () => {
           anchor,
           onPage: true,
         });
-      // The rows and stations keep their names on the new page.
+      // The rows and stations keep their names on the new page: the row
+      // ids (`line-bN`) and the station ids (`station-bN`) the old page had.
       expect(target).toMatch(/id=\{`line-\$\{s\.id\}`\}/);
+      expect(target).toMatch(/`station-\$\{station\.id\}`/);
     }
   });
 

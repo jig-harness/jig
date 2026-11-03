@@ -2,6 +2,9 @@
 // The line's page had this address once. A bookmark or a link from
 // elsewhere still names it, so it forwards to the page that holds the line
 // now, its anchor renamed where the new page renamed it and kept otherwise.
+// A reader with scripts keeps any anchor. Without scripts, and in the Markdown
+// twin, the page lists the renamed anchors as links, and any other anchor
+// lands on the page's top.
 import { RENAMED_PAGES } from "../../lib/factory-anchors.ts";
 
 const { to, anchors } = RENAMED_PAGES.execution ?? { to: "line", anchors: {} };
@@ -31,6 +34,17 @@ const target = `/factory/${to}/`;
   <body>
     <main>
       <p>This page is now <a href={target}>The line</a>.</p>
+      {
+        Object.keys(anchors).length > 0 && (
+          <ul>
+            {Object.entries(anchors).map(([from, to]) => (
+              <li>
+                <code>#{from}</code> is now <a href={`${target}#${encodeURIComponent(to)}`}>#{to}</a>.
+              </li>
+            ))}
+          </ul>
+        )
+      }
     </main>
   </body>
 </html>

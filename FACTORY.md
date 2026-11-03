@@ -80,8 +80,10 @@ agent sessions. A timer runs it every few minutes, and each run, a
 ### What it starts
 
 Each tick reads the tracker, the pull requests and the sessions already
-running. It derives what to start from those records alone, so stopping it
-loses nothing. Then it starts:
+running, and the records it keeps on the machine: the sessions it launched,
+the nudges and notifications already sent, and the outcome of each stage.
+Those records survive stopping the dispatcher, so a restart loses nothing and
+starts no stage twice. Then it starts:
 
 - **A pickup** for each item assigned to the repository's
   [factory identity](GLOSSARY.md): the tracker user a team assigns work to
@@ -160,9 +162,11 @@ session stops on an account's usage limit, the dispatcher records a
 limit resets. A drive stopped there is re-armed on another account at the
 next tick.
 
-Once a limit resets, a session the dispatcher started that waits at its
-prompt gets the one [nudge](GLOSSARY.md) the dispatcher ever types:
-"continue". Anything else a stuck session needs goes to a person.
+Once a limit resets, an interactive session the dispatcher started whose last
+record is still that limit gets the one [nudge](GLOSSARY.md) the dispatcher
+ever types, a fixed sentence asking it to continue. It is sent only when the
+agent's input line is empty, no menu or question is showing and nobody has the
+workspace open. Anything else a stuck session needs goes to a person.
 
 ### Contended areas, one at a time
 
@@ -296,7 +300,10 @@ repository without them gives the skills little to work from.
   labels. The skills read it when they run, and the audit checks it against
   the repository. Where a skill needs a named tool, an interface stands
   between them. The [tracker interface](GLOSSARY.md) has adapters for GitHub
-  Issues, Linear and Jira. The [workspace launcher](tools/launcher/README.md)
+  Issues, Linear and Jira; a few operations, such as the review skill's
+  deferral step, still call Linear directly
+  ([the exceptions](plugin/EXTENDING.md#issue-tracker)), and the pull-request
+  skills have no forge interface yet. The [workspace launcher](tools/launcher/README.md)
   opens workspaces in Herdr, which Jig's tooling targets first, in Orca and
   in Conductor. The skills run in Claude Code and Codex, and the pull-request
   skills work with GitHub. An organization's own skills, gates and review

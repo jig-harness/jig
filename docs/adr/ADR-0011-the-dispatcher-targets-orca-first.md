@@ -105,7 +105,8 @@ interface, with nothing in the tick changed.
 
 ## Extraction (decisions-become-checks)
 
-Not yet checked by a gate: the dispatcher is not built. Its build order
-runs the tick's tests against a fake `orca` command, and its README is to
-list the Orca commands and output it relies on, as the
-[Orca workspace tool](../../tools/orca/README.md)'s does.
+Not yet checked by a gate. The dispatcher is built (`plugin/dispatch/`),
+and its tick's tests run against a fake `orca` command. The Orca commands and
+output it relies on are listed in the [plugin README](../../plugin/README.md),
+as the [Orca workspace tool](../../tools/orca/README.md)'s README does for
+that tool.
