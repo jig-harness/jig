@@ -107,6 +107,7 @@ interface, with nothing in the tick changed.
 
 Not yet checked by a gate. The dispatcher is built (`plugin/dispatch/`),
 and its tick's tests run against a fake `orca` command. The Orca commands and
-output it relies on are listed in the [plugin README](../../plugin/README.md),
-as the [Orca workspace tool](../../tools/orca/README.md)'s README does for
-that tool.
+output fields it relies on are not yet listed in one place: the adapter's
+header comment (`plugin/dispatch/lib/runtime/orca.ts`) names the commands, and
+the [plugin README](../../plugin/README.md) describes the behaviour they give.
+The inventory an Orca upgrade is assessed against is still to be written.
