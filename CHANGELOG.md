@@ -380,6 +380,33 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.129.0] - 2026-11-03
+
+### Added
+
+- A drive's terminal tab in Orca now closes itself when the drive ends with
+  nothing for a person: converged, merged or closed, taken over, re-armable,
+  stopped or paused by a person, or refused because another driver holds the
+  pull request. This covers a drive `drive-pr` or `do-item` arms in a tab and
+  a stage the dispatcher launches (a dispatcher session closes its tab once it
+  records `done`). A drive that parks or fails keeps its tab for you, and the
+  next run for the same pull request or item closes that earlier terminal if
+  nothing is running in it. Only the recorded terminal closes, never a pane
+  you added beside it. What the tab showed stays in the driver log, the ledger and the
+  pass's session transcript. Only tabs Jig opened and recorded are closed
+  (see *run tab* in [GLOSSARY.md](GLOSSARY.md)); a tab you opened, and a
+  run tab opened before this release, is never touched.
+
+### Changed
+
+- `jig gc`'s `worktrees` kind no longer treats a detected package manager's
+  dependency directory (such as `node_modules/`, wherever it sits in the
+  tree) as local state that vetoes collection: it is rebuildable from the root
+  `package.json` and tracked lockfile, so a worktree is judged on the rest of its
+  evidence instead. Any other ignored path (`.env`, `.context/`, a build
+  output directory) still vetoes collection exactly as before, and the
+  receipt now lists the ignored paths it set aside as rebuildable.
+
 ## [0.128.0] - 2026-11-03
 
 ### Added
@@ -4867,7 +4894,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.128.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.129.0...HEAD
+[0.129.0]: https://github.com/jig-harness/jig/compare/v0.128.0...v0.129.0
 [0.128.0]: https://github.com/jig-harness/jig/compare/v0.127.1...v0.128.0
 [0.127.1]: https://github.com/jig-harness/jig/compare/v0.127.0...v0.127.1
 [0.127.0]: https://github.com/jig-harness/jig/compare/v0.126.0...v0.127.0
