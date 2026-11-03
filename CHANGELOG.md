@@ -380,6 +380,20 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.128.0] - 2026-11-03
+
+### Added
+
+- `/jig:jig` says which of the plugin's skills fits a task and what comes
+  after it, where a setting or a practice is documented (the reference
+  installed with the plugin, and Jig's repository at the installed
+  version's tag), and what to do when Jig itself is wrong. For a Jig bug
+  it checks that the fault is Jig's (`jig doctor` rules out a setup
+  fault), searches for an existing issue, and drafts the report in the
+  fields of Jig's bug form with `skills/jig/scripts/report-bug.ts`, which
+  reads the version and the operating system itself and replaces the
+  repository's own names with placeholders; a person confirms before it is filed on jig-harness/jig.
+
 ## [0.127.1] - 2026-11-03
 
 ### Fixed
@@ -4853,7 +4867,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.127.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.128.0...HEAD
+[0.128.0]: https://github.com/jig-harness/jig/compare/v0.127.1...v0.128.0
 [0.127.1]: https://github.com/jig-harness/jig/compare/v0.127.0...v0.127.1
 [0.127.0]: https://github.com/jig-harness/jig/compare/v0.126.0...v0.127.0
 [0.126.0]: https://github.com/jig-harness/jig/compare/v0.125.0...v0.126.0

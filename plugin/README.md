@@ -22,6 +22,12 @@ whose template a repository fills with its own owners. The
 last column says how a skill connects to the others: what starts it, what it
 runs, what it hands over to.
 
+**Find your way.** `jig` says which skill a task needs and what comes after it, where the plugin's reference is, and how to report a Jig bug.
+
+| Skill | What it does | Invoke as | Works with |
+|-------|--------------|-----------|------------|
+| [jig](skills/jig/README.md) | Answers which skill fits a task and how the skills hand work on, from the reference installed with the plugin (these tables, the configuration reference, each skill's pages) and Jig's repository at the installed version's tag; when Jig itself is wrong, decides whether the fault is Jig's, searches for an existing issue, and drafts a bug report in the fields of Jig's bug form, with the repository's own names replaced, for a person to confirm before it is filed on jig-harness/jig | `/jig:jig` | Names the skill that does the work and hands over to it; sends a lesson that is not a defect to [reflect](skills/reflect/README.md), and in Jig's own repository files the bug through [file-issue](skills/file-issue/README.md) |
+
 **Deliver a change.** One item of work, from the tracker to a merged pull request. `file-issue` puts the item on the tracker, labelled by the repository's label taxonomy; `do-item` opens the pull request and arms `drive-pr`, and `work-batch` does the same for several small issues closed in one pull request; `drive-pr` runs one `resolve-review-comments` pass per review round, works a conflict through `resolve-conflicts`, and repairs red CI in its own repair round; `fix-ci` is the repair by hand when no drive runs or its budget is spent. Each also works by hand.
 
 | Skill | What it does | Invoke as | Works with |

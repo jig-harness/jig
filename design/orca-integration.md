@@ -10,11 +10,11 @@ places built on their own: the
 and workspace names, and the [dispatcher](../GLOSSARY.md)'s
 [session runtime](../GLOSSARY.md), Orca first
 ([ADR-0011](../docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)).
-Nothing says how the rest of the execution line meets Orca: a parked drive
-leaves its card where it was, `jig gc` cannot collect an Orca-managed
-worktree without leaving Orca's card and terminals behind, the dispatcher
-cannot read an account's usage from Orca's command line, and Orca's plugin
-system has no Jig in it. With this built, Orca is the runtime and Jig is the
+Of the rest of the execution line, the board and collection through Orca
+are built; what remains is the gap that lets an agent start between
+collection's last check and the removal, the dispatcher's reading of an
+account's usage from Orca's command line, and Orca's plugin system, which
+has no Jig in it. With this built, Orca is the runtime and Jig is the
 process: Orca owns workspaces, sessions, accounts, the phone and the board;
 Jig owns what to start, when it is done and what it still owes, and the two
 meet only through Orca's command line and its plugin events.
@@ -39,9 +39,9 @@ loads. Each class pays off before the next starts.
 | --- | --- | --- | --- |
 | Worktree creation and agent launch, on this machine or a paired server | The launcher's `orca` provider and the workspace tool: the branch named as the repository names it, the M12 create hook run once, the agent started once per key | Nothing for a person; the dispatcher's launches reuse it (item 33) | use |
 | The session registry, the account roster and the headless server | The dispatcher reads sessions, caps per account, notifies by comment and unread flag | Usage per account from the command line, which Orca shows in its desktop app and on the phone | contribute |
-| The workspace board and comment | `do-item` names the card and moves it; `drive-pr` links the card to its pull request | Every stage moves the card: Ready, park, stop and merge | use |
+| The workspace board and comment | `do-item` names the card and moves it; `drive-pr` links the card to its pull request | Built: every stage moves the card: Ready, park, stop and merge | use |
 | Setup and archive hooks | The workspace tool runs `.config/worktree-hooks/create` itself | Nothing yet: the plugin only logs a workspace created in the app; running the create hook once there waits on the dispatcher's open rules moving into the plugin ([dispatcher build step 3](dark-factory-dispatch.md#build-order)) | later |
-| Worktree removal | `jig gc`'s worktrees kind reads plain git and is disabled | An Orca-managed worktree is collected through Orca, after the remove hook and the reflection park | use |
+| Worktree removal | `jig gc`'s worktrees kind collects an Orca-managed checkout through Orca, and reports any other | Built: an Orca-managed worktree is collected through Orca, after the remove hook and the reflection park; open: no launch may slip in before the removal | use |
 | Scheduled automations | Nothing | Nothing: the dispatcher is a stateless tick on the machine's timer, with a report and a ledger, which an automation that runs an agent prompt is not | — |
 | Orchestration runs: a coordinator, supervised workers, decision gates | `do-item` delegates to subagents in one session | A later design: the implementer as a supervised worker, routed by item 31 | later |
 | Plugins: worker events, panels, commands | Nothing | A worker-only plugin that wakes the dispatcher on an agent's status change | plugin |
@@ -72,8 +72,8 @@ happen under one lock, shared by the skills' helper and the dispatcher's
 notifications and held across both; a writer that cannot take it within a
 short deadline warns and skips, as every board call does on failure.
 
-`orca-board.ts` gains `--unread` and `--comment` and moves to
-`plugin/shared/`, since `do-item`, `drive-pr` and `followup` all call it. A repository with custom
+`plugin/shared/orca-board.ts` takes `--unread` and `--comment`, since
+`do-item`, `drive-pr` and `followup` all call it. A repository with custom
 board columns maps the stages onto them in `orca.board` in `.config/jig.yaml`
 ([CONFIGURATION.md](../plugin/CONFIGURATION.md)). Jig moves the card
 itself rather than asking Orca to follow the pull request's state: Jig
@@ -95,20 +95,18 @@ records go with the checkout. Orca's registry is part of the idle proof: a
 checkout with an agent in any state short of finished (working, waiting or
 blocked) is never idle, whatever git says, and an unreadable or incomplete
 registry refuses collection, as the gc contract says (fail closed). The registry is a snapshot, though: an opener can start an
-agent after the read and before the removal. So an Orca-managed checkout
-stays report-only, as every worktree does today
-([plugin/gc/README.md](../plugin/gc/README.md)), until every path that can start an agent in
-it is covered: either each launch and open path takes `gc`'s session
-admission around the launch and holds it while the session lives in any
-state short of finished, or Orca refuses a removal atomically while an
-agent is starting or live in any such state. Jig's workspace tool and the dispatcher can take admission,
-but a direct `orca agent launch --worktree` or an open in Orca's app can
-come after the registry read and produces no creation event, and a
+agent after the read and before the removal. Collection through Orca is
+enabled today, with the registry standing in for the session admission an
+opener does not hold, and that last gap stays open. Closing it needs one of
+two things: each launch and open path takes `gc`'s session admission around
+the launch and holds it while the session lives in any state short of
+finished, or Orca refuses a removal atomically while an agent is starting
+or live in any such state. Jig's workspace tool and the dispatcher can take
+admission, but a direct `orca agent launch --worktree` or an open in Orca's
+app can come after the registry read and produces no creation event, and a
 creation-event handler would take admission after the creation, not around
-it. So workspace provenance alone never makes a checkout collectable, and
-a workspace made outside Jig stays report-only. Collection through Orca
-starts when one of the two is in place. The workspace tool's remove steps move into the plugin for
-this, as item 33 moves its open steps. The `tools/orca` entry point stays
+it. So workspace provenance alone never closes the gap. The workspace tool's remove steps already run through the plugin
+(`plugin/gc/worktree-removal.ts`). The `tools/orca` entry point stays
 as the launcher's `orca` provider and the caller of the workspace-open
 path until a pull request names the launcher's migration to the plugin;
 that pull request deletes the copy.
@@ -195,13 +193,13 @@ dashboard stays `jig dispatch dashboard`, opened as an HTML tab.
 One pull request each, in this order; each is usable on its own.
 
 1. **This design** and its plan item.
-2. **The board from Jig's side**, after `drive-pr` links the card to its
-   pull request: `orca-board.ts` into `plugin/shared/` with `--unread` and
+2. **The board from Jig's side** (built), after `drive-pr` links the card
+   to its pull request: `orca-board.ts` into `plugin/shared/` with `--unread` and
    `--comment`, the moves in `drive-pr` and `followup`, `orca.board`.
-3. **Collection through the runtime**: the worktrees kind's runtime column,
+3. **Collection through the runtime** (built; the admission gap below is open): the worktrees kind's runtime column,
    the `orca.command` machine entry, the remove steps moved into the
    plugin, the registry in the proof, tests against a fake `orca` command;
-   collection stays report-only until every launch path is covered by admission or Orca refuses a removal atomically.
+   collection is enabled, and the race with an agent started after the registry read stays open until every launch path is covered by admission or Orca refuses a removal atomically.
 4. **The asks**, filed by a person, each with its pull request to Orca
    when a maintainer does not take it.
 5. **The plugin**, after item 33's tick exists: the manifest, the worker,
