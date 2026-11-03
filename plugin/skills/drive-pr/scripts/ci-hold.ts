@@ -38,6 +38,7 @@ import {
 } from "./lib/ci-hold.ts";
 import { type CiPolicy, ciPolicy, holdLabelPolicy } from "./lib/ci-policy.ts";
 import { fail, isDigits, isGitSha, runMain } from "./lib/cli.ts";
+import { timelineEvents } from "./lib/pr-timeline.ts";
 import { ghCall, git, gitCallTimeoutSeconds, resolvePr } from "./lib/proc.ts";
 import {
   assertRemoteMutationAllowed,
@@ -53,6 +54,10 @@ import {
   commitStatusesFor,
   hasNonReviewerCi,
 } from "./lib/status/evidence.ts";
+import {
+  withoutSuperseded,
+  workflowRunsBehind,
+} from "./lib/status/workflow-runs.ts";
 
 let policy: CiPolicy = {
   requiredChecks: [],
@@ -98,23 +103,6 @@ async function viewer(): Promise<string | null> {
   const result = await ghCall(["api", "user", "-q", ".login"]);
   const login = result.code === 0 ? result.stdout.trim() : "";
   return login === "" ? null : login;
-}
-
-/** Every event on the PR's timeline, or `null` when it cannot be read. */
-async function timelineEvents(pr: string): Promise<unknown[] | null> {
-  const result = await ghCall([
-    "api",
-    "--paginate",
-    "--slurp",
-    `repos/{owner}/{repo}/issues/${pr}/timeline?per_page=100`,
-  ]);
-  if (result.code !== 0) return null;
-  try {
-    const pages = JSON.parse(result.stdout) as unknown;
-    return Array.isArray(pages) ? pages.flat() : null;
-  } catch {
-    return null;
-  }
 }
 
 async function transitions(pr: string): Promise<LabelTransition[] | null> {
@@ -806,8 +794,14 @@ async function finalCiProofGreen(
   persisted: Extract<CiHoldState, { phase: "released" }> | null,
   requireSuccess: boolean,
 ): Promise<{ ok: true; startedAt: string | null } | { ok: false }> {
-  const runs = await checkRuns(head);
-  if (runs === null) return { ok: false };
+  const allRuns = await checkRuns(head);
+  if (allRuns === null) return { ok: false };
+  // A cancelled run another run replaced proves nothing about a required
+  // check, however its check-run ids interleave with the replacement's.
+  const runs = withoutSuperseded(
+    allRuns,
+    await workflowRunsBehind("{owner}", "{repo}", head, allRuns),
+  );
   const required = policy.requiredChecks;
   const apps = policy.requiredApps;
   const noHold = policy.holdLabel === null;
@@ -886,7 +880,13 @@ async function requiredCiAggregateIsGreen(head: string): Promise<boolean> {
     commitStatusesFor("{owner}", "{repo}", head),
   ]);
   if (allRuns === null || statuses === null) return false;
-  return ciVerdictOf(allRuns, statuses, false, head) === "green";
+  const workflowRuns = await workflowRunsBehind(
+    "{owner}",
+    "{repo}",
+    head,
+    allRuns,
+  );
+  return ciVerdictOf(allRuns, statuses, false, head, workflowRuns) === "green";
 }
 
 /** Has any non-reviewer check run or commit status registered on `head`? */

@@ -949,20 +949,16 @@ async function main(): Promise<number> {
             unresolvedThreadPaths: report.openThreadPaths,
           },
           ci: report.ci,
-          // The structured evidence behind `ci`: `evaluate()` has computed both
-          // of these on its internal `report` object all along, but this
-          // hand-built payload never included either, so `drive.ts`'s own
-          // `finalStatus.failingCheckNames`/`failingCheckRunNames` reads were
-          // always `undefined` and `staleRequiredFailure` could never evaluate
-          // `true` in production — every earlier fix to that predicate's LOGIC
-          // was polishing evidence that never actually arrived at the CLI
-          // boundary.
+          // The structured evidence behind `ci`, which `drive.ts`'s
+          // `staleRequiredFailure` and its CI-repair dispatch read from this
+          // payload; a field left out here never reaches them.
           failingCheckNames: report.failingCheckNames,
           failingCheckRunNames: report.failingCheckRunNames,
           // The commit-status-only complement — `drive.ts` needs this to tell a
-          // purely check-run- sourced failure from one that ALSO has a fresh,
-          // unambiguous commit-status occurrence under the same name.
+          // purely check-run sourced failure from one that ALSO has a fresh
+          // commit-status occurrence under the same name.
           failingStatusNames: report.failingStatusNames,
+          failingRuns: report.failingRuns,
         })}\n`,
       );
     } else {

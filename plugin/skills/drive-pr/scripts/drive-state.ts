@@ -204,6 +204,7 @@ import {
 } from "./lib/ci-hold.ts";
 import { type CiPolicy, ciPolicy } from "./lib/ci-policy.ts";
 import { ciHoldLabelSetting } from "./lib/overlay.ts";
+import { timelineEvents } from "./lib/pr-timeline.ts";
 import {
   ExitError,
   fail,
@@ -292,6 +293,10 @@ import {
   commitStatusesFor,
   hasNonReviewerCi,
 } from "./lib/status/evidence.ts";
+import {
+  withoutSuperseded,
+  workflowRunsBehind,
+} from "./lib/status/workflow-runs.ts";
 
 function usage(): void {
   console.error(`usage: drive-state.ts <command> [PR] [flags]
@@ -694,19 +699,8 @@ async function readCiHoldTimeline(
 ): Promise<ReturnType<typeof ciHoldTransitions>> {
   const label = holdLabel();
   if (label === null) return null;
-  const result = await ghCall([
-    "api",
-    "--paginate",
-    "--slurp",
-    `repos/{owner}/{repo}/issues/${pr}/timeline?per_page=100`,
-  ]);
-  if (result.code !== 0) return null;
-  try {
-    const pages = JSON.parse(result.stdout) as unknown;
-    return Array.isArray(pages) ? ciHoldTransitions(pages.flat(), label) : null;
-  } catch {
-    return null;
-  }
+  const events = await timelineEvents(pr);
+  return events === null ? null : ciHoldTransitions(events, label);
 }
 
 /** The commands whose record arrives on standard input. */
@@ -1614,17 +1608,11 @@ async function main(): Promise<number> {
         }
         // ONE predicate for "does CI genuinely prove this head is done and
         // green" — called for the INITIAL proof below AND, unchanged, for every
-        // later re-check `stillFullyCurrent()` performs. Two rounds running, a
-        // re-check implemented as a SEPARATE, cheaper approximation of this
-        // same question fell out of sync with it: a aggregate-only
+        // later re-check `stillFullyCurrent()` performs: an aggregate-only
         // `ciVerdictOf` re-check treats `skipped` as passing, so a newer
         // skipped run for a required check could supersede the successful
-        // post-unlabel run without either refresh noticing, even though
-        // `completedRequiredCi` — the INITIAL proof's own predicate — would
-        // reject it. Sharing one implementation for "prove CI green" makes that
-        // class of drift impossible rather than merely unlikely, the same
-        // reasoning `stillFullyCurrent()` itself already applies to
-        // state/head/held/ timeline.
+        // post-unlabel run, even though `completedRequiredCi` rejects it.
+        // Sharing one implementation makes that class of drift impossible.
         async function proveCiGreen(): Promise<
           { ok: true } | { ok: false; reason: string }
         > {
@@ -1653,6 +1641,13 @@ async function main(): Promise<number> {
           if (allRuns === null || statuses === null) {
             return { ok: false, reason: "cannot read complete CI evidence" };
           }
+          const workflowRuns = await workflowRunsBehind(
+            "{owner}",
+            "{repo}",
+            a.sha,
+            allRuns,
+          );
+          runs = withoutSuperseded(runs, workflowRuns);
           const apps = policy.requiredApps;
           const attributed =
             settledHold !== null
@@ -1706,7 +1701,13 @@ async function main(): Promise<number> {
                 "the required checks have not all succeeded on this head since the hold was last released",
             };
           }
-          const verdict = ciVerdictOf(allRuns, statuses, false, a.sha);
+          const verdict = ciVerdictOf(
+            allRuns,
+            statuses,
+            false,
+            a.sha,
+            workflowRuns,
+          );
           if (verdict !== "green") {
             return {
               ok: false,

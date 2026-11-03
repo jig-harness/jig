@@ -6,6 +6,7 @@
  */
 
 import { parseReviewRound } from "../../summary-findings.ts";
+import { suiteIdOf } from "../ci-hold.ts";
 import {
   isReviewerLogin,
   reviewedShaMarker,
@@ -15,6 +16,16 @@ import {
   stickyMarker,
 } from "../overlay.ts";
 import { ghCall, run, tsArgv } from "../proc.ts";
+import {
+  type FailedRun,
+  failedRunsOf,
+  failuresExplainedByCancellation,
+  PASSING_CONCLUSIONS,
+  rerunningSuites,
+  type WorkflowRun,
+  withoutSuperseded,
+  workflowRunsBehind,
+} from "./workflow-runs.ts";
 
 // ── Reviewer identity ────────────────────────────────────────────────────────
 // Identify the posting reviewer by its GitHub APP SLUG, not by check-run name.
@@ -77,6 +88,10 @@ export interface CheckRun {
    * distinguishing a genuine in-flight publish (seconds) from a stranded one
    * (measured: 3.5+ hours). */
   started: string | null;
+  /** ISO timestamp; absent or `null` until it has completed. */
+  completed?: string | null;
+  /** The check suite of the workflow run behind it, when it names one. */
+  suiteId?: number | null;
 }
 
 export interface CommitStatus {
@@ -92,6 +107,14 @@ function parsePages(raw: string): unknown[] | null {
   } catch {
     return null;
   }
+}
+
+/** What ties a check-run to its workflow run and to when it ended. */
+function jobTiming(c: Record<string, unknown>) {
+  return {
+    completed: typeof c.completed_at === "string" ? c.completed_at : null,
+    suiteId: suiteIdOf(c.check_suite),
+  };
 }
 
 /**
@@ -135,6 +158,7 @@ export async function checkRunsFor(
         id: Number(c.id ?? 0),
         started:
           c.started_at === null ? null : String(c.started_at ?? "") || null,
+        ...jobTiming(c),
       });
     }
   }
@@ -377,7 +401,62 @@ export function reviewerRun(runs: CheckRun[]): CheckRun | null {
   return candidates.at(-1) ?? null;
 }
 
-const PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
+interface CheckReading {
+  failing: CheckRun[];
+  pending: CheckRun[];
+  /** Nothing is known about these: see `lib/status/workflow-runs.ts`. */
+  cancelled: CheckRun[];
+}
+
+/**
+ * Every non-reviewer check reduced to what it says, from the check runs and the
+ * workflow runs behind them. A cancelled run another run replaced is gone. Of
+ * the rest, the newest per (app, name) speaks, except where that newest is an
+ * absence of evidence. A failure or a live job under the same name then speaks
+ * through it. An older pass never does: a cancelled run beside an older green
+ * is what a CI hold's held run looks like, and it must stay unknown. Nor does a
+ * newer skip answer it, since a job that skipped looked at nothing.
+ */
+function readChecks(
+  runs: CheckRun[],
+  workflowRuns: readonly WorkflowRun[] | null,
+): CheckReading {
+  const counted = withoutSuperseded(
+    runs.filter((r) => !isReviewerCheck(r)),
+    workflowRuns,
+  );
+  const explained = failuresExplainedByCancellation(counted, workflowRuns);
+  const absent = (r: CheckRun) =>
+    r.conclusion === "cancelled" || explained.has(r.id);
+  const rerunning = rerunningSuites(workflowRuns);
+  const pending = (r: CheckRun) =>
+    r.status !== "completed" ||
+    r.conclusion === null ||
+    (rerunning.has(r.suiteId ?? -1) && !PASSING_CONCLUSIONS.has(r.conclusion));
+  const failing = (r: CheckRun) =>
+    !pending(r) && !absent(r) && !PASSING_CONCLUSIONS.has(r.conclusion ?? "");
+  const reading = latestPerName(counted).map((newest) => {
+    const ran = counted
+      .filter(
+        (r) =>
+          r.app === newest.app &&
+          r.name === newest.name &&
+          r.conclusion !== "skipped",
+      )
+      .sort((a, b) => a.id - b.id);
+    const lastRan = ran.at(-1);
+    if (lastRan === undefined || !absent(lastRan)) return newest;
+    const evidence = ran.filter((r) => !absent(r)).at(-1);
+    return evidence !== undefined && (failing(evidence) || pending(evidence))
+      ? evidence
+      : lastRan;
+  });
+  return {
+    failing: reading.filter(failing),
+    pending: reading.filter(pending),
+    cancelled: reading.filter(absent),
+  };
+}
 
 /**
  * Every non-reviewer verdict, reduced to one string — used for
@@ -392,12 +471,17 @@ const PASSING_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
  * A run that is `completed` with a NULL conclusion is an indeterminate result,
  * not a pass — grouped with pending, which is the conservative bucket
  * (announce-merge-ready requires exactly `green`).
+ *
+ * `cancelled:` is an absence of evidence, waited for and never green. It ranks
+ * below `failing:` so a real failure is not hidden behind one, and below
+ * `pending:` because a job still running may yet replace it.
  */
 export function ciVerdictOf(
   runs: CheckRun[],
   statuses: CommitStatus[] | null,
   runsUnreadable: boolean,
   head: string,
+  workflowRuns: readonly WorkflowRun[] | null = null,
 ): string {
   if (runsUnreadable) {
     // An empty stand-in for an unread set is not evidence of a clean one — the
@@ -405,20 +489,10 @@ export function ciVerdictOf(
     // PR_CONFLICTING, never to manufacture a green verdict from a failed query.
     return `unknown: could not read check-runs for ${head}`;
   }
-  const latest = latestPerName(runs.filter((r) => !isReviewerCheck(r)));
-  const failingChecks = latest
-    .filter(
-      (r) =>
-        r.status === "completed" &&
-        r.conclusion !== null &&
-        !PASSING_CONCLUSIONS.has(r.conclusion),
-    )
-    .map((r) => r.name)
-    .join(", ");
-  const pendingChecks = latest
-    .filter((r) => r.status !== "completed" || r.conclusion === null)
-    .map((r) => r.name)
-    .join(", ");
+  const reading = readChecks(runs, workflowRuns);
+  const namesOf = (list: CheckRun[]) => list.map((r) => r.name).join(", ");
+  const failingChecks = namesOf(reading.failing);
+  const pendingChecks = namesOf(reading.pending);
   if (statuses === null) {
     return `unknown: could not read commit statuses for ${head}`;
   }
@@ -440,6 +514,9 @@ export function ciVerdictOf(
   }
   if (pendingChecks !== "" || pendingStatuses !== "") {
     return `pending: ${joined(pendingChecks, pendingStatuses)}`;
+  }
+  if (reading.cancelled.length > 0) {
+    return `cancelled: ${namesOf(reading.cancelled)}`;
   }
   return "green";
 }
@@ -463,17 +540,22 @@ export function ciVerdictOf(
 export function failingCheckRunNames(
   runs: CheckRun[],
   runsUnreadable: boolean,
+  workflowRuns: readonly WorkflowRun[] | null = null,
 ): string[] | null {
   if (runsUnreadable) return null;
-  const latest = latestPerName(runs.filter((r) => !isReviewerCheck(r)));
-  return latest
-    .filter(
-      (r) =>
-        r.status === "completed" &&
-        r.conclusion !== null &&
-        !PASSING_CONCLUSIONS.has(r.conclusion),
-    )
-    .map((r) => r.name);
+  return readChecks(runs, workflowRuns).failing.map((r) => r.name);
+}
+
+/**
+ * The workflow runs behind the failing check-runs: the runs a repair pass is
+ * told to re-run, rather than any other run on the head. `null` when the
+ * workflow runs could not be read.
+ */
+export function failingRunsOf(
+  runs: CheckRun[],
+  workflowRuns: readonly WorkflowRun[] | null,
+): FailedRun[] | null {
+  return failedRunsOf(readChecks(runs, workflowRuns).failing, workflowRuns);
 }
 
 /**
@@ -521,19 +603,91 @@ export function failingStatusNames(
  * `failingCheckRunNames` and `failingStatusNames` instead, never this
  * one.
  *
- * Mirrors `ciVerdictOf`'s own filtering predicates — keep the two in sync.
- * `null` mirrors its two `unknown:` cases: the query failed, so there is
- * nothing to enumerate.
+ * Reads the same `readChecks` as `ciVerdictOf`, so a cancelled check is in
+ * neither. `null` mirrors its two `unknown:` cases: the query failed, so there
+ * is nothing to enumerate.
  */
 export function failingNames(
   runs: CheckRun[],
   statuses: CommitStatus[] | null,
   runsUnreadable: boolean,
+  workflowRuns: readonly WorkflowRun[] | null = null,
 ): string[] | null {
   if (runsUnreadable || statuses === null) return null;
-  const failingChecks = failingCheckRunNames(runs, runsUnreadable) ?? [];
+  const failingChecks =
+    failingCheckRunNames(runs, runsUnreadable, workflowRuns) ?? [];
   const failingStatuses = failingStatusNames(statuses) ?? [];
   return [...failingChecks, ...failingStatuses];
+}
+
+/** The CI fields of a status report. */
+export interface CiReport {
+  ci: string;
+  /**
+   * The structured counterpart to `ci` — the individual failing check-run and
+   * commit-status names, unparsed. A consumer that needs to test one of these
+   * names for exact membership in a known set must read this field rather than
+   * re-splitting `ci` on `,`/`;`, which cannot round-trip a name that itself
+   * contains either delimiter. `null` mirrors `ci`'s own `unknown:` cases.
+   */
+  failingCheckNames: string[] | null;
+  /**
+   * The check-run-only subset of `failingCheckNames` — never legacy commit
+   * statuses. A consumer deciding whether a required-named failure is merely
+   * "possibly stale" (unconfirmed check-run freshness, `finalCi.code === 4`)
+   * must intersect against THIS field, not `failingCheckNames`: the freshness
+   * ambiguity only ever applies to a check-run, never to a commit status.
+   * `null` mirrors `failingCheckNames`'s own `runsUnreadable` case.
+   */
+  failingCheckRunNames: string[] | null;
+  /**
+   * The legacy-commit-status-only complement of `failingCheckRunNames` — the
+   * two together partition `failingCheckNames`'s merged, provenance-free output
+   * back by source. A consumer exempting a required-named failure as "possibly
+   * stale" must also confirm the SAME name is absent from here:
+   * `failingCheckRunNames.includes(name)` alone cannot tell a purely
+   * check-run-sourced failure from one that ALSO has a fresh, unambiguous
+   * commit-status occurrence sharing that name. `null` mirrors
+   * `failingCheckNames`'s own `statuses === null` case.
+   */
+  failingStatusNames: string[] | null;
+  /** The workflow runs behind the failing check-runs: `failingRunsOf`. */
+  failingRuns: FailedRun[] | null;
+}
+
+/**
+ * Read the rest of the CI evidence for `runs` and reduce it to a report.
+ *
+ * An unreadable status API is UNKNOWN, never an empty (therefore clean) set: a
+ * timeout or a 403 reading as "no legacy statuses exist" would let
+ * announce-merge-ready post that every non-reviewer check is green over a
+ * status context nobody could see.
+ */
+export async function ciReportFor(
+  owner: string,
+  repo: string,
+  head: string,
+  runs: CheckRun[],
+  runsUnreadable: boolean,
+): Promise<CiReport> {
+  const statuses = await commitStatusesFor(owner, repo, head);
+  const workflowRuns = await workflowRunsBehind(owner, repo, head, runs);
+  return {
+    ci: ciVerdictOf(runs, statuses, runsUnreadable, head, workflowRuns),
+    failingCheckNames: failingNames(
+      runs,
+      statuses,
+      runsUnreadable,
+      workflowRuns,
+    ),
+    failingCheckRunNames: failingCheckRunNames(
+      runs,
+      runsUnreadable,
+      workflowRuns,
+    ),
+    failingStatusNames: failingStatusNames(statuses),
+    failingRuns: failingRunsOf(runs, workflowRuns),
+  };
 }
 
 /**
