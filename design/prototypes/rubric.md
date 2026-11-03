@@ -24,7 +24,7 @@ success criteria list; the rest are not scored.
 
 ## What a block scores
 
-Three blocks have a scope a bundle can read two ways, so it is stated:
+Some blocks have a scope a bundle can read two ways, so it is stated:
 
 - **Weight** scores the design as it would be built for production. A
   prototype that renders through its design tool's page runtime does not fail
@@ -35,9 +35,11 @@ Three blocks have a scope a bundle can read two ways, so it is stated:
   handoff lists it as a server ask; the scorecard names those asks beside the
   row. A capability shown as existing that no ask covers fails the block.
 - **Above the fold** scores the scenarios in which the brief's content is
-  present. A scenario whose banner replaces that content (the server is
-  gone) is scored on the banner, and the scorecard names the scenario and
-  where the content falls.
+  present. Content that stays on the page, even disabled or dimmed behind a
+  banner, is present, so that scenario is scored like any other. Only a
+  scenario whose banner removes that content from the page is scored on the
+  banner instead, and the scorecard names the scenario and where the content
+  falls.
 
 ## Scoring
 
