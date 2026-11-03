@@ -116,7 +116,7 @@ export interface LaunchRecord {
   marker: number | null;
   /** A drive's ledger round when it was launched, which its outcome row's rounds count from; `null` when unknown. */
   round?: number | null;
-  /** For a re-arm of a stale converged drive: why it was stale, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
+  /** For a re-drive: why it was launched, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
   redrive?: StaleCause | null;
   /** The vendor session id the tick minted for an interactive session and passed to its agent; `null` when none was. */
   sessionId?: string | null;

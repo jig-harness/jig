@@ -4,10 +4,9 @@
  * admitted account. For each one:
  *
  * 1. read the pull request and its ledger again, and go on only when its
- *    facts are the ones the plan acted on (for a re-drive of a stale
- *    converged drive, the pull request's head and mergeability too; for an
- *    arm its `drive` label asked for, still no ledger at the same head) and
- *    no `hold` label has appeared on it;
+ *    facts are the ones the plan acted on (for a re-drive, the change it acts
+ *    on too; for an arm its `drive` label asked for, still no ledger at the
+ *    same head) and no `hold` label has appeared on it;
  * 2. admit an account (accounts.ts), and check that the wrapper's
  *    environment resolves to that account's identity;
  * 3. use the workspace that holds the pull request, or open one named for
@@ -100,7 +99,12 @@ async function retryBlocked(
     record.facts,
   );
   if (read.class !== want) return `its ledger now reads ${read.class}`;
-  const moved = changedStale(record.redrive, read);
+  // A stop on a conflict stands whatever moved since: its base moves often, and
+  // this record holds the pull request until its launch is replayed.
+  const moved =
+    record.redrive?.conflictStop === true
+      ? null
+      : changedStale(record.redrive, read);
   if (moved !== null) return moved;
   return accountBlocked(state, record);
 }
@@ -116,7 +120,7 @@ function wantedClass(
   return redrive == null ? "re-armable" : "stale";
 }
 
-/** Why a stale pull request no longer shows the change a re-drive acts on; `null` when it still does. */
+/** Why a pull request no longer shows the change a re-drive acts on; `null` when it still does. */
 function changedStale(
   redrive: StaleCause | null | undefined,
   fresh: DrivenPr,

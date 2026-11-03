@@ -225,6 +225,46 @@ request's head and whether it conflicts: its launch record keeps that
 change, and a later tick that finds the same change reports it however
 that launch ended, so a drive that converges again without settling it
 starts no loop.
+
+A drive that stopped `9` (conflicting with its base, its conflict-repair
+budget spent) is read beside the pull request too. Its conflict-resolve pass
+can fail for reasons a second try settles: an account's usage limit, a pass
+deadline, a base that moved under it. So it is
+re-driven as well, once per change, and here the change is the pair of the
+pull request's head and its base branch's head. That head is read from the
+branch itself, and only for a ledger that stopped `9`: the pull request's own
+`baseRefOid` stays at the commit the forge recorded when the pull request last
+moved, so it cannot say that the base did. The re-drive is owed whatever the
+forge reports now. Still conflicting, the conflict-resolve round tries again;
+mergeable (a person merged the base in, or the base moved past the conflict),
+the stop no longer describes the pull request, and the drive's ordinary rounds
+take it from there. A mergeability the forge is still computing, or a head or
+a base head that does not read, leaves it unplaced for that tick.
+
+A person is told only once this machine's re-drive of that change leaves the
+ledger stopped `9`, whether the re-drive stopped so itself or ended without
+writing a stop of its own (a refusal at its attach, a crash), since nothing
+else drives the pull request until its head or its base moves. Any other exit
+it stops on reads as that exit's row says. A stuck conflict therefore costs one
+launch per base move, and the base moving is what makes it a new attempt, so
+there is no loop: a re-drive that changes nothing leaves the change as it was,
+and a change is never re-driven twice. A converged drive's re-drive is keyed on
+its head and whether it conflicts, so one that stops `9` gets one more attempt
+under this key: at most one launch more. The serialized areas' holds and a
+person's `hold` label keep a re-drive off as they keep any re-arm, and a person's
+stop is never re-armed.
+
+A headless Claude pass can commit only where `drive.pass_args` names a permission mode. A host opts in through its user layer, and a repository's own file takes precedence over it. Without a mode, a conflict re-drive stops `9` again at the same change and the dispatcher notifies a person.
+
+A conflict-resolve pass does not leave its merge behind: a merge it started and
+did not conclude is aborted before the drive re-gates or stops
+([terminal states](../plugin/skills/drive-pr/references/terminal-states.md#repair-rounds)),
+so a re-drive finds a clean tree and an attach is not refused over a head that
+moved. A merge the tree already held when the pass started is not the pass's
+to discard: the pass finishes it or starts it over (`drive-pr` `SKILL.md` § 0),
+and a tree that holds one behind a moved head refuses the attach, which leaves
+the ledger stopped `9`, so a person is told.
+
 A stopped ledger with no exit has no known origin: `drives.ts --stop`
 records one, and so does the driver's own recovery after a crash, a thrown
 refusal or a signal, so the tick cannot read a person's decision into it.
@@ -234,6 +274,8 @@ refusal or a signal, so the tick cannot read a person's decision into it.
 | running, heartbeat inside the lease window | driven | nothing |
 | running, heartbeat past the lease window | silent | takes it over only when this machine's launch record started that driver; otherwise reports it |
 | stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified | stale | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head |
+| stopped `9` (conflicting with its base, its conflict-repair budget spent), this machine's records holding no re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
+| stopped `9`, this machine already having re-driven that change, however that launch ended | needs a person | notifies once per stop, with the exit and the drive's handoff |
 | stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
 | stopped `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
 | stopped with no exit | stopped, origin unknown | never re-armed, since it may be a person's stop; notifies once per stop, with the drive's handoff |
@@ -242,7 +284,7 @@ refusal or a signal, so the tick cannot read a person's decision into it.
 | stopped `4` (not judgeable yet: a converged drive that left the Ready mark to another driver, or whose final CI witness did not arrive) | re-armable | re-arms on any admitted account, as `drive-pr` asks an unattended wrapper to |
 | stopped `8`, an item unanswered | parked | notifies once per park |
 | stopped `11` or `13` | refused | nothing; another driver holds it |
-| stopped on any other exit (`1`, `2`, `6`, `7`, `9`, `12`, `14`, `15`, or one this table does not know) | needs a person | notifies once per stop, with the exit and the drive's handoff |
+| stopped on any other exit (`1`, `2`, `6`, `7`, `12`, `14`, `15`, or one this table does not know) | needs a person | notifies once per stop, with the exit and the drive's handoff |
 
 The tick reads every pull request merged after the date the follow-up
 stage was switched on for the repository (`followup_since` in the machine
@@ -1123,7 +1165,8 @@ One pull request each, in this order; each is usable on its own.
    verified head and mergeable is left alone; a mergeability still being
    computed leaves it unplaced. Waits on step 3 only. Usable alone: a
    pull request that converged and then conflicted no longer waits for a
-   person to notice.
+   person to notice. A drive that stopped `9` is re-driven through the same
+   launch, keyed on its head and its base branch's head.
 8. **Admit Codex accounts.** The drive skill documents the Codex pass
    command beside Claude Code's, with the pass model read per vendor from
    `routing.models`; the dispatcher admits `vendor: codex` accounts for

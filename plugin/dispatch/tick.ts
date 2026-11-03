@@ -65,6 +65,7 @@ import {
   applyDrives,
   type FreshDrive,
 } from "./lib/actions/drive.ts";
+import { settleConflictStops } from "./lib/actions/drive-hold.ts";
 import { applyFollowups } from "./lib/actions/followup.ts";
 import { outOfTime, rotated } from "./lib/actions/launch.ts";
 import {
@@ -101,7 +102,7 @@ import type {
   SessionRuntime,
   SessionsReport,
 } from "./lib/runtime/port.ts";
-import { readSection } from "./lib/section.ts";
+import { branchPattern, readSection } from "./lib/section.ts";
 import { observeContention } from "./lib/sources/contention.ts";
 import { readDrives } from "./lib/sources/ledgers.ts";
 import { readPickups } from "./lib/sources/tracker.ts";
@@ -124,9 +125,6 @@ import {
   takeTickLock,
   writeReceipt,
 } from "./receipts.ts";
-
-/** `pull_requests.branch_name`'s default, the branch form of an item. */
-const BRANCH_PATTERN = "{key_lower}-{slug}";
 
 export interface TickOptions {
   repos: string[];
@@ -163,17 +161,6 @@ function emptyReport(path: string, refused: string): RepoReport {
     notifications: [],
     quiet: [],
   };
-}
-
-function branchPattern(values: Record<string, unknown>): string {
-  const prs = values.pull_requests;
-  const pattern =
-    typeof prs === "object" && prs !== null
-      ? (prs as Record<string, unknown>).branch_name
-      : undefined;
-  return typeof pattern === "string" && pattern !== ""
-    ? pattern
-    : BRANCH_PATTERN;
 }
 
 async function gatherRepo(
@@ -223,6 +210,7 @@ async function gatherRepo(
   // The forge: the open pull requests and their ledgers, and the merges.
   const labels = section.labels.enabled ? section.labels : null;
   const forge = await readForge(repo, report, section, labels, nowMs);
+  forge.drives = settleConflictStops(forge.drives, allRecords(context));
   const { open, drives, merged, login } = forge;
 
   // The runtime: which of them a session holds.
