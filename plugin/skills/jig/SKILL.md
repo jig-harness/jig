@@ -73,7 +73,7 @@ configuration is valid by `CONFIGURATION.md`. Otherwise it goes elsewhere:
 | A configuration error (the message names the field and where it was set)               | Fix the configuration in the repository                                                                |
 | The repository's own gate, test or code failing                                        | The repository's own tracker                                                                           |
 | A tool the README's "Requirements" lists is missing                                    | Install it                                                                                             |
-| A plugin copy that is out of date, a scheduled job that does not run                   | `jig doctor` names the fix; `jig upgrade` updates the plugin                                           |
+| A plugin copy that is out of date, a scheduled job that does not run                   | `jig doctor` suggests the fix, `jig upgrade` updates the plugin; a crash its receipts show is a bug    |
 | A lesson about how the instructions, skills or gates fit this repository, not a defect | `/jig:reflect`, where the configuration has a `reflection` section                                     |
 | A question, or an idea not yet a defect                                                | [Discussions](https://github.com/jig-harness/jig/discussions)                                          |
 | A security vulnerability                                                               | A [private advisory](https://github.com/jig-harness/jig/security/advisories/new), never a public issue |
@@ -89,8 +89,11 @@ confirms every report before it is filed.
 
 1. **Reproduce it once** and keep the command, its exit code and its
    output. Write them to a file. Run `jig doctor` first where the `jig`
-   command is on `PATH`: a failure it names with a fix is setup, not a
-   bug, and one it cannot explain belongs in the report.
+   command is on `PATH`, and treat its output as evidence, not a verdict:
+   its fix is a suggestion, not a diagnosis. A failure is setup only once
+   the cause is established (an out-of-date copy, a missing tool); a failed
+   run whose receipts (`jig receipts`) show a crash, and any failure the
+   suggested fix does not clear, belongs in the report.
 2. **Look for it** among Jig's issues, open and closed:
 
    ```sh
