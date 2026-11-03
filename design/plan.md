@@ -710,19 +710,23 @@ beside the rounds.
 Jig's tooling reaches [Orca](https://www.onorca.dev) in places built
 on their own (the workspace tool behind the launcher, `do-item`'s board
 updates and workspace names, the dispatcher's session runtime), and the
-rest of the execution line meets it only in part: the dispatcher cannot
-read an account's usage from Orca's command line, and Orca's plugin
-system has no Jig in it. [design/orca-integration.md](orca-integration.md)
-has how it works, in classes built in order. Still open: what Jig asks of
-Orca (usage per account from the command line; a phone push only when an
+rest of the execution line meets it only in part: collection through
+Orca still races an agent started between its last registry read and the
+removal, the dispatcher cannot read an account's usage from Orca's command
+line, and Orca's plugin system has no Jig in it. [design/orca-integration.md](orca-integration.md)
+has how it works, in classes built in order. Still open: closing the
+collection gap, by every launch and open path taking `gc`'s session
+admission around the launch or Orca refusing a removal atomically while an
+agent starts or lives; what Jig asks of Orca (usage per account from the command line; a phone push only when an
 agent needs input; filed by a person, each with its pull request offered),
 and a worker-only plugin in its own repository that runs a
 `jig dispatch --apply` tick when an agent's status changes, with no panel
 until a panel can receive data. One pull request per step, in the design's
 order; the plugin waits on item 33's tick.
 
-Done when the dispatcher's account cap reads `orca account usage --json`
-where Orca has it, and an agent in a Jig repository reaching `waiting`, `blocked` or `done`
+Done when no launch can slip between the registry read and `orca worktree
+rm` of a collected checkout, the dispatcher's account cap reads `orca
+account usage --json` where Orca has it, and an agent in a Jig repository reaching `waiting`, `blocked` or `done`
 under the plugin has a tick pending from the moment the event arrives, while the plugin's worker lives (a restart loses the pending flag and the machine's timer tick then processes the repository):
 the first event after a minute of quiet starts it at once, an event during
 a running tick or the minute after a start waits for one trailing tick
