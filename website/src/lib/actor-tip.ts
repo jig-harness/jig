@@ -48,6 +48,15 @@ export function actorTip(a: Actor): ActorTip {
         said: "Run by an agent: ",
       };
     case "tool":
+      if (a.name === "dispatcher")
+        return {
+          href: "/factory/unattended/",
+          head: "dispatcher",
+          kind: "Tool · runs on a timer, outside the agent",
+          body: clip(plain(factory().unattended.lead.join(" ")), 220),
+          more: "With nobody at the keyboard →",
+          said: "Started by a tool: ",
+        };
       return {
         href: a.href ?? `${REPO_URL}/blob/main/tools/${a.name}/README.md`,
         head: a.name,

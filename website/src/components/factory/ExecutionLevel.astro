@@ -1,6 +1,7 @@
 ---
-// Level B in full: the stations as a line with what each hands on and
-// the follow-up return, the pull-request loop in text, and the station table.
+// The line in full: its stations with what each hands on, the two rails
+// under them (a person merges; the dispatcher starts stations), the
+// pull-request loop the stations run in text, and the station table.
 import "../../styles/factory.css";
 import ActorLine from "../ActorLine.astro";
 import SectionHead from "../SectionHead.astro";
@@ -14,14 +15,16 @@ const f = factory();
 const inline = (text: string, from = "FACTORY.md") => mdInline(text, from);
 const prLoop = await Promise.all(f.prLoop.map(async (s) => ({ n: s.n, html: await inline(s.body) })));
 const lineRows = await Promise.all(f.line.map(async (s) => ({ ...s, whatHtml: await inline(s.what) })));
+const roadmap = f.roadmap.filter((r) => r.section === "The line");
 ---
 
-  <SectionHead id="execution" label="B · Execution: the work-item line" note={`one work item, ${countWord(f.line.length)} stations`} />
-  <figure class="level-fig" aria-label={`The ${countWord(f.line.length)} execution stations, who runs each, and what each hands on`}>
+  <SectionHead id="line" label="The line, station by station" note={`one work item, ${countWord(f.line.length)} stations`} />
+  <p class="lead" set:html={await inline(f.lineLead)} />
+  <figure class="level-fig" aria-label={`The line's ${countWord(f.line.length)} stations, who runs each, what each hands on, and the two rails under them`}>
     <ol class="row seven">
       {f.line.map((s, i) => <StationBox station={s} arrow={i < f.line.length - 1} handoff={HANDOFFS[s.id]?.label} />)}
     </ol>
-    <ReturnRail>↺ follow-up items enter the line again at station 1 · no skill merges</ReturnRail>
+    <ReturnRail line={f.line} />
   </figure>
   <div class="two">
     <div>
@@ -29,8 +32,11 @@ const lineRows = await Promise.all(f.line.map(async (s) => ({ ...s, whatHtml: aw
       <ol class="numbered">{prLoop.map((s) => <li><span class="num">{s.n}</span><p set:html={s.html} /></li>)}</ol>
     </div>
     <div>
-      <p class="small-p" set:html={await inline(f.lineLead)} />
-      <div class="small-p" set:html={await md(f.lineAfter, "FACTORY.md")} />
+      <p class="small-p" set:html={await inline(f.lineAfter)} />
+      <div class="roadmap-refs">
+        <span class="label">On the roadmap</span>
+        {roadmap.map((r) => <ActorLine actor={{ kind: "todo", item: r.item, text: r.text }} />)}
+      </div>
     </div>
   </div>
   <div class="line-table">

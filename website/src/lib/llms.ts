@@ -61,9 +61,9 @@ export const SECTIONS: readonly SectionEntry[] = [
   {
     slug: "factory",
     summary:
-      "Jig as a software factory: the scaffolding a factory of agents runs on, and its stations.",
+      "Jig as a software factory: the line every work item travels, the dispatcher that keeps it moving, and the scaffolding it stands on.",
     title: "Software factory",
-    note: "the scaffolding, the design pipeline, the work-item line and the learning loop",
+    note: "the line, the dispatcher, the design pipeline, the scaffolding and the learning loop",
   },
   {
     slug: "adopt",
@@ -122,27 +122,32 @@ export const FIXED_PAGES: Readonly<Record<string, readonly Link[]>> = {
     {
       title: "Jig as a software factory",
       route: "/factory/",
-      note: "what Jig provides to build the scaffolding a factory of agents runs on, and the stations that stand on it",
+      note: "the line every work item travels, what keeps it moving with nobody at the keyboard, and the scaffolding every station stands on",
     },
     {
-      title: "The scaffolding",
-      route: "/factory/scaffolding/",
-      note: "the jobs a repository's scaffolding does, the modules that build each, and what Jig provides",
+      title: "The line",
+      route: "/factory/line/",
+      note: "the stations one work item passes from pickup to follow-up, who runs each and what each hands on, and the pull-request loop they run",
     },
     {
-      title: "Design and planning",
+      title: "With nobody at the keyboard",
+      route: "/factory/unattended/",
+      note: "the dispatcher: what it starts every few minutes, what reaches a person, the outcome log, accounts and their usage limits, and what it never does",
+    },
+    {
+      title: "Deciding what to build",
       route: "/factory/design/",
       note: "the feature pipeline, from research to an epic of planned work items",
     },
     {
-      title: "Execution",
-      route: "/factory/execution/",
-      note: "the work-item line and the pull-request loop every change follows",
+      title: "What it stands on",
+      route: "/factory/scaffolding/",
+      note: "the jobs a repository's scaffolding does, the modules that build each, and what Jig provides",
     },
     {
-      title: "The learning loop",
+      title: "The loop that sharpens it",
       route: "/factory/learning-loop/",
-      note: "how a miss a station should have caught becomes a validated check",
+      note: "how a miss a station should have caught becomes a proven check",
     },
   ],
   adopt: [
@@ -183,6 +188,10 @@ export const FIXED_PAGES: Readonly<Record<string, readonly Link[]>> = {
     },
   ],
 };
+
+/** The line on each factory page, by its route, which the overview lists too. */
+export const FACTORY_PAGE_NOTES: Readonly<Record<string, string>> =
+  Object.fromEntries((FIXED_PAGES.factory ?? []).map((l) => [l.route, l.note]));
 
 /** The file's route: `/llms.txt`, or `/modules/llms.txt` for a section. */
 const llmsRoute = (slug?: string): string =>

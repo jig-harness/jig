@@ -9,7 +9,12 @@ import {
   modules,
   skills,
 } from "../lib/data/index.ts";
-import { type Actor, jobsByModule } from "../lib/data/factory.ts";
+import {
+  type Actor,
+  jobsByModule,
+  partOf,
+  stationLabel,
+} from "../lib/data/factory.ts";
 import { LEVEL_NAME, LEVELS } from "../lib/data/modules.ts";
 import { headingId } from "../lib/view.ts";
 
@@ -74,25 +79,30 @@ const PAGES: [string, string, string][] = [
   [
     "Jig as a software factory",
     "/factory/",
-    "software factory scaffolding context verification guides catches knowledge stations levels design planning execution pipeline pr loop learning loop flywheel platform person merge",
+    "software factory line dispatcher scaffolding context verification guides catches knowledge stations design planning pipeline pr loop learning loop flywheel platform person merge",
   ],
   [
-    "The scaffolding",
+    "The line",
+    "/factory/line/",
+    "line execution work item pull request loop pick up build open drive repair merge follow up stations rails",
+  ],
+  [
+    "With nobody at the keyboard: the dispatcher",
+    "/factory/unattended/",
+    "dispatcher unattended nobody at the keyboard tick timer pickup re-arm re-drive follow-up notification phone morning outcome log dashboard account slot wall usage limit nudge serialized area held labels drift",
+  ],
+  [
+    "Deciding what to build: the feature pipeline",
+    "/factory/design/",
+    "design planning feature pipeline research requirements prd architecture prototype plan epic stages",
+  ],
+  [
+    "What it stands on: the scaffolding",
     "/factory/scaffolding/",
     "scaffolding context verification guides catches knowledge jobs modules configuration layers tracker interface adapters",
   ],
   [
-    "Design and planning: the feature pipeline",
-    "/factory/design/",
-    "design planning feature pipeline research prd architecture prototype plan epic stages",
-  ],
-  [
-    "Execution: the work-item line",
-    "/factory/execution/",
-    "execution work item line pull request loop pick up build open drive repair merge follow up stations",
-  ],
-  [
-    "The learning loop",
+    "The loop that sharpens it",
     "/factory/learning-loop/",
     "learning loop flywheel miss lens fixture validate measure reflection memory promotion",
   ],
@@ -161,14 +171,13 @@ const actorText = (a: Actor) =>
 function stationEntries(): Entry[] {
   const f = factory();
   return [...f.pipeline, ...f.line].map((s) => {
-    const level = s.id.startsWith("a") ? "Design" : "Execution";
     const who = s.actors.map(actorText).join(" · ");
     return {
       kind: "Station",
-      label: `${level} ${s.n} · ${s.name}`,
+      label: stationLabel(s),
       sub: who,
       href: `/factory/#station-${s.id}`,
-      key: `${level} ${s.name} station ${who}`.toLowerCase(),
+      key: `${partOf(s)} ${s.name} station ${who}`.toLowerCase(),
     };
   });
 }

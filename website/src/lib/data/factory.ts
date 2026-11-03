@@ -1,10 +1,14 @@
 /**
- * FACTORY.md in the parts the factory page and figures lay out: the
- * scaffolding's three jobs and the modules that build each, what Jig
- * provides, the two levels, their stations and who runs each station, what
- * stays with a person and what Jig leaves to the platform.
+ * FACTORY.md in the parts the factory pages and figures lay out, in the
+ * document's order: the line, its stations and who runs each station; what
+ * the dispatcher starts with nobody at the keyboard; deciding what to build;
+ * the scaffolding's three jobs, the modules that build each and what Jig
+ * provides; the learning loop; what stays with a person and what the
+ * platform supplies. A section is found by the start of its heading, and a
+ * subsection by the start of its own.
  */
 import {
+  blocks,
   firstParagraph,
   leadOf,
   listItems,
@@ -16,7 +20,7 @@ import {
   withoutTitle,
 } from "../source.ts";
 
-/** Who runs a station: a skill, the arbiter agent, a tool, a person, or nothing yet. */
+/** Who runs a station: a skill, the arbiter agent, a tool, a person, or work on the roadmap. */
 export type Actor =
   | { kind: "skill" | "agent"; name: string; note?: string }
   | { kind: "tool"; name: string; note: string; href?: string }
@@ -24,7 +28,7 @@ export type Actor =
   | { kind: "todo"; item: string; text: string; note?: string };
 
 export interface Station {
-  /** `a3` for design stage 3, `b6` for execution station 6. */
+  /** `a3` for design stage 3, `b6` for line station 6. */
   id: string;
   n: number;
   name: string;
@@ -32,6 +36,14 @@ export interface Station {
   what: string;
   actors: Actor[];
 }
+
+/** The part of the factory a station is in, as a station's label names it. */
+export const partOf = (s: Pick<Station, "id">): "Design" | "Line" =>
+  s.id.startsWith("a") ? "Design" : "Line";
+
+/** A station as the site labels it: "Line 4 · Drive". */
+export const stationLabel = (s: Station): string =>
+  `${partOf(s)} ${s.n} · ${s.name}`;
 
 export type JobId = "context" | "verification" | "knowledge";
 
@@ -58,8 +70,60 @@ export interface FactoryLevel {
   modules: string[];
 }
 
+/**
+ * Roadmap work an "On the roadmap" sentence links: the item's number, or a
+ * group's name ("Later"), and the link's text, which says what the work is.
+ */
+export interface RoadmapRef {
+  item: string;
+  text: string;
+  /** The ROADMAP.md heading anchor the link names. */
+  anchor: string;
+  /** The title of the FACTORY.md section the sentence is in. */
+  section: string;
+}
+
+/** One thing the dispatcher starts, as "What it starts" lists it. */
+export interface DispatcherStart {
+  /** The item's bold lead: "A pickup". */
+  lead: string;
+  /** The item's text, Markdown. */
+  body: string;
+  /** The line station it starts, from `DISPATCHER_STARTS`. */
+  station?: string;
+}
+
+/** The dispatcher's section, "With nobody at the keyboard". */
+export interface Unattended {
+  /** The paragraphs before the first subsection. */
+  lead: string[];
+  /** Each subsection: its anchor, its title and its Markdown, in order. */
+  parts: { id: string; title: string; body: string }[];
+  /** What each tick reads, as "What it starts" lists it in its first sentence. */
+  reads: string[];
+  starts: DispatcherStart[];
+  /** The stops only a person settles, as "What reaches a person" lists them first. */
+  tells: string[];
+  /** "What it never does": each item's bold lead and its text. */
+  never: { lead: string; body: string }[];
+}
+
 export interface Factory {
   intro: string[];
+  lineLead: string;
+  line: Station[];
+  lineAfter: string;
+  prLoopLead: string;
+  prLoop: { n: number; lead: string; body: string }[];
+  unattended: Unattended;
+  designLead: string;
+  pipeline: Station[];
+  everyStage: string;
+  designSkillsLead: string;
+  designSkills: { name: string; station: string }[];
+  designPerson: string;
+  levelsLead: string;
+  levels: FactoryLevel[];
   scaffoldLead: string;
   jobs: Job[];
   /** The "running many agents at once" paragraph, and the modules it names. */
@@ -67,24 +131,17 @@ export interface Factory {
   provideLead: string;
   provideList: string;
   provideClose: string;
-  levelsLead: string;
-  levels: FactoryLevel[];
-  loopAndAudit: string;
-  pipeline: Station[];
-  everyStage: string;
-  designSkillsLead: string;
-  designSkills: { name: string; station: string }[];
-  designPerson: string;
-  prLoopLead: string;
-  prLoop: { n: number; lead: string; body: string }[];
-  lineLead: string;
-  line: Station[];
-  lineAfter: string;
+  /** The learning loop's first paragraph, and the paragraphs after it. */
   learning: string;
+  learningMore: string[];
+  /** The paragraph on the audit that closes the learning loop's section. */
+  audit: string;
   personLead: string;
   person: string[];
   platformLead: string;
   platform: { lead: string; body: string; modules: string[] }[];
+  /** Every roadmap link an "On the roadmap" sentence makes, in order. */
+  roadmap: RoadmapRef[];
 }
 
 const JOB_IDS: Record<string, JobId> = {
@@ -102,8 +159,8 @@ const DESIGN_STAGE: Record<string, number> = {
 
 /**
  * Stations work the factory says is on the roadmap, by roadmap item. The
- * factory's "On the roadmap" sentences name each; the test checks every item
- * named here still appears in FACTORY.md.
+ * factory's "On the roadmap" sentences link each; the test checks every item
+ * named here is one of those links.
  */
 export const NOT_BUILT: Record<string, Actor[]> = {
   a5: [{ kind: "todo", item: "Later", text: "epic planning on the tracker" }],
@@ -119,7 +176,7 @@ export const NOT_BUILT: Record<string, Actor[]> = {
     {
       kind: "todo",
       item: "17",
-      text: "a skill that runs the post-merge stage M7 states",
+      text: "a follow-up skill for every repository",
     },
   ],
 };
@@ -148,6 +205,38 @@ export const EVERY_STAGE: Actor[] = [
   { kind: "person", note: "accepts each stage's artifact" },
   ...DESIGN_NOT_BUILT.everyStage,
 ];
+
+/**
+ * The line stations the dispatcher starts when nobody does, by the bold lead
+ * of the "What it starts" item that names each start. The line figure draws
+ * each as a tap of the dispatcher's rail, and the who-works-where grid marks
+ * the dispatcher in each station's column; the test checks every lead here
+ * is an item of that list, and every item has a station.
+ */
+export const DISPATCHER_STARTS: Readonly<Record<string, string>> = {
+  "A pickup": "b1",
+  "A re-arm": "b4",
+  "A re-drive": "b4",
+  "The follow-up": "b7",
+};
+
+/** The dispatcher, as the tool the who-works-where grid gives a row. */
+export const DISPATCHER: Actor = {
+  kind: "tool",
+  name: "dispatcher",
+  note: "starts a station when nobody does",
+};
+
+/** What the dispatcher's rail says at each station it starts: "pickup". */
+export function dispatcherTaps(f: Factory): Map<string, string[]> {
+  const taps = new Map<string, string[]>();
+  for (const s of f.unattended.starts) {
+    if (!s.station) continue;
+    const said = s.lead.replace(/^(A|The) /, "").toLowerCase();
+    taps.set(s.station, [...(taps.get(s.station) ?? []), said]);
+  }
+  return taps;
+}
 
 /**
  * What each station hands to the next, by station id, as the figure labels
@@ -211,7 +300,7 @@ function actorFromMatch(m: RegExpMatchArray): Actor {
       kind: "tool",
       name: "repository follow-up",
       note: "supplied by the repository; started by a person or the dispatcher",
-      href: "/factory/execution/#execution",
+      href: "/factory/line/#line",
     };
   if (m[0] === "[dispatcher]")
     return {
@@ -224,7 +313,7 @@ function actorFromMatch(m: RegExpMatchArray): Actor {
     return {
       kind: "tool",
       name: "launcher",
-      note: "Linear's “open in coding agent” button, its one tracker so far",
+      note: "the “open in coding agent” button in Linear",
     };
   const name = m[1] ?? m[3] ?? "";
   const agent = m[2] === "agents" || name === "review-arbiter";
@@ -278,41 +367,92 @@ function tableOf(body: string): string {
   return body.slice(Math.max(0, body.search(/^\|/m))).split(/\n\s*\n/)[0] ?? "";
 }
 
+/** The first table in `body` whose header row starts with the column `head`. */
+function tableHeaded(body: string, head: string): string {
+  const escaped = head.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const at = body.search(new RegExp(`^\\|\\s*${escaped}\\s*\\|`, "m"));
+  return at < 0 ? "" : tableOf(body.slice(at));
+}
+
 const startingWith = (paras: string[], prefix: string) =>
   paras.find((p) => p.startsWith(prefix)) ?? "";
 
-function scaffoldParts(scaffold: string, provide: string) {
-  const sp = paragraphs(scaffold);
-  const pp = paragraphs(provide);
+function lineStation([
+  n = "",
+  name = "",
+  what = "",
+  by = "",
+]: string[]): Station {
+  const id = `b${n}`;
   return {
-    scaffoldLead: sp[0] ?? "",
-    jobs: parseJobs(tableOf(scaffold)),
-    many: { text: sp[1] ?? "", modules: moduleIds(sp[1] ?? "") },
-    provideLead: pp[0] ?? "",
-    provideList: provide
-      .slice(
-        provide.indexOf("\n- ") + 1,
-        provide.lastIndexOf("\nThe [principles]"),
-      )
-      .trim(),
-    provideClose: pp[pp.length - 1] ?? "",
+    id,
+    n: Number(n),
+    name,
+    what,
+    actors: [...actorsOf(by), ...(NOT_BUILT[id] ?? [])],
   };
 }
 
-function levelParts(two: string) {
-  const tp = paragraphs(two);
+function lineParts(line: string) {
+  const lp = paragraphs(line);
   return {
-    levelsLead: tp[0] ?? "",
-    levels: tableRows(two).map(
-      ([name = "", unit = "", decides = "", handsOn = "", mods = ""]) => ({
-        name: name.replace(/\*/g, ""),
-        unit,
-        decides,
-        handsOn,
-        modules: moduleIds(mods),
-      }),
+    lineLead: lp[0] ?? "",
+    line: tableRows(tableHeaded(line, "#")).map(lineStation),
+    lineAfter: startingWith(lp, "Follow-up items"),
+    prLoopLead: startingWith(lp, "Every change follows"),
+    prLoop: listItems(line).map((i) => ({
+      n: i.n,
+      lead: leadOf(i.text),
+      body: i.body,
+    })),
+  };
+}
+
+/** A subsection's anchor on the unattended page: `unattended-what-it-starts`. */
+const partId = (title: string) =>
+  `unattended-${title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")}`;
+
+/**
+ * The items of the list a sentence opens with, after `verb`: "Each tick
+ * reads the tracker, the pull requests and the sessions" gives the three.
+ */
+function listAfter(text: string, verb: RegExp): string[] {
+  const m = new RegExp(`${verb.source}([^.]+)\\.`).exec(
+    text.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/\s+/g, " "),
+  );
+  return (m?.[1] ?? "")
+    .split(/,\s*(?:or\s+|and\s+)?|\s+(?:and|or)\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function unattendedParts(body: string): Unattended {
+  const [own, ...subs] = sections(body, 3);
+  const starting = section(subs, "What it starts");
+  return {
+    lead: paragraphs(own?.body ?? ""),
+    parts: subs.map((p) => ({
+      id: partId(p.title),
+      title: p.title,
+      body: p.body,
+    })),
+    reads: listAfter(firstParagraph(starting), /\breads /),
+    tells: listAfter(
+      firstParagraph(section(subs, "What reaches a person")),
+      /\bsettle: /,
     ),
-    loopAndAudit: tp[tp.length - 1] ?? "",
+    starts: listItems(starting).map((i) => {
+      const lead = leadOf(i.text).replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+      const station = DISPATCHER_STARTS[lead];
+      return { lead, body: i.body, ...(station ? { station } : {}) };
+    }),
+    never: listItems(section(subs, "What it never does")).map((i) => ({
+      lead: leadOf(i.text),
+      body: i.body,
+    })),
   };
 }
 
@@ -336,52 +476,70 @@ function designStation(item: {
   };
 }
 
-function designParts(pipe: string) {
-  const pp = paragraphs(pipe);
+function levelParts(design: string) {
+  const table = tableHeaded(design, "Part");
+  const before = table ? design.slice(0, design.indexOf(table)) : "";
   return {
-    pipeline: listItems(pipe).map(designStation),
-    everyStage: startingWith(pp, "**At every stage"),
-    designSkillsLead: startingWith(pp, "The skills that run"),
-    designSkills: tableRows(tableOf(pipe.slice(pipe.indexOf("| Skill")))).map(
+    levelsLead: paragraphs(before).at(-1) ?? "",
+    levels: tableRows(table).map(
+      ([name = "", unit = "", decides = "", handsOn = "", mods = ""]) => ({
+        name: name.replace(/\*/g, ""),
+        unit,
+        decides,
+        handsOn,
+        modules: moduleIds(mods),
+      }),
+    ),
+  };
+}
+
+function designParts(design: string) {
+  const dp = paragraphs(design);
+  return {
+    designLead: dp[0] ?? "",
+    pipeline: listItems(design).map(designStation),
+    everyStage: startingWith(dp, "**At every stage"),
+    designSkillsLead: startingWith(dp, "The skills that run"),
+    designSkills: tableRows(tableHeaded(design, "Skill")).map(
       ([skill = "", station = ""]) => ({
         name: /`([a-z-]+)`/.exec(skill)?.[1] ?? skill,
         station,
       }),
     ),
-    designPerson: startingWith(pp, "A person sets"),
+    designPerson: startingWith(dp, "A person sets"),
+    ...levelParts(design),
   };
 }
 
-function lineStation([
-  n = "",
-  name = "",
-  what = "",
-  by = "",
-]: string[]): Station {
-  const id = `b${n}`;
+function scaffoldParts(stands: string) {
+  const [own, ...subs] = sections(stands, 3);
+  const scaffold = own?.body ?? "";
+  const provide = section(subs, "What Jig provides");
+  const sp = paragraphs(scaffold);
+  const pp = paragraphs(provide);
+  const many = startingWith(sp, "Running many agents");
   return {
-    id,
-    n: Number(n),
-    name,
-    what,
-    actors: [...actorsOf(by), ...(NOT_BUILT[id] ?? [])],
+    scaffoldLead: sp[0] ?? "",
+    jobs: parseJobs(tableHeaded(scaffold, "Job")),
+    many: { text: many, modules: moduleIds(many) },
+    provideLead: pp[0] ?? "",
+    provideList: provide
+      .slice(
+        provide.indexOf("\n- ") + 1,
+        provide.lastIndexOf("\nThe [principles]"),
+      )
+      .trim(),
+    provideClose: pp[pp.length - 1] ?? "",
   };
 }
 
-function executionParts(exec: string) {
-  const ep = paragraphs(exec);
+function learningParts(loop: string) {
+  const lp = paragraphs(loop);
+  const audit = startingWith(lp, "The [audit]");
   return {
-    prLoopLead: ep[0] ?? "",
-    prLoop: listItems(exec).map((i) => ({
-      n: i.n,
-      lead: leadOf(i.text),
-      body: i.body,
-    })),
-    lineLead: startingWith(ep, "The plugin runs that loop"),
-    line: tableRows(tableOf(exec.slice(exec.indexOf("| #")))).map(lineStation),
-    lineAfter: ep
-      .slice(ep.findIndex((p) => p.startsWith("Follow-up items")))
-      .join("\n\n"),
+    learning: firstParagraph(loop),
+    learningMore: lp.slice(1).filter((p) => p !== audit),
+    audit,
   };
 }
 
@@ -400,17 +558,42 @@ function boundaryParts(person: string, platform: string) {
   };
 }
 
+const ROADMAP_LINK = /\[([^\]]+)\]\(ROADMAP\.md#([^)\s]+)\)/g;
+
+/**
+ * The roadmap links of every block that says what is on the roadmap (a
+ * paragraph or a list that contains "on the roadmap"), each with the item
+ * its anchor names: `9-delegated-merge-…` is item 9, `later` is Later.
+ */
+function roadmapRefs(all: { title: string; body: string }[]): RoadmapRef[] {
+  return all.flatMap(({ title, body }) =>
+    blocks(body)
+      .filter((b) => /\bon the roadmap\b/i.test(b))
+      .flatMap((b) =>
+        [...b.matchAll(ROADMAP_LINK)].map(([, text = "", anchor = ""]) => ({
+          item:
+            /^(\d+)-/.exec(anchor)?.[1] ??
+            anchor.charAt(0).toUpperCase() + anchor.slice(1),
+          text: text.replace(/\s+/g, " ").replace(/`/g, ""),
+          anchor,
+          section: title,
+        })),
+      ),
+  );
+}
+
 export function parseFactory(markdown: string): Factory {
   const parts = sections(markdown);
   const of = (prefix: string) => section(parts, prefix);
   return {
     intro: paragraphs(withoutTitle(parts[0]?.body ?? "")),
-    ...scaffoldParts(of("A factory of agents"), of("What Jig provides")),
-    ...levelParts(of("Two levels")),
-    ...designParts(of("Design and planning")),
-    ...executionParts(of("Execution")),
-    learning: firstParagraph(of("The learning loop")),
-    ...boundaryParts(of("What stays"), of("What Jig leaves")),
+    ...lineParts(of("The line")),
+    unattended: unattendedParts(of("With nobody at the keyboard")),
+    ...designParts(of("Deciding what to build")),
+    ...scaffoldParts(of("What it stands on")),
+    ...learningParts(of("The loop that sharpens it")),
+    ...boundaryParts(of("What stays"), of("What the platform")),
+    roadmap: roadmapRefs(parts),
   };
 }
 

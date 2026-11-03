@@ -99,14 +99,31 @@ function repoUrl(path: string, isFile: Exists = () => false): string {
  * be a whole route.
  */
 const FACTORY_HEADINGS: Record<string, string> = {
+  "the-line": "/factory/line/#line",
+  "with-nobody-at-the-keyboard": "/factory/unattended/#unattended",
+  "what-it-starts": "/factory/unattended/#unattended-what-it-starts",
+  "what-reaches-a-person":
+    "/factory/unattended/#unattended-what-reaches-a-person",
+  "the-outcome-log-and-its-dashboard":
+    "/factory/unattended/#unattended-the-outcome-log-and-its-dashboard",
+  "accounts-and-their-usage-limits":
+    "/factory/unattended/#unattended-accounts-and-their-usage-limits",
+  "contended-areas-one-at-a-time":
+    "/factory/unattended/#unattended-contended-areas-one-at-a-time",
+  "what-it-never-does": "/factory/unattended/#unattended-what-it-never-does",
+  "deciding-what-to-build": "/factory/design/#design",
+  "what-it-stands-on": "/factory/scaffolding/#scaffolding",
+  "what-jig-provides-to-build-it": "/factory/scaffolding/#provides",
+  "the-loop-that-sharpens-it": "/factory/learning-loop/#learning",
+  "what-stays-with-a-person": "person",
+  "what-the-platform-supplies": "platform",
+  // The headings FACTORY.md had before, for a link written against one.
   "a-factory-of-agents-runs-on-scaffolding":
     "/factory/scaffolding/#scaffolding",
-  "what-jig-provides-to-build-it": "/factory/scaffolding/#provides",
   "two-levels-and-a-loop-around-them": "levels",
   "design-and-planning-the-feature-pipeline": "/factory/design/#design",
-  "execution-the-work-item-line": "/factory/execution/#execution",
+  "execution-the-work-item-line": "/factory/line/#line",
   "the-learning-loop-wraps-both": "/factory/learning-loop/#learning",
-  "what-stays-with-a-person": "person",
   "what-jig-leaves-to-the-platform": "platform",
 };
 const ANCHORS: Record<string, (anchor: string) => string> = {

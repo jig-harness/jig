@@ -28,7 +28,7 @@ The [dispatcher](../../GLOSSARY.md)
 ([design/dark-factory-dispatch.md](../../design/dark-factory-dispatch.md))
 is a new kind of tooling. It runs with nobody at the keyboard, on a timer,
 and starts the stages of the
-[execution line](../../FACTORY.md#execution-the-work-item-line) (the steps
+[execution line](../../FACTORY.md#the-line) (the steps
 that carry one work item from pickup to a merged pull request) as agent
 sessions: pickups, [re-arms and takeovers](../../GLOSSARY.md) of a stopped
 or wedged pull-request drive, follow-ups. To do that it needs these from
@@ -105,7 +105,9 @@ interface, with nothing in the tick changed.
 
 ## Extraction (decisions-become-checks)
 
-Not yet checked by a gate: the dispatcher is not built. Its build order
-runs the tick's tests against a fake `orca` command, and its README is to
-list the Orca commands and output it relies on, as the
-[Orca workspace tool](../../tools/orca/README.md)'s does.
+Not yet checked by a gate. The dispatcher is built (`plugin/dispatch/`),
+and its tick's tests run against a fake `orca` command. The Orca commands and
+output fields it relies on are not yet listed in one place: the adapter's
+header comment (`plugin/dispatch/lib/runtime/orca.ts`) names the commands, and
+the [plugin README](../../plugin/README.md) describes the behaviour they give.
+The inventory an Orca upgrade is assessed against is still to be written.

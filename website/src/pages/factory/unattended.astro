@@ -1,0 +1,27 @@
+---
+import Unattended from "../../components/factory/Unattended.astro";
+import Plate from "../../components/Plate.astro";
+import Base from "../../layouts/Base.astro";
+import { factory } from "../../lib/data/index.ts";
+import { FACTORY_PAGE_NOTES } from "../../lib/llms.ts";
+import { mdInline } from "../../lib/markdown.ts";
+import "../../styles/factory.css";
+
+const lead = await Promise.all(factory().unattended.lead.map((p) => mdInline(p, "FACTORY.md")));
+const note = FACTORY_PAGE_NOTES["/factory/unattended/"] ?? "";
+---
+
+<Base title="With nobody at the keyboard" description={note.charAt(0).toUpperCase() + note.slice(1) + "."}>
+  <section class="page wrap">
+    <div class="intro-row">
+      <div class="intro">
+        <span class="eyebrow">Jig as a software factory · the dispatcher</span>
+        <h1 class="display">With nobody at the keyboard, the dispatcher keeps the line moving.</h1>
+        {lead.map((html) => <p set:html={html} />)}
+        <p class="muted small">It starts stations on <a href="/factory/line/">the line</a>. What stays with a person is on <a href="/factory/#person">the overview</a>.</p>
+      </div>
+      <span class="intro-plate" style="flex-basis: clamp(360px, 48%, 640px)"><Plate name="line" width="100%" /></span>
+    </div>
+    <Unattended />
+  </section>
+</Base>

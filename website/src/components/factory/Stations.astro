@@ -1,5 +1,7 @@
 ---
-// Figure 2, every station and who runs it, and the two levels.
+// Figure 2, every station and who runs it: deciding what to build, then the
+// line with its two rails, inside the learning loop; then figure 3 and the
+// two parts side by side.
 import "../../styles/factory.css";
 import ActorChip from "../ActorChip.astro";
 import DesignRow from "./DesignRow.astro";
@@ -16,6 +18,8 @@ import { mdInline } from "../../lib/markdown.ts";
 const f = factory();
 const inline = (text: string, from = "FACTORY.md") => mdInline(text, from);
 const handoff = (id: string) => HANDOFFS[id]?.label;
+const design = f.levels.find((l) => l.name === "Deciding what to build");
+const line = f.levels.find((l) => l.name === "The line");
 const levelRows = await Promise.all(
   f.levels.map(async (l) => ({
     ...l,
@@ -26,8 +30,7 @@ const levelRows = await Promise.all(
 );
 ---
 
-  <SectionHead id="levels" label="Two levels and a loop around them" note="the stations, on that scaffolding" />
-  <p class="lead" set:html={await inline(f.levelsLead)} />
+  <SectionHead id="levels" label="Every station, and who runs it" note="deciding what to build, then the line, inside the learning loop" />
   <figure class="detail" aria-labelledby="fx-cap">
     <div class="legend" role="list" aria-label="Who runs a station">
       <span role="listitem"><StatusMark kind="skill" size={13} />a skill</span>
@@ -38,36 +41,37 @@ const levelRows = await Promise.all(
       <span role="listitem" class="muted">hover any chip for what it does</span>
     </div>
     <div class="loop-frame">
-      <a class="frame-tag" href="/factory/learning-loop/">↻ Learning loop · M8 · wraps both levels</a>
+      <a class="frame-tag" href="/factory/learning-loop/">↻ The loop that sharpens it · M8 · around both parts</a>
       <span class="frame-tag orbit-note" aria-hidden="true">a miss at any station ↗ becomes a check ↙</span>
       <div class="level-head" id="design-level">
-        <span><span class="label">A · Design and planning</span> <span class="muted">a feature or an epic · the feature pipeline</span></span>
-        <span class="chips">{f.levels[0]?.modules.map((id) => <ModChip id={id} size="small" />)}</span>
+        <span><span class="label">Deciding what to build</span> <span class="muted">a feature or an epic · the feature pipeline</span></span>
+        <span class="chips">{design?.modules.map((id) => <ModChip id={id} size="small" />)}</span>
       </div>
       <DesignRow />
       <div class="handoff"><Arrow dir="down" class="handoff-arrow" /><span>hands on an epic of planned work items · each work item enters the line below on its own</span></div>
-      <div class="level-head" id="execution-level">
-        <span><span class="label">B · Execution</span> <span class="muted">one work item · the work-item line</span></span>
-        <span class="chips">{f.levels[1]?.modules.map((id) => <ModChip id={id} size="small" />)}</span>
+      <div class="level-head" id="line-level">
+        <span><span class="label">The line</span> <span class="muted">one work item, from pickup to follow-up</span></span>
+        <span class="chips">{line?.modules.map((id) => <ModChip id={id} size="small" />)}</span>
       </div>
       <ol class="row seven">
         {f.line.map((s, i) => <StationBox station={s} arrow={i < f.line.length - 1} handoff={handoff(s.id)} />)}
       </ol>
-      <ReturnRail>↺ follow-up items enter the line again at station 1 · no skill merges</ReturnRail>
+      <ReturnRail line={f.line} />
       <div class="base">
         <span class="base-item"><span class="frame-tag inline">↺ misses → lenses</span><span class="base-text">every miss becomes a new check; <ActorChip actor={{ kind: "skill", name: "reflect" }} /> records what a session learned, <ActorChip actor={{ kind: "skill", name: "review-reflections" }} /> turns it into changes a person approves, <ActorChip actor={{ kind: "skill", name: "promote-memory" }} /> promotes session memory</span></span>
-        <span class="base-item"><span class="audit-tag">Audit</span><span class="base-text"><ActorChip actor={{ kind: "skill", name: "audit" }} /> inspects the factory itself: scores every module and, re-run, reports what drifted</span></span>
+        <span class="base-item"><span class="audit-tag">Audit</span><span class="base-text"><ActorChip actor={{ kind: "skill", name: "audit" }} /> inspects the factory itself: scores every module and, run again, reports what drifted</span></span>
       </div>
     </div>
     <figcaption id="fx-cap">
-      Figure 2: the stations in detail. Two levels inside the learning loop; every station names what runs it and what it hands on, and unbuilt work stays in the figure with its roadmap item. The tinted station is a person's decision. Every station here stands on the scaffolding in <a href="#figure-1">figure 1</a>; <a href="/factory/design/">level A</a> and <a href="/factory/execution/">level B</a> each have a page.
+      Figure 2: every station, who runs it and what it hands on, inside the learning loop. Work on the roadmap stays in the figure as a dashed chip with its item. The tinted station is a person's. Under the line run two rails: on the upper one a person merges, and the lower one is the dispatcher, which starts a station when nobody does. Every station stands on the scaffolding in <a href="#figure-1">figure 1</a>. <a href="/factory/design/">Deciding what to build</a>, <a href="/factory/line/">the line</a> and <a href="/factory/unattended/">the dispatcher</a> each have a page.
     </figcaption>
   </figure>
 
   <Matrix />
 
+  <p class="lead" set:html={await inline(f.levelsLead)} />
   <div class="levels-table">
-    <div class="th" aria-hidden="true"><span>Level</span><span>Unit of work</span><span>What it decides</span><span>What it hands on</span><span>Modules</span></div>
+    <div class="th" aria-hidden="true"><span>Part</span><span>Unit of work</span><span>What it decides</span><span>What it hands on</span><span>Modules</span></div>
     {
       levelRows.map((l) => (
         <div class="level-row">
@@ -84,4 +88,3 @@ const levelRows = await Promise.all(
       ))
     }
   </div>
-  <p class="small-p" set:html={await inline(f.loopAndAudit)} />

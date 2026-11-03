@@ -52,12 +52,16 @@ export const NAV: readonly NavEntry[] = [
   {
     label: "Factory",
     href: "/factory/",
+    /* FACTORY.md's order: the line a work item travels, what keeps it
+       moving with nobody at the keyboard, what comes before it, what it
+       stands on, and the loop around it. */
     pages: [
       { label: "Overview", href: "/factory/" },
-      { label: "Scaffolding", href: "/factory/scaffolding/" },
-      { label: "A · Design and planning", href: "/factory/design/" },
-      { label: "B · Execution", href: "/factory/execution/" },
-      { label: "Learning loop", href: "/factory/learning-loop/" },
+      { label: "The line", href: "/factory/line/" },
+      { label: "With nobody at the keyboard", href: "/factory/unattended/" },
+      { label: "Deciding what to build", href: "/factory/design/" },
+      { label: "What it stands on", href: "/factory/scaffolding/" },
+      { label: "The loop that sharpens it", href: "/factory/learning-loop/" },
     ],
   },
   {

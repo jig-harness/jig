@@ -62,10 +62,12 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
 | `/modules/<Mn>/mappings/` | mappings.md | the whole file, for links that name it |
-| `/factory/` | FACTORY.md | the overview: figure 1 (stations on the scaffolding, above the platform), figure 2 (every station, who runs it and what it hands on, inside the learning loop), figure 3 (every actor by every station), the levels, what stays with a person and what the platform supplies |
-| `/factory/scaffolding/` | FACTORY.md, CONFIGURATION.md | the jobs with the modules that build each, when each verification module acts along a session, running many agents at once, and what Jig provides: the configuration layers and the tracker interface |
-| `/factory/design/`, `/factory/execution/` | FACTORY.md | one level each: its stations as a row with handoffs, the stages or the pull-request loop in text, the skills that run them or the station table |
-| `/factory/learning-loop/` | FACTORY.md, M8's README | the miss-to-lens flywheel step by step, its two companion cycles, and what triggers reflection |
+| `/factory/` | FACTORY.md | the overview: the problem in three sentences, figure 1 (stations on the scaffolding, above the platform, with the dispatcher's rail under the line), the factory's pages one card each, figure 2 (every station, who runs it and what it hands on, inside the learning loop, with the line's two rails: a person merges, and the dispatcher starts stations), figure 3 (every actor by every station, the dispatcher's row among them), the two parts side by side, what stays with a person and what the platform supplies |
+| `/factory/line/` | FACTORY.md | the line: its stations as a row with handoffs and its two rails, the pull-request loop in text, the station table, and what is on the roadmap; `/factory/execution/`, its address before, forwards to it |
+| `/factory/unattended/` | FACTORY.md | with nobody at the keyboard: a figure of what one tick reads, starts and tells a person, above the line with its rails; then each part of the dispatcher's section, what it never does, and what is on the roadmap |
+| `/factory/design/` | FACTORY.md | deciding what to build: the stages as a row with handoffs, the stages in text, and the skills that run them |
+| `/factory/scaffolding/` | FACTORY.md, CONFIGURATION.md | what it stands on: the jobs with the modules that build each, when each verification module acts along a session, running many agents at once, and what Jig provides: the configuration layers and the tracker interface |
+| `/factory/learning-loop/` | FACTORY.md, M8's README | the loop that sharpens it: the miss-to-lens flywheel step by step, its two companion cycles, and what triggers reflection |
 | `/adopt/` | plugin/README.md | getting started: the prompt that hands the setup to an agent, then the stations from nothing installed to a first audit, then the guides for an existing repository and a new project |
 | `/adopt/existing/`, `/adopt/greenfield/` | adoption/*.md, profiles | the guides with the plan rail: the chosen profile's modules in order, linked to their levels, and a hand-off link that keeps the profile (`?profile=`) |
 | `/adopt/plugin/`, `/adopt/configuration/`, `/adopt/extending/`, `/adopt/mechanisms/` | plugin/README.md, CONFIGURATION.md, EXTENDING.md, MECHANISMS.md | the plugin README's sections getting started does not render; the configuration reference; the extending guide; the map of the deterministic and reasoned parts |
@@ -128,6 +130,11 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
   entry on hover or keyboard focus, and on each of the section's pages
   holds it as a bar below itself, the current page marked, so the reader
   sees where they are among the section's pages however far they scroll.
+  The factory's pages follow FACTORY.md's order, the line first: the
+  overview, the line, with nobody at the keyboard, deciding what to build,
+  what it stands on, and the loop that sharpens it. An address a factory
+  page or anchor had before forwards to where that part is now
+  (`website/src/lib/factory-anchors.ts`).
   A page's own index of its sections or of its family's pages (the skills,
   the principles) is the side index, one design wherever it appears; a
   list taller than the window scrolls within it. Sticky rails and anchor
@@ -172,11 +179,11 @@ subjects:
 | `map` | the Context job, 1:1 | a surveyor's map unrolled on a table, held flat by two brass weights, a compass rose on the map and a folding ruler beside it |
 | `gauge` | the Verification job, 16:9 | a pair of steel vernier calipers measuring a small machined part, next to a cylindrical go/no-go plug gauge standing upright |
 | `catalog` | the Knowledge job, 1:1 | a wooden card-catalog cabinet of twelve drawers in three rows of four, one drawer pulled open to show index cards with tabs, label holders empty |
-| `drafting` | design and planning, 16:9 | a drafting table tilted toward the viewer with a T-square, compasses, a set square and a half-finished mechanical drawing pinned at the corners |
-| `line` | execution, 3:1 | a straight conveyor line in side elevation with seven small work stations along it, each a bench with a different hand tool, and a return belt underneath running back to the first station |
-| `flywheel` | the learning loop, 16:9 | a large cast-iron flywheel on a bearing stand, belt-driven, with a centrifugal ball governor beside it |
+| `drafting` | deciding what to build, 16:9 | a drafting table tilted toward the viewer with a T-square, compasses, a set square and a half-finished mechanical drawing pinned at the corners |
+| `line` | the line, 3:1, and the unattended page's intro until `escapement` is drawn | a straight conveyor line in side elevation with seven small work stations along it, each a bench with a different hand tool, and a return belt underneath running back to the first station |
+| `flywheel` | the loop that sharpens it, 16:9 | a large cast-iron flywheel on a bearing stand, belt-driven, with a centrifugal ball governor beside it |
 | `lever` | what stays with a person, 16:9 | a human hand gripping a tall lever on a cast-iron control stand, the lever set to one of three notched positions |
-| `slab` | what Jig leaves to the platform, 16:9 | a building foundation in section: a concrete slab on driven piles, with service conduits and a drainage pipe passing through it |
+| `slab` | what the platform supplies, 16:9 | a building foundation in section: a concrete slab on driven piles, with service conduits and a drainage pipe passing through it |
 | `engine` | the 404 page, 16:9 | the preamble alone, with no subject |
 | `lattice` | behind sunk bands, a 1:1 tile | a seamless repeating tile of a faint isometric scaffolding lattice: thin poles, ledgers, diagonal braces and couplers in thin even lines, continuing across all four edges |
 | `toolwall` | the features page's intro, 16:9 | a pegboard tool wall with tools hung above their painted outlines, two outlines empty |
@@ -193,6 +200,7 @@ subjects:
 | `scraper` | feature 12, documents that say what is true now, 1:1 | a drawing board with an erasing knife and its shavings |
 | `wrenches` | feature 13, adopt one module at a time, 1:1 | three sizes of one wrench on a pegboard, a hand taking the middle one |
 | `footing` | not yet drawn: the home page's foot, 3:1, in place of `slab` | a wide cross-section of the ground under a building: a concrete slab on driven piles, service pipes and conduits running the width of the drawing beneath it, and a scaffolding lattice standing on the slab at the right, cut by the drawing's upper edge |
+| `escapement` | not yet drawn: the unattended page's intro, 16:9, in place of `line` | a clockwork escapement driving a long shaft through three bearing stands |
 | `timer` | not yet drawn: feature 3, a line that runs with nobody at the keyboard, 1:1, in place of `numberer` | a wall-mounted clockwork timer switch, its dial marked in hours, a lever beside it |
 | `numberer` | feature 3 until `timer` is drawn; drawn for FEATURES.md's section on change notes and the `changelog` skill, 16:9 | an automatic numbering stamp on a stack of slips, one stamped slip on a booklet |
 

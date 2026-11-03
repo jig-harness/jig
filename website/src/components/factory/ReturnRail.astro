@@ -2,10 +2,206 @@
 // The rail that carries a row's last station back to its first: down from
 // under the last, across, and up into the first, with the head centered on
 // the line where it meets the box. The text sits on the rail.
+//
+// Given the line's stations, it draws the line's two rails instead. The
+// upper one is where a person merges, joined to the Merge station. The
+// lower one is the dispatcher, which runs where the follow-up return runs
+// and taps up into each station it starts when nobody does.
 import "../../styles/factory.css";
+import { dispatcherTaps, type Station } from "../../lib/data/factory.ts";
+import { factory } from "../../lib/data/index.ts";
+import StatusMark from "../StatusMark.astro";
+
+interface Props {
+  line?: Station[];
+}
+const { line } = Astro.props;
+const taps = line
+  ? [...dispatcherTaps(factory()).entries()].flatMap(([id, said]) => {
+      const at = line.findIndex((s) => s.id === id);
+      const s = line[at];
+      return s ? [{ col: at + 1, n: s.n, name: s.name, said: said.join(" · ") }] : [];
+    })
+  : [];
+const mergeAt = line ? line.findIndex((s) => s.actors[0]?.kind === "person") + 1 : 0;
+const merge = line?.[mergeAt - 1];
 ---
 
-<div class="return" aria-hidden="true">
-  <svg class="return-head" viewBox="0 0 12 9" width="12" height="9"><path d="M6 0 12 9H0z" /></svg>
-</div>
-<p class="return-text"><span><slot /></span></p>
+{
+  line ? (
+    <div class="rails">
+      <div class="rails-draw" aria-hidden="true">
+        <span class="d-u" />
+        {taps
+          .filter((t) => t.col !== 1 && t.col !== line.length)
+          .map((t) => (
+            <span class="d-tap" style={`--c: ${t.col}`} />
+          ))}
+        {taps.map((t) => (
+          <svg class="d-head" style={`--c: ${t.col}`} viewBox="0 0 12 9" width="12" height="9">
+            <path d="M6 0 12 9H0z" />
+          </svg>
+        ))}
+        <span class="m-line" />
+        {mergeAt > 0 && <span class="m-tick" style={`--c: ${mergeAt}`} />}
+      </div>
+      {merge && (
+        <p class="m-label" style={`--c: ${mergeAt}`}>
+          <StatusMark kind="person" size={12} />
+          <span><span class="vh">The upper rail, at station {merge.n}, {merge.name}: </span>a person merges</span>
+        </p>
+      )}
+      <ul class="taps" aria-label="The stations the dispatcher starts">
+        {taps.map((t) => (
+          <li style={`--c: ${t.col}`}>
+            <span class="tap-n">{t.n}</span>
+            <span class="vh">{t.name}: </span>
+            <span>{t.said}</span>
+          </li>
+        ))}
+      </ul>
+      <p class="return-text rail-text">
+        <span>
+          <a class="rail-name" href="/factory/unattended/">The dispatcher</a> starts these stations when nobody does, every few minutes. It never merges. ↺ Follow-up items enter the line again at station {line[0]?.n}.
+        </span>
+      </p>
+    </div>
+  ) : (
+    <>
+      <div class="return" aria-hidden="true">
+        <svg class="return-head" viewBox="0 0 12 9" width="12" height="9"><path d="M6 0 12 9H0z" /></svg>
+      </div>
+      <p class="return-text"><span><slot /></span></p>
+    </>
+  )
+}
+
+<style>
+  /* The line's two rails, under its stations: the upper one where a
+     person merges, joined to the Merge station, and the dispatcher's below it,
+     where the follow-up return runs, tapping up into each station it starts.
+     `--c` is a station's column; `--at` its center, on the row's own grid. */
+  .rails {
+    --gap: 26px;
+    --cols: 7;
+    position: relative;
+    padding-top: 58px;
+  }
+  .rails [style*="--c"] {
+    --at: calc(
+      (100% - (var(--cols) - 1) * var(--gap)) / var(--cols) * (var(--c) - 0.5) +
+        var(--gap) * (var(--c) - 1)
+    );
+  }
+  .rails-draw {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 58px;
+    --edge: calc((100% - (var(--cols) - 1) * var(--gap)) / var(--cols) / 2);
+  }
+  .d-u {
+    position: absolute;
+    top: 0;
+    height: 46px;
+    left: calc(var(--edge) - 1.5px);
+    right: calc(var(--edge) - 1.5px);
+    border: 3px solid var(--accent);
+    border-top: 0;
+    border-radius: 0 0 var(--r-panel) var(--r-panel);
+  }
+  .d-tap {
+    position: absolute;
+    top: 0;
+    height: 46px;
+    width: 3px;
+    left: calc(var(--at) - 1.5px);
+    background: var(--accent);
+  }
+  .d-head {
+    position: absolute;
+    top: -2px;
+    left: var(--at);
+    transform: translateX(-50%);
+    fill: var(--accent);
+  }
+  .m-line {
+    position: absolute;
+    top: 20px;
+    left: var(--edge);
+    right: var(--edge);
+    border-top: 1.5px solid var(--ink);
+  }
+  .m-tick {
+    position: absolute;
+    top: 0;
+    height: 20px;
+    width: 1.5px;
+    left: calc(var(--at) - 0.75px);
+    background: var(--ink);
+  }
+  .m-label {
+    position: absolute;
+    top: 21px;
+    left: var(--at);
+    transform: translate(-50%, -50%);
+    margin: 0;
+    padding: 0 6px;
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    background: var(--card);
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .taps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+    column-gap: var(--gap);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .taps li {
+    grid-column: var(--c);
+    text-align: center;
+  }
+  .tap-n {
+    font-family: var(--serif);
+    font-weight: 400;
+    color: var(--muted);
+    margin-right: 4px;
+  }
+  .rail-text {
+    margin-top: 8px;
+  }
+  .rail-name {
+    font-weight: 600;
+  }
+  @media (max-width: 1079px) {
+    .rails {
+      padding-top: 0;
+    }
+    .rails-draw {
+      display: none;
+    }
+    .m-label {
+      position: static;
+      transform: none;
+      margin: 12px 0 6px;
+      padding: 0;
+      background: none;
+    }
+    .taps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 16px;
+    }
+    .taps li {
+      text-align: left;
+    }
+  }
+</style>

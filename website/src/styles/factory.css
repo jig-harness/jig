@@ -458,8 +458,8 @@
   padding-left: 12px;
   white-space: nowrap;
 }
-.matrix td.A,
-.matrix th.A {
+.matrix td.design,
+.matrix th.design {
   background: color-mix(in srgb, var(--sunk) 55%, transparent);
 }
 .matrix td.band,
@@ -801,6 +801,13 @@
   gap: 6px 18px;
   margin-top: 28px;
   font-size: 14px;
+}
+/* What is on the roadmap for a part, as roadmap chips under its text. */
+.roadmap-refs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
 }
 @media (max-width: 1079px) {
   .jobs-table .th,
