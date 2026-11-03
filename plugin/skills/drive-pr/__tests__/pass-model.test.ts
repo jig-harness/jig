@@ -182,7 +182,34 @@ describe("effectivePass", () => {
       model: "gpt-own",
       source: "the pass command's own model",
     });
-    expect(() => effectivePass(codex, "sonnet", configured, routed)).toThrow(
+    expect(
+      effectivePass(own, "gpt-override", configured, routed),
+    ).toMatchObject({
+      argv: ["codex", "exec", "-m", "gpt-override", "/jig:drive-pr 7"],
+      model: "gpt-override",
+    });
+  });
+
+  it("replaces all Codex model flags while preserving the prompt and other arguments", () => {
+    const prompt = "Use jig:drive-pr with --model mentioned in prose";
+    const pass = [
+      "codex",
+      "exec",
+      "--model=old",
+      "-m",
+      "other",
+      "--json",
+      prompt,
+    ];
+    expect(effectivePass(pass, "gpt-new", configured).argv).toEqual([
+      "codex",
+      "exec",
+      "-m",
+      "gpt-new",
+      "--json",
+      prompt,
+    ]);
+    expect(() => effectivePass(pass, "two words", configured)).toThrow(
       PassModelUsageError,
     );
   });
@@ -193,6 +220,39 @@ describe("effectivePass", () => {
 });
 
 describe("withoutModel", () => {
+  it("replaces attached Codex short model options", () => {
+    for (const option of ["-mold", "-m=old"]) {
+      const argv = ["codex", "exec", option, "prompt"];
+      expect(effectivePass(argv, undefined, configured).model).toBe("old");
+      expect(effectivePass(argv, "gpt-new", configured).argv).toEqual([
+        "codex",
+        "exec",
+        "-m",
+        "gpt-new",
+        "prompt",
+      ]);
+      expect(withoutModel(argv)).toEqual(["codex", "exec", "prompt"]);
+    }
+  });
+
+  it("preserves model-like prompt content after the option terminator", () => {
+    for (const prompt of ["--model=old is an example", "-mold", "--model"]) {
+      const argv = ["codex", "exec", "--", prompt];
+      expect(withoutModel(argv)).toEqual(argv);
+      expect(effectivePass(argv, "gpt-new", configured).argv).toEqual([
+        "codex",
+        "exec",
+        "-m",
+        "gpt-new",
+        "--",
+        prompt,
+      ]);
+      expect(withoutModel(["codex", "exec", "-mold", "--", prompt])).toEqual(
+        argv,
+      );
+    }
+  });
+
   it("drops a claude pass's --model, so a model id is never read as the PR", () => {
     expect(
       withoutModel(["claude", "--model", "claude-sonnet-4-5", "-p", "x"]),

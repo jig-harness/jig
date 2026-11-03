@@ -1,9 +1,8 @@
 /**
  * drive-pr suite: arming a drive from a Codex session (`lib/arm.ts`). The
  * arm builds Codex's documented pass command, on the model of
- * `routing.models.codex`, opens a terminal tab where Orca can, and prints
- * the command where a Claude Code session would use its background
- * execution. A stand-in replaces Orca's command line: no test opens a tab.
+ * `routing.models.codex`, opens a terminal tab where Orca can, and requests
+ * managed background execution elsewhere. A stand-in replaces Orca's command line: no test opens a tab.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -65,30 +64,43 @@ function inputs(
 }
 
 describe("the way a drive is armed from a Codex session", () => {
-  it("opens a tab in Orca, and prints the command where Claude Code would use the background", () => {
+  it("opens a tab in Orca, and uses managed background execution elsewhere", () => {
     expect(chooseWay("auto", CODEX_IN_ORCA, "linux")).toMatchObject({
       way: "tab",
       orca: "/opt/orca/bin/orca",
     });
     const away = chooseWay("auto", CODEX, "linux");
-    expect(away).toMatchObject({ way: "print" });
-    expect(JSON.stringify(away)).toContain("this session is Codex's");
+    expect(away).toMatchObject({ way: "background" });
     expect(chooseWay("background", CODEX_IN_ORCA, "linux")).toMatchObject({
-      way: "print",
+      way: "background",
     });
     expect(chooseWay("tab", CODEX, "linux")).toMatchObject({
       error: expect.stringContaining("cannot open a terminal tab"),
     });
   });
 
-  it("prints the command, not the background, when Orca refuses the tab under auto", async () => {
+  it("requests a background spawn when Orca refuses the tab under auto", async () => {
     const { report, exit } = await arm(
       inputs("auto", CODEX_IN_ORCA),
       deps(orca({ ok: false })),
     );
     expect(exit).toBe(0);
-    expect(report).toMatchObject({ way: "print", status: "print" });
-    expect(report.fallback).toContain("the command is printed instead");
+    expect(report).toMatchObject({ way: "background", status: "spawn" });
+    expect(report.fallback).toContain("arming in the background instead");
+  });
+  it("falls back on Windows and on an unconfirmed tab, while explicit print stays inert", async () => {
+    expect(chooseWay("auto", CODEX_IN_ORCA, "win32")).toMatchObject({
+      way: "background",
+    });
+    expect(chooseWay("print", CODEX_IN_ORCA, "linux")).toMatchObject({
+      way: "print",
+    });
+    const result = await arm(
+      inputs("auto", CODEX_IN_ORCA),
+      deps(orca({ ok: true })),
+    );
+    expect(result.report).toMatchObject({ way: "background", status: "spawn" });
+    expect(result.report.fallback).toContain("did not list its drive in time");
   });
 });
 

@@ -1,7 +1,7 @@
 /**
  * drive-pr suite: the documented Codex pass command. `drive.ts` runs it on
  * the execution tier of `routing.models.codex` (else Codex's own
- * configuration), refuses Claude Code's `--pass-model` for it, and kills a
+ * configuration), accepts `--pass-model` overrides, and kills a
  * Codex pass that outruns the pass deadline, since the turn-budget hook
  * counts nothing under Codex and nothing else bounds it.
  */
@@ -97,12 +97,10 @@ describe("the documented Codex pass command", () => {
     );
   });
 
-  it("refuses Claude Code's --pass-model for a Codex pass", async () => {
-    const r = await dryRun(["--pass-model", "opus"]);
-    expectSpawnExit({ ...r, stdout: null }, 2);
-    expect(r.stderr).toContain(
-      "--pass-model applies to a Claude Code pass command",
-    );
+  it("overrides the Codex model through --pass-model", async () => {
+    const r = await dryRun(["--pass-model", "gpt-override"]);
+    expectSpawnExit({ ...r, stdout: null }, 0);
+    expect(wouldRun(r.stderr)).toStartWith("codex exec -m gpt-override ");
   });
 
   it("kills a Codex pass that outruns a positive pass deadline", async () => {
