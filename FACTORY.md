@@ -202,7 +202,8 @@ line's stations with nobody at the keyboard: a pickup for each item
 assigned to the factory's tracker identity, a restart for each drive that
 stopped on a usage limit or an answered question, a follow-up for each
 merge, and a notification to a person for the stops that are theirs
-(item 33, [designed](design/dark-factory-dispatch.md)).
+(item 33: [built](design/dark-factory-dispatch.md), open until its checks on
+a host running Orca pass).
 
 ## The learning loop (wraps both)
 
