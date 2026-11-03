@@ -19,7 +19,9 @@
 // compares one total per document against the merge base, and a document
 // whose total grew is listed with the new findings, each sentence quoted.
 // No baseline file is committed. Without a flag, the gates' stage reports
-// each document's count.
+// each document's count. The linter's README admits this one use, a ratchet
+// over named documents that never blocks on a single finding, and its tests
+// list this script as the ratchet caller.
 //
 // Usage: check-voice.ts [--json | --list [document…]]
 //   (no flag)  each document's count, for the gates

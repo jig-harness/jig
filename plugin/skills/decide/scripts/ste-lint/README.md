@@ -75,7 +75,20 @@ first.
 ## Advisory only
 
 No CI workflow, hook, package script, gate, plugin manifest or validation
-plan may call this linter on authored text.
-`../../__tests__/ste-lint.test.ts` fails if a wiring file names it. That scan
-does not follow a script that a wiring file delegates to. The skill's test
-suite does run the linter, on fixtures only.
+plan may call this linter on authored text, with one exception: a repository
+may count the linter's findings over documents it names, as a
+[ratchet](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) that
+refuses a change raising a document's count and never blocks on a single
+finding. Jig does this for the pages a first-time reader meets:
+[`scripts/check-voice.ts`](https://github.com/jig-harness/jig/blob/main/scripts/check-voice.ts)
+counts each one's findings under its voice guide's caps, and a counter of
+its [M1 ratchet](https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/reference/ratchet/README.md)
+holds the counts.
+
+`../../__tests__/ste-lint.test.ts` holds both halves of the rule in Jig. It
+fails when a wiring file names the linter: a workflow, a hook, a package
+script, the gate list, a plugin manifest or the ratchet wiring. It fails
+when a script in Jig's `scripts/`, `tools/`, `lib/` or `modules/` names the
+linter and is not on the test's list of ratchet callers. And it fails when a
+listed caller is not a `json` counter of the ratchet wiring. The skill's own
+tests run the linter on fixtures.

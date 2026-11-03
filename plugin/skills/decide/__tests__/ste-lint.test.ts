@@ -15,7 +15,8 @@
  * them byte for byte.
  *
  * The linter is advisory. The last describe blocks pin that no wiring file
- * names it, and that the canonical writing rules live in one file.
+ * names it, that a script which does is a ratchet counter the suite lists,
+ * and that the canonical writing rules live in one file.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -514,14 +515,33 @@ describe("a decision text and its plain rewrite", () => {
 });
 
 describe("advisory only", () => {
-  // The guarantee is narrow on purpose: no wiring file NAMES the linter. A
-  // script that a wiring file delegates to is not followed, so a helper that
-  // runs the linter without the name appearing here is out of this scan's reach.
-  /** Files that wire CI, hooks, gates or validation plans. None may mention the linter. */
+  // No wiring file names the linter. A script outside the skill that names it
+  // is one of RATCHET_CALLERS, each run as a json counter of the ratchet
+  // wiring: a count over named documents that refuses growth and never blocks
+  // on a single finding (the linter's README, § Advisory only).
+  /** The ratchet wiring, whose counters may run a listed caller. */
+  const RATCHET_WIRING = "tools/quality/ratchet.jsonc";
+  /** The scripts that may run the linter on authored text, each with the ratchet counter that runs it. */
+  const RATCHET_CALLERS: Record<string, string> = {
+    "scripts/check-voice.ts": "voice",
+  };
+  /** Where Jig keeps the scripts its wiring runs. */
+  const SCRIPT_ROOTS = ["scripts", "tools", "lib", "modules"];
+  const SCRIPT_SKIP = new Set([
+    "node_modules",
+    "fixtures",
+    "fixture",
+    "seeds",
+    "dist",
+    "vendor",
+  ]);
+
+  /** Files that wire CI, hooks, gates, the ratchet or validation plans. None may mention the linter. */
   function wiringFiles(): string[] {
     const required = [
       "package.json",
       "scripts/gates.ts",
+      RATCHET_WIRING,
       ".config/jig.yaml",
       ".claude-plugin/marketplace.json",
       "plugin/.claude-plugin/plugin.json",
@@ -546,17 +566,63 @@ describe("advisory only", () => {
     return files;
   }
 
-  it("reads a non-empty set of CI, gate and hook files (so a clean scan is real)", () => {
+  /** The code under SCRIPT_ROOTS, tests left out: they run the linter on fixtures or to pin it. */
+  function scripts(): string[] {
+    const found: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (!SCRIPT_SKIP.has(entry.name)) walk(path);
+        } else if (
+          /\.(ts|tsx|js|mjs|cjs|sh)$/.test(entry.name) &&
+          !entry.name.endsWith(".test.ts")
+        )
+          found.push(path);
+      }
+    };
+    for (const root of SCRIPT_ROOTS) walk(join(REPO_ROOT, root));
+    return found;
+  }
+
+  /** The ratchet wiring's counters. Its comments are whole lines. */
+  function counters(): { name: string; format: string; command?: string[] }[] {
+    const text = readFileSync(join(REPO_ROOT, RATCHET_WIRING), "utf8")
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n");
+    return JSON.parse(text).counters;
+  }
+
+  it("reads a non-empty set of CI, gate, ratchet and hook files and scripts (so a clean scan is real)", () => {
     const files = wiringFiles();
-    expect(files.length).toBeGreaterThanOrEqual(7);
+    expect(files.length).toBeGreaterThanOrEqual(8);
     for (const file of files) expect(statSync(file).isFile()).toBe(true);
+    expect(scripts().length).toBeGreaterThan(100);
   });
 
-  it("no workflow, gate, package script, plugin manifest or hook names the linter", () => {
+  it("no workflow, gate, package script, ratchet wiring, plugin manifest or hook names the linter", () => {
     const offenders = wiringFiles().filter((file) =>
       /ste-lint/.test(readFileSync(file, "utf8")),
     );
     expect(offenders.map((f) => relative(REPO_ROOT, f))).toEqual([]);
+  });
+
+  it("a script that names the linter is a listed ratchet caller, and every listed caller names it", () => {
+    const callers = scripts()
+      .filter((file) => /ste-lint/.test(readFileSync(file, "utf8")))
+      .map((file) => relative(REPO_ROOT, file).split(sep).join("/"))
+      .sort();
+    expect(callers).toEqual(Object.keys(RATCHET_CALLERS).sort());
+  });
+
+  it("each listed caller runs as a json counter of the ratchet wiring", () => {
+    const wired = counters();
+    for (const [script, name] of Object.entries(RATCHET_CALLERS)) {
+      const counter = wired.find((c) => c.name === name);
+      expect(counter?.format, script).toBe("json");
+      expect(counter?.command, script).toContain(script);
+    }
   });
 });
 
