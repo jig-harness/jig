@@ -220,6 +220,16 @@ async function wallRecorded(
   return tryWriteWall({ ...record, pr: record.pr });
 }
 
+/** The terminal a refusing wrapper was opened in has nothing to show a person: close it. */
+async function closeRefusedTab(): Promise<void> {
+  try {
+    const line = await endOwnTab(true);
+    if (line !== null) console.error(`jig dispatch run: ${line}`);
+  } catch (error) {
+    swallow(error, "the refusing wrapper's tab could not be closed");
+  }
+}
+
 async function wrap(id: string, token: string): Promise<number> {
   const record = readRecord(id);
   if (record === null || record.token !== token) {
@@ -243,13 +253,7 @@ async function wrap(id: string, token: string): Promise<number> {
     console.error(
       `jig dispatch run: ${id} is already claimed; nothing started`,
     );
-    // The terminal this wrapper was opened in has nothing to show a person.
-    try {
-      const line = await endOwnTab(true);
-      if (line !== null) console.error(`jig dispatch run: ${line}`);
-    } catch (error) {
-      swallow(error, "the refusing wrapper's tab could not be closed");
-    }
+    await closeRefusedTab();
     return CLAIMED;
   }
   process.chdir(record.workspace.path);

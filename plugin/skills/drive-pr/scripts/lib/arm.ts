@@ -375,6 +375,44 @@ async function tabTail(
     : [];
 }
 
+/** Record the opened tab through `deps.runTab`; a failure is reported and never stops the arm. */
+async function recordTabSafely(
+  deps: TabDeps,
+  result: Record<string, unknown>,
+  orca: string,
+  request: ArmRequest,
+): Promise<void> {
+  try {
+    await deps.runTab?.(result, orca, request);
+  } catch (error) {
+    console.error(
+      `arm: the drive's tab is not recorded and stays open (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+}
+
+/** Poll until the clone lists a drive on the PR that started after the tab opened, or `confirmMs` passes. */
+async function awaitDrive(
+  request: ArmRequest,
+  opened: number,
+  deps: TabDeps,
+): Promise<LiveDrive | null> {
+  const deadline = opened + deps.confirmMs;
+  for (;;) {
+    const left = deadline - deps.now();
+    if (left <= 0) return null;
+    const drive = await deps.liveDrive(request, Math.ceil(left / 1000));
+    if (
+      drive !== null &&
+      drive !== "unreadable" &&
+      Date.parse(drive.started ?? "") >= opened - STARTED_SLACK_MS
+    )
+      return drive;
+    if (deadline - deps.now() <= 0) return null;
+    await deps.sleep(deps.pollMs);
+  }
+}
+
 /**
  * Open the drive's tab and wait, polling up to `confirmMs`, until the
  * clone's drives list a drive on the PR that started after the tab opened.
@@ -403,27 +441,9 @@ export async function armInTab(
       why: `orca terminal create failed ${orcaFailure(done)}`,
     };
   const terminal = terminalHandle(result);
-  try {
-    await deps.runTab?.(result, orca, request);
-  } catch (error) {
-    console.error(
-      `arm: the drive's tab is not recorded and stays open (${error instanceof Error ? error.message : String(error)})`,
-    );
-  }
-  const deadline = opened + deps.confirmMs;
-  for (;;) {
-    const left = deadline - deps.now();
-    if (left <= 0) break;
-    const drive = await deps.liveDrive(request, Math.ceil(left / 1000));
-    if (
-      drive !== null &&
-      drive !== "unreadable" &&
-      Date.parse(drive.started ?? "") >= opened - STARTED_SLACK_MS
-    )
-      return { status: "armed", terminal, drive };
-    if (deadline - deps.now() <= 0) break;
-    await deps.sleep(deps.pollMs);
-  }
+  await recordTabSafely(deps, result, orca, request);
+  const drive = await awaitDrive(request, opened, deps);
+  if (drive !== null) return { status: "armed", terminal, drive };
   const tail = terminal === null ? [] : await tabTail(orca, terminal, deps);
   return { status: "unconfirmed", terminal, tail };
 }
