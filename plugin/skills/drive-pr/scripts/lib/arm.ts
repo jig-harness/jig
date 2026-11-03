@@ -52,6 +52,7 @@ import { driveTs, drives } from "./driver/paths.ts";
 import type { AccountVendor } from "./identity.ts";
 import type { ArmDriveMode } from "./overlay.ts";
 import { codexPermission, type PassArgs, permissionMode } from "./pass-args.ts";
+import { runTabEnv } from "../../../../shared/orca-tabs.ts";
 import { passCommand } from "./pass-command.ts";
 import { withCodexModel } from "./pass-model.ts";
 
@@ -402,7 +403,13 @@ export async function armInTab(
       why: `orca terminal create failed ${orcaFailure(done)}`,
     };
   const terminal = terminalHandle(result);
-  await deps.runTab?.(result, orca, request);
+  try {
+    await deps.runTab?.(result, orca, request);
+  } catch (error) {
+    console.error(
+      `arm: the drive's tab is not recorded and stays open (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
   const deadline = opened + deps.confirmMs;
   for (;;) {
     const left = deadline - deps.now();
@@ -562,7 +569,7 @@ export async function arm(
   const outcome = await armInTab(
     choice.orca,
     request,
-    commandLine([...sessionOverrides(env), ...base.argv]),
+    commandLine([...sessionOverrides(env), ...runTabEnv(env), ...base.argv]),
     deps,
   );
   return tabReport(chosen, outcome, setting.value === "auto");

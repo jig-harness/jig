@@ -13,8 +13,11 @@
  * while its shell is still alive, since a tab whose shell exited stays as a
  * pane Orca no longer closes by its handle.
  *
- * A tab is closed only while it is idle: its shell is still the one recorded
- * and has no child process, so a tab someone typed a command into stays. A
+ * Only the recorded terminal is closed, never its whole tab, so a pane a
+ * person added beside it stays. It is closed only while it is idle: its shell
+ * is still the one recorded and has no child process, so a terminal someone
+ * typed a command into stays, and the closer gives up as soon as it sees a
+ * process that was not there when the run was ending. A
  * process table that cannot be read counts as busy. A tab Jig did not record
  * is never touched, and nothing here fails a run: every step reports what it
  * did and the run goes on.
@@ -87,6 +90,25 @@ export function defaultRunTabDeps(env: Env = process.env): RunTabDeps {
     sleep: (ms) => new Promise((settle) => setTimeout(settle, ms)),
   };
 }
+
+/**
+ * The variables a run tab's command carries: the store the opener records
+ * into (the tab's shell does not inherit the opener's environment), and a
+ * note that the opener will record the tab, so the run's end waits briefly
+ * for the record instead of finding none.
+ */
+export function runTabEnv(env: Env = process.env): string[] {
+  const dir = env.JIG_ORCA_TABS_DIR?.trim();
+  return [
+    `${PENDING_VAR}=1`,
+    ...(dir ? [`JIG_ORCA_TABS_DIR=${resolve(dir)}`] : []),
+  ];
+}
+
+const PENDING_VAR = "JIG_ORCA_TAB_PENDING";
+
+/** How long a run's end waits for its opener to record the tab. */
+const REGISTRATION_WAIT_MS = 10_000;
 
 /** The subject of a run on a pull request. */
 export function prSubject(pr: number | string): string {
@@ -266,7 +288,6 @@ export async function closeRunTab(
     "close",
     "--terminal",
     tab.handle,
-    "--tab",
     "--json",
   ]);
   const envelope = orcaEnvelope(done.stdout);
@@ -294,6 +315,7 @@ function outcomeText(outcome: CloseOutcome): string {
 export async function closePreviousTabs(
   run: { worktree: string; subject: string; except: string },
   deps: Pick<RunTabDeps, "root" | "orca" | "table">,
+  until: number = Number.POSITIVE_INFINITY,
 ): Promise<string[]> {
   const worktree = treePath(run.worktree);
   const earlier = readRunTabs(deps.root).filter(
@@ -303,10 +325,17 @@ export async function closePreviousTabs(
       tab.handle !== run.except,
   );
   const lines: string[] = [];
-  for (const tab of earlier)
+  for (const tab of earlier) {
+    if (Date.now() >= until) {
+      lines.push(
+        `earlier run tab ${tab.handle} (${tab.title}): left, out of time`,
+      );
+      continue;
+    }
     lines.push(
       `earlier run tab ${tab.handle} (${tab.title}): ${outcomeText(await closeRunTab(tab, deps))}`,
     );
+  }
   return lines;
 }
 
@@ -334,6 +363,12 @@ function startCloser(tab: RunTab, pid: number, root: string): void {
         stdio: ["ignore", log, log],
       },
     );
+    // A spawn that fails later reports itself here, never as a crash of the run.
+    child.on("error", (error) => {
+      console.error(
+        `run tab ${tab.handle}: its closer failed (${error.message})`,
+      );
+    });
     child.unref();
   } finally {
     closeSync(log);
@@ -347,13 +382,30 @@ function startCloser(tab: RunTab, pid: number, root: string): void {
  * is not a recorded tab's own command (a person's tab, a run under another
  * wrapper, a test).
  */
-export function endOwnTab(
+export async function endOwnTab(
   closes: boolean,
   root: string = tabsRoot(),
   self: { pid: number; ppid: number } = process,
   start: (tab: RunTab, pid: number, root: string) => void = startCloser,
-): string | null {
-  const tab = readRunTabs(root).find((t) => t.shellPid === self.ppid);
+  wait: {
+    pending: boolean;
+    now: () => number;
+    sleep: (ms: number) => Promise<void>;
+  } = {
+    pending: process.env[PENDING_VAR] === "1",
+    now: Date.now,
+    sleep: (ms) => new Promise((settle) => setTimeout(settle, ms)),
+  },
+): Promise<string | null> {
+  const find = () => readRunTabs(root).find((t) => t.shellPid === self.ppid);
+  let tab = find();
+  // The opener records the tab after Orca has started the run, so a run that
+  // ends quickly can get here first; wait for the record when one is coming.
+  const deadline = wait.now() + REGISTRATION_WAIT_MS;
+  while (tab === undefined && wait.pending && wait.now() < deadline) {
+    await wait.sleep(POLL_MS);
+    tab = find();
+  }
   if (tab === undefined) return null;
   const named = `run tab ${tab.handle} (${tab.title})`;
   if (!closes) return `${named} stays open: the run ended needing a person`;
@@ -377,7 +429,18 @@ function alive(pid: number): boolean {
   }
 }
 
-/** The detached closer: wait for `pid` to exit, then close the tab once its shell is idle. */
+function childPids(tab: RunTab, rows: ProcessRow[]): number[] {
+  return rows
+    .filter((row) => row.ppid === tab.shellPid && !row.stat.startsWith("Z"))
+    .map((row) => row.pid);
+}
+
+/**
+ * The detached closer: wait for `pid` to exit, then close the tab once its
+ * shell is idle. The closer starts while the run is still the shell's
+ * foreground command, so a child of the shell it did not see then is a
+ * person's new work: it stops there and leaves the tab.
+ */
 async function closeAfterExit(
   handle: string,
   pid: number,
@@ -386,9 +449,14 @@ async function closeAfterExit(
 ): Promise<CloseOutcome | "unrecorded"> {
   const tab = readTab(tabFile(deps.root, handle));
   if (tab === null) return "unrecorded";
+  const first = await deps.table();
+  const known = new Set(first === null ? [] : childPids(tab, first));
   const deadline = deps.now() + CLOSER_WAIT_MS;
   while (isAlive(pid) && deps.now() < deadline) await deps.sleep(POLL_MS);
   for (;;) {
+    const rows = await deps.table();
+    if (rows !== null && childPids(tab, rows).some((p) => !known.has(p)))
+      return "busy";
     const outcome = await closeRunTab(tab, deps);
     if (outcome !== "busy" || deps.now() >= deadline) return outcome;
     await deps.sleep(POLL_MS);

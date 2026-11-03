@@ -256,17 +256,20 @@ async function wrap(id: string, token: string): Promise<number> {
     signal,
     ...(wallUnrecorded ? { wallUnrecorded: true as const } : {}),
   });
-  closeTabIfDone(record, code);
+  await closeTabIfDone(record, code);
   return code ?? 1;
 }
 
 /** Close the run's tab when the run left nothing for a person; a failure only says so. */
-function closeTabIfDone(record: LaunchRecord, code: number | null): void {
+async function closeTabIfDone(
+  record: LaunchRecord,
+  code: number | null,
+): Promise<void> {
   try {
     const done = isDrive(record)
       ? driveExitClosesTab(code)
       : readResult(record.id) === "done";
-    const line = endOwnTab(done);
+    const line = await endOwnTab(done);
     if (line !== null) console.error(`jig dispatch run: ${line}`);
   } catch (error) {
     swallow(error, "the run's tab could not be closed");

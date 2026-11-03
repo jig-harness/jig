@@ -130,7 +130,7 @@ describe("the re-arm's terminal tab", () => {
     await launchInShell(w);
     await waitFor("the tab's close", () => tabCloses(w).length === 1);
     expect(tabCloses(w)).toEqual([
-      ["terminal", "close", "--terminal", "term-1", "--tab", "--json"],
+      ["terminal", "close", "--terminal", "term-1", "--json"],
     ]);
     await waitFor("the record dropped", () => runTabs(w).length === 0);
   });

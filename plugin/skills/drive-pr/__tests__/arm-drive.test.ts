@@ -985,7 +985,7 @@ describe("arm-drive.ts", () => {
       expect(prefix.slice(0, LOGIN_PREFIX.length)).toEqual(LOGIN_PREFIX);
       const rest = prefix.slice(LOGIN_PREFIX.length);
       expect(rest.filter((word) => word.includes("=")).sort()).toEqual(
-        carried.sort(),
+        [...carried, "JIG_ORCA_TAB_PENDING=1"].sort(),
       );
       expect(rest.filter((word) => word === "-u").length).toBe(
         ["JIG_HOME", "JIG_OVERLAY", "JIG_USER_LAYER"].filter(

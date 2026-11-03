@@ -176,6 +176,7 @@ import { main } from "./lib/driver/main.ts";
 import { driverRuntime } from "./lib/driver/runtime.ts";
 import { driveExitClosesTab, endOwnTab } from "../../../shared/orca-tabs.ts";
 import { swallow } from "../../../shared/errors.ts";
+import { ExitError } from "../../../shared/cli.ts";
 export {
   roundFingerprint,
   resolveHandoffAt,
@@ -211,9 +212,9 @@ export {
  * (armed in a tab, `lib/arm.ts`) and its exit leaves nothing for a person;
  * under the dispatcher's wrapper, the wrapper closes the tab instead.
  */
-function closeTabIfDone(code: number): void {
+async function closeTabIfDone(code: number): Promise<void> {
   try {
-    const line = endOwnTab(driveExitClosesTab(code));
+    const line = await endOwnTab(driveExitClosesTab(code));
     if (line !== null) console.error(`drive.ts: ${line}`);
   } catch (error) {
     swallow(error, "the drive's tab could not be closed");
@@ -225,8 +226,15 @@ function closeTabIfDone(code: number): void {
 if (import.meta.main) {
   runMain("drive.ts", async () => {
     try {
-      const code = await span("drive", {}, main);
-      closeTabIfDone(code);
+      let code: number;
+      try {
+        code = await span("drive", {}, main);
+      } catch (error) {
+        // A refusal travels as an ExitError; its code decides the tab too.
+        if (error instanceof ExitError) await closeTabIfDone(error.code);
+        throw error;
+      }
+      await closeTabIfDone(code);
       return code;
     } finally {
       // The shared coordinator owns exit while other cancellations are pending.

@@ -10,7 +10,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  expectSpawnExit,
+  expectSpawnExited,
+} from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { OrcaRunner } from "../orca.ts";
 import {
   closePreviousTabs,
@@ -172,7 +175,7 @@ describe("whether a tab is idle", () => {
 });
 
 describe("closing a tab", () => {
-  test("closes an idle tab with its whole tab and drops the record", async () => {
+  test("closes an idle tab's terminal only, not its tab, and drops the record", async () => {
     write(tab());
     const orca = fakeOrca();
     const outcome = await closeRunTab(tab(), {
@@ -182,7 +185,7 @@ describe("closing a tab", () => {
     });
     expect(outcome).toBe("closed");
     expect(orca.calls).toEqual([
-      ["terminal", "close", "--terminal", "term_old", "--tab", "--json"],
+      ["terminal", "close", "--terminal", "term_old", "--json"],
     ]);
     expect(readRunTabs(root)).toEqual([]);
   });
@@ -271,38 +274,136 @@ describe("closing a subject's earlier tabs", () => {
 });
 
 describe("a run ending in its own tab", () => {
-  test("starts the closer for the tab whose shell is its parent", () => {
+  test("starts the closer for the tab whose shell is its parent", async () => {
     write(tab());
     const started: Array<[string, number]> = [];
-    const line = endOwnTab(true, root, { pid: 777, ppid: SHELL }, (t, pid) =>
-      started.push([t.handle, pid]),
+    const line = await endOwnTab(
+      true,
+      root,
+      { pid: 777, ppid: SHELL },
+      (t, pid) => started.push([t.handle, pid]),
     );
     expect(started).toEqual([["term_old", 777]]);
     expect(line).toContain("closes once this run has exited");
   });
 
-  test("leaves the tab open when the run needs a person, and says so", () => {
+  test("leaves the tab open when the run needs a person, and says so", async () => {
     write(tab());
     const started: unknown[] = [];
-    const line = endOwnTab(false, root, { pid: 777, ppid: SHELL }, (t) =>
+    const line = await endOwnTab(false, root, { pid: 777, ppid: SHELL }, (t) =>
       started.push(t),
     );
     expect(started).toEqual([]);
     expect(line).toContain("stays open");
   });
 
-  test("does nothing when its parent is no recorded tab's shell", () => {
+  test("does nothing when its parent is no recorded tab's shell", async () => {
     write(tab());
     const started: unknown[] = [];
-    const line = endOwnTab(true, root, { pid: 777, ppid: 1 }, (t) =>
+    const line = await endOwnTab(true, root, { pid: 777, ppid: 1 }, (t) =>
       started.push(t),
     );
     expect(line).toBeNull();
     expect(started).toEqual([]);
   });
+
+  test("waits for the opener's record when one is coming", async () => {
+    const started: unknown[] = [];
+    let clock = 0;
+    let sleeps = 0;
+    const line = await endOwnTab(
+      true,
+      root,
+      { pid: 777, ppid: SHELL },
+      (t) => started.push(t),
+      {
+        pending: true,
+        now: () => clock,
+        sleep: async (ms) => {
+          clock += ms;
+          sleeps += 1;
+          if (sleeps === 3) write(tab());
+        },
+      },
+    );
+    expect(started).toHaveLength(1);
+    expect(line).toContain("closes once this run has exited");
+  });
+
+  test("does not wait when no record is expected, and gives up when none comes", async () => {
+    let clock = 0;
+    const clockDeps = (pending: boolean) => ({
+      pending,
+      now: () => clock,
+      sleep: async (ms: number) => {
+        clock += ms;
+      },
+    });
+    const self = { pid: 777, ppid: SHELL };
+    expect(
+      await endOwnTab(true, root, self, () => undefined, clockDeps(false)),
+    ).toBeNull();
+    expect(clock).toBe(0);
+    expect(
+      await endOwnTab(true, root, self, () => undefined, clockDeps(true)),
+    ).toBeNull();
+    expect(clock).toBeGreaterThanOrEqual(10_000);
+  });
 });
 
 describe("the detached closer", () => {
+  /** A shell stand-in and a fake Orca, with the tab recorded for them. */
+  async function recordedShell(): Promise<{
+    shell: ReturnType<typeof Bun.spawn>;
+    calls: string;
+  }> {
+    const shell = Bun.spawn(["sleep", "30"], { stdout: "ignore" });
+    const rows = await processTable();
+    const start = rows?.find((r) => r.pid === shell.pid)?.start;
+    expect(start).toBeString();
+    const calls = join(dir, "orca-calls.log");
+    const orca = join(dir, "orca");
+    writeFileSync(
+      orca,
+      `#!/bin/sh\necho "$@" >> ${JSON.stringify(calls)}\necho '{"ok":true,"result":{}}'\n`,
+    );
+    chmodSync(orca, 0o755);
+    write(tab({ shellPid: shell.pid, shellStart: start as string, orca }));
+    return { shell, calls };
+  }
+
+  test("closes nothing while the run is still alive, then closes once it exits", async () => {
+    const { shell, calls } = await recordedShell();
+    const run = Bun.spawn(["sleep", "30"], { stdout: "ignore" });
+    const closer = Bun.spawn(
+      [
+        process.execPath,
+        join(import.meta.dir, "..", "orca-tabs.ts"),
+        "close",
+        "term_old",
+        String(run.pid),
+      ],
+      {
+        env: { ...process.env, JIG_ORCA_TABS_DIR: root },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    try {
+      await new Promise((settle) => setTimeout(settle, 1500));
+      expect(existsSync(calls)).toBe(false);
+      run.kill();
+      await expectSpawnExited(closer, 0, "orca-tabs.ts close");
+      expect(readFileSync(calls, "utf8").trim()).toBe(
+        "terminal close --terminal term_old --json",
+      );
+    } finally {
+      run.kill();
+      closer.kill();
+      shell.kill();
+    }
+  });
+
   test("waits for the run to exit, then closes its idle tab through Orca", async () => {
     // The tab's shell: a live process with no child.
     const shell = Bun.spawn(["sleep", "30"], { stdout: "ignore" });
@@ -340,7 +441,7 @@ describe("the detached closer", () => {
       );
       expectSpawnExit(closer, 0, "orca-tabs.ts close");
       expect(readFileSync(calls, "utf8").trim()).toBe(
-        "terminal close --terminal term_old --tab --json",
+        "terminal close --terminal term_old --json",
       );
       expect(readRunTabs(root)).toEqual([]);
     } finally {

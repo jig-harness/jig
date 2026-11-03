@@ -31,6 +31,7 @@ import { run } from "../../../shared/proc.ts";
 import {
   closePreviousTabs,
   defaultRunTabDeps,
+  runTabEnv,
   prSubject,
   recordRunTab,
 } from "../../../shared/orca-tabs.ts";
@@ -44,6 +45,8 @@ const BUNFIG = resolve(import.meta.dir, "../../bunfig.toml");
 /** The command line a launched terminal runs: the wrapper under its record. */
 function wrapperCommand(record: string, token: string): string {
   return [
+    "env",
+    ...runTabEnv(),
     process.execPath,
     "--no-env-file",
     `--config=${BUNFIG}`,
@@ -157,7 +160,7 @@ async function startTerminal(
     };
   const envelope = orcaEnvelope(done.stdout);
   if (done.code === 0 && envelope?.ok === true) {
-    const tabNote = await runTab(workspace, stage, envelope.result);
+    const tabNote = await runTab(workspace, stage, envelope.result, until);
     const detail = `orca terminal create: ${JSON.stringify(envelope.result).slice(0, 300)}${tabNote}`;
     if (stage.kind === "headless") return { ok: true, detail };
     const handle = handleOf(envelope.result);
@@ -200,10 +203,26 @@ async function runTab(
   workspace: { path: string },
   stage: LaunchStage,
   result: Record<string, unknown>,
+  until: number,
+): Promise<string> {
+  try {
+    return await recordAndCloseEarlier(workspace, stage, result, until);
+  } catch (error) {
+    return `; the tab's recording failed and it stays open after its run: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+async function recordAndCloseEarlier(
+  workspace: { path: string },
+  stage: LaunchStage,
+  result: Record<string, unknown>,
+  until: number,
 ): Promise<string> {
   const subject = subjectOf(stage.record);
   if (subject === null)
     return "; the tab is not recorded as a run tab: its launch record does not read";
+  if (Date.now() >= until)
+    return "; the tab stays open after its run: the launch's time was spent before it could be recorded";
   const tabs = defaultRunTabDeps();
   const recorded = await recordRunTab(
     {
@@ -220,6 +239,7 @@ async function runTab(
   const closed = await closePreviousTabs(
     { worktree: workspace.path, subject, except: recorded.tab.handle },
     tabs,
+    until,
   );
   return closed.length === 0 ? "" : `; ${closed.join("; ")}`;
 }
