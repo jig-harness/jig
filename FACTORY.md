@@ -34,7 +34,7 @@ them, and the plugin ships the skills.
 | 4 | Drive | Review rounds run unattended. Each round waits for the reviewers and gives every finding one recorded outcome. Then it fixes, verifies, pushes and resolves. An arbiter rules on contested findings. | [`drive-pr`](plugin/skills/drive-pr/README.md), [`resolve-review-comments`](plugin/skills/resolve-review-comments/README.md), the [`review-arbiter`](plugin/agents/review-arbiter.md) agent |
 | 5 | Repair | Red CI or a conflict with the base gets a bounded repair round, and the drive checks again. | `drive-pr` with [`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md); [`fix-ci`](plugin/skills/fix-ci/SKILL.md) run on its own |
 | 6 | Merge | A person merges. | a person |
-| 7 | Follow up | After a merge, the dispatcher starts the repository's follow-up, which settles what the merge owes. Deferred review findings become tracked follow-up items. Jig's own follow-up skill does this for Jig. | `resolve-review-comments`' deferral, `do-item` |
+| 7 | Follow up | After a merge, the dispatcher starts the repository's follow-up, which settles what the merge owes. Deferred review findings become tracked follow-up items. Jig's own follow-up skill does this for Jig. | The repository's follow-up command, started by a person or the [dispatcher](plugin/README.md#the-dispatcher) |
 
 Follow-up items enter the line again at station 1, so the line is itself a
 loop. At station 4 the review rounds run unattended, as one

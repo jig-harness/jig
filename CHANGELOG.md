@@ -336,6 +336,16 @@ changes are marked **Breaking** and say what a consumer changes.
   survives its driver: its ledger on the pull request, a takeover from any
   clone, and a parked question that reaches a person's phone. Each feature's
   roadmap entries name the work the roadmap holds open.
+- [README.md](README.md) opens with the problem a team that builds with
+  agents meets, before saying what Jig is. Its software-factory section now
+  tells the line one work item runs along, then the jobs of the
+  scaffolding under it, and links [FACTORY.md](FACTORY.md) for the rest.
+- The home page lists the problems Jig addresses and walks through a recorded
+  pull request. The run checks calendar dates, clock times and its actors;
+  events after midnight show their date. The factory reference describes the
+  dispatcher's current behavior and the repository's post-merge command.
+  The factory site preserves the follow-up runners and the separate roadmap
+  caveats in its execution figures and explanation.
 
 ### Fixed
 
@@ -358,6 +368,17 @@ changes are marked **Breaking** and say what a consumer changes.
 - A link to a section of the getting-started, plugin, features or
   principles page no longer stops well below the header: it lands just
   under it.
+
+## [0.127.1] - 2026-11-03
+
+### Fixed
+
+- `do-item` and `drive-pr` now request Codex managed background execution
+  when no terminal tab is available, with instructions for verifying startup
+  and preserving the session for hosts that terminate child processes on exit.
+- `arm-drive.ts` and `drive.ts` accept `--pass-model` for Codex, including
+  routing tiers resolved through `routing.models.codex`, without applying
+  Claude Code's default model to Codex.
 
 ## [0.127.0] - 2026-11-02
 
@@ -4821,7 +4842,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.127.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.127.1...HEAD
+[0.127.1]: https://github.com/jig-harness/jig/compare/v0.127.0...v0.127.1
 [0.127.0]: https://github.com/jig-harness/jig/compare/v0.126.0...v0.127.0
 [0.126.0]: https://github.com/jig-harness/jig/compare/v0.125.0...v0.126.0
 [0.125.0]: https://github.com/jig-harness/jig/compare/v0.124.0...v0.125.0

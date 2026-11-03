@@ -1,9 +1,6 @@
 /**
- * drive-pr suite: arming a drive from a session (`scripts/arm-drive.ts`,
- * `lib/arm.ts`): the way `do_item.arm_drive` and the session choose, the
- * command that starts the drive and how it is quoted, and the terminal tab
- * Orca opens, with a stand-in for Orca's command line: no test opens a real
- * tab.
+ * Drive arming: command quoting, runtime selection, configuration forwarding,
+ * tab confirmation, and background fallback. Orca calls use a stand-in.
  */
 
 import { describe, expect, it } from "bun:test";
@@ -666,6 +663,48 @@ describe("arm-drive.ts", () => {
       "--model",
       "opus",
     ]);
+  });
+
+  it("arms Codex in the background with its strategic model and forwards the override", async () => {
+    const run = await runArm(
+      scratchTree(),
+      ["42", "--pass-model", "strategic"],
+      {
+        CODEX_HOME: "/unused/codex",
+        JIG__ROUTING__MODELS__CODEX__EXECUTION: "gpt-small",
+        JIG__ROUTING__MODELS__CODEX__STRATEGIC: "gpt-large",
+      },
+    );
+    expectSpawnExit(run, 0);
+    const answer = report(run);
+    expect(answer).toMatchObject({
+      status: "spawn",
+      way: "background",
+      model: "gpt-large",
+    });
+    const separator = answer.argv.indexOf("--");
+    expect(answer.argv.slice(5, separator)).toEqual([
+      "--bots-only",
+      "--pass-model",
+      "strategic",
+    ]);
+    expect(answer.argv.slice(separator + 1, separator + 5)).toEqual([
+      "codex",
+      "exec",
+      "-m",
+      "gpt-large",
+    ]);
+  });
+
+  it("refuses a Codex tier without its routing row rather than using Claude's", async () => {
+    const run = await runArm(
+      scratchTree(),
+      ["42", "--pass-model", "strategic"],
+      { CODEX_HOME: "/unused/codex" },
+    );
+    expectSpawnExit(run, 1);
+    expect(report(run)).toMatchObject({ status: "failed", model: null });
+    expect(report(run).reason).toContain("no codex row");
   });
 
   it("reads do_item.arm_drive and drive.pass_model from the configuration", async () => {

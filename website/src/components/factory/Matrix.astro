@@ -76,7 +76,7 @@ function cellLabel(row: Actor, at: Actor, c: Column): string {
         {
           ordered.map(([k, a]) => (
             <tr class={a.kind}>
-              <th scope="row">{a.kind === "todo" ? <span class="todo-head"><StatusMark kind="todo" size={13} />on the roadmap</span> : <ActorChip actor={{ ...a, note: undefined } as Actor} />}</th>
+              <th scope="row">{a.kind === "todo" ? <span class="todo-head"><StatusMark kind="todo" size={13} />on the roadmap</span> : <ActorChip actor={a.kind === "tool" ? a : { ...a, note: undefined }} />}</th>
               {columns.map((c) => {
                 const at = cell(c, k);
                 return (

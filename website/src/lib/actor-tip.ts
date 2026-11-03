@@ -58,11 +58,11 @@ export function actorTip(a: Actor): ActorTip {
           said: "Started by a tool: ",
         };
       return {
-        href: `${REPO_URL}/blob/main/tools/${a.name}/README.md`,
+        href: a.href ?? `${REPO_URL}/blob/main/tools/${a.name}/README.md`,
         head: a.name,
         kind: "Tool · runs outside the agent",
-        body: toolSummary(a.name),
-        more: "Open its README →",
+        body: a.href ? a.note : toolSummary(a.name),
+        more: a.href ? "Read how it runs →" : "Open its README →",
         said: "Run by a tool: ",
       };
     case "person":

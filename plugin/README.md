@@ -1055,7 +1055,11 @@ them together.
   Codex session runs, and the one the dispatcher runs on a Codex account
   ([start command](skills/drive-pr/README.md#how-to-start-it)). A Codex
   pass runs on the execution tier of `routing.models.codex`, else Codex's
-  own configured model; `drive.pass_model` is Claude Code's. Since the
+  own configured model; `--pass-model` overrides it with a model or a tier
+  from `routing.models.codex`. `drive.pass_model` is Claude Code's. Both
+  skills arm Codex through a terminal tab or its managed background command
+  tool; where the host ends children with the session, keep it alive until
+  the drive ends or use an external terminal. Since the
   turn-budget hook counts nothing under Codex, a Codex pass has no turn cap
   of its own: the pass deadline (`DRIVE_PR_PASS_TIMEOUT`, 90 minutes by
   default) is what ends one that runs on, so keep it on for a Codex drive.

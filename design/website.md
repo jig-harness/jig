@@ -57,7 +57,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
-| `/` | README, FACTORY.md, profiles | the evaluator's path: the plain statement and two reader paths beside the jig, a model drawn as a technical drawing that the first stretch of scrolling closes and the pointer swivels; the factory miniature; the map strip (the compact module map, starting on Team/Standard, each row opening its module's popover, with what a filled cell means); the limits; the enforcement ladder; the profiles; the day-one audit text; the ways to use Jig, one plate each; and where to start, above the foundation plate rising from the page's foot |
+| `/` | README, FEATURES.md, FACTORY.md, profiles, `website/src/data/walkthrough.yaml` | the evaluator's path: the problem the README opens with, its tagline and two reader paths beside the jig, a model drawn as a technical drawing that the first stretch of scrolling closes and the pointer swivels; what goes wrong, one feature's problem line each, linked to its section on `/features/`; one recorded run of Jig's own line, each event at its station, from the pull request's opening to the follow-up after its merge; the README's factory section beside the factory miniature; the map strip (the compact module map, starting on Team/Standard, each row opening its module's popover, with what a filled cell means); the limits; the enforcement ladder; the profiles; the day-one audit text; the ways to use Jig, one plate each; and where to start, above the foundation plate rising from the page's foot |
 | `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, its problem line, number, title and skill chips) linking to its section, then one section per feature: its problem line as a quotation, its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
@@ -375,7 +375,8 @@ update is not a plugin release.
 ## Build order
 
 Done: the site, its design, CI and deployment from `main`, open to every
-reader and to search engines.
+reader and to search engines. The home page opens with the problem and a
+recorded run of Jig's own line.
 Open, each its own pull request:
 
 1. **Contrast gate.** A check, run in CI after the build, that every text
@@ -395,13 +396,7 @@ Open, each its own pull request:
    renderer, and the home page and the adoption page embed it with a caption
    naming that run. It rests inert so the page keeps its scroll, usable
    after a click, in full screen or in its own tab.
-6. **The problem first.** The home page opens with what goes wrong for a
-   team that builds with agents and no scaffolding, in two or three plain
-   sentences before the model, and the evaluator's path continues with a
-   recorded walkthrough of one item from pickup to merge, so a reader sees
-   the loop run before reading how it is built. The copy comes from the
-   README's opening, which gains that statement first.
-7. **A comparison page.** One page that sets Jig beside the other
+6. **A comparison page.** One page that sets Jig beside the other
    frameworks a team evaluating it will have met, on the dimensions the
    [spec ecosystems](spec-ecosystems-research.md) note uses, says plainly
    where Jig is behind (time to first value, the product-facing layer,

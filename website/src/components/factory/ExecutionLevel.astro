@@ -9,7 +9,7 @@ import ReturnRail from "./ReturnRail.astro";
 import StationBox from "../StationBox.astro";
 import { HANDOFFS } from "../../lib/data/factory.ts";
 import { factory } from "../../lib/data/index.ts";
-import { mdInline } from "../../lib/markdown.ts";
+import { md, mdInline } from "../../lib/markdown.ts";
 import { countWord } from "../../lib/view.ts";
 const f = factory();
 const inline = (text: string, from = "FACTORY.md") => mdInline(text, from);
