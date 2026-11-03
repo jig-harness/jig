@@ -238,7 +238,13 @@ export function checkVoice(root = "."): number {
 
 const USAGE = "usage: check-voice.ts [--json | --list [document…]]";
 
-function main(args: string[]): number {
+type Mode =
+  | { kind: "report" }
+  | { kind: "json" }
+  | { kind: "list"; only: string[] };
+
+/** What the arguments ask for, or why they cannot be run. */
+function mode(args: string[]): Mode | string {
   const { values, positionals } = strictOptions(
     {
       args,
@@ -250,24 +256,26 @@ function main(args: string[]): number {
   const unknown = positionals.filter(
     (p) => !(VISITOR_DOCUMENTS as readonly string[]).includes(p),
   );
-  if (
-    (positionals.length && !values.list) ||
-    unknown.length ||
-    (values.json && values.list)
-  ) {
-    if (unknown.length)
-      console.error(`not a visitor document: ${unknown.join(", ")}`);
-    console.error(USAGE);
+  if (unknown.length) return `not a visitor document: ${unknown.join(", ")}`;
+  if (values.json && values.list) return "--json and --list exclude each other";
+  if (values.list) return { kind: "list", only: positionals };
+  if (positionals.length) return "a document is named only after --list";
+  return values.json ? { kind: "json" } : { kind: "report" };
+}
+
+function main(args: string[]): number {
+  const asked = mode(args);
+  if (typeof asked === "string") {
+    console.error(`${asked}\n${USAGE}`);
     return 2;
   }
-  if (!values.json && !values.list) return checkVoice(process.cwd());
-  const measured = measure(
-    process.cwd(),
-    Boolean(values.json) && process.env.RATCHET_HISTORICAL === "1",
-  );
+  if (asked.kind === "report") return checkVoice(process.cwd());
+  const historical =
+    asked.kind === "json" && process.env.RATCHET_HISTORICAL === "1";
+  const measured = measure(process.cwd(), historical);
   if (typeof measured === "string") return couldNotCheck(GATE, measured);
-  if (values.json) console.log(countsJson(measured));
-  else list(measured, positionals);
+  if (asked.kind === "json") console.log(countsJson(measured));
+  else list(measured, asked.only);
   return 0;
 }
 

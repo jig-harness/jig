@@ -41,10 +41,15 @@ const CLEAN: Record<string, string> = {
   "ROADMAP.md": "# Roadmap\n\nWhat is open, in order.\n",
 };
 
+/** The test's environment, without a merge-base marker a caller might have set. */
+const inherited = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => key !== "RATCHET_HISTORICAL"),
+);
+
 function run(cwd: string, args: string[], env: Record<string, string> = {}) {
   const result = Bun.spawnSync([process.execPath, SCRIPT, ...args], {
     cwd,
-    env: { ...process.env, ...env },
+    env: { ...inherited, ...env },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -239,5 +244,6 @@ describe("the command line", () => {
     expectSpawnExit(run(dir, ["--list", "GLOSSARY.md"]), 2, "document");
     expectSpawnExit(run(dir, ["--jsno"]), 2, "flag");
     expectSpawnExit(run(dir, ["--json", "--list"]), 2, "both");
+    expectSpawnExit(run(dir, ["FACTORY.md"]), 2, "without --list");
   });
 });
