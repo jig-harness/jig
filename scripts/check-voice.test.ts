@@ -193,6 +193,18 @@ describe("word-rule report context", () => {
     ["Fine.\tseamless tool.", 'marketing-adjective: "seamless tool."'],
     ["- Intro. End and", 'dangling-conjunction: "End and"'],
     ["- Intro.\n  End and", 'dangling-conjunction: "End and"'],
+    [
+      "- Intro. End and\nUnindented continuation. Another.",
+      'dangling-conjunction: "End and Unindented continuation."',
+    ],
+    [
+      "- Intro.\n  End and\nUnindented continuation. Another.",
+      'dangling-conjunction: "End and Unindented continuation."',
+    ],
+    [
+      "- 😀 `example` Intro. End or\nUnindented continuation. Another.",
+      'dangling-conjunction: "End or Unindented continuation."',
+    ],
     ["- Fine.\tseamless tool.", 'marketing-adjective: "seamless tool."'],
   ])("maps normalized and marker coordinates: %s", (source, entry) => {
     expect(entries(source)).toContain(entry);

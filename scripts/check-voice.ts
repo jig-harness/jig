@@ -182,17 +182,23 @@ function containingSentence(
   f: Finding,
   positions: Map<number, JoinedPosition>,
   allSentences: Sentence[],
+  sourceLines: string[],
 ): Sentence | undefined {
   const position = positions.get(f.line - 1);
-  // This producer anchors at the list marker, but reports the item's end.
-  if (f.rule === "dangling-conjunction")
-    return allSentences.findLast(
-      (s) => s.line === (position?.line ?? f.line - 1) + 1,
-    );
+  // The list producer can anchor at the marker. Locate its conjunction on
+  // that physical line before mapping into the joined paragraph, which may
+  // continue beyond the list producer's item boundary.
+  let sourceColumn = f.col - 1;
+  if (f.rule === "dangling-conjunction") {
+    const { text } = withoutCode(sourceLines[f.line - 1] ?? "");
+    const conjunction = /\b(?:and|or)\s*$/i.exec(text);
+    if (conjunction)
+      sourceColumn = [...text.slice(0, conjunction.index)].length;
+  }
   // Source columns lose container prefixes and gain earlier paragraph lines.
   const column = position
-    ? position.offset + f.col - 1 - position.prefix
-    : f.col - 1;
+    ? position.offset + sourceColumn - position.prefix
+    : sourceColumn;
   const context = allSentences.find(
     (s) =>
       s.line === (position?.line ?? f.line - 1) + 1 &&
@@ -213,6 +219,7 @@ export function voiceFindings(source: string): {
   const positions = new Map<number, JoinedPosition>();
   joinWrapped(source, positions);
   const allSentences = sentences(source);
+  const sourceLines = splitlines(source);
   for (const s of allSentences) {
     if (s.words > MAX_WORDS)
       hard.push({
@@ -230,7 +237,7 @@ export function voiceFindings(source: string): {
   for (const f of linted) {
     // Sentence length and semicolons are measured above, under the guide's caps.
     if (f.rule === "long-sentence" || f.rule === "semicolon") continue;
-    const context = containingSentence(f, positions, allSentences);
+    const context = containingSentence(f, positions, allSentences, sourceLines);
     const quote = f.level === "advisory" ? f.match : context?.text || f.match;
     const finding = { line: f.line, entry: `${f.rule}: "${quote}"` };
     (f.level === "advisory" ? advice : hard).push(finding);
