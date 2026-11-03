@@ -2,7 +2,7 @@
 
 # Jig Harness
 
-Jig is a harness for teams that build software with AI coding agents. It
+Jig is a [harness](GLOSSARY.md) for teams that build software with AI coding agents. It
 gives a repository the rules its agents follow, the skills they run and the
 checks their work must pass, and carries each change from pickup to merge.
 What one session learns, the next one keeps.

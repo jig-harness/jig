@@ -10,7 +10,7 @@
  */
 import { plain } from "./data/modules.ts";
 import { SITE_ORIGIN } from "./origin.ts";
-import { firstParagraph } from "./source.ts";
+import { paragraphs } from "./source.ts";
 
 export interface Link {
   title: string;
@@ -220,11 +220,10 @@ export function readmeLead(readme: string): { summary: string; intro: string } {
     .slice(0, readme.indexOf(tagline))
     .replace(/\*\*\s*$/, "");
   const statement =
-    before
-      .split(/\n\s*\n/)
-      .map((p) => p.trim())
-      .filter((p) => p && !p.startsWith("#") && !/^!\[/.test(p))
-      .at(-1) ?? "";
+    paragraphs(before)
+      .filter((p) => !/^!\[/.test(p))
+      .at(-1)
+      ?.replace(/\s*\n\s*/g, " ") ?? "";
   return {
     summary: plain(tagline).replace(/\.$/, ""),
     intro: plain(statement),

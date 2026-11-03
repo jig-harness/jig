@@ -43,3 +43,10 @@ test("the README's tagline and the statement of what Jig is are the root's summa
   expect(lead.intro).toStartWith("Jig is a harness for teams");
   expect(lead.intro).not.toContain("**");
 });
+
+test("a comment between the statement and the tagline does not replace the statement", () => {
+  const lead = readmeLead(
+    "# T\n\nJig is a harness.\nIt does things.\n\n<!-- opening copy -->\n\n**Tagline.**\n",
+  );
+  expect(lead.intro).toBe("Jig is a harness. It does things.");
+});
