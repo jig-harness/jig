@@ -235,6 +235,7 @@ areas:
       - "biome.json"
       - ".fallowrc.jsonc"
       - "renovate.json5"
+      - ".sonarcloud.properties"
       - ".gitattributes"
       - ".gitignore"
       - ".github/**"
