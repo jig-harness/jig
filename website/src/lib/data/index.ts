@@ -200,6 +200,10 @@ export const walkthrough = once(() =>
   parseWalkthrough(
     read("website/src/data/walkthrough.yaml"),
     factory().line.map((s) => s.name),
-    new Set(skills().map((s) => s.name)),
+    new Set(
+      skills()
+        .filter((s) => !s.agent)
+        .map((s) => s.name),
+    ),
   ),
 );

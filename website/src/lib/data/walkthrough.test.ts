@@ -10,7 +10,9 @@ const read = (path: string) => readFileSync(join(root, path), "utf8");
 
 const stations = parseFactory(read("FACTORY.md")).line.map((s) => s.name);
 const skills = new Set(
-  parseSkills(read("plugin/README.md")).map((s) => s.name),
+  parseSkills(read("plugin/README.md"))
+    .filter((s) => !s.agent)
+    .map((s) => s.name),
 );
 const yaml = read("website/src/data/walkthrough.yaml");
 const run = parseWalkthrough(yaml, stations, skills);
@@ -36,6 +38,7 @@ describe("the recorded run", () => {
     const merge = run.events.findIndex(
       (e) => e.station === "Merge" && e.by.kind === "person",
     );
+    expect(at("Drive")).toBeGreaterThanOrEqual(0);
     expect(merge).toBeGreaterThan(at("Drive"));
     expect(run.events.slice(merge).some((e) => e.station === "Follow up")).toBe(
       true,
@@ -79,6 +82,43 @@ describe("parseWalkthrough refuses", () => {
         skills,
       ),
     ).toThrow(/date/);
+  });
+
+  test("impossible calendar dates and clock times", () => {
+    const text = event("    station: Open\n");
+    for (const date of ["2026-99-99", "2026-02-29", "2026-04-31"])
+      expect(() =>
+        parseWalkthrough(text.replaceAll("2026-11-02", date), stations, skills),
+      ).toThrow(/date/);
+    for (const at of [
+      "2026-02-30T14:27Z",
+      "2026-11-02T24:00Z",
+      "2026-11-02T14:60Z",
+    ])
+      expect(() =>
+        parseWalkthrough(
+          text.replace("2026-11-02T14:27Z", at),
+          stations,
+          skills,
+        ),
+      ).toThrow(/UTC time/);
+    expect(() =>
+      parseWalkthrough(
+        `${text}    until: "2026-11-02T99:99Z"\n`,
+        stations,
+        skills,
+      ),
+    ).toThrow(/UTC time/);
+  });
+
+  test("a named plugin agent presented as a skill", () => {
+    const text = event("    station: Open\n").replace(
+      "by: agent",
+      "by: review-arbiter",
+    );
+    expect(() => parseWalkthrough(text, stations, skills)).toThrow(
+      /plugin skill/,
+    );
   });
 
   test("events out of time order", () => {

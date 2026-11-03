@@ -188,21 +188,25 @@ The plugin runs that loop as a line of stations, one work item at a time:
 | 4 | Drive | Review rounds run unattended: wait for the reviewers, give every finding one recorded outcome, fix, verify, push, resolve; contested findings go to an arbiter | [`drive-pr`](plugin/skills/drive-pr/README.md), [`resolve-review-comments`](plugin/skills/resolve-review-comments/README.md), the [`review-arbiter`](plugin/agents/review-arbiter.md) agent |
 | 5 | Repair | Red CI or a conflict with the base: a bounded repair round, then check again | `drive-pr` with [`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md); [`fix-ci`](plugin/skills/fix-ci/SKILL.md) run on its own (the drive's CI repair does not use it yet, ROADMAP.md, Later) |
 | 6 | Merge | A person merges | a person |
-| 7 | Follow up | Deferred review findings become tracked follow-up items; the pull request lists every out-of-tree action merging leaves open | `resolve-review-comments`' deferral, `do-item` |
+| 7 | Follow up | Settle what the merge still owes: deferred findings become tracked follow-up items, tracker state is updated, the merged result is verified and the pull request's out-of-tree actions are completed | The repository's follow-up command, started by a person or the [dispatcher](plugin/README.md#the-dispatcher) |
 
 Follow-up items enter the line again at station 1, so the execution level is
 itself a loop. `drive-pr` stops on one named end state (converged, waiting on
-a person, conflicting, …) and never approves or merges. On the roadmap: a
+a person, conflicting, …) and never approves or merges. The
+[dispatcher](plugin/README.md#the-dispatcher) starts stations with nobody at
+the keyboard: it re-arms drives stopped on a usage limit or an answered
+question, re-drives a converged pull request whose head changed or which now
+conflicts with its base, and notifies a person about stops that need their
+decision. It also
+starts pickups and post-merge follow-ups where the workspace runtime can bind
+the session to its billing account; otherwise it reports them without starting
+a session. The repository supplies its own follow-up command.
+
+On the roadmap: a
 converged drive arming the merge it certified (ROADMAP.md item 9, which
-changes "a person merges" and is decided on its own), a skill that runs
-the post-merge stage [M7](modules/M7-pr-lifecycle-review/README.md) states,
-which settles what a merge still owes beyond the follow-ups station 7 files
-(item 17), and a [dispatcher](GLOSSARY.md) that starts the
-line's stations with nobody at the keyboard: a pickup for each item
-assigned to the factory's tracker identity, a restart for each drive that
-stopped on a usage limit or an answered question, a follow-up for each
-merge, and a notification to a person for the stops that are theirs
-(item 33, [designed](design/dark-factory-dispatch.md)).
+changes "a person merges" and is decided on its own), and a shared skill
+that runs the post-merge stage [M7](modules/M7-pr-lifecycle-review/README.md)
+states (item 17).
 
 ## The learning loop (wraps both)
 

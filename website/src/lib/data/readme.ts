@@ -22,7 +22,12 @@ export interface ReadmeFactory {
 /** The README lost a part the home page lays out. */
 class ReadmeShapeError extends Error {}
 
-const oneLine = (text: string) => text.replace(/\s*\n\s*/g, " ").trim();
+const oneLine = (text: string) =>
+  text
+    .split("\n")
+    .map((line) => line.trim())
+    .join(" ")
+    .trim();
 
 /** A paragraph's sentences: a break after `.`, `!` or `?` before a capital. */
 const sentencesOf = (text: string) =>

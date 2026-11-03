@@ -45,6 +45,14 @@ const MINUTE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/;
 const PR_URL = /^https:\/\/github\.com\/jig-harness\/jig\/pull\/(\d+)$/;
 const NAMED = new Set(["agent", "person", "dispatcher"]);
 
+function validDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return (
+    Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+}
+
 function text(value: unknown, where: string): string {
   if (typeof value !== "string" || !value.trim())
     throw new WalkthroughError(`walkthrough.yaml: ${where} is missing`);
@@ -53,7 +61,12 @@ function text(value: unknown, where: string): string {
 
 function minute(value: unknown, where: string): string {
   const at = text(value, where);
-  if (!MINUTE.test(at))
+  if (
+    !MINUTE.test(at) ||
+    !validDate(at.slice(0, 10)) ||
+    Number(at.slice(11, 13)) > 23 ||
+    Number(at.slice(14, 16)) > 59
+  )
     throw new WalkthroughError(
       `walkthrough.yaml: ${where} is ${JSON.stringify(at)}, not a UTC time to the minute`,
     );
@@ -86,9 +99,9 @@ export function parseWalkthrough(
   if (!doc || typeof doc !== "object")
     throw new WalkthroughError("walkthrough.yaml: not a map");
   const date = text(doc.date, "date");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
+  if (!validDate(date))
     throw new WalkthroughError(
-      `walkthrough.yaml: date is ${JSON.stringify(date)}, not YYYY-MM-DD`,
+      `walkthrough.yaml: date is ${JSON.stringify(date)}, not a valid YYYY-MM-DD date`,
     );
   const pr = (doc.pr ?? {}) as Record<string, unknown>;
   const url = text(pr.url, "pr.url");
