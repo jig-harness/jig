@@ -38,6 +38,11 @@
  * pull request (`lib/session.ts`), bound to its account the same way; its
  * exit is recorded, and no wall is written for it.
  *
+ * Once the exit is recorded, a run that left nothing for a person (a drive
+ * whose exit `driveExitClosesTab` closes on, a session that recorded `done`)
+ * closes its terminal tab, when the tick recorded it as a run tab
+ * (`shared/orca-tabs.ts`); a park or a failure keeps the tab.
+ *
  * Exit codes: the drive's own; 2 usage, a token that is not the record's,
  * or a state database a newer plugin wrote; 3 the record was already
  * claimed, so nothing started.
@@ -45,6 +50,7 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { swallow } from "../shared/errors.ts";
+import { driveExitClosesTab, endOwnTab } from "../shared/orca-tabs.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
 import { passCommand } from "../skills/drive-pr/scripts/lib/pass-command.ts";
 import { run } from "../shared/proc.ts";
@@ -59,6 +65,7 @@ import {
   type LaunchRecord,
   ownIdentity,
   readRecord,
+  readResult,
   recordExit,
 } from "./lib/launches.ts";
 import { probeWall } from "./lib/quota-probe.ts";
@@ -249,7 +256,21 @@ async function wrap(id: string, token: string): Promise<number> {
     signal,
     ...(wallUnrecorded ? { wallUnrecorded: true as const } : {}),
   });
+  closeTabIfDone(record, code);
   return code ?? 1;
+}
+
+/** Close the run's tab when the run left nothing for a person; a failure only says so. */
+function closeTabIfDone(record: LaunchRecord, code: number | null): void {
+  try {
+    const done = isDrive(record)
+      ? driveExitClosesTab(code)
+      : readResult(record.id) === "done";
+    const line = endOwnTab(done);
+    if (line !== null) console.error(`jig dispatch run: ${line}`);
+  } catch (error) {
+    swallow(error, "the run's tab could not be closed");
+  }
 }
 
 /** The wrapper's command line; `jig dispatch run` reaches it too. */

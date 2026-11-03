@@ -4,11 +4,19 @@
  * terminals run their command, with a fake drive in place of `drive.ts`.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { processTable } from "../../shared/process-table.ts";
+import { type RunTab, readRunTabs } from "../../shared/orca-tabs.ts";
 import { bootId } from "../lib/launches.ts";
 import { writeWall } from "../lib/walls.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -79,6 +87,72 @@ async function tick(w: World): Promise<TickReceipt> {
 }
 
 const launches = (r: TickReceipt) => r.repos[0]?.launches ?? [];
+
+/** Every `orca terminal close` the fake Orca answered, by its arguments. */
+function tabCloses(w: World): string[][] {
+  const path = join(w.dir, "orca-calls.log");
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as string[])
+    .filter((args) => args[0] === "terminal" && args[1] === "close");
+}
+
+/** The run tabs recorded under the child's home. */
+function runTabs(w: World): RunTab[] {
+  return readRunTabs(join(w.home, ".local", "state", "jig", "orca-tabs"));
+}
+
+/** A launch whose tab runs in a shell that outlives the wrapper; returns the launch record's id. */
+async function launchInShell(w: World): Promise<string> {
+  writeFileSync(join(w.dir, "orca-terminal-shell"), "");
+  const receipt = await tick(w);
+  const record = launches(receipt)[0]?.record ?? "";
+  expect(launches(receipt)[0]?.outcome).toBe("launched");
+  const [tab] = runTabs(w);
+  expect(tab?.subject).toBe("pr:7");
+  cleanups.push(() => {
+    try {
+      process.kill(tab?.shellPid ?? 0);
+    } catch {
+      // Already closed.
+    }
+  });
+  await waitFor("the exit", () => exitWritten(w, record));
+  return record;
+}
+
+describe("the re-arm's terminal tab", () => {
+  it("is closed through Orca once the drive converges", async () => {
+    const { w } = fixture();
+    machineFile(w, [account(w, "a", "a@example.com")]);
+    await launchInShell(w);
+    await waitFor("the tab's close", () => tabCloses(w).length === 1);
+    expect(tabCloses(w)).toEqual([
+      ["terminal", "close", "--terminal", "term-1", "--tab", "--json"],
+    ]);
+    await waitFor("the record dropped", () => runTabs(w).length === 0);
+  });
+
+  it("stays open when the drive parks for a person", async () => {
+    const { w } = fixture();
+    machineFile(w, [account(w, "a", "a@example.com")]);
+    writeFileSync(join(w.dir, "drive-exit"), "8");
+    await launchInShell(w);
+    // The wrapper says, before it exits, whether its tab closes.
+    await waitFor("the wrapper's end", () =>
+      readFileSync(join(w.dir, "terminal.log"), "utf8").includes(
+        "stays open: the run ended needing a person",
+      ),
+    );
+    expect(readFileSync(join(w.dir, "terminal.log"), "utf8")).not.toContain(
+      "closes once this run has exited",
+    );
+    expect(tabCloses(w)).toEqual([]);
+    expect(runTabs(w)).toHaveLength(1);
+  });
+});
 
 describe("jig dispatch --apply launches re-arms within account caps", () => {
   it("re-arms a drive quota-parked on account a on account b, in one tick", async () => {

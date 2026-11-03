@@ -29,7 +29,9 @@
  * Windows host opens no tab. Under `auto` a tab that cannot be opened, or
  * whose drive `drives.ts` does not list in time, falls back to the
  * background, saying why (a drive the tab did start refuses the second on
- * its lock); under `tab` that is the answer.
+ * its lock); under `tab` that is the answer. The tab is recorded as a run
+ * tab (`shared/orca-tabs.ts`): the drive closes it when it ends with nothing
+ * for a person, and arming the PR again closes its earlier idle run tabs.
  */
 import { resolve } from "node:path";
 import { shellQuote } from "../../../../shared/cli.ts";
@@ -320,6 +322,16 @@ export interface TabDeps {
   /** How long to wait for the drive to be listed once the tab is open. */
   confirmMs: number;
   pollMs: number;
+  /**
+   * Record the tab `terminal create` answered `result` for, so the drive
+   * closes it when it ends, and close the PR's earlier run tabs; it never
+   * fails the arm. Without it the tab is not recorded and stays open.
+   */
+  runTab?: (
+    result: Record<string, unknown>,
+    orca: string,
+    request: ArmRequest,
+  ) => Promise<void>;
 }
 
 /** How the tab flow ended. */
@@ -390,6 +402,7 @@ export async function armInTab(
       why: `orca terminal create failed ${orcaFailure(done)}`,
     };
   const terminal = terminalHandle(result);
+  await deps.runTab?.(result, orca, request);
   const deadline = opened + deps.confirmMs;
   for (;;) {
     const left = deadline - deps.now();

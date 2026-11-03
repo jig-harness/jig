@@ -1,0 +1,350 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import type { OrcaRunner } from "../orca.ts";
+import {
+  closePreviousTabs,
+  closeRunTab,
+  driveExitClosesTab,
+  endOwnTab,
+  openedTab,
+  prSubject,
+  type RunTab,
+  readRunTabs,
+  recordRunTab,
+  tabState,
+} from "../orca-tabs.ts";
+import { type ProcessRow, processTable } from "../process-table.ts";
+
+const SHELL = 4242;
+const START = "Tue Nov  3 15:00:00 2026";
+
+function row(
+  pid: number,
+  ppid: number,
+  start = START,
+  stat = "Ss",
+): ProcessRow {
+  return { pid, ppid, pgid: pid, start, stat, args: "zsh -l" };
+}
+
+const CREATED = {
+  terminal: { handle: "term_new", tabId: "tab-new", processId: SHELL },
+};
+
+let dir: string;
+let root: string;
+let tree: string;
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "orca-tabs-"));
+  root = join(dir, "tabs");
+  tree = join(dir, "tree");
+  mkdirSync(tree);
+});
+afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+/** A fake Orca that records each call and answers `answer`. */
+function fakeOrca(answer = { code: 0, stdout: '{"ok":true,"result":{}}' }): {
+  runner: OrcaRunner;
+  calls: string[][];
+} {
+  const calls: string[][] = [];
+  return {
+    calls,
+    runner: async (_command, args) => {
+      calls.push(args);
+      return { stderr: "", ...answer };
+    },
+  };
+}
+
+function tab(fields: Partial<RunTab> = {}): RunTab {
+  return {
+    version: 1,
+    handle: "term_old",
+    tabId: "tab-old",
+    shellPid: SHELL,
+    shellStart: START,
+    worktree: tree,
+    subject: prSubject(42),
+    title: "drive #42",
+    orca: "orca",
+    openedAt: "2026-11-03T15:00:00.000Z",
+    ...fields,
+  };
+}
+
+function write(t: RunTab): void {
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, `${t.handle}.json`), JSON.stringify(t));
+}
+
+describe("which drive exits close the tab", () => {
+  test("an ending with nothing for a person closes it", () => {
+    for (const code of [0, 4, 5, 11, 13, 16, 18, 19, 20])
+      expect(driveExitClosesTab(code)).toBe(true);
+  });
+  test("a park, a failure or a signal keeps it", () => {
+    for (const code of [1, 2, 6, 7, 8, 9, 12, 14, 15, 99, null])
+      expect(driveExitClosesTab(code)).toBe(false);
+  });
+});
+
+describe("recording a tab", () => {
+  test("reads the handle, tab and shell PID from Orca's answer", () => {
+    expect(openedTab(CREATED)).toEqual({
+      handle: "term_new",
+      tabId: "tab-new",
+      shellPid: SHELL,
+    });
+  });
+
+  test("an answer with no shell PID is not a run tab", () => {
+    expect(openedTab({ terminal: { handle: "term_new" } })).toBeNull();
+  });
+
+  test("records the shell's start time beside its PID", async () => {
+    const recorded = await recordRunTab(
+      {
+        orca: "orca",
+        result: CREATED,
+        worktree: tree,
+        subject: prSubject(42),
+        title: "drive #42",
+      },
+      { root, table: async () => [row(SHELL, 1)], now: () => 0 },
+    );
+    expect(recorded).toEqual({
+      tab: expect.objectContaining({
+        handle: "term_new",
+        shellPid: SHELL,
+        shellStart: START,
+        subject: "pr:42",
+      }),
+    });
+    expect(readRunTabs(root).map((t) => t.handle)).toEqual(["term_new"]);
+  });
+
+  test("a shell missing from the process table leaves the tab unrecorded", async () => {
+    const recorded = await recordRunTab(
+      {
+        orca: "orca",
+        result: CREATED,
+        worktree: tree,
+        subject: prSubject(42),
+        title: "drive #42",
+      },
+      { root, table: async () => null, now: () => 0 },
+    );
+    expect(recorded).toEqual({ unrecorded: expect.stringContaining("4242") });
+    expect(existsSync(root)).toBe(false);
+  });
+});
+
+describe("whether a tab is idle", () => {
+  test("a shell with no child is idle", () => {
+    expect(tabState(tab(), [row(SHELL, 1)])).toBe("idle");
+  });
+  test("a shell running a command is busy", () => {
+    expect(tabState(tab(), [row(SHELL, 1), row(5000, SHELL)])).toBe("busy");
+  });
+  test("a zombie child does not keep it busy", () => {
+    expect(tabState(tab(), [row(SHELL, 1), row(5000, SHELL, START, "Z")])).toBe(
+      "idle",
+    );
+  });
+  test("a PID now held by another process is gone", () => {
+    expect(tabState(tab(), [row(SHELL, 1, "Wed Nov  4 09:00:00 2026")])).toBe(
+      "gone",
+    );
+  });
+});
+
+describe("closing a tab", () => {
+  test("closes an idle tab with its whole tab and drops the record", async () => {
+    write(tab());
+    const orca = fakeOrca();
+    const outcome = await closeRunTab(tab(), {
+      root,
+      orca: orca.runner,
+      table: async () => [row(SHELL, 1)],
+    });
+    expect(outcome).toBe("closed");
+    expect(orca.calls).toEqual([
+      ["terminal", "close", "--terminal", "term_old", "--tab", "--json"],
+    ]);
+    expect(readRunTabs(root)).toEqual([]);
+  });
+
+  test("leaves a busy tab and an unreadable process table alone", async () => {
+    write(tab());
+    const orca = fakeOrca();
+    const busy = await closeRunTab(tab(), {
+      root,
+      orca: orca.runner,
+      table: async () => [row(SHELL, 1), row(5000, SHELL)],
+    });
+    const unknown = await closeRunTab(tab(), {
+      root,
+      orca: orca.runner,
+      table: async () => null,
+    });
+    expect([busy, unknown]).toEqual(["busy", "busy"]);
+    expect(orca.calls).toEqual([]);
+    expect(readRunTabs(root)).toHaveLength(1);
+  });
+
+  test("drops the record of a tab whose shell is gone, without calling Orca", async () => {
+    write(tab());
+    const orca = fakeOrca();
+    const outcome = await closeRunTab(tab(), {
+      root,
+      orca: orca.runner,
+      table: async () => [row(1, 0)],
+    });
+    expect(outcome).toBe("gone");
+    expect(orca.calls).toEqual([]);
+    expect(readRunTabs(root)).toEqual([]);
+  });
+
+  test("a handle Orca no longer knows is gone", async () => {
+    write(tab());
+    const stale = fakeOrca({
+      code: 1,
+      stdout: '{"ok":false,"error":{"code":"terminal_handle_stale"}}',
+    });
+    const outcome = await closeRunTab(tab(), {
+      root,
+      orca: stale.runner,
+      table: async () => [row(SHELL, 1)],
+    });
+    expect(outcome).toBe("gone");
+    expect(readRunTabs(root)).toEqual([]);
+  });
+
+  test("a close Orca refuses keeps the record", async () => {
+    write(tab());
+    const refused = fakeOrca({
+      code: 1,
+      stdout: '{"ok":false,"error":{"code":"refused"}}',
+    });
+    const outcome = await closeRunTab(tab(), {
+      root,
+      orca: refused.runner,
+      table: async () => [row(SHELL, 1)],
+    });
+    expect(outcome).toEqual({ failed: expect.stringContaining("refused") });
+    expect(readRunTabs(root)).toHaveLength(1);
+  });
+});
+
+describe("closing a subject's earlier tabs", () => {
+  test("closes only the same subject's tabs in the same worktree, never the new one", async () => {
+    write(tab({ handle: "term_old" }));
+    write(tab({ handle: "term_new" }));
+    write(tab({ handle: "term_other_pr", subject: prSubject(7) }));
+    write(tab({ handle: "term_other_tree", worktree: join(dir, "elsewhere") }));
+    const orca = fakeOrca();
+    const lines = await closePreviousTabs(
+      { worktree: tree, subject: prSubject(42), except: "term_new" },
+      { root, orca: orca.runner, table: async () => [row(SHELL, 1)] },
+    );
+    expect(lines).toEqual(["earlier run tab term_old (drive #42): closed"]);
+    expect(orca.calls.map((args) => args[3])).toEqual(["term_old"]);
+    expect(
+      readRunTabs(root)
+        .map((t) => t.handle)
+        .sort(),
+    ).toEqual(["term_new", "term_other_pr", "term_other_tree"]);
+  });
+});
+
+describe("a run ending in its own tab", () => {
+  test("starts the closer for the tab whose shell is its parent", () => {
+    write(tab());
+    const started: Array<[string, number]> = [];
+    const line = endOwnTab(true, root, { pid: 777, ppid: SHELL }, (t, pid) =>
+      started.push([t.handle, pid]),
+    );
+    expect(started).toEqual([["term_old", 777]]);
+    expect(line).toContain("closes once this run has exited");
+  });
+
+  test("leaves the tab open when the run needs a person, and says so", () => {
+    write(tab());
+    const started: unknown[] = [];
+    const line = endOwnTab(false, root, { pid: 777, ppid: SHELL }, (t) =>
+      started.push(t),
+    );
+    expect(started).toEqual([]);
+    expect(line).toContain("stays open");
+  });
+
+  test("does nothing when its parent is no recorded tab's shell", () => {
+    write(tab());
+    const started: unknown[] = [];
+    const line = endOwnTab(true, root, { pid: 777, ppid: 1 }, (t) =>
+      started.push(t),
+    );
+    expect(line).toBeNull();
+    expect(started).toEqual([]);
+  });
+});
+
+describe("the detached closer", () => {
+  test("waits for the run to exit, then closes its idle tab through Orca", async () => {
+    // The tab's shell: a live process with no child.
+    const shell = Bun.spawn(["sleep", "30"], { stdout: "ignore" });
+    try {
+      const rows = await processTable();
+      const start = rows?.find((r) => r.pid === shell.pid)?.start;
+      expect(start).toBeString();
+      const calls = join(dir, "orca-calls.log");
+      const orca = join(dir, "orca");
+      writeFileSync(
+        orca,
+        `#!/bin/sh\necho "$@" >> ${JSON.stringify(calls)}\necho '{"ok":true,"result":{}}'\n`,
+      );
+      chmodSync(orca, 0o755);
+      write(tab({ shellPid: shell.pid, shellStart: start as string, orca }));
+      // The run: already exited by the time the closer looks.
+      const run = Bun.spawnSync(["true"]);
+      expectSpawnExit(
+        { exitCode: run.exitCode, stdout: null, stderr: null },
+        0,
+      );
+      const closer = Bun.spawnSync(
+        [
+          process.execPath,
+          join(import.meta.dir, "..", "orca-tabs.ts"),
+          "close",
+          "term_old",
+          String(run.pid),
+        ],
+        {
+          env: { ...process.env, JIG_ORCA_TABS_DIR: root },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      expectSpawnExit(closer, 0, "orca-tabs.ts close");
+      expect(readFileSync(calls, "utf8").trim()).toBe(
+        "terminal close --terminal term_old --tab --json",
+      );
+      expect(readRunTabs(root)).toEqual([]);
+    } finally {
+      shell.kill();
+    }
+  });
+});

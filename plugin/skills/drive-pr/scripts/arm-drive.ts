@@ -62,6 +62,7 @@ import {
   liveDriveIn,
   sessionVendor,
   type TabDeps,
+  tabTitle,
 } from "./lib/arm.ts";
 import { drives } from "./lib/driver/paths.ts";
 import type { AccountVendor } from "./lib/identity.ts";
@@ -87,6 +88,12 @@ import {
 } from "./lib/pass-model.ts";
 import { git, gitIdentityEnv, run, tsArgv } from "./lib/proc.ts";
 import { runOrca } from "../../../shared/orca.ts";
+import {
+  closePreviousTabs,
+  defaultRunTabDeps,
+  prSubject,
+  recordRunTab,
+} from "../../../shared/orca-tabs.ts";
 
 const USAGE =
   'usage: arm-drive.ts <PR> [--mode auto|tab|background|print] [--pass-model M] [--pass-args "WORDS"] [--max-rounds N] [--keep-draft] [--handoff-at V]';
@@ -347,6 +354,37 @@ function answer({ report, exit }: { report: ArmReport; exit: number }): number {
   return exit;
 }
 
+/** Record the drive's tab as a run tab and close the PR's earlier ones, saying what happened on stderr. */
+async function recordTab(
+  result: Record<string, unknown>,
+  orca: string,
+  request: ArmRequest,
+): Promise<void> {
+  const tabs = defaultRunTabDeps();
+  const subject = prSubject(request.pr);
+  const recorded = await recordRunTab(
+    {
+      orca,
+      result,
+      worktree: request.tree,
+      subject,
+      title: tabTitle(request.pr),
+    },
+    tabs,
+  );
+  if ("unrecorded" in recorded) {
+    console.error(
+      `arm-drive.ts: the drive's tab stays open after the drive, since it is not recorded: ${recorded.unrecorded}`,
+    );
+    return;
+  }
+  const closed = await closePreviousTabs(
+    { worktree: request.tree, subject, except: recorded.tab.handle },
+    tabs,
+  );
+  for (const line of closed) console.error(`arm-drive.ts: ${line}`);
+}
+
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
   const inputs = await readInputs(args);
@@ -358,6 +396,7 @@ async function main(): Promise<number> {
     sleep: (ms) => sleep(ms / 1000),
     confirmMs: confirmSeconds() * 1000,
     pollMs: 1500,
+    runTab: recordTab,
   };
   return answer(await arm(inputs, deps));
 }

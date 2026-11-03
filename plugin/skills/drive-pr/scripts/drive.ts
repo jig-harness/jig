@@ -174,6 +174,8 @@ import { runMain } from "./lib/cli.ts";
 import { span } from "../../../shared/trace.ts";
 import { main } from "./lib/driver/main.ts";
 import { driverRuntime } from "./lib/driver/runtime.ts";
+import { driveExitClosesTab, endOwnTab } from "../../../shared/orca-tabs.ts";
+import { swallow } from "../../../shared/errors.ts";
 export {
   roundFingerprint,
   resolveHandoffAt,
@@ -204,12 +206,28 @@ export {
   driverStopCompletionCleanup,
 } from "./lib/driver/lifecycle.ts";
 
+/**
+ * Close the drive's terminal tab when the drive is that tab's own command
+ * (armed in a tab, `lib/arm.ts`) and its exit leaves nothing for a person;
+ * under the dispatcher's wrapper, the wrapper closes the tab instead.
+ */
+function closeTabIfDone(code: number): void {
+  try {
+    const line = endOwnTab(driveExitClosesTab(code));
+    if (line !== null) console.error(`drive.ts: ${line}`);
+  } catch (error) {
+    swallow(error, "the drive's tab could not be closed");
+  }
+}
+
 // Bun resolves the entry module's identity, including Windows path aliases.
 // Importing helpers must never start the driver or acquire its locks.
 if (import.meta.main) {
   runMain("drive.ts", async () => {
     try {
-      return await span("drive", {}, main);
+      const code = await span("drive", {}, main);
+      closeTabIfDone(code);
+      return code;
     } finally {
       // The shared coordinator owns exit while other cancellations are pending.
       if (driverRuntime.driverShuttingDown)

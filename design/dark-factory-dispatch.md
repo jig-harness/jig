@@ -522,7 +522,14 @@ implementation:
   wrapper under the same record. For an interactive session, that `orca
   agent launch --retry-launch` retries by a key the adapter passes it,
   rather than starting a second agent, is checked when the pickup stage is
-  built, and until it does, a lost interactive launch is not retried;
+  built, and until it does, a lost interactive launch is not retried.
+  The launched terminal is recorded as a *run tab*
+  (`plugin/shared/orca-tabs.ts`): its handle and the PID and start of the
+  login shell Orca reports for it. The wrapper closes it through `orca
+  terminal close --tab` once the stage ends with nothing for a person,
+  while the shell is still alive (Orca no longer closes a tab whose shell
+  has exited by its handle), and a launch closes the earlier idle run tabs
+  of its pull request or item in the workspace;
 - `notify` as a workspace marked unread with the message as its comment
   (`orca worktree set --comment <message> --unread`, the comment read
   first and read back with `orca worktree show`), appended to the comment while the workspace
