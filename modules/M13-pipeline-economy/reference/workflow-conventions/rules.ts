@@ -623,8 +623,37 @@ export function ciHold(pipelines: Pipelines): Found[] {
   return [
     ...unguarded,
     ...missingEvents(pipelines, heavy, label),
+    ...filteredDispatches(pipelines, heavy, label),
     ...missingSentinel(pipelines, label),
   ];
+}
+
+/** A pull-request trigger's path filter on a workflow a sibling dispatches on
+ * the hold label. A dispatched run ignores it, so the release runs the workflow
+ * whatever the pull request changed, and nothing else says so: the saving the
+ * filter gave is gone without a failure. */
+function filteredDispatches(
+  pipelines: Pipelines,
+  heavy: { wf: Workflow }[],
+  label: string,
+): Found[] {
+  return holdParticipants(pipelines, heavy)
+    .filter((wf) => dispatchedByLabel(pipelines, wf, label))
+    .flatMap((wf) =>
+      PR_EVENTS.filter((event) =>
+        FILTERS.some((filter) => filter in (wf.on[event] ?? {})),
+      ).map((event) => ({
+        ...at(
+          wf,
+          undefined,
+          "ci-hold-paths",
+        )(
+          `the ${event} trigger is filtered by paths, which a run dispatched on the hold label '${label}' ignores, so the release runs this workflow whatever the pull request changed`,
+          `select jobs inside the run and drop the filter; or, if the workflow is cheap, take it out of the hold (its guard, its heavy entry, its dispatch); or accept the cost with a reasoned exception (${README}#ci-hold)`,
+        ),
+        line: triggerLine(wf, event),
+      })),
+    );
 }
 
 /** The three a trigger without `types:` runs on; listing any replaces them. */

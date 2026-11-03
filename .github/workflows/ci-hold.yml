@@ -63,6 +63,6 @@ jobs:
           held=$(gh api "repos/$GH_REPO/issues/$PR/labels?per_page=100" --jq '[.[].name] | any(. == "ci:hold")')
           echo "ci:hold on pull request #$PR: $held"
           if ! gh workflow run gates.yml --ref "$HEAD_REF" -f pr="$PR" -f held="$held"; then
-            echo "::error::could not start gates.yml on $HEAD_REF. A branch from before gates.yml took workflow_dispatch refuses the dispatch: merge the base into it."
+            echo "::error::could not start gates.yml on $HEAD_REF, so this head has not reported under the label's new state. A branch from before gates.yml took workflow_dispatch refuses the dispatch: merge the base into it. A push runs CI in any case."
             exit 1
           fi

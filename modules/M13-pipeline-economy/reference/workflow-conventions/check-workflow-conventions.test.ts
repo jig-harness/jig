@@ -916,6 +916,88 @@ test("a pull-request workflow outside the hold needs no label events", () => {
   exits(run(["--root", root]), 0, "a workflow with no heavy or required job");
 });
 
+test("a cheap workflow leaves a dispatched hold with no label events, no guard and no exception", () => {
+  const root = dispatchedHold();
+  writeFileSync(
+    join(root, ".github/workflows/docs.yml"),
+    `on:\n  pull_request:\n    types: [opened, synchronize, reopened]\n${CONC}jobs:\n${job("docs")}`,
+  );
+  const result = run(["--root", root]);
+  exits(result, 0, "outside the hold, and the reaction does not name it");
+  expect(result.out).toContain("1 exception(s)");
+
+  writeFileSync(
+    join(root, ".config/workflow-conventions.yaml"),
+    "heavy:\n  - ci.yml#e2e\n  - docs.yml#docs\n",
+  );
+  const declared = run(["--root", root]);
+  exits(declared, 1, "still declared heavy, it is still in the hold");
+  expect(rulesOf(declared.err)).toEqual([
+    "ci-hold-events",
+    "ci-hold-guard",
+    "heavy-per-change",
+  ]);
+});
+
+/** A required workflow and a heavy one, both dispatched on the hold label; the
+ * heavy one's pull-request trigger carries `filter`. */
+function filteredHeavy(filter: string, exceptions = "") {
+  return repo({
+    ".config/jig.yaml": `ci:\n  required_checks: [verdict]\n  hold_label: "hold"\n`,
+    ".config/workflow-conventions.yaml": "heavy:\n  - e2e.yml#e2e\n",
+    ".config/workflow-conventions-exceptions.txt": `# The merge waits for it.\nheavy-per-change .github/workflows/e2e.yml e2e\n${exceptions}`,
+    ".github/workflows/ci.yml": `on:\n  pull_request:\n    types: [opened, synchronize, reopened]\n${HELD_INPUTS}${CONC}jobs:\n  verdict:\n    if: \${{ !cancelled() }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n      - if: \${{ ${SENTINEL} }}\n        run: exit 1\n`,
+    ".github/workflows/e2e.yml": `on:\n  pull_request:\n    types: [opened, synchronize, reopened]\n    ${filter}\n${HELD_INPUTS}${CONC}jobs:\n  e2e:\n    if: \${{ ${GUARD} }}\n    runs-on: x\n    timeout-minutes: 10\n    steps:\n      - run: make e2e\n`,
+    ".github/workflows/ci-hold.yml": `${REACTION_TYPES}${CONC}${reactionJob(
+      REACTION_IF,
+      `      - run: |\n          ${REACTION_CALL}\n          gh workflow run e2e.yml --ref "$HEAD" -f pr="$PR" -f held="$HELD"\n`,
+    )}`,
+  });
+}
+
+test("a path filter on a dispatched workflow is reported, since the dispatched run ignores it", () => {
+  for (const filter of ['paths: ["src/**"]', 'paths-ignore: ["docs/**"]']) {
+    const result = run(["--root", filteredHeavy(filter)]);
+    exits(result, 1, filter);
+    expect({ filter, rules: rulesOf(result.err) }).toEqual({
+      filter,
+      rules: ["ci-hold-paths"],
+    });
+    expect(result.err).toContain(
+      ".github/workflows/e2e.yml:2: [ci-hold-paths]",
+    );
+    expect(result.err).toContain("whatever the pull request changed");
+  }
+  exits(
+    run([
+      "--root",
+      filteredHeavy(
+        'paths: ["src/**"]',
+        "\n# The release may run it on any change: it costs little.\nci-hold-paths .github/workflows/e2e.yml\n",
+      ),
+    ]),
+    0,
+    "a repository accepts the cost with a reason",
+  );
+});
+
+test("a path filter is no finding where label events start the workflow", () => {
+  const root = holdTrigger(PR_HOLD);
+  writeFileSync(
+    join(root, ".config/workflow-conventions.yaml"),
+    "heavy:\n  - ci.yml#e2e\n  - e2e.yml#e2e\n",
+  );
+  writeFileSync(
+    join(root, ".config/workflow-conventions-exceptions.txt"),
+    "# The merge waits for them.\nheavy-per-change .github/workflows/ci.yml e2e\nheavy-per-change .github/workflows/e2e.yml e2e\n",
+  );
+  writeFileSync(
+    join(root, ".github/workflows/e2e.yml"),
+    `on:\n  pull_request:\n    types: [opened, synchronize, reopened, labeled, unlabeled]\n    paths: ["src/**"]\n${CONC}jobs:\n  e2e:\n    if: \${{ !contains(${LABELS}, 'hold') }}\n    runs-on: x\n    timeout-minutes: 10\n    steps:\n      - run: make e2e\n`,
+  );
+  exits(run(["--root", root]), 0, "label events respect the filter");
+});
+
 test("a types: that is not a list of names could not be checked", () => {
   const result = run([
     "--root",

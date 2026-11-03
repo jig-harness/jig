@@ -183,10 +183,10 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     # CI hold (opt in): on each job the hold may skip, add the guard as an
     # &&-joined term of its condition. It tests the pull request's labels,
-    # never the event's action: with label events starting runs, a job that
-    # skipped on any `labeled` event would let an unrelated label turn a
-    # failing head into a passing skip, while this one skips only a held
-    # pull request and runs real CI on any other label event.
+    # never the event's action: a job that skipped on any `labeled` event would
+    # let an unrelated label turn a failing head into a passing skip, while this
+    # one skips only a held pull request. Where a small workflow dispatches this
+    # one, add `&& !inputs.held` too: a dispatched run's event holds no labels.
     #   if: needs.changes.outputs.code == 'true' && !contains(github.event.pull_request.labels.*.name, '<hold label>')
     runs-on: <runner, e.g. ubuntu-latest>
     timeout-minutes: <2-3x the slowest healthy run, at most 60, e.g. 30>
@@ -226,7 +226,9 @@ jobs:
       # heavy job the hold skipped cannot skip it too), with no
       # continue-on-error: a tolerated failure fails nothing. To have the
       # held run listed as cancelled rather than failed once the release
-      # passes, cancel the run before failing: M13's mappings.md, § Hold.
+      # passes, cancel the run before failing: M13's mappings.md, § Hold. Where
+      # a small workflow dispatches this one, add `|| inputs.held` to the
+      # condition.
       # - name: Fail while held
       #   if: contains(github.event.pull_request.labels.*.name, '<hold label>')
       #   run: |

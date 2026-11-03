@@ -294,6 +294,30 @@ The second form has limits of its own, which
 merge a pull-request run tests, it cannot start a run for a pull request from a
 fork, and the label's application takes a little longer to reach the head.
 
+A repository with many workflows in its hold weighs three more things before
+it chooses, in this order.
+
+- **Shrink the hold first.** Only a workflow that reports a required check, or
+  whose heavy jobs are worth skipping, needs to take part. Cost is rarely spread
+  evenly: in one repository measured, two workflows made up about two thirds of
+  the minutes, and nearly every other one took about two minutes or less. A
+  cheap workflow can simply leave the hold. It drops its label events and its
+  skip, and runs on each push like any other. Fewer workflows then need either
+  form, and the two that matter may be the only ones left to move.
+- **A run started on demand ignores path filters.** A label event respects a
+  filter on the workflow's trigger, so a filtered workflow stays quiet when its
+  paths did not change. A dispatched run does not: the release runs that
+  workflow whatever the pull request changed, and nothing fails to say so. The
+  second form therefore suits a workflow without path filters. One that keeps
+  its filter either selects its jobs inside the run instead, leaves the hold, or
+  accepts that every release runs it.
+- **A workflow may already mean something when started on demand.** Its manual
+  run may deploy, or push an image. A hold's dispatch would trigger that, on
+  every application and removal of the label, unless the workflow tells the two
+  apart, so never dispatch such a workflow as it stands. Move the manual path
+  into a workflow of its own, or have those jobs skip when the run names a pull
+  request.
+
 The drive's last push is usually a held one, since no one knows a push is
 the last until review passes it, so the head the merge waits for carries
 the held run beside the release's run. Where the provider still shows the

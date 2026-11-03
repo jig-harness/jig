@@ -271,7 +271,7 @@ criteria:
     observe:
       - "a step in a required job, or in a job the required job needs directly while itself running on !cancelled(), fails while the hold label is present (cancelling its own run first counts only in the required job itself, and only when it fails where the cancellation does not happen), does not continue on error, and its message names the label to remove; on a run dispatched as held it fires on that input too"
       - "every pull-request workflow with a job the hold skips, or reporting a required check, either triggers on labeled and unlabeled beside opened, synchronize and reopened, or has workflow_dispatch and a sibling workflow on labeled and unlabeled that tests the exact hold label and dispatches it, saying whether the pull request is held"
-      - "where a sibling dispatches it, the dispatched run tests the pull request's merge and refuses one that does not hold the head it reports on, not the branch alone"
+      - "where a sibling dispatches it, the dispatched run tests the pull request's merge and refuses one that does not hold the head it reports on, not the branch alone, and a workflow_dispatch the workflow already had keeps its side effects, a deploy or an image push, away from that run"
       - "each skipped job's condition tests the pull request's label set for the exact hold label, not the event's action, so an unrelated label event cannot turn a failing head into a passing skip; a dispatched run's job also skips on the held input"
       - "the driver that removes the label accepts only check runs that started after the removal"
       - "expected-absent when no hold label is configured (no ci.hold_label or equivalent)"
@@ -291,6 +291,7 @@ criteria:
       - "the lint reads the hold label from the repository's configuration and reports its hold rules as not applicable without one"
       - "it fails a pull-request trigger of a workflow in the hold that lists fewer than opened, synchronize, reopened, labeled and unlabeled, unless the workflow has workflow_dispatch with a boolean held input and a sibling workflow on labeled and unlabeled tests the exact hold label and dispatches it"
       - "it accepts a guard only as a negated contains over the pull request's label names with the exact label, and a held-head check only as the positive test, in a job whose failure reaches the required check; a dispatched workflow's guard and held-head check also read the held input"
+      - "it reports a path filter on the pull-request trigger of a dispatched workflow, since a dispatched run ignores it, unless a reasoned exception accepts that"
       - "it runs in CI on changes to the workflow files, with its own self-test"
       - "expected-absent when no hold label is configured"
 

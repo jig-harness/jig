@@ -4,8 +4,8 @@
 //
 // Rules (README.md says why each exists): job-timeout, pr-concurrency,
 // required-not-path-filtered, aggregator-unless-cancelled, ci-hold-guard,
-// ci-hold-events and ci-hold-sentinel, heavy-per-change, cache-env-parity,
-// pinned-uses, push-pr-paths, catalog-paths. Every exception carries a
+// ci-hold-events, ci-hold-paths and ci-hold-sentinel, heavy-per-change,
+// cache-env-parity, pinned-uses, push-pr-paths, catalog-paths. Every exception carries a
 // reason, and one that suppresses no finding is itself a finding
 // (exception-list).
 //
@@ -75,6 +75,7 @@ const RULE_NAMES = [
   ...Object.keys(RULES).filter((rule) => rule !== "ci-hold"),
   "ci-hold-guard",
   "ci-hold-events",
+  "ci-hold-paths",
   "ci-hold-sentinel",
 ];
 

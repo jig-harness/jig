@@ -107,6 +107,9 @@ While a pull request carries it:
   reopened; or, where labels change often, a small workflow reacts to this
   label alone and dispatches them, saying whether the pull request is held>`.
 
+Only the workflows above take part: a cheap workflow with no required check
+leaves the hold and runs on each push.
+
 Only results that started after the label's removal count. A driver that
 died leaves the label on: remove it by hand
 (`<gh pr edit <PR> --remove-label ci:hold>`); never rerun the held run, which

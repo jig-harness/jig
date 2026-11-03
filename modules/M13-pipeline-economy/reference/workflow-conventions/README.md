@@ -132,7 +132,15 @@ recognize is a finding to rewrite or excuse, never a pass.
   workflow that has the trigger with no such reaction is held to the first form.
   A `types:` that is not a list of names could not be checked. A pull-request
   workflow with no heavy work and no required check is outside the hold and
-  needs none of this.
+  needs none of this, so a cheap workflow leaves the hold by dropping its label
+  types, its guard and its `heavy` entry, with no exception.
+- `ci-hold-paths`: a workflow in the second form has no `paths` or
+  `paths-ignore` on its `pull_request` or `pull_request_target` trigger. A
+  dispatched run ignores the filter, so the release runs the workflow whatever
+  the pull request changed, and nothing fails to say so. Select jobs inside the
+  run and drop the filter, take the workflow out of the hold, or, where running
+  it on every release is worth it, record that in the exception list with the
+  reason. The first form needs none of this: a label event respects the filter.
 - `ci-hold-guard`: every heavy job (see below) of a pull-request workflow
   skips while the label is present, and so does every job of a pull-request
   workflow that calls a heavy workflow of the repository, directly or
@@ -336,7 +344,8 @@ step fails or read what it says: its script must exit non-zero with a
 message that names the label to remove, which review checks. Of the workflow
 that dispatches a held run, it reads the file name and the word `held`, not
 what value the step passes, and it does not check that the dispatched run tests
-the pull request's merge. Whether a concurrency key
+the pull request's merge, or that a `workflow_dispatch` the workflow already had
+does nothing a hold must not trigger. Whether a concurrency key
 covers what it cancels, and whether an aggregator's script judges each result
 correctly, stay with review.
 
