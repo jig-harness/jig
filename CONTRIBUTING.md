@@ -381,9 +381,11 @@ setting): adding those layers to Jig is future work.
 `bun run quality` (M1's [ratchet gate](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md))
 fails a change that adds a finding to a rule at `warn` in `biome.json`, to a
 flag in `tsconfig.ratchet.json`, a suppression comment, the total source
-lines above the 1000-line limit per file, or any plugin skill file's count of
-a skill-authoring rule (M0's check, compared per file), measured against the
-merge base.
+lines above the 1000-line limit per file, any plugin skill file's count of
+a skill-authoring rule (M0's check, compared per file), or a visitor
+document's count of findings under the [voice guide](docs/VOICE.md)'s caps
+(`scripts/check-voice.ts`, which the gates also run to report each count),
+measured against the merge base.
 The size counter covers source and test code, including website
 styles and templates; it excludes fixtures, seeds, vendored code and build
 outputs. Split by responsibility at the source. Do not pad the exclusion
