@@ -19,7 +19,7 @@ import {
 /** Who runs a station: a skill, the arbiter agent, a tool, a person, or nothing yet. */
 export type Actor =
   | { kind: "skill" | "agent"; name: string; note?: string }
-  | { kind: "tool"; name: string; note: string }
+  | { kind: "tool"; name: string; note: string; href?: string }
   | { kind: "person"; note?: string }
   | { kind: "todo"; item: string; text: string; note?: string };
 
@@ -107,13 +107,6 @@ const DESIGN_STAGE: Record<string, number> = {
  */
 export const NOT_BUILT: Record<string, Actor[]> = {
   a5: [{ kind: "todo", item: "Later", text: "epic planning on the tracker" }],
-  b1: [
-    {
-      kind: "todo",
-      item: "33",
-      text: "a dispatcher that starts the line's stations with nobody at the keyboard",
-    },
-  ],
   b6: [
     {
       kind: "todo",
@@ -213,6 +206,20 @@ export const VERIFY_WHEN: Record<string, { at: number[]; what: string }> = {
 /** One actor a "Run by" cell's match names. */
 function actorFromMatch(m: RegExpMatchArray): Actor {
   if (m[0] === "a person") return { kind: "person" };
+  if (m[0] === "The repository's follow-up command")
+    return {
+      kind: "tool",
+      name: "repository follow-up",
+      note: "supplied by the repository; started by a person or the dispatcher",
+      href: "/factory/execution/#execution",
+    };
+  if (m[0] === "[dispatcher]")
+    return {
+      kind: "tool",
+      name: "dispatcher",
+      note: "starts the repository's follow-up command",
+      href: "/adopt/plugin/#the-dispatcher",
+    };
   if (m[0] === "[launcher]")
     return {
       kind: "tool",
@@ -234,7 +241,7 @@ const actorKey = (a: Actor) =>
 /** The actors a "Run by" cell names, in order, each once. */
 function actorsOf(cell: string): Actor[] {
   const re =
-    /\[`([a-z-]+)`\]\(plugin\/(skills|agents)\/|`([a-z-]+)`('\s*deferral)?|\ba person\b|\[launcher\]/g;
+    /\[`([a-z-]+)`\]\(plugin\/(skills|agents)\/|`([a-z-]+)`('\s*deferral)?|\ba person\b|\[launcher\]|The repository's follow-up command|\[dispatcher\]/g;
   const all = [...cell.matchAll(re)].map(actorFromMatch);
   return all.filter(
     (a, i) => all.findIndex((b) => actorKey(b) === actorKey(a)) === i,
@@ -372,7 +379,9 @@ function executionParts(exec: string) {
     })),
     lineLead: startingWith(ep, "The plugin runs that loop"),
     line: tableRows(tableOf(exec.slice(exec.indexOf("| #")))).map(lineStation),
-    lineAfter: startingWith(ep, "Follow-up items"),
+    lineAfter: ep
+      .slice(ep.findIndex((p) => p.startsWith("Follow-up items")))
+      .join("\n\n"),
   };
 }
 
