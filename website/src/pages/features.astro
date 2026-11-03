@@ -32,6 +32,7 @@ const list = await Promise.all(
       n: i + 1,
       id,
       plate,
+      problemHtml: `“${await mdInline(x.problem, FROM)}”`,
       bodyHtml: await md(x.body, FROM),
       practiceHtml: await mdInline(besideModules(x.practice), FROM),
       runs: x.skills.map(skillActor),
@@ -65,6 +66,7 @@ const list = await Promise.all(
             <li class="card">
               <span class="card-plate"><Plate name={x.plate} /></span>
               <span class="card-text">
+                <span class="card-problem" set:html={x.problemHtml} />
                 <a class="card-link" href={`#${x.id}`}>
                   <span class="num">{String(x.n).padStart(2, "0")}</span>
                   <span class="card-title">{x.title}</span>
@@ -96,6 +98,9 @@ const list = await Promise.all(
               </h2>
               <span class="feature-plate"><Plate name={x.plate} /></span>
             </div>
+            <blockquote class="problem">
+              <p set:html={x.problemHtml} />
+            </blockquote>
             <div class="prose" set:html={x.bodyHtml} />
             <dl class="rail">
               {x.runs.length > 0 && (
@@ -211,6 +216,13 @@ const list = await Promise.all(
     gap: 10px;
     min-width: 0;
   }
+  .card-problem {
+    font-family: var(--serif);
+    font-size: 14.5px;
+    line-height: 1.4;
+    color: var(--muted);
+    text-wrap: pretty;
+  }
   .card-link {
     display: flex;
     flex-direction: column;
@@ -279,6 +291,19 @@ const list = await Promise.all(
   .feature-plate {
     flex: none;
     width: 112px;
+  }
+  .problem {
+    margin: 0 0 18px;
+    padding: 2px 0 2px 16px;
+    border-left: 3px solid var(--accent);
+    max-width: 62ch;
+  }
+  .problem p {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 19px;
+    line-height: 1.4;
+    text-wrap: pretty;
   }
   .rail {
     margin: 4px 0 18px;

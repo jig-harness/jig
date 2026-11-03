@@ -58,7 +58,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
 | `/` | README, FACTORY.md, profiles | the evaluator's path: the plain statement and two reader paths beside the jig, a model drawn as a technical drawing that the first stretch of scrolling closes and the pointer swivels; the factory miniature; the map strip (the compact module map, starting on Team/Standard, each row opening its module's popover, with what a filled cell means); the limits; the enforcement ladder; the profiles; the day-one audit text; the ways to use Jig, one plate each; and where to start, above the foundation plate rising from the page's foot |
-| `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, number, title and skill chips) linking to its section, then one section per feature: its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
+| `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, its problem line, number, title and skill chips) linking to its section, then one section per feature: its problem line as a quotation, its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
 | `/modules/<Mn>/mappings/` | mappings.md | the whole file, for links that name it |
@@ -189,19 +189,20 @@ subjects:
 | `toolwall` | the features page's intro, 16:9 | a pegboard tool wall with tools hung above their painted outlines, two outlines empty |
 | `theodolite` | feature 1, an audit of where you stand, 1:1 | a surveyor's theodolite on a tripod with a folded measuring staff |
 | `crate` | feature 2, a work item carried from pickup to merge, 1:1 | a tagged wooden crate on a roller conveyor |
-| `sieves` | feature 3, review in tiers with an arbiter, 1:1 | three stacked sieves over a tray, a balance scale beside them |
-| `ratchet` | feature 4, a learning loop built into the process, 1:1 | a ratchet wheel with its pawl engaged |
-| `ledger` | feature 5, decisions recorded, found again, turned into checks, 1:1 | an open bound ledger with a ribbon, a hand stamp and ink pad |
-| `pantograph` | feature 6, design and planning grounded in the repository, 1:1 | a pantograph copying a small drawing larger on a drawing board |
-| `stepladder` | feature 7, gates that ship with their tests, 1:1 | a five-rung stepladder with a plug gauge on its top step |
-| `spindle` | feature 8, change notes and a changelog, 1:1 | a desk spindle holding a stack of impaled notes, one note waiting |
-| `bays` | feature 9, workspaces for many agents on one machine, 1:1 | a long bench divided into four bays, each with a vise and a lamp |
-| `stencils` | feature 10, one configuration file read in layers, 1:1 | three stacked stencil plates with offset openings |
-| `scraper` | feature 11, documents that say what is true now, 1:1 | a drawing board with an erasing knife and its shavings |
-| `wrenches` | feature 12, adopt one module at a time, 1:1 | three sizes of one wrench on a pegboard, a hand taking the middle one |
+| `sieves` | feature 4, review in tiers with an arbiter, 1:1 | three stacked sieves over a tray, a balance scale beside them |
+| `ratchet` | feature 5, a learning loop built into the process, 1:1 | a ratchet wheel with its pawl engaged |
+| `ledger` | feature 6, decisions recorded, found again, turned into checks, 1:1 | an open bound ledger with a ribbon, a hand stamp and ink pad |
+| `pantograph` | feature 7, design and planning grounded in the repository, 1:1 | a pantograph copying a small drawing larger on a drawing board |
+| `stepladder` | feature 8, gates that ship with their tests, 1:1 | a five-rung stepladder with a plug gauge on its top step |
+| `spindle` | feature 9, change notes and a changelog, 1:1 | a desk spindle holding a stack of impaled notes, one note waiting |
+| `bays` | feature 10, workspaces for many agents on one machine, 1:1 | a long bench divided into four bays, each with a vise and a lamp |
+| `stencils` | feature 11, one configuration file read in layers, 1:1 | three stacked stencil plates with offset openings |
+| `scraper` | feature 12, documents that say what is true now, 1:1 | a drawing board with an erasing knife and its shavings |
+| `wrenches` | feature 13, adopt one module at a time, 1:1 | three sizes of one wrench on a pegboard, a hand taking the middle one |
 | `footing` | not yet drawn: the home page's foot, 3:1, in place of `slab` | a wide cross-section of the ground under a building: a concrete slab on driven piles, service pipes and conduits running the width of the drawing beneath it, and a scaffolding lattice standing on the slab at the right, cut by the drawing's upper edge |
 | `escapement` | not yet drawn: the unattended page's intro, 16:9, in place of `line` | a clockwork escapement driving a long shaft through three bearing stands |
-| `numberer` | not yet placed: FEATURES.md's section on change notes and the `changelog` skill, 16:9 | an automatic numbering stamp on a stack of slips, one stamped slip on a booklet |
+| `timer` | not yet drawn: feature 3, a line that runs with nobody at the keyboard, 1:1, in place of `numberer` | a wall-mounted clockwork timer switch, its dial marked in hours, a lever beside it |
+| `numberer` | feature 3 until `timer` is drawn; drawn for FEATURES.md's section on change notes and the `changelog` skill, 16:9 | an automatic numbering stamp on a stack of slips, one stamped slip on a booklet |
 
 #### The jig's model
 
