@@ -409,7 +409,9 @@ development and shipped as a version.
   unreadable mailbox stops the drive with exit 1. The
   [CI hold](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a label
   (`ci.hold_label`) the drive puts on the pull request between rounds so
-  the repository's workflows skip their expensive jobs;
+  the repository's workflows skip their expensive jobs (they learn of it from
+  label events or from a small workflow that reacts to the label by starting
+  them; either way `skills/drive-pr` reads only the check runs on the head);
   `skills/drive-pr/scripts/ci-hold.ts` adds and removes it, using the
   label's own timeline event as the proof that the drive, not someone
   else, made the change it undoes.

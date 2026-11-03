@@ -1261,7 +1261,9 @@ make, use the entry's term instead.
   *held-head check*); removing it runs every required check again on the
   same head, and only results that started after the removal count. A *PR
   drive loop* applies it between review rounds and removes it at
-  convergence. The practice is
+  convergence. Where labels change often, a small workflow reacts to this
+  label alone and starts the others, so no other label starts or cancels a
+  run. The practice is
   [M13's](modules/M13-pipeline-economy/README.md#7-hold); drive-pr's
   `ci.hold_label` is its driver side.
 - **Drive mailbox** — the one way to reach a running *PR drive loop* from

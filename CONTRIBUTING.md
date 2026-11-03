@@ -88,7 +88,9 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    while it is on, the `gates` check fails without running the jobs, and
    removing it runs them in full. A drive that stopped can leave the label
    behind; remove it by hand (`gh pr edit <PR> --remove-label ci:hold`),
-   never by rerunning the held run.
+   never by rerunning the held run. `.github/workflows/ci-hold.yml` starts
+   those runs: no other label change starts or cancels a gates run, and on a
+   pull request from a fork this one cannot either, so there a push runs CI.
 4. The pull request may merge once a round after Ready has settled: every
    reviewer has reported on the current head, no thread or summary finding is
    left unanswered, and the required checks are green. A person merges; an

@@ -33,12 +33,17 @@ on:
   pull_request:
     branches: [<default-branch>]
     types: [opened, synchronize, reopened]
-    # CI hold (opt in; Jig module M13, piece 7): with a hold label, list both
-    # label transitions too. Applying the label fires only `labeled`, so
-    # without it the held head keeps its pre-hold result; removing it fires
-    # only `unlabeled`, so without it nothing runs again on the released head.
-    # Listing any type replaces the three defaults, so they stay listed:
+    # CI hold (opt in; Jig module M13, piece 7): with a hold label, both label
+    # transitions must start this workflow. Applying the label fires only
+    # `labeled`, so without it the held head keeps its pre-hold result; removing
+    # it fires only `unlabeled`, so without it nothing runs again on the released
+    # head. Where labels rarely change, list both here; listing any type replaces
+    # the three defaults, so they stay listed:
     #   types: [opened, synchronize, reopened, labeled, unlabeled]
+    # Every label change then runs the whole workflow. Where labels change often,
+    # keep the three types above and have a small workflow react to the hold
+    # label alone by dispatching this one, with `pr` and `held` inputs (M13's
+    # mappings.md gives the shape, and what such a run must check out).
 
 # Cancel in-progress runs for the same PR when new commits are pushed.
 concurrency:

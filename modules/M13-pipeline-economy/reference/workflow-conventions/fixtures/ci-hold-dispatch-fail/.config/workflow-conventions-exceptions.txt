@@ -1,0 +1,3 @@
+# The merge waits for the end-to-end suite; the CI hold runs it once per
+# review instead of on every push.
+heavy-per-change .github/workflows/ci.yml e2e

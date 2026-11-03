@@ -259,7 +259,10 @@ checked. For each workflow the change touches:
   names do not, and the expression language has no hash to encode around
   it, so two dispatches naming `Release` and `release` would share one group
   and cancel each other. Two deliberate manual runs both running is the
-  harmless outcome; one dropped is not.
+  harmless outcome; one dropped is not. The exception is a run a workflow
+  dispatches in place of a pull request's own, as M13's CI hold can: it shares
+  that pull request's group through a `type: number` input, since the newer
+  of the two covers the older.
 - **A schedule and a manual run on the same ref** are separated by the
   event name in the key, so a manual backfill never cancels the scheduled
   run; a dispatch that operates on another ref takes it as an input and is

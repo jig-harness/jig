@@ -420,12 +420,21 @@ const LABELS = "github\\.event\\.pull_request\\.labels\\.\\*\\.name";
 const labelTest = (label: string) =>
   `contains\\(\\s*${LABELS}\\s*,\\s*'${escapeRegExp(label)}'\\s*\\)`;
 
+/** The input a dispatched run learns the hold from. */
+const HELD_INPUT = "inputs\\.held";
+const ORS_HELD = `\\s*\\|\\|\\s*${HELD_INPUT}`;
+
 /** Whether an `if:` is nothing but a positive test for the label:
- * `contains(<labels>, '<label>')`, optionally inside `\${{ }}`. Any other
- * spelling (negated, compared with false, combined) is not taken as a
- * sentinel: a missed sentinel is a finding, a misread one a false pass. */
-const onlyWhenHeld = (cond: string, label: string) =>
-  new RegExp(`^${labelTest(label)}$`).test(bare(cond));
+ * `contains(<labels>, '<label>')`, optionally inside `\${{ }}`, optionally
+ * with `|| inputs.held` after it, which can only fire it more often; a run the
+ * hold label dispatches (`dispatched`) needs that part, since its event holds
+ * no labels. Any other spelling (negated, compared with false, combined) is
+ * not taken as a sentinel: a missed sentinel is a finding, a misread one a
+ * false pass. */
+const onlyWhenHeld = (cond: string, label: string, dispatched: boolean) =>
+  new RegExp(
+    `^${labelTest(label)}${dispatched ? ORS_HELD : `(?:${ORS_HELD})?`}$`,
+  ).test(bare(cond));
 
 /** Whether an `if:` skips the job while the label is present: one of its
  * `&&`-joined terms is exactly `!contains(<labels>, '<label>')` or
@@ -435,6 +444,13 @@ const onlyWhenHeld = (cond: string, label: string) =>
 function guarded(cond: string, label: string): boolean {
   const test = labelTest(label);
   const term = new RegExp(`^!\\s*(?:${test}|\\(\\s*${test}\\s*\\))$`);
+  return conjuncts(bare(cond))?.some((t) => term.test(t)) ?? false;
+}
+
+/** Whether an `if:` skips the job on a run dispatched as held: one of its
+ * `&&`-joined terms is exactly `!inputs.held`. */
+function skipsHeldRun(cond: string): boolean {
+  const term = new RegExp(`^!\\s*${HELD_INPUT}$`);
   return conjuncts(bare(cond))?.some((t) => term.test(t)) ?? false;
 }
 
@@ -463,11 +479,11 @@ const runsWhileHeld = (job: Job) =>
  * and one of its `run:` steps runs only then. A failure the job or step
  * tolerates (`continue-on-error`) fails nothing, and a job a skipped need
  * skips never reaches its step. */
-function sentinel(job: Job, label: string): boolean {
+function sentinel(job: Job, label: string, dispatched: boolean): boolean {
   if (!failsOnError(job.def)) return false;
   const failing = (step: Record<string, unknown>) =>
     runs(step) && failsOnError(step);
-  if (onlyWhenHeld(condition(job), label))
+  if (onlyWhenHeld(condition(job), label, dispatched))
     return (
       !needs(job).length &&
       steps(job).some((step) => failing(step) && step.if === undefined)
@@ -478,8 +494,57 @@ function sentinel(job: Job, label: string): boolean {
       (step) =>
         failing(step) &&
         step.if !== undefined &&
-        onlyWhenHeld(String(step.if), label),
+        onlyWhenHeld(String(step.if), label, dispatched),
     )
+  );
+}
+
+/** Whether a job starts workflow `name` when exactly the hold label changes:
+ * one of its `&&`-joined conditions is `github.event.label.name == '<label>'`,
+ * and a step that always runs dispatches `name` saying whether it is held. A
+ * failure either tolerates would leave the head without the run the label
+ * owes it. */
+function reactsToLabel(job: Job, name: string, label: string): boolean {
+  if (!failsOnError(job.def)) return false;
+  const exact = new RegExp(
+    `^github\\.event\\.label\\.name\\s*==\\s*'${escapeRegExp(label)}'$`,
+  );
+  if (!conjuncts(bare(condition(job)))?.some((t) => exact.test(t)))
+    return false;
+  const file = escapeRegExp(name);
+  const call = new RegExp(
+    `gh\\s+workflow\\s+run\\s+["']?${file}["']?(?:\\s|$)|actions/workflows/${file}/dispatches`,
+  );
+  return steps(job).some(
+    (step) =>
+      runs(step) &&
+      failsOnError(step) &&
+      step.if === undefined &&
+      call.test(String(step.run)) &&
+      /\bheld\b/.test(String(step.run)),
+  );
+}
+
+/** Whether a workflow takes the hold from a sibling rather than from label
+ * events of its own: it has `workflow_dispatch` with a boolean `held` input,
+ * and another workflow on both label transitions reacts to the hold label by
+ * dispatching it. */
+function dispatchedByLabel(
+  { workflows }: Pipelines,
+  wf: Workflow,
+  label: string,
+): boolean {
+  const inputs = wf.on.workflow_dispatch?.inputs;
+  const held = isRecord(inputs) ? inputs.held : undefined;
+  if (!isRecord(held) || held.type !== "boolean") return false;
+  return workflows.some(
+    (sibling) =>
+      sibling !== wf &&
+      PR_EVENTS.some((event) => {
+        const listed = (sibling.on[event]?.types as string[] | undefined) ?? [];
+        return LABEL_TYPES.every((type) => listed.includes(type));
+      }) &&
+      sibling.jobs.some((job) => reactsToLabel(job, wf.name, label)),
   );
 }
 
@@ -528,25 +593,32 @@ function heavyOnPullRequests(pipelines: Pipelines) {
 }
 
 /** With a CI hold, heavy pull-request jobs carry its guard, every workflow
- * that takes part runs on both label transitions, and a sentinel fails a
- * required check while the label is present. */
+ * that takes part runs on both label transitions or is dispatched on them, and
+ * a sentinel fails a required check while the label is present. */
 export function ciHold(pipelines: Pipelines): Found[] {
   const label = pipelines.settings.holdLabel;
   if (!label) return [];
   const heavy = heavyOnPullRequests(pipelines);
   const unguarded = heavy.flatMap(({ wf, jobs }) => {
-    return jobs
-      .filter((job) => !guarded(condition(job), label))
-      .map((job) =>
-        at(
-          wf,
-          job,
-          "ci-hold-guard",
-        )(
-          `heavy job '${job.id}' runs on pull requests but its if: does not skip it while the hold label '${label}' is present`,
-          `skip it while the label is present, e.g. if: \${{ !contains(github.event.pull_request.labels.*.name, '${label}') }} (${README}#ci-hold)`,
-        ),
-      );
+    const dispatched = dispatchedByLabel(pipelines, wf, label);
+    return jobs.flatMap((job) => {
+      const found = at(wf, job, "ci-hold-guard");
+      if (!guarded(condition(job), label))
+        return [
+          found(
+            `heavy job '${job.id}' runs on pull requests but its if: does not skip it while the hold label '${label}' is present`,
+            `skip it while the label is present, e.g. if: \${{ !contains(github.event.pull_request.labels.*.name, '${label}') }} (${README}#ci-hold)`,
+          ),
+        ];
+      if (dispatched && !skipsHeldRun(condition(job)))
+        return [
+          found(
+            `heavy job '${job.id}' is dispatched when the hold label '${label}' changes but its if: does not skip it on a held run, whose event holds no labels`,
+            `add the term !inputs.held to its if: (${README}#ci-hold)`,
+          ),
+        ];
+      return [];
+    });
   });
   return [
     ...unguarded,
@@ -555,19 +627,16 @@ export function ciHold(pipelines: Pipelines): Found[] {
   ];
 }
 
-/** The pull-request event types a workflow that honours the hold runs on:
- * the three a trigger without `types:` runs on, since listing any replaces
- * them, and the two label transitions. Applying the label must start a run,
- * so the sentinel fails at once instead of the check keeping a pre-hold
- * result; removing it must start one, so every required check runs again on
- * the same head. */
-const HOLD_EVENT_TYPES = [
-  "opened",
-  "synchronize",
-  "reopened",
-  "labeled",
-  "unlabeled",
-];
+/** The three a trigger without `types:` runs on; listing any replaces them. */
+const OPEN_TYPES = ["opened", "synchronize", "reopened"];
+/** The two label transitions. */
+const LABEL_TYPES = ["labeled", "unlabeled"];
+/** The pull-request event types a workflow that honours the hold runs on, when
+ * no sibling dispatches it. Applying the label must start a run, so the
+ * sentinel fails at once instead of the check keeping a pre-hold result;
+ * removing it must start one, so every required check runs again on the same
+ * head. */
+const HOLD_EVENT_TYPES = [...OPEN_TYPES, ...LABEL_TYPES];
 
 /** The pull-request workflows that take part in the hold: those with a
  * guarded heavy job or a call to a heavy workflow, and those holding a
@@ -583,36 +652,48 @@ function holdParticipants(
 }
 
 /** Each pull-request trigger of a workflow that takes part in the hold lists
- * every type the hold needs. inputs.ts has checked the shape: `types` is
- * absent or a list of names. */
+ * every type the hold needs: all five, or, for a workflow a sibling dispatches
+ * on the label, the three a run needs for a push (which `types:` left out
+ * means). inputs.ts has checked the shape: `types` is absent or a list of
+ * names. */
 function missingEvents(
   pipelines: Pipelines,
   heavy: { wf: Workflow }[],
   label: string,
 ): Found[] {
-  return holdParticipants(pipelines, heavy).flatMap((wf) =>
-    PR_EVENTS.filter((event) => event in wf.on).flatMap((event): Found[] => {
-      const listed = (wf.on[event]?.types as string[] | undefined) ?? [];
-      const missing = HOLD_EVENT_TYPES.filter((t) => !listed.includes(t));
-      if (!missing.length) return [];
-      const problem = listed.length
-        ? `the workflow honours the hold label '${label}' but its ${event} trigger lists types ${listed.join(", ")} and not ${missing.join(", ")}`
-        : `the workflow honours the hold label '${label}' but its ${event} trigger has no types:, so it never runs when the label is applied or removed`;
-      return [
-        {
-          ...at(
-            wf,
-            undefined,
-            "ci-hold-events",
-          )(
-            `${problem}: applying the label would leave the checks' pre-hold results in place, and removing it would run nothing again`,
-            `list types: [${HOLD_EVENT_TYPES.join(", ")}] under on.${event}; the guard reads the pull request's labels, so an unrelated label event still runs real CI (${README}#ci-hold)`,
-          ),
-          line: triggerLine(wf, event),
-        },
-      ];
-    }),
-  );
+  return holdParticipants(pipelines, heavy).flatMap((wf) => {
+    const dispatched = dispatchedByLabel(pipelines, wf, label);
+    return PR_EVENTS.filter((event) => event in wf.on).flatMap(
+      (event): Found[] => {
+        const listed = (wf.on[event]?.types as string[] | undefined) ?? [];
+        if (dispatched && !listed.length) return [];
+        const missing = (dispatched ? OPEN_TYPES : HOLD_EVENT_TYPES).filter(
+          (t) => !listed.includes(t),
+        );
+        if (!missing.length) return [];
+        const problem = listed.length
+          ? `the workflow honours the hold label '${label}' but its ${event} trigger lists types ${listed.join(", ")} and not ${missing.join(", ")}`
+          : `the workflow honours the hold label '${label}' but its ${event} trigger has no types:, so it never runs when the label is applied or removed`;
+        return [
+          {
+            ...at(
+              wf,
+              undefined,
+              "ci-hold-events",
+            )(
+              dispatched
+                ? `${problem}: a push would leave the checks' earlier results in place`
+                : `${problem}: applying the label would leave the checks' pre-hold results in place, and removing it would run nothing again, since no workflow reacts to the label by dispatching it`,
+              dispatched
+                ? `list types: [${OPEN_TYPES.join(", ")}] under on.${event}, or leave types: out (${README}#ci-hold)`
+                : `list types: [${HOLD_EVENT_TYPES.join(", ")}] under on.${event}, so every label event runs real CI; or, where labels change often, give the workflow workflow_dispatch with a boolean input held, and add a workflow on labeled and unlabeled whose job tests github.event.label.name == '${label}' and dispatches this one (${README}#ci-hold)`,
+            ),
+            line: triggerLine(wf, event),
+          },
+        ];
+      },
+    );
+  });
 }
 
 /** The jobs whose failure fails a required check: the required jobs, and
@@ -636,20 +717,23 @@ function gating(wf: Workflow, settings: Settings): Job[] {
   return [...reached];
 }
 
-function missingSentinel(
-  { workflows, settings }: Pipelines,
-  label: string,
-): Found[] {
-  const found = workflows
-    .filter(isPullRequest)
-    .some((wf) => gating(wf, settings).some((job) => sentinel(job, label)));
+function missingSentinel(pipelines: Pipelines, label: string): Found[] {
+  const { workflows, settings } = pipelines;
+  const pullRequest = workflows.filter(isPullRequest);
+  const dispatched = (wf: Workflow) => dispatchedByLabel(pipelines, wf, label);
+  const found = pullRequest.some((wf) =>
+    gating(wf, settings).some((job) => sentinel(job, label, dispatched(wf))),
+  );
   if (found) return [];
+  const test = `contains(github.event.pull_request.labels.*.name, '${label}')${
+    pullRequest.some(dispatched) ? " || inputs.held" : ""
+  }`;
   return [
     {
       rule: "ci-hold-sentinel",
       file: settings.jigConfig,
       problem: `ci.hold_label is '${label}' but no pull-request job fails a required check while it is present, so a held head can look mergeable`,
-      remedy: `add a step with if: contains(github.event.pull_request.labels.*.name, '${label}') that exits 1 (in the required job, optionally after cancelling its own run so it is listed as cancelled once released) and does not continue on error, in a job that runs while held: the required job or one it needs (${README}#ci-hold)`,
+      remedy: `add a step with if: ${test} that exits 1 (in the required job, optionally after cancelling its own run so it is listed as cancelled once released) and does not continue on error, in a job that runs while held: the required job or one it needs (${README}#ci-hold)`,
     },
   ];
 }

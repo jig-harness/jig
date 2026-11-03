@@ -101,14 +101,16 @@ While a pull request carries it:
   the label, never by the event that started the run;
 - `<the aggregator job>` fails, or cancels its run, at its first step with a
   message naming the label, so a held head is never mergeable;
-- every workflow above runs on `labeled` and `unlabeled` as well as on
-  `opened`, `synchronize` and `reopened`, so applying the label fails the
-  head at once and removing it runs everything again on the same head.
+- both of the label's transitions start every workflow above, so applying the
+  label fails the head at once and removing it runs everything again on the
+  same head: `<each lists labeled and unlabeled beside opened, synchronize and
+  reopened; or, where labels change often, a small workflow reacts to this
+  label alone and dispatches them, saying whether the pull request is held>`.
 
 Only results that started after the label's removal count. A driver that
 died leaves the label on: remove it by hand
 (`<gh pr edit <PR> --remove-label ci:hold>`); never rerun the held run, which
-replays the event that carried the label. Merge queue:
+replays the hold. Merge queue:
 `<how a queued pull request is released, or "no merge queue">`.
 
 ## 8. Caches
@@ -198,9 +200,9 @@ in by its due date fails the check.
       them by the resolver's selection.
 - [ ] Its placement is in the table above.
 - [ ] If a job of it is one the hold skips, or it reports a required check:
-      it runs on both label events, the skip tests the pull request's labels
-      for the hold label, and the held-head check's failure reaches the
-      required check.
+      it runs on both label events or the workflow that reacts to the hold
+      label dispatches it, the skip tests whether the pull request is held,
+      and the held-head check's failure reaches the required check.
 - [ ] If it uses a cache: the cache is in the table above with its key
       scheme and bound, its credentials are checked non-empty before the
       first task, its hit rate goes to the job summary, and its jobs are in

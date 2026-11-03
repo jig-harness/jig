@@ -1,0 +1,42 @@
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr:
+        type: number
+        required: true
+      held:
+        type: boolean
+        required: true
+concurrency:
+  group: ci-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v4
+      - run: make build
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !inputs.held }}
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v4
+      - run: make e2e
+  verdict:
+    needs: [build, e2e]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail while held
+        if: ${{ contains(github.event.pull_request.labels.*.name, 'ci:hold') || inputs.held }}
+        run: |
+          echo "::error::CI is held between review rounds: remove the ci:hold label to run every check on this head"
+          exit 1
+      - run: |
+          test "${{ needs.build.result }}" = success
+          test "${{ needs.e2e.result }}" = success
