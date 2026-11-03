@@ -22,6 +22,23 @@ success criteria list; the rest are not scored.
 | Neutral data | The prototype names no real organization, person, account or tracker key. |
 | Scenarios | Every Tweaks scenario the brief asked for is switchable, at every configured width, in both themes. |
 
+## What a block scores
+
+Three blocks have a scope a bundle can read two ways, so it is stated:
+
+- **Weight** scores the design as it would be built for production. A
+  prototype that renders through its design tool's page runtime does not fail
+  the block for that; the scorecard names the runtime dependency beside the
+  row.
+- **Truth** scores what the page claims about the backend. A capability the
+  backend does not yet have may appear in the design only when the bundle's
+  handoff lists it as a server ask; the scorecard names those asks beside the
+  row. A capability shown as existing that no ask covers fails the block.
+- **Above the fold** scores the scenarios in which the brief's content is
+  present. A scenario whose banner replaces that content (the server is
+  gone) is scored on the banner, and the scorecard names the scenario and
+  where the content falls.
+
 ## Scoring
 
 The scorecard lists each block the flow exercises with `pass` or `fail`
