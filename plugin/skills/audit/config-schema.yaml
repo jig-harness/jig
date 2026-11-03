@@ -322,7 +322,7 @@ fields:
     type: string
     pattern: "^(?!-)(?!.*\\.\\.)(?!.*//)(?!/)(?!.*/$)(?!.*\\.$)(?!(?:.*/)?\\.)(?!.*\\.lock(?:/|$))[A-Za-z0-9._/-]+$"
     default: origin
-    read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc]
+    read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc, jig]
     since: 0.94.0
 
   pull_requests.stacking:
@@ -462,7 +462,7 @@ fields:
   issue_tracker.team:
     type: string
     pattern: "^[A-Z][A-Z0-9]*$"
-    read_by: [do-item, drive-pr, review, work-batch, dispatch]
+    read_by: [do-item, drive-pr, review, work-batch, dispatch, jig]
     repository_only: true
   issue_tracker.states:
     type: map
