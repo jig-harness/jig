@@ -88,18 +88,22 @@ async function operation(admin: string): Promise<string | null> {
  * directories: the shape of a wholly ignored workspace folder that git
  * reports as one collapsed entry, hiding the `node_modules` inside it. A
  * symbolic link or any other file is local state and fails it. The walk
- * is bounded by `deadline` (checked per entry, like `worktreeActivity`) and
- * throws when it passes, so a huge ignored cache cannot hold the collector.
+ * is bounded by `deadline` (checked on entering a directory and per entry,
+ * like `worktreeActivity`) and throws when it passes, so a huge ignored cache cannot hold the collector.
  */
+function checkDeadline(deadline: number): void {
+  if (Date.now() > deadline)
+    throw new GcError("Ignored-content scan exceeded its deadline");
+}
 function onlyDependencyDirectories(
   directory: string,
   deadline: number,
 ): boolean {
+  checkDeadline(deadline);
   const children = readdirSync(directory);
   if (children.length === 0) return false;
   return children.every((child) => {
-    if (Date.now() > deadline)
-      throw new GcError("Ignored-content scan exceeded its deadline");
+    checkDeadline(deadline);
     const path = join(directory, child);
     const stat = lstatSync(path);
     if (!stat.isDirectory()) return false;
@@ -139,6 +143,7 @@ export function classifyIgnored(
   const rebuildable: string[] = [];
   const other: string[] = [];
   for (const path of paths) {
+    checkDeadline(deadline);
     const directory = path.endsWith("/") ? path.slice(0, -1) : null;
     const dependency =
       inputs &&

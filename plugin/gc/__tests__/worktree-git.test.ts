@@ -318,3 +318,15 @@ test("the ignored-content scan fails once its deadline has passed", () => {
   );
   expect(classifyIgnored(root, ["website/"]).rebuildable).toEqual(["website/"]);
 });
+
+test("the deadline also covers a direct dependency directory and an empty one", () => {
+  const root = mkdtempSync(join(tmpdir(), "gc-ignored-deadline-"));
+  mkdirSync(join(root, "node_modules"));
+  mkdirSync(join(root, "empty"));
+  writeFileSync(join(root, "package.json"), "{}\n");
+  writeFileSync(join(root, "package-lock.json"), "{}\n");
+  for (const path of ["node_modules/", "empty/"])
+    expect(() => classifyIgnored(root, [path], Date.now() - 1)).toThrow(
+      "deadline",
+    );
+});
