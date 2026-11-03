@@ -11,6 +11,8 @@ import { driverRuntime } from "./runtime.ts";
 
 import { touchLock } from "./lifecycle.ts";
 
+import { cardOnReady } from "./orca-card.ts";
+
 async function recordReadyBeforePass(
   context: DriveRoundContext,
 ): Promise<number | "continue" | null> {
@@ -187,7 +189,10 @@ async function processRecognizedReadyOutcome(
       return 1;
     }
   }
-  if (outcome === "marked") context.markedReadyThisRun = true;
+  if (outcome === "marked") {
+    context.markedReadyThisRun = true;
+    await cardOnReady(context.pr);
+  }
 
   return null;
 }

@@ -81,6 +81,11 @@ The instructions run in Bash on macOS and Linux, and PowerShell on Windows.
 Make Bun, Git and GitHub CLI available to the command tool. Codex substitutes
 the installed skill's absolute path for `${CLAUDE_SKILL_DIR}` before running a command. Generated
 JSON and comment bodies are read from files, so no Git Bash utilities are needed.
+Codex delegates with its subagent tool and the routed agent's instructions,
+falling back to the current session when that tool is unavailable. The drive
+uses Codex's pass command, started in a terminal tab or through its managed
+background command tool; see [how to start it](../drive-pr/README.md#how-to-start-it)
+for session lifetime and model overrides.
 
 Run every TypeScript script through `bun`, from the consumer repository's
 root. For example, using the installed do-item skill directory:
@@ -105,12 +110,15 @@ does. `do_item.arm_drive` in the
 default, opens a terminal tab of the pull request's workspace where the
 session can (in Orca, below) and uses the session's background execution
 elsewhere; `tab`, `background` and `print` (the command only) choose one.
-Each round's agent runs on `drive.pass_model`
-([configuration](../../CONFIGURATION.md#drive)): `sonnet`, Claude Code's
-alias for the latest Sonnet, unless you name a model, an alias or a
-routing tier, and with the extra arguments `drive.pass_args` gives its
-command (none unless the repository sets them; see
-[drive-pr](../drive-pr/README.md)). The skill reports
+A Claude Code round uses `drive.pass_model`
+([configuration](../../CONFIGURATION.md#drive)), defaulting to `sonnet`,
+and the extra arguments in `drive.pass_args` (none unless configured).
+A Codex round uses `routing.models.codex.execution`, or Codex's own
+configured model when that routing row is absent; it does not read
+`drive.pass_model` or `drive.pass_args`. For either runtime, `--pass-model`
+overrides the model for one drive, resolving a routing tier through that
+runtime's row of `routing.models` (see [drive-pr](../drive-pr/README.md)).
+The skill reports
 the command, the model, the permission mode, the driver log and the
 commands that list and stop the drive. An issue that waits on a person's
 decision gets the command only.
@@ -132,9 +140,12 @@ or stopping it.
 Run in a worktree of [Orca](https://www.onorca.dev), the skill also moves
 the worktree's card on Orca's workspace board, which the desktop app and
 Orca Mobile show: to In progress when it starts the issue, and to In review,
-with the pull request linked, once the pull request opens. Nothing turns
-this on and nothing in another runtime changes: outside Orca it makes no
-call, and an Orca call that fails only warns.
+with the pull request linked, once the pull request opens; the
+[drive](../drive-pr/README.md) moves it on from there. A
+board with custom columns maps these stages onto them in
+[`orca.board`](../../CONFIGURATION.md#orca). Nothing turns this on and
+nothing in another runtime changes: outside Orca it makes no call, and an
+Orca call that fails only warns.
 
 The workspace is also renamed as the work moves, from a template over the item key, title, pull request and a short status (`[I]`
 implementing, `[D]` driving, `[R]` ready to merge; `✅` done is reserved for

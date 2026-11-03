@@ -324,11 +324,11 @@ not resolve it either.
 |-------|------|-------------|---------|--------------|
 | `drive.validation_plan_command` | shell command | The plan is `gates.command` alone | drive-pr, fix-ci, resolve-conflicts, review, descar | Reads changed files (one per line) on stdin and prints the validation plan as JSON on stdout. The change-areas skill's resolver prints such a plan from the catalog: `bun <plugin>/skills/change-areas/scripts/resolve.ts --files - --format json`, or the repository's own [composer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) around it |
 | `drive.load_guard_command` | shell command | No load guard | drive-pr | Waits until the machine can take heavy checks |
-| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts | The repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (YAML with an `areas:` map). The [change-areas](skills/change-areas/README.md) skill validates the whole catalog against [its schema](skills/change-areas/README.md#the-catalog) and resolves a change against it. The plugin reads each area's `paths` and `generated[].source` globs, `labels`, `tracker.labels` and `tracker.flags` (`linear:` is the older spelling of the `tracker:` block) and `agent`, through one reader that refuses an area whose globs, labels or `tracker` block are malformed, with the field at fault; `agent` and the rest of the area are passed through unchecked. `resolve-conflicts` also reads each area's `generated[].outputs` and `command` (see `resolve_conflicts.generated`). `determine_agent.ts --catalog` overrides it for one run |
+| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing, no serialized areas | drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts, dispatch | The repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (YAML with an `areas:` map). The [change-areas](skills/change-areas/README.md) skill validates the whole catalog against [its schema](skills/change-areas/README.md#the-catalog) and resolves a change against it. The plugin reads each area's `paths` and `generated[].source` globs, `labels`, `tracker.labels` and `tracker.flags` (`linear:` is the older spelling of the `tracker:` block), `serialize` and `agent`, through one reader that refuses an area whose globs, labels, `tracker` block or `serialize` are malformed, with the field at fault; `agent` and the rest of the area are passed through unchecked. `resolve-conflicts` also reads each area's `generated[].outputs` and `command` (see `resolve_conflicts.generated`), and its history report proposes `serialize` for the areas its conflict hotspots lie in (`history.ts --propose-serialize`). The dispatcher reads the catalog from the default branch as the forge holds it, as it reads its `dispatch` section, so it must be a repository-relative path there; an area marked `serialize: true` has its pull requests driven one at a time ([`dispatch`](#dispatch)). `determine_agent.ts --catalog` overrides it for one run |
 | `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-item | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
 | `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops unconverged (exit `6`). The `--max-rounds` flag overrides it for one run. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
 | `drive.pass_deadline_retries` | whole number ≥ 0 | `2` | drive-pr | How many passes killed at their deadline one drive restarts from, counted in the drive state across re-arms and takeovers until the drive converges or the pull request closes: the driver reports what the killed pass left in the tree, leaves it there and starts the next round. Past this many it stops with exit `15` and says the budget is spent; `0` stops at the first. A value that is not a whole number of at least 0 stops the drive |
-| `drive.pass_model` | one word: a model id, a Claude Code alias, or a routing tier (`execution`, `strategic`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. It is Claude Code's: a Codex pass runs on its own `-m`, else the execution tier of `routing.models.codex`, else Codex's own configured model, and any other pass command chooses its own model. A value that is not one word stops the drive |
+| `drive.pass_model` | one word: a model id, a Claude Code alias, or a routing tier (`execution`, `strategic`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. The setting is Claude Code's; `--pass-model` also overrides a Codex pass and resolves tiers through `routing.models.codex`. Without that flag, a Codex pass runs on its own `-m`, else the execution tier of `routing.models.codex`, else Codex's own configured model, and any other pass command chooses its own model. A value that is not one word stops the drive |
 | `drive.pass_args` | list of words, each a string without spaces, such as `[--permission-mode, bypassPermissions]` | `[]`: the pass command carries no extra arguments | drive-pr, do-item | Extra arguments for a Claude Code pass command: the arm command both skills build carries them before `-p` (`claude --model <model> <words> -p …`), and `drive.ts` adds them before `-p` to a pass command that carries no arguments of its own. A command that carries its own (the arm command, or a re-arm or takeover command a stopped drive printed) is kept as written. The `--pass-args "<words>"` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive: one value, split on spaces, and empty for none. The driver log and the `drives.ts` listing name the [permission mode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) each pass runs in (`inherited` when the command sets none: Claude Code's own settings decide). **What setting it risks:** `--permission-mode bypassPermissions` skips the permission prompts of the unattended passes (explicit ask rules, tools that need a person and checks before removing critical paths still apply), so a pass can then write nearly anywhere, including protected paths such as `.claude/skills/**` that a pass without a terminal is otherwise denied in a prompting mode; what then limits it is the instructions the drive gives it (`guarded-push.ts` pushes to the pull request's branch only, and the bots-only rule keeps it to bot threads), which a pass follows but nothing stops it from ignoring; a repository that needs a mechanical limit adds Claude Code `permissions.deny` rules or hooks. Jig sets nothing here for a repository that did not ask. It cannot hold `--model` (set `drive.pass_model`) or `-p`/`--print` (the drive writes the prompt). A pass command that is not Claude Code's ignores the field and the driver log says so. A value that is not a list of words stops the drive with a message naming the field |
 | `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
 
@@ -453,7 +453,7 @@ same), rather than running without the repository's routing and gates.
 | `do_item.scouts` | map from agent to a list of scouts | none | do-item | Scouts that run before each agent. The key is the **agent**, not a label |
 | `do_item.gates` | list of `{labels, paths, skill}` | none | do-item | Review skills that must approve a change before it is pushed, when the issue carries one of the `labels` or the change touches one of the `paths` |
 | `do_item.execution_plan_block` | name | `execution-plan-v1` | do-item | Name of the fenced block in an epic's description that holds its machine-readable execution plan |
-| `do_item.arm_drive` | `auto`, `tab`, `background`, `print` | `auto` | do-item, drive-pr | How `/jig:do-item`'s § Arm the drive and `/jig:drive-pr`'s § Arm start the drive (both through drive-pr's `arm-drive.ts`). `auto`: in a terminal tab of the pull request's workspace where the session can open one (in an [Orca](https://www.onorca.dev) workspace on a macOS or Linux host), and with the session's background execution elsewhere, falling back to the background, and saying why, when Orca refuses the tab or the tab's drive is not listed in time. `tab`: a terminal tab, or a reported failure. `background`: the session's background execution. `print`: the command only, for a person to run. The tab is a fresh login shell of the user's, so `bun`, the agent's command (`claude` or `codex`) and the account or profile come from it, not from the session. A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the drive's command is quoted for a POSIX shell: `auto` arms in the background, and `tab` fails. The drive's pass command is the one of the agent tool the session runs in: a Codex session arms Codex's pass command, in a tab, and prints it where Claude Code would use the background. A session of any other tool prints Claude Code's command whatever the setting, and so does a human checkpoint the run has no clearance for |
+| `do_item.arm_drive` | `auto`, `tab`, `background`, `print` | `auto` | do-item, drive-pr | How `/jig:do-item`'s § Arm the drive and `/jig:drive-pr`'s § Arm start the drive (both through drive-pr's `arm-drive.ts`). `auto`: in a terminal tab of the pull request's workspace where the session can open one (in an [Orca](https://www.onorca.dev) workspace on a macOS or Linux host), and with the session's background execution elsewhere, falling back to the background, and saying why, when Orca refuses the tab or the tab's drive is not listed in time. `tab`: a terminal tab, or a reported failure. `background`: the session's background execution. `print`: the command only, for a person to run. The tab is a fresh login shell of the user's, so `bun`, the agent's command (`claude` or `codex`) and the account or profile come from it, not from the session. A Windows host opens no tab, since Orca's tab there can run `cmd.exe` or PowerShell and the drive's command is quoted for a POSIX shell: `auto` arms in the background, and `tab` fails. The drive's pass command is the one of the agent tool the session runs in: a Codex session arms Codex's pass command in a tab or through its managed background command tool. Without that tool, the caller prints the command and reports the limitation; when the host ends children with the session, keep it alive until the drive ends or use an external terminal. A session of any other tool prints Claude Code's command whatever the setting, and so does a human checkpoint the run has no clearance for |
 | `do_item.work_types` | map from a work type to fields of its row in the depth table below | The table's defaults | do-item | How much each delivery station does for an item of each type. An entry overrides single fields and keeps the rest of the row; a type outside the default list must set every field. Refused: an entry for a type outside `issue_tracker.types`, an entry for `unknown`, a field the table does not have, and a value outside a field's set. do-item prints the type and its row when it picks up an item |
 
 The routing order and the gates are explained in
@@ -521,6 +521,29 @@ directory. The title comes from a file because it is tracker text that a
 shell must not expand; `--title <text>` is for a caller that starts the
 script without a shell. `--id` is left out for a pull request that serves no
 item.
+
+## `orca`
+
+How the skills show a piece of work on [Orca](https://www.onorca.dev)'s
+workspace board, where the session runs in a terminal Orca opened. Each stage
+of the execution line moves the worktree's card: `do-item` to the
+`in_progress` stage at pickup and to `in_review` when it opens the pull
+request, and `drive-pr` to `in_review` when it marks the pull request Ready;
+`completed` is the stage a post-merge step moves it to. A drive that stops where a
+person must look (a park, a usage-limit stop, a failure stop) marks the card
+unread with the stop's one-line reason as its comment, and moves no column.
+A comment never replaces one a person has not read: while the card is
+unread, the new line is appended to its comment, which Jig's dispatcher
+notifications do too, under one lock per card.
+Outside Orca nothing is read or called, and an Orca failure only warns.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `orca.board` | map from a stage (`in_progress`, `in_review`, `completed`) to a board status id | Orca's own columns, `{in_progress: in-progress, in_review: in-review, completed: completed}` | do-item, drive-pr | The column each stage moves the card to, for a board with custom columns. An entry overrides one stage and keeps the rest; a stage outside this set, or a value that is not a status id (letters, digits, `-` and `_`), only warns and moves nothing |
+
+From the repository root, `bun "<plugin>/shared/orca-board.ts" [in-progress|in-review|completed] [--pr <number>] [--unread] [--comment <text>]`
+moves the card by hand, `<plugin>` being the installed plugin's directory.
+The stage is written with a hyphen there, as Orca's default column is named.
 
 ## `work_batch`
 
@@ -1058,12 +1081,33 @@ take commands from a person. With the default prefix:
 | `jig:converged` | the dispatcher | the drive converged at the pull request's head: a person merges |
 | `jig:parked` | the dispatcher | the drive stopped on something only a person settles |
 | `jig:stale` | the dispatcher | the drive converged, then the pull request conflicted with its base or its head moved: the dispatcher re-drives it |
+| `jig:held` | the dispatcher | the pull request waits its turn in a serialized change area (below): the dispatcher drives it once it leads |
 | `jig:followed-up` | the dispatcher | merged, and its follow-up is done |
 | `jig:drive` | a person | adopt a pull request with no drive ledger: the dispatcher arms a drive on it (the machine file's `rearm` stage), once per head commit, and replaces the label with the state label once the ledger exists |
 | `jig:hold` | a person | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it |
 
+A serialized change area (`serialize: true` on an area of the
+[change-area catalog](#drive) that `drive.change_areas_catalog` names, read
+from the default branch) holds every dispatched pull request that touches
+it but one: the one closest to merge, which the dispatcher drives as any
+other. The rest get no re-arm, takeover or re-drive while they wait, are
+reported as `held: serialized behind #N in <area>` (and, with the dispatch
+labels on, carry `jig:held`), and
+each hold's start and end is an event row in the outcome log, the end with
+how long it lasted. The order is mechanical, from the ledger and the forge:
+converged and mergeable first, then a drive in progress, then the fewest
+unresolved review threads, then the most rounds, then the oldest. When the
+leader merges or stops touching the area, the next run promotes the next.
+A pull request in two serialized areas waits unless it leads both. Only
+the dispatcher's own launches wait: a drive a person arms on a held pull
+request is not stopped, and the run reports that the area has two drives.
+A pull request whose files, threads or ledger do not read this run, or a
+catalog that does not read, leaves its group unplaced for the run, with no
+re-arm and no label written, and the next run reads it again.
+
 The ledger is the truth: each `--apply` run sets each managed pull
-request's state label from its ledger again, one forge call per pull
+request's state label from its ledger again (`jig:held` from the serialized
+areas), one forge call per pull
 request whose labels disagree, so a state label a person changed comes
 back at the next run, and the dispatcher never reads a state label to
 decide what to start. A run without `--apply`, or for a repository the
@@ -1306,6 +1350,8 @@ do_item:
 workspace_name:
   template: "{status} {id} {title}"   # [D] JIG-12 Rename workspaces
   statuses: { ready: "[R]", done: "✅" }
+orca:
+  board: { in_review: review, completed: shipped }   # custom board columns
 work_batch:
   point_budget: 16
   size_points: { xs: 1, small: 2, medium: 6 }   # keys: exactly issue_tracker.labels.batch_sizes

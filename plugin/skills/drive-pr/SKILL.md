@@ -167,6 +167,18 @@ consumer polling `--json` for one of these states will never see it there.
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
+In an [Orca](https://www.onorca.dev) worktree, `drive.ts` shows a stop a
+person must settle on the workspace card: a park, a usage-limit stop and
+every failure stop (an operational failure, a usage error, the round budget
+spent, a failed reviewer check, an unworkable conflict, an unclean converged
+worktree, a stall, a recurring pass deadline) mark the card unread with the
+stop's one-line reason as its comment, the park's question first among them;
+on a card still unread, the reason is appended to the comment a person has
+not read yet. A converged drive, a closed pull request, a stop a person asked
+for and a drive another driver holds move nothing
+(`scripts/lib/driver/orca-card.ts`). Outside Orca nothing is called, and an
+Orca failure only warns; the exit is the stop's own either way.
+
 `CONVERGED` on a PR that is **still an unmarked draft** is not returned as-is:
 `drive.ts` marks it Ready first and re-gates once (§ Drafts are driven). Its
 witnesses are all sound on a draft — the reviewer that produced them reads
@@ -344,8 +356,9 @@ named as that setting's; one that names no model is reported as none), the
 prints carries it. A Codex pass (`codex …`) runs on its own `-m`, else the
 execution tier of `routing.models.codex`, added after `exec`, else Codex's
 own configured model; `drive.pass_model` is Claude Code's and is not read for
-it. Any other pass command chooses its own model, and `--pass-model` is
-refused for every pass command but Claude Code's (exit `2`).
+it. `--pass-model` overrides either vendor's model; a Codex tier resolves
+through `routing.models.codex`. Any other pass command chooses its own
+model and refuses `--pass-model` (exit `2`).
 
 **The pass arguments.** A Claude Code pass command can carry extra words
 before `-p`, such as `--permission-mode bypassPermissions`, without which a
@@ -944,7 +957,11 @@ could forge or forget.
      printed, once, as step 5 reads a spawned driver's output. Open no
      second tab and spawn nothing.
    - `spawn` → spawn `command` with the harness's background execution
-     (Bash `run_in_background`), never blocking the session on it. When
+     (Claude Code: Bash `run_in_background`; Codex: `exec_command` with a
+     short `yield_time_ms`, keeping the returned `session_id` for
+     `write_stdin`). If the host exposes neither managed background tool,
+     print the command with that limitation and stop. Never claim it was started
+     without a handle or a completed command result. When
      `fallback` is set, `auto` meant a tab and the driver goes to the
      background instead: say why (Orca refused the tab, a Windows host, or
      a tab whose drive `drives.ts` did not list in time, whose `tail` to
@@ -957,7 +974,7 @@ could forge or forget.
      Orca, on a Windows host, or a tab Orca refused) or a setting, the model
      or the working tree cannot be read; exit `2`: a malformed command line.
 
-   **exact** — For `spawn`, pass the Bash call's `timeout` of `28800000` (8 hours) with
+   **exact** — For `spawn` in Claude Code, pass the Bash call's `timeout` of `28800000` (8 hours) with
    `run_in_background`; a drive runs up to `--max-rounds` rounds of up to 90
    minutes each, so it outlives the harness's default. Eight hours does not
    cover every drive: a quota sleep (up to `DRIVE_PR_QUOTA_MAX_SLEEP_SEC`,
@@ -1032,7 +1049,9 @@ could forge or forget.
      captured output.
    - exit `0` inside the window → the drive already reached a terminal state;
      report its own reason.
-   - still running → armed. Do not poll.
+   - still running → armed. Go on to step 6 and report; poll only after
+     that report, and only if keeping a Codex host session alive is
+     required for the command to continue (below).
 6. **Name the workspace, report and stop.** When step 4 found the drive
    `armed`, or step 5 found it still running (not refused, failed or already
    finished), name the workspace for the driving stage, in `<tree>`, with the
@@ -1064,16 +1083,19 @@ could forge or forget.
    and can be opened for append with `bun "${CLAUDE_SKILL_DIR}/scripts/portable.ts" check-log <path>` before
    quoting it — `drive.ts` prints the path before taking its locks and its log
    writes are best effort — never a `<state dir>` template), and the handles
-   `handles.list` (list) and `handles.stop` (stop). Then end the turn. After handing over, do
+   `handles.list` (list) and `handles.stop` (stop). End the turn only when doing
+   so preserves the driver (see the Codex session lifetime below). After handing over, do
    not touch the drive's state, threads, or worktree: the driver owns them.
 
 The documented pass commands are Claude Code's `claude -p` and Codex's
 `codex exec` (§ Running it), and `arm-drive.ts` builds the one of the agent
-tool this session runs in. In a Codex session it opens a terminal tab where
-Orca can and otherwise answers `print`, since the background way is Claude
-Code's background execution: print the command and say why, as
-`/jig:do-item` does. `--pass-model` and `--pass-args` are Claude Code's and
-are refused there (exit `2`). In any other agent tool, do not arm:
+tool this session runs in. A Codex session opens a terminal tab where
+Orca can and otherwise receives `spawn`. Poll its command handle once for
+the arm check. If the host ends child processes with the session, keep the
+session alive and poll until the drive ends, or use an external terminal;
+a command handle alone does not prove the drive survives session exit.
+`--pass-model` supports either vendor; `--pass-args` remains Claude Code's
+and is refused for Codex (exit `2`). In any other agent tool, do not arm:
 `arm-drive.ts` answers `print` with Claude Code's command, so print it, say
 why, and do not substitute a guessed pass command. A person can put their
 own tool's command after the `--` and run it.
@@ -2720,6 +2742,14 @@ bun "${CLAUDE_SKILL_DIR}/scripts/mark-ready.ts" [PR] --round N --reason "round N
 `--round N` applies `pull_requests.mark_ready`: before the configured round,
 or when the repository marks Ready only at convergence or never, it prints
 `not-due` and does nothing.
+
+When it prints `marked`, move the Orca workspace card to the review stage with
+the pull request linked, as `drive.ts` does itself; outside Orca it does
+nothing, and an Orca failure only warns (exit `0`):
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-review --pr <PR>
+```
 
 **At convergence, in an interactive round.** When § 1's gate answers
 `CONVERGED` (exit 3) on a PR that is still a draft, there is no round to work,

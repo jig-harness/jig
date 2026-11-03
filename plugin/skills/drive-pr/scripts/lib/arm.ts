@@ -14,10 +14,9 @@
  *
  * The pass command is the session's own agent tool's documented one
  * (`pass-command.ts`): Claude Code's in a Claude Code session, Codex's in a
- * Codex session. A Codex session opens a tab where it can and otherwise
- * prints the command: the background way is Claude Code's background
- * execution. A session of any other tool, or one no harness can be read
- * for, prints Claude Code's command only: a guessed one for another agent
+ * Codex session. Both use a tab where available, otherwise the
+ * session's managed background execution. A session of any other tool,
+ * or one no harness can be read for, prints Claude Code's command only: a guessed one for another agent
  * tool is worse than one left for a person to run.
  *
  * In a tab the drive outlives the session and has a window a person can
@@ -255,17 +254,11 @@ export function chooseWay(
       way: "print",
       reason: `the documented pass commands are Claude Code's and Codex's, and this session runs ${detectHarness(env)?.name ?? "no agent harness this can identify"}: Claude Code's command only, for a person to run`,
     };
-  const choice = claudeOrTab(setting, env, platform);
-  if (vendor === "claude" || "error" in choice || choice.way !== "background")
-    return choice;
-  return {
-    way: "print",
-    reason: `${choice.reason}; the background way is Claude Code's background execution, and this session is Codex's: the command only, for a person to run`,
-  };
+  return tabOrBackground(setting, env, platform);
 }
 
 /** The way to arm from a session that can open a tab or run in the background. */
-function claudeOrTab(
+function tabOrBackground(
   setting: Exclude<ArmDriveMode, "print">,
   env: Env,
   platform: NodeJS.Platform,
@@ -559,29 +552,16 @@ export async function arm(
     commandLine([...sessionOverrides(env), ...base.argv]),
     deps,
   );
-  return tabReport(chosen, outcome, setting.value === "auto", vendor);
+  return tabReport(chosen, outcome, setting.value === "auto");
 }
 
 /**
- * `report` sent to the background instead of a tab, saying why; from a
- * Codex session, whose background way is not Claude Code's, the command is
- * printed instead.
+ * `report` sent to the session's background execution instead of a tab, saying why.
  */
 function fallBack(
   report: ArmReport,
   why: string,
-  vendor: AccountVendor,
 ): { report: ArmReport; exit: number } {
-  if (vendor === "codex")
-    return {
-      report: {
-        ...report,
-        way: "print",
-        status: "print",
-        fallback: `${why}; the background way is Claude Code's background execution, so the command is printed instead`,
-      },
-      exit: 0,
-    };
   return {
     report: {
       ...report,
@@ -595,15 +575,13 @@ function fallBack(
 
 /**
  * The report after a tab. Under `auto`, a tab that did not open, or whose
- * drive was not listed in time, falls back to the background (to the
- * printed command from a Codex session): a drive the tab did start holds
- * the PR's lock, so the second refuses (exit `11`).
+ * drive was not listed in time, falls back to the background: a drive the
+ * tab did start holds the PR's lock, so the second refuses (exit `11`).
  */
 function tabReport(
   chosen: ArmReport,
   outcome: TabOutcome,
   auto: boolean,
-  vendor: AccountVendor,
 ): { report: ArmReport; exit: number } {
   const tab = { title: tabTitle(chosen.pr), terminal: null };
   switch (outcome.status) {
@@ -642,12 +620,11 @@ function tabReport(
         return fallBack(
           seen,
           "the tab opened, but drives.ts did not list its drive in time (tail has what the tab printed)",
-          vendor,
         );
       return { report: { ...seen, status: "unconfirmed" }, exit: 0 };
     }
     case "failed":
-      if (auto) return fallBack(chosen, outcome.why, vendor);
+      if (auto) return fallBack(chosen, outcome.why);
       return {
         report: { ...chosen, status: "failed", reason: outcome.why },
         exit: 1,

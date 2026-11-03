@@ -21,6 +21,7 @@
  * expectation.
  */
 import { swallow } from "../../shared/errors.ts";
+import { unresolvedThreadCount } from "./forge.ts";
 import {
   isDrive,
   type ReadRecord,
@@ -42,6 +43,21 @@ import type {
 /** A drive record still running: its wrapper alive. */
 function runningDrive(r: ReadRecord): boolean {
   return isDrive(r.record) && r.state.kind === "alive";
+}
+
+/** A reader of unresolved thread counts that asks the forge once per pull request, for every consumer of one tick. */
+export function tickThreadReader(
+  slug: string,
+): (pr: number) => Promise<number> {
+  const reads = new Map<number, Promise<number>>();
+  return (pr) => {
+    let read = reads.get(pr);
+    if (read === undefined) {
+      read = unresolvedThreadCount(slug, pr);
+      reads.set(pr, read);
+    }
+    return read;
+  };
 }
 
 /**
