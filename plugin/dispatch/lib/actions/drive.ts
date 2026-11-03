@@ -213,6 +213,7 @@ async function launchOne(
       configDir: slots.account.configDir,
       wallBackoffMs: state.machine.wallBackoffMs,
       passTimeoutSec: state.passDeadlineSec,
+      codexBypass: state.codexOptIn.on,
       replaces: action.takeover ?? null,
       facts: action.facts ?? factsOf(pr),
       createdAt: new Date().toISOString(),

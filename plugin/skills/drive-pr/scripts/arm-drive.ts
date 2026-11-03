@@ -22,15 +22,18 @@
  *   --pass-args   extra arguments for the pass command, for this drive: one
  *                 value, split on whitespace (`"--permission-mode
  *                 bypassPermissions"`); an empty value means none. Default
- *                 `drive.pass_args`, else none. The words are written into
- *                 the pass command before `-p`, and the flag is forwarded to
- *                 `drive.ts`, as `--pass-model` is
+ *                 `drive.pass_args`, which only the host's user file or one
+ *                 run's environment may set, else none. The words are written
+ *                 into the pass command before `-p`, and the flag is
+ *                 forwarded to `drive.ts`, as `--pass-model` is
  *   --max-rounds, --keep-draft, --handoff-at  forwarded to `drive.ts`
  *
  * The pass command is the session's own agent tool's (`lib/arm.ts`): in a
  * Codex session it is Codex's, on the execution tier of
  * `routing.models.codex` (else Codex's own configured model), and
- * `--pass-model` overrides it, resolving tiers through the Codex row.
+ * `--pass-model` overrides it, resolving tiers through the Codex row. It
+ * carries `--dangerously-bypass-approvals-and-sandbox` only on a host that set
+ * `drive.codex_bypass`, and Codex's own configuration decides otherwise.
  * `--pass-args` remains Claude Code's and is refused for Codex.
  *
  * Prints one JSON object (`ArmReport` in `lib/arm.ts`): `status` says what
@@ -69,6 +72,7 @@ import type { AccountVendor } from "./lib/identity.ts";
 import {
   type ArmDriveMode,
   armDriveSetting,
+  codexBypassSetting,
   DEFAULT_ARM_DRIVE,
   DEFAULT_PASS_MODEL,
   isArmDriveMode,
@@ -237,7 +241,8 @@ async function readInputs(
   const armDrive = attempt(() => setting(args.mode));
   const model = attempt(() => passModel(args.passModel, vendor));
   const passArgs = attempt(() => extraPassArgs(args.passArgs, vendor));
-  const problems = [tree, armDrive, model, passArgs].filter(
+  const codexBypass = attempt(() => vendor === "codex" && codexBypassSetting());
+  const problems = [tree, armDrive, model, passArgs, codexBypass].filter(
     (v) => v instanceof Error,
   );
   const problem = problems[0];
@@ -246,13 +251,15 @@ async function readInputs(
     !(tree instanceof Error) &&
     !(armDrive instanceof Error) &&
     !(model instanceof Error) &&
-    !(passArgs instanceof Error)
+    !(passArgs instanceof Error) &&
+    !(codexBypass instanceof Error)
   )
     return {
       request: { pr: args.pr, tree, forward: args.forward },
       setting: armDrive,
       model,
       passArgs,
+      codexBypass,
       env: process.env,
     };
   const noArgs: PassArgs = {
@@ -272,6 +279,7 @@ async function readInputs(
         model: model instanceof Error ? fallbackModel(vendor) : model,
         passArgs: passArgs instanceof Error ? noArgs : passArgs,
         vendor,
+        codexBypass: codexBypass === true,
       },
       `arm-drive.ts: ${problem?.message ?? "unknown"}`,
     ),

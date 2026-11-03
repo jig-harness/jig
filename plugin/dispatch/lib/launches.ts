@@ -96,6 +96,8 @@ export interface LaunchRecord {
   wallBackoffMs: number;
   /** For a drive: the pass deadline, in seconds (`0` for none), it was admitted under and runs under (`drive.ts --pass-timeout`); absent on a record written before it was kept. */
   passTimeoutSec?: number | null;
+  /** For a drive: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
+  codexBypass?: boolean;
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */
   replaces: string | null;
   /** The ledger facts the launch acted on: the same facts after a refusal are never launched again. */
@@ -338,6 +340,8 @@ function optionalFields(value: Record<string, unknown>): boolean {
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
     optionalSeconds(value.passTimeoutSec) &&
+    (value.codexBypass === undefined ||
+      typeof value.codexBypass === "boolean") &&
     optionalTime(value.endedAt) &&
     optionalTime(value.openedAt) &&
     isRedrive(value.redrive)

@@ -160,7 +160,9 @@ capped number of sessions at once, each one a [slot](GLOSSARY.md). When a
 session stops on an account's usage limit, the dispatcher records a
 [wall](GLOSSARY.md). It leaves the account out of every launch until the
 limit resets. A drive stopped there is re-armed on another account at the
-next tick.
+next tick. A Codex account is admitted only on a machine that
+[opted in](plugin/CONFIGURATION.md#a-hosts-opt-in-to-bypass) to running Codex
+without its sandbox, since nobody is there to approve.
 
 Once a limit resets, an interactive session the dispatcher started whose last
 record is still that limit gets the one [nudge](GLOSSARY.md) the dispatcher

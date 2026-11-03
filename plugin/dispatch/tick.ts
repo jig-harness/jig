@@ -66,7 +66,7 @@ import {
   type FreshDrive,
 } from "./lib/actions/drive.ts";
 import { applyFollowups } from "./lib/actions/followup.ts";
-import { outOfTime, rotated } from "./lib/actions/launch.ts";
+import { accountsReport, outOfTime, rotated } from "./lib/actions/launch.ts";
 import {
   heldPullRequests,
   planLabels,
@@ -77,12 +77,7 @@ import { carriesSet, hasCommand, type LabelConfig } from "./lib/labels.ts";
 import { applyNotices } from "./lib/actions/notify.ts";
 import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
-import {
-  lastAccount,
-  type NotAdmitted,
-  notAdmitted,
-  slotTable,
-} from "./lib/accounts.ts";
+import { hostCodexOptIn, lastAccount, slotTable } from "./lib/accounts.ts";
 import { readMarkers } from "./lib/followup-marker.ts";
 import { readOutcomes, settleFollowups } from "./lib/followup-outcomes.ts";
 import { readIdle, updateIdle } from "./lib/idle.ts";
@@ -909,6 +904,7 @@ function applyState(
     table: slotTable(machine.accounts, records, nowMs),
     last: lastAccount(records),
     passDeadlineSec: passTimeoutSeconds(),
+    codexOptIn: hostCodexOptIn(),
     startedAt: Date.now(),
     tick,
     repos: options.repos.length,
@@ -922,22 +918,6 @@ function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
         runtimeTimeoutMs: machine.runtimeTimeoutMs,
         workspaceTimeoutMs: machine.workspaceTimeoutMs,
       });
-}
-
-/**
- * The machine file's accounts a drive's pass is never admitted on, for the
- * receipt: a vendor with no documented pass command, or a Codex account
- * while the pass deadline this run reads is `0`.
- */
-function accountsReport(
-  machine: MachineConfig | null,
-  apply: ApplyState | null,
-): { accountsNotAdmitted?: NotAdmitted[] } {
-  if (machine === null) return {};
-  const deadline =
-    apply === null ? passTimeoutSeconds() : apply.passDeadlineSec;
-  const refused = notAdmitted(machine.accounts, deadline);
-  return refused.length === 0 ? {} : { accountsNotAdmitted: refused };
 }
 
 export async function runTick(options: TickOptions): Promise<TickResult> {

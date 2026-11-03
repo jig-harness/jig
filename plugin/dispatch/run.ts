@@ -10,8 +10,9 @@
  * `drive.ts <PR> [--take-over] --bots-only --pass-timeout <s> -- <pass>` in
  * the pull request's workspace, the pass being the documented pass command
  * of the account's vendor (`claude -p "/jig:drive-pr --bots-only <PR>"`, or
- * Codex's `codex exec …`) and the deadline the one the tick admitted it
- * under, with the account's configuration directory set (`CLAUDE_CONFIG_DIR`
+ * Codex's `codex exec …`, with the bypass when the record says the tick
+ * admitted it on a host that opted in) and the deadline the one the tick
+ * admitted it under, with the account's configuration directory set (`CLAUDE_CONFIG_DIR`
  * or `CODEX_HOME`) and the credential variables and the other directory
  * variable removed, so the pass bills the account the tick admitted. When
  * the drive ends it records the exit, and an
@@ -87,7 +88,7 @@ const BUNFIG = resolve(import.meta.dir, "bunfig.toml");
 /**
  * The drive command a record starts, under the same trusted startup as this
  * wrapper: the documented pass command of the record's vendor, under the
- * pass deadline the record was admitted with.
+ * pass deadline and the host's opt-in the record was admitted with.
  */
 function driveCommand(record: LaunchRecord, script: string): string[] {
   const pr = String(record.pr);
@@ -104,7 +105,7 @@ function driveCommand(record: LaunchRecord, script: string): string[] {
       ? ["--pass-timeout", String(deadline)]
       : []),
     "--",
-    ...passCommand(record.vendor, pr),
+    ...passCommand(record.vendor, pr, record.codexBypass === true),
   ];
 }
 

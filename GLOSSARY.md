@@ -1194,9 +1194,12 @@ make, use the entry's term instead.
   before removing critical paths still apply, so an unattended call can
   still be denied. It trades the prompts for the instructions the drive
   gives the pass (its push script, its bots-only rule), which steer it but
-  do not stop it; only Claude Code's deny rules and hooks still do. A repository chooses it for its passes with
-  `drive.pass_args`
-  ([configuration](plugin/CONFIGURATION.md#drive)).
+  do not stop it; only Claude Code's deny rules and hooks still do. A pass
+  can then do anything the account running it can, so a host chooses it for
+  its own passes, after checking what that account reaches, with
+  `drive.pass_args` in its user file
+  ([configuration](plugin/CONFIGURATION.md#a-hosts-opt-in-to-bypass)); a
+  repository's file cannot set it.
 - **Drive ledger** — the resumable part of a *PR drive loop*'s saved state
   (its round, what it parked for a person and why, what it replied to and
   pushed, who drove it and when it last wrote), kept as one hidden-marker

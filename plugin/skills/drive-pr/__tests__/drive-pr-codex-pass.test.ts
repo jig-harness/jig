@@ -29,7 +29,7 @@ const ROUND_READY = {
   ],
 };
 
-const CODEX_PASS = passCommand("codex", 999);
+const CODEX_PASS = passCommand("codex", 999, true);
 
 /** The command the dry run says it would run. */
 function wouldRun(stderr: string): string {
@@ -53,7 +53,13 @@ async function dryRun(flags: string[], env: Record<string, string> = {}) {
 }
 
 describe("the documented Codex pass command", () => {
-  it("runs codex exec without a sandbox or approvals, its prompt naming the skill and carrying the invocation", () => {
+  it("runs codex exec with the bypass only when the host opted in, its prompt naming the skill and carrying the invocation", () => {
+    expect(passCommand("codex", 999)).toEqual([
+      "codex",
+      "exec",
+      "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 999",
+    ]);
+    expect(passCommand("codex", 999, false)).toEqual(passCommand("codex", 999));
     expect(CODEX_PASS).toEqual([
       "codex",
       "exec",
@@ -65,8 +71,37 @@ describe("the documented Codex pass command", () => {
       "-p",
       "/jig:drive-pr --bots-only 999",
     ]);
+    expect(passCommand("claude", 999, true)).toEqual(
+      passCommand("claude", 999),
+    );
     expect(skillPrompt("codex", "/followup 12")).toBe(
       "Use the followup skill: /followup 12",
+    );
+  });
+
+  it("still starts a Codex pass command with no bypass, and its log says inherited", async () => {
+    const r = await runDrive(
+      ROUND_READY,
+      [
+        "--dry-run",
+        "--no-head-sync",
+        "--bots-only",
+        "--",
+        ...passCommand("codex", 999),
+      ],
+      undefined,
+      {
+        env: {
+          DRIVE_PR_QUOTA_NO_SPAWN_PREP: "1",
+          JIG__DRIVE__CODEX_BYPASS: "true",
+        },
+      },
+    );
+    expect(wouldRun(r.stderr)).toBe(
+      "codex exec Use the jig:drive-pr skill: /jig:drive-pr --bots-only 999",
+    );
+    expect(r.stderr).toContain(
+      "permission mode: inherited (the pass command sets no --sandbox; Codex's configuration decides)",
     );
   });
 
