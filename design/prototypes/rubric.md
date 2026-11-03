@@ -35,11 +35,12 @@ Some blocks have a scope a bundle can read two ways, so it is stated:
   handoff lists it as a server ask; the scorecard names those asks beside the
   row. A capability shown as existing that no ask covers fails the block.
 - **Above the fold** scores the scenarios in which the brief's content is
-  present. Content that stays on the page, even disabled or dimmed behind a
-  banner, is present, so that scenario is scored like any other. Only a
-  scenario whose banner removes that content from the page is scored on the
-  banner instead, and the scorecard names the scenario and where the content
-  falls.
+  present and working. Content that stays on the page and working behind a
+  banner is present, so that scenario is scored like any other. A scenario
+  whose banner says the content cannot be used (the server is gone) is scored
+  on the banner instead, whether the page removes that content or keeps it
+  disabled or dimmed below the banner; the scorecard names the scenario and
+  where the content falls.
 
 ## Scoring
 
