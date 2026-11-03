@@ -12,8 +12,9 @@
 // The voice counter holds each visitor document's count of findings under
 // docs/VOICE.md's caps. Its rules are the documents and its entries the
 // findings, so each document's total is compared, and a document whose total
-// grew is listed with the new sentences quoted. Its script is a support path
-// too.
+// grew is listed with the new sentences quoted. Its script is a support path,
+// and so is the imported linter it delegates its rules to, so the base is
+// measured with the head's rules.
 {
   "counters": [
     {
@@ -76,6 +77,7 @@
     "tools/quality/grit",
     "modules/M15-contracts-errors/reference/lint-rules",
     "modules/M0-instruction-architecture/reference/skill-authoring/check-skill-authoring.ts",
-    "scripts/check-voice.ts"
+    "scripts/check-voice.ts",
+    "plugin/skills/decide/scripts/ste-lint"
   ]
 }

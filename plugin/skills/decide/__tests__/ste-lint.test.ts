@@ -665,6 +665,13 @@ describe("advisory only", () => {
     ).counters;
   }
 
+  /** The support paths of the ratchet wiring: implementations the base is measured with. */
+  function support(
+    source = readFileSync(join(REPO_ROOT, RATCHET_WIRING), "utf8"),
+  ): string[] {
+    return (parseJsonc(source) as { support?: string[] }).support ?? [];
+  }
+
   function isCounter(
     counter: { format: string; command?: string[]; per?: string },
     script: string,
@@ -838,6 +845,10 @@ describe("advisory only", () => {
 
   it("each listed caller runs as a json counter of the ratchet wiring", () => {
     expect(invalidCounters(counters())).toEqual([]);
+  });
+
+  it("the linter is a support path of the ratchet wiring, so the base is measured with the head's rules", () => {
+    expect(support()).toContain("plugin/skills/decide/scripts/ste-lint");
   });
 });
 
