@@ -30,7 +30,8 @@
  * The pass command is the session's own agent tool's (`lib/arm.ts`): in a
  * Codex session it is Codex's, on the execution tier of
  * `routing.models.codex` (else Codex's own configured model), and
- * `--pass-model` and `--pass-args`, which are Claude Code's, are refused.
+ * `--pass-model` overrides it, resolving tiers through the Codex row.
+ * `--pass-args` remains Claude Code's and is refused for Codex.
  *
  * Prints one JSON object (`ArmReport` in `lib/arm.ts`): `status` says what
  * the caller does next — `armed` (a tab runs the drive and `drives.ts` lists
@@ -288,13 +289,10 @@ function setting(mode: ArmDriveMode | undefined): {
 
 /** The pass's model: Claude Code's `--pass-model`, else `drive.pass_model`; a Codex pass's from `routing.models.codex`. */
 function passModel(flag: string | undefined, vendor: AccountVendor): ArmModel {
-  if (vendor === "codex") {
-    if (flag !== undefined)
-      throw new PassModelUsageError(
-        "--pass-model applies to a Claude Code pass command; a Codex pass runs on routing.models.codex.execution, else Codex's own configuration",
-      );
-    return configuredCodexModel();
-  }
+  if (vendor === "codex")
+    return flag === undefined
+      ? configuredCodexModel()
+      : resolveModelValue(flag, "--pass-model", undefined, "codex");
   return flag === undefined
     ? configuredPassModel()
     : resolveModelValue(flag, "--pass-model");
