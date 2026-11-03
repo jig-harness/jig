@@ -72,8 +72,8 @@ happen under one lock, shared by the skills' helper and the dispatcher's
 notifications and held across both; a writer that cannot take it within a
 short deadline warns and skips, as every board call does on failure.
 
-`orca-board.ts` gains `--unread` and `--comment` and moves to
-`plugin/shared/`, since `do-item`, `drive-pr` and `followup` all call it. A repository with custom
+`plugin/shared/orca-board.ts` takes `--unread` and `--comment`, since
+`do-item`, `drive-pr` and `followup` all call it. A repository with custom
 board columns maps the stages onto them in `orca.board` in `.config/jig.yaml`
 ([CONFIGURATION.md](../plugin/CONFIGURATION.md)). Jig moves the card
 itself rather than asking Orca to follow the pull request's state: Jig
@@ -105,8 +105,8 @@ or live in any such state. Jig's workspace tool and the dispatcher can take
 admission, but a direct `orca agent launch --worktree` or an open in Orca's
 app can come after the registry read and produces no creation event, and a
 creation-event handler would take admission after the creation, not around
-it. So workspace provenance alone never closes the gap. The workspace tool's remove steps move into the plugin for
-this, as item 33 moves its open steps. The `tools/orca` entry point stays
+it. So workspace provenance alone never closes the gap. The workspace tool's remove steps already run through the plugin
+(`plugin/gc/worktree-removal.ts`). The `tools/orca` entry point stays
 as the launcher's `orca` provider and the caller of the workspace-open
 path until a pull request names the launcher's migration to the plugin;
 that pull request deletes the copy.
