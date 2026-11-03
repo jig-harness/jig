@@ -192,6 +192,13 @@ describe("word-rule report context", () => {
   test.each([
     ["Fine.\tseamless tool.", 'marketing-adjective: "seamless tool."'],
     ["- Intro. End and", 'dangling-conjunction: "End and"'],
+    ["- Intro. End and\u001f", 'dangling-conjunction: "End and"'],
+    ["- Intro. word`x`and", 'dangling-conjunction: "word`x`and"'],
+    ["- Intro.\n  word`x`or", 'dangling-conjunction: "word`x`or"'],
+    [
+      "- 😀 `first` Intro. word`second`and\u001f",
+      'dangling-conjunction: "word`second`and"',
+    ],
     ["- Intro.\n  End and", 'dangling-conjunction: "End and"'],
     [
       "- Intro. End and\nUnindented continuation. Another.",

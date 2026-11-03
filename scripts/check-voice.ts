@@ -65,6 +65,7 @@ const MAX_SEMICOLONS = 1;
 const SENTENCE_BREAK = py(String.raw`(?<=[.!?])\s+`, { global: true });
 const CODE_SPAN = py("`[^`]*`", { global: true });
 const WHITESPACE = py(String.raw`\s+`, { global: true });
+const CONJUNCTION_END = py(String.raw`\b(?:and|or)\s*$`, { ignoreCase: true });
 
 /** Use the parser's tab stops before measuring either findings or sentences. */
 function normalizeTabs(source: string): string {
@@ -190,10 +191,14 @@ function containingSentence(
   // continue beyond the list producer's item boundary.
   let sourceColumn = f.col - 1;
   if (f.rule === "dangling-conjunction") {
-    const { text } = withoutCode(sourceLines[f.line - 1] ?? "");
-    const conjunction = /\b(?:and|or)\s*$/i.exec(text);
+    const raw = sourceLines[f.line - 1] ?? "";
+    // Mask operands before searching, preserving both their word boundaries
+    // and source indices. Only then remove spans to map into sentence space.
+    const masked = raw.replace(CODE_SPAN, (span) => " ".repeat(span.length));
+    const conjunction = CONJUNCTION_END.exec(masked);
     if (conjunction)
-      sourceColumn = [...text.slice(0, conjunction.index)].length;
+      sourceColumn = [...withoutCode(raw.slice(0, conjunction.index)).text]
+        .length;
   }
   // Source columns lose container prefixes and gain earlier paragraph lines.
   const column = position
