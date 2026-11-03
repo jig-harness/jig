@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "name": "quiet",
+      "url": "generated/dispatch-dashboard.html?scenario=quiet&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/quiet.png"
+    },
+    {
+      "name": "loud",
+      "url": "generated/dispatch-dashboard.html?scenario=loud&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/loud.png"
+    },
+    {
+      "name": "hung",
+      "url": "generated/dispatch-dashboard.html?scenario=hung&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/hung.png"
+    },
+    {
+      "name": "queue",
+      "url": "generated/dispatch-dashboard.html?scenario=queue&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/queue.png"
+    },
+    {
+      "name": "stopped",
+      "url": "generated/dispatch-dashboard.html?scenario=stopped&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/stopped.png"
+    },
+    {
+      "name": "gone",
+      "url": "generated/dispatch-dashboard.html?scenario=gone&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/gone.png"
+    },
+    {
+      "name": "token",
+      "url": "generated/dispatch-dashboard.html?scenario=token&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/token.png"
+    },
+    {
+      "name": "empty",
+      "url": "generated/dispatch-dashboard.html?scenario=empty&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/empty.png"
+    },
+    {
+      "name": "long",
+      "url": "generated/dispatch-dashboard.html?scenario=long&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/long.png"
+    },
+    {
+      "name": "loud-dark",
+      "url": "generated/dispatch-dashboard.html?scenario=loud&theme=dark&switch=off",
+      "ready": "html[data-scenario-ready]",
+      "screenshot": "screenshots/loud-dark.png"
+    }
+  ]
+}
