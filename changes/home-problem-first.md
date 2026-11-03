@@ -8,3 +8,5 @@
   pull request. The run checks calendar dates, clock times and its actors;
   events after midnight show their date. The factory reference describes the
   dispatcher's current behavior and the repository's post-merge command.
+  The factory site preserves the follow-up runners and the separate roadmap
+  caveats in its execution figures and explanation.

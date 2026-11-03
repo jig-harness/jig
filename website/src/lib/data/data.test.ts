@@ -345,6 +345,20 @@ describe.skipIf(!existsSync(join(root, "FACTORY.md")))("the factory", () => {
     expect(jobsByModule(f).get("M5")).toEqual(["guide", "catch", "knowledge"]);
   });
 
+  test("follow-up runners and the separate roadmap paragraph reach the site", () => {
+    const actors = f.line.find((s) => s.id === "b7")?.actors ?? [];
+    expect(actors.filter((a) => a.kind === "tool").map((a) => a.name)).toEqual([
+      "repository follow-up",
+      "dispatcher",
+    ]);
+    expect(actors[0]?.kind).toBe("tool");
+    expect(f.lineAfter).toContain("On the roadmap:");
+    expect(f.lineAfter).toContain("shared skill");
+    expect(f.lineAfter).toContain(
+      "repository supplies its own follow-up command",
+    );
+  });
+
   test("every roadmap item marked not built is one the factory names", () => {
     const items = [
       ...Object.values(NOT_BUILT).flat(),
