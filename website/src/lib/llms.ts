@@ -213,13 +213,21 @@ export function render(file: LlmsFile): string {
   return `${out.join("\n")}\n`;
 }
 
-/** README's bold tagline and opening paragraph: what Jig is. */
+/** README's bold tagline and the paragraph before it, which says what Jig is. */
 export function readmeLead(readme: string): { summary: string; intro: string } {
   const tagline = /^\*\*(.+?)\*\*\s*$/m.exec(readme)?.[1] ?? "Jig";
-  const after = readme.slice(readme.indexOf(tagline) + tagline.length);
+  const before = readme
+    .slice(0, readme.indexOf(tagline))
+    .replace(/\*\*\s*$/, "");
+  const statement =
+    before
+      .split(/\n\s*\n/)
+      .map((p) => p.trim())
+      .filter((p) => p && !p.startsWith("#") && !/^!\[/.test(p))
+      .at(-1) ?? "";
   return {
     summary: plain(tagline).replace(/\.$/, ""),
-    intro: plain(firstParagraph(after.replace(/^\*\*\s*/, ""))),
+    intro: plain(statement),
   };
 }
 

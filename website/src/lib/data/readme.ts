@@ -1,13 +1,14 @@
 /**
- * The parts of the README the home page lays out: the problem it opens
- * with, its factory section and its list of ways to use Jig.
+ * The parts of the README the home page lays out: the statement of what
+ * Jig is that it opens with, its factory section and its list of ways to
+ * use Jig.
  */
 import { leadOf, listItems, paragraphs, section, sections } from "../source.ts";
 
 export interface ReadmeOpening {
-  /** The problem the README opens with, one sentence per entry, in order. */
-  problem: string[];
-  /** The bold line after the problem: what Jig is, in one line, Markdown. */
+  /** What Jig is, as the README opens: one sentence per entry, in order. */
+  statement: string[];
+  /** The bold line after the statement: what Jig gives, in one line, Markdown. */
   tagline: string;
 }
 
@@ -35,24 +36,25 @@ const sentencesOf = (text: string) =>
 
 /**
  * The opening: the first paragraph under the title that is not the logo,
- * which states the problem, then the bold tagline. A README that opens on
- * its tagline, or puts anything between the problem and the tagline, fails
- * the build here rather than giving the home page a hero without a problem.
+ * which says what Jig is, then the bold tagline. A README that opens on
+ * its tagline, or puts anything between the statement and the tagline,
+ * fails the build here rather than giving the home page a hero that says
+ * nothing.
  */
 function opening(preamble: string): ReadmeOpening {
   const paras = paragraphs(preamble)
     .map(oneLine)
     .filter((p) => !/^!\[[^\]]*\]\([^)]*\)$/.test(p));
-  const [problem = "", tagline = ""] = paras;
-  if (!problem || problem.startsWith("**"))
+  const [statement = "", tagline = ""] = paras;
+  if (!statement || statement.startsWith("**"))
     throw new ReadmeShapeError(
-      "README.md: the first paragraph under the title must state the problem, before the bold tagline",
+      "README.md: the first paragraph under the title must say what Jig is, before the bold tagline",
     );
   if (!/^\*\*[^*]+\*\*$/.test(tagline))
     throw new ReadmeShapeError(
-      "README.md: the paragraph after the problem must be the bold tagline",
+      "README.md: the paragraph after the statement must be the bold tagline",
     );
-  return { problem: sentencesOf(problem), tagline };
+  return { statement: sentencesOf(statement), tagline };
 }
 
 /** The factory section: the line's paragraphs, then the jobs and the sentence opening them. */

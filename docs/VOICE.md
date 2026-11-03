@@ -189,11 +189,14 @@ Before:
 > Scaffolding that lets AI agents work your repository well — adopted one
 > module at a time.
 
-The first word is Jig's own term. The reader learns no problem, and "well"
-promises nothing a reader can check.
+The first word is Jig's own term, the reader learns nothing about what Jig
+is, and "well" promises nothing a reader can check.
 
 After:
 
-> Agents open pull requests faster than a team can review them. Jig checks
-> each change before the push, then runs its review rounds with nobody
-> watching. A person merges. Adopt it one module at a time.
+> Jig is a harness for teams that build software with AI coding agents. It
+> gives a repository the rules its agents follow, the skills they run and the
+> checks their work must pass, and carries each change from pickup to merge.
+
+The first sentence says what Jig is in words a reader already has. The
+second says what it gives and what it does, as things a reader can check.
