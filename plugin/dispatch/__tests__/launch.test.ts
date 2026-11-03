@@ -330,8 +330,13 @@ describe("jig dispatch --apply launches re-arms within account caps", () => {
       record: first?.record,
     });
     expect(recordIds(w)).toEqual([first?.record ?? ""]);
-    const commands = terminalCreates(w).map(
-      (a) => a[a.indexOf("--command") + 1],
+    // Each attempt carries its own deadline for recording the tab; the rest of
+    // the command is the same record and key.
+    const commands = terminalCreates(w).map((a) =>
+      a[a.indexOf("--command") + 1]?.replace(
+        /JIG_ORCA_TAB_PENDING=\d+/,
+        "JIG_ORCA_TAB_PENDING=<due>",
+      ),
     );
     expect(commands).toHaveLength(2);
     expect(commands[0]).toBe(commands[1]);

@@ -984,9 +984,11 @@ describe("arm-drive.ts", () => {
       const prefix = shellWords(typed.slice(0, -command.length - 1));
       expect(prefix.slice(0, LOGIN_PREFIX.length)).toEqual(LOGIN_PREFIX);
       const rest = prefix.slice(LOGIN_PREFIX.length);
-      expect(rest.filter((word) => word.includes("=")).sort()).toEqual(
-        [...carried, "JIG_ORCA_TAB_PENDING=1"].sort(),
+      const words = rest.filter((word) => word.includes("="));
+      const due = words.map((w) =>
+        w.replace(/^(JIG_ORCA_TAB_PENDING=)\d+$/, "$1_"),
       );
+      expect(due.sort()).toEqual([...carried, "JIG_ORCA_TAB_PENDING=_"].sort());
       expect(rest.filter((word) => word === "-u").length).toBe(
         ["JIG_HOME", "JIG_OVERLAY", "JIG_USER_LAYER"].filter(
           (key) => !carried.some((entry) => entry.startsWith(`${key}=`)),

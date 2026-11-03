@@ -96,29 +96,39 @@ export function defaultRunTabDeps(env: Env = process.env): RunTabDeps {
 
 /**
  * The variables a run tab's command carries: the store the opener records
- * into (the tab's shell does not inherit the opener's environment), and a
- * note that the opener will record the tab, so the run's end waits briefly
- * for the record instead of finding none.
+ * into (the tab's shell does not inherit the opener's environment), and the
+ * moment (epoch milliseconds) by which the opener will have recorded the tab
+ * or given up, so the run's end waits for the record exactly that long
+ * instead of finding none. `until` is the opener's own deadline; without
+ * one, the opener is bounded by `REGISTRATION_WAIT_MS` from now.
  */
-export function runTabEnv(env: Env = process.env): string[] {
+export function runTabEnv(
+  env: Env = process.env,
+  until: number = Date.now() + REGISTRATION_WAIT_MS,
+): string[] {
   const dir = env.JIG_ORCA_TABS_DIR?.trim();
   return [
-    `${PENDING_VAR}=1`,
+    `${PENDING_VAR}=${Math.ceil(until) + REGISTRATION_SLACK_MS}`,
     ...(dir ? [`JIG_ORCA_TABS_DIR=${resolve(dir)}`] : []),
   ];
 }
 
 const PENDING_VAR = "JIG_ORCA_TAB_PENDING";
 
-/**
- * How long a run's end waits for its opener to record the tab: longer than
- * the opener's own launch deadline (Orca's terminal create is allowed twenty
- * seconds in `shared/orca.ts`, the dispatch runtime sixty), so a run that
- * ends at once still finds the record its opener publishes after create
- * answers. An opener that cannot record leaves the run's end waiting this
- * long, and only then.
- */
+/** The wait for a record when the opener names no deadline of its own. */
 const REGISTRATION_WAIT_MS = 90_000;
+
+/** Added to the opener's deadline for the clock between the two processes. */
+const REGISTRATION_SLACK_MS = 5_000;
+
+/**
+ * The moment the opener's record is due by, from the run's environment;
+ * null when no record is expected (the variable is unset or not a time).
+ */
+function pendingUntil(env: Env = process.env): number | null {
+  const value = Number(env[PENDING_VAR]);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
 
 /**
  * The seconds a call may take when it must end by `until` (epoch ms) and is
@@ -463,12 +473,13 @@ export async function endOwnTab(
     known: number[],
   ) => void = startCloser,
   wait: {
-    pending: boolean;
+    /** When the opener's record is due by (epoch ms); null when none is expected. */
+    until: number | null;
     now: () => number;
     sleep: (ms: number) => Promise<void>;
     table?: RunTabDeps["table"];
   } = {
-    pending: process.env[PENDING_VAR] === "1",
+    until: pendingUntil(),
     now: Date.now,
     sleep: (ms) => new Promise((settle) => setTimeout(settle, ms)),
   },
@@ -490,8 +501,11 @@ export async function endOwnTab(
   let found = await find();
   // The opener records the tab after Orca has started the run, so a run that
   // ends quickly can get here first; wait for the record when one is coming.
-  const deadline = wait.now() + REGISTRATION_WAIT_MS;
-  while (found === undefined && wait.pending && wait.now() < deadline) {
+  while (
+    found === undefined &&
+    wait.until !== null &&
+    wait.now() < wait.until
+  ) {
     await wait.sleep(POLL_MS);
     found = await find();
   }

@@ -42,11 +42,14 @@ import type { LaunchStage, RuntimeReceipt } from "./port.ts";
 const RUN_TS = resolve(import.meta.dir, "../../run.ts");
 const BUNFIG = resolve(import.meta.dir, "../../bunfig.toml");
 
-/** The command line a launched terminal runs: the wrapper under its record. */
-function wrapperCommand(record: string, token: string): string {
+/**
+ * The command line a launched terminal runs: the wrapper under its record,
+ * told by when the launch (`until`, epoch ms) will have recorded its tab.
+ */
+function wrapperCommand(record: string, token: string, until: number): string {
   return [
     "env",
-    ...runTabEnv(),
+    ...runTabEnv(process.env, until),
     process.execPath,
     "--no-env-file",
     `--config=${BUNFIG}`,
@@ -147,7 +150,7 @@ async function startTerminal(
       "--title",
       stage.title,
       "--command",
-      wrapperCommand(stage.record, key),
+      wrapperCommand(stage.record, key, until),
       "--json",
     ],
     { timeoutSec: seconds(timeoutMs), stderr: "pipe" },

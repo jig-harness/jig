@@ -27,6 +27,7 @@ import {
   readRunTabs,
   recordRunTab,
   tabState,
+  runTabEnv,
 } from "../orca-tabs.ts";
 import { type ProcessRow, processTable } from "../process-table.ts";
 
@@ -300,10 +301,10 @@ describe("a run ending in its own tab", () => {
   type Started = [string, number, number[]];
   const ready = (
     rows: ProcessRow[] | null,
-    pending = false,
+    until: number | null = null,
     extra: { now?: () => number; sleep?: (ms: number) => Promise<void> } = {},
   ) => ({
-    pending,
+    until,
     now: extra.now ?? Date.now,
     sleep: extra.sleep ?? (async () => undefined),
     table: async () => rows,
@@ -423,7 +424,7 @@ describe("a run ending in its own tab", () => {
       root,
       { pid: 777, ppid: SHELL },
       (t) => started.push(t),
-      ready([row(SHELL, 1), row(777, SHELL)], true, {
+      ready([row(SHELL, 1), row(777, SHELL)], 100_000, {
         now: () => clock,
         sleep: async (ms) => {
           clock += ms;
@@ -436,10 +437,10 @@ describe("a run ending in its own tab", () => {
     expect(line).toContain("closes once this run has exited");
   });
 
-  test("does not wait when no record is expected, and gives up when none comes", async () => {
+  test("does not wait when no record is expected, and waits as long as the opener's deadline when one is", async () => {
     let clock = 0;
-    const clockDeps = (pending: boolean) =>
-      ready([row(SHELL, 1)], pending, {
+    const clockDeps = (until: number | null) =>
+      ready([row(SHELL, 1)], until, {
         now: () => clock,
         sleep: async (ms) => {
           clock += ms;
@@ -447,13 +448,19 @@ describe("a run ending in its own tab", () => {
       });
     const self = { pid: 777, ppid: SHELL };
     expect(
-      await endOwnTab(true, root, self, () => undefined, clockDeps(false)),
+      await endOwnTab(true, root, self, () => undefined, clockDeps(null)),
     ).toBeNull();
     expect(clock).toBe(0);
+    // A launch allowed longer than any fixed wait (a runtime_timeout of 3m).
     expect(
-      await endOwnTab(true, root, self, () => undefined, clockDeps(true)),
+      await endOwnTab(true, root, self, () => undefined, clockDeps(185_000)),
     ).toBeNull();
-    expect(clock).toBeGreaterThanOrEqual(90_000);
+    expect(clock).toBeGreaterThanOrEqual(185_000);
+  });
+
+  test("the run's variable carries the opener's deadline", () => {
+    const [pending] = runTabEnv({}, 1_000_000);
+    expect(pending).toBe("JIG_ORCA_TAB_PENDING=1005000");
   });
 });
 
