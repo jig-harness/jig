@@ -173,6 +173,11 @@ changes are marked **Breaking** and say what a consumer changes.
   dispatcher, tick, session runtime and factory identity, and the terms
   of its control function: outcome log, stage drift and nudge.
 - [M12](modules/M12-parallel-agent-ergonomics/mappings.md#worktree-managers--agent-runners--where-the-hooks-wire)'s mappings say where Worktrunk runs a repository's worktree create and remove hooks: its blocking `pre-start` and `pre-remove` hooks in `.config/wt.toml`, each inside the worktree, so a failed remove hook keeps the worktree and its unsent reflection findings. Worktrunk skips project hooks when their approval is declined, so the hook must be approved before a removal for that guarantee to hold.
+- [FEATURES.md](FEATURES.md) has a feature for the line running with
+  nobody at the keyboard: the dispatcher that restarts stopped drives and
+  reaches a person's phone, its outcome log and dashboard, the dispatch
+  labels a person steers with, and the pull requests of a contended area
+  driven one at a time.
 
 ### Changed
 
@@ -326,6 +331,11 @@ changes are marked **Breaking** and say what a consumer changes.
 - [ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)
   is amended: Herdr stays the first workspace runtime for Jig's tooling,
   except the planned dispatcher, which targets Orca first.
+- Each feature in [FEATURES.md](FEATURES.md) opens with the problem it
+  solves, as a team would say it. The work-item feature says how a drive
+  survives its driver: its ledger on the pull request, a takeover from any
+  clone, and a parked question that reaches a person's phone. Each feature's
+  roadmap entries name the work the roadmap holds open.
 
 ### Fixed
 
