@@ -95,19 +95,17 @@ records go with the checkout. Orca's registry is part of the idle proof: a
 checkout with an agent in any state short of finished (working, waiting or
 blocked) is never idle, whatever git says, and an unreadable or incomplete
 registry refuses collection, as the gc contract says (fail closed). The registry is a snapshot, though: an opener can start an
-agent after the read and before the removal. So an Orca-managed checkout
-stays report-only, as every worktree does today
-([plugin/gc/README.md](../plugin/gc/README.md)), until every path that can start an agent in
-it is covered: either each launch and open path takes `gc`'s session
-admission around the launch and holds it while the session lives in any
-state short of finished, or Orca refuses a removal atomically while an
-agent is starting or live in any such state. Jig's workspace tool and the dispatcher can take admission,
-but a direct `orca agent launch --worktree` or an open in Orca's app can
-come after the registry read and produces no creation event, and a
+agent after the read and before the removal. Collection through Orca is
+enabled today, with the registry standing in for the session admission an
+opener does not hold, and that last gap stays open. Closing it needs one of
+two things: each launch and open path takes `gc`'s session admission around
+the launch and holds it while the session lives in any state short of
+finished, or Orca refuses a removal atomically while an agent is starting
+or live in any such state. Jig's workspace tool and the dispatcher can take
+admission, but a direct `orca agent launch --worktree` or an open in Orca's
+app can come after the registry read and produces no creation event, and a
 creation-event handler would take admission after the creation, not around
-it. So workspace provenance alone never makes a checkout collectable, and
-a workspace made outside Jig stays report-only. Collection through Orca
-starts when one of the two is in place. The workspace tool's remove steps move into the plugin for
+it. So workspace provenance alone never closes the gap. The workspace tool's remove steps move into the plugin for
 this, as item 33 moves its open steps. The `tools/orca` entry point stays
 as the launcher's `orca` provider and the caller of the workspace-open
 path until a pull request names the launcher's migration to the plugin;
@@ -201,7 +199,7 @@ One pull request each, in this order; each is usable on its own.
 3. **Collection through the runtime** (built; the admission gap below is open): the worktrees kind's runtime column,
    the `orca.command` machine entry, the remove steps moved into the
    plugin, the registry in the proof, tests against a fake `orca` command;
-   collection stays report-only until every launch path is covered by admission or Orca refuses a removal atomically.
+   collection is enabled, and the race with an agent started after the registry read stays open until every launch path is covered by admission or Orca refuses a removal atomically.
 4. **The asks**, filed by a person, each with its pull request to Orca
    when a maintainer does not take it.
 5. **The plugin**, after item 33's tick exists: the manifest, the worker,
