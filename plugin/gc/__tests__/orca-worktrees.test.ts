@@ -20,6 +20,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -395,6 +396,34 @@ describe.skipIf(
       rebuildable: ["node_modules/"],
     });
   }, 60_000);
+
+  for (const [label, extra] of [
+    ["a file", (dir: string) => writeFileSync(join(dir, "notes.txt"), "x\n")],
+    [
+      "a symbolic link",
+      (dir: string) => symlinkSync("node_modules", join(dir, "alias")),
+    ],
+  ] as const)
+    test(`a collapsed folder holding ${label} beside its dependency directory stays a finding`, () => {
+      const f = setup();
+      writeFileSync(join(f.tree, ".gitignore"), "website/\n");
+      writeFileSync(join(f.tree, "package-lock.json"), "{}\n");
+      writeFileSync(join(f.tree, "package.json"), "{}\n");
+      f.command(["git", "-C", f.tree, "add", "-A"]);
+      f.command(["git", "-C", f.tree, "commit", "-m", "track a lockfile"]);
+      f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
+      f.command(["git", "-C", f.tree, "fetch", "origin"]);
+      f.refreshGh();
+      mkdirSync(join(f.tree, "website", "node_modules"), { recursive: true });
+      writeFileSync(join(f.tree, "website", "node_modules", "pkg.js"), "");
+      extra(join(f.tree, "website"));
+      idle(f);
+      const receipt = line(gc(f, ["--json"]));
+      expect(receipt.outcome).toBe("finding");
+      expect(receipt.reason).toContain("website/");
+      expect(existsSync(f.tree)).toBe(true);
+      expect(calls(f)).not.toContainEqual(expect.stringMatching(/ rm /));
+    }, 60_000);
 
   test("an ignored path with no recognisable package manager is still a finding", () => {
     const f = setup();

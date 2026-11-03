@@ -87,16 +87,25 @@ async function operation(admin: string): Promise<string | null> {
  * Whether `directory` (a path under `root`) holds nothing but dependency
  * directories: the shape of a wholly ignored workspace folder that git
  * reports as one collapsed entry, hiding the `node_modules` inside it. A
- * symbolic link or any other file is local state and fails it.
+ * symbolic link or any other file is local state and fails it. The walk
+ * is bounded by `deadline` (checked per entry, like `worktreeActivity`) and
+ * throws when it passes, so a huge ignored cache cannot hold the collector.
  */
-function onlyDependencyDirectories(directory: string): boolean {
+function onlyDependencyDirectories(
+  directory: string,
+  deadline: number,
+): boolean {
   const children = readdirSync(directory);
   if (children.length === 0) return false;
   return children.every((child) => {
+    if (Date.now() > deadline)
+      throw new GcError("Ignored-content scan exceeded its deadline");
     const path = join(directory, child);
     const stat = lstatSync(path);
     if (!stat.isDirectory()) return false;
-    return child === "node_modules" || onlyDependencyDirectories(path);
+    return (
+      child === "node_modules" || onlyDependencyDirectories(path, deadline)
+    );
   });
 }
 /** Whether the root holds a manifest and a recognised lockfile to rebuild from. */
@@ -121,7 +130,11 @@ function rebuildInputs(root: string): boolean {
  * none; a lockfile-less ecosystem's own rebuildable directory would be
  * grounds to add one.
  */
-function classifyIgnored(root: string, paths: string[]): IgnoredContent {
+export function classifyIgnored(
+  root: string,
+  paths: string[],
+  deadline = Date.now() + 30_000,
+): IgnoredContent {
   const inputs = rebuildInputs(root);
   const rebuildable: string[] = [];
   const other: string[] = [];
@@ -131,7 +144,7 @@ function classifyIgnored(root: string, paths: string[]): IgnoredContent {
       inputs &&
       directory !== null &&
       (directory.split("/").pop() === "node_modules" ||
-        onlyDependencyDirectories(join(root, directory)));
+        onlyDependencyDirectories(join(root, directory), deadline));
     (dependency ? rebuildable : other).push(path);
   }
   return { rebuildable, other };
