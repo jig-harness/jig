@@ -25,11 +25,14 @@ const ORCA_CALL_TIMEOUT_SEC = 20;
 export type OrcaRunner = (
   command: string,
   args: string[],
+  timeoutSec?: number,
 ) => Promise<{ code: number; stdout: string; stderr: string }>;
 
-/** The runner that spawns Orca's command, bounded by `ORCA_CALL_TIMEOUT_SEC`. */
-export const runOrca: OrcaRunner = (command, args) =>
-  run([command, ...args], { timeoutSec: ORCA_CALL_TIMEOUT_SEC });
+/** The runner that spawns Orca's command, bounded by `ORCA_CALL_TIMEOUT_SEC` or a tighter `timeoutSec`. */
+export const runOrca: OrcaRunner = (command, args, timeoutSec) =>
+  run([command, ...args], {
+    timeoutSec: Math.min(ORCA_CALL_TIMEOUT_SEC, timeoutSec ?? Infinity),
+  });
 
 /**
  * Orca's command when this session runs in a terminal Orca opened, else the

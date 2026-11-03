@@ -17,15 +17,17 @@
  * person added beside it stays. It is closed only while it is idle: its shell
  * is still the one recorded and has no child process, so a terminal someone
  * typed a command into stays, and the closer gives up as soon as it sees a
- * process that was not there when the run was ending. A
+ * process that was not there when the run was ending: the ending process
+ * lists the shell's children as it ends, and hands that list to the closer. A
  * process table that cannot be read counts as busy. A tab Jig did not record
  * is never touched, and nothing here fails a run: every step reports what it
  * did and the run goes on.
  *
- *   bun orca-tabs.ts close <handle> <pid>
+ *   bun orca-tabs.ts close <handle> <pid> [<known pid>,...]
  *
  * is the detached closer: it waits until `<pid>` has exited, then closes the
- * recorded tab `<handle>` if it is idle.
+ * recorded tab `<handle>` if it is idle and no child of its shell is outside
+ * the known list.
  */
 import { spawn } from "node:child_process";
 import {
@@ -70,7 +72,8 @@ export interface RunTab {
 export interface RunTabDeps {
   root: string;
   orca: OrcaRunner;
-  table: () => Promise<ProcessRow[] | null>;
+  /** The process table, within `timeoutSec` seconds when given. */
+  table: (timeoutSec?: number) => Promise<ProcessRow[] | null>;
   now: () => number;
   sleep: (ms: number) => Promise<void>;
 }
@@ -85,7 +88,7 @@ export function defaultRunTabDeps(env: Env = process.env): RunTabDeps {
   return {
     root: tabsRoot(env),
     orca: runOrca,
-    table: () => processTable(),
+    table: (timeoutSec) => processTable(timeoutSec),
     now: Date.now,
     sleep: (ms) => new Promise((settle) => setTimeout(settle, ms)),
   };
@@ -109,6 +112,22 @@ const PENDING_VAR = "JIG_ORCA_TAB_PENDING";
 
 /** How long a run's end waits for its opener to record the tab. */
 const REGISTRATION_WAIT_MS = 10_000;
+
+/**
+ * The seconds a call may take when it must end by `until` (epoch ms) and is
+ * otherwise bounded by `cap`; null when `until` has passed.
+ */
+function within(until: number, cap: number): number | null {
+  const left = (until - Date.now()) / 1000;
+  return left <= 0 ? null : Math.min(cap, left);
+}
+
+/** The environment for a command that runs inside a run tab, without the tab's own marker. */
+export function withoutRunTabMarker<T extends Env>(env: T): T {
+  const rest = { ...env };
+  delete rest[PENDING_VAR];
+  return rest;
+}
 
 /** The subject of a run on a pull request. */
 export function prSubject(pr: number | string): string {
@@ -215,13 +234,16 @@ export async function recordRunTab(
     title: string;
   },
   deps: Pick<RunTabDeps, "root" | "table" | "now">,
+  until: number = Number.POSITIVE_INFINITY,
 ): Promise<{ tab: RunTab } | { unrecorded: string }> {
   const tab = openedTab(opened.result);
   if (tab === null)
     return {
       unrecorded: "Orca's answer names no terminal handle and shell PID",
     };
-  const rows = await deps.table();
+  const budget = within(until, TABLE_CALL_SEC);
+  if (budget === null) return { unrecorded: "the launch's time was spent" };
+  const rows = await deps.table(budget);
   const shell = rows?.find((row) => row.pid === tab.shellPid);
   if (shell === undefined || shell.start === "")
     return {
@@ -250,6 +272,9 @@ export async function recordRunTab(
   return { tab: record };
 }
 
+/** How long one process-table read may take. */
+const TABLE_CALL_SEC = 5;
+
 /** Whether the tab's shell is still the recorded one and has no child process. */
 export function tabState(
   tab: RunTab,
@@ -264,18 +289,26 @@ export function tabState(
 }
 
 /** How closing one tab ended. */
-export type CloseOutcome = "closed" | "busy" | "gone" | { failed: string };
+export type CloseOutcome =
+  | "closed"
+  | "busy"
+  | "gone"
+  | "out of time"
+  | { failed: string };
 
 /**
  * Close `tab` through Orca if it is idle. A tab whose shell is gone, or that
  * Orca no longer knows, has its record dropped: Orca cannot close it by its
- * handle any more.
+ * handle any more. Neither call outlasts `until` (epoch ms).
  */
 export async function closeRunTab(
   tab: RunTab,
   deps: Pick<RunTabDeps, "root" | "orca" | "table">,
+  until: number = Number.POSITIVE_INFINITY,
 ): Promise<CloseOutcome> {
-  const rows = await deps.table();
+  const tableBudget = within(until, TABLE_CALL_SEC);
+  if (tableBudget === null) return "out of time";
+  const rows = await deps.table(tableBudget);
   if (rows === null) return "busy";
   const state = tabState(tab, rows);
   if (state === "gone") {
@@ -283,13 +316,13 @@ export async function closeRunTab(
     return "gone";
   }
   if (state === "busy") return "busy";
-  const done = await deps.orca(tab.orca, [
-    "terminal",
-    "close",
-    "--terminal",
-    tab.handle,
-    "--json",
-  ]);
+  const closeBudget = within(until, Number.POSITIVE_INFINITY);
+  if (closeBudget === null) return "out of time";
+  const done = await deps.orca(
+    tab.orca,
+    ["terminal", "close", "--terminal", tab.handle, "--json"],
+    closeBudget,
+  );
   const envelope = orcaEnvelope(done.stdout);
   if (done.code === 0 && envelope?.ok === true) {
     forget(deps.root, tab.handle);
@@ -333,7 +366,7 @@ export async function closePreviousTabs(
       continue;
     }
     lines.push(
-      `earlier run tab ${tab.handle} (${tab.title}): ${outcomeText(await closeRunTab(tab, deps))}`,
+      `earlier run tab ${tab.handle} (${tab.title}): ${outcomeText(await closeRunTab(tab, deps, until))}`,
     );
   }
   return lines;
@@ -347,13 +380,25 @@ const SELF = import.meta.path;
  * Start the detached closer for `tab`, which waits for `pid` to exit first.
  * It writes what it did, and any failure, to `closer.log` beside the records.
  */
-function startCloser(tab: RunTab, pid: number, root: string): void {
+function startCloser(
+  tab: RunTab,
+  pid: number,
+  root: string,
+  known: number[],
+): void {
   mkdirSync(root, { recursive: true });
   const log = openSync(join(root, "closer.log"), "a");
   try {
     const child = spawn(
       process.execPath,
-      ["--no-env-file", SELF, "close", tab.handle, String(pid)],
+      [
+        "--no-env-file",
+        SELF,
+        "close",
+        tab.handle,
+        String(pid),
+        known.join(","),
+      ],
       // Its own session, so closing the tab does not end the closer, and a
       // directory with no bunfig.toml of a consumer's in it.
       {
@@ -381,36 +426,64 @@ function startCloser(tab: RunTab, pid: number, root: string): void {
  * leaves it open. Returns a line for the run's log; null when this process
  * is not a recorded tab's own command (a person's tab, a run under another
  * wrapper, a test).
+ *
+ * The tab is the record whose shell is this process's parent by PID and
+ * start time, so a record kept from a killed run whose shell PID was reused
+ * is not taken for it. The children the shell has now are read here, while
+ * the run is still its foreground command, and handed to the closer as the
+ * work that is not new.
  */
 export async function endOwnTab(
   closes: boolean,
   root: string = tabsRoot(),
   self: { pid: number; ppid: number } = process,
-  start: (tab: RunTab, pid: number, root: string) => void = startCloser,
+  start: (
+    tab: RunTab,
+    pid: number,
+    root: string,
+    known: number[],
+  ) => void = startCloser,
   wait: {
     pending: boolean;
     now: () => number;
     sleep: (ms: number) => Promise<void>;
+    table?: RunTabDeps["table"];
   } = {
     pending: process.env[PENDING_VAR] === "1",
     now: Date.now,
     sleep: (ms) => new Promise((settle) => setTimeout(settle, ms)),
   },
 ): Promise<string | null> {
-  const find = () => readRunTabs(root).find((t) => t.shellPid === self.ppid);
-  let tab = find();
+  const table = wait.table ?? ((sec?: number) => processTable(sec));
+  const find = async (): Promise<
+    { tab: RunTab; known: number[] } | "unreadable" | undefined
+  > => {
+    const candidates = readRunTabs(root).filter(
+      (t) => t.shellPid === self.ppid,
+    );
+    if (candidates.length === 0) return undefined;
+    const rows = await table(TABLE_CALL_SEC);
+    if (rows === null) return "unreadable";
+    const shell = rows.find((row) => row.pid === self.ppid);
+    const tab = candidates.find((t) => t.shellStart === shell?.start);
+    return tab === undefined ? undefined : { tab, known: childPids(tab, rows) };
+  };
+  let found = await find();
   // The opener records the tab after Orca has started the run, so a run that
   // ends quickly can get here first; wait for the record when one is coming.
   const deadline = wait.now() + REGISTRATION_WAIT_MS;
-  while (tab === undefined && wait.pending && wait.now() < deadline) {
+  while (found === undefined && wait.pending && wait.now() < deadline) {
     await wait.sleep(POLL_MS);
-    tab = find();
+    found = await find();
   }
-  if (tab === undefined) return null;
+  if (found === undefined) return null;
+  if (found === "unreadable")
+    return "a run tab stays open: the process table could not be read";
+  const { tab, known } = found;
   const named = `run tab ${tab.handle} (${tab.title})`;
   if (!closes) return `${named} stays open: the run ended needing a person`;
   try {
-    start(tab, self.pid, root);
+    start(tab, self.pid, root, known);
   } catch (error) {
     return `${named} stays open: its closer did not start (${error instanceof Error ? error.message : String(error)})`;
   }
@@ -437,20 +510,19 @@ function childPids(tab: RunTab, rows: ProcessRow[]): number[] {
 
 /**
  * The detached closer: wait for `pid` to exit, then close the tab once its
- * shell is idle. The closer starts while the run is still the shell's
- * foreground command, so a child of the shell it did not see then is a
- * person's new work: it stops there and leaves the tab.
+ * shell is idle. `known` is the shell's children when the run was ending, so
+ * a child of the shell outside it is a person's new work: the closer stops
+ * there and leaves the tab.
  */
 async function closeAfterExit(
   handle: string,
   pid: number,
+  known: ReadonlySet<number>,
   deps: RunTabDeps,
   isAlive: (pid: number) => boolean = alive,
 ): Promise<CloseOutcome | "unrecorded"> {
   const tab = readTab(tabFile(deps.root, handle));
   if (tab === null) return "unrecorded";
-  const first = await deps.table();
-  const known = new Set(first === null ? [] : childPids(tab, first));
   const deadline = deps.now() + CLOSER_WAIT_MS;
   while (isAlive(pid) && deps.now() < deadline) await deps.sleep(POLL_MS);
   for (;;) {
@@ -464,14 +536,21 @@ async function closeAfterExit(
 }
 
 async function closerMain(): Promise<number> {
-  const [verb, handle, pid] = process.argv.slice(2);
-  if (verb !== "close" || !handle || !Number.isSafeInteger(Number(pid))) {
-    console.error("usage: orca-tabs.ts close <handle> <pid>");
+  const [verb, handle, pid, known = ""] = process.argv.slice(2);
+  const knownPids = known === "" ? [] : known.split(",").map(Number);
+  if (
+    verb !== "close" ||
+    !handle ||
+    !Number.isSafeInteger(Number(pid)) ||
+    !knownPids.every(Number.isSafeInteger)
+  ) {
+    console.error("usage: orca-tabs.ts close <handle> <pid> [<known pid>,...]");
     return 2;
   }
   const outcome = await closeAfterExit(
     handle,
     Number(pid),
+    new Set(knownPids),
     defaultRunTabDeps(),
   );
   console.error(

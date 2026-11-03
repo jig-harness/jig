@@ -233,6 +233,7 @@ async function recordAndCloseEarlier(
       title: stage.title,
     },
     tabs,
+    until,
   );
   if ("unrecorded" in recorded)
     return `; the tab stays open after its run, since it is not recorded: ${recorded.unrecorded}`;

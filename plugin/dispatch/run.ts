@@ -50,7 +50,11 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { swallow } from "../shared/errors.ts";
-import { driveExitClosesTab, endOwnTab } from "../shared/orca-tabs.ts";
+import {
+  driveExitClosesTab,
+  endOwnTab,
+  withoutRunTabMarker,
+} from "../shared/orca-tabs.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
 import { passCommand } from "../skills/drive-pr/scripts/lib/pass-command.ts";
 import { run } from "../shared/proc.ts";
@@ -245,7 +249,8 @@ async function wrap(id: string, token: string): Promise<number> {
   const { code, signal } = await runDrive(
     stageArgv(record),
     record.workspace.path,
-    passEnvironment(process.env, record),
+    // The tab's own command is this wrapper; the drive it runs is not.
+    withoutRunTabMarker(passEnvironment(process.env, record)),
   );
   // The wall first: once the exit is published the record no longer holds its
   // slot, and a tick in between would admit the walled account.
