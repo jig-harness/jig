@@ -33,6 +33,7 @@ import {
   holds,
   isDrive,
   type ReadRecord,
+  redrivenChanges,
   UNARMED_FACTS,
 } from "../launches.ts";
 import type { DrivenPr } from "../types.ts";
@@ -173,8 +174,8 @@ function redriven(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
   if (stale === undefined) return null;
   const earlier = mine.findLast(
     (r) =>
-      r.record.redrive?.change === stale.change ||
-      r.record.redrive?.earlier?.includes(stale.change) === true,
+      r.record.redrive != null &&
+      redrivenChanges(r.record.redrive).includes(stale.change),
   );
   return earlier === undefined
     ? null

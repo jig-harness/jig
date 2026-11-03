@@ -351,8 +351,16 @@ function isRedrive(value: unknown): boolean {
     value === null ||
     (isMapping(value) &&
       typeof value.cause === "string" &&
-      typeof value.change === "string")
+      typeof value.change === "string" &&
+      (value.earlier === undefined ||
+        (Array.isArray(value.earlier) &&
+          value.earlier.every((c) => typeof c === "string"))))
   );
+}
+
+/** Every change a re-drive record counts as acted on: the one it names now and the ones a replay moved on from. */
+export function redrivenChanges(redrive: StaleCause): string[] {
+  return [redrive.change, ...(redrive.earlier ?? [])];
 }
 
 /** A record as this version reads it: the fields an earlier version did not write, at their defaults. */
@@ -785,11 +793,24 @@ function latestRefusals(records: ReadRecord[]): Set<string> {
  * change a pull request has been re-driven for keeps one.
  */
 function latestRedrives(records: ReadRecord[]): Set<string> {
-  return latestIdsBy(records, (r) =>
-    isDrive(r.record) && r.record.redrive
-      ? `${r.record.repo}#${String(r.record.pr)}\0${r.record.redrive.change}`
-      : null,
-  );
+  const ids = new Set<string>();
+  const changes = new Set<string>();
+  for (const r of records)
+    if (isDrive(r.record) && r.record.redrive)
+      for (const c of redrivenChanges(r.record.redrive))
+        changes.add(`${r.record.repo}#${String(r.record.pr)}\0${c}`);
+  for (const key of changes)
+    for (const id of latestIdsBy(records, (r) =>
+      isDrive(r.record) &&
+      r.record.redrive &&
+      redrivenChanges(r.record.redrive).some(
+        (c) => `${r.record.repo}#${String(r.record.pr)}\0${c}` === key,
+      )
+        ? key
+        : null,
+    ))
+      ids.add(id);
+  return ids;
 }
 
 /** The ids of the latest record under each key `keyOf` gives; a record it gives `null` is not kept. */

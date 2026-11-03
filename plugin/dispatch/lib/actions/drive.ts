@@ -21,7 +21,12 @@
  * `--apply`.
  */
 import { admittedVendor } from "../accounts.ts";
-import { type LaunchRecord, newRecordId, newToken } from "../launches.ts";
+import {
+  type LaunchRecord,
+  newRecordId,
+  newToken,
+  redrivenChanges,
+} from "../launches.ts";
 import {
   type Dispatched,
   dispatched,
@@ -103,17 +108,43 @@ async function retryBlocked(
   // this record holds the pull request until its launch is replayed. The replay
   // then acts on the change read now, so the record names that one, and keeps
   // the one an earlier launch may already have acted on.
-  if (record.redrive?.conflictStop === true) {
-    if (read.stale !== undefined && read.stale.change !== record.redrive.change)
-      record.redrive = {
-        ...read.stale,
-        earlier: [...(record.redrive.earlier ?? []), record.redrive.change],
-      };
-  } else {
-    const moved = changedStale(record.redrive, read);
-    if (moved !== null) return moved;
-  }
+  const blocked =
+    record.redrive?.conflictStop === true
+      ? replayedChange(state, record, read)
+      : changedStale(record.redrive, read);
+  if (blocked !== null) return blocked;
   return accountBlocked(state, record);
+}
+
+/**
+ * A record that stopped on a conflict acts on the change read now: it names
+ * that one and keeps the ones an earlier launch may have acted on. Why it must
+ * not, when a launch record (its own history included) already re-drove that
+ * change; `null` when it may.
+ */
+function replayedChange(
+  state: ApplyState,
+  record: LaunchRecord,
+  read: DrivenPr,
+): string | null {
+  const redrive = record.redrive;
+  if (redrive == null || read.stale === undefined) return null;
+  const change = read.stale.change;
+  if (change === redrive.change) return null;
+  const done = state.records.find(
+    (r) =>
+      r.record.repo === record.repo &&
+      r.record.pr === record.pr &&
+      r.record.redrive != null &&
+      redrivenChanges(r.record.redrive).includes(change),
+  );
+  if (done !== undefined)
+    return `launch record ${done.record.id} already re-drove the change it shows now`;
+  record.redrive = {
+    ...read.stale,
+    earlier: [...(redrive.earlier ?? []), redrive.change],
+  };
+  return null;
 }
 
 /** The class a launch acts on: a takeover's `silent`, a re-drive's `stale`, a labelled arm's `unarmed`, any other re-arm's `re-armable`. */
