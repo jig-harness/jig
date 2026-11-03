@@ -478,8 +478,12 @@ an already-driven PR refuses on the single-instance lock (exit `11`) — arming
 is idempotent in the only way that matters.
 
 **Where a running drive is visible.** A drive armed in a terminal tab
-shows its passes there. One armed in the background outlives the session
-that spawned it, so its console is not where you look:
+shows its passes there while it runs. The tab closes once the drive ends
+with nothing for a person (any exit but a park or a failure; `0`, `4`,
+`5`, `11`, `13`, `16`, `18`, `19`, `20`), and arming the pull request again
+closes an earlier tab that is idle, so a finished drive is read from what
+follows, as one armed in the background is. One armed in the background
+outlives the session that spawned it, so its console is not where you look:
 
 - **Driver log** — every line the driver prints is also appended to
   `<state dir>/drive-pr-<PR>.log`, next to the per-PR state, each line

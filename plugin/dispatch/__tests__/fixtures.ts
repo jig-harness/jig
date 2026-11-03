@@ -151,10 +151,16 @@ if (args[0] === "terminal" && args[1] === "create") {
   if (!fs.existsSync(F + "/orca-terminal-noop")) {
     const command = args[args.indexOf("--command") + 1];
     const log = fs.openSync(F + "/terminal.log", "a");
-    spawn("sh", ["-c", command], { detached: true, stdio: ["ignore", log, log], env: process.env }).unref();
+    // With orca-terminal-shell, a shell that outlives its command as a login shell does, named by its PID as Orca names it.
+    const shell = fs.existsSync(F + "/orca-terminal-shell");
+    const child = spawn("sh", ["-c", shell ? command + "; exec sleep 60" : command], { detached: true, stdio: ["ignore", log, log], env: process.env });
+    child.unref();
+    if (shell) answer({ terminal: { handle: "term-1", tabId: "tab-1", processId: child.pid } });
   }
   answer({ terminal: { handle: "term-1" } });
 }
+if (args[0] === "terminal" && args[1] === "close")
+  answer({ close: { handle: args[args.indexOf("--terminal") + 1] } });
 if (args[0] === "terminal" && args[1] === "show")
   answer({ terminal: { handle: args[args.indexOf("--terminal") + 1], tabId: "tab-1", leafId: "leaf-1" } });
 if (args[0] === "terminal" && args[1] === "list") {

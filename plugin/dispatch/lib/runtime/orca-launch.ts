@@ -17,21 +17,39 @@
  * (`<tabId>:<leafId>`), read back with `orca terminal show`. Orca still
  * reports that it cannot bind an interactive session (`orca.ts` says why),
  * so the tick never asks for one.
+ *
+ * The tab is recorded as a run tab (`shared/orca-tabs.ts`), so the wrapper
+ * closes it when its run ends with nothing for a person, and the launch
+ * closes the earlier idle run tabs of the same pull request or item in the
+ * workspace. Neither holds a launch back: the receipt says what happened.
  */
 import { resolve } from "node:path";
 import { shellQuote } from "../../../shared/cli.ts";
 import { orcaCommand, orcaEnvelope } from "../../../shared/orca.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { run } from "../../../shared/proc.ts";
+import {
+  closePreviousTabs,
+  defaultRunTabDeps,
+  runTabEnv,
+  prSubject,
+  recordRunTab,
+} from "../../../shared/orca-tabs.ts";
+import { readRecord } from "../launches.ts";
 import { markComment } from "./orca-comment.ts";
 import type { LaunchStage, RuntimeReceipt } from "./port.ts";
 
 const RUN_TS = resolve(import.meta.dir, "../../run.ts");
 const BUNFIG = resolve(import.meta.dir, "../../bunfig.toml");
 
-/** The command line a launched terminal runs: the wrapper under its record. */
-function wrapperCommand(record: string, token: string): string {
+/**
+ * The command line a launched terminal runs: the wrapper under its record,
+ * told by when the launch (`until`, epoch ms) will have recorded its tab.
+ */
+function wrapperCommand(record: string, token: string, until: number): string {
   return [
+    "env",
+    ...runTabEnv(process.env, until),
     process.execPath,
     "--no-env-file",
     `--config=${BUNFIG}`,
@@ -132,7 +150,7 @@ async function startTerminal(
       "--title",
       stage.title,
       "--command",
-      wrapperCommand(stage.record, key),
+      wrapperCommand(stage.record, key, until),
       "--json",
     ],
     { timeoutSec: seconds(timeoutMs), stderr: "pipe" },
@@ -145,7 +163,8 @@ async function startTerminal(
     };
   const envelope = orcaEnvelope(done.stdout);
   if (done.code === 0 && envelope?.ok === true) {
-    const detail = `orca terminal create: ${JSON.stringify(envelope.result).slice(0, 300)}`;
+    const tabNote = await runTab(workspace, stage, envelope.result, until);
+    const detail = `orca terminal create: ${JSON.stringify(envelope.result).slice(0, 300)}${tabNote}`;
     if (stage.kind === "headless") return { ok: true, detail };
     const handle = handleOf(envelope.result);
     const left = until - Date.now();
@@ -169,4 +188,62 @@ async function startTerminal(
     ok: false,
     detail: `orca terminal create refused it (${envelope.ok ? "exit" : (envelope.code ?? "no code")}, exit ${done.code})`,
   };
+}
+
+/** What a launch record's run is for, as run tabs name it; null when the record does not read. */
+function subjectOf(record: string): string | null {
+  const launch = readRecord(record);
+  if (launch === null) return null;
+  if (launch.pr !== null) return prSubject(launch.pr);
+  return launch.item === null ? null : `item:${launch.item}`;
+}
+
+/**
+ * Record the stage's tab as a run tab and close the earlier ones of its pull
+ * request or item; returns what happened, for the receipt's detail.
+ */
+async function runTab(
+  workspace: { path: string },
+  stage: LaunchStage,
+  result: Record<string, unknown>,
+  until: number,
+): Promise<string> {
+  try {
+    return await recordAndCloseEarlier(workspace, stage, result, until);
+  } catch (error) {
+    return `; the tab's recording failed and it stays open after its run: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+async function recordAndCloseEarlier(
+  workspace: { path: string },
+  stage: LaunchStage,
+  result: Record<string, unknown>,
+  until: number,
+): Promise<string> {
+  const subject = subjectOf(stage.record);
+  if (subject === null)
+    return "; the tab is not recorded as a run tab: its launch record does not read";
+  if (Date.now() >= until)
+    return "; the tab stays open after its run: the launch's time was spent before it could be recorded";
+  const tabs = defaultRunTabDeps();
+  const recorded = await recordRunTab(
+    {
+      orca: orcaBinary(),
+      result,
+      worktree: workspace.path,
+      subject,
+      title: stage.title,
+    },
+    tabs,
+    until,
+  );
+  if ("unrecorded" in recorded)
+    return `; the tab stays open after its run, since it is not recorded: ${recorded.unrecorded}`;
+  const closed = await closePreviousTabs(
+    { worktree: workspace.path, subject, except: recorded.tab.handle },
+    tabs,
+    until,
+  );
+  return closed.length === 0 ? "" : `; ${closed.join("; ")}`;
 }

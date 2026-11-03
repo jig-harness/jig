@@ -1867,6 +1867,13 @@ make, use the entry's term instead.
   #456`). A session may rename the workspace to what the work became; the
   mark outlives the name, so the morning report still lists the workspace
   as dispatched.
+- **Run tab** — a terminal tab Jig opens in a workspace to run a drive or
+  another stage of the line: one `drive-pr` arms a drive in, or one the
+  *dispatcher* launches into. Jig records each one it opens, and the tab
+  closes itself when its run ends with nothing for a person (converged,
+  merged, taken over, re-armable, stopped by a person); a run that parks or
+  fails keeps its tab, and the next run for the same pull request or item
+  closes it. A tab a person opened is never closed.
 - **Dispatch labels** — the pull-request labels through which the
   *dispatcher* and a person see and steer each other, off unless a
   repository turns them on, all under one prefix the repository picks

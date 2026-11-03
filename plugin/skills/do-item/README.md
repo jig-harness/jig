@@ -156,7 +156,8 @@ template, and `template: ""` turns the renaming off.
 It also arms the drive in a terminal tab of its own in the workspace, titled
 `drive #<PR>`, so the drive outlives the session, a person can watch its
 rounds, and the session that implemented the item ends without a drive
-running beside it. The tab is a fresh login shell of yours, so `bun`,
+running beside it. The tab closes when the drive ends, unless the drive
+parked or failed and needs you. The tab is a fresh login shell of yours, so `bun`,
 `claude` and the Claude account or profile the drive uses come from it, not
 from the session. If Orca cannot open the tab, or the tab's drive does not
 show up in time, the drive starts in the background as it does elsewhere,
