@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import {
   existsSync,
   mkdirSync,
@@ -329,4 +329,30 @@ test("the deadline also covers a direct dependency directory and an empty one", 
     expect(() => classifyIgnored(root, [path], Date.now() - 1)).toThrow(
       "deadline",
     );
+});
+
+test("the deadline expiring mid-traversal stops the walk of a collapsed directory", () => {
+  const root = mkdtempSync(join(tmpdir(), "gc-ignored-deadline-"));
+  mkdirSync(join(root, "website", "packages", "node_modules"), {
+    recursive: true,
+  });
+  writeFileSync(join(root, "package.json"), "{}\n");
+  writeFileSync(join(root, "package-lock.json"), "{}\n");
+  // The clock reads inside the budget for `ticks` checks, then past it. The
+  // walk makes five: one per path, one entering each of `website` and
+  // `packages`, and one per entry in each.
+  const scan = (ticks: number) => {
+    let reads = 0;
+    const clock = spyOn(Date, "now").mockImplementation(() =>
+      ++reads <= ticks ? 0 : 2,
+    );
+    try {
+      return classifyIgnored(root, ["website/"], 1);
+    } finally {
+      clock.mockRestore();
+    }
+  };
+  for (const ticks of [1, 2, 3, 4])
+    expect(() => scan(ticks)).toThrow("deadline");
+  expect(scan(5).rebuildable).toEqual(["website/"]);
 });
