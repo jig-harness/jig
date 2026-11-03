@@ -33,6 +33,9 @@
 
 import { readFileSync } from "node:fs";
 
+import { report } from "./report.ts";
+export { report, pyRound1 } from "./report.ts";
+
 // ---------------------------------------------------------------------------
 // Python semantics
 // ---------------------------------------------------------------------------
@@ -201,24 +204,6 @@ function cmpStr(a: string, b: string): number {
   return x.length - y.length;
 }
 
-/** Python `round(x, 1)`: the exact binary value, ties to even. */
-export function pyRound1(x: number): number {
-  // `toFixed` also rounds the exact binary value (1.95 is below 1.95, so it
-  // gives 1.9), but breaks a true tie upward. The only binary values exactly
-  // halfway between two tenths are odd multiples of 0.25.
-  const quarters = x * 4;
-  if (Number.isInteger(quarters) && quarters % 2 !== 0) {
-    const floor = Math.floor(x * 10);
-    return (floor % 2 === 0 ? floor : floor + 1) / 10;
-  }
-  return Number(x.toFixed(1));
-}
-
-/** Python `repr()` of a float in the range this tool prints. */
-function pyFloat(x: number): string {
-  return Number.isInteger(x) ? `${x}.0` : String(x);
-}
-
 /** Python `int(text)` for a decimal string. Throws as Python raises. */
 function pyInt(text: string): number {
   const s = pyStrip(text);
@@ -232,33 +217,6 @@ function pyInt(text: string): number {
     value = value * 10 + ((code - zero) % 10);
   }
   return s.startsWith("-") ? -value : value;
-}
-
-class PyFloat {
-  readonly value: number;
-  constructor(value: number) {
-    this.value = value;
-  }
-}
-
-/** Python `json.dumps(value, indent=2)`, with its default `ensure_ascii`. */
-function pyDumps(value: unknown, depth = 0): string {
-  const pad = "  ".repeat(depth + 1);
-  const end = "  ".repeat(depth);
-  if (value instanceof PyFloat) return pyFloat(value.value);
-  if (Array.isArray(value)) {
-    if (!value.length) return "[]";
-    return `[\n${value.map((v) => pad + pyDumps(v, depth + 1)).join(",\n")}\n${end}]`;
-  }
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value);
-    if (!entries.length) return "{}";
-    return `{\n${entries.map(([k, v]) => `${pad}${pyDumps(k)}: ${pyDumps(v, depth + 1)}`).join(",\n")}\n${end}}`;
-  }
-  return JSON.stringify(value).replace(
-    /[\u0080-\uffff]/g,
-    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -897,6 +855,14 @@ export function blankFences(text: string): string {
   return scan(text)[0].join("\n");
 }
 
+export interface JoinedPosition {
+  /** Zero-based output line and code-point offset after inline code removal. */
+  line: number;
+  offset: number;
+  /** Code points removed from the start of the original cleaned line. */
+  prefix: number;
+}
+
 /**
  * Return `text` with every wrapped paragraph or list item on one line.
  *
@@ -905,8 +871,23 @@ export function blankFences(text: string): string {
  * removed before any boundary is tested, and a change of quote depth is
  * a boundary. The joined line starts after its list marker and quote marker.
  */
-export function joinWrapped(text: string): string {
+export function joinWrapped(
+  text: string,
+  positions?: Map<number, JoinedPosition>,
+): string {
   const [out, records] = parse(text);
+  const original = splitlines(text);
+  const locate = (index: number, line: number, offset: number, trim = true) => {
+    const rawInner = (records[index] as LineRecord).inner;
+    const inner = trim ? pyStrip(rawInner) : rawInner;
+    const raw = original[index] as string;
+    const start = inner ? raw.lastIndexOf(inner) : 0;
+    positions?.set(index, {
+      line,
+      offset,
+      prefix: cpLen(stripInlineCode(raw.slice(0, Math.max(0, start)))),
+    });
+  };
   const buffer: number[] = []; // physical indexes of the open paragraph
   let bufferDepth = 0;
 
@@ -916,6 +897,11 @@ export function joinWrapped(text: string): string {
     // A joined line is paragraph text. Its pipes must not rebuild a table
     // row beside a table the original containers kept apart; the broken
     // bar is the same width and the same one word.
+    let offset = 0;
+    for (const [partIndex, index] of buffer.entries()) {
+      locate(index, buffer[0] as number, offset);
+      offset += cpLen(stripInlineCode(parts[partIndex] as string)) + 1;
+    }
     out[buffer[0] as number] = parts
       .filter((p) => p)
       .join(" ")
@@ -932,6 +918,7 @@ export function joinWrapped(text: string): string {
       // without the containers: a `>` or list marker left on the line is an
       // extra cell or word there.
       out[index] = record.inner;
+      locate(index, index, 0, false);
       return;
     }
     if (record.item) flush();
@@ -1039,39 +1026,6 @@ export function lint(
 // ---------------------------------------------------------------------------
 // Report and command line
 // ---------------------------------------------------------------------------
-
-/** Render the report exactly as the Python originals print it. */
-export function report(
-  findings: Finding[],
-  wordsTotal: number,
-  asJson: boolean,
-  hardCount: number,
-  baseline: number,
-): string {
-  const rate = wordsTotal ? pyRound1((findings.length * 100) / wordsTotal) : 0;
-  if (asJson) {
-    return `${pyDumps({
-      violations: findings,
-      count: findings.length,
-      hard_count: hardCount,
-      baseline,
-      words: wordsTotal,
-      per_100_words: new PyFloat(rate),
-    })}\n`;
-  }
-  const out = findings.map(
-    (f) =>
-      `${f.file}:${f.line}:${f.col} ${f.rule}: ${f.message} [${f.match}]\n`,
-  );
-  out.push(
-    `\n${findings.length} violations (${hardCount} hard, baseline ${baseline}), ` +
-      `${wordsTotal} words, ${pyFloat(rate)} per 100 words\n`,
-  );
-  out.push(
-    "Hedges/modality (may, might, could) are never flagged: confidence is content.\n",
-  );
-  return out.join("");
-}
 
 function assert(condition: unknown, detail?: unknown): asserts condition {
   if (!condition) throw new Error(`selftest failed: ${JSON.stringify(detail)}`);
