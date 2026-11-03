@@ -8,11 +8,11 @@ import JigModel from "../components/JigModel.astro";
 import SkillCommand from "../components/SkillCommand.astro";
 import Walkthrough from "../components/Walkthrough.astro";
 import Base from "../layouts/Base.astro";
-import { modules, profiles, readme, walkthrough } from "../lib/data/index.ts";
+import { features, modules, profiles, readme, walkthrough } from "../lib/data/index.ts";
 import { LEVEL_NAME } from "../lib/data/modules.ts";
 import { mdInline } from "../lib/markdown.ts";
 import type { PlateName } from "../lib/plates.ts";
-import { countWord } from "../lib/view.ts";
+import { countWord, headingId } from "../lib/view.ts";
 
 const count = modules().length;
 const r = readme();
@@ -28,6 +28,15 @@ const [problemHead = "", ...problemRest] = r.opening.problem;
 const heroHead = await mdInline(problemHead, "README.md");
 const heroLede = await mdInline(problemRest.join(" "), "README.md");
 const heroTagline = await mdInline(r.opening.tagline.replace(/^\*\*|\*\*$/g, ""), "README.md");
+// What goes wrong: each feature's problem line from FEATURES.md, in its
+// order, linked to the feature's section on the features page.
+const problems = await Promise.all(
+  features().features.map(async (x) => ({
+    title: x.title,
+    href: `/features/#${headingId(x.title)}`,
+    html: `“${await mdInline(x.problem, "FEATURES.md")}”`,
+  })),
+);
 const run = walkthrough();
 const fxLine = await Promise.all(r.factory.line.map((p) => mdInline(p, "README.md")));
 const fxJobsLead = await mdInline(r.factory.jobsLead, "README.md");
@@ -111,11 +120,25 @@ const LIMITS = [
     </div>
   </section>
 
-  {
-    /* The problems section goes here: one line per feature, in a team's own
-       words for what goes wrong, read from FEATURES.md's problem lines and
-       each linked to its feature's section on /features/. */
-  }
+  <section id="problems" class="problems wrap band band-sunk" aria-labelledby="problems-h">
+    <div class="problems-head">
+      <span class="eyebrow">What goes wrong</span>
+      <h2 id="problems-h" class="display small-h">What a team says when nothing holds the work.</h2>
+      <p>Each line opens one of Jig's features. Follow it to what Jig does about it.</p>
+    </div>
+    <ul class="problem-list">
+      {
+        problems.map((p) => (
+          <li>
+            <a href={p.href}>
+              <span class="problem-line" set:html={p.html} />
+              <span class="problem-feature">{p.title} →</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
 
   <section id="run" class="run wrap band" aria-labelledby="run-h">
     <div class="run-head">
@@ -375,6 +398,56 @@ const LIMITS = [
     font-weight: 500;
     font-size: 15px;
     margin-top: auto;
+  }
+
+  /* What goes wrong: one card per feature, its problem line in the serif
+     as a quotation and the feature it opens below it. */
+  .problems-head {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .problems-head p {
+    margin: 0;
+    max-width: 60ch;
+  }
+  .problem-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+    gap: 12px;
+  }
+  .problem-list a {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    background: var(--card);
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .problem-list a:hover,
+  .problem-list a:focus-visible {
+    border-color: var(--accent);
+  }
+  .problem-line {
+    font: 19px/1.35 var(--serif);
+    text-wrap: pretty;
+  }
+  .problem-feature {
+    margin-top: auto;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .problem-list a:hover .problem-feature {
+    color: var(--accent-hover);
   }
 
   /* The recorded run: what it is on the left, the timeline on the right;
