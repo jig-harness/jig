@@ -7,7 +7,7 @@ waiting for a person it may not need.
 
 ### Changed
 
-- `jig dispatch` re-drives a drive that stopped with exit `9` (still conflicting with its base once its conflict-repair budget is spent), on any admitted account, once for each pair of the pull request's head and its base branch's head, whether the forge still reports it conflicting or now reports it mergeable. It tells a person only when that re-drive leaves the ledger stopped `9` at the same pair; a head or a base that moves is a new attempt. The tick reads the base branch's head for such a ledger only, and a head or a mergeability that does not read leaves the pull request unplaced for that tick. A headless Claude pass can commit only where `drive.pass_args` names a permission mode: see that field in [CONFIGURATION.md](../plugin/CONFIGURATION.md#drive).
+- `jig dispatch` re-drives a drive that stopped with exit `9` (still conflicting with its base once its conflict-repair budget is spent), on any admitted account, once for each pair of the pull request's head and its base branch's head, whether the forge still reports it conflicting or now reports it mergeable. It tells a person only when that re-drive leaves the ledger stopped `9` at the same pair; a head or a base that moves is a new attempt. The tick reads the base branch's head for such a ledger only, and a head or a mergeability that does not read leaves the pull request unplaced for that tick. A headless Claude pass can commit only where its approval source allows it, such as a permission mode `drive.pass_args` names: see that field in [CONFIGURATION.md](../plugin/CONFIGURATION.md#drive).
 - An outcome row for exit `9` now reads `exit 9 (conflicting with its base)`, still under the class `gates failed`.
 
 ### Fixed

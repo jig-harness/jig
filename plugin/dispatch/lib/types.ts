@@ -103,6 +103,8 @@ export interface StaleCause {
   change: string;
   /** The drive stopped `9`: a re-drive that leaves it so at this change is a person's to settle. */
   conflictStop?: true;
+  /** Changes an earlier launch of the same record may have acted on before a replay moved `change` on; each counts as re-driven. */
+  earlier?: string[];
 }
 
 /** One open pull request whose comments hold a drive ledger. */

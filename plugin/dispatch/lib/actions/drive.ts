@@ -100,12 +100,19 @@ async function retryBlocked(
   );
   if (read.class !== want) return `its ledger now reads ${read.class}`;
   // A stop on a conflict stands whatever moved since: its base moves often, and
-  // this record holds the pull request until its launch is replayed.
-  const moved =
-    record.redrive?.conflictStop === true
-      ? null
-      : changedStale(record.redrive, read);
-  if (moved !== null) return moved;
+  // this record holds the pull request until its launch is replayed. The replay
+  // then acts on the change read now, so the record names that one, and keeps
+  // the one an earlier launch may already have acted on.
+  if (record.redrive?.conflictStop === true) {
+    if (read.stale !== undefined && read.stale.change !== record.redrive.change)
+      record.redrive = {
+        ...read.stale,
+        earlier: [...(record.redrive.earlier ?? []), record.redrive.change],
+      };
+  } else {
+    const moved = changedStale(record.redrive, read);
+    if (moved !== null) return moved;
+  }
   return accountBlocked(state, record);
 }
 

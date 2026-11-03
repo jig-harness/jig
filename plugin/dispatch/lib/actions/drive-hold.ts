@@ -172,7 +172,9 @@ function redriven(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
   const stale = pr.class === "stale" ? pr.stale : undefined;
   if (stale === undefined) return null;
   const earlier = mine.findLast(
-    (r) => r.record.redrive?.change === stale.change,
+    (r) =>
+      r.record.redrive?.change === stale.change ||
+      r.record.redrive?.earlier?.includes(stale.change) === true,
   );
   return earlier === undefined
     ? null

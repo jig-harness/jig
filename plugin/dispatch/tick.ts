@@ -210,7 +210,10 @@ async function gatherRepo(
   // The forge: the open pull requests and their ledgers, and the merges.
   const labels = section.labels.enabled ? section.labels : null;
   const forge = await readForge(repo, report, section, labels, nowMs);
-  forge.drives = settleConflictStops(forge.drives, allRecords(context));
+  forge.drives = settleConflictStops(
+    forge.drives,
+    allRecords(context).filter((r) => r.record.repo === repo.slug),
+  );
   const { open, drives, merged, login } = forge;
 
   // The runtime: which of them a session holds.
