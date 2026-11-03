@@ -1138,9 +1138,11 @@ routing below remain **exact**.
         report it with the exit code and captured output.
       - Exit `0` → the drive already reached a terminal state within the
         window: report its outcome rather than assuming it is running.
-      - Still running → armed; move on without further polling unless the
-        Codex host requires this session to stay alive. In that case, keep
-        polling the same task until the drive ends; never launch it again.
+      - Still running → armed; move on to the rename and the tracker comment
+        below. Only when the Codex host requires this session to stay alive
+        do you then keep polling the same task until the drive ends, after
+        those steps, so the outcome and handles are published first; never
+        launch it again, and report the drive's terminal outcome afterward.
 
       Once armed, name the workspace for the driving stage (same rules as at
       pickup, with `.context/workspace-title.md` still holding the title):

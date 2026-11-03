@@ -1049,8 +1049,9 @@ could forge or forget.
      captured output.
    - exit `0` inside the window → the drive already reached a terminal state;
      report its own reason.
-   - still running → armed. Poll only if keeping a Codex host session alive
-     is required for the command to continue (below).
+   - still running → armed. Go on to step 6 and report; poll only after
+     that report, and only if keeping a Codex host session alive is
+     required for the command to continue (below).
 6. **Name the workspace, report and stop.** When step 4 found the drive
    `armed`, or step 5 found it still running (not refused, failed or already
    finished), name the workspace for the driving stage, in `<tree>`, with the
