@@ -248,15 +248,9 @@ to the person; its Herdr provider starts the configured agent.
 
 [Orca](https://www.onorca.dev) is one of the workspace runtimes Jig's
 tooling supports, beside Herdr, the runtime it targets first. On an Orca
-host every stage of the execution line will keep the workspace board true
-(a parked drive's card unread with the question as its comment, a merged
-item's card completed), `jig gc` will collect an Orca-managed worktree
-through Orca so its card and terminals go with it, the dispatcher will read
-each account's usage from Orca's command line once Orca offers it, and a
-small plugin Orca loads will run a dispatcher tick the moment an agent
-stops or waits. Collection goes through the worktrees kind's runtime
-column, which another runtime joins; the board helper and the plugin are
-Orca-bound.
+host the dispatcher will read each account's usage from Orca's command line
+once Orca offers it, and a small plugin Orca loads will run a dispatcher
+tick the moment an agent stops or waits. The plugin is Orca-bound.
 
 ## Later
 
