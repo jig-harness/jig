@@ -110,8 +110,15 @@ export function runTabEnv(env: Env = process.env): string[] {
 
 const PENDING_VAR = "JIG_ORCA_TAB_PENDING";
 
-/** How long a run's end waits for its opener to record the tab. */
-const REGISTRATION_WAIT_MS = 10_000;
+/**
+ * How long a run's end waits for its opener to record the tab: longer than
+ * the opener's own launch deadline (Orca's terminal create is allowed twenty
+ * seconds in `shared/orca.ts`, the dispatch runtime sixty), so a run that
+ * ends at once still finds the record its opener publishes after create
+ * answers. An opener that cannot record leaves the run's end waiting this
+ * long, and only then.
+ */
+const REGISTRATION_WAIT_MS = 90_000;
 
 /**
  * The seconds a call may take when it must end by `until` (epoch ms) and is
@@ -292,6 +299,7 @@ export function tabState(
 export type CloseOutcome =
   | "closed"
   | "busy"
+  | "reused"
   | "gone"
   | "out of time"
   | { failed: string };
@@ -300,11 +308,18 @@ export type CloseOutcome =
  * Close `tab` through Orca if it is idle. A tab whose shell is gone, or that
  * Orca no longer knows, has its record dropped: Orca cannot close it by its
  * handle any more. Neither call outlasts `until` (epoch ms).
+ *
+ * With `known` (the shell's children when the run was ending), the one
+ * process-table read that decides idleness also decides reuse: a child
+ * outside `known` is a person's new work and ends as "reused", which a
+ * caller does not retry; a child inside it is the ending run, "busy", which
+ * it may.
  */
 export async function closeRunTab(
   tab: RunTab,
   deps: Pick<RunTabDeps, "root" | "orca" | "table">,
   until: number = Number.POSITIVE_INFINITY,
+  known?: ReadonlySet<number>,
 ): Promise<CloseOutcome> {
   const tableBudget = within(until, TABLE_CALL_SEC);
   if (tableBudget === null) return "out of time";
@@ -315,7 +330,11 @@ export async function closeRunTab(
     forget(deps.root, tab.handle);
     return "gone";
   }
-  if (state === "busy") return "busy";
+  if (state === "busy")
+    return known !== undefined &&
+      childPids(tab, rows).some((p) => !known.has(p))
+      ? "reused"
+      : "busy";
   const closeBudget = within(until, Number.POSITIVE_INFINITY);
   if (closeBudget === null) return "out of time";
   const done = await deps.orca(
@@ -526,10 +545,8 @@ async function closeAfterExit(
   const deadline = deps.now() + CLOSER_WAIT_MS;
   while (isAlive(pid) && deps.now() < deadline) await deps.sleep(POLL_MS);
   for (;;) {
-    const rows = await deps.table();
-    if (rows !== null && childPids(tab, rows).some((p) => !known.has(p)))
-      return "busy";
-    const outcome = await closeRunTab(tab, deps);
+    const outcome = await closeRunTab(tab, deps, undefined, known);
+    if (outcome === "reused") return "busy";
     if (outcome !== "busy" || deps.now() >= deadline) return outcome;
     await deps.sleep(POLL_MS);
   }

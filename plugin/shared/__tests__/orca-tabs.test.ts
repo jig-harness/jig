@@ -209,6 +209,28 @@ describe("closing a tab", () => {
     expect(readRunTabs(root)).toHaveLength(1);
   });
 
+  test("decides reuse and idleness from one process-table read", async () => {
+    write(tab());
+    const orca = fakeOrca();
+    let reads = 0;
+    const deps = {
+      root,
+      orca: orca.runner,
+      table: async () => {
+        reads += 1;
+        return [row(SHELL, 1), row(5000, SHELL), row(6000, SHELL)];
+      },
+    };
+    const known = new Set([5000]);
+    expect(await closeRunTab(tab(), deps, undefined, known)).toBe("reused");
+    expect(reads).toBe(1);
+    // Only the ending run's own children: still busy, which a caller retries.
+    expect(
+      await closeRunTab(tab(), deps, undefined, new Set([5000, 6000])),
+    ).toBe("busy");
+    expect(orca.calls).toEqual([]);
+  });
+
   test("drops the record of a tab whose shell is gone, without calling Orca", async () => {
     write(tab());
     const orca = fakeOrca();
@@ -431,7 +453,7 @@ describe("a run ending in its own tab", () => {
     expect(
       await endOwnTab(true, root, self, () => undefined, clockDeps(true)),
     ).toBeNull();
-    expect(clock).toBeGreaterThanOrEqual(10_000);
+    expect(clock).toBeGreaterThanOrEqual(90_000);
   });
 });
 
