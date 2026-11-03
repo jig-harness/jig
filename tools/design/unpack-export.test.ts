@@ -8,6 +8,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -61,6 +62,34 @@ function pageTemplate(title: string, body: string): string {
   return `<!DOCTYPE html>\n<html lang="en"><head>\n<title>${title}</title>\n<script src="${RUNTIME_ID}"></script>\n</head>\n<body>\n${body}\n<script type="text/x-dc" data-dc-script="" data-props="{}">class Component {}</script>\n</body></html>`;
 }
 
+interface PageSpec {
+  id: string;
+  title: string;
+  react?: string;
+  dom?: string | null;
+}
+
+/** An export of self-standing pages, each carrying its own React builds. */
+function pagesExport(pages: PageSpec[]): string {
+  const manifest: Record<string, unknown> = {};
+  for (const spec of pages) {
+    const assets: Record<string, unknown> = {
+      [RUNTIME_ID]: asset(RUNTIME),
+      [REACT_ID]: asset(spec.react ?? REACT),
+    };
+    if (spec.dom !== null) assets[DOM_ID] = asset(spec.dom ?? DOM);
+    manifest[spec.id] = asset(
+      bundle(pageTemplate(spec.title, "<x-dc><div>hello</div></x-dc>"), assets),
+      "text/html",
+    );
+  }
+  return bundle(
+    "<html><body></body></html>",
+    manifest,
+    pages.map((spec) => spec.id),
+  );
+}
+
 function syntheticExport(): string {
   const page = bundle(
     pageTemplate("Sample page", '<x-dc><div class="dd">hello</div></x-dc>'),
@@ -97,11 +126,14 @@ interface Run {
 function withExport(
   html: string,
   check: (dir: string, result: Run) => void,
+  args: string[] = [],
+  before?: (dir: string) => void,
 ): void {
   const dir = mkdtempSync(join(tmpdir(), "unpack-export-"));
   try {
     writeFileSync(join(dir, "export.html"), html);
-    const result = Bun.spawnSync(["bun", SCRIPT, dir], {
+    before?.(dir);
+    const result = Bun.spawnSync(["bun", SCRIPT, ...args, dir], {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -152,6 +184,108 @@ describe("unpack-export", () => {
       expect(html).not.toContain("<!--");
       expect(read(dir, "vendor", "react.production.min.js")).toBe(REACT);
       expect(read(dir, "vendor", "react-dom.production.min.js")).toBe(DOM);
+    });
+  });
+
+  it("declares a viewport in every generated page", () => {
+    withExport(syntheticExport(), (dir, result) => {
+      expectSpawnExit(result, 0);
+      expect(read(dir, "generated", "sample-page.html")).toContain(
+        '<head>\n<meta name="viewport" content="width=device-width, initial-scale=1">',
+      );
+    });
+  });
+
+  it("refuses two pages that would share a file name", () => {
+    withExport(
+      pagesExport([
+        { id: PAGE_ID, title: "Sample page" },
+        { id: IMPORTER_ID, title: "Sample-page" },
+      ]),
+      (dir, result) => {
+        expectSpawnExit(result, 2);
+        expect(result.stderr).toContain("already named sample-page.html");
+        expect(existsSync(join(dir, "generated"))).toBe(false);
+      },
+    );
+  });
+
+  it("refuses a page whose id would leave the directory", () => {
+    withExport(pagesExport([{ id: "../export", title: "" }]), (dir, result) => {
+      expectSpawnExit(result, 2);
+      expect(result.stderr).toContain("not a plain file name");
+      expect(read(dir, "export.html")).toContain("__bundler/manifest");
+    });
+  });
+
+  it("refuses an export that lacks a React build", () => {
+    withExport(
+      pagesExport([{ id: PAGE_ID, title: "Sample page", dom: null }]),
+      (_dir, result) => {
+        expectSpawnExit(result, 2);
+        expect(result.stderr).toContain(
+          "carries no react-dom.production.min.js",
+        );
+      },
+    );
+  });
+
+  it("refuses pages whose React builds differ", () => {
+    withExport(
+      pagesExport([
+        { id: PAGE_ID, title: "First" },
+        { id: IMPORTER_ID, title: "Second", react: `${REACT}\n/* other */` },
+      ]),
+      (_dir, result) => {
+        expectSpawnExit(result, 2);
+        expect(result.stderr).toContain(
+          "its react.production.min.js differs from an earlier page's",
+        );
+      },
+    );
+  });
+
+  it("keeps the previous output when the export is refused", () => {
+    withExport(
+      pagesExport([{ id: PAGE_ID, title: "Sample page", dom: null }]),
+      (dir, result) => {
+        expectSpawnExit(result, 2);
+        expect(read(dir, "generated", "old.html")).toBe("previous");
+      },
+      [],
+      (dir) => {
+        mkdirSync(join(dir, "generated"));
+        writeFileSync(join(dir, "generated", "old.html"), "previous");
+      },
+    );
+  });
+
+  it("--check passes over fresh output and names what differs otherwise", () => {
+    const html = syntheticExport();
+    withExport(html, (dir, written) => {
+      expectSpawnExit(written, 0);
+      const fresh = Bun.spawnSync(["bun", SCRIPT, "--check", dir]);
+      expectSpawnExit(
+        {
+          exitCode: fresh.exitCode,
+          stdout: fresh.stdout.toString(),
+          stderr: fresh.stderr.toString(),
+        },
+        0,
+      );
+      writeFileSync(join(dir, "generated", "sample-page.html"), "edited");
+      writeFileSync(join(dir, "generated", "extra.html"), "left over");
+      const drifted = Bun.spawnSync(["bun", SCRIPT, "--check", dir]);
+      const text = drifted.stderr.toString();
+      expectSpawnExit(
+        { exitCode: drifted.exitCode, stdout: "", stderr: text },
+        1,
+      );
+      expect(text).toContain("generated/sample-page.html differs");
+      expect(text).toContain("generated/extra.html differs");
+      expect(text).toContain(
+        "regenerate with: bun tools/design/unpack-export.ts",
+      );
     });
   });
 

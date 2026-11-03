@@ -13,7 +13,8 @@
  *   (holds an `<x-dc>` template and imports no other page), with the
  *   runtime's manifest reference replaced by three scripts at the end of
  *   its body: the scenario hook below, inline; the React builds, by path;
- *   and the page runtime as exported, inline;
+ *   and the page runtime as exported, inline; every page's React builds
+ *   must be the same bytes;
  * - `vendor/react.production.min.js` and `vendor/react-dom.production.min.js`,
  *   the React builds as exported (their licence stays in `vendor/LICENSE`).
  *
@@ -23,18 +24,24 @@
  * once the page has rendered, so the landing check opens one scenario per
  * URL and waits for it.
  *
- * Usage: `bun tools/design/unpack-export.ts <bundle-dir>`, where the bundle
- * holds `export.html`. `generated/` is replaced whole. Exit 2 when the file
+ * Every generated page also gets a viewport declaration, which the export's
+ * pages lack, so a phone lays them out at its own width.
+ *
+ * Usage: `bun tools/design/unpack-export.ts [--check] <bundle-dir>`, where
+ * the bundle holds `export.html`. `generated/` is replaced whole, and only
+ * after the whole export has unpacked; `--check` writes nothing and exits 1
+ * naming each file that differs from a fresh unpacking. Exit 2 when the file
  * is not such an export.
  */
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { cli } from "../../lib/cli.ts";
 import {
   decodeJson,
@@ -184,11 +191,10 @@ export interface Unpacked {
   react: string[];
 }
 
-/** What the pages share: the one runtime, inlined into each, and the React builds, written once. */
+/** What the pages share: the one runtime, inlined into each, and the React builds, kept once. */
 interface Shared {
-  vendor: string;
   runtime: string | null;
-  react: string[];
+  react: Map<string, string>;
 }
 
 /** A page's title, for its file name and its messages. */
@@ -203,8 +209,9 @@ function standsAlone(template: string): boolean {
 
 /**
  * The page's template with its manifest references resolved: a React build
- * goes to `vendor/`, the runtime is kept for `support.js`, and the script tag
- * that named it is dropped.
+ * is kept for `vendor/`, the runtime is kept to be inlined, and the script
+ * tag that named it is dropped. Two pages carrying different builds of the
+ * same file, or different runtimes, are refused.
  */
 function resolveAssets(
   title: string,
@@ -217,8 +224,12 @@ function resolveAssets(
     const text = assetText(asset);
     const react = reactFile(text);
     if (react !== undefined) {
-      writeFileSync(join(shared.vendor, react), text);
-      if (!shared.react.includes(react)) shared.react.push(react);
+      const earlier = shared.react.get(react);
+      if (earlier !== undefined && earlier !== text)
+        throw new UnpackError(
+          `${title}: its ${react} differs from an earlier page's`,
+        );
+      shared.react.set(react, text);
       continue;
     }
     const tag = new RegExp(`\\s*<script src="${uuid}"></script>`);
@@ -237,6 +248,18 @@ function resolveAssets(
   return html;
 }
 
+const VIEWPORT =
+  '<meta name="viewport" content="width=device-width, initial-scale=1">';
+
+/** The page with a viewport declaration in its head, so a phone lays it out at its own width. */
+function withViewport(title: string, html: string): string {
+  if (/<meta\s[^>]*name=["']viewport["']/i.test(html)) return html;
+  const head = /<head[^>]*>/i.exec(html);
+  if (head === null) throw new UnpackError(`${title}: no <head>`);
+  const at = head.index + head[0].length;
+  return `${html.slice(0, at)}\n${VIEWPORT}${html.slice(at)}`;
+}
+
 /** The page with the scripts it needs appended to its body. */
 function withScripts(
   title: string,
@@ -250,12 +273,15 @@ function withScripts(
   return `${html.slice(0, end)}${scripts(runtime)}${html.slice(end)}`;
 }
 
-/** Write one page under `generated`; its file name, or `null` when it was skipped. */
+/** A file name that cannot leave the directory it is written to. */
+const SAFE_STEM = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/** Add one page's file to `files`; a page that imports another is skipped. */
 function unpackPage(
   id: string,
   page: Asset,
-  generated: string,
   shared: Shared,
+  files: Map<string, string>,
   out: Unpacked,
 ): void {
   const inner = parseBundle(assetText(page));
@@ -266,45 +292,98 @@ function unpackPage(
     return;
   }
   const resolved = resolveAssets(title, inner.template, inner.manifest, shared);
-  const html = withScripts(title, resolved, shared.runtime);
-  const name = `${slug(title) || id}.html`;
-  writeFileSync(join(generated, name), html);
+  const html = withScripts(
+    title,
+    withViewport(title, resolved),
+    shared.runtime,
+  );
+  const stem = slug(title) || id;
+  if (!SAFE_STEM.test(stem))
+    throw new UnpackError(`${title}: its page id is not a plain file name`);
+  const name = `${stem}.html`;
+  if (out.pages.includes(name))
+    throw new UnpackError(`${title}: another page is already named ${name}`);
+  files.set(`generated/${name}`, html);
   out.pages.push(name);
 }
 
-/** Write the export's self-standing pages, runtime and React builds under `dir`. */
-export function unpack(dir: string): Unpacked {
+/** Every file the export yields, by path under the bundle directory; nothing is written. */
+export function build(dir: string): {
+  files: Map<string, string>;
+  out: Unpacked;
+} {
   const exportPath = join(dir, "export.html");
   if (!existsSync(exportPath))
     throw new UnpackError(`${exportPath} does not exist`);
   const outer = parseBundle(readFileSync(exportPath, "utf8"));
   if (outer === null)
     throw new UnpackError(`${exportPath} is not a design export`);
-  const generated = join(dir, "generated");
-  rmSync(generated, { recursive: true, force: true });
-  mkdirSync(generated, { recursive: true });
-  const shared: Shared = {
-    vendor: join(dir, "vendor"),
-    runtime: null,
-    react: [],
-  };
-  mkdirSync(shared.vendor, { recursive: true });
+  const shared: Shared = { runtime: null, react: new Map() };
+  const files = new Map<string, string>();
   const out: Unpacked = { pages: [], skipped: [], react: [] };
   for (const id of outer.pageOrder) {
     const page = outer.manifest[id];
-    if (page !== undefined) unpackPage(id, page, generated, shared, out);
+    if (page !== undefined) unpackPage(id, page, shared, files, out);
   }
-  out.react = shared.react;
   if (out.pages.length === 0)
     throw new UnpackError(`${exportPath} holds no self-standing page`);
+  for (const name of REACT_FILES) {
+    const text = shared.react.get(name);
+    if (text === undefined)
+      throw new UnpackError(`${exportPath} carries no ${name}`);
+    files.set(`vendor/${name}`, text);
+    out.react.push(name);
+  }
+  return { files, out };
+}
+
+/**
+ * Write the export's self-standing pages, runtime and React builds under
+ * `dir`. The whole result is built and checked first, so a refused export
+ * leaves the previous output as it was.
+ */
+export function unpack(dir: string): Unpacked {
+  const { files, out } = build(dir);
+  rmSync(join(dir, "generated"), { recursive: true, force: true });
+  for (const [path, text] of files) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
   return out;
 }
 
-const USAGE = "Usage: bun tools/design/unpack-export.ts <bundle-dir>";
+/** The generated files that differ from what the export yields: missing, changed or left over. */
+export function stale(dir: string): string[] {
+  const { files } = build(dir);
+  const found: string[] = [];
+  for (const [path, text] of files) {
+    const file = join(dir, path);
+    if (!existsSync(file) || readFileSync(file, "utf8") !== text)
+      found.push(path);
+  }
+  const generated = join(dir, "generated");
+  if (existsSync(generated))
+    for (const name of readdirSync(generated))
+      if (!files.has(`generated/${name}`)) found.push(`generated/${name}`);
+  return found;
+}
+
+const USAGE = "Usage: bun tools/design/unpack-export.ts [--check] <bundle-dir>";
 
 function main(args: string[]): number {
-  const dir = args[0];
+  const check = args[0] === "--check";
+  const dir = check ? args[1] : args[0];
   if (dir === undefined || dir.startsWith("-")) throw new UnpackError(USAGE);
+  if (check) {
+    const found = stale(dir);
+    for (const path of found)
+      console.error(`${path} differs from a fresh unpacking`);
+    if (found.length > 0)
+      console.error(
+        `regenerate with: bun tools/design/unpack-export.ts ${dir}`,
+      );
+    return found.length > 0 ? 1 : 0;
+  }
   const result = unpack(dir);
   for (const page of result.pages) console.log(`generated/${page}`);
   for (const file of result.react) console.log(`vendor/${file}`);

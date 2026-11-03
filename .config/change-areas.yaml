@@ -380,3 +380,20 @@ areas:
     workspace: []
     impliedBy: []
     deployTier: none
+    generated:
+      - outputs:
+          - "design/prototypes/dispatch-dashboard/generated/dispatch-dashboard.html"
+          - "design/prototypes/dispatch-dashboard/generated/decisions.html"
+          - "design/prototypes/dispatch-dashboard/generated/handoff.html"
+          - "design/prototypes/dispatch-dashboard/vendor/react.production.min.js"
+          - "design/prototypes/dispatch-dashboard/vendor/react-dom.production.min.js"
+        source:
+          - "design/prototypes/dispatch-dashboard/export.html"
+          - "tools/design/unpack-export.ts"
+        command: "bun tools/design/unpack-export.ts design/prototypes/dispatch-dashboard"
+        check: "bun tools/design/unpack-export.ts --check design/prototypes/dispatch-dashboard"
+        notes: >-
+          The design round's self-standing pages and React builds, unpacked
+          from the raw export. The check rebuilds them in memory and writes
+          nothing; a file in generated/ that the export does not yield counts
+          as stale too.
