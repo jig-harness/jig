@@ -28,7 +28,7 @@ The [dispatcher](../../GLOSSARY.md)
 ([design/dark-factory-dispatch.md](../../design/dark-factory-dispatch.md))
 is a new kind of tooling. It runs with nobody at the keyboard, on a timer,
 and starts the stages of the
-[execution line](../../FACTORY.md#execution-the-work-item-line) (the steps
+[execution line](../../FACTORY.md#the-line) (the steps
 that carry one work item from pickup to a merged pull request) as agent
 sessions: pickups, [re-arms and takeovers](../../GLOSSARY.md) of a stopped
 or wedged pull-request drive, follow-ups. To do that it needs these from

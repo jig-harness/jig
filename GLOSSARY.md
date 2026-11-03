@@ -23,10 +23,12 @@ make, use the entry's term instead.
   practices to build that scaffolding and skills that run the stations. See
   [FACTORY.md](FACTORY.md).
 - **Station** — one fixed step of a *software factory*, with its input, its
-  output and who runs it: a skill, an agent or a person. Design and planning
-  runs a feature through a pipeline of stations (research, PRD, architecture,
-  …); execution runs one work item through a line of them, from pick-up to a
-  merged pull request and its follow-ups. See [FACTORY.md](FACTORY.md).
+  output and who runs it: a skill, an agent, a tool or a person. Deciding what
+  to build runs a feature through a pipeline of stations (research,
+  requirements, architecture, …); the line runs one work item through a row
+  of them, from pick-up to a merged pull request and its follow-ups. The
+  *dispatcher* is no station: it starts stations of the line when nobody is at
+  the keyboard. See [FACTORY.md](FACTORY.md).
 - **Lifecycle map** (stage map) — the one table that publishes a repository's
   delivery loop, from steering to a closed epic and back: a row per named
   stage, the skill, command or document that owns it, and the artifact it
@@ -1175,6 +1177,12 @@ make, use the entry's term instead.
   but is stuck (alive with no progress) or dead with nothing left unpushed;
   it is refused against a driver that is making progress
   ([drive-pr](plugin/skills/drive-pr/README.md#picking-up-a-stopped-drive)).
+- **Re-drive** — the *dispatcher* starting a *PR drive loop* again on a pull
+  request whose drive converged, once that pull request has gone stale: the
+  forge reports it in conflict with its base, or its head moved past the head
+  the drive verified. It starts once per head, and the drive merges the base
+  in or reviews the new head. A converged pull request its base merely moved
+  past, still mergeable at the verified head, is left alone.
 - **Permission mode (of a pass)** — the setting of an agent tool that
   decides which of its actions ask a person first. Claude Code's
   `default` mode asks before most edits and commands; a pass of a *PR

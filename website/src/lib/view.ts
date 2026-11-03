@@ -61,18 +61,22 @@ export function factoryPlace(
   moduleId: string,
 ): { label: string; href: string } | null {
   const f = factory();
-  if (f.levels[0]?.modules.includes(moduleId))
-    return { label: "Factory · design and planning", href: "/factory/design/" };
-  if (f.levels[1]?.modules.includes(moduleId))
-    return { label: "Factory · execution", href: "/factory/execution/" };
+  const part = (name: string) => f.levels.find((l) => l.name === name);
+  if (part("Deciding what to build")?.modules.includes(moduleId))
+    return {
+      label: "Factory · deciding what to build",
+      href: "/factory/design/",
+    };
+  if (part("The line")?.modules.includes(moduleId))
+    return { label: "Factory · the line", href: "/factory/line/" };
   if (moduleId === "M8")
     return {
-      label: "Factory · the learning loop",
+      label: "Factory · the loop that sharpens it",
       href: "/factory/learning-loop/",
     };
   if (f.platform.some((p) => p.modules.includes(moduleId)))
     return {
-      label: "Factory · asks the platform for",
+      label: "Factory · what the platform supplies",
       href: "/factory/#platform",
     };
   return null;

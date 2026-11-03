@@ -1,9 +1,10 @@
 ---
 // What a factory of agents runs on, as one picture: the stations (the
-// plugin's skills) standing on the scaffolding (three jobs, built by the
-// modules), above the line where the organization's platform starts. `mini`
-// is the home page's form; `full` adds the platform's four needs and the
-// caption.
+// plugin's skills), with the dispatcher's rail under the line, standing on
+// the scaffolding (three jobs, built by the modules), above the line where
+// the organization's platform starts. `mini` is the home page's form; `full`
+// adds the platform's four needs and the caption.
+import { dispatcherTaps } from "../lib/data/factory.ts";
 import { factory } from "../lib/data/index.ts";
 import Arrow from "./Arrow.astro";
 import JobCell from "./factory/JobCell.astro";
@@ -22,7 +23,9 @@ const plain = (md: string) =>
     .replace(/[*`_]/g, "")
     .replace(/\s+/g, " ")
     .trim();
-const shortOf = (means: string) => plain(means).split(/:|, each rule/)[0] ?? "";
+const shortOf = (means: string) => plain(means).split(/:|\.\s|, each rule/)[0] ?? "";
+const tapped = [...dispatcherTaps(f).keys()].map((id) => f.line.find((s) => s.id === id)?.n);
+const starts = `stations ${tapped.slice(0, -1).join(", ")} and ${tapped.at(-1)}`;
 ---
 
 <figure class:list={["xs", variant]} id={variant === "full" ? "figure-1" : undefined} aria-labelledby={variant === "full" ? "xs-cap" : undefined} aria-label={variant === "mini" ? "What the factory runs on, at a glance" : undefined}>
@@ -40,16 +43,20 @@ const shortOf = (means: string) => plain(means).split(/:|, each rule/)[0] ?? "";
   <div class="stations-wrap">
     <div class="stations">
       <span class="frame-tag">Stations · the plugin's skills</span>
-      <span class="level-name">A · Design and planning</span>
+      <span class="level-name">Deciding what to build</span>
       <ol class="row five">
         {f.pipeline.map((s) => <StationBox station={s} compact />)}
       </ol>
       <div class="handoff"><Arrow dir="down" class="handoff-arrow" /><span>an epic of planned work items, one at a time</span></div>
-      <span class="level-name">B · Execution</span>
+      <span class="level-name">The line</span>
       <ol class="row seven">
         {f.line.map((s) => <StationBox station={s} compact />)}
       </ol>
-      <p class="loop">↺ the learning loop wraps both levels · follow-ups re-enter at 1 · no skill merges</p>
+      <p class="rail">
+        <a class="rail-name" href="/factory/unattended/">The dispatcher</a>
+        <span>starts {starts} when nobody is at the keyboard · a person merges</span>
+      </p>
+      <p class="loop">↺ the learning loop wraps both parts · follow-ups re-enter at 1</p>
     </div>
   </div>
   <div class="scaffold">
@@ -106,7 +113,7 @@ const shortOf = (means: string) => plain(means).split(/:|, each rule/)[0] ?? "";
       </div>
     ) : (
       <figcaption id="xs-cap">
-        Figure 1: what a factory of agents runs on. The plugin's skills run the stations at the top (<a href="#levels">figure 2</a> has each one); they stand on the scaffolding, whose three jobs Jig's modules build. Jig ends at the solid line: below it, each module states what the repository needs from your platform, so any platform can supply it. <a href="/factory/scaffolding/">The scaffolding in full</a>.
+        Figure 1: what a factory of agents runs on. The plugin's skills run the stations at the top, and <a href="#levels">figure 2</a> has each one. Under the line runs the dispatcher, which starts a station when nobody does. The stations stand on the scaffolding, whose three jobs Jig's modules build. Jig ends at the solid line: below it, each module states what the repository needs from your platform, so any platform can supply it. <a href="/factory/scaffolding/">The scaffolding in full</a>.
       </figcaption>
     )
   }
@@ -187,6 +194,22 @@ const shortOf = (means: string) => plain(means).split(/:|, each rule/)[0] ?? "";
   .loop {
     margin: 8px 0 0;
     font-size: 12.5px;
+  }
+  /* The dispatcher, as the rail under the line's stations. */
+  .rail {
+    margin: 6px 0 0;
+    border-top: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 0 var(--r) var(--r);
+    padding: 4px 8px 5px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    align-items: baseline;
+    font-size: 12.5px;
+  }
+  .rail-name {
+    font-weight: 600;
   }
   .scaffold {
     border: 1px solid var(--line);

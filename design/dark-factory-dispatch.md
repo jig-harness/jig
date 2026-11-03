@@ -1,6 +1,6 @@
 # The dispatcher, a tick that starts the execution line's stages: design
 
-**What problem this solves.** Jig's [execution line](../FACTORY.md#execution-the-work-item-line)
+**What problem this solves.** Jig's [execution line](../FACTORY.md#the-line)
 has a skill for each stage: `do-item` picks an item up, `drive-pr` drives its
 pull request through review, a follow-up settles what the merge owes. Each
 of them starts only when a person types it. An item assigned to the team

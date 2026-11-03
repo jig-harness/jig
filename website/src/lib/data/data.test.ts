@@ -8,10 +8,12 @@ import { FEATURE_PLATES, parseFeatures } from "./features.ts";
 import { parseFlywheel } from "./flywheel.ts";
 import {
   DESIGN_NOT_BUILT,
+  DISPATCHER_STARTS,
   HANDOFFS,
   NOT_BUILT,
   VERIFY_PHASES,
   VERIFY_WHEN,
+  dispatcherTaps,
   jobsByModule,
   parseFactory,
 } from "./factory.ts";
@@ -27,6 +29,7 @@ import { parseReadme } from "./readme.ts";
 import { parseSkills } from "./skills.ts";
 import { parseChangelog, parseRoadmap, roadmapAnchor } from "./whats-new.ts";
 import { PLATES } from "../plates.ts";
+import { sections } from "../source.ts";
 import { headingId } from "../view.ts";
 import {
   MODULE_IDS,
@@ -316,6 +319,79 @@ describe.skipIf(!existsSync(join(root, "FACTORY.md")))("the factory", () => {
   const text = existsSync(join(root, "FACTORY.md")) ? read("FACTORY.md") : "";
   const f = parseFactory(text);
 
+  test("reads the sections in the document's order, the line first", () => {
+    expect(
+      sections(text)
+        .slice(1)
+        .map((s) => s.title),
+    ).toEqual([
+      "The line",
+      "With nobody at the keyboard",
+      "Deciding what to build",
+      "What it stands on",
+      "The loop that sharpens it",
+      "What stays with a person",
+      "What the platform supplies",
+    ]);
+    expect(f.intro.length).toBeGreaterThanOrEqual(2);
+    expect(f.lineLead).not.toBe("");
+    expect(f.lineAfter).toStartWith("Follow-up items");
+    expect(f.prLoopLead).toStartWith("Every change follows");
+    expect(f.prLoop.map((s) => s.lead)).toEqual([
+      "Develop",
+      "Review rounds",
+      "Resolve every comment",
+      "Merge",
+    ]);
+    expect(f.designLead).not.toBe("");
+    expect(f.scaffoldLead).not.toBe("");
+    expect(f.many.modules).toEqual(["M12", "M11"]);
+    expect(f.provideList).toStartWith("- **A practice for each part.**");
+    expect(f.learning).not.toBe("");
+    expect(f.audit).toStartWith("The [audit]");
+    expect(f.person.length).toBeGreaterThan(0);
+    expect(f.platform.map((p) => p.lead)).toContain("Parallel workspaces");
+  });
+
+  test("reads the dispatcher's section: its parts, what it starts and what it never does", () => {
+    const u = f.unattended;
+    expect(u.lead.length).toBeGreaterThan(0);
+    expect(u.parts.map((p) => p.title)).toEqual([
+      "What it starts",
+      "What reaches a person",
+      "The outcome log and its dashboard",
+      "Accounts and their usage limits",
+      "Contended areas, one at a time",
+      "What it never does",
+    ]);
+    expect(new Set(u.parts.map((p) => p.id)).size).toBe(u.parts.length);
+    // Every start the rail draws is an item of the list, and every item
+    // starts a station of the line.
+    expect(u.starts.map((s) => s.lead).sort()).toEqual(
+      Object.keys(DISPATCHER_STARTS).sort(),
+    );
+    const stations = new Set(f.line.map((s) => s.id));
+    for (const s of u.starts)
+      expect({ lead: s.lead, at: stations.has(s.station ?? "") }).toEqual({
+        lead: s.lead,
+        at: true,
+      });
+    expect([...dispatcherTaps(f).keys()]).toEqual(["b1", "b4", "b7"]);
+    // The figure's "reads" and "tells a person" lists, from the sentences
+    // that open their parts, one phrase each.
+    for (const list of [u.reads, u.tells]) {
+      expect(list.length).toBeGreaterThanOrEqual(3);
+      for (const phrase of list) expect(phrase).not.toMatch(/,| and | or /);
+    }
+    expect(u.never.map((n) => n.lead)).toContain("Merge");
+    expect(u.never.map((n) => n.lead)).toContain("Answer a parked question");
+  });
+
+  test("names no roadmap item by number in a sentence", () => {
+    const prose = text.replace(/\]\([^)]*\)/g, "]");
+    expect(prose).not.toMatch(/\bitems? \d+\b/i);
+  });
+
   test("parses the three jobs, both levels and every station", () => {
     expect(f.jobs.map((j) => j.id)).toEqual([
       "context",
@@ -325,7 +401,14 @@ describe.skipIf(!existsSync(join(root, "FACTORY.md")))("the factory", () => {
     expect(f.jobs.find((j) => j.id === "verification")?.catches).toContain(
       "M1",
     );
-    expect(f.levels).toHaveLength(2);
+    expect(f.levels.map((l) => l.name)).toEqual([
+      "Deciding what to build",
+      "The line",
+    ]);
+    expect(f.levels.map((l) => l.modules)).toEqual([
+      ["M5", "M6"],
+      ["M7", "M9"],
+    ]);
     expect(f.pipeline).toHaveLength(5);
     expect(f.line.map((s) => s.name)).toEqual([
       "Pick up",
@@ -345,16 +428,29 @@ describe.skipIf(!existsSync(join(root, "FACTORY.md")))("the factory", () => {
     expect(jobsByModule(f).get("M5")).toEqual(["guide", "catch", "knowledge"]);
   });
 
-  test("every roadmap item marked not built is one the factory names", () => {
+  test("every roadmap item marked not built is one an On the roadmap sentence links", () => {
+    const linked = new Set(f.roadmap.map((r) => r.item));
     const items = [
       ...Object.values(NOT_BUILT).flat(),
       ...DESIGN_NOT_BUILT.level,
       ...DESIGN_NOT_BUILT.everyStage,
     ].flatMap((a) => (a.kind === "todo" ? [a.item] : []));
-    for (const item of items)
-      expect(text, item).toMatch(
-        item === "Later" ? /ROADMAP\.md, Later/ : new RegExp(`item ${item}\\b`),
-      );
+    for (const item of items) expect(linked.has(item), item).toBe(true);
+    expect(NOT_BUILT.b1).toBeUndefined();
+  });
+
+  test("every roadmap link lands on a ROADMAP.md heading", () => {
+    const headings = new Set(
+      [...read("ROADMAP.md").matchAll(/^#{2,3} (.+)$/gm)].map((m) =>
+        headingId(m[1] ?? ""),
+      ),
+    );
+    expect(f.roadmap.length).toBeGreaterThan(0);
+    for (const r of f.roadmap)
+      expect({ anchor: r.anchor, found: headings.has(r.anchor) }).toEqual({
+        anchor: r.anchor,
+        found: true,
+      });
   });
 
   test("every station has a handoff, and its own text still says what it stands for", () => {
