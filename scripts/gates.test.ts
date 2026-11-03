@@ -20,6 +20,15 @@ import {
   spawnSync,
 } from "../plugin/shared/guarded-git-spawn.ts";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  DRIVE_PR_AREA,
+  NIGHTLY_TRIGGERS,
+  PR_SUITE,
+  PR_TRIGGERS,
+  PR_WEBSITE_SUITE,
+  type SuiteContract,
+  WEBSITE_STEP,
+} from "./gates-workflow-contract.ts";
 
 // Filter after merging overrides, including Windows' case-insensitive spelling.
 function safeSpawn(
@@ -1207,7 +1216,6 @@ type SuiteJob = {
 // Whether a job runs and whether its failure reaches the run's result are set
 // by its condition and its dependencies: a skipped dependency skips the job.
 // A suite that runs as steps of a larger job carries its own step condition.
-type SuiteContract = { if?: string; needs?: string; stepIf?: string };
 
 // A job counts as running a suite only when every key of its workflow, every
 // key it carries, every key of its strategy and every key of the suite's step
@@ -1343,48 +1351,6 @@ function workflowRunsSuite(
     runsSuite(workflow.jobs?.[job] ?? {}, dir, contract)
   );
 }
-
-// On pull requests the drive-pr suite runs when its area is affected and the
-// CI hold is off, after the job that resolves the areas; every night it runs
-// unconditionally. The website's suite runs in the gate-set job, which runs
-// whenever the hold is off, as a step selected by the website area.
-const DRIVE_PR_AREA = `contains(needs.areas.outputs.areas, '"drive-pr"')`;
-const NOT_HELD = `!contains(github.event.pull_request.labels.*.name, 'ci:hold') && !inputs.held`;
-const PR_SUITE: SuiteContract = {
-  needs: "areas",
-  if: `\${{ ${DRIVE_PR_AREA} && ${NOT_HELD} }}`,
-};
-const WEBSITE_STEP = `\${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}`;
-const PR_WEBSITE_SUITE: SuiteContract = {
-  needs: "areas",
-  if: `\${{ ${NOT_HELD} }}`,
-  stepIf: WEBSITE_STEP,
-};
-// Pull requests run on the default types alone; ci-hold.yml starts a run by
-// dispatch when the hold label changes.
-const PR_TRIGGERS = {
-  pull_request: { types: ["opened", "synchronize", "reopened"] },
-  push: { branches: ["main"] },
-  workflow_dispatch: {
-    inputs: {
-      pr: {
-        description: "The pull request to test; dispatch from its head branch",
-        type: "number",
-        required: true,
-      },
-      held: {
-        description:
-          "The pull request carries the hold label, so the heavy jobs skip and `gates` cancels this run",
-        type: "boolean",
-        required: true,
-      },
-    },
-  },
-};
-const NIGHTLY_TRIGGERS = {
-  schedule: [{ cron: "17 3 * * *" }],
-  workflow_dispatch: null,
-};
 
 test("a suite counts as run only by an allowlisted job and command", async () => {
   const { SEPARATE_SUITES } = await import("./gates.ts");

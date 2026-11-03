@@ -357,4 +357,6 @@ correctly, stay with review.
 | `inputs.ts` | reads the workflows, actions, configuration and exception list, failing closed |
 | `rules.ts` | the rules, one function each |
 | `check-workflow-conventions.test.ts` | paired self-test |
+| `check-workflow-conventions-dispatch.test.ts` | the self-test of the CI hold's dispatched form |
+| `test-support.ts` | what the two self-tests share |
 | `fixtures/` | one small repository per case: a pass and a fail per rule, composite actions, unparseable input, a repeated key, stale, reasonless and unknown-rule exceptions, malformed configuration |
