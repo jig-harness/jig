@@ -617,6 +617,10 @@ Prose about the thing, long enough to count.
       '"A "quote" inside."\n\nProse.',
       '""\n\nProse.',
       '"A problem." And more.\n\nProse.',
+      '### Unexpected heading\n\n"A problem."\n\nProse.',
+      '```text\nExample\n```\n\n"A problem."\n\nProse.',
+      '> Context\n\n"A problem."\n\nProse.',
+      '<!-- Context -->\n\n"A problem."\n\nProse.',
     ])
       expect(() => parseFeatures(section(bad)), bad).toThrow(
         /must open with its problem line/,

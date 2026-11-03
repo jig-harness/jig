@@ -12,6 +12,7 @@
  */
 import type { PlateName } from "../plates.ts";
 import {
+  blocks,
   listItems,
   moduleIds,
   paragraphs,
@@ -187,10 +188,11 @@ function fieldList(
 }
 
 /**
- * The problem line, the section's first paragraph with its quotation marks
- * dropped, or "" when that paragraph is not one quotation.
+ * The problem line, the section's opening block with its quotation marks
+ * dropped, or "" when that block is not one quoted paragraph.
  */
 function problemLine(paragraph: string): string {
+  if (paragraphs(paragraph)[0] !== paragraph) return "";
   const m = /^"([^"]*)"$/.exec(paragraph.replace(/\s*\n\s*/g, " ").trim());
   return m?.[1]?.trim() ?? "";
 }
@@ -207,9 +209,9 @@ function feature(title: string, body: string): Feature {
   const practice = fields.get("Practice") ?? "";
   if (!practice) throw new Error(`FEATURES.md: "${title}" has no Practice`);
   const notBuilt = fields.get("On the roadmap") ?? "";
-  const [first = "", ...rest] = paragraphs(head);
+  const [first = "", ...rest] = blocks(head);
   const problem = problemLine(first);
-  const prose = rest.join("\n\n");
+  const prose = paragraphs(rest.join("\n\n")).join("\n\n");
   if (!problem || !prose)
     throw new Error(
       problem
