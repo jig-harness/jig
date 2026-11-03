@@ -264,6 +264,15 @@ areas:
     deployTier: none
     reviewRisk: high
 
+  scanner-policy:
+    title: "What the code scanners analyse and skip"
+    category: infra
+    paths: [".sonarcloud.properties", ".github/codeql/**"]
+    workspace: []
+    impliedBy: []
+    deployTier: none
+    reviewRisk: high
+
   review-config:
     title: "The AI reviewers' configuration and the catalog it is derived from"
     category: infra

@@ -64,6 +64,8 @@ high_risk_path_patterns:
   - source: '^\.claude/'
   - source: '^modules/[^/]*/reference/'
   - source: '^\.github/workflows/'
+  - source: '^\.sonarcloud\.properties$'
+  - source: '^\.github/codeql/'
   - source: '^\.config/ai-review\.yaml$'
   - source: '^\.config/change-areas\.yaml$'
   - source: '^\.coderabbit\.yaml$'
