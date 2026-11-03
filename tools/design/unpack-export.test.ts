@@ -210,6 +210,33 @@ describe("unpack-export", () => {
     );
   });
 
+  it("refuses two pages whose file names differ only in case", () => {
+    withExport(
+      pagesExport([
+        { id: PAGE_ID, title: "" },
+        { id: IMPORTER_ID, title: "" },
+      ])
+        .replaceAll(PAGE_ID, "Page")
+        .replaceAll(IMPORTER_ID, "page"),
+      (dir, result) => {
+        expectSpawnExit(result, 2);
+        expect(result.stderr).toContain("is already named");
+        expect(existsSync(join(dir, "generated"))).toBe(false);
+      },
+    );
+  });
+
+  it("refuses a page order that names a page the export does not carry", () => {
+    const html = pagesExport([{ id: PAGE_ID, title: "Sample page" }]);
+    withExport(
+      html.replace(`["${PAGE_ID}"]`, `["${PAGE_ID}","missing-page"]`),
+      (_dir, result) => {
+        expectSpawnExit(result, 2);
+        expect(result.stderr).toContain("does not carry it");
+      },
+    );
+  });
+
   it("refuses a page whose id would leave the directory", () => {
     withExport(pagesExport([{ id: "../export", title: "" }]), (dir, result) => {
       expectSpawnExit(result, 2);

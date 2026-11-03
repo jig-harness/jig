@@ -301,7 +301,7 @@ function unpackPage(
   if (!SAFE_STEM.test(stem))
     throw new UnpackError(`${title}: its page id is not a plain file name`);
   const name = `${stem}.html`;
-  if (out.pages.includes(name))
+  if (out.pages.some((page) => page.toLowerCase() === name.toLowerCase()))
     throw new UnpackError(`${title}: another page is already named ${name}`);
   files.set(`generated/${name}`, html);
   out.pages.push(name);
@@ -323,7 +323,11 @@ export function build(dir: string): {
   const out: Unpacked = { pages: [], skipped: [], react: [] };
   for (const id of outer.pageOrder) {
     const page = outer.manifest[id];
-    if (page !== undefined) unpackPage(id, page, shared, files, out);
+    if (page === undefined)
+      throw new UnpackError(
+        `${exportPath} lists page ${id} but does not carry it`,
+      );
+    unpackPage(id, page, shared, files, out);
   }
   if (out.pages.length === 0)
     throw new UnpackError(`${exportPath} holds no self-standing page`);
