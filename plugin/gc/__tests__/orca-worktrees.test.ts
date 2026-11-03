@@ -345,6 +345,12 @@ describe.skipIf(
     // as untracked content that would veto before the ignored-content check.
     writeFileSync(join(f.tree, ".gitignore"), "node_modules/\n");
     writeFileSync(join(f.tree, "package-lock.json"), "{}\n");
+    // A tracked file beside the nested workspace's own node_modules, as a
+    // real monorepo package has: otherwise git's directory collapsing has
+    // nothing else to stop at and reports the untracked `website/` parent
+    // instead of `website/node_modules/`.
+    mkdirSync(join(f.tree, "website"), { recursive: true });
+    writeFileSync(join(f.tree, "website", "package.json"), "{}\n");
     f.command(["git", "-C", f.tree, "add", "-A"]);
     f.command(["git", "-C", f.tree, "commit", "-m", "track a lockfile"]);
     f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
@@ -364,9 +370,10 @@ describe.skipIf(
       details: {
         runtime: "orca",
         orca: f.id,
+        // A wholly ignored directory is one entry, not every file inside it.
         rebuildable: expect.arrayContaining([
-          "node_modules/.bin/tsc",
-          "website/node_modules/pkg.js",
+          "node_modules/",
+          "website/node_modules/",
         ]),
       },
     });
@@ -389,7 +396,7 @@ describe.skipIf(
     expect(receipt.reason).toContain(".env");
     expect(receipt.reason).not.toContain("node_modules");
     expect(receipt.details).toMatchObject({
-      rebuildable: ["node_modules/pkg.js"],
+      rebuildable: ["node_modules/"],
     });
   }, 60_000);
 
@@ -453,7 +460,7 @@ describe.skipIf(
         runtime: "orca",
         hook: expect.stringMatching(/\.config\/worktree-hooks\/remove$/),
         parked: true,
-        rebuildable: ["node_modules/pkg.js"],
+        rebuildable: ["node_modules/"],
       },
     });
     expect(existsSync(f.tree)).toBe(false);

@@ -281,6 +281,11 @@ export async function worktreeProof(
           "--others",
           "--ignored",
           "--exclude-standard",
+          // A wholly ignored directory (node_modules, in the common case) is
+          // one entry, not every file inside it: a dependency tree can hold
+          // tens of thousands, which would otherwise bloat every veto reason
+          // and receipt line that names it.
+          "--directory",
           "-z",
         ])
       )
