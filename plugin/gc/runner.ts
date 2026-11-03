@@ -26,12 +26,12 @@ async function prove(kind: CollectionKind, resource: Resource): Promise<Proof> {
 function scope(kind: CollectionKind): { repository?: string } {
   return kind.repository ? { repository: kind.repository } : {};
 }
-/** `resource.details`, overlaid with `proof.details` where the proof sets any. */
-function mergedDetails(resource: Resource, proof: Proof): unknown {
-  if (proof.details === undefined) return resource.details;
+/** `base`, overlaid with `overlay` where it sets any field. */
+function mergedDetails(base: unknown, overlay: unknown): unknown {
+  if (overlay === undefined) return base;
   return {
-    ...(isMapping(resource.details) ? resource.details : {}),
-    ...(isMapping(proof.details) ? proof.details : {}),
+    ...(isMapping(base) ? base : {}),
+    ...(isMapping(overlay) ? overlay : {}),
   };
 }
 function refuseReportOnly(line: ReceiptLine, proof: Proof): boolean {
@@ -51,14 +51,18 @@ async function collectResource(
     const final = await prove(kind, resource);
     line.reason = final.reason;
     line.outcome = outcome(final);
-    const details = mergedDetails(resource, final);
+    const details = mergedDetails(resource.details, final.details);
     if (details !== undefined) line.details = details;
     if (final.state !== "dead" || refuseReportOnly(line, final)) return;
     line.proof = final.reason;
     line.outcome = "unverified";
     line.reason = "collection started; completion not yet recorded";
     persist();
-    Object.assign(line, await kind.collect(resource));
+    const collected = await kind.collect(resource);
+    const before = line.details;
+    Object.assign(line, collected);
+    const merged = mergedDetails(before, collected.details);
+    if (merged !== undefined) line.details = merged;
   });
 }
 async function evaluate(
@@ -76,7 +80,7 @@ async function evaluate(
     outcome: outcome(proof),
     reason: proof.reason,
   };
-  const details = mergedDetails(resource, proof);
+  const details = mergedDetails(resource.details, proof.details);
   if (details !== undefined) line.details = details;
   if (resource.bytes !== undefined) line.bytes = resource.bytes;
   receipt.resources.push(line);

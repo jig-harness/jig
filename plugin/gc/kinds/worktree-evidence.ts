@@ -35,6 +35,13 @@ export interface WorktreeEvidence {
 }
 const unknown = (reason: string): Proof => ({ state: "unverified", reason });
 const live = (reason: string): Proof => ({ state: "live", reason });
+/** At most 5 names, so an ignored build directory of many files stays a short reason. */
+const NAMED_PATHS_LIMIT = 5;
+function namedPaths(paths: string[]): string {
+  const shown = paths.slice(0, NAMED_PATHS_LIMIT).join(", ");
+  const rest = paths.length - NAMED_PATHS_LIMIT;
+  return rest > 0 ? `${shown}, and ${rest} more` : shown;
+}
 export function localWorktreeVeto(
   facts: Pick<
     WorktreeEvidence,
@@ -48,7 +55,7 @@ export function localWorktreeVeto(
   if (facts.ignoredContent.other.length)
     return {
       state: "finding",
-      reason: `ignored local content (${facts.ignoredContent.other.join(", ")}) has no independent preservation proof`,
+      reason: `ignored local content (${namedPaths(facts.ignoredContent.other)}) has no independent preservation proof`,
     };
   return null;
 }

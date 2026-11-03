@@ -434,6 +434,31 @@ describe.skipIf(
     expect(calls(f)).toContain(`worktree rm --worktree id:${f.id} --json`);
   }, 60_000);
 
+  test("collecting a worktree whose only ignored content is a dependency directory still reports it as rebuildable", () => {
+    const f = setup();
+    writeFileSync(join(f.tree, ".gitignore"), "node_modules/\n");
+    writeFileSync(join(f.tree, "package-lock.json"), "{}\n");
+    f.command(["git", "-C", f.tree, "add", "-A"]);
+    f.command(["git", "-C", f.tree, "commit", "-m", "track a lockfile"]);
+    f.command(["git", "-C", f.tree, "push", "origin", "topic"]);
+    f.command(["git", "-C", f.tree, "fetch", "origin"]);
+    f.refreshGh();
+    mkdirSync(join(f.tree, "node_modules"), { recursive: true });
+    writeFileSync(join(f.tree, "node_modules", "pkg.js"), "");
+    idle(f);
+    const collected = line(gc(f, ["--collect", "--json"]));
+    expect(collected).toMatchObject({
+      outcome: "collected",
+      details: {
+        runtime: "orca",
+        hook: expect.stringMatching(/\.config\/worktree-hooks\/remove$/),
+        parked: true,
+        rebuildable: ["node_modules/pkg.js"],
+      },
+    });
+    expect(existsSync(f.tree)).toBe(false);
+  }, 60_000);
+
   test("collecting preserves an unsent reflection finding outside the removed checkout", () => {
     const f = setup();
     idle(f);
