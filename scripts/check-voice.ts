@@ -37,6 +37,8 @@ import { couldNotCheck } from "../lib/findings.ts";
 import {
   CODE_FENCE,
   joinWrapped,
+  type JoinedPosition,
+  type Finding,
   lint,
   markdownTableCells,
   py,
@@ -68,6 +70,8 @@ const WHITESPACE = py(String.raw`\s+`, { global: true });
 interface Sentence {
   /** 1-based: the first line of its paragraph, or its table row. */
   line: number;
+  start: number;
+  end: number;
   words: number;
   semicolons: number;
   /** The sentence as written, code spans kept, whitespace collapsed. */
@@ -100,7 +104,11 @@ function withoutCode(segment: string): { text: string; at: number[] } {
 }
 
 /** The sentences of one segment, split where the linter splits them. */
-function segmentSentences(segment: string, line: number): Sentence[] {
+function segmentSentences(
+  segment: string,
+  line: number,
+  column = 0,
+): Sentence[] {
   const { text, at } = withoutCode(segment);
   const out: Sentence[] = [];
   let start = 0;
@@ -109,6 +117,8 @@ function segmentSentences(segment: string, line: number): Sentence[] {
     const measured = text.slice(start, end);
     out.push({
       line,
+      start: column + [...text.slice(0, start)].length,
+      end: column + [...text.slice(0, end)].length,
       words: pySplit(measured).length,
       semicolons: measured.split(";").length - 1,
       text: pyStrip(
@@ -144,11 +154,31 @@ export function sentences(source: string): Sentence[] {
       inFence = !inFence;
       return;
     }
-    if (inFence) return;
-    for (const [segment] of cells.get(index) ?? [[line, 0]])
-      out.push(...segmentSentences(segment, index + 1));
+    if (inFence || !pyStrip(line)) return;
+    for (const [segment, column] of cells.get(index) ?? [[line, 0]])
+      out.push(...segmentSentences(segment, index + 1, column));
   });
   return out;
+}
+
+/** Resolve a physical finding through its paragraph's cleaned coordinates. */
+function containingSentence(
+  f: Finding,
+  positions: Map<number, JoinedPosition>,
+  allSentences: Sentence[],
+): Sentence | undefined {
+  const position = positions.get(f.line - 1);
+  // Source columns lose container prefixes and gain earlier paragraph lines.
+  const column = position
+    ? position.offset + f.col - 1 - position.prefix
+    : f.col - 1;
+  const context = allSentences.find(
+    (s) =>
+      s.line === (position?.line ?? f.line - 1) + 1 &&
+      s.start <= column &&
+      column < s.end,
+  );
+  return context;
 }
 
 /** The linter's findings on `source` under the guide's caps: what counts, and what is advice. */
@@ -158,6 +188,8 @@ export function voiceFindings(source: string): {
   words: number;
 } {
   const hard: VoiceFinding[] = [];
+  const positions = new Map<number, JoinedPosition>();
+  joinWrapped(source, positions);
   const allSentences = sentences(source);
   for (const s of allSentences) {
     if (s.words > MAX_WORDS)
@@ -176,16 +208,8 @@ export function voiceFindings(source: string): {
   for (const f of linted) {
     // Sentence length and semicolons are measured above, under the guide's caps.
     if (f.rule === "long-sentence" || f.rule === "semicolon") continue;
-    const paragraph = allSentences.findLast((s) => s.line <= f.line)?.line;
-    const context = allSentences.filter(
-      (s) =>
-        s.line === paragraph &&
-        s.text.toLowerCase().includes(f.match.toLowerCase()),
-    );
-    const quote =
-      f.level === "advisory"
-        ? f.match
-        : context.map((s) => s.text).join(" ") || f.match;
+    const context = containingSentence(f, positions, allSentences);
+    const quote = f.level === "advisory" ? f.match : context?.text || f.match;
     const finding = { line: f.line, entry: `${f.rule}: "${quote}"` };
     (f.level === "advisory" ? advice : hard).push(finding);
   }

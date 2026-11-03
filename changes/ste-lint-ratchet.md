@@ -10,3 +10,6 @@ release: patch
   document's count and never blocks on a single finding. The linter's
   [README](../plugin/skills/decide/scripts/ste-lint/README.md#advisory-only)
   states the rule, and its tests fail on any other wiring that runs it.
+- Voice reports map each word finding to its own sentence, including wrapped
+  paragraphs, repeated words, table cells and inline code. The advisory wiring
+  check follows delegated imports and rejects per-finding counter enforcement.

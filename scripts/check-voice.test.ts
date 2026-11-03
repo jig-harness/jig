@@ -151,6 +151,38 @@ describe("word-rule report context", () => {
     },
   );
 
+  test.each([
+    [
+      "The tool is seamless. The service is seamless.",
+      ["The tool is seamless.", "The service is seamless."],
+    ],
+    [
+      "The tool is seamless. The service is\nseamless.",
+      ["The tool is seamless.", "The service is seamless."],
+    ],
+    [
+      "- The tool is seamless. The service is\n  seamless.",
+      ["The tool is seamless.", "The service is seamless."],
+    ],
+    [
+      "| The tool is seamless. | The service is seamless. |\n| --- | --- |",
+      ["The tool is seamless.", "The service is seamless."],
+    ],
+    [
+      "😀 `code` The tool is seamless. The service is seamless.",
+      ["😀 `code` The tool is seamless.", "The service is seamless."],
+    ],
+  ])(
+    "each occurrence quotes only its owning sentence: %s",
+    (source, quotes) => {
+      expect(
+        entries(source).filter((entry) =>
+          entry.startsWith("marketing-adjective:"),
+        ),
+      ).toEqual(quotes.map((quote) => `marketing-adjective: "${quote}"`));
+    },
+  );
+
   test("a wrapped word finding quotes the whole sentence", () => {
     expect(entries("Intro.\n\nThe tool is\nseamless for teams.\n")).toContain(
       'marketing-adjective: "The tool is seamless for teams."',
