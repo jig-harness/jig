@@ -66,6 +66,22 @@ const SENTENCE_BREAK = py(String.raw`(?<=[.!?])\s+`, { global: true });
 const CODE_SPAN = py("`[^`]*`", { global: true });
 const WHITESPACE = py(String.raw`\s+`, { global: true });
 
+/** Use the parser's tab stops before measuring either findings or sentences. */
+function normalizeTabs(source: string): string {
+  return splitlines(source)
+    .map((line) => {
+      let column = 0;
+      return [...line]
+        .map((ch) => {
+          const width = ch === "\t" ? 4 - (column % 4) : 1;
+          column += width;
+          return ch === "\t" ? " ".repeat(width) : ch;
+        })
+        .join("");
+    })
+    .join("\n");
+}
+
 /** One sentence as the linter measures it, and as it reads on the page. */
 interface Sentence {
   /** 1-based: the first line of its paragraph, or its table row. */
@@ -145,7 +161,7 @@ function segmentSentences(
  * segment of its own.
  */
 export function sentences(source: string): Sentence[] {
-  const lines = splitlines(joinWrapped(source));
+  const lines = splitlines(joinWrapped(normalizeTabs(source)));
   const cells = markdownTableCells(lines);
   const out: Sentence[] = [];
   let inFence = false;
@@ -168,6 +184,11 @@ function containingSentence(
   allSentences: Sentence[],
 ): Sentence | undefined {
   const position = positions.get(f.line - 1);
+  // This producer anchors at the list marker, but reports the item's end.
+  if (f.rule === "dangling-conjunction")
+    return allSentences.findLast(
+      (s) => s.line === (position?.line ?? f.line - 1) + 1,
+    );
   // Source columns lose container prefixes and gain earlier paragraph lines.
   const column = position
     ? position.offset + f.col - 1 - position.prefix
@@ -187,6 +208,7 @@ export function voiceFindings(source: string): {
   advice: VoiceFinding[];
   words: number;
 } {
+  source = normalizeTabs(source);
   const hard: VoiceFinding[] = [];
   const positions = new Map<number, JoinedPosition>();
   joinWrapped(source, positions);

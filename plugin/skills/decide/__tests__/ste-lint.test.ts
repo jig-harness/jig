@@ -594,27 +594,31 @@ describe("advisory only", () => {
 
   /** Relative module dependencies, apart from the gates' report-only import. */
   function imports(file: string, source: string, root: string): string[] {
-    if (!/\.[cm]?[jt]sx?$/.test(file)) return [];
+    // Remove only the report-only edge; every other import and command remains.
+    if (file === join(root, "scripts/gates.ts"))
+      source = source.replace(
+        /import\s*\{\s*checkVoice\s*\}\s*from\s*["']\.\/check-voice\.ts["']\s*;?/g,
+        "",
+      );
+    const executablePaths = [
+      ...source.matchAll(
+        /(?:\.{1,2}\/)?(?:[\w.-]+\/)+[\w.-]+\.(?:tsx?|[cm]?js|sh)\b/g,
+      ),
+    ].flatMap(([path]) => [resolve(root, path), resolve(file, "..", path)]);
+    if (!/\.[cm]?[jt]sx?$/.test(file)) return executablePaths;
     const scanner = new Bun.Transpiler({
       loader: file.endsWith("tsx") ? "tsx" : "ts",
     });
-    return scanner
-      .scanImports(source.replace(/^#![^\n]*\n/, ""))
-      .flatMap((dependency) => {
-        if (!dependency.path.startsWith(".")) return [];
-        const target = join(file, "..", dependency.path);
-        // The gates consume only the report, whose exit is independent of counts.
-        if (
-          file === join(root, "scripts/gates.ts") &&
-          target === join(root, "scripts/check-voice.ts") &&
-          /import\s*\{\s*checkVoice\s*\}\s*from\s*["']\.\/check-voice\.ts["']/.test(
-            source,
-          ) &&
-          !/voiceFindings/.test(source)
-        )
-          return [];
-        return [target, `${target}.ts`, join(target, "index.ts")];
-      });
+    return [
+      ...executablePaths,
+      ...scanner
+        .scanImports(source.replace(/^#![^\n]*\n/, ""))
+        .flatMap((dependency) => {
+          if (!dependency.path.startsWith(".")) return [];
+          const target = join(file, "..", dependency.path);
+          return [target, `${target}.ts`, join(target, "index.ts")];
+        }),
+    ];
   }
 
   /** Scripts that reach individual findings, including delegated imports. */
@@ -648,10 +652,15 @@ describe("advisory only", () => {
   /** Read the same JSON-with-comments grammar as the ratchet. */
   function counters(
     source = readFileSync(join(REPO_ROOT, RATCHET_WIRING), "utf8"),
-  ): { name: string; format: string; command?: string[] }[] {
+  ): { name: string; format: string; command?: string[]; per?: string }[] {
     return (
       parseJsonc(source) as {
-        counters: { name: string; format: string; command?: string[] }[];
+        counters: {
+          name: string;
+          format: string;
+          command?: string[];
+          per?: string;
+        }[];
       }
     ).counters;
   }
@@ -667,6 +676,32 @@ describe("advisory only", () => {
         JSON.stringify(["bun", script, "--json"])
     );
   }
+
+  function invalidCounters(wired: ReturnType<typeof counters>): string[] {
+    return Object.entries(RATCHET_CALLERS).flatMap(([script, name]) => {
+      const executing = wired.filter((c) =>
+        c.command?.some((arg) => arg.includes(script)),
+      );
+      return [
+        ...(executing.some((c) => c.name === name) ? [] : [name]),
+        ...executing.filter((c) => !isCounter(c, script)).map((c) => c.name),
+      ];
+    });
+  }
+
+  it("rejects an extra differently named counter that enforces entries", () => {
+    expect(
+      invalidCounters([
+        ...counters(),
+        {
+          name: "voice-strict",
+          format: "json",
+          per: "file",
+          command: ["bun", "scripts/check-voice.ts", "--json"],
+        },
+      ]),
+    ).toContain("voice-strict");
+  });
 
   it("rejects per-entry enforcement of a document counter", () => {
     expect(
@@ -733,6 +768,28 @@ describe("advisory only", () => {
         'import { checkVoice } from "./check-voice.ts"; import { voiceFindings as findings } from "./check-voice.ts"; process.exit(findings("seamless").hard.length ? 1 : 0);',
       );
       expect(callers(root)).toContain("scripts/gates.ts");
+      for (const extra of [
+        'import * as voice from "./check-voice.ts"; voice.sentences("text");',
+        'import { sentences } from "./check-voice.ts"; sentences("text");',
+        'const voice = await import("./check-voice.ts"); voice.sentences("text");',
+      ]) {
+        writeFileSync(
+          join(root, "scripts/gates.ts"),
+          'import { checkVoice } from "./check-voice.ts"; ' + extra,
+        );
+        expect(callers(root), extra).toContain("scripts/gates.ts");
+      }
+      for (const command of [
+        'Bun.spawnSync(["bun", "scripts/check-voice.ts", "--json"]);',
+        'execSync("bun scripts/check-voice.ts --json");',
+        "#!/bin/sh\nbun scripts/check-voice.ts --json",
+      ]) {
+        const hook = command.startsWith("#!")
+          ? "scripts/hook.sh"
+          : "scripts/hook.ts";
+        writeFileSync(join(root, hook), command);
+        expect(callers(root), command).toContain(hook);
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -780,11 +837,7 @@ describe("advisory only", () => {
   });
 
   it("each listed caller runs as a json counter of the ratchet wiring", () => {
-    const wired = counters();
-    for (const [script, name] of Object.entries(RATCHET_CALLERS)) {
-      const counter = wired.find((c) => c.name === name);
-      expect(counter && isCounter(counter, script), script).toBe(true);
-    }
+    expect(invalidCounters(counters())).toEqual([]);
   });
 });
 

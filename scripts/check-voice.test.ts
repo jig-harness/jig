@@ -188,6 +188,15 @@ describe("word-rule report context", () => {
       'marketing-adjective: "The tool is seamless for teams."',
     );
   });
+
+  test.each([
+    ["Fine.\tseamless tool.", 'marketing-adjective: "seamless tool."'],
+    ["- Intro. End and", 'dangling-conjunction: "End and"'],
+    ["- Intro.\n  End and", 'dangling-conjunction: "End and"'],
+    ["- Fine.\tseamless tool.", 'marketing-adjective: "seamless tool."'],
+  ])("maps normalized and marker coordinates: %s", (source, entry) => {
+    expect(entries(source)).toContain(entry);
+  });
 });
 
 describe("the sentences are the linter's", () => {
