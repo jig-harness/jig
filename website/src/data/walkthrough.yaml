@@ -1,0 +1,97 @@
+# One run of Jig's own line, as the records show it: the pull request's
+# timeline and comments on GitHub (its drive ledger and follow-up marker
+# among them), and the dispatcher's outcome log and receipts on the host that
+# ran it. Nothing here is composed. Times are UTC, to the minute.
+#
+# The home page renders it (website/src/components/Walkthrough.astro), and
+# website/src/lib/data/walkthrough.ts checks it: every event names a station
+# of FACTORY.md's line and an actor the page can draw, the events run in time
+# order, and the run carries its date and its pull request.
+#
+# `by` is `agent`, `person`, `dispatcher`, or the name of a plugin skill.
+# `record` says where the event is written down.
+date: "2026-11-02"
+pr:
+  number: 409
+  url: https://github.com/jig-harness/jig/pull/409
+  change: Each stage of the line moves the workspace's card on the Orca board.
+events:
+  - at: "2026-11-02T14:27Z"
+    station: Open
+    by: agent
+    what: An agent opens the pull request as a draft, with the change and its tests.
+    record: the pull request's timeline
+  - at: "2026-11-02T15:05Z"
+    station: Drive
+    by: drive-pr
+    what: The review drive claims the pull request and starts its rounds, unattended.
+    record: the drive's claim comment
+  - at: "2026-11-02T15:45Z"
+    station: Drive
+    by: drive-pr
+    what: The first round answers the reviewers' 13 findings, and the drive marks the pull request ready for review.
+    record: the pull request's timeline
+  - at: "2026-11-02T15:48Z"
+    until: "2026-11-02T17:38Z"
+    station: Drive
+    by: drive-pr
+    what: The rounds go on. The drive answers 28 more findings, 27 accepted with a fix and 1 rejected with its reason.
+    record: the review threads
+  - at: "2026-11-02T18:42Z"
+    station: Drive
+    by: drive-pr
+    what: At round 11 every thread has an outcome and the checks pass. The drive stops, converged.
+    record: the drive ledger
+  - at: "2026-11-02T21:11Z"
+    station: Drive
+    by: dispatcher
+    what: Main has moved, and the pull request now conflicts with it. The dispatcher's timer run finds the converged drive stale and starts a new drive.
+    record: the dispatcher's receipt and launch record
+  - at: "2026-11-02T21:14Z"
+    station: Repair
+    by: drive-pr
+    what: The new drive merges main into the branch and resolves the conflicts.
+    record: the merge commit
+  - at: "2026-11-02T21:55Z"
+    until: "2026-11-02T22:19Z"
+    station: Drive
+    by: drive-pr
+    what: In rounds 12 and 13 the reviewers raise 7 findings on the merged code. The drive accepts each one with a fix.
+    record: the review threads
+  - at: "2026-11-02T22:29Z"
+    station: Drive
+    by: drive-pr
+    what: The drive stops again, converged, and the outcome log records the second drive as converged.
+    record: the outcome log
+  - at: "2026-11-02T22:46Z"
+    station: Merge
+    by: person
+    what: A person merges the pull request.
+    record: the pull request's timeline
+  - at: "2026-11-02T22:47Z"
+    station: Follow up
+    by: agent
+    what: A follow-up started by hand claims the merge with a marker comment on the pull request.
+    record: the follow-up marker
+  - at: "2026-11-02T22:50Z"
+    station: Follow up
+    by: dispatcher
+    what: The dispatcher sees the claim and starts no second follow-up.
+    record: the dispatcher's receipt
+  - at: "2026-11-02T22:59Z"
+    station: Follow up
+    by: agent
+    what: The follow-up finds main's link check failing, because a design note merged just before links the old path of a script this pull request moved. It opens a fix and marks its run done.
+    record: the follow-up marker and the fix's pull request
+    link: https://github.com/jig-harness/jig/pull/420
+  - at: "2026-11-02T23:00Z"
+    station: Follow up
+    by: dispatcher
+    what: The dispatcher reads the done marker and labels the pull request followed up.
+    record: the dispatcher's receipt
+  - at: "2026-11-02T23:13Z"
+    station: Merge
+    by: person
+    what: A person merges the fix.
+    record: the fix's pull request
+    link: https://github.com/jig-harness/jig/pull/420

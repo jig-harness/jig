@@ -38,8 +38,11 @@ Ask these of every `content` commit. One yes is enough to look closer.
 ## Where hand-written facts live
 
 - **Home page** (`website/src/pages/index.astro`): the limits list (what Jig
-  never does, each with its source), the hero, the ladder paragraph, the
-  day-one paragraph, the profile-graduation line.
+  never does, each with its source), the line on modules under the hero,
+  the ladder paragraph, the day-one paragraph, the profile-graduation line.
+  The recorded run (`website/src/data/walkthrough.yaml`) is copied by hand
+  from one pull request and the dispatcher's records, and its parser checks
+  only that each station still exists.
 - **Factory** (`website/src/components/CrossSection.astro`,
   `website/src/components/factory/*.astro`): the figure captions, the "at
   every stage" band, which stations are for user-interface work only, where
@@ -111,7 +114,7 @@ The parsers and what they read:
 | `principles.ts` | `principles/` | `# N — Title`, `**Why.**`, `**Consequences**`, the index table's third column; the index page also shows the README's first paragraph |
 | `skills.ts` | `plugin/README.md` | the `Skill` and `Agent` tables; the paragraph on how skills reach the tracker |
 | `factory.ts` | `FACTORY.md` | its section titles, the jobs, stations and levels tables and their column counts, the paragraphs it finds by their opening words |
-| `readme.ts` | `README.md` | "Jig as a software factory" and "Ways to use" |
+| `readme.ts` | `README.md` | the paragraph under the title, the problem, followed by the bold tagline; "Jig as a software factory" with its paragraphs before a list of jobs; "Ways to use" |
 | `features.ts` | `FEATURES.md` | one `##` section per feature, opening with its problem line, a paragraph in double quotes; a list of `**Skills:**`, `**Practice:**` and `**On the roadmap:**` fields after the prose, skills by their link paths, modules by id, roadmap items as "item N"; an unknown field, or a feature without a problem line, prose or a practice, fails the build |
 | `adoption.ts` | `adoption/*.md` | the brownfield sections; the greenfield heading that names the phase count |
 | `flywheel.ts` | M8's README | "The flywheel", "The two companion cycles", the "Both cycles" paragraph |

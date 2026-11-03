@@ -436,14 +436,59 @@ test("the configuration layers and the tracker interface's operations", () => {
   expect(t.operations[0]).toMatch(/read an issue/);
 });
 
-test("the README's factory section and its ways to use Jig", () => {
+describe("the README", () => {
   const r = parseReadme(read("README.md"));
-  expect(r.ways.map((w) => w.lead)).toEqual([
-    "Greenfield template",
-    "Brownfield upgrade",
-    "Reference",
-    "Shared tooling",
-  ]);
+  const factorySection = (body: string) =>
+    `# Jig Harness\n\nThe problem. Its cost.\n\n**The tagline.**\n\n## Jig as a software factory\n\n${body}\n`;
+
+  test("opens with the problem in two or three sentences, then its tagline", () => {
+    expect(r.opening.problem.length).toBeGreaterThanOrEqual(2);
+    expect(r.opening.problem.length).toBeLessThanOrEqual(3);
+    expect(r.opening.problem[0]).not.toMatch(/^(Scaffolding|Jig)\b/);
+    expect(r.opening.tagline).toMatch(/^\*\*A jig for AI coding agents/);
+  });
+
+  test("refuses a README whose title is followed by its tagline instead of the problem", () => {
+    expect(() =>
+      parseReadme(
+        "# Jig Harness\n\n**The tagline.**\n\nThe problem.\n\n## Jig as a software factory\n\nThe line.\n\nIt stands on:\n\n- **Context**: c\n",
+      ),
+    ).toThrow(/problem/);
+    expect(() =>
+      parseReadme(
+        factorySection("The line.\n\nIt stands on:\n\n- **Context**: c"),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      parseReadme(factorySection("The line, with no jobs.")),
+    ).toThrow(/software factory/);
+  });
+
+  test("tells the line, then the scaffolding's jobs, with no roadmap number or configuration key", () => {
+    expect(r.factory.jobs.map((j) => j.lead)).toEqual([
+      "Context",
+      "Verification",
+      "Knowledge",
+    ]);
+    expect(r.factory.line.join(" ")).toContain("A person merges.");
+    for (const text of [
+      ...r.factory.line,
+      r.factory.jobsLead,
+      ...r.factory.jobs.map((j) => j.body),
+    ]) {
+      expect(text, text).not.toMatch(/\bitem \d+\b/);
+      expect(text, text).not.toMatch(/`[a-z_]+(\.[a-z_]+)+`/);
+    }
+  });
+
+  test("lists the ways to use Jig", () => {
+    expect(r.ways.map((w) => w.lead)).toEqual([
+      "Greenfield template",
+      "Brownfield upgrade",
+      "Reference",
+      "Shared tooling",
+    ]);
+  });
 });
 
 describe("FEATURES.md", () => {

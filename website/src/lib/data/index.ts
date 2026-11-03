@@ -30,6 +30,7 @@ import {
 import { parseProfiles } from "./profiles.ts";
 import { parseReadme } from "./readme.ts";
 import { parseSkills } from "./skills.ts";
+import { parseWalkthrough } from "./walkthrough.ts";
 import {
   parseChangelog,
   parseRoadmap,
@@ -193,3 +194,12 @@ export const trackerInterface = once(() =>
 );
 
 export const readme = once(() => parseReadme(read("README.md")));
+
+/** The recorded run the home page walks through, checked against the line's stations. */
+export const walkthrough = once(() =>
+  parseWalkthrough(
+    read("website/src/data/walkthrough.yaml"),
+    factory().line.map((s) => s.name),
+    new Set(skills().map((s) => s.name)),
+  ),
+);
