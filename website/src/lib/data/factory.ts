@@ -300,7 +300,7 @@ function actorFromMatch(m: RegExpMatchArray): Actor {
       kind: "tool",
       name: "repository follow-up",
       note: "supplied by the repository; started by a person or the dispatcher",
-      href: "/factory/execution/#execution",
+      href: "/factory/line/#line",
     };
   if (m[0] === "[dispatcher]")
     return {
