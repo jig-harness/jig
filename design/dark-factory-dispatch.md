@@ -16,13 +16,16 @@ and tells a person when a stage stops on something only a person can
 settle. It never merges: that stays a person's
 ([ADR-0003](../docs/adr/ADR-0003-a-person-merges.md)).
 
-This is the design of [plan.md](plan.md) item 33. Nothing of it is built
-yet. It builds on item 32 (driving any pull request from anywhere): the
+This is the design of [plan.md](plan.md) item 33. Every step of its
+[build order](#build-order) is built, and the documents that describe it are
+the current truth; the item stays open on the roadmap until its "Done when"
+checks run on a host running Orca, each named at its own build step. It
+builds on item 32 (driving any pull request from anywhere): the
 [drive ledger](../plugin/skills/drive-pr/README.md#where-its-state-lives)
 on each pull request, the re-arm of a stopped drive and the takeover of a
 wedged one are in `drive-pr` today; item 32's framed park (a park that
 carries the question, the options and the recommended one) and its morning
-report are still being built. M0 names the service this is: a
+report are built too. M0 names the service this is: a
 [control plane](../GLOSSARY.md), "a service that tracks an agent's job and
 can reach a person". The dispatcher is the first one Jig ships, for the
 execution line only. Its first [session runtime](../GLOSSARY.md) is Orca
@@ -67,14 +70,12 @@ guards keep one stage from starting twice:
   session for it.
 - **The stages' own refusals.** `drive.ts` refuses a second driver by its
   lock and the ledger's claim, and admits a re-arm or takeover only on a
-  mechanical state. `do-item` has no such refusal today: its start step
-  moves the item to its in-progress state "if not already active" and goes
-  on, so a person's manual pickup racing a dispatched one starts beside it.
-  The pickup stage (build step 4) therefore depends on a change to
-  `do-item`'s claim: it refuses an item already in its in-progress state or
-  assigned to anyone but the session's own identity, and it re-reads the
-  item after its transition and stands down when another claim landed
-  first. A tracker offers no conditional write, so a race inside that
+  mechanical state. `do-item`'s claim has the same kind of refusal, which
+  the pickup stage (build step 4) depends on: it refuses an item already in
+  its in-progress state or assigned to anyone but the session's own
+  identity, and it re-reads the item after its transition and stands down
+  when another claim landed first, so a person's manual pickup racing a
+  dispatched one does not start beside it. A tracker offers no conditional write, so a race inside that
   re-read is narrowed, not closed, and when both claims come from the
   factory identity the item's state and assignee cannot tell them apart.
   The tick therefore checks the sessions instead: an item that more than
@@ -498,8 +499,8 @@ implementation:
   Jig, not from the plugin, so the installed dispatcher cannot call it.
   Its workspace rules (branch selection, an existing checkout of the
   branch first, branch correction and setup, which a bare `orca worktree
-  create` does not do) move into the plugin in build step 3, the first
-  step that opens a workspace, and the tool then calls the moved code, so
+  create` does not do) live in the plugin, in
+  `plugin/shared/orca-workspace/open.ts`, and the tool calls that code, so
   the pickups in step 4 reuse it rather than a copy;
 - `launch` for a **headless pass** (a drive re-arm or takeover) as
   `orca terminal create --worktree <selector> --title <tab title> --command
@@ -734,7 +735,7 @@ which a directory shared between accounts could not.
 
 A notification goes out once per cause, its launch record or receipt
 naming what was sent: a drive parked with an item unanswered, carrying the
-parked questions (item 32's framed decision once that is built); a drive
+parked questions (item 32's framed decision, built); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
 stalled pickup or a double claim; a failed follow-up; a session waiting past
@@ -773,7 +774,7 @@ record per cause (an unchanged refusal not to retry, a notification
 already sent), keyed by the cause's own facts (the item and its state, the
 ledger's generation and exit, the park), and dropped only when those facts
 change or the item or pull request leaves every record the tick reads. `jig dispatch
-receipts` lists them; once item 32's morning report is built, it lists the
+receipts` lists them; the morning report (`drives.ts --report`) lists the
 launches, refusals and notifications since the last report beside the
 drives' own.
 
@@ -1091,8 +1092,8 @@ One pull request each, in this order; each is usable on its own.
    person runs it by hand and marks that marker done when it succeeds
    (Jig's `/followup` first); the notifications above
    through `notify`. The park's
-   notification carries item 32's framed decision once that is built, and
-   the receipts join its morning report then; a consumer repository's
+   notification carries item 32's framed decision, and
+   the receipts join its morning report; a consumer repository's
    follow-up waits on its own post-merge command (item 17).
 6. **Control.** The outcome log and its classifier, the expectations and
    stage drift, `jig dispatch dashboard`, the interactive wall record and
@@ -1104,9 +1105,8 @@ One pull request each, in this order; each is usable on its own.
    pickup and follow-up expectations on steps 4 and 5; the nudge on
    interactive launches (step 4, itself waiting on an agent launch that
    binds its account) and on a launch that carries the vendor session id.
-7. **Re-drive a stale converged pull request.** The forge read gains each
-   open pull request's mergeability and current head commit (the listing
-   carries neither today), compared with the ledger's `verifiedSha`; the
+7. **Re-drive a stale converged pull request.** The forge read carries each
+   open pull request's mergeability and current head commit, compared with the ledger's `verifiedSha`; the
    ledger classification the
    `stale` class (converged, and conflicting or past the verified head),
    and the plan re-arms it through step 3's launch, on any admitted
