@@ -1,0 +1,68 @@
+# Starts the gates for the CI hold (modules/M13-pipeline-economy/README.md#7-hold)
+# when its label goes on or comes off. gates.yml has no label trigger, so no
+# other label change starts or cancels a gates run. Both transitions start one,
+# because the head must stop passing the moment it is held and must report again
+# once it is released:
+#
+# - applied: `gates` runs with `held`, skips the heavy jobs and cancels itself,
+#   which replaces the head's green with a cancelled required check and, through
+#   gates.yml's concurrency, ends any run in flight.
+# - removed: `gates` runs in full on the head.
+#
+# Every label event still starts a run of this workflow, and any but the hold's
+# only leaves a skipped job. The concurrency group names the label so that one
+# of those never cancels a dispatch on its way.
+#
+# It reads the label set when it runs rather than from the event, so the run
+# that is queued last settles on the label's real state whichever event it
+# carries, and rerunning a failed run here is safe.
+#
+# GitHub runs no pull-request workflow on a pull request that conflicts with its
+# base, this one included: there, a label change does nothing until a push
+# resolves the conflict, and that push runs CI as the labels then say.
+#
+# A pull request from a fork gets a read-only token and its branch is not here,
+# so it cannot be dispatched. The job fails and says so; a push runs CI.
+#
+# GITHUB_TOKEN may start a `workflow_dispatch` run, the one kind of run its
+# events do start. This job checks out and runs nothing of the repository.
+name: ci-hold
+
+on:
+  pull_request:
+    types: [labeled, unlabeled]
+
+permissions: {}
+
+concurrency:
+  group: ci-hold-${{ github.event.pull_request.number }}-${{ github.event.label.name }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    name: start gates
+    if: ${{ github.event.label.name == 'ci:hold' && github.event.pull_request.state == 'open' }}
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      pull-requests: read
+    steps:
+      - name: Start gates with the label's current state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [ "$HEAD_REPO" != "$GH_REPO" ]; then
+            echo "::error::pull request #$PR comes from a fork, so changing the ci:hold label cannot start the gates here. A push to it runs CI, under the labels it then carries."
+            exit 1
+          fi
+          held=$(gh api "repos/$GH_REPO/issues/$PR/labels?per_page=100" --jq '[.[].name] | any(. == "ci:hold")')
+          echo "ci:hold on pull request #$PR: $held"
+          if ! gh workflow run gates.yml --ref "$HEAD_REF" -f pr="$PR" -f held="$held"; then
+            echo "::error::could not start gates.yml on $HEAD_REF. A branch from before gates.yml took workflow_dispatch refuses the dispatch: merge the base into it."
+            exit 1
+          fi
