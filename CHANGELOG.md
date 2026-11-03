@@ -359,6 +359,17 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.127.1] - 2026-11-03
+
+### Fixed
+
+- `do-item` and `drive-pr` now request Codex managed background execution
+  when no terminal tab is available, with instructions for verifying startup
+  and preserving the session for hosts that terminate child processes on exit.
+- `arm-drive.ts` and `drive.ts` accept `--pass-model` for Codex, including
+  routing tiers resolved through `routing.models.codex`, without applying
+  Claude Code's default model to Codex.
+
 ## [0.127.0] - 2026-11-02
 
 ### Added
@@ -4821,7 +4832,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.127.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.127.1...HEAD
+[0.127.1]: https://github.com/jig-harness/jig/compare/v0.127.0...v0.127.1
 [0.127.0]: https://github.com/jig-harness/jig/compare/v0.126.0...v0.127.0
 [0.126.0]: https://github.com/jig-harness/jig/compare/v0.125.0...v0.126.0
 [0.125.0]: https://github.com/jig-harness/jig/compare/v0.124.0...v0.125.0
