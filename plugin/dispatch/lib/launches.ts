@@ -181,7 +181,7 @@ export interface LaunchExit {
   signal: string | null;
   /** Set when the stage ended on the account's wall and the wrapper could not record that wall. */
   wallUnrecorded?: true;
-  /** For a follow-up pass that ended without recording done: the end of its output, which carries the question it stopped on. */
+  /** For a follow-up pass that ended without recording done: the last `Question:` line of its output, the question it stopped on. */
   said?: string;
 }
 

@@ -367,8 +367,9 @@ a labelled arm's), on an admitted account, behind a serialized area's
 hold, and the fresh read before the launch applies the rule again. The
 report names each adopted pull request with the rule's reason (its
 author, its last update, the window), and the forge record counts them.
-The rule works with the labels on or off; beside `only_labeled` it is
-refused, since a pull request with no label of the set is never read.
+The rule needs the labels on, since the hold label is read only then;
+beside `only_labeled` it is refused, since a pull request with no label of
+the set is never read.
 
 **Serialized areas** (optional). An area of the repository's change-area
 catalog (`drive.change_areas_catalog`, [M3](../modules/M3-change-area-catalog/README.md))
@@ -504,8 +505,8 @@ only that it ended, so the prompt the tick composes ends by asking the
 pass to record its result: `jig dispatch result <record> <token>
 done|failed`, which writes the stage's answer into its launch record. Its
 record ends with the pass's exit, with that result, or as failed when none
-was recorded; the wrapper keeps the end of the output of a pass that ended
-short of `done` on its exit, which is where a pass that needs a person
+was recorded; the wrapper keeps the last `Question:` line of the output of a pass that
+ended short of `done` on its exit, which is where a pass that needs a person
 states its question (see Sessions that wait), and the follow-up's result
 is what its outcome record keeps.
 
@@ -747,7 +748,7 @@ to work pickups are reported, not started.
 A follow-up does not wait for that: it runs as a headless pass, the
 account's vendor's non-interactive command (`claude -p`, `codex exec`) on
 the repository's follow-up command and the pull request, started by the
-same wrapper and bound the same way as a drive's pass. Three reasons decide
+same wrapper and bound the same way as a drive's pass. These reasons decide
 it. The work is mechanical: tags, tracker items, status pages and
 consumers, which a skill settles without a conversation. Headless binding
 is the binding the dispatcher already proves at every drive's launch, with
@@ -766,8 +767,10 @@ until it ends or a person ends it, so a cap full of waiting sessions is
 visible in every report rather than silent. A follow-up's pass cannot
 wait: one that cannot finish without a person carries out what does not
 depend on the answer, stops, records `failed`, and ends its output with a
-line that starts `Question:`. The wrapper keeps the end of that output on
-the pass's exit, and the tick notifies the failed follow-up with the
+line that starts `Question:`. The wrapper keeps that line, at most 1000 characters and
+nothing else of the output, on the pass's exit; it reaches the launch
+record, the outcome log and the notification, so the pass is told to put
+no secret or personal data in it. The tick notifies the failed follow-up with the
 question, classed as parked for a person; the marker stays, so nothing
 starts it again until a person settles it.
 

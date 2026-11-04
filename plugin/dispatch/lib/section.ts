@@ -206,6 +206,10 @@ export function dispatchSection(
     );
   const labelConfig = labels(section.labels);
   const adopt = adoptRule(section.adopt);
+  if (adopt.enabled && !labelConfig.enabled)
+    throw new SectionError(
+      "dispatch.adopt needs dispatch.labels.enabled: the rule never adopts a pull request carrying the hold label, which is read only with the labels on",
+    );
   if (adopt.enabled && labelConfig.onlyLabeled)
     throw new SectionError(
       "dispatch.adopt needs dispatch.labels.only_labeled off: under only_labeled a pull request with no label of the set is never read, so none could be adopted",

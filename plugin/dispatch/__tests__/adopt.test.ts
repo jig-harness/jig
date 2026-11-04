@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { adoptionOf, adopts, type Adoption } from "../lib/adopt.ts";
 import { dispatchSection } from "../lib/section.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { labeled, openPr, SLUG, type World, world } from "./fixtures.ts";
@@ -34,7 +35,7 @@ const ADOPT = config(
   "  labels: { enabled: true }\n  adopt: { enabled: true, within: 72h }",
 );
 const NAMED = config(
-  '  adopt:\n    enabled: true\n    authors: [someone-else, "dependabot[bot]"]',
+  '  labels: { enabled: true }\n  adopt:\n    enabled: true\n    authors: [someone-else, "dependabot[bot]"]',
 );
 const NONE = config("  labels: { enabled: true }");
 
@@ -160,15 +161,18 @@ describe("dispatch.adopt", () => {
       withinMs: 168 * HOUR,
     });
     expect(
-      dispatchSection({ dispatch: { adopt: { enabled: true } } }).adopt,
+      dispatchSection({
+        dispatch: { labels: { enabled: true }, adopt: { enabled: true } },
+      }).adopt,
     ).toEqual({ enabled: true, authors: null, withinMs: 168 * HOUR });
   });
 
   it("refuses an unknown key, an empty author, a window that is no duration, and only_labeled beside it", () => {
     const read = (dispatch: unknown) => () => dispatchSection({ dispatch });
-    expect(read({ adopt: { enabled: true, age: "1h" } })).toThrow(
-      "dispatch.adopt has unknown key(s): age",
-    );
+    expect(read({ adopt: { enabled: true } })).toThrow("labels.enabled");
+    expect(
+      read({ labels: { enabled: true }, adopt: { enabled: true, age: "1h" } }),
+    ).toThrow("dispatch.adopt has unknown key(s): age");
     expect(read({ adopt: { enabled: true, authors: [""] } })).toThrow(
       "dispatch.adopt.authors",
     );
@@ -181,5 +185,22 @@ describe("dispatch.adopt", () => {
         adopt: { enabled: true },
       }),
     ).toThrow("only_labeled");
+  });
+});
+
+describe("the default author", () => {
+  const pr = {
+    author: { login: "drive-app[bot]", bot: true },
+    updatedAt: new Date().toISOString(),
+  };
+  const section = (authors: string[] | null) => ({
+    adopt: { enabled: true, authors, withinMs: 168 * HOUR },
+  });
+
+  it("never adopts a bot the dispatcher's own login makes the default, only one the rule names", () => {
+    const implicit = adoptionOf(section(null), "drive-app[bot]");
+    expect(adopts(pr, implicit as Adoption, null, Date.now())).toBeNull();
+    const named = adoptionOf(section(["drive-app[bot]"]), "drive-bot");
+    expect(adopts(pr, named as Adoption, null, Date.now())).not.toBeNull();
   });
 });

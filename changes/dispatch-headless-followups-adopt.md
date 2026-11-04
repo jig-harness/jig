@@ -5,7 +5,7 @@ release: minor
 ### Added
 
 - An adoption rule for the dispatcher, `dispatch.adopt`, off unless a
-  repository turns it on: an open pull request with no drive ledger, opened
+  repository turns it on (and needs the dispatch labels on): an open pull request with no drive ledger, opened
   by one of the rule's `authors` (by default the login the dispatcher reads
   the forge as) and updated within its `within` window (a week by
   default), draft or not, is armed as if a person had labelled it

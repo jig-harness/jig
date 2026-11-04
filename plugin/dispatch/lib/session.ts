@@ -25,7 +25,7 @@ import type { LaunchRecord, LaunchState, SessionResult } from "./launches.ts";
 export const PICKUP_SKILL = "/jig:do-item";
 
 /** What starts the line a follow-up pass that needs a person ends its output with, before its question. */
-const QUESTION_PREFIX = "Question:";
+export const QUESTION_PREFIX = "Question:";
 
 const BUNFIG = resolve(import.meta.dir, "../bunfig.toml");
 const JIG = resolve(import.meta.dir, "../../jig.ts");
@@ -85,7 +85,7 @@ function followupPrompt(record: LaunchRecord): string {
     "",
     "jig dispatch started this headless pass for the follow-up of a merged pull request; nobody is at the keyboard, and nobody can answer a question while it runs.",
     `It claimed the follow-up with the marker comment ${marker} on the pull request. That claim is this pass's: post no marker of your own. Before each act that writes outside the pull request (an issue closed, a tag pushed), check that you still hold the claim, and stop on any nonzero exit (an earlier marker, an unreadable forge, a missing marker): ${jigCommand(["marker", "check", pr, "--comment", marker, "--repo", record.repo])}`,
-    `Where a step needs a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide. The dispatcher sends that line to a person.`,
+    `Where a step needs a person's decision, do not guess: carry out what does not depend on it, then stop, and end your output with one line that starts "${QUESTION_PREFIX}" and states what the person must decide, with no secret or personal data in it. The dispatcher sends that line to a person.`,
     "When you stop, record how the follow-up ended, once:",
     `- every arm is settled, what you may carry out carried out and the rest reported: ${resultCommand(record, "done")}`,
     `- you stopped short of that (a question, a failure, an earlier marker): ${resultCommand(record, "failed")}`,

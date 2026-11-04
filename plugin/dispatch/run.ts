@@ -41,9 +41,9 @@
  * a drive's pass, and a Codex pass the bypass only when the record says the
  * tick admitted it on a host that opted in; the wrapper adds no permission
  * of its own. The wrapper stops the pass at the deadline the record names,
- * passes its output through, and keeps the output's end on the exit of a
- * pass that ended without recording `done`: that is where a pass that
- * needs a person states its question.
+ * passes its output through, and keeps its last `Question:` line, nothing
+ * else of it, on the exit of a pass that ended without recording `done`:
+ * that is where a pass that needs a person states its question.
  *
  * A pickup's record starts its vendor's agent instead (Claude Code or
  * Codex), interactively, on `/jig:do-item <key>` with its route's model and
@@ -87,7 +87,11 @@ import {
   recordExit,
 } from "./lib/launches.ts";
 import { probeWall } from "./lib/quota-probe.ts";
-import { followupPassArgv, sessionArgv } from "./lib/session.ts";
+import {
+  followupPassArgv,
+  QUESTION_PREFIX,
+  sessionArgv,
+} from "./lib/session.ts";
 import { failureText } from "./lib/text.ts";
 import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts";
 import { StateVersionError } from "./lib/state.ts";
@@ -129,24 +133,34 @@ function driveScript(): string {
   return process.env.JIG_DISPATCH_DRIVE_SCRIPT || driveTs;
 }
 
-/** How much of the end of a follow-up pass's output its exit keeps. */
-const SAID_CHARS = 2000;
+/** How much of a follow-up pass's last `Question:` line its exit keeps: the only part of the output that is persisted. */
+const QUESTION_CHARS = 1000;
 /** How long a pass stopped at its deadline has to end before it is killed. */
 const STOP_GRACE_MS = 10_000;
-/** How long the wrapper waits, once the stage exited, for the rest of its output. */
+/** How long the wrapper waits, once the stage exited, for the rest of its output and for its descendants to end. */
 const DRAIN_MS = 2000;
 
 interface Ran {
   code: number | null;
   signal: string | null;
-  /** The end of the stage's output, where the wrapper kept it. */
+  /** The stage's last `Question:` line, where the wrapper kept it. */
   said?: string;
 }
 
-/** How the wrapper runs a stage: whether it keeps its output's end, and the deadline it enforces itself (seconds, `0` for none). */
+/** How the wrapper runs a stage: whether it keeps its last question, and the deadline it enforces itself (seconds, `0` for none). */
 interface RunOptions {
   keepOutput: boolean;
   deadlineSec: number;
+}
+
+/** Whether a process group still has a member. */
+function groupAlive(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
 }
 
 function runStage(
@@ -156,21 +170,51 @@ function runStage(
   options: RunOptions = { keepOutput: false, deadlineSec: 0 },
 ): Promise<Ran> {
   return new Promise((settle) => {
+    // A pass under a deadline leads its own process group, so the deadline reaches what the agent started too.
+    const grouped = options.deadlineSec > 0 && process.platform !== "win32";
     const child = spawn(argv[0] as string, argv.slice(1), {
       cwd,
       env,
+      detached: grouped,
       stdio: options.keepOutput ? ["inherit", "pipe", "inherit"] : "inherit",
     });
-    let said = "";
+    const signalTree = (name: NodeJS.Signals) => {
+      if (grouped && child.pid !== undefined) {
+        try {
+          process.kill(-child.pid, name);
+          return;
+        } catch (error) {
+          swallow(error, "the pass's group is gone or unsignalable");
+        }
+      }
+      child.kill(name);
+    };
+    let line = "";
+    let question = "";
+    const endLine = () => {
+      const text = line.trim();
+      if (text.startsWith(QUESTION_PREFIX) && text !== QUESTION_PREFIX)
+        question = text;
+      line = "";
+    };
     let drained = !options.keepOutput;
     child.stdout?.on("data", (chunk: Buffer) => {
-      process.stdout.write(chunk);
-      said = (said + chunk.toString("utf8")).slice(-SAID_CHARS);
+      const text = chunk.toString("utf8");
+      if (!process.stdout.write(chunk)) {
+        child.stdout?.pause();
+        process.stdout.once("drain", () => child.stdout?.resume());
+      }
+      const parts = text.split("\n");
+      parts.forEach((part, i) => {
+        if (i > 0) endLine();
+        const room = QUESTION_PREFIX.length + QUESTION_CHARS - line.length;
+        if (room > 0) line += part.slice(0, room);
+      });
     });
     child.stdout?.on("end", () => {
       drained = true;
     });
-    const forward = (name: NodeJS.Signals) => child.kill(name);
+    const forward = (name: NodeJS.Signals) => signalTree(name);
     for (const name of FORWARDED) process.on(name, forward);
     const timers: ReturnType<typeof setTimeout>[] = [];
     if (options.deadlineSec > 0)
@@ -179,8 +223,8 @@ function runStage(
           console.error(
             `jig dispatch run: the pass ran past its ${options.deadlineSec}s deadline; stopping it`,
           );
-          child.kill("SIGTERM");
-          timers.push(setTimeout(() => child.kill("SIGKILL"), STOP_GRACE_MS));
+          signalTree("SIGTERM");
+          timers.push(setTimeout(() => signalTree("SIGKILL"), STOP_GRACE_MS));
         }, options.deadlineSec * 1000),
       );
     let ended = false;
@@ -188,14 +232,25 @@ function runStage(
       if (ended) return;
       ended = true;
       for (const timer of timers) clearTimeout(timer);
+      // What the agent started can outlive it; the exit is published once the group has ended.
+      if (grouped && child.pid !== undefined && groupAlive(child.pid)) {
+        signalTree("SIGKILL");
+        const gone = Date.now() + DRAIN_MS;
+        while (groupAlive(child.pid) && Date.now() < gone) await Bun.sleep(20);
+      }
       for (const name of FORWARDED) process.off(name, forward);
-      // The output's last bytes can follow the exit; a grandchild that keeps the pipe open is not waited for.
+      // The output's last bytes can follow the exit; a grandchild that keeps the pipe open is not waited for, and its pipe is let go.
       const until = Date.now() + DRAIN_MS;
       while (!drained && Date.now() < until) await Bun.sleep(20);
+      if (!drained) {
+        child.stdout?.removeAllListeners("data");
+        child.stdout?.destroy();
+      }
+      endLine();
       settle({
         code,
         signal,
-        ...(options.keepOutput ? { said } : {}),
+        ...(options.keepOutput && question !== "" ? { said: question } : {}),
       });
     };
     child.on("error", (error) => {
@@ -284,7 +339,7 @@ function stageArgv(record: LaunchRecord): string[] {
   return sessionArgv(record);
 }
 
-/** How the wrapper runs a record's stage: a follow-up's pass under its own deadline, its output's end kept; anything else as it is. */
+/** How the wrapper runs a record's stage: a follow-up's pass under its own deadline, its last question kept; anything else as it is. */
 function runOptions(record: LaunchRecord): RunOptions {
   if (record.action !== "followup")
     return { keepOutput: false, deadlineSec: 0 };

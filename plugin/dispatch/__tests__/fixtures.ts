@@ -269,6 +269,8 @@ process.exit(0);
  * The Claude Code a wrapper starts in tests: it records how it was started
  * and runs until \`claude-exit\` appears, then prints \`claude-said\` when
  * there is one and exits with the code \`claude-exit\` holds (0 when empty).
+ * With \`claude-stubborn\` present it ignores SIGTERM and leaves a tool
+ * command running, whose pid it writes to \`claude-tool-pid\`.
  */
 const FAKE_CLAUDE = `#!/usr/bin/env bun
 const fs = require("node:fs");
@@ -279,6 +281,11 @@ fs.appendFileSync(F + "/claude-runs.jsonl", JSON.stringify({
   configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
   token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
 }) + "\\n");
+if (fs.existsSync(F + "/claude-stubborn")) {
+  process.on("SIGTERM", () => {});
+  const tool = require("node:child_process").spawn("sleep", ["300"], { stdio: "ignore" });
+  fs.writeFileSync(F + "/claude-tool-pid", String(tool.pid));
+}
 const until = Date.now() + 60000;
 while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(50);
 if (fs.existsSync(F + "/claude-said")) process.stdout.write(fs.readFileSync(F + "/claude-said", "utf8"));

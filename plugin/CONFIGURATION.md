@@ -1194,8 +1194,9 @@ commit, on an admitted account, behind a serialized area's hold, and a
 drive a person stopped is never re-armed, since its ledger records the
 stop. Each run's report names every pull request the rule adopted, with
 its author, its last update and the window, and the forge line counts
-them. It works with the labels on or off; under `labels.only_labeled` it
-is refused, since a pull request with no label of the set is never read.
+them. It needs `labels.enabled`, since the hold label is read only with the
+labels on; under `labels.only_labeled` it is refused, since a pull request
+with no label of the set is never read.
 
 ### The machine's dispatch file
 

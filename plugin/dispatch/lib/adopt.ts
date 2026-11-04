@@ -7,7 +7,8 @@
  *   the login the dispatcher reads the forge as, which is the identity the
  *   host's sessions open pull requests under;
  * - it was updated within the rule's window (`within`, a week by default);
- * - a bot opened it only where the rule names that bot;
+ * - a bot opened it only where the rule names that bot, never through the
+ *   default author;
  * - a person's `hold` label is not on it.
  *
  * A draft is adopted like any other, since a pull request opens as a draft
@@ -22,6 +23,8 @@ import type { DispatchSection } from "./types.ts";
 /** The rule as one tick applies it: the authors resolved, the window in milliseconds. */
 export interface Adoption {
   authors: string[];
+  /** Whether `authors` came from the repository's section, not from the dispatcher's own login. */
+  named: boolean;
   withinMs: number;
 }
 
@@ -47,6 +50,7 @@ export function adoptionOf(
   if (!rule.enabled) return null;
   return {
     authors: rule.authors ?? (login === null ? [] : [login]),
+    named: rule.authors !== null,
     withinMs: rule.withinMs,
   };
 }
@@ -99,6 +103,7 @@ export function adopts(
     .map(normalLogin)
     .includes(normalLogin(author.login));
   if (!named) return null;
+  if (isBot(author) && !adoption.named) return null;
   const updated = Date.parse(pr.updatedAt ?? "");
   if (!Number.isFinite(updated) || nowMs - updated > adoption.withinMs)
     return null;

@@ -9,13 +9,14 @@
  * and a tick's whose record and outcome are gone is a failed follow-up.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
 import { manualMarker, MARKER, tickMarker } from "../lib/followup-marker.ts";
 import { readOutcomes } from "../lib/followup-outcomes.ts";
 import { readRecord } from "../lib/launches.ts";
+import { existingStateDb } from "../lib/state.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { mergedPr, SLUG, type World, world } from "./fixtures.ts";
 import {
@@ -185,6 +186,50 @@ describe("jig dispatch --apply follows up a merge", () => {
     expect(action?.evidence.question).toBe(question);
     expect(action?.notice?.text).toContain(question);
     expect(claudeRuns(w)).toHaveLength(1);
+  });
+
+  it("stops a pass at its deadline with the tool commands it started, and settles the slot only after", async () => {
+    const { w } = fixture();
+    w.env.DRIVE_PR_PASS_TIMEOUT = "1";
+    writeFileSync(join(w.dir, "claude-stubborn"), "");
+    const [launched] = launches(await applyTick(w, false));
+    const id = String(launched?.record);
+    expect(readRecord(id, dispatchState(w))?.passTimeoutSec).toBe(1);
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    await waitFor("the tool command", () =>
+      existsSync(join(w.dir, "claude-tool-pid")),
+    );
+    const tool = Number(readFileSync(join(w.dir, "claude-tool-pid"), "utf8"));
+    await waitFor("the exit", () => exitWritten(w, id), 40_000);
+    const alive = () => {
+      try {
+        process.kill(tool, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    expect(alive()).toBe(false);
+    const row = existingStateDb(dispatchState(w))
+      ?.query("SELECT exit FROM launches WHERE id = ?")
+      .get(id) as { exit: string };
+    expect(JSON.parse(row.exit)).toMatchObject({ signal: "SIGKILL" });
+  }, 60_000);
+
+  it("keeps the question of a pass whose last line is longer than the output's kept end", async () => {
+    const { w } = fixture();
+    const [launched] = launches(await applyTick(w, false));
+    const id = String(launched?.record);
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    writeFileSync(
+      join(w.dir, "claude-said"),
+      `Question: ${"which version? ".repeat(120)}\n${"noise ".repeat(500)}\n`,
+    );
+    writeFileSync(join(w.dir, "claude-exit"), "1");
+    await waitFor("the exit", () => exitWritten(w, id));
+    const after = await applyTick(w, false);
+    const [action] = after.repos[0]?.actions ?? [];
+    expect(action?.evidence.question).toContain("which version?");
   });
 
   it("runs the pass with the permission settings of the host's user layer", async () => {
