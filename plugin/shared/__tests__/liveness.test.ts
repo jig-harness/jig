@@ -112,8 +112,12 @@ describe("judging a recorded holder", () => {
 
   it("compares start times on a civil clock, whatever zone or daylight-saving gap the judge is in", async () => {
     const script = `
-      import { compareStarts } from ${JSON.stringify(fileURLToPath(new URL("../liveness.ts", import.meta.url)))};
-      process.stdout.write(compareStarts("Sun Mar 29 02:30:00 2026", "Sun Mar 29 03:30:00 2026"));
+      import { ownIdentity, relate } from ${JSON.stringify(fileURLToPath(new URL("../liveness.ts", import.meta.url)))};
+      const mine = ownIdentity();
+      process.stdout.write(relate(
+        { ...mine, start: "Sun Mar 29 02:30:00 2026" },
+        { ...mine, start: "Sun Mar 29 03:30:00 2026" },
+      ));
     `;
     const proc = Bun.spawn(["bun", "-e", script], {
       env: { ...process.env, TZ: "Europe/Amsterdam" },
@@ -122,7 +126,7 @@ describe("judging a recorded holder", () => {
     });
     await expectSpawnExited(proc, 0);
     const out = await new Response(proc.stdout).text();
-    expect(out).toBe("shifted");
+    expect(out).toBe("unknown");
   });
 
   it("answers unknown, not dead, when a relation rests on start times that may be one start", () => {

@@ -497,7 +497,7 @@ function civilMs(text: string): number {
  * the widest gap between two time zones, which is one start read in two
  * zones and cannot be told from a reused pid.
  */
-export function compareStarts(
+function compareStarts(
   a: string,
   b: string,
 ): "same" | "differ" | "shifted" {
