@@ -54,6 +54,7 @@ class Literals {
   code(interpolation = false): void {
     let depth = 0;
     const recent: string[] = [];
+    const controlParens: boolean[] = [];
     while (this.at < this.source.length) {
       if (this.trivia()) continue;
       const char = this.source[this.at] as string;
@@ -61,11 +62,21 @@ class Literals {
         this.take(char);
         return;
       }
-      const word = this.token(recent);
+      const word = this.contextToken(recent, controlParens);
       if (word === "{") depth++;
       if (word === "}") depth--;
       recent.push(word);
     }
+  }
+
+  /** A control condition closes before a statement; a call closes an expression. */
+  private contextToken(recent: string[], controlParens: boolean[]): string {
+    const word = this.token(recent);
+    if (word === "(")
+      controlParens.push(
+        /^(?:if|while|for|with|switch|catch)$/.test(recent.at(-1) ?? ""),
+      );
+    return word === ")" && controlParens.pop() ? "control)" : word;
   }
 
   private token(recent: string[]): string {
@@ -76,7 +87,7 @@ class Literals {
     }
     if (char === "/" && this.regex(recent.at(-1) ?? "")) return "literal";
     const word =
-      /^[A-Za-z_$][\w$]*/.exec(this.source.slice(this.at))?.[0] ?? char;
+      /^(?:=>|[A-Za-z_$][\w$]*)/.exec(this.source.slice(this.at))?.[0] ?? char;
     this.take(word);
     return word;
   }
@@ -84,7 +95,7 @@ class Literals {
   private regex(previous: string): boolean {
     if (
       previous &&
-      !/^(?:[=(:,;!&|?{}[]|return|throw|yield|case|void|typeof|delete|in|of)$/.test(
+      !/^(?:[=(:,;!&|?{}[]|=>|control\)|return|throw|yield|case|void|typeof|delete|in|of)$/.test(
         previous,
       )
     )

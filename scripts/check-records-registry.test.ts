@@ -207,6 +207,23 @@ describe("what the code names", () => {
   const tableNames = (source: string) =>
     namedIn("plugin/db.ts", source).map((n) => n.text);
 
+  test("regex expression and control-flow contexts cannot hide later SQL", () => {
+    for (const before of [
+      `const matches = () => /'/.test("");`,
+      `if (enabled) /'/.test(value);`,
+      `if (check(nested(value))) /["']/g.test(value);`,
+      `while (enabled) /'/.test(value);`,
+      `for (; enabled;) /'/.test(value);`,
+      `with (context) /'/.test(value);`,
+      `const ratio = total / count;`,
+      `const ratio = calculate(value) / count;`,
+    ]) {
+      expect(
+        tableNames(`${before}\ndb.run("CREATE TABLE new_records (id TEXT)");`),
+      ).toEqual(["new_records"]);
+    }
+  });
+
   test("SQL comments before CREATE stay inside the source literal", () => {
     expect(
       tableNames(
