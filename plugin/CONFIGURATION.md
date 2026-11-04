@@ -93,7 +93,7 @@ The skills read their values from up to three
 
 | Layer | Where | Holds |
 |-------|-------|-------|
-| 1. User | `~/.jig/jig.yaml`; `JIG_HOME` moves the `~/.jig` folder | One person's or one machine's values, for every repository: a personal default, a folder shared by all repositories |
+| 1. User | `~/.jig/jig.yaml`; `JIG_HOME` moves the `~/.jig` folder | One person's or one machine's values, for every repository: a personal default, a folder shared by all repositories, how far this host trusts a drive's passes |
 | 2. Repository | `.config/jig.yaml` ([the file](#the-file)); `JIG_OVERLAY` names a different file | The repository's own values |
 | 3. Environment | `JIG__<SECTION>__<FIELD>` variables | One run's values |
 
@@ -133,8 +133,15 @@ Command-line flags, where a script has them, override all three.
   classes a drive may park on, which an environment variable is refused for
   too ([`autonomy`](#autonomy)).
 - **Fields only a user file sets.** [`clones`](#clones-user-file-only)
-  describes one machine, so a repository's file refuses it; an environment
-  variable may still set it for one run.
+  describes one machine, and [`drive.pass_args` and
+  `drive.codex_bypass`](#a-hosts-opt-in-to-bypass) say how far this host
+  trusts a drive's passes. A repository's file refuses these fields with an error
+  naming the field, whatever it sets them to (an empty list and `null`
+  included), and so does a file `JIG_OVERLAY` names, which is the repository's
+  layer. A `drive` section in that layer that is not a mapping (`drive: null`,
+  or `drive:` with nothing under it) is refused the same way, since it would
+  replace the host's whole section. An environment variable may still set them
+  for one run.
 - **Adoption is the repository's file.** A user file alone does not make a
   repository look adopted: `resolve-review-comments` and the tracker scripts
   still refuse to run without `.config/jig.yaml`. The skills that run on
@@ -329,8 +336,56 @@ not resolve it either.
 | `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops unconverged (exit `6`). The `--max-rounds` flag overrides it for one run. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
 | `drive.pass_deadline_retries` | whole number ≥ 0 | `2` | drive-pr | How many passes killed at their deadline one drive restarts from, counted in the drive state across re-arms and takeovers until the drive converges or the pull request closes: the driver reports what the killed pass left in the tree, leaves it there and starts the next round. Past this many it stops with exit `15` and says the budget is spent; `0` stops at the first. A value that is not a whole number of at least 0 stops the drive |
 | `drive.pass_model` | one word: a model id, a Claude Code alias, or a routing tier (`execution`, `strategic`) | `sonnet`, Claude Code's alias for the latest Sonnet | drive-pr, do-item | The model each pass of a drive runs on: the arm command both skills build carries it as `claude --model <model> -p …`, and `drive.ts` adds it after `claude` to a pass command that names no model of its own. A tier resolves through the same tier-to-model table as the implementer's route (`routing.models`, row `claude-code`). The `--pass-model` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive. The driver log and the `drives.ts` listing name the model. The setting is Claude Code's; `--pass-model` also overrides a Codex pass and resolves tiers through `routing.models.codex`. Without that flag, a Codex pass runs on its own `-m`, else the execution tier of `routing.models.codex`, else Codex's own configured model, and any other pass command chooses its own model. A value that is not one word stops the drive |
-| `drive.pass_args` | list of words, each a string without spaces, such as `[--permission-mode, bypassPermissions]` | `[]`: the pass command carries no extra arguments | drive-pr, do-item | Extra arguments for a Claude Code pass command: the arm command both skills build carries them before `-p` (`claude --model <model> <words> -p …`), and `drive.ts` adds them before `-p` to a pass command that carries no arguments of its own. A command that carries its own (the arm command, or a re-arm or takeover command a stopped drive printed) is kept as written. The `--pass-args "<words>"` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive: one value, split on spaces, and empty for none. The driver log and the `drives.ts` listing name the [permission mode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) each pass runs in (`inherited` when the command sets none: Claude Code's own settings decide). **What setting it risks:** `--permission-mode bypassPermissions` skips the permission prompts of the unattended passes (explicit ask rules, tools that need a person and checks before removing critical paths still apply), so a pass can then write nearly anywhere, including protected paths such as `.claude/skills/**` that a pass without a terminal is otherwise denied in a prompting mode; what then limits it is the instructions the drive gives it (`guarded-push.ts` pushes to the pull request's branch only, and the bots-only rule keeps it to bot threads), which a pass follows but nothing stops it from ignoring; a repository that needs a mechanical limit adds Claude Code `permissions.deny` rules or hooks. Jig sets nothing here for a repository that did not ask. A headless Claude pass can commit only where its approval source allows it: a permission mode `drive.pass_args` names, or an allow rule of Claude Code's own settings (`--allowedTools`, `permissions.allow`). A host opts in through its user layer, and a repository's own file takes precedence over it. Where nothing allows the commit, a conflict re-drive stops `9` again at the same change and the dispatcher notifies a person. It cannot hold `--model` (set `drive.pass_model`) or `-p`/`--print` (the drive writes the prompt). A pass command that is not Claude Code's ignores the field and the driver log says so. A value that is not a list of words stops the drive with a message naming the field |
+| `drive.pass_args` | list of words, each a string without spaces, such as `[--permission-mode, bypassPermissions]`. Only the host's user file or one run's environment sets it | `[]`: the pass command carries no extra arguments | drive-pr, do-item | Extra arguments for a Claude Code pass command on this host: the arm command both skills build carries them before `-p` (`claude --model <model> <words> -p …`), and `drive.ts` adds them before `-p` to a pass command that carries no arguments of its own. A command that carries its own (the arm command, or a re-arm or takeover command a stopped drive printed) is kept as written. The `--pass-args "<words>"` flag of `drive.ts` and of `arm-drive.ts` overrides it for one drive: one value, split on spaces, and empty for none. The driver log and the `drives.ts` listing name the [permission mode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) each pass runs in (`inherited` when the command sets none: Claude Code's own settings decide). A headless Claude pass can commit only where its approval source allows it: a permission mode `drive.pass_args` names, or an allow rule of Claude Code's own settings (`--allowedTools`, `permissions.allow`). Where nothing allows the commit, a conflict re-drive stops `9` again at the same change and the dispatcher notifies a person. A repository's file that sets it, an empty list included, stops the drive with an error naming the field; [a host's opt-in](#a-hosts-opt-in-to-bypass) says why, and what the setting risks. It cannot hold `--model` (set `drive.pass_model`) or `-p`/`--print` (the drive writes the prompt), and it cannot end in an option that needs a value, such as `--permission-mode`, since the drive's `-p` would be read as that value; `--pass-args` follows the same rules. A pass command that is not Claude Code's ignores the field and the driver log says so. A value that is not a list of words stops the drive with a message naming the field |
+| `drive.codex_bypass` | `true`, `false`. Only the host's user file or one run's environment sets it | `false`: a Codex pass carries no bypass, and Codex's own configuration decides | drive-pr, do-item, dispatch | Whether a Codex pass on this host runs with `--dangerously-bypass-approvals-and-sandbox`, which means no sandbox and no approvals. An arm from a Codex session writes it into the pass command. The dispatcher admits a Codex account only where it is `true`, for any launch, and says why on every run where it is not ([the machine's dispatch file](#the-machines-dispatch-file)); the launch record keeps what the run judged, so the launched pass does what was admitted. `drive.ts` runs a Codex pass command as given, so one armed without the setting still starts and its driver log says `inherited`. A repository's file that sets it stops the drive with an error naming the field ([a host's opt-in](#a-hosts-opt-in-to-bypass)). A value that is neither `true` nor `false` fails an arm from a Codex session and keeps the dispatcher from admitting a Codex account, naming the field |
 | `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
+
+### A host's opt-in to bypass
+
+A drive's pass runs with nobody at a terminal, so whatever would ask a person
+is denied instead. Under Claude Code's prompting modes that includes every
+write under a protected path such as `.claude/skills/**`; under Codex's
+sandbox it includes a push and a write to the worktree's git directory. A host
+lets its passes skip those checks in its own user file, and nowhere else:
+
+```yaml
+# ~/.jig/jig.yaml
+drive:
+  pass_args: [--permission-mode, bypassPermissions]   # a Claude Code pass
+  codex_bypass: true                                  # a Codex pass
+```
+
+**What you accept.** With bypass on, a pass can do anything this host's
+account can: use every credential it holds, push wherever those credentials
+may push, change any other checkout on the machine, and call anything the
+network lets it reach. So opt in after checking what that account reaches.
+Claude Code's `bypassPermissions` still honours explicit ask rules, tools that
+need a person and the checks before removing critical paths; Codex's flag runs
+with no sandbox and no approvals at all. What steers a pass from there is the
+instructions the drive gives it (`guarded-push.ts` pushes to the pull request's
+branch only, and the bots-only rule keeps it to bot threads), which a pass
+follows but nothing stops it from ignoring. A host that needs a mechanical
+limit puts Claude Code `permissions.deny` rules or hooks in that account's own
+settings, since a pull request can edit the checkout's.
+
+**Why a repository's file cannot say.** It is shared by everyone who clones it,
+so it cannot know what a host's account reaches, and a drive reads it from the
+pull request's own checkout, so a pull request could give its own passes bypass
+or cancel the host's choice. The whole field is refused, not only its
+permission words, because other Claude Code options widen a pass as well
+(`--settings`, `--allowedTools`, `--mcp-config`, `--add-dir`, `--plugin-dir`).
+
+**For one drive.** `--pass-args` on `arm-drive.ts` and `drive.ts`, and a pass
+command given after `drive.ts`'s `--`, are a person or an agent on the host
+choosing for that drive. A re-arm or takeover command a drive prints carries the
+words the drive itself started with.
+
+**What this does not cover.** A checkout's own `.claude/settings.json` is the
+pull request's to edit too, and Claude Code reads it in a pass whatever the host
+chose. As of Claude Code 2.1.311, in a directory it has not been told to trust,
+hooks there run and a `permissions.defaultMode` of `acceptEdits` applies, while
+`bypassPermissions` there and allow rules do not. Treat a drive of a pull request
+you do not trust as running that pull request's code on this host.
 
 ## `autonomy`
 
@@ -1159,7 +1214,7 @@ dashboard:
 | `repositories[].stages` | Empty; the stages `--apply` starts for it. `rearm` starts re-arms and takeovers of drives, and a re-drive, once per change, of a converged drive whose pull request now conflicts with its base or whose head moved past the head the drive verified, and of a drive that stopped on a conflict (exit `9`). `pickup` starts a `do-item` session per item the repository's `dispatch` section makes a pickup, and `followup` a session running `dispatch.followup_command` per merged pull request, each only where the session runtime can bind an interactive session to its account: Orca cannot yet, so each is reported with that reason and nothing is started. `notify` sends each notification once (with Orca, the workspace's comment, marked unread). `steer` sends the one nudge, `Your usage limit has reset. Continue`, once to an interactive session the runtime reports waiting after its account's wall reset; no other stage implies it |
 | `repositories[].followup_since` | None; when the follow-up stage started for it. Without it, the previous run's receipt keeps the start |
 | `accounts[].name` | Required; the account's name here, which launch records and walls are kept under |
-| `accounts[].vendor` | Required; the agent tool the account bills, which every session on it runs in: `claude` (Claude Code) or `codex` (Codex), the tools the drive documents a pass command for. A drive's pass on a `codex` account runs Codex's pass command, on the execution tier of the repository's `routing.models.codex`, and is admitted only while the pass deadline the run reads (`DRIVE_PR_PASS_TIMEOUT`, else 90 minutes) is positive, since a Codex pass has no turn cap of its own. Any other name (lowercase letters, digits and dashes) is accepted, reported on every run as accepted and not admitted, and never launched on |
+| `accounts[].vendor` | Required; the agent tool the account bills, which every session on it runs in: `claude` (Claude Code) or `codex` (Codex), the tools the drive documents a pass command for. A drive's pass on a `codex` account runs Codex's pass command, on the execution tier of the repository's `routing.models.codex`, and is admitted only while the pass deadline the run reads (`DRIVE_PR_PASS_TIMEOUT`, else 90 minutes) is positive, since a Codex pass has no turn cap of its own. A `codex` account is admitted for any launch only on a host that set [`drive.codex_bypass`](#a-hosts-opt-in-to-bypass), since a pass needs that bypass to push and to write its worktree's git directory, a pickup's session goes on to arm such a pass, and nobody is there to approve; every run reports why otherwise. Any other name (lowercase letters, digits and dashes) is accepted, reported on every run as accepted and not admitted, and never launched on |
 | `accounts[].config_dir` | Required; the configuration directory of the account's profile, set as `CLAUDE_CONFIG_DIR` (`claude`) or `CODEX_HOME` (`codex`) for each session it bills. The session starts with the other variable and `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` removed, so only this directory decides the account |
 | `accounts[].identity` | Required; the email address or account id the drive's identity resolver reads from that directory. A launch whose directory resolves to anything else, or to nothing, starts nothing and is reported |
 | `accounts[].max_per_account` | 2; the sessions the dispatcher may hold on the account at once (its slots). Sessions a person starts on the same account are not counted, so lower it when you share the account |
@@ -1195,7 +1250,9 @@ slot until a person clears it with `jig dispatch clear <record>`.
 ## Complete example
 
 Every section, with values a typical repository might set. Copy only what
-differs from the defaults.
+differs from the defaults. The fields only a host sets are not here, since a
+repository's file refuses them: [`clones`](#clones-user-file-only) and
+[a host's opt-in to bypass](#a-hosts-opt-in-to-bypass).
 
 ```yaml
 gc:
@@ -1274,7 +1331,6 @@ drive:
   max_rounds: 10                         # default round budget of a drive; --max-rounds overrides
   pass_deadline_retries: 2               # passes killed at their deadline a drive restarts from
   pass_model: sonnet                     # a model id, an alias or a routing tier; --pass-model overrides
-  pass_args: []                          # extra words for a claude pass, before -p, e.g. [--permission-mode, bypassPermissions]; --pass-args overrides
   escape_baseline_doc: docs/review-loop-baseline.md
 autonomy:
   level: attended                        # attended | unattended | wide

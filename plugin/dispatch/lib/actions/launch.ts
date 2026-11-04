@@ -10,7 +10,11 @@ import {
   admitRearm,
   admitTakeover,
   checkIdentity,
+  type CodexOptIn,
+  hostCodexOptIn,
   type IdentityCheck,
+  type NotAdmitted,
+  notAdmitted,
   refreshWalls,
   type Slots,
   slotsOf,
@@ -38,6 +42,7 @@ import {
   type SessionRuntime,
   tabTitle,
 } from "../runtime/port.ts";
+import { passTimeoutSeconds } from "../../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { PICKUP_SKILL } from "../session.ts";
 import { failureText } from "../text.ts";
 import type {
@@ -64,6 +69,12 @@ export interface ApplyState {
    * one the pass gets.
    */
   passDeadlineSec: number;
+  /**
+   * This host's opt-in to Codex's bypass, read once for the tick: admission
+   * judges a Codex account by it, and a drive's launch record keeps it, so
+   * the pass command does what was judged.
+   */
+  codexOptIn: CodexOptIn;
   /** The workspaces this tick has opened so far, within `OPENS_PER_TICK`. */
   opened?: number;
   /** When the tick began, for its overall deadline. */
@@ -73,6 +84,25 @@ export interface ApplyState {
   /** How many repositories the tick walks, the radix the stages' and targets' turns count in. */
   repos?: number;
   root?: string;
+}
+
+/**
+ * The machine file's accounts a drive's pass is never admitted on, for the
+ * receipt: a vendor with no documented pass command, or a Codex account
+ * while the pass deadline this run reads is `0` or the host has not opted in
+ * to its bypass.
+ */
+export function accountsReport(
+  machine: MachineConfig | null,
+  apply: ApplyState | null,
+): { accountsNotAdmitted?: NotAdmitted[] } {
+  if (machine === null) return {};
+  const refused = notAdmitted(
+    machine.accounts,
+    apply?.passDeadlineSec ?? passTimeoutSeconds(),
+    apply?.codexOptIn ?? hostCodexOptIn(),
+  );
+  return refused.length === 0 ? {} : { accountsNotAdmitted: refused };
 }
 
 /**
@@ -461,6 +491,8 @@ export async function accountBlocked(
     slots.account.configDir !== record.configDir
   )
     return `${slots.account.name} no longer has the vendor and directory the launch was recorded with`;
+  if (record.vendor === "codex" && !state.codexOptIn.on)
+    return `${slots.account.name}: ${state.codexOptIn.why}`;
   if (slots.wallUnrecorded)
     return `${slots.account.name} ended on a wall that was not recorded`;
   if (slots.wall !== null)
@@ -474,24 +506,25 @@ function admission(
   action: Action,
   excluded: ReadonlySet<string>,
 ) {
+  const codex = state.codexOptIn;
   if (action.stage === "pickup" || action.stage === "followup")
     return admitRearm(
       state.table,
       state.last,
-      { kind: "interactive" },
+      { kind: "interactive", codex },
       excluded,
     );
   if (action.takeover === undefined)
     return admitRearm(
       state.table,
       state.last,
-      { kind: "pass", deadlineSec: state.passDeadlineSec },
+      { kind: "pass", deadlineSec: state.passDeadlineSec, codex },
       excluded,
     );
   const replaced = state.records.find((r) => r.record.id === action.takeover);
   return replaced === undefined
     ? { waits: `the launch record ${action.takeover} it replaces is gone` }
-    : admitTakeover(state.table, replaced, state.passDeadlineSec);
+    : admitTakeover(state.table, replaced, state.passDeadlineSec, codex);
 }
 
 /**

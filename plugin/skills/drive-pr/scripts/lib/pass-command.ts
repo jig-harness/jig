@@ -4,16 +4,18 @@
  * `drive.ts`'s `--` is a person's own command, run as given.
  *
  *   claude  claude -p "/jig:drive-pr --bots-only <PR>"
- *   codex   codex exec --dangerously-bypass-approvals-and-sandbox \
- *             "Use the jig:drive-pr skill: /jig:drive-pr --bots-only <PR>"
+ *   codex   codex exec "Use the jig:drive-pr skill: /jig:drive-pr --bots-only <PR>"
  *
  * Claude Code runs a plugin skill from its slash command; Codex runs one
  * when the prompt names it, so its prompt names the skill and carries the
- * same invocation. A Codex pass runs with no sandbox and no approvals: a
- * pass pushes, calls the forge and writes the worktree's git directory,
- * which Codex's sandboxes refuse, and nobody is there to approve. The
- * model each one runs on is decided by `pass-model.ts`, and Claude Code's
- * extra arguments by `pass-args.ts`.
+ * same invocation. Neither command takes a permission of its own. A pass
+ * pushes, calls the forge and writes the worktree's git directory, which
+ * Codex's sandboxes refuse, and nobody is there to approve, so a Codex pass
+ * needs `--dangerously-bypass-approvals-and-sandbox`; a host opts in to it
+ * with `drive.codex_bypass`, after checking what its account can reach, and
+ * without that Codex's own configuration decides. The model each one runs
+ * on is decided by `pass-model.ts`, and Claude Code's extra arguments by
+ * `pass-args.ts`.
  *
  * Under Codex the plugin's turn-budget hook counts nothing, so a Codex pass
  * has no turn cap of its own: the pass deadline (`DRIVE_PR_PASS_TIMEOUT`,
@@ -52,13 +54,18 @@ export function skillPrompt(vendor: AccountVendor, invocation: string): string {
   return `Use the ${skill} skill: ${invocation}`;
 }
 
-/** The documented pass command of `vendor` for pull request `pr`, its model left to `pass-model.ts`. */
+/**
+ * The documented pass command of `vendor` for pull request `pr`, its model
+ * left to `pass-model.ts`: a Codex pass with the bypass when `codexBypass`
+ * says the host opted in, which is Claude Code's to ignore.
+ */
 export function passCommand(
   vendor: AccountVendor,
   pr: number | string,
+  codexBypass = false,
 ): string[] {
   const prompt = skillPrompt(vendor, `/jig:drive-pr --bots-only ${pr}`);
   return vendor === "claude"
     ? ["claude", "-p", prompt]
-    : ["codex", "exec", CODEX_BYPASS, prompt];
+    : ["codex", "exec", ...(codexBypass ? [CODEX_BYPASS] : []), prompt];
 }

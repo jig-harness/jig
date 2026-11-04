@@ -6,16 +6,22 @@
  * (`claude`), its command can carry extra words before `-p`, such as
  * `--permission-mode bypassPermissions`: without that mode a pass started
  * without a terminal is denied every write under a protected path such as
- * `.claude/skills/**`. The words come, in this order, from:
+ * `.claude/skills/**`. Every source of those words is on the host's side,
+ * since a pull request can edit the repository's own file and a drive reads
+ * it from that pull request's checkout (`shared/config-layers.ts` refuses the
+ * field there). The words come, in this order, from:
  *
  *   1. `--pass-args "<words>"` on `arm-drive.ts` or `drive.ts`, for one
  *      drive: the value split on whitespace (no quoting, since a word holds
  *      no space); an empty value adds none and keeps `drive.pass_args` out;
- *   2. `drive.pass_args`, a list of words, added only to a pass command that
- *      carries no arguments of its own (`claude`, its `--model`, `-p` and the
- *      prompt): a command that carries its own is kept as written, so a
- *      re-arm or takeover command printed from a running drive runs the same
- *      arguments it shows, whatever the configuration says by then.
+ *   2. `drive.pass_args`, a list of words in the host's user file or one
+ *      run's environment, added only to a pass command that carries no
+ *      arguments of its own (`claude`, its `--model`, `-p` and the prompt): a
+ *      command that carries its own is kept as written, so a re-arm or
+ *      takeover command printed from a running drive runs the same arguments
+ *      it shows, whatever the configuration says by then. Those words are the
+ *      running drive's own: its command line and the host's settings when it
+ *      started.
  *
  * Words the pass command already carries as one run are not added twice:
  * the command `arm-drive.ts` builds already holds them. A pass command that
@@ -24,9 +30,11 @@
  * is read from the command as it runs (`--permission-mode X`, or
  * `--dangerously-skip-permissions` for `bypassPermissions`), and is
  * `inherited` (Claude Code's own settings decide) when the command sets none.
- * A `codex` pass command's is read from its own words the same way: its
- * documented `--dangerously-bypass-approvals-and-sandbox`, a `--sandbox`,
- * or `inherited` (Codex's configuration decides).
+ * A `codex` pass command's is read from its own words the same way:
+ * `--dangerously-bypass-approvals-and-sandbox`, which the arm and the
+ * dispatcher add for a host that set `drive.codex_bypass`, a `--sandbox`, or
+ * `inherited` (Codex's configuration decides). `drive.ts` adds nothing to a
+ * Codex pass command: it runs as given.
  */
 import { basename } from "node:path";
 import { passVendor } from "./identity.ts";
@@ -52,7 +60,9 @@ export function parsePassArgsFlag(value: string): string[] {
   const words = value.split(/\s+/).filter((word) => word !== "");
   const refused = refusedPassArgs(words);
   if (refused !== undefined)
-    throw new PassArgsUsageError(`--pass-args ${refused}`);
+    throw new PassArgsUsageError(
+      `--pass-args ${refused} (its words follow drive.pass_args's rule)`,
+    );
   return words;
 }
 
@@ -203,8 +213,8 @@ function otherPass(
 
 /**
  * How a `codex` pass command runs its commands: without a sandbox or
- * approvals (its documented form), in the sandbox `--sandbox` names, or as
- * Codex's own configuration decides.
+ * approvals (a host that set `drive.codex_bypass`), in the sandbox
+ * `--sandbox` names, or as Codex's own configuration decides.
  */
 export function codexPermission(argv: readonly string[]): PermissionMode {
   if (argv.slice(1).includes(CODEX_BYPASS))
