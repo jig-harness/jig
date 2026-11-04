@@ -276,7 +276,8 @@ export function withoutRerunning<T extends JobEvidence>(
 /**
  * Whether a check name lost an unsuccessful job to a run being re-run and has
  * no success of its own left: the re-run's result is still owed, and a newer
- * skip of that name is not one.
+ * skip of that name is not one. A success counts only from a later run than
+ * the job it would replace: an older success predates the failure being re-run.
  */
 export function rerunAwaitsResult<
   T extends JobEvidence & { appId?: number | null },
@@ -290,7 +291,10 @@ export function rerunAwaitsResult<
           (k) =>
             k.name === job.name &&
             k.appId === job.appId &&
-            k.conclusion === "success",
+            k.conclusion === "success" &&
+            k.suiteId != null &&
+            job.suiteId != null &&
+            k.suiteId > job.suiteId,
         ),
     );
 }
