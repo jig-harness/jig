@@ -5,7 +5,7 @@ reads in a browser: the dispatch dashboard (`jig dispatch dashboard`), the
 decision sheet (`decide`), the explainer sheet (`explain`), the audit sheet
 (`audit`) and the code-stats report (`code-stats`). Each picks its own
 colours. The dashboard wears Jig's look (warm paper, green accent, light and
-dark), the three sheets share a neutral grey and blue in light only, and the
+dark), the sheets share a neutral grey and blue in light only, and the
 code-stats report has a blue of its own in both modes. Only the dashboard
 carries Jig's mark as its icon. A reader moving from one page to the next
 sees three products, a reader whose system is dark gets a white sheet, and a
@@ -73,10 +73,16 @@ Two fields in a new `ui` section of the configuration, and nothing else:
 One colour is all a team gives: the rest is derived. The light and dark
 accents keep the given colour's hue and chroma, at the lightness nearest to
 it that reaches 4.5:1 on that mode's surfaces; a colour that already does
-stays as given. `accent-hover`, `accent-soft` and `on-accent` are derived
-the same way. So a team's colour never fails contrast and is never refused
-for it; only a value that is not a colour is refused, with the field and the
-layer that set it named.
+stays as given. A colour with transparency is composited onto the mode's
+page surface first, so every derivation starts from an opaque colour (a
+fully transparent one would otherwise match its background at every
+lightness). `accent-hover` and `accent-soft` are derived from the accent
+the same way. `on-accent`, the label on an accent button, is chosen
+against the derived accent itself: black or white, whichever reaches 4.5:1
+on it. Ordinary ink stays readable on `accent-soft` by the same test. So a
+team's colour never fails contrast and is never refused for it; only a
+value that is not a colour is refused, with the field and the layer that
+set it named.
 
 What a theme does not reach:
 
@@ -93,8 +99,8 @@ Which layer sets it follows who the page belongs to:
 - **The sheets and the report** belong to the repository they were written
   in, so they read `ui` from every layer
   ([CONFIGURATION.md § Configuration layers](../plugin/CONFIGURATION.md#configuration-layers)):
-  the repository's file sets the team's look, a person's user file may set
-  their own over it.
+  the repository's file overrides a person's user-file defaults, as every
+  higher layer overrides a lower one.
 - **The dashboard** spans every repository the machine dispatches for, so
   it reads `ui` from the user file and the environment only, and a `ui.mark`
   there is an absolute path, as `clones` paths are.
