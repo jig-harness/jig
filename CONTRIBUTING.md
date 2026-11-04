@@ -87,9 +87,9 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    (`ci.hold_label`, [M13's hold](modules/M13-pipeline-economy/README.md#7-hold)):
    while it is on, the `gates` check fails without running the jobs, and
    removing it runs them in full. Any other label's event starts a mirror
-   run: it runs none of the jobs, and its `gates` repeats the newest real
-   run's result on the head, so a label change neither costs a run nor
-   cancels one. A drive that stopped can leave the label
+   run: it skips the heavy jobs, cancels no run, and its `gates` waits for the
+   newest real run on the head and repeats its result, holding a runner while
+   it waits. A drive that stopped can leave the label
    behind; remove it by hand (`gh pr edit <PR> --remove-label ci:hold`),
    never by rerunning the held run.
 4. The pull request may merge once a round after Ready has settled: every

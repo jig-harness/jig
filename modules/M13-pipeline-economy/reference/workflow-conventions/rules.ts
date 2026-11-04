@@ -457,10 +457,52 @@ export function ciHold(pipelines: Pipelines): Found[] {
   });
   return [
     ...unguarded,
+    ...labelEventConditions(pipelines, heavy, label, unguarded),
     ...missingEvents(pipelines, heavy, label),
     ...missingSentinel(pipelines, label),
     ...mirrorForm(pipelines, heavy, label),
   ];
+}
+
+/** Whether a term of a job's `if:` decides on the event's own label or on a
+ * label action, rather than on the pull request's label set. */
+const readsLabelEvent = (term: string) =>
+  /\bgithub\.event\.label\b/.test(term) ||
+  (/\bgithub\.event\.action\b/.test(term) && /labeled/.test(term));
+
+/** Every job of a workflow in the hold whose `if:` decides on the label event
+ * in any form but the mirror form's skip term. A job skipped on a label event
+ * can turn a failing head into a passing one, so a form the lint cannot prove
+ * safe is a finding, never a pass. Jobs already reported as unguarded are not
+ * reported again. */
+function labelEventConditions(
+  pipelines: Pipelines,
+  heavy: { wf: Workflow; jobs: Job[] }[],
+  label: string,
+  reported: Found[],
+): Found[] {
+  const skip = new RegExp(`^!\\s*\\(\\s*${otherLabelTest(label)}\\s*\\)$`);
+  return holdParticipants(pipelines, heavy).flatMap((wf) =>
+    wf.jobs
+      .filter(
+        (job) => !reported.some((f) => f.file === wf.file && f.job === job.id),
+      )
+      .filter((job) =>
+        (conjuncts(bare(condition(job))) ?? [bare(condition(job))]).some(
+          (term) => readsLabelEvent(term) && !skip.test(term),
+        ),
+      )
+      .map((job) =>
+        at(
+          wf,
+          job,
+          "ci-hold-guard",
+        )(
+          `job '${job.id}' decides on the label event in a form the lint cannot prove safe, and a job skipped on a label event can turn a failing head into a passing one`,
+          `test the pull request's label set for the hold, and skip on another label's event only with the term !(github.event.label.name && github.event.label.name != '${label}') of the mirror form (${README}#ci-hold)`,
+        ),
+      ),
+  );
 }
 
 /** A required job's step that repeats the newest real run's result: a `run:`
@@ -477,20 +519,41 @@ const mirrorStep = (job: Job, label: string) =>
 
 /** Whether `wf`'s run-name begins with the other-label test, marking a mirror
  * run apart from a real one. */
-const marksMirrors = (wf: Workflow, label: string) =>
-  typeof wf.doc["run-name"] === "string" &&
-  new RegExp(`^\\s*\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&`).test(
-    wf.doc["run-name"],
+function marksMirrors(wf: Workflow, label: string): boolean {
+  const name = wf.doc["run-name"];
+  const rest =
+    typeof name === "string"
+      ? name.match(
+          new RegExp(
+            `^\\s*\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&([\\s\\S]*)\\}\\}\\s*$`,
+          ),
+        )?.[1]
+      : undefined;
+  if (rest === undefined) return false;
+  // The literal start of each name the expression gives: the first is the
+  // mirror's, each one after an `||` or `&&` another branch's.
+  const starts = [
+    ...`&&${rest}`.matchAll(/(?:&&|\|\|)\s*(?:format\(\s*)?'([^'{]*)/g),
+  ].map((m) => m[1] ?? "");
+  const [mirror, ...others] = starts;
+  return (
+    !!mirror &&
+    others.some(
+      (real) => real && !real.startsWith(mirror) && !mirror.startsWith(real),
+    )
   );
+}
 
 /** Whether `wf`'s concurrency group gives a mirror run a key of its own: its
- * expression begins with the other-label test and a key holding the run id. */
+ * expression begins with the other-label test and a key that reads the run id,
+ * outside any quoted text, before the first `||`. */
 function isolatesMirrors(wf: Workflow, label: string): boolean {
   const concurrency = wf.doc.concurrency;
   const group = isRecord(concurrency) ? String(concurrency.group ?? "") : "";
-  return new RegExp(
-    `\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&[^|]*github\\.run_id[^|]*\\|\\|`,
-  ).test(group);
+  const key = group.match(
+    new RegExp(`\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&([^|]*)\\|\\|`),
+  )?.[1];
+  return /\bgithub\.run_id\b/.test(key?.replace(/'[^']*'/g, "''") ?? "");
 }
 
 /** The mirror form's workflow-level findings: its concurrency group and its

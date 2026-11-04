@@ -18,7 +18,7 @@ import {
 afterEach(cleanRoots);
 
 const OTHER = "github.event.label.name && github.event.label.name != 'hold'";
-const RUN_NAME = `run-name: \${{ ${OTHER} && format('ci mirror ({0} label)', github.event.label.name) || '' }}\n`;
+const RUN_NAME = `run-name: \${{ ${OTHER} && format('ci mirror ({0} label)', github.event.label.name) || github.event_name == 'pull_request' && format('ci - {0}', github.event.pull_request.title) || '' }}\n`;
 const GROUP = `concurrency:\n  group: ci-\${{ ${OTHER} && format('mirror-{0}', github.run_id) || github.ref }}\n  cancel-in-progress: true\n`;
 const SKIP = `!(${OTHER})`;
 const HEAVY_IF = `!contains(${LABELS}, 'hold') && ${SKIP}`;
@@ -104,6 +104,13 @@ test("a mirror run takes a concurrency group of its own", () => {
     "a group keyed by the ref, not the run",
     "its concurrency group",
   );
+  failsMirror(
+    mirrored({
+      group: `concurrency:\n  group: ci-\${{ ${OTHER} && format('mirror-{0}', 'github.run_id') || github.ref }}\n  cancel-in-progress: true\n`,
+    }),
+    "the run id only as quoted text, one key for every mirror",
+    "its concurrency group",
+  );
 });
 
 test("a mirror run is marked by run-name", () => {
@@ -113,6 +120,58 @@ test("a mirror run is marked by run-name", () => {
     "a run-name that marks nothing",
     "no run-name",
   );
+  for (const [what, name] of [
+    ["the same name for mirror and real runs", `'ci' || 'ci'`],
+    [
+      "a real run left to its default name",
+      `format('ci mirror ({0} label)', github.event.label.name) || ''`,
+    ],
+    [
+      "a real run's name that starts like the mirror's",
+      `'ci mirror' || format('ci mirror - {0}', github.event.pull_request.title)`,
+    ],
+  ] as const)
+    failsMirror(
+      mirrored({ runName: `run-name: \${{ ${OTHER} && ${name} }}\n` }),
+      what,
+      "no run-name",
+    );
+});
+
+test("a job that decides on the label event in another form is a finding, never a pass", () => {
+  for (const [what, cond] of [
+    [
+      "a skip on any label event",
+      `!contains(${LABELS}, 'hold') && github.event.label.name == ''`,
+    ],
+    [
+      "a skip on one action",
+      `!contains(${LABELS}, 'hold') && github.event.action != 'labeled'`,
+    ],
+    [
+      "the other-label test spelled another way",
+      `!contains(${LABELS}, 'hold') && github.event.label.name == 'hold'`,
+    ],
+  ] as const) {
+    const result = run([
+      "--root",
+      mirrored({
+        e2eIf: cond,
+        lintIf: `!contains(${LABELS}, 'hold')`,
+        runName: "",
+        group: CONC,
+        verdictSteps: `${SENTINEL_STEP}      - run: make verdict\n`,
+      }),
+    ]);
+    exits(result, 1, what);
+    expect({ what, rules: rulesOf(result.err) }).toEqual({
+      what,
+      rules: ["ci-hold-guard"],
+    });
+    expect(result.err).toContain(
+      "job 'e2e' decides on the label event in a form the lint cannot prove safe",
+    );
+  }
 });
 
 test("the required job runs on other labels' events, and every heavy job skips", () => {

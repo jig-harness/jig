@@ -294,13 +294,15 @@ for. Such a pipeline answers an event for any label but the hold's with a
   fails on any other result, when it finds no real run, when the provider's
   interface does not answer, and at a deadline that outlasts the longest real
   run.
-- **A mirror run is marked as one,** so a mirror never repeats another mirror
-  and takes the result of a real run only.
+- **A mirror run is marked as one,** and a real run is named so it cannot be
+  taken for one, so a mirror repeats a real run only, and only one of its own
+  pull request; where the provider cannot say which pull request a run
+  belongs to, the mirror fails.
 - **The hold still wins.** On a held pull request the required job fails, or
   cancels itself, as in any held run.
 
-A mirror waits as long as the real run it repeats, on the smallest runner, and
-the head reads as pending meanwhile. Its skipped heavy jobs may show under
+A mirror waits as long as the real run it repeats, holding a runner, and the
+head reads as pending meanwhile. Its skipped heavy jobs may show under
 their own names as skipped; their real results stay with the real run.
 
 The drive's last push is usually a held one, since no one knows a push is

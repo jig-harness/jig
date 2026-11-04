@@ -1,8 +1,8 @@
 // The mirror step of .github/workflows/gates.yml: on a label event other than
 // the CI hold's, `gates` repeats the newest real run's result. The test runs the
 // step's own script, read from the workflow, under bash with a fake `gh` that
-// answers from canned API responses through the step's own `--jq` filters (so
-// `jq` must be installed) and a `timeout` that only runs its command.
+// answers from canned API responses through the step's own `--jq` filters with
+// `jq`, which mise.toml provides, and a `timeout` that only runs its command.
 import { afterAll, expect, test } from "bun:test";
 import {
   mkdirSync,
@@ -32,15 +32,27 @@ const scratch = mkdtempSync(join(tmpdir(), "gates-mirror-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 let cases = 0;
 
-/** A run in the listing `actions/workflows/gates.yml/runs` answers. */
-const run = (id: number, status: string, title = "Fix the widget") => ({
+const PR = 435;
+/** A run in the listing `actions/workflows/gates.yml/runs` answers, linked to
+ * the pull requests `prs`. */
+const run = (
+  id: number,
+  status: string,
+  title = "gates - Fix the widget",
+  prs = [PR],
+) => ({
   id,
   status,
   display_title: title,
+  pull_requests: prs.map((number) => ({ number })),
 });
 const SELF = 900;
 const self = run(SELF, "in_progress", "gates mirror (docs label)");
 const listing = (...runs: object[]) => ({ workflow_runs: runs });
+/** A listing that comes in pages, as `gh api --paginate` reads it. */
+const pages = (...list: object[][]) => ({
+  pages: list.map((runs) => listing(...runs)),
+});
 const jobs = (gates: string | null) => ({
   jobs: [
     { name: "change areas", conclusion: "success" },
@@ -70,7 +82,10 @@ function mirror(
     join(bin, "gh"),
     `#!/usr/bin/env bun
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-const [, endpoint, flag, filter] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const paginate = args.includes("--paginate");
+const filter = args[args.indexOf("--jq") + 1];
+const endpoint = args.slice(1).find((a, i, all) => !a.startsWith("--") && all[i - 1] !== "--jq") ?? "";
 const dir = ${JSON.stringify(dir)};
 const kind = /\\/jobs\\?/.test(endpoint) ? "jobs" : "runs";
 appendFileSync(dir + "/calls.log", endpoint + "\\n");
@@ -79,14 +94,16 @@ const n = existsSync(count) ? Number(readFileSync(count, "utf8")) : 0;
 writeFileSync(count, String(n + 1));
 const list = JSON.parse(readFileSync(dir + "/answers.json", "utf8"))[kind];
 const answer = list[Math.min(n, list.length - 1)];
-if (answer === ${JSON.stringify(FAIL)} || flag !== "--jq") {
+if (answer === ${JSON.stringify(FAIL)} || !args.includes("--jq")) {
   console.error("gh: HTTP 502");
   process.exit(1);
 }
-const jq = Bun.spawnSync(["jq", "-r", filter], { stdin: new TextEncoder().encode(JSON.stringify(answer)), env: process.env });
-process.stdout.write(jq.stdout);
-process.stderr.write(jq.stderr);
-process.exit(jq.exitCode ?? 1);
+for (const page of paginate && answer.pages ? answer.pages : [answer]) {
+  const jq = Bun.spawnSync(["jq", "-r", filter], { stdin: new TextEncoder().encode(JSON.stringify(page)), env: process.env });
+  process.stdout.write(jq.stdout);
+  process.stderr.write(jq.stderr);
+  if (jq.exitCode !== 0) process.exit(jq.exitCode ?? 1);
+}
 `,
   );
   writeFakeProgram(
@@ -105,6 +122,7 @@ process.exit(jq.exitCode ?? 1);
       GH_TOKEN: "token",
       HEAD_SHA: "a".repeat(40),
       SELF: String(SELF),
+      PR: String(PR),
       GITHUB_REPOSITORY: "owner/repo",
       GITHUB_SERVER_URL: "https://github.example",
       ...env,
@@ -134,9 +152,61 @@ test("the step's marker is the start of the name run-name gives a mirror run", (
     join(import.meta.dir, "../.github/workflows/gates.yml"),
     "utf8",
   );
-  const name = raw.match(/^run-name: .*format\('([^']*)\{0\}/m)?.[1];
+  const names = [
+    ...(raw.match(/^run-name: .*$/m)?.[0] ?? "").matchAll(
+      /format\('([^'{]*)\{0\}/g,
+    ),
+  ].map((m) => m[1] ?? "");
+  const [mirrorName, realName] = names;
   expect(step?.env?.MIRROR).toBeTruthy();
-  expect(name).toBe(step?.env?.MIRROR);
+  expect(mirrorName).toBe(step?.env?.MIRROR);
+  // A real pull-request run's name starts otherwise, so no title can pass a
+  // real run off as a mirror, or a mirror as a real run.
+  expect(realName).toBeTruthy();
+  expect(realName?.startsWith(mirrorName ?? "")).toBe(false);
+  expect(mirrorName?.startsWith(realName ?? "")).toBe(false);
+});
+
+test("it reads every page of runs", () => {
+  const { result, calls } = mirror(
+    [
+      pages(
+        Array.from({ length: 3 }, (_, i) =>
+          run(500 + i, "completed", "gates mirror (xs label)"),
+        ),
+        [run(100, "completed")],
+      ),
+    ],
+    [jobs("failure")],
+  );
+  expectSpawnExit(result, 1, "the only real run is on the second page");
+  expect(calls.at(-1)).toContain("/actions/runs/100/jobs");
+});
+
+test("it repeats only this pull request's runs", () => {
+  const other = mirror(
+    [
+      listing(
+        run(200, "completed", "gates - Other", [436]),
+        run(100, "completed"),
+      ),
+    ],
+    [jobs("failure")],
+  );
+  expectSpawnExit(other.result, 1, "another pull request's newer passing run");
+  expect(other.calls.at(-1)).toContain("/actions/runs/100/jobs");
+  for (const [what, prs] of [
+    ["a run linked to no pull request, as a fork's is", []],
+    ["a run linked to several, as on a commit that heads several", [PR, 436]],
+  ] as const) {
+    const { result, out } = mirror(
+      [listing(run(100, "completed", "gates - Fix the widget", [...prs]))],
+      [jobs("success")],
+      { GRACE_SECONDS: "1", POLL_SECONDS: "1" },
+    );
+    expectSpawnExit(result, 1, what);
+    expect(out).toContain(`no real gates run of pull request #${PR}`);
+  }
 });
 
 test("it passes only when the newest real run's gates passed", () => {
@@ -203,7 +273,7 @@ test("it fails when no real run appears within the grace period", () => {
     POLL_SECONDS: "1",
   });
   expectSpawnExit(result, 1, "only mirror runs on the head");
-  expect(out).toContain("no real gates run exists");
+  expect(out).toContain(`no real gates run of pull request #${PR}`);
 });
 
 test("three failed reads in a row fail it; fewer do not", () => {

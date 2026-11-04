@@ -1,4 +1,4 @@
-run-name: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && format('ci mirror ({0} label)', github.event.label.name) || '' }}
+run-name: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && format('ci mirror ({0} label)', github.event.label.name) || github.event_name == 'pull_request' && format('ci - {0}', github.event.pull_request.title) || '' }}
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]

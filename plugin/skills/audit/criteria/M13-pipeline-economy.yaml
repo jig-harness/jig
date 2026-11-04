@@ -290,7 +290,7 @@ criteria:
       - "the lint reads the hold label from the repository's configuration and reports its hold rules as not applicable without one"
       - "it fails a pull-request trigger of a workflow in the hold that lists fewer than opened, synchronize, reopened, labeled and unlabeled"
       - "it accepts a guard only as a negated contains over the pull request's label names with the exact label, and a held-head check only as the positive test, in a job whose failure reaches the required check"
-      - "where a workflow skips work on another label's events, it fails one whose concurrency group is not that run's own, whose run-name does not mark the run, whose required job skips or has no step that runs only on those events, or whose heavy job still runs on them"
+      - "where a workflow skips work on another label's events, it fails one whose concurrency group is not that run's own, whose run-name does not name mirror and real runs apart, whose required job skips or has no step that runs only on those events, or whose heavy job still runs on them, and it fails any job condition that decides on the label event in another form"
       - "it runs in CI on changes to the workflow files, with its own self-test"
       - "expected-absent when no hold label is configured"
 
