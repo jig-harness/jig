@@ -12,10 +12,9 @@
  * can still recognise its own.
  */
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
-import { swallow } from "../errors.ts";
 import { isRecord } from "../guards.ts";
+import { bootId } from "../liveness.ts";
 
 export interface Writer {
   /** The forge login the writer is signed in as, where it knows it. */
@@ -36,16 +35,6 @@ export type Medium = "machine" | "tree" | "forge" | "tracker";
 /** Whether everyone who can read the repository can read a record kept on `medium`. */
 function isPublic(medium: Medium): boolean {
   return medium === "forge" || medium === "tracker";
-}
-
-/** This boot's id: Linux's `boot_id`; elsewhere, empty (the start time still tells a reused pid apart). */
-export function bootId(): string {
-  try {
-    return readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
-  } catch (error) {
-    swallow(error, "no boot id on this platform");
-    return "";
-  }
 }
 
 /** `value` as the digest a public record carries in its place. */

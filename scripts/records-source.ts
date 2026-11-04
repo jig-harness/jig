@@ -1,10 +1,18 @@
 import { parse } from "@babel/parser";
 import {
+  getBindingIdentifiers,
+  isCatchClause,
+  isDeclaration,
+  isFunction,
   isIdentifier,
   isMemberExpression,
   isStringLiteral,
   isTaggedTemplateExpression,
   isTemplateLiteral,
+  isTSEnumDeclaration,
+  isTSModuleDeclaration,
+  isTSParameterProperty,
+  type Node,
   type Expression,
   type TemplateLiteral,
   traverseFast,
@@ -59,6 +67,8 @@ function append(
   line: number,
   verbatim: boolean,
 ): void {
+  // Template CR and CRLF denote one LF; normalize before decoding escapes.
+  raw = raw.replace(/\r\n?/g, "\n");
   for (let at = 0; at < raw.length; ) {
     const sourceEscape =
       /^\\(?:u\{[\dA-Fa-f]+\}|u[\dA-Fa-f]{4}|x[\dA-Fa-f]{2}|\r\n|[\s\S])/.exec(
@@ -84,14 +94,46 @@ function template(
       sql.text += "\0";
       sql.lines.push(quasi.loc?.start.line ?? 1);
     }
+    const part: SqlSource = { text: "", lines: [] };
     append(
-      sql,
+      part,
       source.slice(quasi.start ?? 0, quasi.end ?? 0),
       quasi.loc?.start.line ?? 1,
       verbatim,
     );
+    // The parser owns the language semantics; decoding above only maps lines.
+    sql.text += verbatim
+      ? quasi.value.raw
+      : (quasi.value.cooked ?? quasi.value.raw);
+    for (const line of part.lines) sql.lines.push(line);
   }
   return sql;
+}
+
+/** Unknown tags can transform either representation, so neither certifies names. */
+function templateSources(
+  source: string,
+  node: TemplateLiteral,
+  raw: boolean,
+  uncertain: boolean,
+): SqlSource[] {
+  if (!uncertain) return [template(source, node, raw)];
+  return [true, false].map((verbatim) => ({
+    ...template(source, node, verbatim),
+    uncertain: true,
+  }));
+}
+
+/** Babel's binding retriever covers JavaScript; include TypeScript value bindings. */
+function bindsStringName(node: Node): boolean {
+  if (isTSEnumDeclaration(node) || isTSModuleDeclaration(node))
+    return isIdentifier(node.id, { name: "String" });
+  if (isTSParameterProperty(node))
+    return Object.hasOwn(getBindingIdentifiers(node.parameter), "String");
+  return (
+    (isDeclaration(node) || isFunction(node) || isCatchClause(node)) &&
+    Object.hasOwn(getBindingIdentifiers(node), "String")
+  );
 }
 
 /** Parse TypeScript syntax so regexes and division never change literal boundaries. */
@@ -102,20 +144,29 @@ export function sourceLiterals(source: string): SqlSource[] {
     allowAwaitOutsideFunction: true,
     allowReturnOutsideFunction: true,
   });
+  // Conservatively withhold built-in semantics throughout a file that binds
+  // String. This includes nested scopes and declarations after the tag.
+  let bindsString = false;
+  traverseFast(ast, (node) => {
+    bindsString ||= bindsStringName(node);
+  });
   const rawTemplates = new Set<TemplateLiteral>();
   const unknownTemplates = new Set<TemplateLiteral>();
   const found: SqlSource[] = [];
   traverseFast(ast, (node) => {
     if (isTaggedTemplateExpression(node)) {
-      if (rawTag(node.tag)) rawTemplates.add(node.quasi);
+      if (!bindsString && rawTag(node.tag)) rawTemplates.add(node.quasi);
       else unknownTemplates.add(node.quasi);
     }
     if (isTemplateLiteral(node)) {
-      if (unknownTemplates.has(node)) {
-        // Inspect both representations: neither is proven to be the tag's output.
-        for (const verbatim of [true, false])
-          found.push({ ...template(source, node, verbatim), uncertain: true });
-      } else found.push(template(source, node, rawTemplates.has(node)));
+      found.push(
+        ...templateSources(
+          source,
+          node,
+          rawTemplates.has(node),
+          unknownTemplates.has(node),
+        ),
+      );
     }
     if (isStringLiteral(node)) {
       const sql: SqlSource = { text: "", lines: [] };

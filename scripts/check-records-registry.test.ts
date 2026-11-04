@@ -304,6 +304,44 @@ describe("what the code names", () => {
     expect(tableNames("message`ordinary CLI help`;")).toEqual([]);
   });
 
+  test("shadowed String tags cannot certify cooked or raw SQL names", () => {
+    const sql = String.raw`CREATE\u0020TABLE launches (id TEXT)`;
+    for (const wrap of [
+      (tag: string) => `function run(String) { ${tag} }`,
+      (tag: string) => `const run = ({String}) => { ${tag} };`,
+      (tag: string) => `const String = custom; ${tag}`,
+      (tag: string) => `import String from "custom"; ${tag}`,
+      (tag: string) => `try {} catch (String) { ${tag} }`,
+      (tag: string) => `class String {} ${tag}`,
+      (tag: string) => `namespace String { export const raw = custom; } ${tag}`,
+      (tag: string) => `enum String { raw } ${tag}`,
+      (tag: string) => `import String = Custom; ${tag}`,
+      (tag: string) =>
+        `class Runner { constructor(private String: any) { ${tag} } }`,
+    ]) {
+      for (const tag of ["String.raw", 'String["raw"]', "String[`raw`]"]) {
+        const source = wrap(`${tag}\`${sql}\`;`);
+        expect(
+          namedIn("plugin/db.ts", source).some((n) => n.unclassified),
+        ).toBe(true);
+      }
+    }
+  });
+
+  test("templates normalize literal CR and CRLF while keeping source lines", () => {
+    for (const ending of ["\r", "\r\n", "\n"]) {
+      for (const tag of ["", "String.raw", 'String["raw"]']) {
+        const source = `const sql = ${tag}\`-- migration${ending}CREATE TABLE new_records (id TEXT);\`;`;
+        const tables = namedIn("plugin/db.ts", source).filter(
+          (n) => n.what === "table",
+        );
+        expect(tables).toHaveLength(1);
+        expect(tables[0]?.line).toBe(2);
+        expect(tableNames(source)).toEqual(["new_records"]);
+      }
+    }
+  });
+
   test("SQL declaration starts exclude comments and quoted values", () => {
     for (const sql of [
       "SELECT 1; /* CREATE TABLE old_records (id TEXT); */",
