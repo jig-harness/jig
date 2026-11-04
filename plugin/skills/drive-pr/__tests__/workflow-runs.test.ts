@@ -571,6 +571,19 @@ describe("evidence is dropped only when a successor supplies a result", () => {
     expect(verdict([failed, success], workflowRuns)).toBe("green");
   });
 
+  it("does not let a retained success in a rerunning run replace another run's failure", () => {
+    const workflowRuns = [
+      workflowRun(40, null, T3, { attempt: 2 }),
+      workflowRun(41, null, T2, { attempt: 2 }),
+    ];
+    const runs = [
+      job("unit", "success", 40),
+      job("unit", "failure", 41, { started: T1, completed: T1 }),
+    ];
+    expect(rerunAwaitsResult(runs, workflowRuns)).toBe(true);
+    expect(verdict(runs, workflowRuns)).toBe("pending: unit");
+  });
+
   it("does not explain two failures that started together as aggregators", () => {
     const workflowRuns = [workflowRun(40, "cancelled", T1)];
     const runs = [

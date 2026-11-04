@@ -294,6 +294,7 @@ export function unreplacedRerunJobs<
   T extends JobEvidence & { appId?: number | null; app?: string },
 >(jobs: readonly T[], workflowRuns: readonly WorkflowRun[] | null): T[] {
   const kept = withoutRerunning(jobs, workflowRuns);
+  const rerunning = rerunningSuites(workflowRuns);
   const startedOf = (suiteId: number | null | undefined): number => {
     const run = (workflowRuns ?? []).find((r) => r.checkSuiteId === suiteId);
     return run === undefined ? Number.NaN : Date.parse(run.startedAt);
@@ -308,6 +309,13 @@ export function unreplacedRerunJobs<
             k.appId === job.appId &&
             k.app === job.app &&
             k.conclusion === "success" &&
+            // A success in a run being re-run is a previous attempt's,
+            // retained: the rerun's start time says nothing about it.
+            !(
+              k.suiteId !== undefined &&
+              k.suiteId !== null &&
+              rerunning.has(k.suiteId)
+            ) &&
             startedOf(k.suiteId) > startedOf(job.suiteId),
         ),
     );
