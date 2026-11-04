@@ -232,10 +232,13 @@ development and shipped as a version.
   which of them it could collect ([resource collection](gc/README.md)).
   Scratch folders and tool state are report-only: collection stays off for
   each until every process that creates them takes part in its admission
-  protocol. A worktree Orca manages is collected when the machine entry
-  names Orca's command: Orca's registry stands in for the admission the
-  opener does not hold, the base branch's copy of the remove hook runs, the
-  unsent reflection findings are parked, and `orca worktree rm` removes it
+  protocol. A worktree Orca manages is eligible for collection when the machine entry
+  names Orca's command, and an eligible one is removed only in a collecting
+  run (the configured weekday or disk pressure) once its proof of death
+  holds; an ordinary run reports it as `would-collect` and removes nothing.
+  Orca's registry stands in for the admission the opener does not hold, the
+  base branch's copy of the remove hook runs, the unsent reflection findings
+  are parked, and `orca worktree rm` removes it
   ([worktrees Orca manages](gc/README.md#worktrees-orca-manages)); every
   other worktree is reported. It also removes its own receipts past their
   retention. State: one receipt per run under `~/.local/state/jig/gc/<date>/`. Refuses: an
