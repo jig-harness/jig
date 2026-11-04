@@ -1303,9 +1303,10 @@ make, use the entry's term instead.
   and so has one whose process id now belongs to a process started at another
   time; one recorded on another machine cannot be checked from here. One
   shared module records and judges it for the *dispatcher*'s *launch
-  records*, the drive's locks, resource collection's admission tokens and
-  the machine-wide locks (the one heavy test runs wait on, and the one over
-  an Orca workspace card's comment).
+  records*, resource collection's admission tokens and the machine-wide
+  locks (the one heavy test runs wait on, and the one over an Orca workspace
+  card's comment). The drive's locks share only its host comparison: their
+  claims record the process id and host, not the boot or start time.
   *Avoid*: a bare process id as proof that a holder still runs.
 - **Directory fence** — a nonempty directory retained at the path reserved
   for one lock acquisition after its release or recovery. A delayed process

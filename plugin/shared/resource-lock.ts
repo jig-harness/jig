@@ -133,21 +133,26 @@ function recordedHolder(path: string, pid: string): ProcessIdentity {
 function judgeOwner(
   path: string,
   seen: string,
+  deadline?: number,
 ): { alive: boolean; who: string } {
   if (!/^[1-9][0-9]*$/.test(seen))
     return { alive: false, who: "an entry that names no owner" };
   const holder = recordedHolder(path, seen);
-  const verdict = isAliveSync(holder);
+  const verdict = isAliveSync(holder, undefined, deadline);
   const reason = verdict.ok ? verdict.value.reason : verdict.failure.reason;
   return {
     alive: !verdict.ok || verdict.value.state === "alive",
     who: `${describeIdentity(holder)}: ${reason}`,
   };
 }
-// Who holds `lock`, for a wait that ran out.
+// Who holds `lock`, for a wait that ran out: the recorded holder, with no
+// further probe once the time is spent.
 function heldBy(lock: string, fileOwners: boolean): string {
   const seen = holder(lock, fileOwners);
-  return seen === undefined ? "another worktree" : judgeOwner(lock, seen).who;
+  if (seen === undefined) return "another worktree";
+  return /^[1-9][0-9]*$/.test(seen)
+    ? describeIdentity(recordedHolder(lock, seen))
+    : "an entry that names no owner";
 }
 // Record this holder's identity beside the lock it has just taken.
 function recordHolder(lock: string): void {
@@ -299,7 +304,7 @@ export async function main(
   // the stale entry stands.
   const reclaim = (path: string) => {
     const seen = holder(path, fileOwners);
-    if (seen === undefined || judgeOwner(path, seen).alive) return;
+    if (seen === undefined || judgeOwner(path, seen, deadline).alive) return;
     const claim = `${path}.reclaim.${/^[1-9][0-9]*$/.test(seen) ? seen : "foreign"}`;
     try {
       publish(claim);
@@ -308,7 +313,7 @@ export async function main(
       return;
     }
     try {
-      const owner = judgeOwner(path, seen);
+      const owner = judgeOwner(path, seen, deadline);
       if (holder(path, fileOwners) === seen && !owner.alive) {
         rmSync(holderFile(path), { force: true });
         rmSync(path, {

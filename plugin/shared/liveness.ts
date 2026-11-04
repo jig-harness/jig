@@ -228,7 +228,11 @@ function userHostId(): string {
     if (errnoCode(error) !== "EEXIST")
       swallow(error, "no host id file could be created; host names decide");
   } finally {
-    rmSync(staged, { force: true });
+    try {
+      rmSync(staged, { force: true });
+    } catch (error) {
+      swallow(error, "the staged host id is left behind; host names decide");
+    }
   }
   return read();
 }
@@ -286,17 +290,22 @@ function identityOf(row: ProcessRow, here: HostIdentity): ProcessIdentity {
   };
 }
 
+const PROBE_TIMEOUT_MS = 5000;
+
 /**
  * One process's row, read alone: `"absent"` when the table answered and has
  * no such process, `null` when it cannot be read.
  */
-function processRow(pid: number): ProcessRow | "absent" | null {
+function processRow(
+  pid: number,
+  timeoutMs = PROBE_TIMEOUT_MS,
+): ProcessRow | "absent" | null {
   const windows = process.platform === "win32";
   let result: ReturnType<typeof Bun.spawnSync>;
   try {
     result = Bun.spawnSync(rowProbe(pid, windows), {
       env: { ...process.env, LC_ALL: "C" },
-      timeout: 5000,
+      timeout: timeoutMs,
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -360,18 +369,22 @@ export function sameHost(a: HostSide, b: HostSide): boolean {
  * How `recorded` stands to `current`, the identity of whatever process now
  * has the same pid on the judge's host: the same process, a process that has
  * ended (an earlier boot, or a reused pid), a process on another host, or
- * another process altogether.
+ * another process altogether; `"unknown"` when the two start times may be one
+ * start read in two time zones.
  */
 export function relate(
   recorded: ProcessIdentity,
   current: ProcessIdentity,
-): "same" | "dead" | "foreign" | "other" {
+): "same" | "dead" | "foreign" | "other" | "unknown" {
   if (!sameHost(recorded, current)) return "foreign";
   if (recorded.bootId && current.bootId && recorded.bootId !== current.bootId)
     return "dead";
   if (recorded.pid !== current.pid) return "other";
-  if (recorded.start && current.start && recorded.start !== current.start)
-    return "dead";
+  if (recorded.start && current.start) {
+    const starts = compareStarts(recorded.start, current.start);
+    if (starts === "differ") return "dead";
+    if (starts === "shifted") return "unknown";
+  }
   return "same";
 }
 
@@ -443,7 +456,7 @@ function otherStart(
   row: ProcessRow,
 ): Liveness | null {
   if (row.start === "" || row.start === identity.start) return null;
-  if (zoneShift(row.start, identity.start))
+  if (compareStarts(row.start, identity.start) === "shifted")
     return failed(
       "unverifiable",
       `pid ${identity.pid} started ${row.start}, which is ${identity.start} read in another time zone, so a reused pid cannot be told apart`,
@@ -457,9 +470,42 @@ function otherStart(
 const QUARTER_HOUR_MS = 900_000;
 const WIDEST_ZONE_GAP_MS = 26 * 3_600_000;
 
-function zoneShift(a: string, b: string): boolean {
-  const gap = Math.abs(Date.parse(a) - Date.parse(b));
-  return gap > 0 && gap <= WIDEST_ZONE_GAP_MS && gap % QUARTER_HOUR_MS === 0;
+const LSTART_TEXT =
+  /^\w{3} (\w{3}) +(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/;
+const MONTHS = "JanFebMarAprMayJunJulAugSepOctNovDec";
+
+/**
+ * A start time as milliseconds on a civil clock with no time zone, so the
+ * judge's own zone and its daylight-saving gaps cannot move it: the process
+ * table's `Www Mon DD HH:MM:SS YYYY` read as UTC, an ISO time as it is;
+ * `NaN` for any other text.
+ */
+function civilMs(text: string): number {
+  const m = LSTART_TEXT.exec(text.trim());
+  if (m === null) return Date.parse(text);
+  const month = MONTHS.indexOf(m[1] ?? "") / 3;
+  if (!Number.isInteger(month) || month < 0) return Number.NaN;
+  const [day, hour, minute, second, year] = [m[2], m[3], m[4], m[5], m[6]].map(
+    Number,
+  ) as [number, number, number, number, number];
+  return Date.UTC(year, month, day, hour, minute, second);
+}
+
+/**
+ * How two start times of one pid compare: `"same"`, `"differ"` (two
+ * processes), or `"shifted"` when they differ by whole quarter hours within
+ * the widest gap between two time zones, which is one start read in two
+ * zones and cannot be told from a reused pid.
+ */
+export function compareStarts(
+  a: string,
+  b: string,
+): "same" | "differ" | "shifted" {
+  if (a === b) return "same";
+  const gap = Math.abs(civilMs(a) - civilMs(b));
+  return gap > 0 && gap <= WIDEST_ZONE_GAP_MS && gap % QUARTER_HOUR_MS === 0
+    ? "shifted"
+    : "differ";
 }
 
 /** Judge a recorded identity, reading the process table when its host and boot are this one's. */
@@ -475,14 +521,19 @@ export async function isAlive(
 /**
  * Judge a lock's holder without the whole process table: a signal check for
  * the pid, then that one process's start time, except on Windows, where a pid
- * that answers keeps its lock.
+ * that answers keeps its lock. A caller waiting under a deadline
+ * (`performance.now()` milliseconds) passes it, and the start time is read
+ * only within the time left: with none, the verdict is unreadable.
  */
 export function isAliveSync(
   identity: ProcessIdentity,
   here: HostIdentity = thisHost(),
+  deadline?: number,
 ): Liveness {
   return (
-    placed(identity, here) ?? signalCheck(identity) ?? startCheck(identity)
+    placed(identity, here) ??
+    signalCheck(identity) ??
+    startCheck(identity, deadline)
   );
 }
 
@@ -510,8 +561,15 @@ function signalCheck(identity: ProcessIdentity): Liveness | null {
 }
 
 /** Read the pid's start time and judge it, remembering a holder confirmed alive. */
-function startCheck(identity: ProcessIdentity): Liveness {
-  const row = processRow(identity.pid);
+function startCheck(identity: ProcessIdentity, deadline?: number): Liveness {
+  const left =
+    deadline === undefined ? PROBE_TIMEOUT_MS : deadline - performance.now();
+  if (left < 1)
+    return failed("unreadable", "no time is left to read the process table");
+  const row = processRow(
+    identity.pid,
+    Math.min(PROBE_TIMEOUT_MS, Math.ceil(left)),
+  );
   // A pid that still answers the signal check yet is missing from the table
   // is a table this check cannot trust, not a process that ended.
   if (row === null || (row === "absent" && pidAnswers(identity.pid)))

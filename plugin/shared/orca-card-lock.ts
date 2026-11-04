@@ -110,17 +110,20 @@ function ownerOf(content: string): ProcessIdentity | null {
  * only an owner judged dead makes a lock stale, never one that cannot be read
  * or judged.
  */
-function ownerGone(owner: ProcessIdentity | null): string | null {
+function ownerGone(
+  owner: ProcessIdentity | null,
+  deadline: number,
+): string | null {
   if (owner === null) return null;
-  const verdict = isAliveSync(owner);
+  const verdict = isAliveSync(owner, undefined, deadline);
   return verdict.ok && verdict.value.state === "dead"
     ? `${describeIdentity(owner)}: ${verdict.value.reason}`
     : null;
 }
 
 /** Why the owner a file's content records counts as gone; `null` while it may run, or when nothing was read. */
-function staleOwner(content: string | null): string | null {
-  return content === null ? null : ownerGone(ownerOf(content));
+function staleOwner(content: string | null, deadline: number): string | null {
+  return content === null ? null : ownerGone(ownerOf(content), deadline);
 }
 
 /** A lock or mutex file's content for this process: pid, a fresh token, identity. */
@@ -150,7 +153,7 @@ function ownContent(): string {
 function reclaim(lock: string, deadline: number): void {
   const judged = readLock(lock);
   if (judged === null) return;
-  const gone = ownerGone(ownerOf(judged));
+  const gone = ownerGone(ownerOf(judged), deadline);
   if (gone === null) return;
   const id = createHash("sha256").update(judged).digest("hex").slice(0, 16);
   const prefix = `${basename(lock)}.reclaim-${id}-`;
@@ -160,7 +163,7 @@ function reclaim(lock: string, deadline: number): void {
     if (performance.now() >= deadline) return;
     mutex = join(dirname(lock), `${prefix}${generation}`);
     if (publish(mutex, content)) break;
-    if (staleOwner(readLock(mutex)) === null) return;
+    if (staleOwner(readLock(mutex), deadline) === null) return;
   }
   try {
     if (readLock(lock) === judged) {
@@ -191,7 +194,7 @@ function sweep(lock: string, deadline: number): void {
       : [];
     if (id === undefined || id === standingId(lock)) continue;
     const file = join(dir, name);
-    if (leftover(file, rest ?? "")) rmSync(file, { force: true });
+    if (leftover(file, rest ?? "", deadline)) rmSync(file, { force: true });
   }
 }
 
@@ -207,13 +210,14 @@ function standingId(lock: string): string | null {
  * Whether `file`, named `rest` after the prefix, is a mutex whose owner is gone
  * or a staging file whose publisher is gone.
  */
-function leftover(file: string, rest: string): boolean {
+function leftover(file: string, rest: string, deadline: number): boolean {
   if (/^\d+$/.test(rest)) {
-    return staleOwner(readLock(file)) !== null;
+    return staleOwner(readLock(file), deadline) !== null;
   }
   const staged = /^\d+\.init-(\d+)-/.exec(rest);
   return (
-    staged !== null && ownerGone(legacyIdentity(Number(staged[1]))) !== null
+    staged !== null &&
+    ownerGone(legacyIdentity(Number(staged[1])), deadline) !== null
   );
 }
 

@@ -2,7 +2,7 @@
 release: minor
 ---
 
-Every part of the plugin that records "this process holds it" now records the same process identity and judges it by the same rules, so a restart or a renamed machine no longer leaves work waiting for a person.
+The dispatcher, resource collection and the two machine-wide locks now record the same process identity and judge it by the same rules, and the drive's locks share its host comparison, so a restart or a renamed machine no longer leaves work waiting for a person.
 
 ### Added
 

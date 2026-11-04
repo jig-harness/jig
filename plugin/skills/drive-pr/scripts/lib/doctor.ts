@@ -85,8 +85,8 @@ import type { QuotaParkRecord } from "./state/schema.ts";
 
 /**
  * How long `lastProgressAt` may go unrefreshed on a LIVE lock before it
- * counts toward `WEDGED`, in minutes: the ledger window, one of the three
- * clocks the shared process identity names (`LEDGER_WINDOW_MIN` in
+ * counts toward `WEDGED`, in minutes: the ledger window, one of the clocks
+ * the shared process identity names (`LEDGER_WINDOW_MIN` in
  * `shared/liveness.ts`), where its length is set.
  *
  * TWO HUNDRED FORTY, derived rather than guessed. `drive.ts` never invokes

@@ -4,7 +4,10 @@
  * processes for the probes.
  */
 import { describe, expect, it } from "bun:test";
-import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  expectSpawnExit,
+  expectSpawnExited,
+} from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   captureIdentity,
   decodeIdentity,
@@ -104,6 +107,27 @@ describe("judging a recorded holder", () => {
       HERE,
     );
     expect(dayLater.ok && dayLater.value.state).toBe("dead");
+  });
+
+  it("compares start times on a civil clock, whatever zone or daylight-saving gap the judge is in", async () => {
+    const script = `
+      import { compareStarts } from ${JSON.stringify(new URL("../liveness.ts", import.meta.url).pathname)};
+      process.stdout.write(compareStarts("Sun Mar 29 02:30:00 2026", "Sun Mar 29 03:30:00 2026"));
+    `;
+    const proc = Bun.spawn(["bun", "-e", script], {
+      env: { ...process.env, TZ: "Europe/Amsterdam" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await expectSpawnExited(proc, 0);
+    const out = await new Response(proc.stdout).text();
+    expect(out).toBe("shifted");
+  });
+
+  it("answers unknown, not dead, when a relation rests on start times that may be one start", () => {
+    expect(
+      relate(HOLDER, { ...HOLDER, start: "Tue Nov  4 15:30:00 2026" }),
+    ).toBe("unknown");
   });
 
   it("judges a holder recorded under the host's earlier name by its process, not as a foreign one", () => {
