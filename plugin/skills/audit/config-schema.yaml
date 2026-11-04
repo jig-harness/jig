@@ -411,7 +411,7 @@ fields:
       pattern: "^(?!(?:--|-p|--print|--model)$)(?!--model=)\\S+$"
     default: []
     since: 0.109.0
-    read_by: [drive-pr, do-item]
+    read_by: [drive-pr, do-item, dispatch]
     user_only: true
   drive.codex_bypass:
     type: boolean

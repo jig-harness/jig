@@ -1,15 +1,15 @@
 /**
- * `--apply` for follow-ups: one interactive session per merged pull request
- * the plan wants followed up, running the repository's follow-up command
- * (`dispatch.followup_command`) on it, in its workspace. A follow-up is an
- * interactive session, so it starts only on a runtime that binds one to
- * the account it bills (`interactiveBinding`); on any other every follow-up
- * is reported, and nothing is written, posted or launched. Otherwise, for
- * each one:
+ * `--apply` for follow-ups: one headless pass per merged pull request the
+ * plan wants followed up, running the repository's follow-up command
+ * (`dispatch.followup_command`) on it, in its workspace. The pass runs
+ * through the wrapper a drive's pass runs through (`run.ts`), bound to the
+ * admitted account by its configuration directory, so it needs no runtime
+ * that binds an interactive session. For each one:
  *
  * 1. the fresh read: still no trusted marker on the pull request, no
  *    running session joined to it;
- * 2. admit an account with a free slot and no wall, and check that the
+ * 2. admit an account with a free slot and no wall, as a drive's pass is
+ *    admitted (under the pass deadline it runs under), and check that the
  *    wrapper's environment resolves to that account's identity;
  * 3. the pull request's workspace: the one joined to it, else its head
  *    branch opened (a branch the merge deleted is cut from the base) in a
@@ -20,7 +20,7 @@
  *    earlier trusted marker wins, and this one is deleted and the record
  *    removed without starting anything; a read-back that fails starts
  *    nothing either;
- * 6. `launch` the session under the record's token.
+ * 6. `launch` the pass under the record's token.
  *
  * The marker is the one thing the dispatcher writes to the forge.
  */
@@ -66,7 +66,6 @@ import {
   openedFor,
   openWithinBudget,
   outOfTime,
-  reportedUnbound,
   rotated,
   waits,
 } from "./launch.ts";
@@ -238,6 +237,8 @@ function newFollowupRecord(
     vendor: admittedVendor(slots.account),
     configDir: slots.account.configDir,
     wallBackoffMs: state.machine.wallBackoffMs,
+    passTimeoutSec: state.passDeadlineSec,
+    codexBypass: state.codexOptIn.on,
     replaces: null,
     facts: `merged ${pr.mergedAt}`,
     createdAt: new Date().toISOString(),
@@ -293,6 +294,16 @@ async function launchOne(
   return claimAndLaunch(state, repo, action, ctx, record, slots);
 }
 
+/** A launch's outcome, saying what started: a headless pass, and the account and directory it is bound to. */
+function headless(outcome: LaunchOutcome, record: LaunchRecord): LaunchOutcome {
+  if (outcome.outcome !== "launched" && outcome.outcome !== "retried")
+    return outcome;
+  return {
+    ...outcome,
+    detail: `a headless follow-up pass bound to account ${record.account} (${record.configDir}): ${outcome.detail}`,
+  };
+}
+
 /** Hold the record, claim on the forge, launch: the deadline is checked before the claim and before the launch. */
 async function claimAndLaunch(
   state: ApplyState,
@@ -309,7 +320,7 @@ async function claimAndLaunch(
   const lost = await claim(state, repo, ctx, record);
   if (lost !== null) return refused(action, lost, name);
   const after = outOfTime(state);
-  if (after === null) return launchHeld(state, record);
+  if (after === null) return headless(await launchHeld(state, record), record);
   // Past the deadline nothing launches, and a marked record with no attempt has no replay path: give the claim back.
   const gone = await relinquish(
     state,
@@ -378,7 +389,6 @@ export async function applyFollowups(
   ctx: FollowupContext,
 ): Promise<void> {
   const wanted = report.actions.filter((a) => a.stage === "followup");
-  if (reportedUnbound(state, wanted, report)) return;
   const unsettled = await dropUnmarked(state, repo, ctx);
   for (const action of rotated(state, wanted, "targets")) {
     const held = unsettled.has(Number(action.target.replace(/\D/g, "")));

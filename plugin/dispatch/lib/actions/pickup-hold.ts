@@ -38,8 +38,8 @@ export function agentOf(sessions: SessionsReport, id: string) {
 }
 
 /**
- * End, in memory, each alive interactive record of `repo` (a pickup's, a
- * follow-up's) whose agent the runtime reports finished: its slot and its
+ * End, in memory, each alive interactive record of `repo` (a pickup's)
+ * whose agent the runtime reports finished: its slot and its
  * target are free again. Returns whether any record changed.
  */
 export function settleAgents(

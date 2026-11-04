@@ -6,8 +6,9 @@
  * `--apply` a tick starts nothing: it reports what it would start, and why.
  * With it, the re-arms and takeovers a repository's machine-file entry
  * enables are launched within each account's cap (actions/drive.ts), its
- * pickups and follow-ups too where the runtime binds an interactive session
- * to its account (actions/pickup.ts, actions/followup.ts), its nudges are
+ * follow-ups as headless passes the same way (actions/followup.ts), its
+ * pickups where the runtime binds an interactive session to its account
+ * (actions/pickup.ts), its nudges are
  * sent once per waiting episode (actions/steer.ts), and its notifications
  * are sent once per cause (actions/notify.ts); everything else is still
  * reported.
@@ -703,7 +704,7 @@ function planRepo(
 ): void {
   const { nowMs } = context;
   const records = settleRecords(context, repo, input.sessions, nowMs);
-  // A follow-up whose agent finished this tick keeps its outcome past its record.
+  // A follow-up that ended keeps its outcome past its record.
   settleFollowups(records);
   const plan = planTick({
     ...input,

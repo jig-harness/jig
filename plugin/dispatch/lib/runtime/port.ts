@@ -104,7 +104,7 @@ export type LaunchStage =
   /** A headless pass: the wrapper (`run.ts`) under its launch record, in a terminal titled `title`. */
   | { kind: "headless"; title: string; mark: string; record: string }
   /**
-   * An interactive session (a pickup's `do-item`, a merge's follow-up):
+   * An interactive session (a pickup's `do-item`):
    * `skill` on `target`, with the route's model and effort, under its
    * launch record. Its receipt names the agent by the id `sessions` reports
    * it under.

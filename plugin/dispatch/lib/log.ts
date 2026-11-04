@@ -39,6 +39,7 @@ import {
   type ReadRecord,
   targetOf,
 } from "./launches.ts";
+import { questionOf } from "./session.ts";
 import { existingStateDb, stateDb } from "./state.ts";
 
 /**
@@ -272,12 +273,18 @@ function wallAtEnd(r: ReadRecord, endedAt: string): string | null {
     : null;
 }
 
-/** An interactive session's class: its recorded result, else how it ended. */
+/** A pickup's session's or a follow-up pass's class: its recorded result, a question it stopped on, else how it ended. */
 function sessionClass(
   r: ReadRecord,
   endedAt: string,
 ): { class: OutcomeClass; reason: string } {
   if (r.result === "done") return { class: "converged", reason: "result done" };
+  const question = questionOf(r.state);
+  if (question !== null)
+    return {
+      class: "parked for a person",
+      reason: `stopped on a question: ${question}`,
+    };
   if (r.result === "failed")
     return { class: "gates failed", reason: "result failed" };
   const s = r.state;

@@ -112,7 +112,7 @@ dispatcher's [tick](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 scheduled jobs run (`runtime/launcher.ts`), and the drive's loop control
 (`skills/drive-pr/scripts/drive.ts`). They start sessions and read how they
 ended. The only reasoning is inside the sessions they start: a drive pass,
-a pickup's `do-item` session, a follow-up session. Those sessions read
+a pickup's `do-item` session, a follow-up pass. Those sessions read
 Jig's `SKILL.md` files and run Jig's scripts, but what they write is the
 repository's own code, replies and records. The plugin they run is an
 installed copy, and a change to it reaches a machine only as a released
@@ -269,9 +269,12 @@ development and shipped as a version.
   the session to the admitted account: for a drive it starts
   `skills/drive-pr/scripts/drive.ts`, whose passes run with no person at a
   terminal, and writes the account's wall on a usage-limit
-  stop (exit 16); for a pickup or a follow-up it starts the account's agent
-  as an interactive session on `/jig:do-item <key>` or the follow-up
-  command. It records the exit either way. Refuses: a record it cannot read
+  stop (exit 16); for a follow-up it starts the account's agent as a
+  headless pass on the follow-up command, with the host's `drive.pass_args`
+  and under the pass deadline; for a pickup it starts the account's agent
+  as an interactive session on `/jig:do-item <key>`. It records the exit
+  every way, with the end of a follow-up pass's output when it stopped
+  short of done. Refuses: a record it cannot read
   or a target it cannot place is reported and never planned; an account
   whose configuration directory does not resolve to the identity the
   machine file names starts nothing (`dispatch/lib/accounts.ts`); a launch
