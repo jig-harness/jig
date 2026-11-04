@@ -279,11 +279,24 @@ non-reviewer CI verdict to be green before it writes the PR-global
 `ci-repair` pass (§ 0) and re-gates from the top afterwards, because a repair
 that pushed moved the head and staled every piece of evidence gathered under
 the old one — the reviewer's stamp included. Only a verdict naming failing
-checks positively (`failing: …`) spends budget: `unknown:` and an unreadable
-report are absences of evidence, not evidence of failure, and a CI-repair pass
-handed neither a run nor a check name has nothing to work from. Once the budget
-is spent — or on the first red if it is `0` — the drive takes the original
-exit-`1` stop and hands the red CI back for repair.
+checks positively (`failing: …`) spends budget: `cancelled:`, `unknown:` and an
+unreadable report are absences of evidence, not evidence of failure, and a
+CI-repair pass handed neither a run nor a check name has nothing to work from.
+Once the budget is spent — or on the first red if it is `0` — the drive takes
+the original exit-`1` stop and hands the red CI back for repair.
+
+**A cancelled check is waited for, never repaired and never passed.** It says
+nothing about the code, so the verdict reads `cancelled: …`. That covers only a
+check concluded `cancelled`; another failed job in the same cancelled run
+still counts as failing. Once a run of the same workflow on this head, started no
+earlier, has completed with a result, the cancelled run's checks no longer
+count, under whatever name they carry, except that an unsuccessful check stays
+when the replacing runs report its name only as skipped. The event that started
+either run does not matter. A failure beside a cancelled check is still a failure, and
+reads `failing: …`. Until something replaces it the drive waits, on the bound
+below, and if nothing does it exits `4`: not judgeable, and retry-safe. An older
+passing run never answers a cancelled check, which is what keeps a held run
+that cancels itself blocking the merge.
 
 **The "still waiting for a witness" poll is bounded**, at
 `DRIVE_PR_FINAL_CI_WITNESS_POLLS` × 10s — 30 minutes by default, `0` to wait
@@ -1294,7 +1307,7 @@ carries the specifics.
 
 | `$DRIVE_PR_ROUND_TASK` | `…_DETAIL` | What this round is |
 |---|---|---|
-| `ci-repair` | the failing check names, as CI reported them | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
+| `ci-repair` | the failing check names, as CI reported them; `$DRIVE_PR_ROUND_FAILED_RUNS` holds the ids of the workflow runs behind them, separated by spaces | The reviewer has converged and the exact-head full-CI verdict is red. Repair CI. |
 | `conflict-resolve` | the PR's base ref name | The PR conflicts with its base and has **no** workable finding. Merge the base in and resolve. |
 
 **Expect § 1's gate to answer `CONVERGED` (exit 3) on a `ci-repair` round, and
@@ -1317,11 +1330,25 @@ exit does, so the driver's own next gate read decides what to dispatch next.
 Then:
 
 - **`ci-repair`** — repair CI on this PR, with the repository's CI-repair
-  skill if it has one: read the failing runs' logs, reproduce locally where
-  possible, fix the cause. Fix every failing check, not only the first. Then
-  pick up at **§ 5**: sync the base, resolve and run the round's validation
-  plan over the cumulative tree, and **§ 6** to commit and push. §§ 2–4 have
-  nothing to enumerate — the review converged before you were dispatched.
+  skill if it has one: read the logs of the runs `$DRIVE_PR_ROUND_FAILED_RUNS`
+  names, reproduce locally where possible, fix the cause. Fix every failing
+  check, not only the first. Then pick up at **§ 5**: sync the base, resolve and
+  run the round's validation plan over the cumulative tree, and **§ 6** to
+  commit and push. §§ 2–4 have nothing to enumerate — the review converged
+  before you were dispatched.
+
+  When the log shows the failure is not in the code (a lost runner, a network
+  error), re-run the failed runs instead of committing:
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run rerun <id> --failed`,
+  for the ids that variable names and no other run on the head. A run with only
+  cancelled checks has no failure to repair; re-running it leaves a sibling
+  failed run on the head's check list. A cancelled run containing failed jobs
+  can be named in the variable and re-run. **Never re-run a run the variable
+  leaves out.** A re-run
+  replays the run's event, so one created while the CI hold's label was on meets
+  the hold again; the variable omits those, and is empty or unset when no run
+  could be named safely. Then re-run nothing, and read the failing checks' runs
+  from `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run list --commit <head>`.
 - **`conflict-resolve`** — run § 5's `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`, which will report exit
   `9`; merge the base and resolve the conflict with
   [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), starting
@@ -1347,7 +1374,8 @@ Then:
 
 Either way **push, or the round achieved nothing the driver can observe** —
 the driver re-gates from the top afterwards and reads the remote head, not
-your worktree. Do not mark the PR Ready from a repair round (§ 7 is a
+your worktree. A re-run of the named runs is the one other thing it observes,
+through their checks. Do not mark the PR Ready from a repair round (§ 7 is a
 completed-review-round duty), and do not resolve threads you did not answer.
 
 If the repair turns out to need a human — a conflict whose correct resolution
