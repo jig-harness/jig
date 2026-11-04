@@ -145,8 +145,10 @@ Every file this run changes is edited before the checks run, so the checks
 cover what is committed (the site renders `CHANGELOG.md` too).
 
 1. `bun scripts/website-sync.ts --advance <target sha from Phase 1>`.
-   The run adds no change note, plugin version or tag: the site is deployed,
-   not released ([changes/README.md](../../../changes/README.md#when-a-pull-request-needs-one)).
+   The run adds no plugin version or tag, and no change note for the site
+   itself, which is deployed, not released. An edit to FEATURES.md or another
+   document a team reads to adopt Jig follows the rule in
+   [changes/README.md](../../../changes/README.md#when-a-pull-request-needs-one).
 2. Verify. The site's build renders the audit example with the repository's
    own dependencies, so the root install comes first:
 
