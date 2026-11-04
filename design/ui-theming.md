@@ -77,9 +77,14 @@ stays as given. A colour with transparency is composited onto the mode's
 page surface first, so every derivation starts from an opaque colour (a
 fully transparent one would otherwise match its background at every
 lightness). `accent-hover` is derived from the accent the same way.
-`accent-soft` is a background, not text, so it is derived for its own
-foreground instead: the given hue and chroma, at the lightness nearest to
-the accent's that keeps ordinary ink at 4.5:1 on it. `on-accent`, the label
+`accent-soft` is a background, not text, so it is derived for the
+foregrounds drawn on it, all of them: ordinary ink and the accent text
+(recommendation IDs, badges, links, picked references). It takes the given
+hue and chroma at the lightness nearest the page surface's that keeps ink at
+4.5:1 on it, and the accent's lightness is then derived against the mode's
+surfaces and `accent-soft` together, so accent text on it reaches 4.5:1 too.
+The shared pages' contrast pairs that name the accent on the soft tint are
+therefore met by construction, not by the page. `on-accent`, the label
 on an accent button, is chosen against the derived accent itself: black or
 white, whichever reaches 4.5:1 on it. So a
 team's colour never fails contrast and is never refused for it; only a
