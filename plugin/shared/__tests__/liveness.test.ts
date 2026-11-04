@@ -3,6 +3,7 @@
  * recorded holder by, on synthetic process tables for the rules and on real
  * processes for the probes.
  */
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "bun:test";
 import {
   expectSpawnExit,
@@ -111,7 +112,7 @@ describe("judging a recorded holder", () => {
 
   it("compares start times on a civil clock, whatever zone or daylight-saving gap the judge is in", async () => {
     const script = `
-      import { compareStarts } from ${JSON.stringify(new URL("../liveness.ts", import.meta.url).pathname)};
+      import { compareStarts } from ${JSON.stringify(fileURLToPath(new URL("../liveness.ts", import.meta.url)))};
       process.stdout.write(compareStarts("Sun Mar 29 02:30:00 2026", "Sun Mar 29 03:30:00 2026"));
     `;
     const proc = Bun.spawn(["bun", "-e", script], {
