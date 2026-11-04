@@ -66,6 +66,17 @@ async function address(stdout: ReadableStream<Uint8Array>): Promise<string> {
   return url;
 }
 
+// The server serves the built page, not dashboard/src: a stale bundle would
+// redraw every shot from the previous UI and report success.
+const built = spawnSync("bun", ["dashboard/build.ts", "--check"], {
+  cwd: repo,
+  stdio: "inherit",
+});
+if (built.status !== 0)
+  throw new ShotError(
+    "the dashboard's built page is stale: run `bun dashboard/build.ts` from the repository root, then run this again",
+  );
+
 const work = mkdtempSync(join(tmpdir(), "dashboard-shots-"));
 const server = Bun.spawn(
   ["bun", "dashboard/serve-fixture.ts", "--scenario", "loud"],

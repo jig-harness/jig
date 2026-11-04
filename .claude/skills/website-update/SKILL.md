@@ -71,6 +71,7 @@ its counted lines, the change-areas it touched and its kind:
 | `build` | touched the toolchain or another area that can break the build | nothing to read; Phase 4's build covers it |
 | `site` | changed only the site itself | nothing, unless its message says it left something for later |
 | `outside` | touched nothing the site reads | read the subject only, and review it if the subject says it changes a fact the site states |
+| `outside` or `build`, touching `dashboard/**` | the dispatch dashboard's page or fixtures, whose screenshots the site shows | list its paths (`git show --stat --diff-merges=first-parent <sha>`) and, when it changes the page or the `loud` fixture, run `bun run dashboard-shots` in `website/` (Phase 2's record: **site edited**) |
 | `update` | an earlier run of this skill: it changed the record, and nothing else it changed is content | nothing: that run checked its own edits |
 
 Note the target commit it reports (`up to origin/main (<sha>)`): this run
