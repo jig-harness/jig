@@ -290,8 +290,9 @@ nothing about the code, so the verdict reads `cancelled: …`. That covers only 
 check concluded `cancelled`; another failed job in the same cancelled run
 still counts as failing. Once a run of the same workflow on this head, started no
 earlier, has completed with a result, the cancelled run's checks no longer
-count at all, under whatever name they carry; the event that started either
-run does not matter. A failure beside a cancelled check is still a failure, and
+count, under whatever name they carry, except that an unsuccessful check stays
+when the replacing runs report its name only as skipped. The event that started
+either run does not matter. A failure beside a cancelled check is still a failure, and
 reads `failing: …`. Until something replaces it the drive waits, on the bound
 below, and if nothing does it exits `4`: not judgeable, and retry-safe. An older
 passing run never answers a cancelled check, which is what keeps a held run
@@ -1325,9 +1326,11 @@ Then:
   When the log shows the failure is not in the code (a lost runner, a network
   error), re-run the failed runs instead of committing:
   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run rerun <id> --failed`,
-  for the ids that variable names and no other run on the head. A cancelled run
-  beside a failed one failed nothing: re-running it leaves the failed run on the
-  head's check list. **Never re-run a run the variable leaves out.** A re-run
+  for the ids that variable names and no other run on the head. A run with only
+  cancelled checks has no failure to repair; re-running it leaves a sibling
+  failed run on the head's check list. A cancelled run containing failed jobs
+  can be named in the variable and re-run. **Never re-run a run the variable
+  leaves out.** A re-run
   replays the run's event, so one created while the CI hold's label was on meets
   the hold again; the variable omits those, and is empty or unset when no run
   could be named safely. Then re-run nothing, and read the failing checks' runs

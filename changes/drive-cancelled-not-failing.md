@@ -9,7 +9,8 @@ release: patch
   failed jobs in a cancelled run remain failures. The drive waits for a run to replace it, on
   `DRIVE_PR_FINAL_CI_WITNESS_POLLS`, and once a run of the same workflow on the
   head has completed with a result the cancelled run's checks no longer count,
-  under whatever name they carry. With nothing to replace it the drive exits
+  except that an unsuccessful check stays when the replacing runs report its
+  name only as skipped. With nothing to replace it the drive exits
   `4`. A cancelled check never reads as passing, so a required check a held run
   cancelled still blocks.
 - A workflow run being re-run keeps its unsuccessful jobs pending until it
