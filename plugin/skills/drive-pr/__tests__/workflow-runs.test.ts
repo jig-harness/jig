@@ -22,6 +22,7 @@ import {
 } from "../scripts/lib/status/evidence.ts";
 import {
   type WorkflowRun,
+  rerunAwaitsResult,
   withoutRerunning,
   withoutSuperseded,
 } from "../scripts/lib/status/workflow-runs.ts";
@@ -508,6 +509,21 @@ describe("evidence is dropped only when a successor supplies a result", () => {
       job("unit", "skipped", 41),
     ];
     expect(verdict(runs, workflowRuns)).toBe("pending: unit");
+  });
+
+  it("owes the result of a rerunning job that only a newer skip remains behind", () => {
+    const rerun = workflowRun(40, null, T1, { attempt: 2 });
+    const workflowRuns = [rerun, workflowRun(41, "success", T2)];
+    const failed = job("unit", "failure", 40, { started: T1, completed: T2 });
+    expect(
+      rerunAwaitsResult([failed, job("unit", "skipped", 41)], workflowRuns),
+    ).toBe(true);
+    expect(
+      rerunAwaitsResult([failed, job("unit", "success", 41)], workflowRuns),
+    ).toBe(false);
+    expect(rerunAwaitsResult([failed], [workflowRun(40, "failure", T1)])).toBe(
+      false,
+    );
   });
 
   it("does not explain two failures that started together as aggregators", () => {

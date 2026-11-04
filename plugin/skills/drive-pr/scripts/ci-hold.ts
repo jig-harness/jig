@@ -55,6 +55,7 @@ import {
   hasNonReviewerCi,
 } from "./lib/status/evidence.ts";
 import {
+  rerunAwaitsResult,
   withoutRerunning,
   withoutSuperseded,
   workflowRunsBehind,
@@ -806,10 +807,11 @@ async function finalCiProofGreen(
     allRuns,
   );
   // A run being re-run has its failed jobs replaced: they witness nothing.
-  const runs = withoutRerunning(
-    withoutSuperseded(allRuns, workflowRuns),
-    workflowRuns,
-  );
+  const settled = withoutSuperseded(allRuns, workflowRuns);
+  // A newer skip looked at nothing, so it cannot stand in for the rerun that
+  // is still outstanding.
+  if (rerunAwaitsResult(settled, workflowRuns)) return { ok: false };
+  const runs = withoutRerunning(settled, workflowRuns);
   const required = policy.requiredChecks;
   const apps = policy.requiredApps;
   const noHold = policy.holdLabel === null;

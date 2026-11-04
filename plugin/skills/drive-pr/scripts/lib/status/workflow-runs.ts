@@ -274,6 +274,28 @@ export function withoutRerunning<T extends JobEvidence>(
 }
 
 /**
+ * Whether a check name lost an unsuccessful job to a run being re-run and has
+ * no success of its own left: the re-run's result is still owed, and a newer
+ * skip of that name is not one.
+ */
+export function rerunAwaitsResult<
+  T extends JobEvidence & { appId?: number | null },
+>(jobs: readonly T[], workflowRuns: readonly WorkflowRun[] | null): boolean {
+  const kept = withoutRerunning(jobs, workflowRuns);
+  return jobs
+    .filter((job) => !kept.includes(job))
+    .some(
+      (job) =>
+        !kept.some(
+          (k) =>
+            k.name === job.name &&
+            k.appId === job.appId &&
+            k.conclusion === "success",
+        ),
+    );
+}
+
+/**
  * The ids of the failed jobs that say nothing about the code: in a cancelled
  * run, an aggregator that `needs` cancelled jobs starts once they have ended
  * and fails on their result. A failed job counts only when it started after a
