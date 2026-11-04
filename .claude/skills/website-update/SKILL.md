@@ -71,7 +71,7 @@ its counted lines, the change-areas it touched and its kind:
 | `build` | touched the toolchain or another area that can break the build | nothing to read; Phase 4's build covers it |
 | `site` | changed only the site itself | nothing, unless its message says it left something for later |
 | `outside` | touched nothing the site reads | read the subject only, and review it if the subject says it changes a fact the site states |
-| `update` | an earlier run of this skill: it changed the record, and nothing else it changed is content apart from its change note | nothing: that run checked its own edits |
+| `update` | an earlier run of this skill: it changed the record, and nothing else it changed is content | nothing: that run checked its own edits |
 
 Note the target commit it reports (`up to origin/main (<sha>)`): this run
 covers exactly the commits up to it, even if `main` moves meanwhile.
@@ -145,11 +145,9 @@ Every file this run changes is edited before the checks run, so the checks
 cover what is committed (the site renders `CHANGELOG.md` too).
 
 1. `bun scripts/website-sync.ts --advance <target sha from Phase 1>`.
-2. When a page changed in a way a reader notices, add a change note
-   (`changes/website-update.md`, [changes/README.md](../../../changes/README.md))
-   with one line under `### Changed` and no `release`; the release step
-   writes it under Unreleased after the merge. No plugin version, no tag.
-3. Verify. The site's build renders the audit example with the repository's
+   The run adds no change note, plugin version or tag: the site is deployed,
+   not released ([changes/README.md](../../../changes/README.md#when-a-pull-request-needs-one)).
+2. Verify. The site's build renders the audit example with the repository's
    own dependencies, so the root install comes first:
 
    ```sh
