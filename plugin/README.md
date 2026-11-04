@@ -87,7 +87,10 @@ that a skill hands a narrow job to):
 Which of these parts are scripts with no model in them, which are a model
 deciding, who owns each record the skills share and who notices when one
 fails is mapped in [MECHANISMS.md](MECHANISMS.md), by mechanism rather than
-by stage.
+by stage. Every record the plugin keeps, on the machine, in the working
+tree, on the forge and on the tracker, with where it lives, who writes it
+and what keeps two writers apart, is listed in [RECORDS.md](RECORDS.md), by
+record.
 
 Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
 [the `jig` command](#the-jig-command) ·

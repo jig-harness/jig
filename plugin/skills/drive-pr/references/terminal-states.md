@@ -567,7 +567,9 @@ is written to `.context/pr-drive-<PR>.md` (override with
 
 The state's resumable subset also lives on the PR, as the **drive ledger**
 (`lib/state/ledger.ts`): one comment opening with `<!-- drive-pr-ledger -->`,
-carrying `ledgerVersion`, a monotonic `generation`, the round, phase, last
+carrying the record envelope (`shared/records/envelope.ts`: kind
+`drive-ledger`, version `v`, the PR as its key, the writer with its host and
+boot as digests, and the time), `ledgerVersion`, a monotonic `generation`, the round, phase, last
 counted and verified heads, the Ready mark, the parked items with their
 decisions, the held items by key, outcome and pushed commit, the quota park
 without its account,
@@ -620,7 +622,9 @@ heartbeat ages past the lease window. The body is cut to the forge's 65,536 limi
 held items' outcomes first, the narrative second and the visible list of
 parked decisions third; a parked decision is never dropped from the data, so
 a ledger that still does not fit is not written, and says so. A canonical
-ledger in a `ledgerVersion` this code does not read is never overwritten.
+ledger in a `ledgerVersion` or envelope version this code does not read is
+never overwritten; a ledger written before the envelope (`ledgerVersion: 1`
+and no `kind`) still reads.
 
 At arm, once its locks are held, `drive.ts` seeds this clone's state from a
 trusted ledger whose generation is newer than the state's own
@@ -633,8 +637,8 @@ park, since the ledger carries no account to judge a wall by. A held item
 whose outcome the size cut dropped is not seeded, and the round triages it
 afresh. A ledger of another pull request is refused. A seed the state store
 refuses keeps its exit (`13` when another working tree holds the PR). A
-`ledgerVersion` it does not read refuses with exit `1`, naming the version.
-`drive-state.ts`'s `reset` keeps the generation the state had reached, so the
+`ledgerVersion` or envelope version it does not read refuses with exit `1`,
+naming the version. `drive-state.ts`'s `reset` keeps the generation the state had reached, so the
 next arm does not seed back what the reset forgot. A forge that cannot be read
 at arm refuses the drive with exit `1`: whether another clone drives the pull
 request is unknown. A driver that does not continue its own clone's ledger (a

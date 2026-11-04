@@ -680,7 +680,9 @@ outlives the session that spawned it, so its console is not where you look:
   dir](README.md#relocating-the-state-dir).
 - **The drive ledger** — the state's resumable subset, mirrored into one
   hidden-marker comment on the PR (`<!-- drive-pr-ledger -->`,
-  `lib/state/ledger.ts`): `ledgerVersion` and a monotonic `generation`, the
+  `lib/state/ledger.ts`): the record envelope (kind `drive-ledger`, its
+  version `v`, the PR as its key, the writer with its host and boot as
+  digests, the time), `ledgerVersion` and a monotonic `generation`, the
   round, phase, last counted and verified heads, the Ready mark, every parked
   item with its decision, every held item by key, outcome and pushed commit,
   the quota park (without its account), the takeover records (without
@@ -702,8 +704,9 @@ outlives the session that spawned it, so its console is not where you look:
   login or an owner, member or collaborator; any other comment carrying the
   marker is ignored and reported. A drive that starts with no state for the
   PR, or with state older than the ledger's generation, seeds its state from
-  the ledger (`drive-state.ts`'s `seed-ledger`); a `ledgerVersion` it does not
-  read refuses with exit `1`, naming the version. The locks stay per clone:
+  the ledger (`drive-state.ts`'s `seed-ledger`); a `ledgerVersion` or envelope
+  version it does not read refuses with exit `1`, naming the version, and a
+  ledger written before the envelope still reads. The locks stay per clone:
   the ledger seeds and arbitrates (§ Picking up a stopped drive), it does not
   lock. `DRIVE_PR_LEDGER=off` and `--dry-run` drive without it. A driver
   stopped by `drives.ts` `--stop` or a signal cannot write its last ledger

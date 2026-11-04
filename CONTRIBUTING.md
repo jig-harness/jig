@@ -250,7 +250,10 @@ design. Run all with one command: `bun run gates`. The set, cheapest first:
    no origin references; plugin code reaching Linear only through the
    tracker interface (`scripts/check-tracker-boundary.ts`, with the files
    that still bypass it, each under its reason, in
-   `scripts/tracker-boundary-allow.txt`); the licence files and NOTICE complete
+   `scripts/tracker-boundary-allow.txt`); every hidden marker, drive state
+   family and table the plugin's code names held by the
+   [records registry](GLOSSARY.md), and every registry entry still named
+   (`scripts/check-records-registry.ts`); the licence files and NOTICE complete
    (`scripts/check-licences.ts`); no workflow that runs a fork's code with
    secrets (M7's PR-target safety lint); the workflows meeting M13's pipeline
    conventions (the workflow-convention lint, with its heavy suites in

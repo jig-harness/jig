@@ -9,7 +9,8 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { processTable } from "../../shared/process-table.ts";
-import { bootId, readRecord } from "../lib/launches.ts";
+import { readRecord } from "../lib/launches.ts";
+import { bootId } from "../../shared/records/writer.ts";
 import { readRows } from "../lib/log.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {

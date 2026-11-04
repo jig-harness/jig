@@ -21,7 +21,8 @@ import {
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { bootId, readRecord } from "../lib/launches.ts";
+import { readRecord } from "../lib/launches.ts";
+import { bootId } from "../../shared/records/writer.ts";
 import { formatReceipt } from "../lib/report.ts";
 import { writeWall } from "../lib/walls.ts";
 import type { TickReceipt } from "../receipts.ts";

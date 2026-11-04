@@ -22,6 +22,7 @@ import { checkTables } from "./check-md-tables.ts";
 import { checkGlossary } from "./check-glossary-coverage.ts";
 import { checkTracker } from "./check-no-tracker-refs.ts";
 import { checkTrackerBoundary } from "./check-tracker-boundary.ts";
+import { checkRecordsRegistry } from "./check-records-registry.ts";
 import { checkLicences } from "./check-licences.ts";
 import { checkChangelog } from "./check-changelog.ts";
 import { checkAuditFit } from "./check-audit-fit.ts";
@@ -181,6 +182,7 @@ export const CHECKS: Stage[] = [
   check("check-glossary-coverage.ts", checkGlossary),
   check("check-no-tracker-refs.ts", checkTracker),
   check("check-tracker-boundary.ts", checkTrackerBoundary),
+  check("check-records-registry.ts", checkRecordsRegistry),
   check("check-licences.ts", checkLicences),
   check("check-workflow-safety.ts", checkWorkflowSafety),
   check("check-workflow-conventions.ts", checkWorkflowConventions),

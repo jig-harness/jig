@@ -43,11 +43,11 @@
  * `waiting_episodes` table), and, once it ended, the time its outcome row
  * carries (`endedAt`), written in the same transaction as that row.
  */
-import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
 import { type ProcessRow, processTable } from "../../shared/process-table.ts";
+import { bootId } from "../../shared/records/writer.ts";
 import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
 import type { StaleCause } from "./types.ts";
@@ -564,16 +564,6 @@ export function claimOf(row: LaunchRow): ProcessIdentity | null | undefined {
   const value = parseJson(row.claim, `the claim of launch record ${row.id}`);
   if (value === undefined) return undefined;
   return isIdentity(value) ? value : null;
-}
-
-/** This boot's id: Linux's `boot_id`; elsewhere, empty (the start time still tells a reused pid apart). */
-export function bootId(): string {
-  try {
-    return readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
-  } catch (error) {
-    swallow(error, "no boot id on this platform");
-    return "";
-  }
 }
 
 /** This process's identity, from the process table; `null` when the table cannot be read. */

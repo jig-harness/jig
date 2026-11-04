@@ -131,7 +131,7 @@ describe("jig dispatch clear", () => {
     writeRecord(record(), dir);
     const claim = {
       host: (await import("node:os")).hostname(),
-      bootId: (await import("../lib/launches.ts")).bootId(),
+      bootId: (await import("../../shared/records/writer.ts")).bootId(),
       pid: process.pid,
       start: "",
       claimedAt: "2026-01-01T00:00:00.000Z",

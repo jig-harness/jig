@@ -1,0 +1,213 @@
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
+import type {
+  NotARecord,
+  RecordKind,
+} from "../plugin/shared/records/registry.ts";
+import {
+  findings,
+  inScope,
+  namedIn,
+  opensWithMarker,
+  STATE_LIBRARY,
+} from "./check-records-registry.ts";
+
+const root = join(import.meta.dir, "..");
+
+/** A template literal's splice of `name`, as source text. */
+const splice = (name: string): string => ["$", "{", name, "}"].join("");
+const temporary: string[] = [];
+afterAll(() => {
+  for (const path of temporary) rmSync(path, { recursive: true, force: true });
+});
+
+/** A scratch repository holding `files`, outside any git work tree. */
+function scratch(files: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), "records-registry-"));
+  temporary.push(dir);
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  return dir;
+}
+
+function gate(cwdRoot: string, arg?: string) {
+  return Bun.spawnSync(
+    [
+      process.execPath,
+      join(import.meta.dir, "check-records-registry.ts"),
+      ...(arg === undefined ? [] : [arg]),
+    ],
+    { cwd: cwdRoot, stdout: "pipe", stderr: "pipe" },
+  );
+}
+
+describe("scope", () => {
+  test("code under plugin/, never tests, fixtures or vendored code", () => {
+    expect(inScope("plugin/dispatch/lib/followup-marker.ts")).toBe(true);
+    expect(inScope("plugin/shared/vendor/js-yaml.mjs")).toBe(false);
+    expect(inScope("plugin/dispatch/__tests__/followup.test.ts")).toBe(false);
+    expect(inScope("plugin/skills/x/fixtures/a.ts")).toBe(false);
+    expect(inScope("plugin/skills/drive-pr/SKILL.md")).toBe(false);
+    expect(inScope("scripts/check-records-registry.ts")).toBe(false);
+  });
+});
+
+describe("what the code names", () => {
+  const texts = (path: string, text: string) =>
+    namedIn(path, text).map((n) => `${n.what} ${n.line} ${n.text}`);
+
+  test("a marker in a string, a template and a regular expression", () => {
+    expect(
+      texts(
+        "plugin/a.ts",
+        [
+          'const A = "<!-- one-marker -->";',
+          `const B = \`<!-- two-marker: ${splice("x")} -->\`;`,
+          "const C = /<!--\\s*three-marker:\\s*(\\d+)/;",
+          "const D = new RegExp(`<!--\\\\s*four-marker\\\\s*-->`);",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      'marker 1 one-marker -->";',
+      `marker 2 two-marker: ${splice("x")} -->\`;`,
+      "marker 3 three-marker:\\s*(\\d+)/;",
+      "marker 4 four-marker\\\\s*-->`);",
+    ]);
+  });
+
+  test("a spliced name read through the file's string constant, and nothing assembled any other way", () => {
+    expect(
+      texts(
+        "plugin/a.ts",
+        [
+          'const DATA = "spliced-data";',
+          `lines.push(\`<!-- ${splice("DATA")}\`);`,
+          `lines.push(\`<!-- ${splice("other")}\`);`,
+          `const re = \`<!--\\\\s*${splice('SHA.replace(/x/, "")')}\`;`,
+        ].join("\n"),
+      ),
+    ).toEqual(["marker 2 spliced-data`);"]);
+  });
+
+  test("no marker on a comment line, nor `<!--` with no name after it", () => {
+    expect(
+      texts(
+        "plugin/a.ts",
+        [
+          " * <!-- in-a-doc-comment -->",
+          "// <!-- in-a-line-comment -->",
+          'if (body.includes("<!--")) return;',
+          "const strip = /<!--[\\s\\S]*?-->/g;",
+          'const end = "<!-- /closing-marker -->";',
+        ].join("\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  test("a state family only in the drive's state library, and a table anywhere", () => {
+    const pattern = '  { re: /^x$/, key: "pr", family: "new-family" },';
+    expect(texts("plugin/a.ts", pattern)).toEqual([]);
+    expect(texts(`${STATE_LIBRARY}patterns.ts`, pattern)).toEqual([
+      "family 1 new-family",
+    ]);
+    expect(
+      texts("plugin/db.ts", "  CREATE TABLE IF NOT EXISTS board_seen ("),
+    ).toEqual(["table 1 board_seen"]);
+  });
+
+  test("a marker matches only where the next character cannot continue its name", () => {
+    expect(opensWithMarker("drive-pr-ledger -->", "drive-pr-ledger")).toBe(
+      true,
+    );
+    expect(
+      opensWithMarker(
+        `drive-pr-merge-ready: ${splice("head")}`,
+        "drive-pr-merge-ready",
+      ),
+    ).toBe(true);
+    expect(opensWithMarker("drive-pr-ledger-data", "drive-pr-ledger")).toBe(
+      false,
+    );
+    expect(
+      opensWithMarker(
+        "coderabbit-ai-generated:v1 -->",
+        "coderabbit-ai-generated",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("findings", () => {
+  const kind: RecordKind = {
+    name: "a-record",
+    medium: "forge",
+    owner: "a.ts",
+    at: "a comment",
+    markers: ["a-marker"],
+    version: 0,
+  };
+  const banner: NotARecord = { marker: "Generated by", why: "a banner" };
+  const dir = scratch({ "plugin/a.ts": "" });
+
+  test("an unregistered marker, named at its file and line", () => {
+    const named = namedIn(
+      "plugin/a.ts",
+      'const A = "<!-- a-marker -->";\nconst B = "<!-- unregistered-marker -->";\nconst C = "<!-- Generated by x -->";',
+    );
+    const found = findings(dir, named, [kind], [banner]);
+    expect(found).toEqual([
+      expect.objectContaining({
+        rule: "records-registry",
+        file: "plugin/a.ts",
+        line: 2,
+        problem:
+          'the hidden marker "unregistered-marker" is in no registered record kind',
+      }),
+    ]);
+  });
+
+  test("a registry entry the code no longer names, and an owner that is gone", () => {
+    const found = findings(
+      dir,
+      [],
+      [{ ...kind, owner: "gone.ts", stateFamily: "old", table: "old_table" }],
+      [banner],
+    ).map((f) => f.problem);
+    expect(found).toEqual([
+      'a-record\'s marker "a-marker" is in no code under plugin/',
+      `a-record's state family "old" tags no pattern in ${STATE_LIBRARY}`,
+      'a-record\'s table "old_table" is created by no code under plugin/',
+      "a-record's owner plugin/gone.ts does not exist",
+      'the marker "Generated by" listed as not a record is in no code under plugin/',
+    ]);
+  });
+});
+
+describe("the gate", () => {
+  test("passes this repository", () => {
+    const r = gate(root);
+    expectSpawnExit(r, 0);
+    expect(r.stdout.toString()).toContain("records-registry: OK");
+  });
+
+  test("fails on an unregistered marker, naming its file and line", () => {
+    const dir = scratch({
+      "plugin/shared/new.ts":
+        '// A record nobody registered.\nexport const MARK = "<!-- jig-unregistered -->";\n',
+    });
+    const r = gate(root, dir);
+    expectSpawnExit(r, 1);
+    expect(r.stderr.toString()).toContain(
+      'plugin/shared/new.ts:2: [records-registry] the hidden marker "jig-unregistered" is in no registered record kind',
+    );
+  });
+
+  test("cannot check without a plugin directory", () => {
+    expectSpawnExit(gate(root, scratch({ "README.md": "" })), 2);
+  });
+});
