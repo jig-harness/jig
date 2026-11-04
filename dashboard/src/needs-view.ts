@@ -242,6 +242,21 @@ export function answerBand(
       loud: true,
     };
   }
+  return quietBand(line, nowMs, { moving, stuck, tickClock, pastTense });
+}
+
+/** The answer when no need is open: sessions not moving still count, and a quiet line says what runs and what waits. */
+function quietBand(
+  line: LineSnapshot,
+  nowMs: number,
+  facts: {
+    moving: number;
+    stuck: number;
+    tickClock: string;
+    pastTense: boolean;
+  },
+): AnswerView {
+  const { moving, stuck, tickClock, pastTense } = facts;
   const walled = line.accounts.filter((a) => wallIsUp(a, nowMs)).length;
   const wallText =
     walled > 0 ? `; ${plural(walled, "account")} behind a wall` : "";

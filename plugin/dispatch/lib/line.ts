@@ -244,6 +244,15 @@ function firstSeen(
   )?.since;
 }
 
+function sightedSince(
+  previous: LineNeed[],
+  repo: string,
+  action: { target: string; cause: string },
+  nowIso: string,
+): string {
+  return firstSeen(previous, repo, action.target, action.cause) ?? nowIso;
+}
+
 function needsOf(
   view: RepoView,
   nowIso: string,
@@ -271,8 +280,7 @@ function needsOf(
         text(action.evidence, "heartbeat") ??
         text(action.evidence, "idleSince") ??
         at ??
-        firstSeen(previous, view.slug, action.target, action.cause) ??
-        nowIso,
+        sightedSince(previous, view.slug, action, nowIso),
       reason: action.reason,
       decisions: (view.drive(pr)?.waiting ?? []).map(decisionOf),
       notified:
