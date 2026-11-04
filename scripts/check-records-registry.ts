@@ -15,7 +15,8 @@
 //   (`family: "<name>"` in `plugin/skills/drive-pr/scripts/lib/state/`), so
 //   a new pattern either joins a registered family or registers its own;
 // - SQLite CREATE TABLE declarations, case-insensitive across lines, with
-//   bare identifiers or names quoted with double quotes, backticks or brackets.
+//   bare identifiers or quoted names. Every table header is accounted for;
+//   names outside the bounded grammar below are findings, never omissions.
 //
 // Each must be a registered kind's marker, state family or table, or a
 // marker the registry lists as not a record (a generated file's banner, a
@@ -69,6 +70,8 @@ export interface Named {
   text: string;
   file: string;
   line: number;
+  /** A declaration whose name cannot be classified by this text scanner. */
+  unclassified?: boolean;
 }
 
 const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*)/;
@@ -76,8 +79,22 @@ const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*)/;
 const MARKER_OPEN = /<!--(?:[ \t]|\\{1,2}s[*+?]?)*/g;
 const SPLICE = /^\$\{([A-Za-z_$][\w$]*)\}/;
 const FAMILY = /\bfamily:\s*"([a-z][a-z0-9-]*)"/g;
-const TABLE =
-  /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"([A-Za-z_]\w*)"|`([A-Za-z_]\w*)`|\[([A-Za-z_]\w*)\]|([A-Za-z_]\w*))/gi;
+const TABLE = /\bCREATE\s+(?:(?:TEMP|TEMPORARY|VIRTUAL)\s+)?TABLE\b/gi;
+// Text, not evaluated SQL: accept a complete literal name followed by a table
+// body, AS query or virtual-table USING clause. Schema-qualified, interpolated
+// and otherwise unsupported names fail closed. Quoted delimiters are doubled.
+const TABLE_NAME =
+  /^\s+(?:IF\s+NOT\s+EXISTS\s+)?("(?:[^"]|"")*"|`(?:[^`]|``)*`|\[[^\]]*\]|'(?:[^']|'')*'|[A-Za-z_]\w*)\s*(?=\(|AS\b|USING\b)/i;
+
+function tableName(rest: string): string | null {
+  const token = TABLE_NAME.exec(rest)?.[1];
+  if (!token) return null;
+  const delimiter = token[0];
+  if (delimiter === "[") return token.slice(1, -1);
+  if (delimiter === '"' || delimiter === "`" || delimiter === "'")
+    return token.slice(1, -1).replaceAll(delimiter + delimiter, delimiter);
+  return token;
+}
 const NAME_START = /^[A-Za-z]/;
 
 /** The string constants a file declares, by name. */
@@ -144,9 +161,11 @@ export function namedIn(path: string, text: string): Named[] {
     .map((line) => (COMMENT_LINE.test(line) ? " ".repeat(line.length) : line))
     .join("\n");
   for (const match of sql.matchAll(TABLE)) {
+    const name = tableName(sql.slice(match.index + match[0].length));
     named.push({
       what: "table",
-      text: match.slice(1).find((s) => s !== undefined) as string,
+      text: name ?? "unclassified CREATE TABLE declaration",
+      ...(name === null ? { unclassified: true } : {}),
       file: path,
       line: sql.slice(0, match.index).split("\n").length,
     });
@@ -166,6 +185,7 @@ function nameOf(text: string): string {
 }
 
 function covers(kind: RecordKind, n: Named): boolean {
+  if (n.unclassified) return false;
   if (n.what === "marker")
     return (kind.markers ?? []).some((m) => opensWithMarker(n.text, m));
   if (n.what === "family") return kind.stateFamily === n.text;
@@ -191,8 +211,9 @@ function unregistered(
       rule: RULE,
       file: n.file,
       line: n.line,
-      problem:
-        n.what === "marker"
+      problem: n.unclassified
+        ? "cannot classify this CREATE TABLE declaration; use a literal unqualified table name or extend the scanner"
+        : n.what === "marker"
           ? `the hidden marker ${JSON.stringify(nameOf(n.text))} is in no registered record kind`
           : n.what === "family"
             ? `the drive state family ${JSON.stringify(n.text)} is in no registered record kind`

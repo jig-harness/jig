@@ -162,6 +162,28 @@ describe("what the code names", () => {
       ),
     ).toBe(false);
   });
+
+  test("table headers are accounted for even outside the supported name grammar", () => {
+    for (const declaration of [
+      'CREATE TABLE "new-records" (id TEXT)',
+      "CREATE TEMP TABLE new_records (id TEXT)",
+      "CREATE TEMPORARY TABLE new_records (id TEXT)",
+      "CREATE VIRTUAL TABLE new_records USING fts5(id)",
+      'CREATE TABLE "a""b" (id TEXT)',
+      "CREATE TABLE main.new_records (id TEXT)",
+      `CREATE TABLE ${splice("tableName")} (id TEXT)`,
+    ]) {
+      const named = namedIn("plugin/db.ts", declaration);
+      expect(named).toHaveLength(1);
+      expect(findings(root, named, [], [])).toHaveLength(1);
+    }
+    expect(
+      namedIn("plugin/db.ts", 'CREATE TABLE "new-records" (id TEXT)')[0]?.text,
+    ).toBe("new-records");
+    expect(
+      namedIn("plugin/db.ts", 'CREATE TABLE "a""b" (id TEXT)')[0]?.text,
+    ).toBe('a"b');
+  });
 });
 
 describe("findings", () => {
@@ -222,6 +244,23 @@ describe("findings", () => {
 });
 
 describe("the gate", () => {
+  test("fails for unregistered quoted and temporary tables and unsupported names", () => {
+    for (const sql of [
+      'CREATE TABLE "new-records" (id TEXT)',
+      "CREATE TEMP TABLE new_records (id TEXT)",
+      "CREATE TEMPORARY TABLE new_records (id TEXT)",
+      "CREATE TABLE main.board_seen (id TEXT)",
+      `CREATE TABLE ${splice("tableName")} (id TEXT)`,
+    ]) {
+      const dir = scratch({ "plugin/db.ts": `const sql = \`${sql}\`;` });
+      const result = gate(root, dir);
+      expectSpawnExit(result, 1);
+      expect(result.stderr.toString()).toContain(
+        "plugin/db.ts:1: [records-registry]",
+      );
+    }
+  });
+
   test("passes this repository", () => {
     const r = gate(root);
     expectSpawnExit(r, 0);
