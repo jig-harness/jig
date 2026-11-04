@@ -106,10 +106,12 @@ the drive verified is re-armed once, one still at the verified head and
 mergeable is left alone, and one whose mergeability the forge is still
 computing is reported unplaced with no launch, a drive stopped on a Claude
 account's wall is re-armed on a Codex account with `CODEX_HOME` bound and
-the Claude variables absent, and an account of a vendor with no documented
+the Claude variables absent, on a host that set `drive.codex_bypass`, and an
+account of a vendor with no documented
 pass command is reported and never launched, a Codex pass that outruns a
 positive `DRIVE_PR_PASS_TIMEOUT` is terminated, and a Codex account is
-reported and never launched while that deadline is `0`, and on a
+reported and never launched while that deadline is `0` or on a host without
+that setting, and on a
 consumer repository three pull requests that touch one serialized area
 over a night are re-driven one at a time, the held ones carrying the
 `held` label until each leads.

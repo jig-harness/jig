@@ -7,7 +7,12 @@
  */
 import { attempt } from "../../shared/outcome.ts";
 import { pluginVersion } from "../../shared/plugin-version.ts";
-import { lastAccount, notAdmitted, slotTable } from "./accounts.ts";
+import {
+  type CodexOptIn,
+  lastAccount,
+  notAdmitted,
+  slotTable,
+} from "./accounts.ts";
 import { readNudges } from "./actions/steer.ts";
 import type { LineAccount } from "./dashboard-contract.ts";
 import type { ReadRecord } from "./launches.ts";
@@ -97,8 +102,13 @@ function accountsOf(
   machine: MachineConfig,
   records: ReadRecord[],
   nowMs: number,
+  codexOptIn: CodexOptIn,
 ): LineAccount[] {
-  const refused = notAdmitted(machine.accounts, passTimeoutSeconds());
+  const refused = notAdmitted(
+    machine.accounts,
+    passTimeoutSeconds(),
+    codexOptIn,
+  );
   return slotTable(machine.accounts, records, nowMs).map((slots) => ({
     name: slots.account.name,
     vendor: slots.account.vendor,
@@ -132,6 +142,8 @@ export function writeTickLine(
     repos: string[];
     records: ReadRecord[];
     inputs: Map<string, RepoLineInput>;
+    /** The admission decision the tick launched under, so line and launches agree. */
+    codexOptIn: CodexOptIn;
   },
 ): void {
   const { machine, records } = tick;
@@ -160,6 +172,7 @@ export function writeTickLine(
             machine,
             records,
             Date.parse(receipt.finishedAt),
+            tick.codexOptIn,
           ),
           lastAccount: lastAccount(records),
           previousNeeds: previous.ok ? (previous.value?.needs ?? []) : [],

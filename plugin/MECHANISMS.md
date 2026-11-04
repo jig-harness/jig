@@ -682,6 +682,13 @@ stops a model. A team that runs passes unattended should know which:
   Under `bypassPermissions` only the runtime's own deny rules and hooks
   still stop a command
   ([permission mode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)).
+  A pass runs in that mode only on the host's say: the configuration reader
+  refuses the setting in a repository's file
+  (`shared/config-layers.ts`), and the dispatcher admits a Codex account only
+  on a host that opted in to its bypass (`dispatch/lib/accounts.ts`). A
+  checkout's own `.claude/settings.json` is outside that check, and a pull
+  request can edit it
+  ([a host's opt-in](CONFIGURATION.md#a-hosts-opt-in-to-bypass)).
   In Jig, `main`'s ruleset requires the gates and resolved threads but no
   approving review.
 - **A loosened ratchet.** The ratchet accepts a `Ratchet-Loosen` trailer in

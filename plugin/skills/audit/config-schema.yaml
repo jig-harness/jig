@@ -42,6 +42,9 @@
 #             shared evidence record (`shared/evidence.ts`)
 #   repository_only  true for a field that describes one repository: the user
 #             file refuses it (CONFIGURATION.md § Configuration layers)
+#   user_only  true for a field only the host may set, in its user file or one
+#             run's environment: a repository's file refuses it, whatever its
+#             value (CONFIGURATION.md § Configuration layers)
 #   default   the value a skill uses when the field is absent, where that is
 #             one fixed value; a starter configuration never writes it
 #   deprecated  the message a re-run prints: what to use instead
@@ -88,10 +91,12 @@ strict:
 null_refused:
   - repository
   - repository.remote
+  - drive
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
   do_issue: "renamed do_item: rename the section (its fields are unchanged); do-item refuses to run while it exists"
+  clones: "it describes one machine, and every skill refuses a repository's file that sets it: move it to the user file"
 
 fields:
   gc.kinds:
@@ -407,6 +412,13 @@ fields:
     default: []
     since: 0.109.0
     read_by: [drive-pr, do-item]
+    user_only: true
+  drive.codex_bypass:
+    type: boolean
+    default: false
+    since: next
+    read_by: [drive-pr, do-item, dispatch]
+    user_only: true
   drive.escape_baseline_doc:
     type: path
     exists: expected

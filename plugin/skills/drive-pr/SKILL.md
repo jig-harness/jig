@@ -329,13 +329,20 @@ bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- claude -p "/jig:dr
 ```
 
 That is Claude Code's pass command. Codex's is the other documented one: it
-names the skill in its prompt, since Codex runs a skill the prompt names, and
-runs without a sandbox or approvals, since a pass pushes, calls the forge and
-has nobody to ask:
+names the skill in its prompt, since Codex runs a skill the prompt names:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- codex exec --dangerously-bypass-approvals-and-sandbox "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 123"
+bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- codex exec "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 123"
 ```
+
+A pass pushes, calls the forge and has nobody to ask, so on a host that set
+`drive.codex_bypass: true` in its user file an arm writes
+`--dangerously-bypass-approvals-and-sandbox` after `exec`, and that pass runs
+without a sandbox or approvals. Without it Codex's own configuration decides.
+`drive.ts` runs a Codex pass command as given, so the command above carries no
+bypass: `arm-drive.ts` is the entry point that reads the setting, and a
+command typed by hand names `--dangerously-bypass-approvals-and-sandbox`
+after `exec` itself.
 
 Each round is a **fresh agent process**, so a long converge never depends on one
 session's context surviving. That is the preferred unattended mode. A Codex
@@ -368,13 +375,18 @@ some). They come from `--pass-args "<words>"` for this run
 (one value, split on spaces; empty for none), else `drive.pass_args`, which
 `drive.ts` adds only to a pass command with no arguments of its own; a
 command that carries its own, as an arm command or a printed re-arm or
-takeover command does, runs as written. The driver log's `pass args:` and
+takeover command does, runs as written. `drive.pass_args` is the host's: only
+its user file or one run's environment sets it. A repository's file that sets
+it, an empty list included, stops the drive (exit `1`), naming the field, since
+a drive reads that file from the pull request's own checkout. The driver log's `pass args:` and
 `permission mode:` lines and the `drives.ts` row name them (`inherited` when
 the command sets no mode: Claude Code's own settings then decide). Another agent tool's pass command ignores
 `drive.pass_args`, and the log says so; `--pass-args` is refused for it
 (exit `2`). A Codex pass's `permission mode:` is read from its own words:
-`no sandbox, no approvals` for the documented command. A `drive.pass_args` that is not a list of words stops the drive
-(exit `1`), naming the field.
+`no sandbox, no approvals` with the bypass, `inherited` without it. A `drive.pass_args` that is not a list of words stops the drive
+(exit `1`), naming the field. A list that ends in an option left without its
+value, such as `--permission-mode`, stops the drive naming `drive.pass_args`:
+exit `1` from the field, exit `2` from `--pass-args`.
 
 **The attach.** Once it holds the tree's driver lock and the PR's,
 `drive.ts` attaches the PR to the tree it runs in
@@ -940,8 +952,8 @@ could forge or forget.
    It reads `do_item.arm_drive` (default `auto`: a terminal tab of the
    PR's workspace where this session can open one, in Orca on a macOS or
    Linux host; the session's background execution elsewhere, Windows hosts
-   included), `drive.pass_model` (default `sonnet`) and `drive.pass_args`
-   (default none) in that tree, and
+   included), `drive.pass_model` (default `sonnet`) and, from the host's
+   user file or environment, `drive.pass_args` (default none) in that tree, and
    prints one JSON object: `command`, the driver's start command in the
    portable one-line form,
    `bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model <model> -p "/jig:drive-pr --bots-only <PR>"`,
@@ -1099,7 +1111,9 @@ the arm check. If the host ends child processes with the session, keep the
 session alive and poll until the drive ends, or use an external terminal;
 a command handle alone does not prove the drive survives session exit.
 `--pass-model` supports either vendor; `--pass-args` remains Claude Code's
-and is refused for Codex (exit `2`). In any other agent tool, do not arm:
+and is refused for Codex (exit `2`). A Codex pass carries the bypass only on a
+host that set `drive.codex_bypass`; `permissionMode` says `inherited` on any
+other. In any other agent tool, do not arm:
 `arm-drive.ts` answers `print` with Claude Code's command, so print it, say
 why, and do not substitute a guessed pass command. A person can put their
 own tool's command after the `--` and run it.

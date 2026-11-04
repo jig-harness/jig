@@ -289,21 +289,71 @@ export const DEFAULT_PASS_ARGS: readonly string[] = [];
 
 /**
  * One word of a pass command's extra arguments: no whitespace, and none of
- * the words `refusedPassArgs` refuses, so the audit's schema rejects what the
- * reading skill would stop on.
+ * the words `refusedPassArgs` refuses. The audit's schema lists the same
+ * pattern for the field, and its check of the host's user file reads
+ * `passArgsProblem`.
  */
 export const PASS_ARG_PATTERN =
   /^(?!(?:--|-p|--print|--model)$)(?!--model=)\S+$/;
 
 /**
+ * Claude Code's options that require a value, as `claude --help` lists them
+ * in 2.1.311 (with the ones it accepts and does not list, such as
+ * `--max-turns`). Left last, one takes the drive's `-p` as its value. `--model`
+ * is not here: `refusedPassArgs` refuses it wherever it stands. An option whose
+ * value is optional (`--debug`, `--resume`) leaves a following dash word alone.
+ */
+const VALUE_OPTIONS: ReadonlySet<string> = new Set([
+  "--add-dir",
+  "--agent",
+  "--agents",
+  "--allowed-tools",
+  "--allowedTools",
+  "--append-system-prompt",
+  "--append-system-prompt-file",
+  "--autocompact",
+  "--betas",
+  "--debug-file",
+  "--disallowed-tools",
+  "--disallowedTools",
+  "--effort",
+  "--environment",
+  "--fallback-model",
+  "--file",
+  "--input-format",
+  "--json-schema",
+  "--max-budget-usd",
+  "--max-turns",
+  "--mcp-config",
+  "-n",
+  "--name",
+  "--output-format",
+  "--permission-mode",
+  "--permission-prompt-tool",
+  "--permission-prompts",
+  "--plugin-dir",
+  "--plugin-url",
+  "--remote-control-session-name-prefix",
+  "--session-id",
+  "--setting-sources",
+  "--settings",
+  "--system-prompt",
+  "--system-prompt-file",
+  "--system-prompt-snapshot",
+  "--tools",
+]);
+
+/**
  * Why `words` cannot be extra arguments of a pass command, `undefined` when
- * they can: the model has its own setting, and the drive writes the prompt.
+ * they can: the model has its own setting, the drive writes the prompt, and
+ * an option needs its value before the drive's `-p`.
  */
 export function refusedPassArgs(words: readonly string[]): string | undefined {
   if (words.includes("--"))
     return "cannot hold --: it would end the pass command's options and turn -p into its prompt";
-  if (words[words.length - 1] === "--permission-mode")
-    return "cannot end with --permission-mode: it needs a mode after it, and the drive's -p would be read as that mode";
+  const last = words[words.length - 1];
+  if (last !== undefined && VALUE_OPTIONS.has(last))
+    return `cannot end with ${last}: it needs a value after it, and the drive's -p would be read as that value`;
   const word = words.find(
     (w) =>
       w === "-p" ||
@@ -316,25 +366,41 @@ export function refusedPassArgs(words: readonly string[]): string | undefined {
     : `cannot hold ${word}: drive.pass_model or --pass-model sets the model, and the drive writes -p and its prompt`;
 }
 
+/** Why `value` cannot be `drive.pass_args`, `undefined` when it can. */
+export function passArgsProblem(value: unknown): string | undefined {
+  return Array.isArray(value) &&
+    value.every((w) => typeof w === "string" && PASS_ARG_PATTERN.test(w))
+    ? refusedPassArgs(value)
+    : "must be a list of words, each a string without spaces, such as [--permission-mode, bypassPermissions]";
+}
+
 /** `drive.pass_args`: extra arguments for a Claude Code pass command; `undefined` when not configured. */
 export function passArgsSetting(): string[] | undefined {
   const value = section("drive").pass_args;
   if (value === undefined || value === null) return undefined;
-  const refuse = (detail: string) =>
-    new DecodeError(
+  const problem = passArgsProblem(value);
+  if (problem !== undefined)
+    throw new DecodeError(
       configSource("drive.pass_args"),
       "$.drive.pass_args",
-      detail,
+      problem,
     );
-  if (
-    !Array.isArray(value) ||
-    !value.every((w) => typeof w === "string" && PASS_ARG_PATTERN.test(w))
-  )
-    throw refuse(
-      "must be a list of words, each a string without spaces, such as [--permission-mode, bypassPermissions]",
+  return value as string[];
+}
+
+/** Whether a Codex pass gets the bypass when the host does not set `drive.codex_bypass`. */
+export const DEFAULT_CODEX_BYPASS = false;
+
+/** `drive.codex_bypass`: whether this host gives a Codex pass the bypass. */
+export function codexBypassSetting(): boolean {
+  const value = section("drive").codex_bypass;
+  if (value === undefined || value === null) return DEFAULT_CODEX_BYPASS;
+  if (typeof value !== "boolean")
+    throw new DecodeError(
+      configSource("drive.codex_bypass"),
+      "$.drive.codex_bypass",
+      "must be true or false",
     );
-  const refused = refusedPassArgs(value);
-  if (refused !== undefined) throw refuse(refused);
   return value;
 }
 
