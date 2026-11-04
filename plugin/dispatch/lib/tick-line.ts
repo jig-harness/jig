@@ -7,7 +7,12 @@
  */
 import { attempt } from "../../shared/outcome.ts";
 import { pluginVersion } from "../../shared/plugin-version.ts";
-import { lastAccount, notAdmitted, slotTable } from "./accounts.ts";
+import {
+  hostCodexOptIn,
+  lastAccount,
+  notAdmitted,
+  slotTable,
+} from "./accounts.ts";
 import { readNudges } from "./actions/steer.ts";
 import type { LineAccount } from "./dashboard-contract.ts";
 import type { ReadRecord } from "./launches.ts";
@@ -98,7 +103,11 @@ function accountsOf(
   records: ReadRecord[],
   nowMs: number,
 ): LineAccount[] {
-  const refused = notAdmitted(machine.accounts, passTimeoutSeconds());
+  const refused = notAdmitted(
+    machine.accounts,
+    passTimeoutSeconds(),
+    hostCodexOptIn(),
+  );
   return slotTable(machine.accounts, records, nowMs).map((slots) => ({
     name: slots.account.name,
     vendor: slots.account.vendor,
