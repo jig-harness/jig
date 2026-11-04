@@ -448,7 +448,11 @@ describe("evidence is dropped only when a successor supplies a result", () => {
       job("tests", "success", 41),
       job("gates", "skipped", 41),
     ];
-    expect(withoutSuperseded(runs, workflowRuns)).toContain(runs[1]);
+    expect(withoutSuperseded(runs, workflowRuns)).toContain(
+      runs.filter(
+        (r) => r.name === "gates" && r.conclusion === "failure",
+      )[0] as never,
+    );
     expect(verdict(runs, workflowRuns)).toBe("cancelled: gates");
   });
 
@@ -480,6 +484,19 @@ describe("evidence is dropped only when a successor supplies a result", () => {
     ];
     expect(verdict(runs, workflowRuns)).toBe("failing: unit");
     expect(failingCheckRunNames(runs, false, workflowRuns)).toEqual(["unit"]);
+  });
+
+  it("lets a newer skip answer an earlier failure of an uncancelled run", () => {
+    const workflowRuns = [
+      workflowRun(40, "failure", T1),
+      workflowRun(41, "success", T2),
+    ];
+    const runs = [
+      job("unit", "failure", 40, { started: T1, completed: T2 }),
+      job("lint", "success", 41),
+      job("unit", "skipped", 41),
+    ];
+    expect(verdict(runs, workflowRuns)).not.toContain("failing");
   });
 
   it("does not explain two failures that started together as aggregators", () => {

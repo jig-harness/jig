@@ -429,6 +429,11 @@ function readChecks(
   const absent = (r: CheckRun) =>
     r.conclusion === "cancelled" || explained.has(r.id);
   const rerunning = rerunningSuites(workflowRuns);
+  const cancelledSuites = new Set(
+    (workflowRuns ?? [])
+      .filter((w) => w.conclusion === "cancelled")
+      .map((w) => w.checkSuiteId),
+  );
   const pending = (r: CheckRun) =>
     r.status !== "completed" ||
     r.conclusion === null ||
@@ -446,10 +451,11 @@ function readChecks(
       .sort((a, b) => a.id - b.id);
     const lastRan = ran.at(-1);
     if (lastRan === undefined) return newest;
-    // A newer skip looked at nothing, so it answers neither an absence of
-    // evidence nor a failure or live job that ran before it.
+    // A newer skip looked at nothing, so it does not answer a failure or live
+    // job retained from a cancelled suite; elsewhere the newest check speaks.
     if (!absent(lastRan))
       return newest.conclusion === "skipped" &&
+        cancelledSuites.has(lastRan.suiteId ?? -1) &&
         (failing(lastRan) || pending(lastRan))
         ? lastRan
         : newest;
