@@ -106,7 +106,7 @@ describe("the way a drive is armed from a Codex session", () => {
 
 describe("the Codex pass an arm from a Codex session builds", () => {
   it("runs Codex's documented pass command, on routing.models.codex's model after exec", () => {
-    const argv = driveArgv(REQUEST, "gpt-example", [], "codex");
+    const argv = driveArgv(REQUEST, "gpt-example", [], "codex", true);
     expect(argv.slice(argv.indexOf("--") + 1)).toEqual([
       "codex",
       "exec",
@@ -115,7 +115,7 @@ describe("the Codex pass an arm from a Codex session builds", () => {
       "--dangerously-bypass-approvals-and-sandbox",
       PROMPT,
     ]);
-    const unset = driveArgv(REQUEST, null, [], "codex");
+    const unset = driveArgv(REQUEST, null, [], "codex", true);
     expect(unset.slice(unset.indexOf("--") + 1)).toEqual([
       "codex",
       "exec",
@@ -124,9 +124,23 @@ describe("the Codex pass an arm from a Codex session builds", () => {
     ]);
   });
 
+  it("carries no bypass unless the host opted in", () => {
+    const argv = driveArgv(REQUEST, "gpt-example", [], "codex");
+    expect(argv.slice(argv.indexOf("--") + 1)).toEqual([
+      "codex",
+      "exec",
+      "-m",
+      "gpt-example",
+      PROMPT,
+    ]);
+    expect(driveArgv(REQUEST, null, [], "codex", false)).toEqual(
+      driveArgv(REQUEST, null, [], "codex"),
+    );
+  });
+
   it("reports the Codex command, its model and its permission", async () => {
     const { report, exit } = await arm(
-      inputs("print", CODEX),
+      { ...inputs("print", CODEX), codexBypass: true },
       deps(orca({ ok: true })),
     );
     expect(exit).toBe(0);
@@ -137,5 +151,17 @@ describe("the Codex pass an arm from a Codex session builds", () => {
     });
     expect(report.argv).toContain("codex");
     expect(report.argv).not.toContain("claude");
+  });
+
+  it("reports inherited for a host that did not opt in", async () => {
+    const { report, exit } = await arm(
+      inputs("print", CODEX),
+      deps(orca({ ok: true })),
+    );
+    expect(exit).toBe(0);
+    expect(report.permissionMode).toBe("inherited");
+    expect(report.argv).not.toContain(
+      "--dangerously-bypass-approvals-and-sandbox",
+    );
   });
 });

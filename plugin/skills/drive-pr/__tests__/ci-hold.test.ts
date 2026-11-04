@@ -553,6 +553,7 @@ describe("ci:hold evidence", () => {
             conclusion: "success",
             started_at: "2026-09-10T10:00:00Z",
             completed_at: "2026-09-10T10:01:00Z",
+            check_suite: { id: 7 },
           },
         ],
       }),
@@ -565,6 +566,7 @@ describe("ci:hold evidence", () => {
         conclusion: "success",
         startedAt: "2026-09-10T10:00:00Z",
         appId: null,
+        suiteId: 7,
       },
     ]);
   });
@@ -829,7 +831,7 @@ describe("ci:hold evidence", () => {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const expected = 1200 + 20 * 30 + 30 + 22 * 2 + 6;
+    const expected = 1200 + 24 * 30 + 30 + 26 * 2 + 6;
     expect(result.exitCode).toBe(0);
     expect(new TextDecoder().decode(result.stdout)).toBe(String(expected));
     rmSync(root, { recursive: true, force: true });

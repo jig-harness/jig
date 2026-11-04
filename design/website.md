@@ -57,14 +57,14 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
-| `/` | README, FEATURES.md, FACTORY.md, profiles, `website/src/data/walkthrough.yaml` | the evaluator's path: what Jig is, as the README opens, its tagline and two reader paths beside the jig, a model drawn as a technical drawing that the first stretch of scrolling closes and the pointer swivels; what goes wrong, one feature's problem line each, linked to its section on `/features/`; one recorded run of Jig's own line, each event at its station, from the pull request's opening to the follow-up after its merge; the README's factory section beside the factory miniature; the map strip (the compact module map, starting on Team/Standard, each row opening its module's popover, with what a filled cell means); the limits; the enforcement ladder; the profiles; the day-one audit text; the ways to use Jig, one plate each; and where to start, above the foundation plate rising from the page's foot |
+| `/` | README, FEATURES.md, FACTORY.md, profiles, `website/src/data/walkthrough.yaml` | the evaluator's path: what Jig is, as the README opens, its tagline and two reader paths beside the jig, a model drawn as a technical drawing that the first stretch of scrolling closes and the pointer swivels; what goes wrong, one feature's problem line each, linked to its section on `/features/`; one recorded run of Jig's own line, each event at its station, from the pull request's opening to the follow-up after its merge; the README's factory section beside the factory miniature; the dispatch dashboard's shot beside what it answers in the morning, linked to the dispatcher's page; the map strip (the compact module map, starting on Team/Standard, each row opening its module's popover, with what a filled cell means); the limits; the enforcement ladder; the profiles; the day-one audit text; the ways to use Jig, one plate each; and where to start, above the foundation plate rising from the page's foot |
 | `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, its problem line, number, title and skill chips) linking to its section, then one section per feature: its problem line as a quotation, its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
 | `/modules/<Mn>/mappings/` | mappings.md | the whole file, for links that name it |
 | `/factory/` | FACTORY.md | the overview: the problem in three sentences, figure 1 (stations on the scaffolding, above the platform, with the dispatcher's rail under the line), the factory's pages one card each, figure 2 (every station, who runs it and what it hands on, inside the learning loop, with the line's two rails: a person merges, and the dispatcher starts stations), figure 3 (every actor by every station, the dispatcher's row among them), the two parts side by side, what stays with a person and what the platform supplies |
 | `/factory/line/` | FACTORY.md | the line: its stations as a row with handoffs and its two rails, the pull-request loop in text, the station table, and what is on the roadmap; `/factory/execution/`, its address before, forwards to it |
-| `/factory/unattended/` | FACTORY.md | with nobody at the keyboard: a figure of what one tick reads, starts and tells a person, above the line with its rails; then each part of the dispatcher's section, what it never does, and what is on the roadmap |
+| `/factory/unattended/` | FACTORY.md | with nobody at the keyboard: a figure of what one tick reads, starts and tells a person, above the line with its rails; then each part of the dispatcher's section, the outcome log's with the dispatch dashboard's shot, what it never does, and what is on the roadmap |
 | `/factory/design/` | FACTORY.md | deciding what to build: the stages as a row with handoffs, the stages in text, and the skills that run them |
 | `/factory/scaffolding/` | FACTORY.md, CONFIGURATION.md | what it stands on: the jobs with the modules that build each, when each verification module acts along a session, running many agents at once, and what Jig provides: the configuration layers and the tracker interface |
 | `/factory/learning-loop/` | FACTORY.md, M8's README | the loop that sharpens it: the miss-to-lens flywheel step by step, its two companion cycles, and what triggers reflection |
@@ -155,6 +155,16 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
   Which plate stands beside which feature is the site's choice, kept in
   `FEATURE_PLATES` (`website/src/lib/data/features.ts`) by the feature's
   heading id; the tests check every feature has one and every plate is drawn.
+- **Shots** (`public/shots/*.webp`, drawn by `DashboardShot.astro`): what
+  a page of Jig's own looks like, where a drawing would not show it. They
+  are screenshots of the real page served over its fixtures, never a
+  person's data, taken by a script at twice the pixel density on a desk and
+  on a phone, once per theme; the component shows the pair matching the
+  reader's theme, and a narrow window the phone alone. The dispatch
+  dashboard's are `website/scripts/dashboard-shots.ts`
+  (`bun run dashboard-shots` in `website/`), over the dashboard's `loud`
+  fixture, run again after a change to the dashboard's page or that fixture.
+  Unlike a plate, a shot says something, so each carries its alt text.
 
 ### Drawing a plate
 

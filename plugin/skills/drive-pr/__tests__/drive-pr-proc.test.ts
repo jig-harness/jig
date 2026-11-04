@@ -1525,7 +1525,7 @@ describe("driveStatusOnceTimeoutSeconds() outlives drive-status.ts --once's evid
       GIT_CALL_TIMEOUT: "45",
     });
     expect(result.driveStatus).toBe(
-      8 * result.helper + 12 * result.gh + 6 * result.git + 26 * 2,
+      8 * result.helper + 13 * result.gh + 6 * result.git + 27 * 2,
     );
     expect(result.driveStatus).toBeGreaterThan(result.helper);
   });
@@ -1543,10 +1543,10 @@ describe("driveStatusOnceTimeoutSeconds() outlives drive-status.ts --once's evid
 describe("finalVerifyTimeoutSeconds() outlives set-verified's own worst-case sequential GitHub-call chain", () => {
   const PROC = join(SCRIPTS, "lib", "proc.ts");
   // The 15-call success chain, the CI policy's 2 sequential reads, and per
-  // proof (3) the commit-status list plus up to MAX_STATUS_PUBLISHERS app
-  // lookups. proc.ts mirrors that cap as a literal; reading it from
+  // proof (3) the workflow runs, the commit-status list and up to
+  // MAX_STATUS_PUBLISHERS app lookups. proc.ts mirrors that cap as a literal; reading it from
   // evidence.ts here makes a changed cap fail these assertions.
-  const CALLS = 15 + 2 + 3 * (1 + MAX_STATUS_PUBLISHERS);
+  const CALLS = 15 + 2 + 3 * (2 + MAX_STATUS_PUBLISHERS);
 
   function readTimeouts(env: Record<string, string>): {
     gh: number;
