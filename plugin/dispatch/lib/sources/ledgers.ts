@@ -10,6 +10,7 @@
  * | running, heartbeat inside the lease window | driven |
  * | running, heartbeat past the lease window | silent |
  * | stopped `0`, the pull request conflicting or its head past the verified head | stale |
+ * | stopped `9` | stale |
  * | stopped `0` (at the verified head, mergeable), `5`, `20` | done |
  * | stopped `18`, `19` | stopped-by-person |
  * | stopped with no exit | stopped-unknown |
@@ -26,11 +27,21 @@
  * verified (`verifiedSha`). A base that merely moved past a pull request
  * that still merges cleanly does not make it stale.
  *
+ * A ledger that stopped `9` is read beside its pull request's mergeability,
+ * its head and its base branch's head, which is read for no other ledger. Its
+ * change is the pair of heads, whatever the forge reports of its mergeability:
+ * still conflicting, the drive's conflict-resolve round tries again; mergeable,
+ * the stop no longer describes the pull request and the drive's rounds take it
+ * from there. Once this machine re-drove that change and the ledger still
+ * stopped `9`, it is a person's (`settleConflictStops`).
+ *
  * A ledger that cannot be read (its comments, a version this reader does
  * not know, a damaged body, an unreadable heartbeat or park answer) is
  * `unplaced`: reported, never planned. So is a converged one whose
  * mergeability the forge is still computing, or whose head or verified head
- * is not known: whether it is stale cannot be told this tick.
+ * is not known, since whether it is stale cannot be told this tick, and one
+ * that stopped `9` whose mergeability, head or base branch's head is not known,
+ * since the change a re-drive would act on cannot be told.
  *
  * Where the repository turns dispatch labels on, each drive carries its
  * pull request's labels, and a pull request with no ledger that carries the
@@ -44,8 +55,9 @@ import type {
   LedgerSnapshot,
 } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { readLedgerSnapshot } from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
+import { branchHead } from "../forge.ts";
 import { hasCommand, type LabelConfig } from "../labels.ts";
-import { minutesBetween } from "../text.ts";
+import { failureText, minutesBetween } from "../text.ts";
 import { framedDecisionLines } from "../../../skills/drive-pr/scripts/lib/state/park-frame.ts";
 import type {
   DrivenPr,
@@ -60,12 +72,17 @@ export type ParkReading =
   | { answered: number; waiting: string[]; parks?: WaitingPark[] }
   | { unreadable: string };
 
+/** What the head of a pull request's base branch read as. */
+type BaseHead = { oid: string } | { unreadable: string };
+
 /** What the forge reports of an open pull request beside its ledger; `null` where it said nothing. */
 export interface PrFacts {
   /** Its head commit. */
   head: string | null;
   /** `MERGEABLE`, `CONFLICTING`, or `UNKNOWN` while the forge computes it. */
   mergeable: string | null;
+  /** The head of its base branch, read only for a ledger that stopped `9`. */
+  base?: BaseHead;
 }
 
 export interface Classified {
@@ -77,34 +94,42 @@ export interface Classified {
 
 const short = (sha: string) => sha.slice(0, 7);
 
+/** What a ledger is read beside when the forge said nothing of its pull request. */
+const NO_FACTS: PrFacts = { head: null, mergeable: null };
+
+/** A pull request's mergeability and head commit as the forge reports them, or why they cannot place its stop yet. */
+function readFacts({
+  head,
+  mergeable,
+}: PrFacts): { head: string; conflicting: boolean } | { unread: string } {
+  if (mergeable === "UNKNOWN")
+    return {
+      unread: "the forge is still computing whether it conflicts with its base",
+    };
+  if (mergeable !== "MERGEABLE" && mergeable !== "CONFLICTING")
+    return {
+      unread: `the forge reports its mergeability as ${String(mergeable)}`,
+    };
+  if (head === null || head === "")
+    return { unread: "the forge reports no head commit for it" };
+  return { head, conflicting: mergeable === "CONFLICTING" };
+}
+
 /**
  * A converged ledger's class, read beside its pull request: `stale` when
  * the forge reports it conflicting with its base or its head is past the
  * head the drive verified, `done` when neither, and `unplaced` while
  * either cannot be told.
  */
-function convergedClass(
-  ledger: Ledger,
-  forge: PrFacts | undefined,
-): Classified {
+function convergedClass(ledger: Ledger, forge: PrFacts): Classified {
   const verified = ledger.verifiedSha;
-  const head = forge?.head ?? null;
-  const mergeable = forge?.mergeable ?? null;
   const unplaced = (why: string): Classified => ({
     class: "unplaced",
     why: `stopped 0 (converged), and ${why}, so whether it is stale cannot be told`,
   });
-  if (mergeable === "UNKNOWN")
-    return unplaced(
-      "the forge is still computing whether it conflicts with its base",
-    );
-  if (mergeable !== "MERGEABLE" && mergeable !== "CONFLICTING")
-    return unplaced(
-      `the forge reports its mergeability as ${String(mergeable)}`,
-    );
-  if (head === null || head === "")
-    return unplaced("the forge reports no head commit for it");
-  const conflicting = mergeable === "CONFLICTING";
+  const facts = readFacts(forge);
+  if ("unread" in facts) return unplaced(facts.unread);
+  const { head, conflicting } = facts;
   if (verified === "" && !conflicting)
     return unplaced("its ledger names no head the drive verified");
   const causes = [
@@ -122,7 +147,41 @@ function convergedClass(
   return {
     class: "stale",
     why: `stopped 0 (converged), and now ${cause}: re-drive on any account`,
-    stale: { cause, change: `head ${head}, ${mergeable.toLowerCase()}` },
+    stale: {
+      cause,
+      change: `head ${head}, ${conflicting ? "conflicting" : "mergeable"}`,
+    },
+  };
+}
+
+/**
+ * A ledger that stopped `9`, read beside its pull request: `stale`, conflicting
+ * or not, keyed on the pair of its head and its base branch's head, and
+ * `unplaced` while either or its mergeability cannot be told.
+ */
+function conflictStopClass(forge: PrFacts): Classified {
+  const unplaced = (why: string): Classified => ({
+    class: "unplaced",
+    why: `stopped 9 (conflicting with its base), and ${why}, so the change a re-drive would act on cannot be told`,
+  });
+  const facts = readFacts(forge);
+  if ("unread" in facts) return unplaced(facts.unread);
+  const base = forge.base ?? { unreadable: "it was not read" };
+  if ("unreadable" in base)
+    return unplaced(
+      `the head of its base branch does not read (${base.unreadable})`,
+    );
+  const cause = facts.conflicting
+    ? "stopped on a conflict with its base, and still conflicting"
+    : "stopped on a conflict with its base, which the forge no longer reports";
+  return {
+    class: "stale",
+    why: `${cause}: re-drive on any account, once for head ${short(facts.head)} and base ${short(base.oid)}`,
+    stale: {
+      cause,
+      change: `head ${facts.head}, base ${base.oid}`,
+      conflictStop: true,
+    },
   };
 }
 
@@ -191,23 +250,32 @@ function parkClass(park: ParkReading | undefined): Classified {
       };
 }
 
-/** The evidence a report prints for one ledger; a converged one's carries the heads and the mergeability it was read beside. */
+/** What a stop's evidence adds: the heads and the mergeability a ledger that stopped `0` or `9` was read beside. */
+function stopEvidence(ledger: Ledger, forge: PrFacts): Evidence {
+  if (ledger.driver.state !== "stopped") return {};
+  const read = { headSha: forge.head, mergeable: forge.mergeable };
+  if (ledger.driver.exit === 0)
+    return {
+      verifiedSha: ledger.verifiedSha === "" ? null : ledger.verifiedSha,
+      ...read,
+    };
+  if (ledger.driver.exit !== 9) return {};
+  const { base } = forge;
+  return {
+    baseSha: base !== undefined && "oid" in base ? base.oid : null,
+    ...read,
+  };
+}
+
+/** The evidence a report prints for one ledger. */
 function ledgerEvidence(
   ledger: Ledger,
   nowMs: number,
-  forge: PrFacts | undefined,
+  forge: PrFacts,
 ): Evidence {
   const beat = Date.parse(ledger.driver.heartbeat);
-  const converged =
-    ledger.driver.state === "stopped" && ledger.driver.exit === 0
-      ? {
-          verifiedSha: ledger.verifiedSha === "" ? null : ledger.verifiedSha,
-          headSha: forge?.head ?? null,
-          mergeable: forge?.mergeable ?? null,
-        }
-      : {};
   return {
-    ...converged,
+    ...stopEvidence(ledger, forge),
     generation: ledger.generation,
     round: ledger.round,
     phase: ledger.phase,
@@ -223,13 +291,13 @@ function ledgerEvidence(
   };
 }
 
-/** A ledger's class, first match wins; `park` is read only for exit `8`, `forge` only for exit `0`. */
+/** A ledger's class, first match wins; `park` is read only for exit `8`, `forge` only for exits `0` and `9`. */
 export function classifyLedger(
   ledger: Ledger,
   nowMs: number,
   windowMs: number,
   park?: ParkReading,
-  forge?: PrFacts,
+  forge: PrFacts = NO_FACTS,
 ): Classified {
   if (ledger.driver.state === "running")
     return runningClass(ledger, nowMs, windowMs);
@@ -241,6 +309,7 @@ export function classifyLedger(
     };
   if (exit === 8) return parkClass(park);
   if (exit === 0) return convergedClass(ledger, forge);
+  if (exit === 9) return conflictStopClass(forge);
   return (
     EXITS[exit]?.(ledger) ?? {
       class: "needs-person",
@@ -256,6 +325,8 @@ export interface OpenPr {
   headRefName: string;
   /** Its head commit, as the forge reports it with the pull request. */
   headRefOid?: string;
+  /** Its base branch, as the forge reports it with the pull request. */
+  baseRefName?: string;
   /** Its mergeability with its base, as the forge reports it with the pull request. */
   mergeable?: string;
   /** Its labels, where the read asked for them. */
@@ -333,15 +404,54 @@ function baseOf(
   return labels === null ? base : { ...base, labels: pr.labels ?? [] };
 }
 
-/** One pull request's drive; `null` when it carries no ledger and no label asks for one. */
-async function driveOf(
+/** What every drive of one reading shares. */
+interface Reading {
+  slug: string;
+  login: string | null;
+  nowMs: number;
+  windowMs: number;
+  labels: LabelConfig | null;
+  /** The head of a base branch, read at most once per reading. */
+  baseHead: (branch: string | undefined) => Promise<BaseHead>;
+}
+
+/** A reading's reader of base branch heads: pull requests on one base share one read. */
+function baseHeads(slug: string): Reading["baseHead"] {
+  const read = new Map<string, Promise<BaseHead>>();
+  return (branch) => {
+    if (branch === undefined || branch === "")
+      return Promise.resolve({
+        unreadable: "the forge reports no base branch for it",
+      });
+    const known = read.get(branch);
+    if (known !== undefined) return known;
+    const head = branchHead(slug, branch).then(
+      (oid): BaseHead => ({ oid }),
+      (error: unknown): BaseHead => ({ unreadable: failureText(error) }),
+    );
+    read.set(branch, head);
+    return head;
+  };
+}
+
+/** What the forge reports of a pull request beside its ledger, its base branch's head for a ledger that stopped `9`. */
+async function factsOf(
   pr: OpenPr,
-  slug: string,
-  login: string | null,
-  nowMs: number,
-  windowMs: number,
-  labels: LabelConfig | null,
-): Promise<DrivenPr | null> {
+  ledger: Ledger,
+  r: Reading,
+): Promise<PrFacts> {
+  const facts = {
+    head: pr.headRefOid ?? null,
+    mergeable: pr.mergeable ?? null,
+  };
+  return ledger.driver.state === "stopped" && ledger.driver.exit === 9
+    ? { ...facts, base: await r.baseHead(pr.baseRefName) }
+    : facts;
+}
+
+/** One pull request's drive; `null` when it carries no ledger and no label asks for one. */
+async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
+  const { slug, login, nowMs, windowMs, labels } = r;
   const base = baseOf(pr, labels);
   const snapshot = await readLedgerSnapshot(String(pr.number), login, slug);
   if (typeof snapshot === "string")
@@ -352,10 +462,7 @@ async function driveOf(
     return { ...base, class: "unplaced", why: why ?? "", evidence: {} };
   const ledger = snapshot.canonical.parsed.ledger;
   const park = await parkOf(pr.number, ledger, slug);
-  const forge: PrFacts = {
-    head: pr.headRefOid ?? null,
-    mergeable: pr.mergeable ?? null,
-  };
+  const forge = await factsOf(pr, ledger, r);
   const classified = classifyLedger(ledger, nowMs, windowMs, park, forge);
   return {
     ...base,
@@ -391,10 +498,17 @@ export async function readDrives(
   nowMs: number,
   labels: LabelConfig | null = null,
 ): Promise<DrivenPr[]> {
-  const window = stallThresholdMs();
+  const reading: Reading = {
+    slug,
+    login,
+    nowMs,
+    windowMs: stallThresholdMs(),
+    labels,
+    baseHead: baseHeads(slug),
+  };
   const out: DrivenPr[] = [];
   for (const pr of prs) {
-    const drive = await driveOf(pr, slug, login, nowMs, window, labels);
+    const drive = await driveOf(pr, reading);
     if (drive !== null) out.push(drive);
   }
   return out;

@@ -239,7 +239,7 @@ assigned to the repository's factory identity, a re-arm for a drive its
 ledger shows stopped on a mechanical state (a usage limit, an answered
 park), a re-drive for a converged drive gone stale (its pull request now
 conflicts with its base, or its head moved past the head the drive
-verified), a follow-up for a merge, a notification for a drive only a
+verified) or for a drive that stopped on a conflict, a follow-up for a merge, a notification for a drive only a
 person can settle. A converged pull request its base merely moved past,
 still mergeable at the verified head, is left alone, and one whose
 mergeability the forge is still computing is reported and waits for a
@@ -270,10 +270,13 @@ so a launch whose answer is lost
 holds its slot and is retried only under its own record. A refusal
 `drive.ts` gives (another driver holds the pull request) is the stage's
 answer and is not launched again on the same ledger facts. A re-drive is
-launched once per change (the pull request's head, conflicting or not):
-the drive merges the base in through its conflict-resolve round, or
-reviews the new head in its ordinary rounds, and a conflict its repair
-budget cannot settle stops it for a person, as any conflict does. A record whose
+launched once per change: the drive merges the base in through its
+conflict-resolve round, or reviews the new head in its ordinary rounds. A
+converged drive's change is its pull request's head, conflicting or not. A
+drive that stopped on a conflict (exit `9`) is re-driven once per pair of its
+pull request's head and its base branch's head, whatever the forge reports of
+it by then, and a person is told only when that re-drive leaves it stopped `9`
+at the same pair; a head or a base that moves is a new attempt. A record whose
 process cannot be checked (another host or boot) holds its slot until a
 person clears it:
 
@@ -535,7 +538,9 @@ nudge goes to the terminal whose tab and pane make the agent's id, through
 `orca terminal read --screen` and `orca terminal send --enter`; since Orca
 starts no interactive session yet, there is nothing to nudge until it does.
 
-**The dashboard.** One page over the log, served while the command runs:
+**The dashboard.** One page that answers, in this order, what needs a person,
+what is running on which account, what is coming and how it went, served while
+the command runs:
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch dashboard [--port <n>]
@@ -543,13 +548,30 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 
 It listens on the machine file's `dashboard.listen`, an address in the
 private or loopback ranges (a Tailscale address of the host, say), and
-prints a URL whose token every request needs. The page reads the log when
-it asks for rows, filters them by time (today, yesterday, seven or thirty
-days, or a range), repository, stage, account, class and reason, and counts
-each class over the window; it writes nothing and generates no report. A
-question about yesterday is the Yesterday filter. Nothing installs or keeps
-it running: start it from a terminal on the host (Orca's phone app reaches
-one), open the URL on the phone, and stop it with Ctrl-C.
+prints a URL whose token every request needs. Nothing installs or keeps it
+running: start it from a terminal on the host (Orca's phone app reaches one),
+open the URL on the phone, and stop it with Ctrl-C.
+
+The page reads two things, every minute and when it comes back into focus, and
+writes nothing:
+
+- **The line**, as the newest tick found it: the parks, stops and stalled
+  pickups waiting on a person, with the question and the recommendation in
+  place and the whole decision one tap away; each account's slots and the
+  sessions in them, with their evidence; what comes next and why. Each tick that
+  reads every repository the machine file lists writes it to the state database
+  beside its receipt. So every panel says which tick it is as of, a stopped timer
+  shows as one, and a host may serve the page from a copy of that database, with
+  no other read. A tick for one repository leaves it as it was.
+- **The outcome log**, filtered by time (today, yesterday, seven or thirty days,
+  or a range), repository, stage, account, class and reason, counting each class
+  over the window and naming each bad class that recurs on a repository. A
+  question about yesterday is the Yesterday filter, and the filter is the page's
+  address, so a view on a phone is a link a laptop opens.
+
+The page acts on nothing: it links to the pull request a decision is answered on
+and copies what cannot open, such as a workspace path or an answer line. When
+the server stops answering, it keeps what it last read and says when that was.
 
 **When a class recurs.** The tick tunes none of its own dials. A class that
 keeps showing on the dashboard (quota walls at the same hour, pickups that

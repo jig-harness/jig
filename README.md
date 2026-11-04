@@ -2,17 +2,15 @@
 
 # Jig Harness
 
-Agents open pull requests faster than a team can review them. Each new
-session starts without what the last one learned, and argues again what the
-team settled last month. Between review rounds, red builds and the chores
-after a merge, the work stops whenever nobody is there to move it.
+Jig is the rules a repository's AI coding agents follow, the step-by-step
+procedures they run and the checks their work must pass. As a
+[harness](GLOSSARY.md), it carries each change from pickup to merge. What one session learns, the next one keeps.
 
 **A jig for AI coding agents: modular delivery practices, shared skills and gates, and an auditor that scores your repository.**
 
-Jig Harness, Jig for short, is a modular collection of software-delivery
-practices for teams that build and maintain software with AI coding agents.
-A jig, in a workshop, holds the work and guides the tool so every cut comes
-out the same. Jig does that for agents with checks every change must pass,
+Jig Harness, Jig for short, takes its name from the workshop: a jig holds
+the work and guides the tool so every cut comes out the same. Jig does that
+for agents with checks every change must pass,
 called [gates](GLOSSARY.md), and instructions an agent loads for one job,
 called [skills](GLOSSARY.md). Every practice is a tool-independent rule
 first, mapped to your tools second. You adopt it one module at a time.

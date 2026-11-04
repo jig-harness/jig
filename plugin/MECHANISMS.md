@@ -307,8 +307,9 @@ development and shipped as a version.
   row per ended launch and one event row per observed cause, in
   `log-<year>-<month>.jsonl`, which nothing removes (`dispatch/lib/log.ts`);
   a stop no class fits is logged as `unknown`, never dropped. The dashboard
-  (`dispatch/dashboard.ts`) reads the log and writes nothing; it listens only
-  on a private or loopback address and refuses a request without its token.
+  (`dispatch/dashboard.ts`) reads the log and the line the newest tick left in
+  the state database (`dispatch/lib/line.ts`), and writes nothing; it listens
+  only on a private or loopback address and refuses a request without its token.
   A notification is a note on the workspace the session runtime shows a
   person (with Orca, the workspace's comment). It counts as sent only when
   that note, read back, carries the message's key line, and is not sent

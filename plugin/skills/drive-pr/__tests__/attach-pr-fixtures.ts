@@ -214,6 +214,30 @@ export function makeClone(): Clone {
   return clone;
 }
 
+/**
+ * Leave `tree`, on the PR's head branch, as a conflict-resolve pass refused its
+ * commit leaves it: the base's conflicting commit merged, resolved and staged,
+ * never concluded. Its `MERGE_HEAD` stands, and its HEAD is still the PR's head.
+ */
+export function leaveStagedMerge(c: Clone, tree: string): void {
+  writeFileSync(join(c.primary, "feature.txt"), "the base's\n");
+  c.git(c.primary, "add", "-A");
+  c.git(c.primary, "commit", "-qm", "the base conflicts");
+  c.git(c.primary, "push", "-q", "origin", "HEAD:main");
+  c.git(tree, "fetch", "-q", "origin", "main");
+  const merge = spawn(tree, ["git", "merge", "origin/main"], c.env);
+  expectSpawnExit(merge, 1, "git merge origin/main");
+  writeFileSync(join(tree, "feature.txt"), "resolved\n");
+  c.git(tree, "add", "feature.txt");
+  c.git(tree, "rev-parse", "-q", "--verify", "MERGE_HEAD");
+}
+
+/** Whether a merge is open in `tree`. */
+export function mergeOpenIn(c: Clone, tree: string): boolean {
+  const argv = ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"];
+  return spawn(tree, argv, c.env).exitCode === 0;
+}
+
 /** The drive state of PR #42 as the clone at `cwd` reads it. */
 export function driveState(clone: Clone, cwd: string): Record<string, unknown> {
   const r = clone.script(cwd, "drive-state.ts", "get", "42");

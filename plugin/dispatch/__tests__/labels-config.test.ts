@@ -76,6 +76,13 @@ describe("the label set", () => {
   });
 });
 
+describe("the label set", () => {
+  it("describes each label within the 100 characters the forge takes", () => {
+    const tooLong = labelSet(ON).filter((l) => l.description.length > 100);
+    expect(tooLong.map((l) => l.name)).toEqual([]);
+  });
+});
+
 describe("the state a ledger maps to", () => {
   it("follows the ledger's class, and leaves a ledger it cannot read as it is", () => {
     expect(stateOf(drive("driven"))).toEqual({ state: "driving" });

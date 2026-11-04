@@ -544,21 +544,21 @@ test("the configuration layers and the tracker interface's operations", () => {
 describe("the README", () => {
   const r = parseReadme(read("README.md"));
   const factorySection = (body: string) =>
-    `# Jig Harness\n\nThe problem. Its cost.\n\n**The tagline.**\n\n## Jig as a software factory\n\n${body}\n`;
+    `# Jig Harness\n\nJig is this. It does that.\n\n**The tagline.**\n\n## Jig as a software factory\n\n${body}\n`;
 
-  test("opens with the problem in two or three sentences, then its tagline", () => {
-    expect(r.opening.problem.length).toBeGreaterThanOrEqual(2);
-    expect(r.opening.problem.length).toBeLessThanOrEqual(3);
-    expect(r.opening.problem[0]).not.toMatch(/^(Scaffolding|Jig)\b/);
+  test("opens with what Jig is in two or three sentences, then its tagline", () => {
+    expect(r.opening.statement.length).toBeGreaterThanOrEqual(2);
+    expect(r.opening.statement.length).toBeLessThanOrEqual(3);
+    expect(r.opening.statement[0]).toMatch(/^Jig is /);
     expect(r.opening.tagline).toMatch(/^\*\*A jig for AI coding agents/);
   });
 
-  test("refuses a README whose title is followed by its tagline instead of the problem", () => {
+  test("refuses a README whose title is followed by its tagline instead of the statement", () => {
     expect(() =>
       parseReadme(
-        "# Jig Harness\n\n**The tagline.**\n\nThe problem.\n\n## Jig as a software factory\n\nThe line.\n\nIt stands on:\n\n- **Context**: c\n",
+        "# Jig Harness\n\n**The tagline.**\n\nJig is this.\n\n## Jig as a software factory\n\nThe line.\n\nIt stands on:\n\n- **Context**: c\n",
       ),
-    ).toThrow(/problem/);
+    ).toThrow(/what Jig is/);
     expect(() =>
       parseReadme(
         factorySection("The line.\n\nIt stands on:\n\n- **Context**: c"),

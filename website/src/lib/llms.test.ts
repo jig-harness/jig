@@ -37,11 +37,16 @@ test("every section with fixed pages is a section", () => {
   for (const slug of Object.keys(FIXED_PAGES)) expect(slugs).toContain(slug);
 });
 
-test("the README's tagline and opening paragraph are the root's summary", () => {
+test("the README's tagline and the statement of what Jig is are the root's summary", () => {
   const lead = readmeLead(readFileSync(join(root, "README.md"), "utf8"));
   expect(lead.summary).toStartWith("A jig for AI coding agents");
-  expect(lead.intro).toStartWith(
-    "Jig Harness, Jig for short, is a modular collection",
-  );
+  expect(lead.intro).toStartWith("Jig is the rules a repository");
   expect(lead.intro).not.toContain("**");
+});
+
+test("a comment between the statement and the tagline does not replace the statement", () => {
+  const lead = readmeLead(
+    "# T\n\nJig is a harness.\nIt does things.\n\n<!-- opening copy -->\n\n**Tagline.**\n",
+  );
+  expect(lead.intro).toBe("Jig is a harness. It does things.");
 });
