@@ -1103,6 +1103,11 @@ make, use the entry's term instead.
 - **Deep-review tracker** — an optional table beside the *audit catalog* that
   versions the list of dimensions a deep review covers and queues a re-review
   of every area last reviewed under an older version.
+- **Harness (agent harness)** — the set of rules, skills and checks a
+  repository gives its AI coding agents, plus the tooling that carries a change
+  from pickup to merge. The agent supplies the model; the harness supplies
+  everything around it. Jig is a harness. See *review harness* for the
+  reviewer built on the same idea.
 - **Review harness** — an automated reviewer built as prompt *lenses* over a
   reusable engine, not a fixed static analyzer. Split into a repo-agnostic
   **core** (a tool registry of reviewers, a required verify step, and
