@@ -35,12 +35,12 @@ path that produces the exit, not because none of them name one.
 |---|---|---|---|
 | `0` | `ROUND_READY` | no | Unresolved threads and/or unaddressed summary-only findings exist. On a mergeable head the reviewer gates below also proved it reviewed that head; on a **conflicting** one they are skipped, so the findings may predate it — the `reason` and `reviewer.reviewedSha` say which (§ 14) |
 | `3` | `CONVERGED` | **yes** | Every convergence condition below holds |
-| `4` | `HEAD_LAG` / `AWAITING_REVIEWER` / `STALE_REVIEW` / `HEAD_MOVED` / `MERGEABILITY_UNKNOWN` | no | Not judgeable yet. With `--once` this returns immediately; otherwise after `--timeout`. `drive.ts` also reuses this code for a case `drive-status.ts` cannot see: the reviewer converged, but the Ready-mark lease is held by another driver — `claimed-by-other` is not proof that driver will finish, and reporting `0` would claim a still-draft PR that the draft-skipping reviewers have never seen is done (§ A draft PR is reviewed, and then marked Ready). And for a second such case: the reviewer converged, nothing is failing, and no fresh exact-head required-check witness arrived within `DRIVE_PR_FINAL_CI_WITNESS_POLLS` polls (default 180 × 10s = 30 min, `0` waits forever) — a required check whose fresh run completed `skipped` is passing to the aggregate verdict and no witness here, and no amount of waiting converts one into the other, so the drive names the rerun and hands back rather than sleeping until a human notices |
+| `4` | `HEAD_LAG` / `AWAITING_REVIEWER` / `STALE_REVIEW` / `HEAD_MOVED` / `MERGEABILITY_UNKNOWN` | no | Not judgeable yet. With `--once` this returns immediately; otherwise after `--timeout`. `drive.ts` also reuses this code for a case `drive-status.ts` cannot see: the reviewer converged, but the Ready-mark lease is held by another driver — `claimed-by-other` is not proof that driver will finish, and reporting `0` would claim a still-draft PR that the draft-skipping reviewers have never seen is done (§ A draft PR is reviewed, and then marked Ready). And for a second such case: the reviewer converged, nothing is failing, and no fresh exact-head required-check witness arrived within `DRIVE_PR_FINAL_CI_WITNESS_POLLS` polls (default 180 × 10s = 30 min, `0` waits forever) — a required check whose fresh run completed `skipped` is passing to the aggregate verdict and no witness here, and no amount of waiting converts one into the other, so the drive names the rerun and hands back rather than sleeping until a human notices. And for a third: the verdict stayed `cancelled: …` for those same polls, with no run to replace the cancelled checks. A cancelled check is unknown, so this is neither a pass nor a failure to repair (§ 9) |
 | `5` | `PR_NOT_OPEN` | **yes** | Merged or closed. Checked first, every pass |
 | `6` | — | **yes** | `drive.ts` only: hit `--max-rounds` without converging |
 | `7` | `REVIEWER_FAILED` | **yes** | The posting reviewer's check-run did not pass |
 | `8` | `HITL_PARKED` | **yes** | Everything still open is parked awaiting a human, each under a registry class with its decision framed, and the exit prints each one in full. The drive never wakes itself up: a re-arm unparks the items, and hands their answers to its passes until one completes, only once **every** one has an answer from an owner, member or collaborator later than the park (§ Picking up a stopped drive); with any unanswered it stops `8` again |
-| `9` | `PR_CONFLICTING` | **yes**, from `drive.ts` only once its conflict-repair budget is spent | The PR conflicts with its base **and** has no workable findings. A conflict alone does not stop the loop — see mode 14. `drive.ts` first spends `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` (default 1) `conflict-resolve` passes on it (§ Repair rounds) |
+| `9` | `PR_CONFLICTING` | **yes**, from `drive.ts` only once its conflict-repair budget is spent | The PR conflicts with its base **and** has no workable findings. A conflict alone does not stop the loop — see mode 14. `drive.ts` first spends `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` (default 1) `conflict-resolve` passes on it (§ Repair rounds), and a merge such a pass did not conclude is aborted before the stop, except one already open when the pass began (kept) or one whose abort failed; finish or abort a merge the stop reports before running its `Fix:` command. Under `jig dispatch` the dispatcher re-drives the stop, once for each pair of the pull request's head and its base branch's head, and tells a person when that re-drive leaves it stopped `9` at the same pair; without it the stop is a person's |
 | `10` | — | — | **Reserved**, never emitted. A draft PR is not a stop: drafts are driven — see § A draft PR is reviewed, and then marked Ready. The code is kept unused so it never takes on a second meaning |
 | `12` | — | **yes** | `drive.ts` only: the review converged, but the worktree is not clean — uncommitted state, an unconcluded merge/cherry-pick/revert/rebase/am (present even over an otherwise-empty `git status`), local HEAD no longer matching the reviewed head (a commit landed here that was never pushed or reviewed, also invisible to `git status`), or any of those probes being unreadable; every one of them fails closed to the same refusal. The convergence is real; the leftovers are edits no round shipped, an unfinished git operation, or an unreviewed local commit. Commit/push/discard as appropriate, or resolve/abort the operation, then re-run. The draft→Ready transition sits **behind** this gate, so a PR still owed that transition when 12 fires stays a draft, and the retry after the cleanup marks it. It never *reverts* one already made: `mark-ready.ts` runs at the end of every completed round from the round `pull_requests.mark_ready` declares (default `1`) and is durably once-only, so a drive that completed that round has already marked the PR and exit 12 leaves it Ready over an unclean tree. The PR is still a draft, then, when no completed round reached the declared one (convergence before it, including at the very first gate), when the repository marks Ready only at convergence (`converged`), or when it never does (`never`, or a drive started with `--keep-draft`, which skips `mark-ready.ts` entirely no matter how many rounds run) — in the last case the draft state is the requested outcome, not a transition still owed — see § A draft PR is reviewed, and then marked Ready |
 | `11` | — | **yes** | `drive.ts` only: a single-instance lock is already held — either this PR's (`pr-drive-<PR>.lock`) or this working tree's (`pr-drive-worktree-<key>.lock`), both in the clone-wide state dir, so a driver in another managed worktree of the same clone collides too. The drive is already armed. The refusal names the holder's `drives.ts` `--doctor` verdict and, when that verdict admits a takeover (`WEDGED`), prints the `--take-over` command; do not stop a driver that is making progress (§ Picking up a stopped drive). `drive.ts` with `--take-over` refused for the holder's verdict, or for a dead holder's leftovers, exits `11` too. `drive-state.ts` raises the same code for its own **session lease** over *(working tree, PR)* when a second live agent session in one checkout attempts a state mutation — a different mechanism with the same exit — and for its **tree lease** when that second session is driving a *different* PR from the same tree, which the per-PR lease alone cannot see. `reply-to-thread.ts` and `answer-summary-finding.ts` raise it too, refusing to `POST` rather than refusing to write state — both check **both** fences, the per-PR session lease and the tree lease, so either one can produce this refusal — `reply-to-thread.ts` through the spawned `assert-post-allowed.ts` (it lives in the sibling skill), `answer-summary-finding.ts` through `lib/state/lease.ts` directly (it lives in this one). All of these — a *live* conflicting holder — name that holder's pid; confirm that process is gone before clearing either. Two exceptions, both on the tree lease, neither naming a pid because neither has a live holder to name: the unreadable-but-fresh case (a file that exists but cannot be parsed as a lease, mirroring `unreadableLeaseFilesFor`'s fail-closed ruling for the PR-wide gate) points at the path instead; and `assertTreeLeaseUnchanged`'s "the lease is simply gone" case (an admitted lease that no longer exists by the time the fence re-checks — `clear-lease` is the common cause but not the only one an operator could have caused, so the message deliberately does not guess which) |
@@ -57,7 +57,8 @@ path that produces the exit, not because none of them name one.
 The JSON report (`--json`) carries `state`, `exit`, `reason`, the head pair, the
 `base` block (`refName`, `oid`, `drift`), the `merge` pair (`mergeable`,
 `stateStatus`), the reviewer's identity/status/reviewed-SHA, the work counts,
-and a `ci` verdict.
+and a `ci` verdict (`green`, or `failing:`, `pending:`, `cancelled:` or
+`unknown:` with the names) with the failing names and runs behind it.
 
 `base.drift` is the one field in the report that is **not** an input
 to any verdict. It is measured once per *counting* invocation — `--no-count`
@@ -94,13 +95,13 @@ to a human or to a pass.
 | `PR_CONFLICTING` with no workable finding | `conflict-resolve` (`base-sync.ts`, then resolve the conflict) | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1 | exit `9`, with its `Fix:` command |
 
 The task reaches the pass in its **environment** (`DRIVE_PR_ROUND_TASK`,
-`DRIVE_PR_ROUND_TASK_DETAIL`), never by rewriting the argv after `--`: that
-argv belongs to whichever agent the operator armed the drive with, and a driver
-editing it would be guessing at another tool's command grammar. `SKILL.md` § 0
-is the pass-side half. `passEnv()` **deletes both variables before setting
-either**, so an ordinary review round can never inherit a repair task — from
-this driver's environment or an operator's shell — and skip triage believing
-itself a repair.
+`DRIVE_PR_ROUND_TASK_DETAIL`, and on a CI repair `DRIVE_PR_ROUND_FAILED_RUNS`),
+never by rewriting the argv after `--`: that argv belongs to whichever agent the
+operator armed the drive with, and a driver editing it would be guessing at
+another tool's command grammar. `SKILL.md` § 0 is the pass-side half.
+`passEnv()` **deletes all of them before setting any**, so an ordinary review
+round can never inherit a repair task — from this driver's environment or an
+operator's shell — and skip triage believing itself a repair.
 
 Properties worth stating because each closes a way this could go wrong:
 
@@ -110,8 +111,16 @@ Properties worth stating because each closes a way this could go wrong:
   base branch — the guess the operator-facing message deliberately does not
   make — one level further away where nobody can see it being made.
 - **Only positively-named failures spend CI budget.** `failing: …` yes;
-  `unknown:` and an unparseable report no. Those are absences of evidence, and
-  a CI-repair pass handed no run and no check name has nothing to work from.
+  `cancelled:`, `unknown:` and an unparseable report no. Those are absences of
+  evidence, and a CI-repair pass handed no run and no check name has nothing to
+  work from.
+- **A CI repair is told which runs failed.** `DRIVE_PR_ROUND_FAILED_RUNS` holds
+  the ids of the workflow runs behind the failing checks, so a pass does not
+  re-run a cancelled sibling and leave the failed run on the head's check list.
+  It omits a run created while the hold's label was on, since a re-run replays
+  that event, and it is empty when the label's history cannot be read. While a
+  run is being re-run its jobs that did not pass read as `pending:`, so a pass
+  that re-ran it does not spend the next repair on the attempt it replaced.
 - **A repair re-gates from the top, never re-checks in place.** A repair that
   pushed moved the head, staling `reviewedHead` and every witness gathered
   under it — the reviewer's own stamp included. Rebuilding that evidence is
@@ -119,6 +128,17 @@ Properties worth stating because each closes a way this could go wrong:
 - **A failed repair pass falls straight through to the stop.** It does not
   retry, and it does not park: the operator gets the same stop a drive with
   no repair budget would give, one pass later.
+- **A conflict-resolve pass leaves no merge behind.** A merge it started and
+  did not conclude (its commit refused, its deadline reached) is aborted before
+  the re-gate or the stop, and the driver log lists what it held:
+  `base-sync.ts`, `finish-round.ts`, an attach over a moved head, convergence
+  and the stop's own `Fix:` all refuse or fail on an open merge, so the next
+  pass, a re-arm or a person starts that merge from a clean tree. A merge that
+  cannot be aborted stays, and the stop names it. A merge the tree already held
+  when the pass started is not the pass's to discard: `SKILL.md` § 0 has the
+  pass finish it or start it over, and the stop names it if it does neither. A
+  person's mailbox stop, or a pass that found the pull request closed, leaves
+  the tree as it is.
 - **The budgets are in-memory, so a re-armed drive gets fresh ones.** Same
   semantics as the `noopRounds` stall streak, and for the same reason: a
   `DriveState` field would be *refused* by `isUsableState` on every file written
@@ -1478,6 +1498,22 @@ false "green":
   neither and the verdict reads green mid-flight.
 - **An unreadable commit-status API.** A timeout or 403 must become
   `unknown: …`, never an empty (therefore clean) set.
+- **A cancelled check.** A CI hold's held run may cancel itself so that a
+  required check blocks the merge, beside the green the opening run left on the
+  same head and under the same name, so a cancelled check is never read as
+  passing. It reads `cancelled: …` (`lib/status/workflow-runs.ts`), below
+  `failing:` and `pending:` and above `green`, and the drive waits for it on
+  the witness bound, ending in exit `4`. It stops counting only when a run of
+  the same workflow on the head, started no earlier, has completed with a
+  result: by start time, because a concurrency group can cancel the higher run
+  id in favour of a lower one started in the same second; with a job that
+  ran, because a run that skipped everything has looked at nothing. A cancelled
+  job stays unknown when the replacing run reports its name as skipped. A
+  failed job in a cancelled run still counts as failing, regardless of when it
+  started. A run being re-run owes its unsuccessful jobs' results until it
+  completes; another run's success never discharges that obligation. With the
+  workflow runs unreadable nothing is dropped: a cancelled check stays unknown
+  and a failed one fails.
 
 ### 10. A finding marked answered by someone who cannot merge
 

@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { jobFiles } from "../../runtime/scheduler.ts";
 import { dispatchJobSpec } from "../install.ts";
+import type { LaunchRecord } from "../lib/launches.ts";
 import { wallOf, writeWall } from "../lib/walls.ts";
 import { type World, world } from "./fixtures.ts";
 import {
@@ -63,6 +64,62 @@ describe("the wrapper", () => {
     expectSpawnExit(r, 3);
     expect(r.stderr).toContain(`${id} is already claimed; nothing started`);
     expect(driveRuns(w)).toEqual([]);
+  });
+
+  describe("a Codex drive's bypass", () => {
+    const BYPASS = "--dangerously-bypass-approvals-and-sandbox";
+
+    /** Runs a Codex drive's record under `fields`, in `env`, and returns the pass command the wrapper started. */
+    async function passOf(
+      fields: Partial<LaunchRecord>,
+      env: Record<string, string>,
+    ): Promise<string[]> {
+      const w = world();
+      current = w;
+      const id = "20261031T080000Z-eeeeeeee";
+      earlierRecord(w, {
+        id,
+        account: "c",
+        token: "the-token",
+        vendor: "codex",
+        ...fields,
+      });
+      w.env = { ...w.env, ...env };
+      const r = await runWrapper(w, [id, "the-token"]);
+      expectSpawnExit(r, 0);
+      const [run] = driveRuns(w);
+      return (run?.argv ?? []).slice((run?.argv ?? []).indexOf("--") + 1);
+    }
+
+    it("follows what the tick admitted it under, on a wrapper that reads no such setting", async () => {
+      const pass = await passOf(
+        { codexBypass: true },
+        { JIG_HOME: "/nonexistent-jig-home" },
+      );
+      expect(pass).toEqual([
+        "codex",
+        "exec",
+        BYPASS,
+        "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 7",
+      ]);
+    });
+
+    it.each([
+      ["says no", { codexBypass: false }],
+      ["was written before it kept this", {}],
+    ])(
+      "adds nothing for a record that %s, whatever the wrapper's environment sets",
+      async (_, fields) => {
+        const pass = await passOf(fields, {
+          JIG__DRIVE__CODEX_BYPASS: "true",
+        });
+        expect(pass).toEqual([
+          "codex",
+          "exec",
+          "Use the jig:drive-pr skill: /jig:drive-pr --bots-only 7",
+        ]);
+      },
+    );
   });
 
   it("refuses a token that is not the record's", async () => {

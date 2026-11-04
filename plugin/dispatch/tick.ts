@@ -65,8 +65,9 @@ import {
   applyDrives,
   type FreshDrive,
 } from "./lib/actions/drive.ts";
+import { settleConflictStops } from "./lib/actions/drive-hold.ts";
 import { applyFollowups } from "./lib/actions/followup.ts";
-import { outOfTime, rotated } from "./lib/actions/launch.ts";
+import { accountsReport, outOfTime, rotated } from "./lib/actions/launch.ts";
 import {
   heldPullRequests,
   planLabels,
@@ -77,12 +78,7 @@ import { carriesSet, hasCommand, type LabelConfig } from "./lib/labels.ts";
 import { applyNotices } from "./lib/actions/notify.ts";
 import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
-import {
-  lastAccount,
-  type NotAdmitted,
-  notAdmitted,
-  slotTable,
-} from "./lib/accounts.ts";
+import { hostCodexOptIn, lastAccount, slotTable } from "./lib/accounts.ts";
 import { readMarkers } from "./lib/followup-marker.ts";
 import { readOutcomes, settleFollowups } from "./lib/followup-outcomes.ts";
 import { readIdle, updateIdle } from "./lib/idle.ts";
@@ -101,7 +97,7 @@ import type {
   SessionRuntime,
   SessionsReport,
 } from "./lib/runtime/port.ts";
-import { readSection } from "./lib/section.ts";
+import { branchPattern, readSection } from "./lib/section.ts";
 import { observeContention } from "./lib/sources/contention.ts";
 import { readDrives } from "./lib/sources/ledgers.ts";
 import { readPickups } from "./lib/sources/tracker.ts";
@@ -125,9 +121,6 @@ import {
   takeTickLock,
   writeReceipt,
 } from "./receipts.ts";
-
-/** `pull_requests.branch_name`'s default, the branch form of an item. */
-const BRANCH_PATTERN = "{key_lower}-{slug}";
 
 export interface TickOptions {
   repos: string[];
@@ -166,17 +159,6 @@ function emptyReport(path: string, refused: string): RepoReport {
     notifications: [],
     quiet: [],
   };
-}
-
-function branchPattern(values: Record<string, unknown>): string {
-  const prs = values.pull_requests;
-  const pattern =
-    typeof prs === "object" && prs !== null
-      ? (prs as Record<string, unknown>).branch_name
-      : undefined;
-  return typeof pattern === "string" && pattern !== ""
-    ? pattern
-    : BRANCH_PATTERN;
 }
 
 async function gatherRepo(
@@ -226,6 +208,10 @@ async function gatherRepo(
   // The forge: the open pull requests and their ledgers, and the merges.
   const labels = section.labels.enabled ? section.labels : null;
   const forge = await readForge(repo, report, section, labels, nowMs);
+  forge.drives = settleConflictStops(
+    forge.drives,
+    allRecords(context).filter((r) => r.record.repo === repo.slug),
+  );
   const { open, drives, merged, login } = forge;
 
   // The runtime: which of them a session holds.
@@ -902,6 +888,7 @@ function applyState(
     table: slotTable(machine.accounts, records, nowMs),
     last: lastAccount(records),
     passDeadlineSec: passTimeoutSeconds(),
+    codexOptIn: hostCodexOptIn(),
     startedAt: Date.now(),
     tick,
     repos: options.repos.length,
@@ -915,22 +902,6 @@ function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
         runtimeTimeoutMs: machine.runtimeTimeoutMs,
         workspaceTimeoutMs: machine.workspaceTimeoutMs,
       });
-}
-
-/**
- * The machine file's accounts a drive's pass is never admitted on, for the
- * receipt: a vendor with no documented pass command, or a Codex account
- * while the pass deadline this run reads is `0`.
- */
-function accountsReport(
-  machine: MachineConfig | null,
-  apply: ApplyState | null,
-): { accountsNotAdmitted?: NotAdmitted[] } {
-  if (machine === null) return {};
-  const deadline =
-    apply === null ? passTimeoutSeconds() : apply.passDeadlineSec;
-  const refused = notAdmitted(machine.accounts, deadline);
-  return refused.length === 0 ? {} : { accountsNotAdmitted: refused };
 }
 
 export async function runTick(options: TickOptions): Promise<TickResult> {
@@ -990,6 +961,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       repos: options.repos,
       records: allRecords(context),
       inputs: context.lineInputs,
+      codexOptIn: apply?.codexOptIn ?? hostCodexOptIn(),
     });
     const path = writeReceipt(receipt);
     pruneReceipts(Date.now(), undefined, days);

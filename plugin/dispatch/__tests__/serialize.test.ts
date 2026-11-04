@@ -208,6 +208,29 @@ describe("jig dispatch serializes the pull requests of a serialized area", () =>
     expect(driveRuns(w).map((r) => r.argv[0])).toEqual(["9"]);
   }, 120_000);
 
+  it("holds a drive that stopped on a conflict behind the group's leader, and re-drives the leader once", async () => {
+    const w = fixture(
+      [7, 9].map((n) => ({
+        n,
+        ledger: stoppedLedger(n, 9),
+        files: [`db/migrations/00${n}.sql`],
+        threads: n === 9 ? 0 : 2,
+        mergeable: "CONFLICTING",
+      })),
+    );
+    const first = await tick(w);
+    expect(launched(first)).toEqual([["PR #9", "launched"]]);
+    expect(held(first)).toEqual([
+      ["PR #7", "held: serialized behind #9 in migrations"],
+    ]);
+    await settled(w, first);
+
+    const second = await tick(w);
+    expect(launched(second)).toEqual([]);
+    expect(held(second)).toEqual(held(first));
+    expect(driveRuns(w).map((r) => r.argv[0])).toEqual(["9"]);
+  }, 120_000);
+
   it("promotes the next pull request when the leader merges, re-drives it once, and logs how long it was held", async () => {
     const w = fixture(THREE, true);
     const first = await tick(w);

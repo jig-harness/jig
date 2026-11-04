@@ -112,9 +112,11 @@ session can (in Orca, below) and uses the session's background execution
 elsewhere; `tab`, `background` and `print` (the command only) choose one.
 A Claude Code round uses `drive.pass_model`
 ([configuration](../../CONFIGURATION.md#drive)), defaulting to `sonnet`,
-and the extra arguments in `drive.pass_args` (none unless configured).
+and the extra arguments in `drive.pass_args` (none unless this host's
+[user file](../../CONFIGURATION.md#a-hosts-opt-in-to-bypass) sets them).
 A Codex round uses `routing.models.codex.execution`, or Codex's own
-configured model when that routing row is absent; it does not read
+configured model when that routing row is absent, and carries its bypass only
+on a host that set `drive.codex_bypass`; it does not read
 `drive.pass_model` or `drive.pass_args`. For either runtime, `--pass-model`
 overrides the model for one drive, resolving a routing tier through that
 runtime's row of `routing.models` (see [drive-pr](../drive-pr/README.md)).

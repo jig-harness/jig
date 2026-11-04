@@ -114,6 +114,14 @@ if (args[0] === "label" && args[1] === "create") {
   fs.writeFileSync(F + "/labels-repo.json", JSON.stringify(have));
   out("");
 }
+if (args[0] === "api" && /^repos\\/[^/]+\\/[^/]+\\/git\\/ref\\/heads\\//.test(args[1] ?? "")) {
+  // The head of the base branch, as base-head holds it; base-head-next replaces it after this read, for a base that moves between two reads.
+  fs.appendFileSync(F + "/base-reads.log", args[1] + "\\n");
+  if (!fs.existsSync(F + "/base-head")) { process.stderr.write("gh: Not Found (HTTP 404)\\n"); process.exit(1); }
+  const sha = fs.readFileSync(F + "/base-head", "utf8");
+  if (fs.existsSync(F + "/base-head-next")) fs.renameSync(F + "/base-head-next", F + "/base-head");
+  out({ ref: "refs/heads/main", object: { sha, type: "commit" } });
+}
 const files = args[0] === "api" ? /^repos\\/[^/]+\\/[^/]+\\/pulls\\/(\\d+)\\/files\\?per_page=(\\d+)&page=(\\d+)$/.exec(args[1] ?? "") : null;
 if (files !== null) {
   // The files files-<pr>.json lists, one page at a time; refused while files-<pr>-fail exists.
@@ -295,17 +303,21 @@ export interface OrcaRow {
 /** The head commit an open pull request reports unless a test names another. */
 export const HEAD_SHA = "a".repeat(40);
 
+/** The head commit of the base branch unless a test names another. */
+export const BASE_SHA = "c".repeat(40);
+
 /** An open pull request as `gh pr list --json` returns it: at `HEAD_SHA` and mergeable, unless `extra` says otherwise. */
 export const openPr = (
   number: number,
   head: string,
-  extra: { headRefOid?: string; mergeable?: string } = {},
+  extra: { headRefOid?: string; mergeable?: string; baseRefName?: string } = {},
 ) => ({
   number,
   url: `https://github.com/${SLUG}/pull/${number}`,
   title: `Pull request ${number}`,
   headRefName: head,
   headRefOid: HEAD_SHA,
+  baseRefName: "main",
   mergeable: "MERGEABLE",
   labels: [] as Array<{ name: string }>,
   ...extra,
@@ -364,6 +376,8 @@ export interface World {
   setAssigner(number: number, login: string, permission: string): void;
   setPrs(state: "open" | "merged", prs: unknown[]): void;
   setComments(pr: number, comments: unknown[]): void;
+  /** The head of the base branch; `null` for a branch that does not read. With `next`, the head after the next read of it. */
+  setBaseHead(sha: string | null, next?: string): void;
   setWorkspaces(rows: OrcaRow[]): void;
   setConfig(yaml: string | null): void;
   /** The files a pull request changes, as the forge lists them. */
@@ -402,6 +416,7 @@ export function world(): World {
     );
   write("prs-open.json", []);
   write("prs-merged.json", []);
+  write("base-head", BASE_SHA);
   write("orca-repos.json", {
     repos: [
       {
@@ -531,6 +546,11 @@ export function world(): World {
     },
     setPrs: (state, prs) => write(`prs-${state}.json`, prs),
     setComments: (pr, comments) => write(`comments-${pr}.json`, comments),
+    setBaseHead: (sha, next) => {
+      if (sha === null) rmSync(join(dir, "base-head"), { force: true });
+      else write("base-head", sha);
+      if (next !== undefined) write("base-head-next", next);
+    },
     setWorkspaces: (rows) =>
       write("orca-ps.json", {
         worktrees: rows.map((r, i) => ({
