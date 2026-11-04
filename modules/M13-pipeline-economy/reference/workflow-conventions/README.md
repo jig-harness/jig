@@ -139,7 +139,29 @@ recognize is a finding to rewrite or excuse, never a pass.
   triggering runs, a guard that skipped on every `labeled` event would let
   any unrelated label replace a failing head's result with a passing skip,
   while this one skips only a pull request that carries the hold label and
-  runs real CI on any other label event.
+  runs real CI on any other label event, unless the workflow answers that
+  event with a mirror (`ci-hold-mirror`).
+- `ci-hold-mirror`: applies to a workflow that answers an event for another
+  label with a [mirror run](../../../../GLOSSARY.md): one where some job's
+  `if:` has the `&&`-joined term `!(github.event.label.name &&
+  github.event.label.name != '<label>')`, where a required job has a mirror
+  step, or whose `run-name` begins with that test. The term skips a job on an
+  event for any label but the hold's, and a pull request's other events carry
+  no label, so it is false on them. Such a workflow needs all of the
+  [mirror's shape](../../README.md#7-hold), since each part missing has a
+  failure of its own. Its workflow-level concurrency group's expression begins
+  with the test, `&&` and a key holding `github.run_id`, before any `||`, so
+  the run cancels nothing; without it, the label's run cancels the real run in
+  flight. Its `run-name` begins `${{ <the test> &&`, so the mirror step can
+  leave mirror runs out; without it, mirrors can wait on each other until the
+  deadline. Each required job neither carries the term, since a skipped
+  required check counts as passing, nor lacks a mirror step: a `run:` step
+  whose whole `if:` is the test, optionally inside `${{ }}`, with no
+  `continue-on-error` on it or on its job, since a run without one judges the
+  jobs it skipped. And every heavy job carries the term, the saving the form
+  exists for. The lint reads where the mirror step stands, not what its script
+  does: that it passes only on the real run's success and fails closed
+  otherwise is review's to check, and Jig's own step has tests that run it.
 - `ci-hold-sentinel`: some job of a pull-request workflow that holds a
   required check fails while the label is present, and its failure reaches
   that check. The job is the required job, or one the required job needs
@@ -327,4 +349,6 @@ correctly, stay with review.
 | `inputs.ts` | reads the workflows, actions, configuration and exception list, failing closed |
 | `rules.ts` | the rules, one function each |
 | `check-workflow-conventions.test.ts` | paired self-test |
+| `check-workflow-conventions-mirror.test.ts` | the self-test of the CI hold's mirror form |
+| `test-support.ts` | what the self-tests share |
 | `fixtures/` | one small repository per case: a pass and a fail per rule, composite actions, unparseable input, a repeated key, stale, reasonless and unknown-rule exceptions, malformed configuration |
