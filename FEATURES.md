@@ -122,8 +122,9 @@ never restarts a drive a person stopped.
 
 Every session it started leaves a row in the [outcome log](GLOSSARY.md)
 when it ends: the stage, the account, how long it ran and how it ended. One
-dashboard filters the log by time, repository, stage, account and outcome. A
-stage that falls behind what it should achieve is reported as
+dashboard opens on what needs a person, which account holds which session and
+what comes next, and filters the log by time, repository, stage, account and
+outcome. A stage that falls behind what it should achieve is reported as
 [stage drift](GLOSSARY.md), and a person decides what happens to it. The one
 prompt the dispatcher types into a session by itself is "continue", once a
 usage limit has reset.

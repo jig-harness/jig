@@ -160,6 +160,8 @@ export interface Unplaced {
   target: string;
   record: RecordName;
   reason: string;
+  /** Set for an item assigned by someone who cannot write: only a person can settle it. */
+  cause?: "assigner-cannot-write";
 }
 
 /** What a notification is about. */
@@ -277,6 +279,8 @@ export interface Running {
   stage: Stage;
   reason: string;
   evidence: Evidence;
+  /** Set when it runs past its expectation and a waiting notification stands, so it is reported rather than notified. */
+  drifting?: true;
 }
 
 /** How one record read for one repository. */

@@ -115,6 +115,7 @@ export async function readPickups(
         target: issue.identifier,
         record: "tracker",
         reason: `assigned to ${identity} by ${by.name}, who cannot write to ${tracker.team}; only a person with write access starts a pickup`,
+        cause: "assigner-cannot-write",
       });
       continue;
     }

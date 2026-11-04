@@ -4,8 +4,8 @@ type: adr
 status: amended
 description: "Jig's runnable tooling, gates and skills are written in TypeScript and run with Bun"
 lifecycle: permanent
-version: "1.1"
-last_updated: 2026-11-01
+version: "1.2"
+last_updated: 2026-11-03
 owner: maintainers
 decision_date: 2026-10-04
 supersedes: ~
@@ -92,3 +92,15 @@ The bundle is what the pinned Bun writes for the pinned package, so a change
 that updates either rebuilds it, and a Bun update can change a vendored file
 whose library did not change. A bundle also carries the parts of the library
 its entry reaches, not only the functions the plugin calls.
+
+### 2026-11-03 — A page the plugin serves is built and minified (v1.2)
+
+Touches the 2026-11-01 amendment's "unminified so a reader can follow it". That
+reason holds for a library plugin code imports, whose stack traces and version
+bumps a person reads. It does not hold for a page sent to a phone, whose source
+is in the repository: `plugin/dispatch/dashboard-page/` is what
+`dashboard/build.ts` builds from that source and the pinned
+packages, minified, and the generated-file check and
+`dashboard/build.test.ts` rebuild it and compare byte for byte,
+so it cannot drift or be edited by hand. Its licences are listed in one file beside
+it.

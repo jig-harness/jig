@@ -86,8 +86,8 @@ import {
 import { readMarkers } from "./lib/followup-marker.ts";
 import { readOutcomes, settleFollowups } from "./lib/followup-outcomes.ts";
 import { readIdle, updateIdle } from "./lib/idle.ts";
+import type { RepoLineInput } from "./lib/line.ts";
 import { hasEnded } from "./lib/log.ts";
-import { exportLog } from "./lib/log-export.ts";
 import {
   pruneLaunches,
   readLaunches,
@@ -105,6 +105,7 @@ import { readSection } from "./lib/section.ts";
 import { observeContention } from "./lib/sources/contention.ts";
 import { readDrives } from "./lib/sources/ledgers.ts";
 import { readPickups } from "./lib/sources/tracker.ts";
+import { copyLog, lineInputOf, writeTickLine } from "./lib/tick-line.ts";
 import { failureText } from "./lib/text.ts";
 import type {
   ClaimedItem,
@@ -146,6 +147,8 @@ interface TickContext {
   nowMs: number;
   launches: ReadRecord[];
   apply: ApplyState | null;
+  /** What each repository's tick read beside its report, by path, for the line. */
+  lineInputs: Map<string, RepoLineInput>;
 }
 
 function emptyReport(path: string, refused: string): RepoReport {
@@ -299,6 +302,7 @@ async function gatherRepo(
     listed: entry !== null,
     serialized,
   });
+  context.lineInputs.set(path, lineInputOf(drives, forge, tracked, sessions));
   return report;
 }
 
@@ -868,17 +872,6 @@ async function readSessions(
   }
 }
 
-/** Copy the outcome log's new rows into its month files; false, with the reason on the receipt, when the copy failed. */
-function copyLog(receipt: TickReceipt): boolean {
-  try {
-    exportLog();
-    return true;
-  } catch (error) {
-    receipt.logCopyFailed = `the outcome log's month files were not brought up to date, and the next tick copies the rows again: ${failureText(error)}`;
-    return false;
-  }
-}
-
 export type TickResult =
   | { held: string }
   | { receipt: TickReceipt; path: string };
@@ -981,6 +974,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       nowMs: now.getTime(),
       launches: apply?.records ?? read.records,
       apply,
+      lineInputs: new Map(),
     };
     const order =
       apply === null ? options.repos : rotated(apply, options.repos);
@@ -991,6 +985,12 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
     receipt.exitStatus = failed || !copied || withheld !== undefined ? 1 : 0;
     receipt.completed = true;
     receipt.finishedAt = new Date().toISOString();
+    writeTickLine(receipt, {
+      machine,
+      repos: options.repos,
+      records: allRecords(context),
+      inputs: context.lineInputs,
+    });
     const path = writeReceipt(receipt);
     pruneReceipts(Date.now(), undefined, days);
     return { receipt, path };

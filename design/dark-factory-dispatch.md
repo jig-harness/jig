@@ -936,12 +936,33 @@ never acted on: the stage keeps running and keeps its slot, and whether to
 stop it is a person's call. Stages the dispatcher did not launch carry no
 expectation.
 
-**The dashboard.** `jig dispatch dashboard` serves one page that reads the
-log when it is opened, filters it by time, repository, stage, account,
-class and reason in SQL over the log table, reading the rows and their
-counts in one read transaction, and shows the count of
-each class over the filtered window. A question about yesterday is a filter, not a report: no report
-file is ever generated, and nothing is written to disk but the log itself.
+**The dashboard.** `jig dispatch dashboard` serves one page that answers, in
+order, what needs a person, what is running on which account, what is coming
+and how it went ([the designed page](prototypes/dispatch-dashboard/README.md)).
+It reads two records and writes nothing.
+
+The first is the **line**, one row of the state database (`tick_line`): the
+needs, the accounts with their slots and walls, the sessions, the queue and the
+repositories as a tick found them, with that tick's receipt. A tick that read
+every repository the machine file lists replaces it at its end; a tick for one
+repository leaves it. Every read behind it stays in the tick: process liveness,
+walls, the machine file, titles, framed decisions. So each panel says which tick
+it is as of, never "live"; a timer that stopped shows as a tick older than the
+interval plus the longest recent tick; and a host may serve the page from a copy
+of the database and nothing else, which is how an isolated service runs it. The
+line is a view: a tick that cannot write it says so on its receipt and exits
+`1`, and what it launched stands. What no record holds stays off the page rather
+than being guessed.
+
+The second is the log, read when the page asks, every minute and on focus:
+filtered by time, repository, stage, account, class and reason in SQL over the
+log table, in one read transaction. It counts each class over the filtered
+window ignoring the class filter, so another class can still be chosen, and
+lists each bad class that ended on a repository on three or more of the last
+seven nights. A question about yesterday is a filter, not a report: no report
+file is ever generated. The filter is the page's query string, so a view is a
+link.
+
 The server runs while the command runs, started and stopped by a person
 (from a terminal on the host, which Orca's phone app reaches); nothing
 installs or keeps it running, so the dispatcher stays without a resident
@@ -949,8 +970,18 @@ process. It listens on the address the machine file names
 (`dashboard.listen`, no default), and refuses an address outside the
 private and loopback ranges, so no route into the host is opened beyond
 the network the host already trusts. The URL it prints carries a token
-minted at start, and a request without it is refused: the log names
+minted at start, and a request without it is refused: these records name
 repositories, items and accounts.
+
+Each read answers with its value or a coded failure with a reason for a person,
+and a bug is caught once around the routes and logged with its stack
+([ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)), so the page holds a code
+and a sentence, never a stack. It keeps the last data it read when the server
+stops answering, and shows nothing at all behind a refused token. The page is
+one HTML document the plugin carries, built from `dashboard/` on
+React, TanStack and Base UI, its script allowed by hash and able to reach only
+this server, since the text it shows comes from pull requests and its address
+holds the token.
 
 **Self-correction through the reflection loop.** A class that recurs is a
 finding about the scaffolding, not something the tick adjusts on its own.
