@@ -283,6 +283,10 @@ export function rerunAwaitsResult<
   T extends JobEvidence & { appId?: number | null },
 >(jobs: readonly T[], workflowRuns: readonly WorkflowRun[] | null): boolean {
   const kept = withoutRerunning(jobs, workflowRuns);
+  const startedOf = (suiteId: number | null | undefined): number => {
+    const run = (workflowRuns ?? []).find((r) => r.checkSuiteId === suiteId);
+    return run === undefined ? Number.NaN : Date.parse(run.startedAt);
+  };
   return jobs
     .filter((job) => !kept.includes(job))
     .some(
@@ -292,9 +296,7 @@ export function rerunAwaitsResult<
             k.name === job.name &&
             k.appId === job.appId &&
             k.conclusion === "success" &&
-            k.suiteId != null &&
-            job.suiteId != null &&
-            k.suiteId > job.suiteId,
+            startedOf(k.suiteId) > startedOf(job.suiteId),
         ),
     );
 }

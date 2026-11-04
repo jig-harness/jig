@@ -537,6 +537,27 @@ describe("evidence is dropped only when a successor supplies a result", () => {
     expect(verdict(runs, workflowRuns)).toBe("pending: unit");
   });
 
+  it("orders a rerun's replacement by run chronology, not suite id", () => {
+    const failed = job("unit", "failure", 40, { started: T1, completed: T2 });
+    const rerun = workflowRun(40, null, T3, { attempt: 2 });
+    expect(
+      rerunAwaitsResult(
+        [failed, job("unit", "success", 41)],
+        [rerun, workflowRun(41, "success", T1)],
+      ),
+    ).toBe(true);
+    const lowerRerun = workflowRun(41, null, T1, { attempt: 2 });
+    expect(
+      rerunAwaitsResult(
+        [
+          job("unit", "failure", 41, { started: T1, completed: T2 }),
+          job("unit", "success", 40),
+        ],
+        [lowerRerun, workflowRun(40, "success", T3)],
+      ),
+    ).toBe(false);
+  });
+
   it("does not explain two failures that started together as aggregators", () => {
     const workflowRuns = [workflowRun(40, "cancelled", T1)];
     const runs = [
