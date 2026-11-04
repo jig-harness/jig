@@ -793,24 +793,19 @@ function latestRefusals(records: ReadRecord[]): Set<string> {
  * change a pull request has been re-driven for keeps one.
  */
 function latestRedrives(records: ReadRecord[]): Set<string> {
-  const ids = new Set<string>();
-  const changes = new Set<string>();
-  for (const r of records)
-    if (isDrive(r.record) && r.record.redrive)
-      for (const c of redrivenChanges(r.record.redrive))
-        changes.add(`${r.record.repo}#${String(r.record.pr)}\0${c}`);
-  for (const key of changes)
-    for (const id of latestIdsBy(records, (r) =>
-      isDrive(r.record) &&
-      r.record.redrive &&
-      redrivenChanges(r.record.redrive).some(
-        (c) => `${r.record.repo}#${String(r.record.pr)}\0${c}` === key,
-      )
-        ? key
-        : null,
-    ))
-      ids.add(id);
-  return ids;
+  // One pass: the newest record naming each change, over its whole history.
+  const latest = new Map<string, ReadRecord>();
+  for (const r of records) {
+    if (!isDrive(r.record) || !r.record.redrive) continue;
+    const prefix = `${r.record.repo}#${String(r.record.pr)}\0`;
+    for (const c of redrivenChanges(r.record.redrive)) {
+      const key = prefix + c;
+      const seen = latest.get(key);
+      if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
+        latest.set(key, r);
+    }
+  }
+  return new Set([...latest.values()].map((r) => r.record.id));
 }
 
 /** The ids of the latest record under each key `keyOf` gives; a record it gives `null` is not kept. */
