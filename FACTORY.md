@@ -94,7 +94,9 @@ starts no stage twice. Then it starts:
   person answered.
 - **A [re-drive](GLOSSARY.md)** of each converged drive gone stale: its pull
   request now conflicts with its base, or its head moved past the head the
-  drive checked.
+  drive checked. A drive that stopped on a conflict it could not repair gets
+  one too, once for each state of its pull request and its base. A person hears
+  of it only if that re-drive stops the same way.
 - **The follow-up** after each merge, which settles what the merge owes.
 
 A tick reports what it would start, and why, before a team lets it start

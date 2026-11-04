@@ -456,13 +456,16 @@ async function liveDriver(pr: string): Promise<string | null> {
     : `a live driver already holds PR #${pr}${holder.diag?.worktree ? ` in ${holder.diag.worktree}` : ""}`;
 }
 
-/** This tree's session-lease fence, held while the attach moves it. */
-async function treeFence(pr: string): Promise<{ release(): void } | null> {
+/** This tree's session-lease fence, held while `label` moves it. */
+export async function treeFence(
+  pr: string,
+  label = "attach-pr.ts",
+): Promise<{ release(): void } | null> {
   // The fence reads the state directory, which a first drive has not made yet.
   mkdirSync(await resolveStateDir(), { recursive: true });
-  const ctx = await resolveFenceContext("attach-pr.ts");
+  const ctx = await resolveFenceContext(label);
   if (ctx === null) return null;
-  const lock = await assertTreeMutationAllowed(ctx, pr, "attach-pr.ts");
+  const lock = await assertTreeMutationAllowed(ctx, pr, label);
   return {
     release: () => {
       lock.release();

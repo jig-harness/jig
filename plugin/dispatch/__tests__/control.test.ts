@@ -164,6 +164,7 @@ describe("the outcome classifier", () => {
       [11, "refused"],
       [18, "refused"],
       [1, "gates failed"],
+      [9, "gates failed"],
       [12, "gates failed"],
       [99, "unknown"],
       [null, "died"],
@@ -173,6 +174,10 @@ describe("the outcome classifier", () => {
         code,
         cls,
       ]);
+    // The reason is what tells a conflict from the rest of its class.
+    expect(classifyEnded(exited(9), AT, NONE).reason).toBe(
+      "exit 9 (conflicting with its base)",
+    );
     expect(
       classifyEnded(exited(5), AT, { takenOver: false, merged: true }).class,
     ).toBe("merged");

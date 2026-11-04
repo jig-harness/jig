@@ -4,10 +4,9 @@
  * admitted account. For each one:
  *
  * 1. read the pull request and its ledger again, and go on only when its
- *    facts are the ones the plan acted on (for a re-drive of a stale
- *    converged drive, the pull request's head and mergeability too; for an
- *    arm its `drive` label asked for, still no ledger at the same head) and
- *    no `hold` label has appeared on it;
+ *    facts are the ones the plan acted on (for a re-drive, the change it acts
+ *    on too; for an arm its `drive` label asked for, still no ledger at the
+ *    same head) and no `hold` label has appeared on it;
  * 2. admit an account (accounts.ts), and check that the wrapper's
  *    environment resolves to that account's identity;
  * 3. use the workspace that holds the pull request, or open one named for
@@ -22,7 +21,12 @@
  * `--apply`.
  */
 import { admittedVendor } from "../accounts.ts";
-import { type LaunchRecord, newRecordId, newToken } from "../launches.ts";
+import {
+  type LaunchRecord,
+  newRecordId,
+  newToken,
+  redrivenChanges,
+} from "../launches.ts";
 import {
   type Dispatched,
   dispatched,
@@ -100,9 +104,47 @@ async function retryBlocked(
     record.facts,
   );
   if (read.class !== want) return `its ledger now reads ${read.class}`;
-  const moved = changedStale(record.redrive, read);
-  if (moved !== null) return moved;
+  // A stop on a conflict stands whatever moved since: its base moves often, and
+  // this record holds the pull request until its launch is replayed. The replay
+  // then acts on the change read now, so the record names that one, and keeps
+  // the one an earlier launch may already have acted on.
+  const blocked =
+    record.redrive?.conflictStop === true
+      ? replayedChange(state, record, read)
+      : changedStale(record.redrive, read);
+  if (blocked !== null) return blocked;
   return accountBlocked(state, record);
+}
+
+/**
+ * A record that stopped on a conflict acts on the change read now: it names
+ * that one and keeps the ones an earlier launch may have acted on. Why it must
+ * not, when a launch record (its own history included) already re-drove that
+ * change; `null` when it may.
+ */
+function replayedChange(
+  state: ApplyState,
+  record: LaunchRecord,
+  read: DrivenPr,
+): string | null {
+  const redrive = record.redrive;
+  if (redrive == null || read.stale === undefined) return null;
+  const change = read.stale.change;
+  if (change === redrive.change) return null;
+  const done = state.records.find(
+    (r) =>
+      r.record.repo === record.repo &&
+      r.record.pr === record.pr &&
+      r.record.redrive != null &&
+      redrivenChanges(r.record.redrive).includes(change),
+  );
+  if (done !== undefined)
+    return `launch record ${done.record.id} already re-drove the change it shows now`;
+  record.redrive = {
+    ...read.stale,
+    earlier: [...(redrive.earlier ?? []), redrive.change],
+  };
+  return null;
 }
 
 /** The class a launch acts on: a takeover's `silent`, a re-drive's `stale`, a labelled arm's `unarmed`, any other re-arm's `re-armable`. */
@@ -116,7 +158,7 @@ function wantedClass(
   return redrive == null ? "re-armable" : "stale";
 }
 
-/** Why a stale pull request no longer shows the change a re-drive acts on; `null` when it still does. */
+/** Why a pull request no longer shows the change a re-drive acts on; `null` when it still does. */
 function changedStale(
   redrive: StaleCause | null | undefined,
   fresh: DrivenPr,
