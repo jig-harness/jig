@@ -1914,7 +1914,8 @@ make, use the entry's term instead.
   and is never moved by hand. **Ready to merge** is its column of pull
   requests a person can merge now: the drive converged at the head it
   verified, the forge reports no conflict, it is not a draft, has no
-  unresolved review thread, and branch protection lets it merge. Planned:
+  unresolved review thread, and branch protection lets it merge, or would
+once a person approves it or updates its branch. Planned:
   [ROADMAP.md](ROADMAP.md) item 36.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
   it started ended, a table of its state database with a text copy of one

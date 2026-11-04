@@ -51,16 +51,19 @@ with others through the same interface.
 
 The dispatch dashboard becomes a board. Every pull request and item the
 dispatcher knows of, whoever drives it, sits in one column: coming, picking
-up, driven, needs you, ready to merge, or merged. Ready to merge holds only
+up, driven, needs you, ready to merge, or merged. Ready to merge leads with
 what a person can merge now: converged, checks green, no conflict, and
 allowed by the repository's branch protection. The work that unblocks others
 comes first, each with a merge command that refuses a pull request changed
-since it was verified. Every pull request shows the same status at a glance: conflicts,
-checks with the failing ones named, unresolved review threads, and whether
-it is ready, with the reason when not. Work moves in any direction, and a
-pull request that was ready and moved back says why. A person is told once
-when a pull request becomes ready, and the history shows how long ready
-work waited and how much was lost to waiting. Merging stays a person's.
+since it was verified. A pull request that needs only an approval stands
+beside them, naming who must approve or that nobody was asked. Every card
+says whether it settles by waiting or waits on a person. Every pull request
+shows the same status at a glance: conflicts, checks with the failing ones
+named, unresolved review threads, and whether it is ready, with the reason
+when not. Work moves in any direction, and a pull request that was ready and
+moved back says why. A person is told once when a pull request becomes
+ready, and the history shows how long ready work waited and how much was
+lost to waiting. Merging stays a person's.
 
 ### 35. One jig command line
 

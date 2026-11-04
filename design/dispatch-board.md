@@ -19,9 +19,10 @@ must open the forge's list of pull requests for the rest.
 With this built, the page's first view is a **board**: one card for each
 piece of work the dispatcher knows, in exactly one column (coming, picking
 up, driven, needs you, ready to merge, merged). The ready-to-merge column
-holds only pull requests a person can merge now: converged, green, and
-allowed by the forge, each with a merge command pinned to the head the drive
-verified. A card moves in any direction, because each tick places it again
+holds converged pull requests one person's act from the merge: merge now,
+each with a merge command pinned to the head the drive verified, or approve
+first, naming who must approve. Every card says whether it settles by
+waiting or waits on a person, and which act. A card moves in any direction, because each tick places it again
 from the records, and a card that moved back (a ready pull request that came
 to conflict, say) shows where it came from and why. The page says how long
 each ready pull request has waited, and the history view says how much
@@ -56,7 +57,7 @@ passes through them:
 | Picking up | an item a pickup session is working on, with no pull request yet | the pickup's launch record, the tracker |
 | Driven | a pull request whose drive runs: its ledger says running, on any machine | the ledger (`driven`, and `silent` marked as such) |
 | Needs you | a pull request or item stopped on something only a person settles: a park, a drive stopped on a failure, a stalled pickup, a double claim, a converged pull request the forge refuses to merge for a reason no drive fixes | the needs the line holds today, and the forge's merge state |
-| Ready to merge | a pull request a person can merge now ([§ Ready, exactly](#ready-exactly)) | the ledger and the pull request listing |
+| Ready to merge | a converged pull request one person's act from the merge, in three lanes: merge now, approve first, update first ([§ Ready, exactly](#ready-exactly)) | the ledger, the pull request listing, its checks and reviews |
 | Merged | a pull request merged since the start of the host's day, with its follow-up's state | the merged listing, the follow-up's launch record and marker |
 
 A drive a person stopped (`stopped-by-person`), and a pull request a person
@@ -75,7 +76,8 @@ it is an open pull request, and what the column needs said:
   reply drafts, the stop's reason verbatim.
 - **Ready to merge:** the head the drive verified, the merge state as the
   forge reported it at the tick, the pull requests waiting behind it in a
-  serialized area, and the merge command.
+  serialized area, and the act left: the merge command, or the reviewers
+  an approval waits on.
 - **Merged:** when it merged, and its follow-up: coming, running, done, or
   in Needs you when it failed.
 
@@ -96,17 +98,18 @@ hints do:
 | Conflicts | none, conflicting, behind, or not known yet | the forge's mergeability and merge state, and the base branch |
 | Checks | running (3 of 8 done), green, failing (2), or none | each failing check by name, linked to its run; the checks still running; whether each is required |
 | Threads | the number of unresolved review threads | how many are a reviewer bot's and how many a person's, linked to the pull request's conversation |
-| Merge | ready, needs an approval, behind, or not ready | the [Ready conditions](#ready-exactly) as a checklist, each met or not with the fact behind it |
+| Merge | merge now, approve first, update first, or not ready | the [Ready conditions](#ready-exactly) as a checklist, each met or not with the fact behind it, and for each one not met whether waiting settles it or which person's act does |
 
 The merge mark is the one derived state of the four: it is the board's own
 predicate, computed by the tick, and its checklist says which condition
 keeps a pull request out of Ready to merge, so "why is this not ready" is
 answered on the card. Every hint ends with the tick it was read at.
 
-The checks and threads are read for the pull requests on the board only,
-in one paged query per repository per tick (each pull request's head-commit
-check rollup and its review threads' resolution and authors), beside the
-listing the tick reads today.
+The checks, threads and reviews are read for the pull requests on the
+board only, in one paged query per repository per tick (each pull request's
+head-commit check rollup with which checks are required, its review
+threads' resolution and authors, its pending review requests and each
+reviewer's latest review), beside the listing the tick reads today.
 
 ### Ready, exactly
 
@@ -126,6 +129,17 @@ each read with the pull request:
 6. It has no unresolved review thread.
 7. It carries no `hold` label.
 
+Condition 2 is Jig's own, and no repository setting turns it off.
+Convergence is a claim about one head: the reviewer reviewed that head,
+and every thread and summary finding on it was settled. Branch protection
+cannot see that claim. A commit pushed after the drive converged can leave
+the forge's merge state `CLEAN`: the checks run green on it, and an
+approval survives unless the repository dismisses stale ones, while
+nothing reviewed the commit. A repository that makes its reviewer's check
+required gets part of condition 2 from the forge, never all of it. A head
+past the verified one is the stale class the tick re-drives today, so the
+card goes back to Coming with that cause.
+
 Conditions 1 to 3 are the tick's `done` class today; 4 and 5 are what
 `announce-merge-ready.ts` re-reads before it says a pull request is safe to
 merge, so the board and the drive's own announcement hold the same bar.
@@ -135,21 +149,47 @@ tick's open pull request listing already reads (`lib/forge.ts`); condition
 unresolved thread, so a thread there now was opened after it: someone
 reviewed the pull request since.
 
-A converged pull request that fails 4, 5 or 6 goes where its reason says:
+A converged pull request that fails 4, 5 or 6 goes where its reason says.
+The forge reports `BLOCKED` without saying why, so the tick reads the
+reason from the facts behind it, in this order:
 
-| The forge reports | Column | What the card says |
-| --- | --- | --- |
-| a draft | Needs you | converged as a draft: marking it ready summons the reviewers that skip drafts |
-| `BLOCKED`, `reviewDecision` `REVIEW_REQUIRED` or `CHANGES_REQUESTED` | Ready to merge, group "needs an approval" | branch protection wants an approving review first |
-| `BEHIND` | Ready to merge, group "behind its base" | the repository requires an up-to-date branch: updating moves its head, and the dispatcher re-drives it |
-| `UNSTABLE` | Needs you | a check failed after the drive converged |
-| `BLOCKED` for any other reason | Needs you | the forge blocks the merge, with its merge state |
-| (any state) an unresolved thread | Needs you | a thread was opened after the drive converged: answer it, or re-arm the drive to address it |
-| `UNKNOWN`, or mergeability `UNKNOWN` | the column it was in at the last tick, marked not read | the forge is still computing |
+| The forge reports | Column, lane | What the card says | Waits on |
+| --- | --- | --- | --- |
+| a draft | Needs you | converged as a draft: marking it ready summons the reviewers that skip drafts | a person: mark it ready |
+| an unresolved thread | Needs you | a thread was opened after the drive converged | a person: answer it, or re-arm the drive |
+| `BLOCKED`, `reviewDecision` `CHANGES_REQUESTED` | Needs you | who requested changes, and when | a person: that reviewer re-reviews, or the drive is re-armed to address it |
+| `BLOCKED`, `reviewDecision` `REVIEW_REQUIRED`, a review requested | Ready to merge, approve first | waits on an approval from the reviewers or teams requested, and since when | a person: one of them approves |
+| `BLOCKED`, `reviewDecision` `REVIEW_REQUIRED`, no review requested | Ready to merge, approve first | needs an approval and nobody is asked for one; its author cannot approve it | a person: request a review |
+| `BLOCKED`, a required check running | the column it was in | the required checks still running | waiting |
+| `BLOCKED` or `UNSTABLE`, a check failing | Needs you | a check failed after the drive converged, by name, linked to its run | a person: re-run it, or re-arm the drive |
+| `BLOCKED` for none of these | Needs you | the forge blocks the merge on a rule the board cannot tell (signed commits, a deployment, a merge queue): open the pull request | a person |
+| `BEHIND` | Ready to merge, update first | the repository requires an up-to-date branch; updating moves its head, and the dispatcher re-drives it | a person: update the branch |
+| `UNKNOWN`, or mergeability `UNKNOWN` | the column it was in, marked not read | the forge is still computing | waiting |
 
-The approval and behind groups are in Ready to merge because the next act
-in both is a person's at the merge (an approval, an update), but they sit
-below the pull requests that merge now, and carry no merge command.
+Ready to merge therefore holds three lanes, each named for the one act left
+before the merge: **merge now** (every condition holds), **approve first**
+and **update first**. All three are a person's, and only merge now carries
+the merge command.
+
+### What each card waits on
+
+The board's most useful signal is the difference between work that
+settles if left alone and work that waits until a person acts. A drive
+that is running, checks that are running, a forge still computing, a slot
+about to free and a pull request held behind its area's leader all settle
+by themselves. An approval nobody gave, a park, a failed check after
+convergence and a draft do not: left alone they wait forever, and the line
+behind them waits with them.
+
+So the tick gives every card a `waitsOn`: `waiting`, with what it waits
+for, or `person`, with the act that settles it (merge, approve, request a
+review, update the branch, answer, re-arm, re-run a check, mark ready).
+The act is in the table above for a converged pull request, and is the
+stop's own for a card in Needs you. A card that waits on a person is
+marked so wherever it is, its act named on its face rather than in a hint,
+and those cards are what the strip's counts add up. A card that waits
+for something already running says what, and says nothing is asked of
+anyone.
 
 The page shows a tick's facts, minutes old, and a person acts on them, so
 the merge never rests on that read. The merge command the card offers is
@@ -168,11 +208,12 @@ forge's own merge button does the same checks.
 
 ### The order within Ready to merge
 
-Each merge should release as much waiting work as it can, so the column
-lists, first, the pull requests that others wait behind in a serialized
-area (the card says "unblocks #12, #14"), then the rest by how long each has
-been ready, the longest first: the longest wait has had the most time to
-drift from its base. The groups that cannot merge now follow.
+The lanes stand in the order of the work they ask, merge now first. Each
+merge should release as much waiting work as it can, so within a lane come,
+first, the pull requests that others wait behind in a serialized area (the
+card says "unblocks #12, #14"), then the rest by how long each has been in
+the lane, the longest first: the longest wait has had the most time to
+drift from its base.
 
 ### A card moves in any direction
 
@@ -184,7 +225,8 @@ forwards. The moves a person meets:
 | --- | --- |
 | Driven → Ready to merge | the drive converged, the checks are green and the forge allows the merge |
 | Ready to merge → Coming or Driven | the base came to conflict, or its head moved past the verified head: the dispatcher re-drives it (the stale class today) |
-| Ready to merge → Needs you | a check failed after convergence, the forge blocks the merge, it became a draft, or its re-drive stopped |
+| Ready to merge → Needs you | a check failed after convergence, a reviewer requested changes or opened a thread, the forge blocks the merge, it became a draft, or its re-drive stopped |
+| Approve first → Merge now | a requested reviewer approved |
 | Ready to merge → Merged | a person merged it |
 | Driven → Needs you | the drive parked or stopped |
 | Needs you → Coming → Driven | the park was answered and the drive is re-armed |
@@ -205,9 +247,11 @@ today: the board never moves a card on a guess.
 
 ### What the page says first
 
-The strip's Now tab carries two counts, "3 to merge · 2 to answer", and the
-answer at the top of the view leads with the merge queue when it holds
-anything: "3 pull requests are ready to merge; the oldest has waited 5 h."
+The strip's Now tab carries the counts of cards that wait on a person, by
+act: "3 to merge · 1 to approve · 2 to answer". The answer at the top of
+the view leads with the merge queue when it holds anything: "3 pull
+requests are ready to merge, the oldest for 5 h; 1 waits on an approval
+nobody was asked for."
 On a phone the columns stack, Ready to merge first, then Needs you, Driven,
 Picking up, Coming and Merged, each folded to its count beyond its first
 cards. On a wide screen the six columns stand side by side in the order work
@@ -225,17 +269,21 @@ it armed says so.
 
 ### Telling a person, and the dispatch labels
 
-A pull request entering Ready to merge is notified once per pull request
-and verified head, through the notifications the tick sends today, with one
-message per tick and repository naming every pull request that became
-ready ("Ready to merge in owner/name: #451, #452"). Its suppression record
-is keyed by the pull request and the head, so a pull request that leaves
-and comes back at a new head is notified again, and one that flickers on a
-forge read is not. The cause is `ready`, added to the notification causes.
+A pull request entering a lane of Ready to merge is notified once per pull
+request, verified head and lane, through the notifications the tick sends
+today, with one message per tick and repository naming every pull request
+that entered one, by lane ("Ready to merge in owner/name: #451, #452.
+Waiting on an approval: #453, nobody asked"). Its suppression record is
+keyed by the pull request, the head and the lane, so a pull request that
+leaves and comes back at a new head is notified again, and one that
+flickers on a forge read is not. The cause is `ready`, added to the
+notification causes. The forge already tells the reviewers it requested;
+this message tells the person the dispatcher reaches, who is the one to
+chase an approval or ask for one.
 
 Where a repository turns dispatch labels on, the `converged` state label
 follows the column: it is on a pull request while it is in Ready to merge
-and its merge-now group, so the forge's list filtered by that label is the
+and its merge-now lane, so the forge's list filtered by that label is the
 same queue.
 
 ### What waiting cost
@@ -243,15 +291,16 @@ same queue.
 The outcome log gains two event rows, each written once per cause as event
 rows are today:
 
-- **became ready**, keyed by the pull request and its verified head, when
-  a card enters Ready to merge's merge-now group;
+- **became ready**, keyed by the pull request, its verified head and the
+  lane, when a card enters a lane of Ready to merge;
 - **left ready**, keyed the same way, when it leaves, with the cause as the
   reason (`merged`, `conflicting`, `head moved`, `check failed`, `blocked`,
   `draft`, `closed`) and the time it was ready as its duration.
 
 The history view counts, over its window, the pull requests that became
-ready, those merged, the median wait from ready to merged, and the ready
-work lost: left ready for anything but a merge, by cause. Those are the
+ready, those merged, the median wait from ready to merged split by lane
+(waiting to be merged, waiting on an approval), and the ready work lost:
+left ready for anything but a merge, by cause. Those are the
 numbers that say whether merging often is keeping the line moving.
 
 ### The line grows one list
@@ -260,8 +309,9 @@ numbers that say whether merging often is keeping the line moving.
 group, the time it entered the column, its previous column with the time
 and cause of the move, the reason verbatim, its driver, and, for Ready to
 merge, the verified head, the merge state, the review decision, the method
-and the pull requests it unblocks, and for every open pull request the
-status row's facts. Each card names the need, session or
+and the pull requests it unblocks, its lane and the reviewers it waits on;
+for every open pull request the status row's facts; and for every card its
+`waitsOn`. Each card names the need, session or
 queue entry it was placed from, so the decisions and reply drafts the page
 shows today hang off the card unchanged. A line written by a tick from
 before the board has no `board`, and the page says the board appears at the
@@ -277,8 +327,10 @@ next tick rather than placing cards itself.
    each card's column history; `jig dispatch`'s report lists the merge
    queue; the `converged` label follows the column. Done when a tick over a
    repository with a converged, green, mergeable pull request reports it in
-   Ready to merge with its pinned command and its status row, one with a
-   failing check carries the check's name and run, and one whose base then
+   Ready to merge with its pinned command and its status row, one blocked
+   on a required review is in approve first naming the reviewers requested
+   or saying nobody was, one with a failing check carries the check's name
+   and run, and one whose base then
    conflicts is placed in Coming at the next tick with "was ready" and the
    cause.
 2. **The design round.** A brief from
@@ -313,6 +365,12 @@ next tick rather than placing cards itself.
   request's files), and an update moves the head, which the dispatcher
   already re-drives. The forge's merge queue is the tool for such a
   repository; the board shows these pull requests in their own group.
+- **Accepting a head the drive did not verify.** A head that differs from
+  the verified one only by a clean merge of the base might keep the drive's
+  verification, which would spare a repository that requires up-to-date
+  branches a re-drive of every ready pull request after each merge. Whether
+  it is safe is a question for the drive's convergence contract, not the
+  board, which reads the drive's verdict and never widens it.
 - **Ordering the queue by predicted conflict.** Knowing which ready pull
   requests touch the same files as others would need a file read per pull
   request each tick; the serialized areas already name the contention a

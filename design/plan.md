@@ -132,9 +132,12 @@ pull request listing (`isDraft`, `mergeStateStatus`, `reviewDecision`)
 plus one query per repository for each pull request's checks and review
 threads; every pull request card carries the same status row (conflicts,
 checks, unresolved threads, and the derived merge state with its
-conditions as a checklist); Ready to merge holds only what a person can
-merge now, ordered by what it unblocks then by wait, each with a merge
-command pinned to the verified head; a card moves in any direction and
+conditions as a checklist); every card says whether it settles by waiting
+or waits on a person, and which act; Ready to merge holds converged pull
+requests one person's act from the merge (merge now, with a merge command
+pinned to the verified head; approve first, naming the reviewers requested
+or that nobody was; update first), ordered by what each unblocks then by
+wait; a card moves in any direction and
 says where it came from when it moved back; a pull request that becomes
 ready is notified once per head; and the outcome log records when work
 became ready and why it left. Built in the design's order: the tick's
@@ -142,7 +145,9 @@ placement, a design round, the page, then notifications and the history.
 
 Done when, on a host running Orca, a converged pull request with green
 checks that the forge lets merge is in Ready to merge with its pinned
-command within one interval and reaches a person's phone once, one whose
+command within one interval and reaches a person's phone once, one
+blocked on a required review is in approve first naming who must approve,
+one whose
 base then conflicts is placed back with "was ready" and the cause at the
 next tick, a drive a person armed by hand shows in Driven, every pull
 request card shows its conflicts, checks, threads and merge state with the
