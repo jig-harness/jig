@@ -22,6 +22,7 @@ import {
   type RowView,
 } from "./log-view.ts";
 import { Mark, StageChip } from "./marks.tsx";
+import { stageMeaning } from "./status.ts";
 
 const PAGE = 25;
 
@@ -52,7 +53,11 @@ const columns = helper.columns([
       <span className="cell-tgt">
         <span className="m">{row.original.target}</span>
         <span className="m mut">{row.original.repo}</span>
-        <StageChip mark={row.original.mark} stage={row.original.stage} />
+        <StageChip
+          mark={row.original.mark}
+          stage={row.original.stage}
+          title={stageMeaning(row.original.stage)}
+        />
       </span>
     ),
   }),

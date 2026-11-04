@@ -38,8 +38,8 @@ export interface NeedView {
   url: string | null;
   goLabel: string | null;
   noLink: string | null;
-  /** What Copy answer line takes. */
-  answerLine: string | null;
+  /** The decision keys a person answers, each with a line `answer <key>: …`. */
+  answerKeys: string[];
   /** What Copy key takes when there is no link. */
   keyText: string | null;
   foldLabel: string;
@@ -134,7 +134,7 @@ export function needView(n: LineNeed, clockNow: Clock): NeedView {
       n.url === null
         ? `No tracker link: this repository has no tracker base. Look up ${n.target} in the tracker.`
         : null,
-    answerLine: first === undefined ? null : `answer ${first.key}: `,
+    answerKeys: [...new Set(n.decisions.map((d) => d.key))],
     keyText: n.url === null ? n.target : null,
     foldLabel: decision === null ? "Details" : "The whole decision",
     evidence: needEvidence(n, question !== null, clockNow.timeZone),

@@ -68,8 +68,10 @@ describe("a park", () => {
     expect(view.goLabel).toBe("Answer on the pull request");
   });
 
-  it("gives the answer line with the option left blank", () => {
-    expect(needView(park, CLOCK).answerLine).toBe("answer PRRT_x1: ");
+  it("names each decision key a person answers, once", () => {
+    expect(needView(park, CLOCK).answerKeys).toEqual(["PRRT_x1"]);
+    const twice = { ...park, decisions: [FRAMED, FRAMED] };
+    expect(needView(twice, CLOCK).answerKeys).toEqual(["PRRT_x1"]);
   });
 
   it("joins each decision's lines for the fold, and Copy decision takes the same text", () => {
@@ -169,7 +171,7 @@ describe("a need's words", () => {
       "No tracker link: this repository has no tracker base. Look up WEB-1 in the tracker.",
     );
     expect(view.keyText).toBe("WEB-1");
-    expect(view.answerLine).toBeNull();
+    expect(view.answerKeys).toEqual([]);
   });
 
   it("words an assigner who cannot write", () => {

@@ -5,7 +5,7 @@ import type {
 } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { fixture } from "../fixtures.ts";
 import type { ReadFailure } from "./api.ts";
-import { lastReadLead, pageStrip, pageView, readLine } from "./page-view.ts";
+import { lastReadLead, pageFresh, pageView, readLine } from "./page-view.ts";
 import type { Read, StateRead } from "./reads.ts";
 
 const SAID = "2026-11-03T16:47:30.000Z";
@@ -56,9 +56,9 @@ describe("the page before the server answered", () => {
   });
 
   it("says nothing of a tick, and has not read", () => {
-    expect(pageStrip(view)).toEqual({
-      main: "Newest tick not known",
-      sub: "",
+    expect(pageFresh(view)).toEqual({
+      short: "Not read yet",
+      detail: ["The page has not read the host yet."],
       alarm: false,
     });
     expect(readLine(view)).toBe("not read");
@@ -67,10 +67,7 @@ describe("the page before the server answered", () => {
 
   it("says the server is gone when it never answered", () => {
     const gone = pageView(stateOf(null, GONE), NO_ROWS, 0);
-    expect(pageStrip(gone)).toMatchObject({
-      sub: "server not answering",
-      alarm: true,
-    });
+    expect(pageFresh(gone)).toMatchObject({ short: "Not read", alarm: true });
   });
 });
 
@@ -94,7 +91,15 @@ describe("the page with an answer", () => {
       "read 16:47 host time; reads every 60 s and on focus",
     );
     expect(lastReadLead(view)).toBe("Last read 16:47; ");
-    expect(pageStrip(view).main).toBe("Tick 16:45, 2 min ago");
+    expect(pageFresh(view)).toEqual({
+      short: "Updated 2 min ago",
+      detail: [
+        "Every panel shows what the 16:45 tick found, host time.",
+        "The next tick is due 16:50.",
+        "The page read the host at 16:47 and reads again every 60 s and on focus.",
+      ],
+      alarm: false,
+    });
   });
 
   it("says so when the server does not name its version", () => {

@@ -9,7 +9,6 @@ import { fixture } from "../fixtures.ts";
 import { ROLES } from "./status.ts";
 import {
   accountView,
-  asOfOf,
   type Clock,
   isOverdue,
   isStuck,
@@ -19,7 +18,7 @@ import {
   sessionKind,
   slotSummary,
   slotView,
-  stripOf,
+  freshOf,
   timerBanner,
 } from "./view.ts";
 
@@ -251,13 +250,15 @@ describe("which sessions are not moving", () => {
 describe("staleness", () => {
   const line = lineOf("quiet");
 
-  it("is the tick and when the next is due", () => {
-    expect(stripOf(line, CLOCK, false)).toEqual({
-      main: "Tick 16:45, 2 min ago",
-      sub: "next due 16:50",
+  it("is how old the tick is, and when the next is due", () => {
+    expect(freshOf(line, CLOCK, false)).toEqual({
+      short: "Updated 2 min ago",
+      detail: [
+        "Every panel shows what the 16:45 tick found, host time.",
+        "The next tick is due 16:50.",
+      ],
       alarm: false,
     });
-    expect(asOfOf(line, "UTC")).toBe("as of the 16:45 tick");
   });
 
   it("alarms only past the interval plus the longest tick", () => {
@@ -266,10 +267,13 @@ describe("staleness", () => {
     expect(isOverdue(line, edge)).toBe(false);
     expect(isOverdue(line, edge + 1)).toBe(true);
     expect(
-      stripOf(line, { nowMs: edge + 60_000, timeZone: "UTC" }, false),
+      freshOf(line, { nowMs: edge + 60_000, timeZone: "UTC" }, false),
     ).toEqual({
-      main: "Tick 16:45, 8 min ago",
-      sub: "next was due 16:50, overdue 3 min",
+      short: "Updated 8 min ago · overdue",
+      detail: [
+        "Every panel shows what the 16:45 tick found, host time.",
+        "The next tick was due 16:50; it is 3 min overdue.",
+      ],
       alarm: true,
     });
   });
@@ -285,24 +289,23 @@ describe("staleness", () => {
   });
 
   it("says when the server is not answering, and alarms", () => {
-    expect(stripOf(line, CLOCK, true)).toEqual({
-      main: "Tick 16:45, 2 min ago",
-      sub: "server not answering",
+    expect(freshOf(line, CLOCK, true)).toMatchObject({
+      short: "Updated 2 min ago · offline",
       alarm: true,
     });
   });
 
   it("has no tick to name before the first", () => {
-    expect(stripOf(null, CLOCK, false)).toEqual({
-      main: "No tick yet",
-      sub: "no receipt on this host",
+    expect(freshOf(null, CLOCK, false)).toMatchObject({
+      short: "No tick yet",
       alarm: false,
     });
-    expect(asOfOf(null, "UTC")).toBe("no tick yet");
   });
 
   it("names the tick in the host's zone", () => {
-    expect(asOfOf(line, "Asia/Tokyo")).toBe("as of the 01:45 tick");
+    expect(
+      freshOf(line, { ...CLOCK, timeZone: "Asia/Tokyo" }, false).detail[0],
+    ).toBe("Every panel shows what the 01:45 tick found, host time.");
   });
 });
 
