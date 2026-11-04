@@ -254,7 +254,7 @@ under this key: at most one launch more. The serialized areas' holds and a
 person's `hold` label keep a re-drive off as they keep any re-arm, and a person's
 stop is never re-armed.
 
-A headless Claude pass can commit only where its approval source allows it: a permission mode `drive.pass_args` names, or an allow rule of Claude Code's own settings (`--allowedTools`, `permissions.allow`). A host opts in through its user layer, and a repository's own file takes precedence over it. Where nothing allows the commit, a conflict re-drive stops `9` again at the same change and the dispatcher notifies a person.
+A headless Claude pass can commit only where its approval source allows it: a permission mode `drive.pass_args` names, or an allow rule of Claude Code's own settings (`--allowedTools`, `permissions.allow`). Only a host's user file or one run's environment sets it; a repository's own file that sets it stops the drive. Where nothing allows the commit, a conflict re-drive stops `9` again at the same change and the dispatcher notifies a person.
 
 A conflict-resolve pass does not leave its merge behind: a merge it started and
 did not conclude is aborted before the drive re-gates or stops
