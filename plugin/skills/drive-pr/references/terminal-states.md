@@ -1496,10 +1496,13 @@ false "green":
   the same workflow on the head, started no earlier, has completed with a
   result: by start time, because a concurrency group can cancel the higher run
   id in favour of a lower one started in the same second; with a job that
-  ran, because a run that skipped everything has looked at nothing. A failed
-  job in a cancelled run reads the same only when it started after a job of that
-  run was cancelled and every failed job there did; one that started earlier
-  failed on its own. With the workflow runs unreadable nothing is dropped and
+  ran, because a run that skipped everything has looked at nothing. A cancelled
+  job stays unknown when the replacing run reports its name as skipped. A
+  failed job in a cancelled run reads the same only when it started strictly
+  after a job of that run was cancelled and after every other job of the run
+  had completed, as an aggregator over them does, and every failed job there
+  did; one that could have run beside another failed on its own. A run being
+  re-run witnesses nothing through its failed jobs until it completes. With the workflow runs unreadable nothing is dropped and
   nothing explained: a cancelled check stays unknown and a failed one fails.
 
 ### 10. A finding marked answered by someone who cannot merge

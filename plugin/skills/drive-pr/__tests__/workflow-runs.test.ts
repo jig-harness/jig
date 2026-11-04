@@ -22,6 +22,7 @@ import {
 } from "../scripts/lib/status/evidence.ts";
 import {
   type WorkflowRun,
+  withoutRerunning,
   withoutSuperseded,
 } from "../scripts/lib/status/workflow-runs.ts";
 
@@ -220,6 +221,20 @@ describe("a cancelled check never reads as passing", () => {
     }
   });
 
+  it("stays unknown when the replacing run skipped the cancelled job", () => {
+    const runs = [
+      job("tests", "cancelled", 40),
+      job("lint", "success", 41),
+      job("tests", "skipped", 41),
+    ];
+    expect(
+      verdict(runs, [
+        workflowRun(40, "cancelled"),
+        workflowRun(41, "success", T4),
+      ]),
+    ).toBe("cancelled: tests");
+  });
+
   it("stays unknown when the workflow runs cannot be read, or there is none", () => {
     const runs = [job("gates", "cancelled", 40), job("gates", "success", 41)];
     // Unreadable: nothing is dropped, and the check runs read on their own.
@@ -238,8 +253,8 @@ describe("an aggregator that fails on cancelled needs", () => {
   const cancelledRun = workflowRun(40, "cancelled");
   const need = () =>
     job("suite", "cancelled", 40, { started: T1, completed: T2 });
-  const aggregator = (started = T2) =>
-    job("gates", "failure", 40, { started, completed: T3 });
+  const aggregator = (started = T3) =>
+    job("gates", "failure", 40, { started, completed: T4 });
 
   it("is the same absence of evidence when its run was cancelled", () => {
     const runs = [need(), aggregator()];
@@ -281,6 +296,20 @@ describe("an aggregator that fails on cancelled needs", () => {
 
   it("stays a failure when the runs cannot be read", () => {
     expect(verdict([need(), aggregator()], null)).toBe("failing: gates");
+  });
+
+  it("stays a failure when it could have run beside a cancelled job", () => {
+    // Same-second starts and completions cannot be ordered.
+    expect(verdict([need(), aggregator(T2)], [cancelledRun])).toBe(
+      "failing: gates",
+    );
+  });
+
+  it("stays a failure when another job of the run completed after it started", () => {
+    const late = job("cleanup", "success", 40, { started: T1, completed: T4 });
+    expect(verdict([need(), late, aggregator()], [cancelledRun])).toBe(
+      "failing: gates",
+    );
   });
 
   it("does not explain a timed-out job", () => {
@@ -393,5 +422,16 @@ describe("createdUnderHold", () => {
     expect(
       failedRunsField([{ id: 41, createdAt: T0 }, { id: "42" }, null]),
     ).toEqual([{ id: 41, createdAt: T0 }]);
+  });
+});
+
+describe("a run being re-run", () => {
+  it("witnesses nothing through its failed jobs, and keeps its passing ones", () => {
+    const rerun = workflowRun(41, null, T2, { attempt: 2 });
+    const runs = [job("tests", "failure", 41), job("lint", "success", 41)];
+    expect(withoutRerunning(runs, [rerun]).map((r) => r.name)).toEqual([
+      "lint",
+    ]);
+    expect(withoutRerunning(runs, null)).toEqual(runs);
   });
 });

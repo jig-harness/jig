@@ -55,6 +55,7 @@ import {
   hasNonReviewerCi,
 } from "./lib/status/evidence.ts";
 import {
+  withoutRerunning,
   withoutSuperseded,
   workflowRunsBehind,
 } from "./lib/status/workflow-runs.ts";
@@ -798,9 +799,16 @@ async function finalCiProofGreen(
   if (allRuns === null) return { ok: false };
   // A cancelled run another run replaced proves nothing about a required
   // check, however its check-run ids interleave with the replacement's.
-  const runs = withoutSuperseded(
+  const workflowRuns = await workflowRunsBehind(
+    "{owner}",
+    "{repo}",
+    head,
     allRuns,
-    await workflowRunsBehind("{owner}", "{repo}", head, allRuns),
+  );
+  // A run being re-run has its failed jobs replaced: they witness nothing.
+  const runs = withoutRerunning(
+    withoutSuperseded(allRuns, workflowRuns),
+    workflowRuns,
   );
   const required = policy.requiredChecks;
   const apps = policy.requiredApps;

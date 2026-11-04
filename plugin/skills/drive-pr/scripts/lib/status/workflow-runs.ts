@@ -45,6 +45,8 @@ export interface WorkflowRun {
 
 /** What a check run has to say for its run to be read. */
 export interface JobEvidence {
+  /** The check's name; absent when the reading does not need it. */
+  name?: string;
   status: string;
   conclusion: string | null;
   /** The check suite of the run it belongs to; absent when it names none. */
@@ -181,27 +183,56 @@ function hasResult(run: WorkflowRun, jobs: readonly JobEvidence[]): boolean {
 function replacedSuites(
   jobs: readonly JobEvidence[],
   workflowRuns: readonly WorkflowRun[],
-): Set<number> {
-  const replaced = new Set<number>();
+): Map<number, number[]> {
+  const replaced = new Map<number, number[]>();
   for (const run of workflowRuns) {
     if (run.status !== "completed" || run.conclusion !== "cancelled") continue;
     const started = Date.parse(run.startedAt);
-    const successor = workflowRuns.some(
+    const successors = workflowRuns.filter(
       (other) =>
         other.id !== run.id &&
         other.workflowId === run.workflowId &&
         Date.parse(other.startedAt) >= started &&
         hasResult(other, jobs),
     );
-    if (successor) replaced.add(run.checkSuiteId);
+    if (successors.length > 0)
+      replaced.set(
+        run.checkSuiteId,
+        successors.map((other) => other.checkSuiteId),
+      );
   }
   return replaced;
+}
+
+/**
+ * A cancelled job whose successor run reports the same name without a result
+ * (it skipped): that job answers nothing, so the cancellation stays unknown.
+ */
+function answeredBySkip(
+  job: JobEvidence,
+  successors: readonly number[],
+  jobs: readonly JobEvidence[],
+): boolean {
+  if (job.name === undefined || job.conclusion !== "cancelled") return false;
+  return jobs.some(
+    (other) =>
+      other.name === job.name &&
+      other.suiteId !== undefined &&
+      other.suiteId !== null &&
+      successors.includes(other.suiteId) &&
+      !(
+        other.status === "completed" &&
+        other.conclusion !== null &&
+        RESULT_CONCLUSIONS.has(other.conclusion)
+      ),
+  );
 }
 
 /**
  * `jobs` less those of a cancelled run another run has replaced, whatever the
  * name: a run cancelled before its matrix expanded leaves a check named after
  * the unexpanded template, which no later run ever reports under that name.
+ * A cancelled job stays when the replacing run reports its name as skipped.
  */
 export function withoutSuperseded<T extends JobEvidence>(
   jobs: readonly T[],
@@ -209,11 +240,28 @@ export function withoutSuperseded<T extends JobEvidence>(
 ): T[] {
   if (workflowRuns === null) return [...jobs];
   const replaced = replacedSuites(jobs, workflowRuns);
+  return jobs.filter((job) => {
+    if (job.suiteId === undefined || job.suiteId === null) return true;
+    const successors = replaced.get(job.suiteId);
+    return successors === undefined || answeredBySkip(job, successors, jobs);
+  });
+}
+
+/**
+ * `jobs` less the unsuccessful ones of a run being re-run: the re-run replaces
+ * them, so until it completes they witness nothing.
+ */
+export function withoutRerunning<T extends JobEvidence>(
+  jobs: readonly T[],
+  workflowRuns: readonly WorkflowRun[] | null,
+): T[] {
+  const rerunning = rerunningSuites(workflowRuns);
   return jobs.filter(
     (job) =>
       job.suiteId === undefined ||
       job.suiteId === null ||
-      !replaced.has(job.suiteId),
+      !rerunning.has(job.suiteId) ||
+      (job.conclusion !== null && PASSING_CONCLUSIONS.has(job.conclusion)),
   );
 }
 
@@ -223,7 +271,8 @@ export function withoutSuperseded<T extends JobEvidence>(
  * and fails on their result. A failed job counts only when it started after a
  * job of its run was cancelled, and only when every failed job of that run
  * did: one that started earlier failed on its own, so it is a real failure,
- * and an aggregator beside it failed for a real reason too. Nothing is
+ * and an aggregator beside it failed for a real reason too. A job that may
+ * have run beside another job of its run is not an aggregator. Nothing is
  * explained in a run that was not cancelled.
  */
 export function failuresExplainedByCancellation(
@@ -247,11 +296,19 @@ export function failuresExplainedByCancellation(
         job.conclusion !== "cancelled" &&
         !PASSING_CONCLUSIONS.has(job.conclusion),
     );
-    const allAfter = failed.every(
-      (job) =>
+    // Timing is the only evidence of a dependency, so it must leave no
+    // doubt: the job started strictly after every other job of its run had
+    // completed, as an aggregator over all of them does. A job that could
+    // have run beside another stays a failure.
+    const others = own.filter((job) => !failed.includes(job));
+    const allAfter = failed.every((job) => {
+      const startedAt = Date.parse(job.started ?? "");
+      return (
         job.conclusion === "failure" &&
-        Date.parse(job.started ?? "") >= firstCancelled,
-    );
+        startedAt > firstCancelled &&
+        others.every((other) => Date.parse(other.completed ?? "") < startedAt)
+      );
+    });
     if (allAfter) for (const job of failed) explained.add(job.id);
   }
   return explained;

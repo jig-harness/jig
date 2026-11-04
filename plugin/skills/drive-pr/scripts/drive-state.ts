@@ -294,6 +294,7 @@ import {
   hasNonReviewerCi,
 } from "./lib/status/evidence.ts";
 import {
+  withoutRerunning,
   withoutSuperseded,
   workflowRunsBehind,
 } from "./lib/status/workflow-runs.ts";
@@ -1647,7 +1648,10 @@ async function main(): Promise<number> {
             a.sha,
             allRuns,
           );
-          runs = withoutSuperseded(runs, workflowRuns);
+          runs = withoutRerunning(
+            withoutSuperseded(runs, workflowRuns),
+            workflowRuns,
+          );
           const apps = policy.requiredApps;
           const attributed =
             settledHold !== null
