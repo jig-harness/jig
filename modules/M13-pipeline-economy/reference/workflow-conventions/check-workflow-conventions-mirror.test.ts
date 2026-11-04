@@ -194,6 +194,8 @@ test("a job may read the pull request's state and other contexts", () => {
     "needs.build.outputs.github == 'true'",
     "toJSON(needs.github) != ''",
     "needs['github'].result == 'success'",
+    "inputs.use-github == 'true'",
+    "needs.build.outputs['use-github'] == 'true'",
   ])
     exits(
       run(["--root", mirrored({ e2eIf: `${HEAVY_IF} && ${term}` })]),

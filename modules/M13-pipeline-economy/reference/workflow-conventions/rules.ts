@@ -471,15 +471,16 @@ export function ciHold(pipelines: Pipelines): Found[] {
  * started the run; anything else the event carries can differ between a label
  * event and a push. An index (`github['event']['action']`) reads as a property;
  * other quoted text is no read, nor is a property of another context that is
- * named `github` (`inputs.github`); names compare in any case. */
+ * named `github` or ends in it (`inputs.github`, `inputs.use-github`); names
+ * compare in any case. */
 function readsEvent(term: string): boolean {
   const text = term
     .replace(/\[\s*'([A-Za-z_][\w-]*)'\s*\]/g, ".$1")
     .replace(/'[^']*'/g, "''");
   return (
-    /(?<!\.\s*)(?<!\w)github\s*\.\s*event\b(?!\s*\.\s*pull_request\b)/i.test(
+    /(?<!\.\s*)(?<![\w-])github\s*\.\s*event\b(?!\s*\.\s*pull_request\b)/i.test(
       text,
-    ) || /(?<!\.\s*)(?<!\w)github\b(?!\s*\.)/i.test(text)
+    ) || /(?<!\.\s*)(?<![\w-])github\b(?!\s*\.)/i.test(text)
   );
 }
 
