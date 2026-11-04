@@ -1,3 +1,14 @@
+import { parse } from "@babel/parser";
+import {
+  isIdentifier,
+  isMemberExpression,
+  isStringLiteral,
+  isTaggedTemplateExpression,
+  isTemplateLiteral,
+  type TemplateLiteral,
+  traverseFast,
+} from "@babel/types";
+
 /** Literal text and the original source line for each character. */
 export interface SqlSource {
   text: string;
@@ -25,124 +36,81 @@ function escapeValue(raw: string): string {
   return ESCAPES[code] ?? code;
 }
 
-/** Read source literals separately from surrounding code and comments. */
-class Literals {
-  private at = 0;
-  private line = 1;
-  readonly found: SqlSource[] = [];
-  private readonly source: string;
-
-  constructor(source: string) {
-    this.source = source;
-  }
-
-  private take(raw: string): void {
-    this.at += raw.length;
-    this.line += raw.split("\n").length - 1;
-  }
-
-  private trivia(): boolean {
-    const match = /^(?:\s+|\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$))/.exec(
-      this.source.slice(this.at),
-    );
-    if (!match) return false;
-    this.take(match[0]);
-    return true;
-  }
-
-  /** Interpolations return at their balanced closing brace; nested literals remain visible. */
-  code(interpolation = false): void {
-    let depth = 0;
-    const recent: string[] = [];
-    const controlParens: boolean[] = [];
-    while (this.at < this.source.length) {
-      if (this.trivia()) continue;
-      const char = this.source[this.at] as string;
-      if (interpolation && char === "}" && depth === 0) {
-        this.take(char);
-        return;
-      }
-      const word = this.contextToken(recent, controlParens);
-      if (word === "{") depth++;
-      if (word === "}") depth--;
-      recent.push(word);
-    }
-  }
-
-  /** A control condition closes before a statement; a call closes an expression. */
-  private contextToken(recent: string[], controlParens: boolean[]): string {
-    const word = this.token(recent);
-    if (word === "(")
-      controlParens.push(
-        /^(?:if|while|for|with|switch|catch)$/.test(recent.at(-1) ?? ""),
-      );
-    return word === ")" && controlParens.pop() ? "control)" : word;
-  }
-
-  private token(recent: string[]): string {
-    const char = this.source[this.at] as string;
-    if (['"', "'", "`"].includes(char)) {
-      this.literal(char, recent.slice(-3).join("") === "String.raw");
-      return "literal";
-    }
-    if (char === "/" && this.regex(recent.at(-1) ?? "")) return "literal";
-    const word =
-      /^(?:=>|[A-Za-z_$][\w$]*)/.exec(this.source.slice(this.at))?.[0] ?? char;
-    this.take(word);
-    return word;
-  }
-
-  private regex(previous: string): boolean {
-    if (
-      previous &&
-      !/^(?:[=(:,;!&|?{}[]|=>|control\)|return|throw|yield|case|void|typeof|delete|in|of)$/.test(
-        previous,
-      )
-    )
-      return false;
-    const match =
-      /^\/(?:\\[^\r\n]|\[(?:\\[^\r\n]|[^\]\\\r\n])*\]|[^/\\[\r\n])+\/[a-z]*/.exec(
-        this.source.slice(this.at),
-      );
-    if (!match) return false;
-    this.take(match[0]);
-    return true;
-  }
-
-  private literal(quote: string, rawTemplate: boolean): void {
-    this.take(quote);
-    const sql: SqlSource = { text: "", lines: [] };
-    while (this.at < this.source.length) {
-      const rest = this.source.slice(this.at);
-      if (rest.startsWith(quote)) {
-        this.take(quote);
-        break;
-      }
-      if (quote === "`" && rest.startsWith("${")) {
-        this.append(sql, "\0");
-        this.take("${");
-        this.code(true);
-        continue;
-      }
-      const sourceEscape =
-        /^\\(?:u\{[\dA-Fa-f]+\}|u[\dA-Fa-f]{4}|x[\dA-Fa-f]{2}|\r\n|[\s\S])/.exec(
-          rest,
-        )?.[0];
-      const raw = sourceEscape ?? (rest[0] as string);
-      this.append(sql, sourceEscape && !rawTemplate ? escapeValue(raw) : raw);
-      this.take(raw);
-    }
-    this.found.push(sql);
-  }
-
-  private append(sql: SqlSource, value: string): void {
+/** Decode only parser-delimited literal contents, retaining each character's line. */
+function append(
+  sql: SqlSource,
+  raw: string,
+  line: number,
+  verbatim: boolean,
+): void {
+  for (let at = 0; at < raw.length; ) {
+    const sourceEscape =
+      /^\\(?:u\{[\dA-Fa-f]+\}|u[\dA-Fa-f]{4}|x[\dA-Fa-f]{2}|\r\n|[\s\S])/.exec(
+        raw.slice(at),
+      )?.[0];
+    const part = sourceEscape ?? (raw[at] as string);
+    const value = sourceEscape && !verbatim ? escapeValue(part) : part;
     sql.text += value;
-    for (let n = 0; n < value.length; n++) sql.lines.push(this.line);
+    for (let n = 0; n < value.length; n++) sql.lines.push(line);
+    line += part.split("\n").length - 1;
+    at += part.length;
   }
 }
 
+function template(
+  source: string,
+  node: TemplateLiteral,
+  verbatim: boolean,
+): SqlSource {
+  const sql: SqlSource = { text: "", lines: [] };
+  for (const [index, quasi] of node.quasis.entries()) {
+    if (index > 0) {
+      sql.text += "\0";
+      sql.lines.push(quasi.loc?.start.line ?? 1);
+    }
+    append(
+      sql,
+      source.slice(quasi.start ?? 0, quasi.end ?? 0),
+      quasi.loc?.start.line ?? 1,
+      verbatim,
+    );
+  }
+  return sql;
+}
+
+/** Parse TypeScript syntax so regexes and division never change literal boundaries. */
 export function sourceLiterals(source: string): SqlSource[] {
-  const reader = new Literals(source);
-  reader.code();
-  return reader.found;
+  const ast = parse(source, {
+    sourceType: "unambiguous",
+    plugins: ["typescript"],
+    allowAwaitOutsideFunction: true,
+    allowReturnOutsideFunction: true,
+  });
+  const rawTemplates = new Set<TemplateLiteral>();
+  const found: SqlSource[] = [];
+  traverseFast(ast, (node) => {
+    if (isTaggedTemplateExpression(node)) {
+      const tag = node.tag;
+      if (
+        isMemberExpression(tag) &&
+        !tag.computed &&
+        isIdentifier(tag.object, { name: "String" }) &&
+        isIdentifier(tag.property, { name: "raw" })
+      )
+        rawTemplates.add(node.quasi);
+    }
+    if (isTemplateLiteral(node))
+      found.push(template(source, node, rawTemplates.has(node)));
+    if (isStringLiteral(node)) {
+      const sql: SqlSource = { text: "", lines: [] };
+      append(
+        sql,
+        source.slice((node.start ?? 0) + 1, (node.end ?? 0) - 1),
+        node.loc?.start.line ?? 1,
+        false,
+      );
+      found.push(sql);
+    }
+  });
+  return found;
 }

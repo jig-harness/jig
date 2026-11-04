@@ -99,7 +99,7 @@ describe("what the code names", () => {
       texts(
         "plugin/a.ts",
         [
-          " * <!-- in-a-doc-comment -->",
+          "/*\n * <!-- in-a-doc-comment -->\n */",
           "// <!-- in-a-line-comment -->",
           'if (body.includes("<!--")) return;',
           "const strip = /<!--[\\s\\S]*?-->/g;",
@@ -110,7 +110,8 @@ describe("what the code names", () => {
   });
 
   test("a state family only in the drive's state library, and a table anywhere", () => {
-    const pattern = '  { re: /^x$/, key: "pr", family: "new-family" },';
+    const pattern =
+      'const patterns = [{ re: /^x$/, key: "pr", family: "new-family" }];';
     expect(texts("plugin/a.ts", pattern)).toEqual([]);
     expect(texts(`${STATE_LIBRARY}patterns.ts`, pattern)).toEqual([
       "family 1 new-family",
@@ -222,6 +223,33 @@ describe("what the code names", () => {
         tableNames(`${before}\ndb.run("CREATE TABLE new_records (id TEXT)");`),
       ).toEqual(["new_records"]);
     }
+  });
+
+  test("statement, async and member-call syntax cannot hide later SQL", () => {
+    for (const before of [
+      `if (enabled) {} else /'/.test(value);`,
+      `do /'/.test(value); while (enabled);`,
+      `await /'/.test(value);`,
+      `for await (const value of values) /'/.test(value);`,
+      `const ratio = obj.catch(value) / denominator;`,
+      `const ratio = obj.if(value) / denominator;`,
+      `const ratio = obj?.while(value) / denominator;`,
+      `const ratio = (value as number) / denominator;`,
+      `const ratio = function () { return 1; } / denominator;`,
+    ]) {
+      const named = namedIn(
+        "plugin/db.ts",
+        `${before} db.run("CREATE TABLE new_records (id TEXT)"); // explanation`,
+      );
+      expect(named.map((n) => n.text)).toEqual(["new_records"]);
+      expect(findings(root, named, [], [])).toHaveLength(1);
+    }
+    expect(
+      tableNames(`const regex = /'CREATE TABLE phantom (id TEXT)'/;`),
+    ).toEqual([]);
+    expect(
+      tableNames(`const regex = /CREATE TABLE phantom (id TEXT)/;`),
+    ).toEqual([]);
   });
 
   test("SQL comments before CREATE stay inside the source literal", () => {
@@ -356,6 +384,16 @@ describe("findings", () => {
 });
 
 describe("the gate", () => {
+  test("cannot certify a file whose source cannot be parsed", () => {
+    const dir = scratch({
+      "plugin/db.ts":
+        'const sql = "unterminated; CREATE TABLE new_records (id TEXT);',
+    });
+    const result = gate(dir);
+    expectSpawnExit(result, 2);
+    expect(result.stderr.toString()).toContain("plugin/db.ts");
+  });
+
   test("fails for unregistered quoted and temporary tables and unsupported names", () => {
     for (const sql of [
       'CREATE TABLE "new-records" (id TEXT)',
