@@ -1907,16 +1907,16 @@ make, use the entry's term instead.
   and, with *dispatch labels* on, labels it `held`. A drive a person arms
   on it still runs. Not the same as a person's `hold` label, which stands
   the dispatcher down from a pull request altogether.
-- **Dispatch board** — the first view of the *dispatcher*'s dashboard:
-  every pull request and item the dispatcher reads, in one column each
-  (coming, picking up, driven, needs you, ready to merge, merged), placed
-  again from the records at every *tick*, so work moves in any direction
-  and is never moved by hand. **Ready to merge** is its column of pull
-  requests a person can merge now: the drive converged at the head it
-  verified, the forge reports no conflict, it is not a draft, has no
-  unresolved review thread, and branch protection lets it merge, or would
-once a person approves it or updates its branch. Planned:
-  [ROADMAP.md](ROADMAP.md) item 36.
+- **Dispatch board** — the *dispatcher*'s dashboard view of every pull
+  request and item it reads, in one column each (coming, picking up,
+  driven, needs you, ready to merge, merged), placed again from the records
+  at every *tick*, so work moves in any direction and is never moved by
+  hand. **Ready to merge** holds the converged pull requests one person's
+  act from the merge: the drive converged at the head it verified, the
+  forge itself witnesses a review of that head, it does not conflict, is
+  not a draft, has no unresolved review thread, and branch protection lets
+  it merge, or would once a person approves it or updates its branch.
+  Planned: [ROADMAP.md](ROADMAP.md) item 36.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
   it started ended, a table of its state database with a text copy of one
   file per month: one row per session with its stage, repository,
