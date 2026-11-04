@@ -57,9 +57,9 @@ afterAll(async () => {
 
 if (!browser && process.env.JIG_REQUIRE_BROWSER === "1")
   it("a browser is available where one is required", () => {
-    throw new Error(
-      `these checks need Chromium and found none (${missing}); JIG_REQUIRE_BROWSER=1 makes a missing browser fail instead of skip`,
-    );
+    // JIG_REQUIRE_BROWSER=1 makes a missing browser fail instead of skip; the
+    // failure names why none was found.
+    expect({ chromium: missing }).toEqual({ chromium: "found" });
   });
 else if (!browser)
   console.warn(
