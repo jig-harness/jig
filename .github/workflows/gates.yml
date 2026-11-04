@@ -1,7 +1,7 @@
-# PROBE ONLY, never merged: gates.yml's triggers, concurrency, job names and
-# conditions in the label-skip form, with the heavy steps stubbed. probe.txt
-# holds "<pass|fail> <seconds the gate set sleeps>".
+# PROBE ONLY, never merged: gates.yml in the mirror form, with the heavy steps
+# stubbed. probe.txt holds "<pass|fail> <seconds the gate set sleeps>".
 name: gates
+run-name: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && format('gates mirror for the {0} label', github.event.label.name) || '' }}
 
 on:
   pull_request:
@@ -13,12 +13,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: gates-${{ github.event.label.name && github.event.label.name != 'ci:hold' && format('label-{0}', github.run_id) || github.event_name == 'pull_request' && github.ref || github.sha }}
+  group: gates-${{ github.event.label.name && github.event.label.name != 'ci:hold' && format('mirror-{0}', github.run_id) || github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   areas:
-    name: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && 'change areas [label event]' || 'change areas' }}
+    name: ${{ 'change areas' }}
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -30,7 +30,7 @@ jobs:
         run: echo 'areas=["drive-pr"]' >> "$GITHUB_OUTPUT"
 
   gate-set:
-    name: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && 'gates (linux) [label event]' || 'gates (linux)' }}
+    name: ${{ 'gates (linux)' }}
     needs: areas
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
     runs-on: ubuntu-latest
@@ -45,7 +45,7 @@ jobs:
           test "$result" = pass
 
   drive-pr-suite:
-    name: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && 'drive-pr suite [label event]' || format('drive-pr suite (linux, {0}/3)', matrix.shard) }}
+    name: drive-pr suite (linux, ${{ matrix.shard }}/3)
     needs: areas
     if: ${{ contains(needs.areas.outputs.areas, '"drive-pr"') && !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
     strategy:
@@ -58,24 +58,11 @@ jobs:
       - name: Run this shard of the drive-pr suite
         run: echo "shard ${{ matrix.shard }}"
 
-  literal-matrix:
-    name: literal matrix (${{ matrix.shard }}/2)
-    needs: areas
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
-    strategy:
-      matrix:
-        shard: [1, 2]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - run: echo "shard ${{ matrix.shard }}"
-
   gates:
-    name: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && 'gates [label event]' || 'gates' }}
     needs: [areas, gate-set, drive-pr-suite]
-    if: ${{ !cancelled() && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-slim
-    timeout-minutes: 5
+    timeout-minutes: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && 8 || 5 }}
     permissions:
       actions: write
     steps:
@@ -92,7 +79,59 @@ jobs:
             echo "::error::the run's cancellation did not arrive within two minutes"
           fi
           exit 1
+      - name: Mirror the newest real run on this head
+        if: ${{ github.event.label.name && github.event.label.name != 'ci:hold' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SELF: ${{ github.run_id }}
+          MIRROR: gates mirror for the
+        run: |
+          deadline=$((SECONDS + 300))
+          grace=$((SECONDS + 60))
+          misses=0
+          read_api() {
+            if out=$(timeout 30 gh api "$@"); then misses=0; return 0; fi
+            misses=$((misses + 1))
+            if [ "$misses" -ge 3 ]; then
+              echo "::error::the API did not answer three reads in a row, so this label event cannot show the head's gates result. Push, or change the label again, to run CI."
+              exit 1
+            fi
+            return 1
+          }
+          while :; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::no real gates run on $HEAD_SHA completed within five minutes. Push, or change the label again, to run CI."
+              exit 1
+            fi
+            if read_api "repos/$GITHUB_REPOSITORY/actions/workflows/gates.yml/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=100" \
+              --jq '[.workflow_runs[] | select(.id != (env.SELF | tonumber) and (.display_title | startswith(env.MIRROR) | not))] | if length == 0 then "none" else (max_by(.id) | "\(.id) \(.status)") end'; then
+              newest=$out
+              if [ "$newest" = none ]; then
+                if [ "$SECONDS" -ge "$grace" ]; then
+                  echo "::error::no real gates run exists on $HEAD_SHA, so this label event has no result to show. Push to run CI."
+                  exit 1
+                fi
+              else
+                set -- $newest
+                run=$1
+                if [ "$2" = completed ] && read_api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?filter=latest&per_page=100" \
+                  --jq '[.jobs[] | select(.name == "gates")] | if length == 1 then .[0].conclusion // "none" else "missing" end'; then
+                  conclusion=$out
+                  url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run"
+                  if [ "$conclusion" = success ]; then
+                    echo "::notice::the newest real gates run on this head passed: $url"
+                    exit 0
+                  fi
+                  echo "::error::the newest real gates run on this head did not pass (its gates job: $conclusion): $url"
+                  exit 1
+                fi
+              fi
+            fi
+            sleep 10
+          done
       - name: Require every selected job
+        if: ${{ !(github.event.label.name && github.event.label.name != 'ci:hold') }}
         env:
           AREAS: ${{ needs.areas.result }}
           GATE_SET: ${{ needs.gate-set.result }}
