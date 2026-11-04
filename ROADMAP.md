@@ -254,6 +254,14 @@ dispatcher will read each account's usage from Orca's command line once
 Orca offers it, and a small plugin Orca loads will run a dispatcher tick
 the moment an agent stops or waits. The plugin is Orca-bound.
 
+### 36. One look for Jig's pages
+
+The pages Jig's tooling draws will share one look: the dispatch dashboard,
+the decision, explainer and audit sheets, and the code-stats report. Each
+will follow the reader's light or dark setting and carry Jig's mark as its
+icon. Every text colour will meet WCAG AA, the Web Content Accessibility
+Guidelines' minimum contrast, in both modes.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** A reusable reconciler for
@@ -263,6 +271,9 @@ the moment an agent stops or waits. The plugin is Orca-bound.
 
 - **Jira store for reflections.** Reflections kept as Jira issues, for a team
   that tracks its work in Jira.
+- **A repository's theme.** A team gives its pages an accent colour and a
+  mark of its own. Jig derives the other colours, so the pages stay
+  readable in light and dark.
 - **More skills.** `scaffolding-update`, which keeps agent instruction files
   in step with decisions and audits them
   ([M0](modules/M0-instruction-architecture/README.md)), and a review skill

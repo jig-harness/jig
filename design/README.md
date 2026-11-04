@@ -68,6 +68,7 @@ with the review.
 | [Driving any pull request from anywhere, with autonomy that fits the hour](dark-factory-driving.md) | 32 |
 | [The dispatcher, a tick that starts the execution line's stages](dark-factory-dispatch.md) | 33 |
 | [Jig in the Orca ecosystem](orca-integration.md) | 34 |
+| [One look for Jig's pages, and a theme a repository can set](ui-theming.md) | 36; Later: a repository's theme |
 
 ## Starting a design
 
