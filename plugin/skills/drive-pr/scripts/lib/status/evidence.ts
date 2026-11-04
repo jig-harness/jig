@@ -22,6 +22,7 @@ import {
   failuresExplainedByCancellation,
   PASSING_CONCLUSIONS,
   rerunningSuites,
+  withoutReplacedRerunning,
   type WorkflowRun,
   withoutSuperseded,
   workflowRunsBehind,
@@ -425,7 +426,12 @@ function readChecks(
   // Read before the superseded cancellations go: the cancelled job an
   // aggregator failed on is the proof that its failure explains nothing.
   const explained = failuresExplainedByCancellation(own, workflowRuns);
-  const counted = withoutSuperseded(own, workflowRuns);
+  // A success from a later run replaces a rerunning failure by run
+  // chronology, as the final CI proof reads it, not by check-run id.
+  const counted = withoutReplacedRerunning(
+    withoutSuperseded(own, workflowRuns),
+    workflowRuns,
+  );
   const absent = (r: CheckRun) =>
     r.conclusion === "cancelled" || explained.has(r.id);
   const rerunning = rerunningSuites(workflowRuns);

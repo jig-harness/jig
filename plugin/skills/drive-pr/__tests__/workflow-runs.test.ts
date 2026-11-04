@@ -558,6 +558,19 @@ describe("evidence is dropped only when a successor supplies a result", () => {
     ).toBe(false);
   });
 
+  it("lets the verdict take a later run's success with the lower check id", () => {
+    // The success is created first, so its check-run id is the lower one.
+    const success = job("unit", "success", 40);
+    const failed = job("unit", "failure", 41, { started: T1, completed: T2 });
+    const workflowRuns = [
+      workflowRun(41, null, T1, { attempt: 2 }),
+      workflowRun(40, "success", T3),
+    ];
+    expect(success.id).toBeLessThan(failed.id);
+    expect(rerunAwaitsResult([failed, success], workflowRuns)).toBe(false);
+    expect(verdict([failed, success], workflowRuns)).toBe("green");
+  });
+
   it("does not explain two failures that started together as aggregators", () => {
     const workflowRuns = [workflowRun(40, "cancelled", T1)];
     const runs = [

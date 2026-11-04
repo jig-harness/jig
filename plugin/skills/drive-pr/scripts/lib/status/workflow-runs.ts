@@ -280,8 +280,19 @@ export function withoutRerunning<T extends JobEvidence>(
  * the job it would replace: an older success predates the failure being re-run.
  */
 export function rerunAwaitsResult<
-  T extends JobEvidence & { appId?: number | null },
+  T extends JobEvidence & { appId?: number | null; app?: string },
 >(jobs: readonly T[], workflowRuns: readonly WorkflowRun[] | null): boolean {
+  return unreplacedRerunJobs(jobs, workflowRuns).length > 0;
+}
+
+/**
+ * The unsuccessful jobs of runs being re-run that a success from a later run
+ * does not replace: their re-run's result is still owed. The proof and the
+ * verdict both read replacement through this, so they cannot disagree on it.
+ */
+export function unreplacedRerunJobs<
+  T extends JobEvidence & { appId?: number | null; app?: string },
+>(jobs: readonly T[], workflowRuns: readonly WorkflowRun[] | null): T[] {
   const kept = withoutRerunning(jobs, workflowRuns);
   const startedOf = (suiteId: number | null | undefined): number => {
     const run = (workflowRuns ?? []).find((r) => r.checkSuiteId === suiteId);
@@ -289,16 +300,37 @@ export function rerunAwaitsResult<
   };
   return jobs
     .filter((job) => !kept.includes(job))
-    .some(
+    .filter(
       (job) =>
         !kept.some(
           (k) =>
             k.name === job.name &&
             k.appId === job.appId &&
+            k.app === job.app &&
             k.conclusion === "success" &&
             startedOf(k.suiteId) > startedOf(job.suiteId),
         ),
     );
+}
+
+/**
+ * `jobs` less the unsuccessful ones of a run being re-run that a success from
+ * a later run replaces: that success speaks for the name, whatever check-run
+ * ids the two carry.
+ */
+export function withoutReplacedRerunning<
+  T extends JobEvidence & { appId?: number | null; app?: string },
+>(jobs: readonly T[], workflowRuns: readonly WorkflowRun[] | null): T[] {
+  const owed = new Set(unreplacedRerunJobs(jobs, workflowRuns));
+  const rerunning = rerunningSuites(workflowRuns);
+  return jobs.filter(
+    (job) =>
+      owed.has(job) ||
+      job.suiteId === undefined ||
+      job.suiteId === null ||
+      !rerunning.has(job.suiteId) ||
+      (job.conclusion !== null && PASSING_CONCLUSIONS.has(job.conclusion)),
+  );
 }
 
 /**
