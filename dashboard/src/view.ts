@@ -71,6 +71,7 @@ export function freshOf(
       short: `${age} · offline`,
       detail: [
         shows,
+        `The next tick was due ${clock(due, timeZone)}.`,
         "The server is not answering, so nothing newer can be read.",
       ],
       alarm: true,

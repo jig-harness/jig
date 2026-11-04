@@ -187,6 +187,14 @@ export function needRows(line: LineSnapshot, clockNow: Clock): NeedRow[] {
   return rows;
 }
 
+/** Counts records needing a person without formatting evidence that belongs inside a panel. */
+export function needCount(line: LineSnapshot | null, nowMs: number): number {
+  return line === null
+    ? 0
+    : line.needs.length +
+        line.sessions.filter((s) => isStuck(sessionKind(s, nowMs))).length;
+}
+
 /** Whether What needs you exists on this page, which decides the page's shape. */
 export function hasNeedRows(line: LineSnapshot | null, nowMs: number): boolean {
   return (

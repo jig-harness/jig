@@ -9,6 +9,7 @@ import {
   answerBand,
   hasNeedRows,
   needRows,
+  needCount,
   needView,
   orderedNeeds,
 } from "./needs-view.ts";
@@ -253,6 +254,23 @@ describe("the person's list", () => {
 });
 
 describe("whether What needs you exists", () => {
+  it("counts stuck records without building their presentation", () => {
+    const line = lineOf("quiet");
+    const session = line.sessions[0];
+    if (session === undefined) throw new Error("fixture needs a session");
+    const malformed = {
+      ...session,
+      launch: "unknown",
+      samples: null,
+    } as unknown as LineSession;
+    expect(needCount({ ...line, needs: [], sessions: [malformed] }, NOW)).toBe(
+      1,
+    );
+    expect(needCount(null, NOW)).toBe(0);
+    expect(needCount(lineOf("loud"), NOW)).toBe(
+      needRows(lineOf("loud"), CLOCK).filter((r) => r.type !== "head").length,
+    );
+  });
   it("does with a need, or with a session not moving", () => {
     expect(hasNeedRows(lineOf("loud"), NOW)).toBe(true);
     const line = lineOf("quiet");

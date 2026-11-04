@@ -1,5 +1,5 @@
 /**
- * The page, in three views. Now keeps the question order, its top half reshaped
+ * The page's views. Now keeps the question order, its top half reshaped
  * by state: with nothing to do the answer is a plain line and what is running
  * takes the wide column; with something to do a filled band appears and the wide
  * column belongs to the person. History is the outcome log; Help says how to
@@ -21,7 +21,7 @@ import { LogPanel } from "./log-panel.tsx";
 import { type Forges, forgesOf, type RowClock } from "./log-view.ts";
 import { Strip } from "./marks.tsx";
 import { NeedsPanel } from "./needs.tsx";
-import { answerBand, hasNeedRows, needRows } from "./needs-view.ts";
+import { answerBand, hasNeedRows, needCount } from "./needs-view.ts";
 import {
   lastReadLead,
   type PageView,
@@ -48,7 +48,13 @@ import {
   pageQuery,
   withParam,
 } from "./search.ts";
-import { nextTheme, schemeOf, type Theme, useTheme } from "./theme.ts";
+import {
+  nextTheme,
+  schemeOf,
+  type Theme,
+  themeSearch,
+  useTheme,
+} from "./theme.ts";
 import { type Clock, timerBanner } from "./view.ts";
 import { WindowPanel } from "./window-panel.tsx";
 
@@ -105,7 +111,11 @@ export function App() {
   const [theme, setTheme] = useTheme();
   const scheme = schemeOf(theme);
   const [filter, setFilter] = useFilter();
-  useEffect(() => forgetOldReplies(Date.now()), []);
+  useEffect(() => {
+    forgetOldReplies(Date.now());
+    const timer = setInterval(() => forgetOldReplies(Date.now()), AGES_MOVE_MS);
+    return () => clearInterval(timer);
+  }, []);
   const state = useStateRead(token);
   const rows = useRowsRead(filter, token, state.data?.answer.timeZone ?? null);
   if (state.failure?.kind === "refused" || rows.failure?.kind === "refused")
@@ -137,7 +147,7 @@ function Freshness({ view }: { view: PageView }) {
   return (
     <Hint
       className={fresh.alarm ? "fresh late" : "fresh"}
-      label="How fresh this page is"
+      label={`How fresh this page is: ${fresh.short}`}
       trigger={
         <>
           <span className="dot" aria-hidden="true" />
@@ -190,12 +200,14 @@ function ViewNav({
   setView,
   needs,
   filter,
+  theme,
 }: {
   view: ViewId;
   setView: (view: ViewId) => void;
   /** How many rows need a person, which the Now tab carries. */
   needs: number;
   filter: LogFilter;
+  theme: Theme;
 }) {
   return (
     <nav className="views" aria-label="Views">
@@ -203,7 +215,7 @@ function ViewNav({
         <a
           className="viewTab"
           key={v.id}
-          href={hrefOf(v.id, filter)}
+          href={hrefOf(v.id, filter, theme)}
           aria-current={v.id === view ? "page" : undefined}
           onClick={(event) => {
             if (event.metaKey || event.ctrlKey || event.shiftKey) return;
@@ -227,10 +239,14 @@ function ViewNav({
 }
 
 /** A view's address: the one the page has, with the view changed. */
-function hrefOf(view: ViewId, filter: LogFilter): string {
+function hrefOf(view: ViewId, filter: LogFilter, theme: Theme): string {
   return pageQuery(
     filter,
-    withParam(location.search, "view", view === "now" ? null : view),
+    withParam(
+      themeSearch(location.search, theme),
+      "view",
+      view === "now" ? null : view,
+    ),
   );
 }
 
@@ -255,10 +271,7 @@ function Page({
   const [tab, setTab] = useView();
   const view = pageView(state, rows, useMonoNow());
   const { line, clock } = view;
-  const needs =
-    line === null
-      ? 0
-      : needRows(line, clock).filter((row) => row.type !== "head").length;
+  const needs = needCount(line, clock.nowMs);
   const today = hostDay(clock.nowMs, clock.timeZone);
   const rowClock: RowClock = useMemo(
     () => ({ today, timeZone: clock.timeZone }),
@@ -281,6 +294,7 @@ function Page({
               setView={setTab}
               needs={needs}
               filter={filter}
+              theme={theme}
             />
           }
           tools={<ThemeSwitch theme={theme} setTheme={setTheme} />}
@@ -291,6 +305,7 @@ function Page({
             <HelpView Fold={Fold} />
           ) : view.answer === null ? null : tab === "history" ? (
             <HistoryPanels
+              theme={theme}
               view={view}
               log={rows.data}
               filter={filter}
@@ -370,6 +385,7 @@ function NowPanels({ view, log }: { view: PageView; log: RowsAnswer | null }) {
 
 /** History: the window over the outcome log and the log itself. */
 function HistoryPanels({
+  theme,
   view,
   log,
   filter,
@@ -377,6 +393,7 @@ function HistoryPanels({
   rowClock,
   forges,
 }: {
+  theme: Theme;
   view: PageView;
   log: RowsAnswer | null;
   filter: LogFilter;
@@ -400,6 +417,7 @@ function HistoryPanels({
       ) : null}
       <PanelBoundary name="How it went" reads={log}>
         <LogPanel
+          theme={theme}
           answer={log}
           filter={filter}
           setFilter={setFilter}

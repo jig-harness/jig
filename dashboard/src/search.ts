@@ -157,7 +157,7 @@ export function withParam(
   const pairs = search
     .replace(/^\?/, "")
     .split("&")
-    .filter((pair) => pair !== "" && pair.split("=")[0] !== name);
+    .filter((pair) => pair !== "" && !new URLSearchParams(pair).has(name));
   if (value !== null) pairs.push(`${name}=${encoded(value)}`);
   return pairs.length === 0 ? "" : `?${pairs.join("&")}`;
 }

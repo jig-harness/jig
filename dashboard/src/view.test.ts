@@ -289,6 +289,9 @@ describe("staleness", () => {
   });
 
   it("says when the server is not answering, and alarms", () => {
+    expect(freshOf(line, CLOCK, true).detail).toContain(
+      "The next tick was due 16:50.",
+    );
     expect(freshOf(line, CLOCK, true)).toMatchObject({
       short: "Updated 2 min ago · offline",
       alarm: true,

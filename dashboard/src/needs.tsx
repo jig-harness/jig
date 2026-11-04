@@ -15,7 +15,7 @@ import type { Clock, SlotView } from "./view.ts";
 
 /** The drafts beside a decision, kept in this browser, and the Copy that joins them to their keys. */
 function Replies({ need }: { need: NeedView }) {
-  const [replies, setReply] = useReplies(need.repo, need.answerKeys);
+  const [replies, setReply, saved] = useReplies(need.repo, need.answerKeys);
   const drafted = replies.some((r) => r.trim() !== "");
   const [open, setOpen] = useState(drafted);
   const id = useId();
@@ -51,7 +51,10 @@ function Replies({ need }: { need: NeedView }) {
             </label>
           ))}
           <p className="sm mut">
-            Kept in this browser only. Copy answer takes{" "}
+            {saved
+              ? "Kept in this browser only."
+              : "Not saved. Kept only while this page stays open; reloading may restore an older draft. Copy your answer before leaving."}{" "}
+            Copy answer takes{" "}
             <span className="m">answer {need.answerKeys[0]}: …</span> with your
             reply, to paste as a comment on the pull request.
           </p>

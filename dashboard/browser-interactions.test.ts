@@ -73,6 +73,13 @@ describe("the disclosures", () => {
         expect(await page.locator(".rowBody").innerText()).toContain(
           "exit 0 (converged)",
         );
+        const stage = page.locator(".rowBody .chipBtn");
+        await stage.focus();
+        await shows(page, ".pop");
+        expect(await page.locator(".pop").innerText()).toContain("drive");
+        await page.keyboard.press("Escape");
+        await stage.click();
+        await shows(page, ".pop");
       } finally {
         await context.close();
       }

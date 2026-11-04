@@ -20,6 +20,7 @@ import {
 } from "./log-view.ts";
 import { Mark } from "./marks.tsx";
 import { type LogFilter, pageQuery, viewQuery } from "./search.ts";
+import { type Theme, themeSearch } from "./theme.ts";
 
 const REASON_WAIT_MS = 300;
 
@@ -200,6 +201,7 @@ function Recurring({
 }
 
 export function LogPanel({
+  theme,
   answer,
   filter,
   setFilter,
@@ -207,6 +209,7 @@ export function LogPanel({
   rowClock,
   forges,
 }: {
+  theme: Theme;
   answer: RowsAnswer | null;
   filter: LogFilter;
   setFilter: (patch: Partial<LogFilter>) => void;
@@ -322,7 +325,7 @@ export function LogPanel({
               <span className="m path">{viewQuery(filter)}</span>
             </span>
             <CopyButton
-              text={`${location.origin}${location.pathname}${pageQuery(filter, location.search)}`}
+              text={`${location.origin}${location.pathname}${pageQuery(filter, themeSearch(location.search, theme))}`}
               idle="Copy link"
               aria="Copy the link to this view"
             />

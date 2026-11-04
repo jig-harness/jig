@@ -6,7 +6,7 @@ The dispatch dashboard is split into views and explains itself in place.
 
 ### Added
 
-- Three views with tabs in the strip: Now (what needs you, what is running,
+- Views with tabs in the strip: Now (what needs you, what is running,
   what is coming), History (the window and the outcome log) and Help (what the
   page's words, stages and marks mean). The view is part of the address, so a
   link opens the same one. The Now tab shows how many items need a person.

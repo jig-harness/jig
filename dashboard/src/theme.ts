@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { readKept, writeKept } from "./kept.ts";
-import { replaceParam } from "./search.ts";
+import { replaceParam, withParam } from "./search.ts";
 
 export type Theme = "auto" | "light" | "dark";
 
@@ -38,6 +38,11 @@ export function nextTheme(theme: Theme): Theme {
   return NEXT[theme];
 }
 
+/** A shareable query carries the effective theme, including a restored choice. */
+export function themeSearch(search: string, theme: Theme): string {
+  return withParam(search, "theme", theme === "auto" ? null : theme);
+}
+
 /** The theme, and how to change it. */
 export function useTheme(): [Theme, (theme: Theme) => void] {
   const [theme, setTheme] = useState(() =>
@@ -46,6 +51,7 @@ export function useTheme(): [Theme, (theme: Theme) => void] {
   useEffect(() => {
     // The document's own scheme too, so what lies past the page's edge matches it.
     document.documentElement.style.colorScheme = schemeOf(theme);
+    replaceParam("theme", theme === "auto" ? null : theme);
   }, [theme]);
   const choose = useCallback((next: Theme) => {
     setTheme(next);

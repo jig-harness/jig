@@ -136,6 +136,12 @@ describe("what the page was opened with", () => {
 });
 
 describe("one parameter changed in place", () => {
+  it("replaces decoded names and keeps unrelated bytes intact", () => {
+    expect(
+      withParam("?%76iew=help&token=a%2Fb&view=now", "view", "history"),
+    ).toBe("?token=a%2Fb&view=history");
+    expect(withParam("?%74heme=dark", "theme", "light")).toBe("?theme=light");
+  });
   it("sets it and keeps every other pair as written", () => {
     expect(withParam("?token=t&repo=example-org/web", "view", "history")).toBe(
       "?token=t&repo=example-org/web&view=history",

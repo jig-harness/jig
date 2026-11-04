@@ -14,7 +14,7 @@ import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LogRow } from "../../plugin/dispatch/lib/log.ts";
 import { CopyButton } from "./copy.tsx";
-import { Evidence } from "./fold.tsx";
+import { Evidence, StageHint } from "./fold.tsx";
 import {
   type Forges,
   type RowClock,
@@ -82,6 +82,7 @@ const columns = helper.columns([
 function RowBody({ view }: { view: RowView }) {
   return (
     <div className="rowBody">
+      <StageHint mark={view.mark} stage={view.stage} />
       <div className="quote">{view.reason}</div>
       <div className="copyRow">
         <CopyButton

@@ -30,7 +30,7 @@ export function HelpView({ Fold }: { Fold: FoldComponent }) {
             heading open a short explanation when hovered, tapped or focused.
           </p>
           <p>
-            The page sends nothing to the host. To answer a parked decision,
+            The page writes nothing to the host. To answer a parked decision,
             write a reply beside it (kept in this browser only), copy the
             answer, and paste it as a comment on the pull request; the next tick
             re-arms the drive.

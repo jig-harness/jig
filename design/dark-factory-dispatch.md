@@ -981,7 +981,7 @@ expectation.
 **The dashboard.** `jig dispatch dashboard` serves one page that answers, in
 order, what needs a person, what is running on which account, what is coming
 and how it went ([the designed page](prototypes/dispatch-dashboard/README.md)),
-in three views: Now for the first three, History for the log, and Help for the
+in views: Now for the first three, History for the log, and Help for the
 words the page uses. A view is a parameter of the address, like the log's
 filter. It reads two records and writes nothing to the host: what a person
 chooses on the page (the theme, reply drafts beside a decision) stays in that
