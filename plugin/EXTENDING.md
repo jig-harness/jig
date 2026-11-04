@@ -208,6 +208,10 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
   - parent and children are Jira's parent field, for sub-tasks and an
     Epic's issues alike, and relations are issue links of the types
     `issue_tracker.jira.link_types` names; links of other types are ignored;
+  - a field a team relies on that Jig's interface has no place for (a size,
+    a facet, an owning repository) reads as labels through
+    `issue_tracker.jira.field_labels`: each value behind the field's
+    prefix, selected in JQL by the field itself, and never written;
   - a comment, or an assignment, is trusted when a person's Atlassian
     account made it, not a guest, that can be assigned issues in the
     project; an app's account, Jira Automation's own included, never is.

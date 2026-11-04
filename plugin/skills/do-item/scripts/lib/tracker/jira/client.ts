@@ -2,8 +2,8 @@
  * The Jira adapter's requests: one issue, a JQL listing, an issue's comments
  * and changelog, and the resolvers that turn a configured or given name into
  * the one Jira resource it names (a fix version, a priority, a link type, an
- * issue type, a user). `tracker.ts`, `reports.ts` and `assigner.ts` build
- * the port on these.
+ * issue type, a field read as labels, a user). `tracker.ts`, `reports.ts`
+ * and `assigner.ts` build the port on these.
  *
  * A name that resolves to no resource, or to several, is refused before
  * anything is written. Timestamps are read in Jira's `+0000` form and given
@@ -16,6 +16,7 @@ import { TrackerRequestError } from "../port.ts";
 import { adfToMarkdown } from "./adf.ts";
 import {
   FIELDS,
+  type FieldLabel,
   iso,
   type JiraIssue,
   optStr,
@@ -101,6 +102,12 @@ export interface Client {
   linkTypes(): Promise<Record<LinkedRelation, LinkType>>;
   /** The project's issue types, with their hierarchy level. */
   issueTypes(): Promise<IssueTypeMeta[]>;
+  /**
+   * The fields `issue_tracker.jira.field_labels` names, each resolved to
+   * exactly one field of the site; read once, and without a request when
+   * none is configured.
+   */
+  fieldLabels(): Promise<FieldLabel[]>;
   /** The account id an identity (account id, email or display name) names. */
   accountId(identity: string): Promise<string>;
   /** Whether the account can be assigned issues in the project; cached. */
@@ -177,6 +184,35 @@ async function searchAccount(get: Get, who: string): Promise<string> {
   );
 }
 
+/** A field's JQL clause name: `cf[10050]` for `customfield_10050`, else its id. */
+function clauseOf(id: string): string {
+  const custom = /^customfield_(\d+)$/.exec(id);
+  return custom === null ? id : `cf[${custom[1]}]`;
+}
+
+/**
+ * How JQL matches one value of a field of this schema exactly, or a refusal
+ * for a type whose values do not read as labels (a user, a date, a
+ * cascading select).
+ */
+function matchOf(
+  schema: unknown,
+  at: string,
+  name: string,
+): FieldLabel["match"] {
+  const type = isRecord(schema) ? schema.type : undefined;
+  const items = isRecord(schema) ? schema.items : undefined;
+  if (type === "string") return null;
+  if (type === "number") return "number";
+  if (type === "option") return "string";
+  if (type === "array" && (items === "option" || items === "string"))
+    return "string";
+  throw new TrackerConfigError(
+    at,
+    `${at}: the field '${name}' is of type ${JSON.stringify(type)}${items === undefined ? "" : ` of ${JSON.stringify(items)}`}; only text, number, select, checkbox and labels fields read as labels`,
+  );
+}
+
 /** The page size of a user search. */
 const USERS_PAGE = 50;
 
@@ -202,6 +238,7 @@ export function jiraClient(opts: ClientOptions): Client {
 
   let links: Promise<Record<LinkedRelation, LinkType>> | undefined;
   let types: Promise<IssueTypeMeta[]> | undefined;
+  let labelFields: Promise<FieldLabel[]> | undefined;
   let zone: Promise<string> | undefined;
   let me: Promise<Record<string, unknown>> | undefined;
   const assignables = new Map<string, Promise<boolean>>();
@@ -230,6 +267,11 @@ export function jiraClient(opts: ClientOptions): Client {
     return matches[0] as T;
   }
 
+  /** The fields every issue read asks for, with those read as labels. */
+  async function fieldsToRead(): Promise<string[]> {
+    return [...FIELDS, ...(await client.fieldLabels()).map((f) => f.id)];
+  }
+
   const client: Client = {
     project,
     site,
@@ -244,7 +286,7 @@ export function jiraClient(opts: ClientOptions): Client {
           {
             method: "GET",
             path: `issue/${encodeURIComponent(key)}`,
-            query: { fields: FIELDS.join(",") },
+            query: { fields: (await fieldsToRead()).join(",") },
           },
           signal,
         );
@@ -252,7 +294,7 @@ export function jiraClient(opts: ClientOptions): Client {
         if (err instanceof JiraApiError && err.notFound) return null;
         throw err;
       }
-      return parseIssue(raw, site);
+      return parseIssue(raw, site, await client.fieldLabels());
     },
 
     async mustIssue(key, signal) {
@@ -265,9 +307,11 @@ export function jiraClient(opts: ClientOptions): Client {
       return found;
     },
 
-    async search(jql, where, signal, fields = FIELDS) {
-      return (await searchPages(transport, jql, fields, where, signal)).map(
-        (i) => parseIssue(i, site),
+    async search(jql, where, signal, fields) {
+      const extra = await client.fieldLabels();
+      const read = fields ?? (await fieldsToRead());
+      return (await searchPages(transport, jql, read, where, signal)).map((i) =>
+        parseIssue(i, site, extra),
       );
     },
 
@@ -418,6 +462,48 @@ export function jiraClient(opts: ClientOptions): Client {
         types = undefined;
       });
       return types;
+    },
+
+    fieldLabels() {
+      const configured = Object.entries(settings.fieldLabels);
+      if (configured.length === 0) return Promise.resolve([]);
+      labelFields ??= (async () => {
+        const raw = await get("field");
+        if (!Array.isArray(raw))
+          throw new JiraApiError("fields of the site: expected a list");
+        const all = raw.map((f, i) => {
+          const r = record(f, `fields[${i}]`);
+          return {
+            id: str(r.id, `fields[${i}].id`),
+            name: str(r.name, `fields[${i}].name`),
+            schema: r.schema,
+          };
+        });
+        return configured.map(([name, prefix]) => {
+          const at = `issue_tracker.jira.field_labels.${name}`;
+          const matches = all.filter(
+            (f) => f.id === name || same(f.name, name),
+          );
+          if (matches.length !== 1)
+            throw new TrackerConfigError(
+              at,
+              `${at}: '${name}' matches ${matches.length} fields of the site${matches.length > 1 ? ` (${matches.map((f) => f.id).join(", ")}); name the field by its id` : ""}, expected exactly 1`,
+            );
+          const f = matches[0] as (typeof all)[number];
+          return {
+            configured: name,
+            id: f.id,
+            name: f.name,
+            clause: clauseOf(f.id),
+            prefix,
+            match: matchOf(f.schema, at, f.name),
+          };
+        });
+      })();
+      labelFields.catch(() => {
+        labelFields = undefined;
+      });
+      return labelFields;
     },
 
     accountId(identity) {

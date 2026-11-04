@@ -48,6 +48,7 @@ describe("issue_tracker.jira", () => {
         related: "Relates",
         duplicate: "Duplicate",
       },
+      fieldLabels: {},
     });
   });
 

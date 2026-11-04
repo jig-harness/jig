@@ -17,7 +17,8 @@
  *   (`issue_tracker.jira.link_types`); other link types are ignored;
  * - descriptions and comments: Markdown converted to and from ADF (`adf.ts`);
  * - labels: Jira labels, free text shared across the site, written as given
- *   when well-formed;
+ *   when well-formed, and the values of the fields `field_labels` names,
+ *   each behind its prefix, which are read and queried but never written;
  * - a trusted comment: one whose author is a licensed, non-guest Atlassian
  *   account that can be assigned issues in the project.
  *
@@ -48,7 +49,7 @@ import { assignerOperations } from "./assigner.ts";
 import { claimOperations } from "./claim.ts";
 import type { Client, IssueTypeMeta } from "./client.ts";
 import { type JiraIssue, record, str } from "./read.ts";
-import { inProject, OPEN, quote } from "./jql.ts";
+import { fieldOfLabel, inProject, OPEN, quote } from "./jql.ts";
 import { isResolvedState } from "./model.ts";
 import { reportOperations } from "./reports.ts";
 import { JiraApiError, offsetPages } from "./transport.ts";
@@ -218,6 +219,19 @@ export function jiraTracker(client: Client): Tracker {
     );
   }
 
+  /** Refuse a label that is a field's value: the adapter reads those fields, never writes them. */
+  async function refuseFieldLabels(labels: ReadonlyArray<string>) {
+    const fields = await client.fieldLabels();
+    for (const l of labels) {
+      const found = fieldOfLabel(l, fields);
+      if (found !== null)
+        throw new TrackerRequestError(
+          "invalid",
+          `label '${l}' is the value of the Jira field '${found.field.name}' (issue_tracker.jira.field_labels.${found.field.configured}), which the adapter reads but does not write; set the field in Jira`,
+        );
+    }
+  }
+
   async function siteLabels(): Promise<string[]> {
     const values = await offsetPages(
       transport,
@@ -364,6 +378,7 @@ export function jiraTracker(client: Client): Tracker {
       requireTitle(issue.title);
       checkPriority(issue.priority);
       checkLabels(issue.labels);
+      await refuseFieldLabels(issue.labels);
       // Every name resolves before the write, so a typo files nothing.
       const parent =
         issue.parent === undefined
@@ -414,7 +429,9 @@ export function jiraTracker(client: Client): Tracker {
         ...(patch.addLabels ?? []).map((l) => ({ add: l })),
         ...(patch.removeLabels ?? []).map((l) => ({ remove: l })),
       ];
-      checkLabels(labels.map((l) => ("add" in l ? l.add : l.remove)));
+      const named = labels.map((l) => ("add" in l ? l.add : l.remove));
+      checkLabels(named);
+      await refuseFieldLabels(named);
       if (patch.priority === 0)
         throw new TrackerRequestError(
           "invalid",

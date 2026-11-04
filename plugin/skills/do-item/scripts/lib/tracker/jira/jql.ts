@@ -8,9 +8,13 @@
  * minute precision in the time zone of the credential's Jira profile, so a
  * window is widened by a minute on each side here and filtered exactly by
  * the adapter.
+ *
+ * A label behind a `field_labels` prefix is a field's value, not a Jira
+ * label, so a query for it is a clause on that field.
  */
 
 import { TrackerRequestError } from "../port.ts";
+import type { FieldLabel } from "./read.ts";
 
 /** A JQL string literal. */
 export function quote(s: string): string {
@@ -94,15 +98,93 @@ export function since(
   return `${field} >= ${quote(jqlDate(sinceMs - PAD, timeZone))}`;
 }
 
+/** The field a label is a value of, by its prefix; `null` for a Jira label. */
+export function fieldOfLabel(
+  label: string,
+  fields: ReadonlyArray<FieldLabel>,
+): { field: FieldLabel; value: string } | null {
+  const field = fields.find((f) => label.startsWith(f.prefix));
+  return field === undefined
+    ? null
+    : { field, value: label.slice(field.prefix.length) };
+}
+
+const NUMBER = /^-?\d+(\.\d+)?$/;
+
+/** A value of `field` as a JQL literal, or a refusal where JQL cannot match it exactly. */
+function valueOf(field: FieldLabel, value: string, label: string): string {
+  if (field.match === "string") return quote(value);
+  if (field.match === "number" && NUMBER.test(value)) return value;
+  throw new TrackerRequestError(
+    "invalid",
+    field.match === "number"
+      ? `label '${label}' names the number field '${field.name}' with '${value}', which is not a number`
+      : `label '${label}' is read from the text field '${field.name}' (issue_tracker.jira.field_labels), which JQL matches by words, not exactly; an issue cannot be selected by it`,
+  );
+}
+
+/** `labels` split into Jira labels and, per field, the values they name. */
+function split(
+  labels: ReadonlyArray<string>,
+  fields: ReadonlyArray<FieldLabel>,
+): { plain: string[]; byField: Map<FieldLabel, string[]> } {
+  const plain: string[] = [];
+  const byField = new Map<FieldLabel, string[]>();
+  for (const label of labels) {
+    const found = fieldOfLabel(label, fields);
+    if (found === null) plain.push(label);
+    else
+      byField.set(found.field, [
+        ...(byField.get(found.field) ?? []),
+        valueOf(found.field, found.value, label),
+      ]);
+  }
+  return { plain, byField };
+}
+
+/** The issues carrying `label`. */
+export function hasLabel(
+  label: string,
+  fields: ReadonlyArray<FieldLabel> = [],
+): string {
+  const found = fieldOfLabel(label, fields);
+  return found === null
+    ? `labels = ${quote(label)}`
+    : `${found.field.clause} = ${valueOf(found.field, found.value, label)}`;
+}
+
 /** The issues carrying at least one of `labels`. */
-export function someLabel(labels: ReadonlyArray<string>): string {
-  return `labels in ${stringList(labels)}`;
+export function someLabel(
+  labels: ReadonlyArray<string>,
+  fields: ReadonlyArray<FieldLabel> = [],
+): string {
+  const { plain, byField } = split(labels, fields);
+  const clauses = [
+    ...(plain.length === 0 ? [] : [`labels in ${stringList(plain)}`]),
+    ...[...byField].map(([f, v]) => `${f.clause} in (${v.join(", ")})`),
+  ];
+  return clauses.length === 1
+    ? (clauses[0] as string)
+    : `(${clauses.join(" OR ")})`;
 }
 
 /**
  * The issues carrying none of `labels`. `labels not in (...)` alone drops
- * every issue with no labels at all, hence the `is EMPTY` clause.
+ * every issue with no labels at all, hence the `is EMPTY` clause; a field
+ * read as labels takes the same form.
  */
-export function noLabel(labels: ReadonlyArray<string>): string {
-  return `(labels not in ${stringList(labels)} OR labels is EMPTY)`;
+export function noLabel(
+  labels: ReadonlyArray<string>,
+  fields: ReadonlyArray<FieldLabel> = [],
+): string {
+  const { plain, byField } = split(labels, fields);
+  return [
+    ...(plain.length === 0
+      ? []
+      : [`(labels not in ${stringList(plain)} OR labels is EMPTY)`]),
+    ...[...byField].map(
+      ([f, v]) =>
+        `(${f.clause} not in (${v.join(", ")}) OR ${f.clause} is EMPTY)`,
+    ),
+  ].join(" AND ");
 }

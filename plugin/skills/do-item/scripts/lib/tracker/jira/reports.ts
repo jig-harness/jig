@@ -24,6 +24,8 @@ import { checkPoolQuery, inWindow } from "../requests.ts";
 import type { Client } from "./client.ts";
 import { type JiraIssue, record } from "./read.ts";
 import {
+  fieldOfLabel,
+  hasLabel,
   inProject,
   KEY,
   keyList,
@@ -221,8 +223,13 @@ export function reportOperations(client: Client): ReportOps {
     });
   }
 
-  /** Refuse a label no issue of the site carries: it would read as an empty population. */
+  /**
+   * Refuse a label no issue of the site carries: it would read as an empty
+   * population. A field's value (`field_labels`) is not a Jira label, and
+   * its field was resolved when the fields were read.
+   */
   async function requireLabel(label: string): Promise<void> {
+    if (fieldOfLabel(label, await client.fieldLabels()) !== null) return;
     const values = await offsetPages(
       client.transport,
       { method: "GET", path: "label", query: { query: label } },
@@ -240,7 +247,7 @@ export function reportOperations(client: Client): ReportOps {
       );
   }
 
-  const label = (l: string) => `labels = ${quote(l)}`;
+  const label = async (l: string) => hasLabel(l, await client.fieldLabels());
 
   return {
     async issuesByKeys(keys) {
@@ -257,7 +264,7 @@ export function reportOperations(client: Client): ReportOps {
           ? null
           : await client.timeZone();
       const clauses: string[] = [];
-      if (query.label !== undefined) clauses.push(label(query.label));
+      if (query.label !== undefined) clauses.push(await label(query.label));
       if (query.createdIn !== undefined && zone !== null)
         clauses.push(widened("created", query.createdIn, zone));
       if (query.completedIn !== undefined && zone !== null)
@@ -280,7 +287,7 @@ export function reportOperations(client: Client): ReportOps {
 
     async startedIssueActivity(l, signal) {
       const epics = await client.search(
-        inProject(project, label(l), 'statusCategory = "In Progress"'),
+        inProject(project, await label(l), 'statusCategory = "In Progress"'),
         `started issues labelled '${l}'`,
         signal,
       );
@@ -311,7 +318,7 @@ export function reportOperations(client: Client): ReportOps {
       const issues = await client.search(
         inProject(
           project,
-          label(query.issueLabel),
+          await label(query.issueLabel),
           since("updated", query.createdIn.sinceMs, zone),
         ),
         `issues labelled '${query.issueLabel}' updated in the window`,
@@ -349,10 +356,11 @@ export function reportOperations(client: Client): ReportOps {
       await requireLabel(query.label);
       // The version must exist: a mistyped one would silently halve the union.
       if (query.project !== undefined) await client.version(query.project);
+      const has = await label(query.label);
       const scope =
         query.project === undefined
-          ? label(query.label)
-          : `(${label(query.label)} OR fixVersion = ${quote(query.project)})`;
+          ? has
+          : `(${has} OR fixVersion = ${quote(query.project)})`;
       const read = await client.search(
         inProject(project, scope),
         `the ledger of '${query.label}'`,
@@ -378,7 +386,7 @@ export function reportOperations(client: Client): ReportOps {
 
     async labelledIssues(l, signal, withDescription = false) {
       const read = await client.search(
-        inProject(project, label(l)),
+        inProject(project, await label(l)),
         `issues labelled '${l}'`,
         signal,
       );
@@ -397,12 +405,13 @@ export function reportOperations(client: Client): ReportOps {
     async openIssues(query) {
       checkPoolQuery(query);
       const none = query.withNoneOf ?? [];
+      const fields = await client.fieldLabels();
       const read = await client.search(
         inProject(
           project,
           OPEN,
-          ...query.withSomeOf.map(someLabel),
-          ...(none.length === 0 ? [] : [noLabel(none)]),
+          ...query.withSomeOf.map((l) => someLabel(l, fields)),
+          ...(none.length === 0 ? [] : [noLabel(none, fields)]),
         ),
         `the pool of ${query.withSomeOf.map((l) => stringList(l)).join(" and ")}`,
       );
