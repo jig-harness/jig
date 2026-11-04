@@ -76,10 +76,12 @@ it that reaches 4.5:1 on that mode's surfaces; a colour that already does
 stays as given. A colour with transparency is composited onto the mode's
 page surface first, so every derivation starts from an opaque colour (a
 fully transparent one would otherwise match its background at every
-lightness). `accent-hover` and `accent-soft` are derived from the accent
-the same way. `on-accent`, the label on an accent button, is chosen
-against the derived accent itself: black or white, whichever reaches 4.5:1
-on it. Ordinary ink stays readable on `accent-soft` by the same test. So a
+lightness). `accent-hover` is derived from the accent the same way.
+`accent-soft` is a background, not text, so it is derived for its own
+foreground instead: the given hue and chroma, at the lightness nearest to
+the accent's that keeps ordinary ink at 4.5:1 on it. `on-accent`, the label
+on an accent button, is chosen against the derived accent itself: black or
+white, whichever reaches 4.5:1 on it. So a
 team's colour never fails contrast and is never refused for it; only a
 value that is not a colour is refused, with the field and the layer that
 set it named.
