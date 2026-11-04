@@ -76,7 +76,9 @@ function isChrome(el: Element, parent: Element | Root): boolean {
       classesOf(parent).includes("code")) ||
     (el.properties?.hidden !== undefined && !isChoicePanel(el)) ||
     el.properties?.ariaHidden === "true" ||
-    classes.some((c) => ["tabs", "checks-head"].includes(c))
+    classes.some((c) => ["tabs", "checks-head"].includes(c)) ||
+    // A picture drawn once per theme: the light one stands for both.
+    (el.tagName === "img" && classes.includes("shot-dark"))
   );
 }
 

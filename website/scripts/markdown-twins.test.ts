@@ -345,3 +345,11 @@ test("a link on a page whose route holds a ? or # resolves against that page", (
   );
   expect([...(anchors.get("/notes/a?b/") ?? [])]).toEqual(["x"]);
 });
+
+test("a picture drawn once per theme is kept once", async () => {
+  const out = await md(
+    `<p><img class="shot-light" src="/a-light.webp" alt="Dashboard"><img class="shot-dark" src="/a-dark.webp" alt="Dashboard"></p>`,
+  );
+  expect(out).toContain("a-light.webp");
+  expect(out).not.toContain("a-dark.webp");
+});
