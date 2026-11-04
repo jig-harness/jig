@@ -451,12 +451,13 @@ function readChecks(
       .sort((a, b) => a.id - b.id);
     const lastRan = ran.at(-1);
     if (lastRan === undefined) return newest;
-    // A newer skip looked at nothing, so it does not answer a failure or live
-    // job retained from a cancelled suite; elsewhere the newest check speaks.
+    // A newer skip looked at nothing, so it never answers a live job, and it
+    // answers a failure only outside a cancelled suite; elsewhere the newest
+    // check speaks.
     if (!absent(lastRan))
       return newest.conclusion === "skipped" &&
-        cancelledSuites.has(lastRan.suiteId ?? -1) &&
-        (failing(lastRan) || pending(lastRan))
+        (pending(lastRan) ||
+          (cancelledSuites.has(lastRan.suiteId ?? -1) && failing(lastRan)))
         ? lastRan
         : newest;
     const evidence = ran.filter((r) => !absent(r)).at(-1);
