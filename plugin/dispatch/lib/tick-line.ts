@@ -8,7 +8,7 @@
 import { attempt } from "../../shared/outcome.ts";
 import { pluginVersion } from "../../shared/plugin-version.ts";
 import {
-  hostCodexOptIn,
+  type CodexOptIn,
   lastAccount,
   notAdmitted,
   slotTable,
@@ -102,11 +102,12 @@ function accountsOf(
   machine: MachineConfig,
   records: ReadRecord[],
   nowMs: number,
+  codexOptIn: CodexOptIn,
 ): LineAccount[] {
   const refused = notAdmitted(
     machine.accounts,
     passTimeoutSeconds(),
-    hostCodexOptIn(),
+    codexOptIn,
   );
   return slotTable(machine.accounts, records, nowMs).map((slots) => ({
     name: slots.account.name,
@@ -141,6 +142,8 @@ export function writeTickLine(
     repos: string[];
     records: ReadRecord[];
     inputs: Map<string, RepoLineInput>;
+    /** The admission decision the tick launched under, so line and launches agree. */
+    codexOptIn: CodexOptIn;
   },
 ): void {
   const { machine, records } = tick;
@@ -169,6 +172,7 @@ export function writeTickLine(
             machine,
             records,
             Date.parse(receipt.finishedAt),
+            tick.codexOptIn,
           ),
           lastAccount: lastAccount(records),
           previousNeeds: previous.ok ? (previous.value?.needs ?? []) : [],

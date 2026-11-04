@@ -135,7 +135,7 @@ Command-line flags, where a script has them, override all three.
 - **Fields only a user file sets.** [`clones`](#clones-user-file-only)
   describes one machine, and [`drive.pass_args` and
   `drive.codex_bypass`](#a-hosts-opt-in-to-bypass) say how far this host
-  trusts a drive's passes. A repository's file refuses all three with an error
+  trusts a drive's passes. A repository's file refuses these fields with an error
   naming the field, whatever it sets them to (an empty list and `null`
   included), and so does a file `JIG_OVERLAY` names, which is the repository's
   layer. A `drive` section in that layer that is not a mapping (`drive: null`,

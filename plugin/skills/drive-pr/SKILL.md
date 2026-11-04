@@ -339,7 +339,10 @@ A pass pushes, calls the forge and has nobody to ask, so on a host that set
 `drive.codex_bypass: true` in its user file an arm writes
 `--dangerously-bypass-approvals-and-sandbox` after `exec`, and that pass runs
 without a sandbox or approvals. Without it Codex's own configuration decides.
-`drive.ts` runs a Codex pass command as given.
+`drive.ts` runs a Codex pass command as given, so the command above carries no
+bypass: `arm-drive.ts` is the entry point that reads the setting, and a
+command typed by hand names `--dangerously-bypass-approvals-and-sandbox`
+after `exec` itself.
 
 Each round is a **fresh agent process**, so a long converge never depends on one
 session's context surviving. That is the preferred unattended mode. A Codex

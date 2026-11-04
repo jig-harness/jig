@@ -961,6 +961,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       repos: options.repos,
       records: allRecords(context),
       inputs: context.lineInputs,
+      codexOptIn: apply?.codexOptIn ?? hostCodexOptIn(),
     });
     const path = writeReceipt(receipt);
     pruneReceipts(Date.now(), undefined, days);
