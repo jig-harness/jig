@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { nextTheme, schemeOf, themeOf } from "./theme.ts";
+import { nextTheme, schemeOf, themeOf, themeSearch } from "./theme.ts";
 
 describe("the theme", () => {
   it("is the one the address names, over what the browser kept", () => {
@@ -12,9 +12,18 @@ describe("the theme", () => {
     expect(themeOf("", "light")).toBe("light");
   });
 
+  it("is the device's when the address names it, over what the browser kept", () => {
+    expect(themeOf("?theme=auto", "dark")).toBe("auto");
+  });
+
   it("follows the device otherwise", () => {
     expect(themeOf("", null)).toBe("auto");
     expect(themeOf("", "blue")).toBe("auto");
+  });
+
+  it("names every theme in a shareable query", () => {
+    expect(themeSearch("?token=t", "auto")).toBe("?token=t&theme=auto");
+    expect(themeSearch("?theme=dark", "light")).toBe("?theme=light");
   });
 
   it("asks for the scheme it names, or both for the device's", () => {

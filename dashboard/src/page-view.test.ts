@@ -94,7 +94,7 @@ describe("the page with an answer", () => {
     expect(pageFresh(view)).toEqual({
       short: "Updated 2 min ago",
       detail: [
-        "Every panel shows what the 16:45 tick found, host time.",
+        "The running, needs-you and queue panels show what the 16:45 tick found, host time; the log is read on its own.",
         "The next tick is due 16:50.",
         "The page read the host at 16:47 and reads again every 60 s and on focus.",
       ],

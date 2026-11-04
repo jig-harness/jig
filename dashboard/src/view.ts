@@ -64,14 +64,15 @@ export function freshOf(
   const { nowMs, timeZone } = clockNow;
   const tick = Date.parse(line.startedAt);
   const due = tick + line.intervalMs;
-  const shows = `Every panel shows what the ${clock(tick, timeZone)} tick found, host time.`;
+  const shows = `The running, needs-you and queue panels show what the ${clock(tick, timeZone)} tick found, host time; the log is read on its own.`;
   const age = `Updated ${ago(tick, nowMs)} ago`;
+  const next = `The next tick ${nowMs > due ? "was" : "is"} due ${clock(due, timeZone)}.`;
   if (gone)
     return {
       short: `${age} · offline`,
       detail: [
         shows,
-        `The next tick was due ${clock(due, timeZone)}.`,
+        next,
         "The server is not answering, so nothing newer can be read.",
       ],
       alarm: true,

@@ -192,6 +192,26 @@ describe("the disclosures", () => {
           "the list has closed",
           async () => (await items.count()) === closed,
         );
+        await page.locator(".pQueue .moreBtn:not(.headMore)").click();
+        await until(
+          "the list has opened again",
+          async () => (await items.count()) > closed,
+        );
+        await page.evaluate(() =>
+          window.scrollTo(0, document.body.scrollHeight),
+        );
+        await page.locator(".pQueue .moreBtn:not(.headMore)").click();
+        await until(
+          "the foot button has closed the list",
+          async () => (await items.count()) === closed,
+        );
+        await until(
+          "the panel's head is back in view",
+          async () =>
+            await page
+              .locator(".pQueue .headMore")
+              .evaluate((el) => el.getBoundingClientRect().top >= 0),
+        );
       } finally {
         await context.close();
       }

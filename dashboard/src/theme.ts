@@ -17,14 +17,23 @@ const NEXT: Record<Theme, Theme> = {
   dark: "auto",
 };
 
+function named(value: string | null): Theme | null {
+  return value === "auto" || value === "light" || value === "dark"
+    ? value
+    : null;
+}
+
 function forced(value: string | null): Theme | null {
   return value === "light" || value === "dark" ? value : null;
 }
 
-/** The theme the address names, else the one this browser kept, else the device's. */
+/**
+ * The theme the address names (`auto` included, so a link can ask for the
+ * device's), else the one this browser kept, else the device's.
+ */
 export function themeOf(search: string, kept: string | null): Theme {
   return (
-    forced(new URLSearchParams(search).get("theme")) ?? forced(kept) ?? "auto"
+    named(new URLSearchParams(search).get("theme")) ?? forced(kept) ?? "auto"
   );
 }
 
@@ -38,9 +47,9 @@ export function nextTheme(theme: Theme): Theme {
   return NEXT[theme];
 }
 
-/** A shareable query carries the effective theme, including a restored choice. */
+/** A shareable query names the effective theme, the device's included. */
 export function themeSearch(search: string, theme: Theme): string {
-  return withParam(search, "theme", theme === "auto" ? null : theme);
+  return withParam(search, "theme", theme);
 }
 
 /** The theme, and how to change it. */
@@ -51,12 +60,13 @@ export function useTheme(): [Theme, (theme: Theme) => void] {
   useEffect(() => {
     // The document's own scheme too, so what lies past the page's edge matches it.
     document.documentElement.style.colorScheme = schemeOf(theme);
-    replaceParam("theme", theme === "auto" ? null : theme);
+    // Auto without a choice leaves the address as it was.
+    if (theme !== "auto") replaceParam("theme", theme);
   }, [theme]);
   const choose = useCallback((next: Theme) => {
     setTheme(next);
     writeKept(KEY, next === "auto" ? null : next);
-    replaceParam("theme", next === "auto" ? null : next);
+    replaceParam("theme", next);
   }, []);
   return [theme, choose];
 }

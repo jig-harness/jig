@@ -254,7 +254,7 @@ describe("staleness", () => {
     expect(freshOf(line, CLOCK, false)).toEqual({
       short: "Updated 2 min ago",
       detail: [
-        "Every panel shows what the 16:45 tick found, host time.",
+        "The running, needs-you and queue panels show what the 16:45 tick found, host time; the log is read on its own.",
         "The next tick is due 16:50.",
       ],
       alarm: false,
@@ -271,7 +271,7 @@ describe("staleness", () => {
     ).toEqual({
       short: "Updated 8 min ago · overdue",
       detail: [
-        "Every panel shows what the 16:45 tick found, host time.",
+        "The running, needs-you and queue panels show what the 16:45 tick found, host time; the log is read on its own.",
         "The next tick was due 16:50; it is 3 min overdue.",
       ],
       alarm: true,
@@ -290,7 +290,7 @@ describe("staleness", () => {
 
   it("says when the server is not answering, and alarms", () => {
     expect(freshOf(line, CLOCK, true).detail).toContain(
-      "The next tick was due 16:50.",
+      "The next tick is due 16:50.",
     );
     expect(freshOf(line, CLOCK, true)).toMatchObject({
       short: "Updated 2 min ago · offline",
@@ -308,7 +308,9 @@ describe("staleness", () => {
   it("names the tick in the host's zone", () => {
     expect(
       freshOf(line, { ...CLOCK, timeZone: "Asia/Tokyo" }, false).detail[0],
-    ).toBe("Every panel shows what the 01:45 tick found, host time.");
+    ).toBe(
+      "The running, needs-you and queue panels show what the 01:45 tick found, host time; the log is read on its own.",
+    );
   });
 });
 

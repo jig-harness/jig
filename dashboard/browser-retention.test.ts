@@ -25,9 +25,11 @@ describe("retained page choices", () => {
         expect(
           await page.locator(".viewTab").first().getAttribute("href"),
         ).toContain("theme=dark");
-        expect(
-          await page.locator(".fresh").getAttribute("aria-label"),
-        ).toContain("Updated");
+        await until("the freshness label has loaded", async () =>
+          (
+            (await page.locator(".fresh").getAttribute("aria-label")) ?? ""
+          ).includes("Updated"),
+        );
         await openView(page, "History");
         await context.grantPermissions(["clipboard-read", "clipboard-write"]);
         await page
