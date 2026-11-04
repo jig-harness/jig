@@ -249,6 +249,14 @@ export function answerBand(
     line.queue.length > 0
       ? `${plural(line.queue.length, "item")} queued`
       : "queue empty";
+  if (stuck > 0)
+    return {
+      title: pastTense
+        ? `${plural(stuck, "session")} not moving at the ${tickClock} tick.`
+        : `${plural(stuck, "session")} not moving.`,
+      sub: `${plural(moving, "session")} working${wallText}; ${queueText}.`,
+      loud: true,
+    };
   return {
     title: pastTense
       ? `Nothing needed a person at the ${tickClock} tick.`

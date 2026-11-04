@@ -17,7 +17,7 @@ export function Legend({ Fold }: { Fold: FoldComponent }) {
     <section className="panel" id="legend" aria-labelledby="h-legend">
       <h2 id="h-legend">Legend</h2>
       <p className="lede lgMeta">
-        Eight words group what the records say. Each outcome class keeps its own
+        These words group what the records say. Each outcome class keeps its own
         name everywhere; the word beside it only says what kind of fact it is.
       </p>
       <div className="legend">

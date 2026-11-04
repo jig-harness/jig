@@ -1,5 +1,5 @@
 /**
- * The operator vocabulary: eight words, each with one key cap, that group what
+ * The operator vocabulary: words, each with one key cap, that group what
  * the records say. A row always prints its recorded word; the mark beside it
  * says what kind of fact that word is. The legend is built from this mapping,
  * so it cannot drift from what the rows show.

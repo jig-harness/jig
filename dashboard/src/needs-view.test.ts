@@ -296,6 +296,19 @@ describe("the answer", () => {
     });
   });
 
+  it("counts a session not moving when no need is open, so the answer matches the action panel", () => {
+    const line = lineOf("quiet");
+    const [session] = line.sessions;
+    const drifting: LineSnapshot = {
+      ...line,
+      sessions: [{ ...(session as LineSession), drifting: "threads are flat" }],
+    };
+    expect(hasNeedRows(drifting, NOW)).toBe(true);
+    const band = answerBand(drifting, CLOCK, true, false);
+    expect(band.title).toBe("1 session not moving.");
+    expect(band.loud).toBe(true);
+  });
+
   it("goes past tense when what is shown is old", () => {
     expect(answerBand(lineOf("stopped"), CLOCK, true, true).title).toBe(
       "Nothing needed a person at the 16:00 tick.",

@@ -19,8 +19,12 @@ const SERVE = join(import.meta.dir, "serve-fixture.ts");
 const DEADLINE_MS = 15_000;
 
 export function chromiumPath(): string | null {
-  const named = process.env.JIG_CHROMIUM;
-  if (named !== undefined && named !== "") return named;
+  // JIG_CHROMIUM is this suite's own override; JIG_TEST_CHROMIUM is the one CI
+  // already supplies for the browser checks it runs.
+  for (const name of ["JIG_CHROMIUM", "JIG_TEST_CHROMIUM"]) {
+    const named = process.env[name];
+    if (named !== undefined && named !== "") return named;
+  }
   const cache = join(homedir(), ".cache/ms-playwright");
   if (!existsSync(cache)) return null;
   for (const dir of readdirSync(cache).sort().reverse()) {
@@ -61,10 +65,19 @@ export async function start(scenario: ScenarioId): Promise<Served> {
     printed += decoder.decode(value);
   }
   const url = printed.trim();
-  if (!url.startsWith("http"))
+  if (!url.startsWith("http")) {
+    // The child may still be running, so end it before reading what it said:
+    // its stderr closes only when it exits.
+    child.kill("SIGKILL");
+    await child.exited;
+    const said = await Promise.race([
+      new Response(child.stderr).text(),
+      Bun.sleep(2000).then(() => ""),
+    ]);
     throw new BrowserCheckError(
-      `the fixture server for ${scenario} printed no address: ${printed} ${await new Response(child.stderr).text()}`,
+      `the fixture server for ${scenario} printed no address: ${printed} ${said}`,
     );
+  }
   reader.releaseLock();
   let stopped = false;
   return {
@@ -85,6 +98,8 @@ export interface Watched {
   page: Page;
   context: BrowserContext;
   otherOrigins: string[];
+  /** Every request the page made, from before it navigated. */
+  requests: string[];
   problems: string[];
 }
 
@@ -101,9 +116,16 @@ export async function open(
     colorScheme: scheme,
   });
   const page = await context.newPage();
-  const watched: Watched = { page, context, otherOrigins: [], problems: [] };
+  const watched: Watched = {
+    page,
+    context,
+    otherOrigins: [],
+    requests: [],
+    problems: [],
+  };
   page.on("request", (request) => {
     const requested = request.url();
+    watched.requests.push(requested);
     if (!requested.startsWith(origin) && !requested.startsWith("data:"))
       watched.otherOrigins.push(requested);
   });

@@ -17,6 +17,23 @@ const STATE = {
   line: fixture("quiet").line,
 };
 
+describe("what a guard admits", () => {
+  it("refuses a state whose parts the page would throw on", () => {
+    expect(isStateAnswer({ ...STATE, timeZone: "invalid" })).toBe(false);
+    expect(isStateAnswer({ ...STATE, now: "x" })).toBe(false);
+    expect(isStateAnswer({ ...STATE, line: {} })).toBe(false);
+    expect(isStateAnswer({ ...STATE, line: null })).toBe(true);
+    expect(isStateAnswer(STATE)).toBe(true);
+  });
+
+  it("refuses rows with null counts, null options or entries that are not rows", () => {
+    expect(isRowsAnswer({})).toBe(false);
+    expect(isRowsAnswer({ counts: null, options: null, rows: [null] })).toBe(
+      false,
+    );
+  });
+});
+
 describe("what an answer means", () => {
   it("is the answer, for a value this page reads", () => {
     expect(resultOf(200, { ok: true, value: STATE }, isStateAnswer)).toEqual({

@@ -162,6 +162,7 @@ export function writeTickLine(
             Date.parse(receipt.finishedAt),
           ),
           lastAccount: lastAccount(records),
+          previousNeeds: previous.ok ? (previous.value?.needs ?? []) : [],
           recentTicksMs: previous.ok
             ? (previous.value?.recentTicksMs ?? [])
             : [],

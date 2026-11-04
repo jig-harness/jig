@@ -4,7 +4,7 @@
  * laptop's, light and dark, for overflow, requests, errors and the strip's fact;
  * then the behaviours one scenario at a time.
  *
- * It drives Chromium through `playwright-core`, from `JIG_CHROMIUM` or the
+ * It drives Chromium through `playwright-core`, from `JIG_CHROMIUM`, `JIG_TEST_CHROMIUM` or the
  * Playwright cache. Where none is found the checks cannot run and are skipped
  * with a warning. Set `JIG_REQUIRE_BROWSER=1` on a machine that must run them:
  * there a missing browser is a failing test, so a suite that never ran cannot
@@ -398,8 +398,7 @@ describe("a wrong token", () => {
     "gets the refusal, no data, and no script runs",
     async () => {
       const server = await served("token");
-      const requests: string[] = [];
-      const { page, context } = await open(
+      const { page, context, requests } = await open(
         requireBrowser(),
         server.origin,
         server.url.replace(TOKEN, WRONG_TOKEN),
@@ -407,7 +406,6 @@ describe("a wrong token", () => {
         "light",
         [REFUSAL_LOAD],
       );
-      page.on("request", (request) => requests.push(request.url()));
       try {
         await shows(page, "#h-ref");
         expect(await page.locator("#h-ref").innerText()).toBe(
@@ -421,7 +419,12 @@ describe("a wrong token", () => {
         expect(text).not.toContain("example-org");
         expect(text).not.toContain("work-a");
         expect(await page.locator("#root").count()).toBe(0);
-        expect(requests).toEqual([]);
+        // Only the page itself was fetched, from before it navigated: no read.
+        expect(
+          requests.filter((url) =>
+            /^\/(state|rows|receipt)$/.test(new URL(url).pathname),
+          ),
+        ).toEqual([]);
       } finally {
         await context.close();
       }

@@ -110,24 +110,28 @@ function parseFilter(
   return filter;
 }
 
-/** Each bad class on a repository that ended on at least three of the seven nights before now. */
+/** Each bad class on a repository that ended on at least three of the last seven host days, today included. */
 function recurringClasses(
   db: NonNullable<ReturnType<typeof existingStateDb>>,
   nowMs: number,
+  timeZone: string,
 ): RecurringClass[] {
+  // Day starts, oldest first: they are calendar boundaries of the host's zone,
+  // so a day's bucket does not move as the query time does.
+  const starts = Array.from({ length: RECURRENCE_NIGHTS }, (_, i) =>
+    midnightIn(timeZone, nowMs, i + 1 - RECURRENCE_NIGHTS),
+  );
   const groups = new Map<string, RecurringClass>();
   const selected = db
     .query(
-      `SELECT bucket, repo, (?1 - at_ms) / ${DAY_MS} AS night, COUNT(*) AS n FROM log
-       WHERE kind = 'ended' AND at_ms <= ?1 AND at_ms > ?2
-         AND bucket NOT IN (${NOT_BAD.map((c) => `'${c}'`).join(", ")})
-       GROUP BY bucket, repo, night`,
+      `SELECT bucket, repo, at_ms FROM log
+       WHERE kind = 'ended' AND at_ms <= ?1 AND at_ms >= ?2
+         AND bucket NOT IN (${NOT_BAD.map((c) => `'${c}'`).join(", ")})`,
     )
-    .all(nowMs, nowMs - RECURRENCE_NIGHTS * DAY_MS) as Array<{
+    .all(nowMs, starts[0] ?? nowMs) as Array<{
     bucket: string;
     repo: string;
-    night: number;
-    n: number;
+    at_ms: number;
   }>;
   for (const row of selected) {
     const key = `${row.bucket}\u0000${row.repo}`;
@@ -137,8 +141,9 @@ function recurringClasses(
       nights: Array.from({ length: RECURRENCE_NIGHTS }, () => false),
       rows: 0,
     };
-    group.nights[RECURRENCE_NIGHTS - 1 - row.night] = true;
-    group.rows += row.n;
+    const day = starts.findLastIndex((start) => start <= row.at_ms);
+    if (day >= 0) group.nights[day] = true;
+    group.rows += 1;
     groups.set(key, group);
   }
   return [...groups.values()]
@@ -233,7 +238,7 @@ export function queryLog(
         account: values.account,
         class: [...new Set([...OUTCOME_CLASSES, ...values.bucket])],
       },
-      recurring: recurringClasses(db, nowMs),
+      recurring: recurringClasses(db, nowMs, timeZone),
       logHasRows: db.query("SELECT 1 FROM log LIMIT 1").get() !== null,
     };
   })();

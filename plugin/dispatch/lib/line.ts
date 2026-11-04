@@ -66,6 +66,8 @@ export interface RepoStored {
 }
 
 export interface LineInput {
+  /** The needs of the tick before, whose first sightings a continuing need keeps. */
+  previousNeeds?: LineNeed[];
   runId: string;
   startedAt: string;
   finishedAt: string;
@@ -230,7 +232,23 @@ class RepoView {
   }
 }
 
-function needsOf(view: RepoView, nowIso: string): LineNeed[] {
+/** When the previous tick's line first showed this need, so a need that carries on keeps its age. */
+function firstSeen(
+  previous: LineNeed[],
+  repo: string,
+  target: string,
+  cause: string,
+): string | undefined {
+  return previous.find(
+    (n) => n.repo === repo && n.target === target && n.cause === cause,
+  )?.since;
+}
+
+function needsOf(
+  view: RepoView,
+  nowIso: string,
+  previous: LineNeed[],
+): LineNeed[] {
   const planned = view.report.actions.filter(isNeed).map((action): LineNeed => {
     const pr = prNumber(action.target);
     const notification = view.report.notifications.find(
@@ -253,6 +271,7 @@ function needsOf(view: RepoView, nowIso: string): LineNeed[] {
         text(action.evidence, "heartbeat") ??
         text(action.evidence, "idleSince") ??
         at ??
+        firstSeen(previous, view.slug, action.target, action.cause) ??
         nowIso,
       reason: action.reason,
       decisions: (view.drive(pr)?.waiting ?? []).map(decisionOf),
@@ -282,7 +301,9 @@ function needsOf(view: RepoView, nowIso: string): LineNeed[] {
         item: u.target,
         url: view.url(u.target),
         title: view.title(u.target),
-        since: nowIso,
+        since:
+          firstSeen(previous, view.slug, u.target, "assigner-cannot-write") ??
+          nowIso,
         reason: u.reason,
         decisions: [],
         notified: null,
@@ -586,7 +607,9 @@ export function buildLine(input: LineInput): LineSnapshot {
       .filter((r) => holds(r.state))
       .map((r) => sessionOf(r, bySlug.get(r.record.repo)))
       .filter((s): s is LineSession => s !== null),
-    needs: views.flatMap((v) => needsOf(v, input.finishedAt)),
+    needs: views.flatMap((v) =>
+      needsOf(v, input.finishedAt, input.previousNeeds ?? []),
+    ),
     queue: views.flatMap(queueOf),
     repos: input.reports.map((r) => repoOf(r, input.machine)),
   };

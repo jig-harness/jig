@@ -99,7 +99,8 @@ const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 /**
  * The instant a `datetime-local` value names on a zone's clock, as ISO text;
  * `null` for text not in that form. The offset is read twice since the first
- * guess can stand on the other side of a clock change from the answer.
+ * guess can stand on the other side of a clock change from the answer, and the
+ * result is checked by showing it back.
  */
 export function instantOf(wall: string, timeZone: string): string | null {
   const found = WALL_CLOCK.exec(wall);
@@ -112,8 +113,13 @@ export function instantOf(wall: string, timeZone: string): string | null {
     hour ?? 0,
     minute ?? 0,
   );
-  const offset = offsetMs(timeZone, asUtc - offsetMs(timeZone, asUtc));
-  return new Date(asUtc - offset).toISOString();
+  const before = offsetMs(timeZone, asUtc);
+  const settled = asUtc - offsetMs(timeZone, asUtc - before);
+  // A time the clock skips has no instant that shows it back; it reads as the
+  // same wall time on the clock's earlier side, which is just after the gap.
+  const instant =
+    inputOf(settled, timeZone) === wall ? settled : asUtc - before;
+  return new Date(instant).toISOString();
 }
 
 /** A number of whole minutes as the page says it: `47 min`, `1 h 17 min`, `3 d`. */

@@ -97,6 +97,10 @@ describe("a typed time and its instant", () => {
     expect(instantOf("2026-03-08T03:30", "America/New_York")).toBe(
       "2026-03-08T07:30:00.000Z",
     );
+    // 02:30 does not exist that day: it reads as 03:30, just after the gap.
+    expect(instantOf("2026-03-08T02:30", "America/New_York")).toBe(
+      "2026-03-08T07:30:00.000Z",
+    );
     // And back at 02:00 on this one.
     expect(instantOf("2026-11-01T00:30", "America/New_York")).toBe(
       "2026-11-01T04:30:00.000Z",

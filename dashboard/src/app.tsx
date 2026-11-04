@@ -276,7 +276,7 @@ function Colophon({ view, token }: { view: PageView; token: string }) {
       )}
       {line === null ? null : (
         <>
-          <a href={receiptUrl(token)}>receipt {line.runId}</a>
+          <a href={receiptUrl(token, line.runId)}>receipt {line.runId}</a>
           <CopyButton text={line.runId} idle="Copy receipt id" />
         </>
       )}

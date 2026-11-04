@@ -332,6 +332,27 @@ describe("buildLine", () => {
     });
   });
 
+  it("keeps the first sighting of a refusal that carries on from tick to tick", () => {
+    const refusing = report({
+      unplaced: [
+        {
+          target: "#231",
+          record: "tracker",
+          reason: "assigned by someone who cannot write",
+          cause: "assigner-cannot-write",
+        },
+      ],
+    });
+    const first = buildLine(
+      input({ reports: [refusing], finishedAt: "2026-11-03T08:00:00.000Z" }),
+    );
+    const later = buildLine(
+      input({ reports: [refusing], previousNeeds: first.needs }),
+    );
+    expect(later.needs[0]?.since).toBe("2026-11-03T08:00:00.000Z");
+    expect(buildLine(input({ reports: [refusing] })).needs[0]?.since).toBe(NOW);
+  });
+
   it("orders the queue by what will happen, and leaves out what started", () => {
     const rearm = (target: string, fields: Partial<Action> = {}): Action => ({
       stage: "rearm",

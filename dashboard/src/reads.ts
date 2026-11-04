@@ -69,8 +69,8 @@ export interface StateRead {
 export function useStateRead(token: string): Read<StateRead> {
   const query = useQuery({
     queryKey: ["state"],
-    queryFn: async (): Promise<StateRead> => ({
-      answer: answerOf(await readState(token)),
+    queryFn: async ({ signal }): Promise<StateRead> => ({
+      answer: answerOf(await readState(token, signal)),
       readAtMono: performance.now(),
     }),
   });
@@ -89,8 +89,8 @@ export function useRowsRead(
   const query = rowsQuery(filter, timeZone);
   const read = useQuery({
     queryKey: ["rows", query],
-    queryFn: async (): Promise<RowsAnswer> =>
-      answerOf(await readRows(token, query)),
+    queryFn: async ({ signal }): Promise<RowsAnswer> =>
+      answerOf(await readRows(token, query, signal)),
     // A range is a time on the host's clock, so it waits until the host's zone is known.
     enabled: filter.window !== "range" || timeZone !== null,
   });

@@ -250,6 +250,31 @@ describe("jig dispatch dashboard", () => {
     expect(logHasRows).toBe(true);
   });
 
+  it("buckets recurrence by host day, so the nights do not move with the query time", () => {
+    const root = mkdtempSync(join(tmpdir(), "dispatch-log-"));
+    bulkRoots.push(root);
+    for (const [i, at] of [
+      "2026-11-01T16:46:00.000Z",
+      "2026-11-01T16:48:00.000Z",
+      "2026-11-02T16:48:00.000Z",
+    ].entries())
+      writeRow(ended(at, `r-day-${i}`, "stalled"), root);
+    const nightsAt = (nowIso: string) => {
+      const answer = dashboardData(
+        new URLSearchParams(),
+        Date.parse(nowIso),
+        root,
+      );
+      if (!answer.ok) throw new TestReadError(answer.failure.reason);
+      return answer.value.recurring.map((r) => r.nights.filter(Boolean).length);
+    };
+    // Two host days hold the failures, however late on Nov 3 the page asks.
+    expect(nightsAt("2026-11-03T16:47:00.000Z")).toEqual([]);
+    expect(nightsAt("2026-11-03T23:00:00.000Z")).toEqual([]);
+    writeRow(ended("2026-11-03T10:00:00.000Z", "r-day-3", "stalled"), root);
+    expect(nightsAt("2026-11-03T16:47:00.000Z")).toEqual([3]);
+  });
+
   it("reads a named window on the host's clock, and the whole day for today", () => {
     const root = fixtureLog();
     const today = rowsOf(new URLSearchParams({ window: "today" }), root);
@@ -279,11 +304,14 @@ describe("jig dispatch dashboard", () => {
       now: () => NOW,
     });
     stop = dashboard.stop;
-    return (path: string, token: string | null = "fixture-token") => {
+    return (
+      path: string,
+      token: string | null = "fixture-token",
+      headers: Record<string, string> = {},
+    ) => {
       const url = new URL(path, dashboard.url);
-      url.search = "";
       if (token !== null) url.searchParams.set("token", token);
-      return fetch(url);
+      return fetch(url, { headers });
     };
   }
 
@@ -331,6 +359,14 @@ describe("jig dispatch dashboard", () => {
     expect(await (await read("/receipt")).json()).toEqual({
       runId: "the receipt",
     });
+    // A receipt named by the run the page shows is that run's, or a refusal that says a newer tick took its place.
+    const named = await read(`/receipt?run=${LINE.runId}`);
+    expect(named.status).toBe(200);
+    const stale = await read("/receipt?run=an-older-tick");
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({
+      failure: { code: "receipt-superseded" },
+    });
   });
 
   it("refuses a wrong token with a page that runs nothing, and an API read with a code", async () => {
@@ -362,11 +398,22 @@ describe("jig dispatch dashboard", () => {
     // fetch asks for compression and undoes it, so the header is what shows it.
     expect(page.headers.get("content-encoding")).toBe("gzip");
     const html = await page.text();
-    const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1] ?? "";
+    const script = /<script>([\s\S]*)<\/script>/i.exec(html)?.[1] ?? "";
     expect(script).not.toBe("");
     expect(script).not.toMatch(/<\/script/i);
     const hash = createHash("sha256").update(script).digest("base64");
     expect(policy).toContain(`'sha256-${hash}'`);
+  });
+
+  it("sends gzip only when the request's Accept-Encoding allows it", async () => {
+    const read = served(fixtureLog());
+    const encoding = async (accept: string) =>
+      (
+        await read("/", "fixture-token", { "accept-encoding": accept })
+      ).headers.get("content-encoding");
+    expect(await encoding("gzip;q=0, identity;q=1")).toBeNull();
+    expect(await encoding("*;q=0")).toBeNull();
+    expect(await encoding("gzip;q=0.5")).toBe("gzip");
   });
 
   it("answers a read that fails with its code and reason, and what was thrown only in its log", async () => {

@@ -97,7 +97,7 @@ interface Page {
  * runs, and it can reach this server and nothing else.
  */
 function contentPolicy(html: string): string {
-  const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1];
+  const script = /<script>([\s\S]*)<\/script>/i.exec(html)?.[1];
   const scripts =
     script === undefined
       ? "'none'"
@@ -130,8 +130,23 @@ function readPage(name: string): Page {
   };
 }
 
+/** Whether the request's `Accept-Encoding` allows gzip: named with a quality above zero, or allowed by `*` when it is not named. */
 function acceptsGzip(request: Request): boolean {
-  return request.headers.get("accept-encoding")?.includes("gzip") ?? false;
+  const header = request.headers.get("accept-encoding");
+  if (header === null) return false;
+  let gzip: number | undefined;
+  let any: number | undefined;
+  for (const part of header.split(",")) {
+    const [name = "", ...params] = part.split(";").map((p) => p.trim());
+    const q = params
+      .map((p) => /^q=([0-9.]+)$/i.exec(p)?.[1])
+      .find((v) => v !== undefined);
+    const quality = q === undefined ? 1 : Number(q);
+    const coding = name.toLowerCase();
+    if (coding === "gzip") gzip = quality;
+    else if (coding === "*") any = quality;
+  }
+  return (gzip ?? any ?? 0) > 0;
 }
 
 function pageResponse(page: Page, request: Request, status = 200): Response {
@@ -154,7 +169,8 @@ function jsonResponse(
     "referrer-policy": "no-referrer",
     "x-content-type-options": "nosniff",
   };
-  return text.length >= COMPRESS_FROM_BYTES && acceptsGzip(request)
+  return Buffer.byteLength(text, "utf8") >= COMPRESS_FROM_BYTES &&
+    acceptsGzip(request)
     ? new Response(Bun.gzipSync(text), {
         status,
         headers: { ...headers, "content-encoding": "gzip" },
@@ -182,6 +198,7 @@ function readAnswer<T>(outcome: Outcome<T>, request: Request): Response {
   if (outcome.ok) return answered(outcome, request, 200);
   console.error(
     `jig dispatch dashboard: ${outcome.failure.code}: ${outcome.failure.reason}`,
+    outcome.failure.cause ?? "",
   );
   return answered(outcome, request, 503);
 }
@@ -213,6 +230,20 @@ export function serveDashboard(options: {
     if (url.pathname === "/rows")
       return readAnswer(dashboardData(url.searchParams, now(), root), request);
     if (url.pathname === "/receipt") {
+      const run = url.searchParams.get("run");
+      if (run !== null) {
+        const line = readLine(root);
+        if (!line.ok) return readAnswer(line, request);
+        if (line.value !== null && line.value.runId !== run)
+          return answered(
+            failed(
+              "receipt-superseded",
+              `tick ${run} is no longer the newest; reload the page to read the newer receipt`,
+            ),
+            request,
+            409,
+          );
+      }
       const receipt = readLineReceipt(root);
       if (!receipt.ok) return readAnswer(receipt, request);
       return receipt.value === null

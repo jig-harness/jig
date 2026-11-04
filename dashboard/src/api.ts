@@ -4,6 +4,7 @@
  * shows rather than something it catches: the server gone, the token refused, a
  * coded failure, or the answer.
  */
+import { isRecord } from "../../plugin/shared/guards.ts";
 import type {
   RowsAnswer,
   StateAnswer,
@@ -74,37 +75,70 @@ function okValue(body: unknown): unknown {
     : undefined;
 }
 
+function isTime(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+/** A zone the browser can show times in: the host names its own by the canonical name the browser lists, or UTC. */
+function isZone(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    (value === "UTC" || Intl.supportedValuesOf("timeZone").includes(value))
+  );
+}
+
+function areRecords(value: unknown): boolean {
+  return Array.isArray(value) && value.every(isRecord);
+}
+
+/** A line the page can lay out: the sections it walks are arrays of records, and the times it formats read. */
+function isLine(value: unknown): boolean {
+  if (value === null) return true;
+  return (
+    isRecord(value) &&
+    isTime(value.startedAt) &&
+    isTime(value.finishedAt) &&
+    typeof value.intervalMs === "number" &&
+    Number.isFinite(value.intervalMs) &&
+    ["accounts", "sessions", "needs", "queue", "repos"].every((section) =>
+      areRecords(value[section]),
+    ) &&
+    (value.needs as Array<Record<string, unknown>>).every(
+      (need) => isTime(need.since) && Array.isArray(need.decisions),
+    ) &&
+    (value.sessions as Array<Record<string, unknown>>).every((session) =>
+      isTime(session.createdAt),
+    )
+  );
+}
+
 export function isStateAnswer(value: unknown): value is StateAnswer {
   return (
-    typeof value === "object" &&
-    value !== null &&
-    "now" in value &&
-    typeof value.now === "string" &&
-    "timeZone" in value &&
-    typeof value.timeZone === "string" &&
-    "schema" in value &&
+    isRecord(value) &&
+    isTime(value.now) &&
+    isZone(value.timeZone) &&
     typeof value.schema === "number" &&
     "line" in value &&
-    typeof value.line === "object"
+    isLine(value.line)
   );
 }
 
 export function isRowsAnswer(value: unknown): value is RowsAnswer {
   return (
-    typeof value === "object" &&
-    value !== null &&
-    "from" in value &&
-    typeof value.from === "string" &&
-    "to" in value &&
-    typeof value.to === "string" &&
-    "rows" in value &&
-    Array.isArray(value.rows) &&
-    "recurring" in value &&
-    Array.isArray(value.recurring) &&
-    "counts" in value &&
-    typeof value.counts === "object" &&
-    "options" in value &&
-    typeof value.options === "object"
+    isRecord(value) &&
+    typeof value.window === "string" &&
+    isTime(value.from) &&
+    isTime(value.to) &&
+    areRecords(value.rows) &&
+    areRecords(value.recurring) &&
+    isRecord(value.counts) &&
+    Object.values(value.counts).every((n) => typeof n === "number") &&
+    typeof value.total === "number" &&
+    typeof value.truncated === "boolean" &&
+    isRecord(value.options) &&
+    ["repo", "stage", "account", "class"].every((field) =>
+      Array.isArray((value.options as Record<string, unknown>)[field]),
+    )
   );
 }
 
@@ -126,37 +160,55 @@ export function resultOf<T>(
   return reads(value) ? { kind: "answer", value } : UNREADABLE;
 }
 
+/** How long one read may take, its body included. */
+const READ_DEADLINE_MS = 15_000;
+
 async function read<T>(
   url: string,
   reads: (value: unknown) => value is T,
+  signal?: AbortSignal,
 ): Promise<ReadResult<T>> {
+  const deadline = AbortSignal.timeout(READ_DEADLINE_MS);
   try {
-    const response = await fetch(url, { cache: "no-store" });
+    const response = await fetch(url, {
+      cache: "no-store",
+      signal:
+        signal === undefined ? deadline : AbortSignal.any([signal, deadline]),
+    });
     return resultOf(response.status, await response.json(), reads);
   } catch (cause) {
     // A body that is not JSON was answered and cannot be read; anything else is
-    // the connection ending before an answer arrived.
+    // the connection ending, or the deadline passing, before an answer arrived.
     return cause instanceof SyntaxError ? UNREADABLE : { kind: "gone" };
   }
 }
 
 /** `GET /state`. */
-export function readState(token: string): Promise<ReadResult<StateAnswer>> {
-  return read(`/state?token=${encodeURIComponent(token)}`, isStateAnswer);
+export function readState(
+  token: string,
+  signal?: AbortSignal,
+): Promise<ReadResult<StateAnswer>> {
+  return read(
+    `/state?token=${encodeURIComponent(token)}`,
+    isStateAnswer,
+    signal,
+  );
 }
 
 /** `GET /rows`, for a filter already written as a query. */
 export function readRows(
   token: string,
   query: string,
+  signal?: AbortSignal,
 ): Promise<ReadResult<RowsAnswer>> {
   return read(
     `/rows?token=${encodeURIComponent(token)}&${query}`,
     isRowsAnswer,
+    signal,
   );
 }
 
-/** Where the newest tick's receipt is served. */
-export function receiptUrl(token: string): string {
-  return `/receipt?token=${encodeURIComponent(token)}`;
+/** Where the receipt of tick `runId` is served: the server answers a newer tick's with a refusal that says so. */
+export function receiptUrl(token: string, runId: string): string {
+  return `/receipt?token=${encodeURIComponent(token)}&run=${encodeURIComponent(runId)}`;
 }
