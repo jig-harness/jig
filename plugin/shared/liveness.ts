@@ -497,10 +497,7 @@ function civilMs(text: string): number {
  * the widest gap between two time zones, which is one start read in two
  * zones and cannot be told from a reused pid.
  */
-function compareStarts(
-  a: string,
-  b: string,
-): "same" | "differ" | "shifted" {
+function compareStarts(a: string, b: string): "same" | "differ" | "shifted" {
   if (a === b) return "same";
   const gap = Math.abs(civilMs(a) - civilMs(b));
   return gap > 0 && gap <= WIDEST_ZONE_GAP_MS && gap % QUARTER_HOUR_MS === 0
