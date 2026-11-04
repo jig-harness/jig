@@ -82,9 +82,9 @@ Third-party code, each under the licence in the file listed, which sits
 beside it:
 
 plugin/shared/vendor/js-yaml.LICENSE
-  js-yaml 4.1.1, MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin
+  js-yaml 4.3.2, MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin
 lib/vendor/js-yaml.LICENSE
-  js-yaml 4.1.1, MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin
+  js-yaml 4.3.2, MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin
 plugin/shared/vendor/optique.LICENSE
   Optique (@optique/core) 1.3.6, MIT License, Copyright 2025–2026 Hong Minhee
 plugin/dispatch/dashboard-page/bundle.LICENSE

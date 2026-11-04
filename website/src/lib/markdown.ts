@@ -6,17 +6,17 @@
  */
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import {
-  createMarkdownProcessor,
-  type MarkdownRenderer,
-} from "@astrojs/markdown-remark";
+import type { MarkdownRenderer } from "@astrojs/markdown-remark";
 import { markdownOptions } from "./markdown-options.ts";
 import { repoRoot } from "./site.ts";
 
 let renderer: Promise<MarkdownRenderer> | undefined;
 
 function processor(): Promise<MarkdownRenderer> {
-  renderer ??= createMarkdownProcessor(markdownOptions(repoRoot));
+  if (!renderer) {
+    const options = markdownOptions(repoRoot);
+    renderer = options.processor.createRenderer(options);
+  }
   return renderer;
 }
 

@@ -220,6 +220,10 @@ test("a number past the range of a double is refused, and YAML's own infinity is
   expect(() => parseData("n: !!float 2e400", "a.yaml")).toThrow(
     "the number 2e400 is past the range of a double",
   );
+  expect(parseData('n: "-1e400"\nm: 1e400suffix', "a.yaml")).toEqual({
+    n: "-1e400",
+    m: "1e400suffix",
+  });
   expect(parseData("n: .inf\nm: -.Inf\nk: .NaN\nx: 0x1F", "a.yaml")).toEqual({
     n: Number.POSITIVE_INFINITY,
     m: Number.NEGATIVE_INFINITY,

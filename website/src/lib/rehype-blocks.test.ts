@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { createMarkdownProcessor } from "@astrojs/markdown-remark";
 import { markdownOptions } from "./markdown-options.ts";
 
 const repoRoot = join(import.meta.dir, "../../..");
 
 async function render(source: string): Promise<string> {
-  const processor = await createMarkdownProcessor(markdownOptions(repoRoot));
+  const options = markdownOptions(repoRoot);
+  const processor = await options.processor.createRenderer(options);
   return (await processor.render(source)).code;
 }
 

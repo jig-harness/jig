@@ -77,13 +77,28 @@ function unfaithful(
 // YAML's own infinity and not-a-number literals.
 const NON_FINITE_LITERAL = /^[-+]?\.(?:inf|nan)$/i;
 
-/** A core-schema number type that refuses, as it constructs it, a number
- * `unfaithful` names. Checking at construction covers a mapping key too:
+/** A core-schema number type that refuses, while resolving or constructing,
+ * a number `unfaithful` names. Checking before key conversion covers a mapping key too:
  * the parser turns a key into its string afterwards, so two keys past 2^53
  * would otherwise become one key and nothing later could see it. */
 function faithful(type: Type): Type {
   return new Type(type.tag, {
     ...type.options,
+    resolve: (data: string) => {
+      // Refuse overflow before resolution can keep the literal as a string.
+      // Quoted scalars never reach an implicit resolver.
+      if (/^[-+]?(?:\d|\.\d)/.test(data)) {
+        const value = Number(data);
+        if (!Number.isNaN(value) && !Number.isFinite(value))
+          throw new InputError(
+            unfaithful(
+              value,
+              data.length > 40 ? `${data.slice(0, 37)}...` : data,
+            ),
+          );
+      }
+      return type.resolve(data);
+    },
     construct: (data: string) => {
       const value = type.construct(data);
       if (typeof value !== "number") return value;

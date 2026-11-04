@@ -68,7 +68,7 @@ jobs:
       commit: ${{ steps.release.outputs.commit }}
       push: ${{ steps.release.outputs.push }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           # The notes are ordered by the commits that added them.
@@ -169,7 +169,7 @@ jobs:
     outputs:
       ready: ${{ steps.plan.outputs.ready }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           # A version is tagged on the first commit of main's history that
