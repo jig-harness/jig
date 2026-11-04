@@ -112,9 +112,12 @@ Ready to merge, lane **merge now**, when all of these hold at the tick:
    ([What `CONVERGED` requires](../plugin/skills/drive-pr/references/terminal-states.md#what-converged-requires)).
 2. Its head is the head the drive verified (`verifiedSha`).
 3. The forge itself witnesses a review of that head: where the repository
-   names a reviewer (`review.reviewer_app`), that app's check run on the
-   head completed and neither failed nor was skipped; where it names none,
-   a person's approving review stands on the head.
+   names a reviewer (`review.reviewer_app`), the reviewer's posting check
+   run on the head, matched as the drive's convergence matches it (the app
+   and the check name, with `review.reviewer_check_pattern` where the
+   repository sets one), completed and neither failed nor was skipped; any
+   other check the app published on the head does not count; where the
+   repository names none, a person's approving review stands on the head.
 4. The forge reports it mergeable with its base (`mergeable` is
    `MERGEABLE`).
 5. It is not a draft.
@@ -149,8 +152,13 @@ written to steer the reviewer never becomes a "merge now" for a person.
 
 `announce-merge-ready.ts` posts only when the predicate says merge now or
 approve first, and words the second as "an approval is still required".
-That is a stricter gate than it holds today, where it refuses only a
-conflict or a draft.
+The predicate adds the forge's protection and review requirements to the
+helper's gates; it replaces none of them. The helper keeps requiring that
+the drive `CONVERGED`, that CI is green, that the head is the verified head
+with the CI-hold evidence, that its worktree is clean and matches the
+reviewed head, and that the live pull request is neither conflicting nor a
+draft. Extracting the predicate takes the forge facts out of the helper and
+leaves those gates where they are.
 
 The board reads the facts conditions 3 to 8 need with its own query
 ([§ The board read](#the-board-read)); conditions 1 and 2 come from the
@@ -165,14 +173,23 @@ this order:
 | an unresolved thread | Needs you | a thread was opened after the drive converged | a person: answer it, or re-arm the drive |
 | the reviewer app's check on the head is missing, failed or skipped | Needs you | the review the ledger reports is not witnessed on this head | a person: re-arm the drive |
 | `reviewDecision` `CHANGES_REQUESTED` | Needs you | who requested changes, and when | a person: that reviewer re-reviews, or the drive is re-armed to address it |
-| an approval is required (`REVIEW_REQUIRED`, or condition 3 or 8 asks for one) and a review is requested | Ready to merge, approve first | waits on a review and approval from the reviewers or teams requested, and since when | a person: one of them reviews and approves |
-| an approval is required and no review is requested | Ready to merge, approve first | needs a review and approval from someone other than its author, and nobody is asked | a person: request a review |
 | `BLOCKED`, a required check running | the column it was in | the required checks still running | waiting |
 | `BLOCKED` or `UNSTABLE`, a check failing | Needs you | a check failed after the drive converged, by name | a person: re-run it, or re-arm the drive |
+| an approval is required (`REVIEW_REQUIRED`, or condition 3 or 8 asks for one) and a review is requested | Ready to merge, approve first | waits on an approval; the reviewers or teams requested are named as requested, and since when | a person: an approval |
+| an approval is required and no review is requested | Ready to merge, approve first | needs a review and approval from someone other than its author, and nobody is asked | a person: request a review |
 | `BLOCKED` for none of these | Needs you | the forge blocks the merge on a rule the board cannot tell (signed commits, a deployment): open the pull request | a person |
 | `BEHIND`, the first in Ready order of its repository | Ready to merge, update next | the repository requires an up-to-date branch; updating moves its head, which costs a re-drive (a review round and a CI run) | a person: update the branch |
 | `BEHIND`, any other | Coming | behind its base, updated after the one in update next | waiting |
 | `UNKNOWN`, or mergeability `UNKNOWN` | the column it was in, marked not read | the forge is still computing | waiting |
+
+The rows are first match, and every row that blocks a merge for a reason
+other than an approval comes before the approval rows, so a pull request
+with a failed or running check, or a thread, is never announced as waiting
+only on an approval. A review request does not say whose approval satisfies
+branch protection: the repository may require several approvals or a code
+owner's, and the board reads neither. So a card names the people or teams
+requested as requested, never as the ones whose approval completes the
+gate, and says the forge may ask for more once an approval is given.
 
 Update next holds one pull request per repository at a time. In a
 repository that requires up-to-date branches, every merge puts every other
@@ -209,8 +226,8 @@ and rebase the repository allows (`squashMergeAllowed`,
 
 The command is built only from values that pass a strict form: the number
 an integer, `<owner/name>` the repository slug the machine file lists,
-`verifiedSha` forty lowercase hexadecimal characters, the method one of the
-three. A value that fails its form withholds the command, and the card
+`verifiedSha` forty lowercase hexadecimal characters, the method one of
+squash, merge and rebase. A value that fails its form withholds the command, and the card
 says which value did; nothing is escaped into a command a person pastes
 into a shell that holds forge credentials. The card's link goes to the pull
 request, where the forge's own merge button does the same checks.
@@ -236,7 +253,7 @@ says nothing is asked of anyone.
 
 ### The status row on every pull request card
 
-Every open pull request carries the same four marks, in the same order and
+Every open pull request carries the same marks, in the same order and
 the same place on the card, whatever its column or list, so a person
 learns to read them once. Each mark is a short symbol and word, and opens a
 hint with its detail on hover, tap or focus, as the page's other hints do:
@@ -248,7 +265,7 @@ hint with its detail on hover, tap or focus, as the page's other hints do:
 | Threads | the number of unresolved review threads | the count, linked to the pull request's conversation |
 | Merge | merge now, approve first, update next, or not ready | the [Ready conditions](#ready-exactly) as a checklist, each met or not with the fact behind it, and for each one not met whether waiting settles it or which person's act does |
 
-The merge mark is the one derived state of the four: the predicate's
+The merge mark is the one derived state among them: the predicate's
 answer, so "why is this not ready" is answered on the card. Every hint ends
 with the tick it was read at.
 
@@ -263,19 +280,30 @@ deadline (30 seconds per repository) marks that repository's cards "not
 read at this tick" with the reason and writes it on the receipt; launches,
 re-drives and notifications of stops are untouched.
 
-It is two GraphQL queries through the signed-in `gh`, the same login the
-drives use, so the two share one hourly budget:
+It is a listing query and a detail query, both GraphQL through the
+signed-in `gh`, the same login the drives use, so they share one hourly
+budget with them:
 
 - **The listing**, paged over the repository's open pull requests, 100 at a
   time, since a paged listing cannot be narrowed to the board's: per pull
-  request a few fields (`isDraft`, `mergeStateStatus`, `reviewDecision`,
-  `isMergeQueueEnabled`, `authorAssociation`), its head commit's check
-  rollup state, and its review threads' resolution (up to 100).
+  request its head commit's id (`headRefOid`), a few fields (`isDraft`,
+  `mergeStateStatus`, `reviewDecision`, `isMergeQueueEnabled`,
+  `authorAssociation`), its head commit's check rollup state, and its
+  review threads' resolution (up to 100).
 - **The detail**, one query naming each pull request of the detail set by
   number: the converged pull requests, the ones in Needs you, and any whose
-  rollup is failing. Per pull request: its head's check contexts (up to
-  100, each with whether it is required, its app and its link), its review
-  requests and its reviewers' latest reviews (up to 20 each).
+  rollup is failing. Per pull request: its head commit's id, its head's
+  check contexts (up to 100, each with whether it is required, its app and
+  its link), its review requests and its reviewers' latest reviews (up to
+  20 each).
+
+Every fact about a pull request is bound to one head. The head commit's id
+in the planning listing, the board listing and the detail must be the same,
+and equal to the ledger's verified head for any card that reaches merge now.
+Where they differ, a push landed between the reads: the detail is read once
+more for that pull request, and where they still differ the card is "not
+read at this tick" and is never in Ready to merge, so a card never combines
+one head's verification with another head's checks.
 
 Nothing reads the comments under a thread, which is where a query's cost
 multiplies: the forge prices a query by the requests its connections need,
@@ -290,12 +318,16 @@ records each board read's cost and the budget left (the query's
 is below a fifth of the hour's, the tick skips the board read, and the
 cards say "not read: the forge budget is kept for the drives".
 
-A connection that overflows its page (more than 100 checks or threads on
-one pull request) gets one follow-up query for that pull request alone. A
-pull request still over after it (more than 300) is marked partial on its
-card ("more than 300 checks: open the pull request") and is never in merge
-now, since an unread failing check cannot be ruled out. It never fails the
-read of its repository.
+A connection that reports another page (`hasNextPage`) on one pull request,
+whether checks, threads, review requests or latest reviews, gets follow-up
+queries for that pull request alone, by cursor, up to the
+[size this is built for](#the-size-it-is-built-for): three pages of 100,
+the first and two follow-ups, so 300 entries. A connection still reporting
+another page after that is marked partial on its card ("more than 300
+checks: open the pull request"), and a partial pull request is never in
+merge now or approve first, since an unread failing check, an unread
+thread, an unread approval or an unread reviewer cannot be ruled out. It
+never fails the read of its repository.
 
 A pull request whose mergeability reads `UNKNOWN` (the forge recomputes it
 for every open pull request after its base moves, so after every merge) is
@@ -341,9 +373,9 @@ forwards. The moves a person meets:
 | Needs you → Coming → Driven | the park was answered and the drive is re-armed |
 | any → off the board | the pull request closed unmerged; the history view keeps it |
 
-When each card entered its column, and where it was before, is kept in a
-table of the state database (`board_seen`), keyed by repository and
-target, not in the line: a tick for one repository, or one that could not
+When each card entered its column and its lane, and where it was before,
+is kept in a table of the state database (`board_seen`), keyed by
+repository and target, not in the line: a tick for one repository, or one that could not
 write the line, keeps every other card's time. A card that moved back (left
 Ready to merge for anything but Merged, or moved left on the board) shows
 where it came from, when, and the cause ("was ready 3 h; its base now
@@ -385,7 +417,7 @@ view, above the panels it has today, which stay.
 The board is a view of its own beside Now, History and Help. On a phone its
 columns stack, Ready to merge first, then Needs you, Driven, Picking up,
 Coming and Merged, each folded to its count beyond its first cards. On a
-wide screen the six columns stand side by side in the order work passes
+wide screen the columns stand side by side in the order work passes
 through them, Ready to merge marked apart, and an empty column narrows to
 its heading. Whether the board later replaces Now as the first view is
 decided once it has been used on a working line. The rest of the visual
@@ -408,8 +440,14 @@ listens only on a private or loopback address. The board shows more than
 the page did (every listed repository's driven and ready pull requests,
 reviewer logins, check names), all of it what each repository's own
 readers see on the forge, and it shows all the machine file's repositories
-to one address. Repositories whose readers must not see each other's work
-are therefore dispatched from different machine files.
+to one address. The dashboard reads one state root, and its history
+aggregates every repository found there without restricting by machine
+file, so two machine files that share a state root expose each other's
+work through either address. Repositories whose readers must not see each
+other's work are therefore dispatched from different machine files with
+separate state roots, each served by its own dashboard instance; a shared
+root with per-repository scoping on every dashboard read is not offered
+until that scoping is specified and enforced.
 
 The person the dispatcher reaches is the board's first reader, but not the
 only person who merges or approves. A merge-now card names no merger: the
@@ -435,14 +473,31 @@ follows the ledger, and it is not the merge queue (see Left out).
 
 ### What waiting cost
 
-The outcome log gains two event rows, each written once per cause as event
-rows are today:
+The outcome log gains event rows. A pull request can leave and re-enter
+Ready to merge at one verified head (a check fails and is re-run, a thread
+opens and is resolved, a hold is added and removed), and each period is its
+own **ready episode**. An episode's key is the pull request, its verified
+head and the episode's start (the tick that saw it enter), so a later
+episode is never discarded as a duplicate of an earlier one, and all of an
+episode's rows share it:
 
-- **became ready**, keyed by the pull request and its verified head, when
-  a card enters Ready to merge, with its lane;
-- **left ready**, keyed the same way, when it leaves, with the cause as the
-  reason (`merged`, `conflicting`, `head moved`, `behind`, `check failed`,
-  `blocked`, `draft`, `closed`) and the time it was ready as its duration.
+- **became ready**, when a card enters Ready to merge, with its lane;
+- **changed lane**, when the card moves between the lanes of Ready to
+  merge, with the lane left, the lane entered and the time spent in the
+  lane left as its duration;
+- **left ready**, when it leaves, with the cause as the reason (`merged`,
+  `conflicting`, `head moved`, `behind`, `check failed`, `blocked`,
+  `draft`, `closed`), the lane it left from and the time it was in that
+  lane as its duration.
+
+The wait of an episode is the sum of its lane durations, so a pull request
+that waited a day for an approval and an hour to be merged shows both. The
+card's time in its current lane comes from `board_seen`, which keeps the
+lane's entry as well as the column's, and orders Ready to merge by it.
+
+The notification record is separate from the event rows: it is keyed by the
+pull request and the head, so a re-entry at the same head is recorded as an
+episode and does not notify again.
 
 The lanes and the causes are closed lists in the dashboard contract, fixed
 before the first row is written; the design round may change how the page
@@ -454,9 +509,18 @@ the lane they waited in; those still ready at the window's end, with the
 oldest one's wait, since a median of the merged leaves out the longest
 waits; and the ready work lost, left ready for anything but a merge, by
 cause. Every wait is measured from the tick that saw the change, so it is
-precise to one interval, and the view says so. The counts are SQL
-aggregates over the log table's time window, the read the history view
-already makes, with its index on time extended to the row's kind.
+precise to one interval, and the view says so.
+
+The history view's existing read filters log rows to the window by time,
+which cannot answer these questions: a pull request that became ready before
+the window and stayed ready through it has no row inside it. So the ready
+counts are an episode query of their own: an episode belongs to the window
+when it began before the window's end and has no left-ready row before the
+window's start, and its became-ready row is read whatever its time. The ones
+without a left-ready row at the window's end are the ones still ready, with
+their wait up to that end; a merge in the window takes its wait from its
+episode's lane durations, not from a row the window may not hold. The
+index on time is extended to the rows' kind and episode key.
 
 ### The line grows one list
 
@@ -483,8 +547,13 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
    host that dispatches a working repository, `jig dispatch log --since
    <30 days ago> --jsonl` gives the re-drives of a stale converged pull
    request with their cause (the ended rows' reason names them), and, per
-   pull request, the time from its drive's converged row to its
-   follow-up's launch, which marks the merge to within an interval. The
+   pull request, the time from its drive's converged row to the forge's
+   `mergedAt`, read with `gh pr list --state merged --json number,mergedAt`.
+   A follow-up's launch is not used as the merge time: a follow-up can be
+   wanted or held until a slot frees, and the ended rows carry the end time
+   and duration, not the launch time (launch is end minus duration), and
+   rate a successful follow-up as `converged` too, so the rows are told
+   apart by stage before they are counted. The
    counts go into the plan item, and a person decides from them whether
    steps 4 to 6 are built. Steps 2 and 3 are built either way: they are
    the queue a person asked for, and they measure the loss from then on.
@@ -493,7 +562,7 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
    `announce-merge-ready.ts` calling it; the board read with its deadline,
    budget floor, overflow follow-up and `UNKNOWN` re-read, isolated from
    planning; the merge command's strict forms; `jig dispatch`'s report
-   listing the merge queue; the `ready` notification; the two event rows;
+   listing the merge queue; the `ready` notification; the event rows;
    the receipt's figures. Done when, on a repository with a required merge
    queue and one without: a converged, witnessed, mergeable pull request
    is reported in merge now with its pinned command; one blocked on a
@@ -518,7 +587,7 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
    the design size keeps the line within its bounds.
 5. **The design round.** A brief from
    [`design-brief-builder`](../plugin/skills/design-brief-builder/SKILL.md)
-   for the board view: the six columns at desktop and phone widths, the
+   for the board view: the columns at desktop and phone widths, the
    scenarios of a quiet line, a full merge queue, a morning of backward
    moves and a long Needs you, light and dark. The round lands under
    [`prototypes/`](prototypes/rubric.md) with its scorecard, which covers
