@@ -34,6 +34,7 @@ function mirrored({
   lintIf = HEAVY_IF,
   verdictIf = "!cancelled()",
   verdictSteps = `${SENTINEL_STEP}${MIRROR_STEP}${JUDGE_STEP}`,
+  on = PR_HOLD,
 } = {}) {
   return repo({
     ".config/jig.yaml": `ci:\n  required_checks: [verdict]\n  hold_label: "hold"\n`,
@@ -41,7 +42,7 @@ function mirrored({
       "heavy:\n  - ci.yml#e2e\n  - ci.yml#lint\n",
     ".config/workflow-conventions-exceptions.txt":
       "# The merge waits for them.\nheavy-per-change .github/workflows/ci.yml\n",
-    ".github/workflows/ci.yml": `${runName}${PR_HOLD}${group}jobs:\n  e2e:\n    if: \${{ ${e2eIf} }}\n    runs-on: x\n    timeout-minutes: 10\n    steps:\n      - run: make e2e\n  lint:\n    if: \${{ ${lintIf} }}\n    runs-on: x\n    timeout-minutes: 10\n    steps:\n      - run: make lint\n  verdict:\n    needs: [e2e, lint]\n    if: \${{ ${verdictIf} }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n${verdictSteps}`,
+    ".github/workflows/ci.yml": `${runName}${on}${group}jobs:\n  e2e:\n    if: \${{ ${e2eIf} }}\n    runs-on: x\n    timeout-minutes: 10\n    steps:\n      - run: make e2e\n  lint:\n    if: \${{ ${lintIf} }}\n    runs-on: x\n    timeout-minutes: 10\n    steps:\n      - run: make lint\n  verdict:\n    needs: [e2e, lint]\n    if: \${{ ${verdictIf} }}\n    runs-on: x\n    timeout-minutes: 5\n    steps:\n${verdictSteps}`,
   });
 }
 
@@ -159,6 +160,44 @@ test("a mirror run is marked by run-name", () => {
     );
 });
 
+test("the real run's name covers the workflow's own pull-request events", () => {
+  const target = (test: string) =>
+    mirrored({
+      on: "on:\n  pull_request_target:\n    types: [opened, synchronize, reopened, labeled, unlabeled]\n",
+      runName: `run-name: \${{ ${OTHER} && format('ci mirror ({0} label)', github.event.label.name) || ${test} && format('ci - {0}', github.event.pull_request.title) || '' }}\n`,
+    });
+  exits(
+    run(["--root", target("github.event_name == 'pull_request_target'")]),
+    0,
+    "the target event",
+  );
+  exits(
+    run(["--root", target("startsWith(github.event_name, 'pull_request')")]),
+    0,
+    "both events",
+  );
+  failsMirror(
+    target("github.event_name == 'pull_request'"),
+    "a test no run of the workflow passes",
+    "no run-name",
+  );
+});
+
+test("a job may read the pull request's state and other contexts", () => {
+  for (const term of [
+    "github.event.pull_request.draft == false",
+    "github.event_name == 'pull_request'",
+    "needs.label.outputs.run == 'true'",
+    "inputs.action == 'check'",
+    "needs.build.outputs['label'] == 'run'",
+  ])
+    exits(
+      run(["--root", mirrored({ e2eIf: `${HEAVY_IF} && ${term}` })]),
+      0,
+      term,
+    );
+});
+
 test("a job that decides on the label event in another form is a finding, never a pass", () => {
   for (const [what, cond] of [
     [
@@ -185,6 +224,22 @@ test("a job that decides on the label event in another form is a finding, never 
       "an action that names no label",
       `!contains(${LABELS}, 'hold') && github.event.action == 'synchronize'`,
     ],
+    [
+      "the whole event, serialized",
+      `!contains(${LABELS}, 'hold') && !contains(toJSON(github.event), '"labeled"')`,
+    ],
+    [
+      "the whole context, serialized",
+      `!contains(${LABELS}, 'hold') && !contains(toJSON(github), 'labeled')`,
+    ],
+    [
+      "an index for every name",
+      `!contains(${LABELS}, 'hold') && github['event']['action'] != 'labeled'`,
+    ],
+    [
+      "the sender, which differs between a label event and a push",
+      `!contains(${LABELS}, 'hold') && github.event.sender.login != 'bot'`,
+    ],
   ] as const) {
     const result = run([
       "--root",
@@ -202,7 +257,7 @@ test("a job that decides on the label event in another form is a finding, never 
       rules: ["ci-hold-guard"],
     });
     expect(result.err).toContain(
-      "job 'e2e' decides on the event's action or label in a form the lint cannot prove safe",
+      "job 'e2e' reads the event outside github.event.pull_request in a form the lint cannot prove safe",
     );
   }
 });

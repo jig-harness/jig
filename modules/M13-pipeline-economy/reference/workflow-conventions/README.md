@@ -141,12 +141,14 @@ recognize is a finding to rewrite or excuse, never a pass.
   while this one skips only a pull request that carries the hold label and
   runs real CI on any other label event, unless the workflow answers that
   event with a mirror (`ci-hold-mirror`). A job's `if:` in a workflow of the
-  hold with a term that reads the event's action or label, in any spelling
-  (`github.event.action`, `github.event['label']`, in any case), is a finding
-  too, unless the term is the mirror's skip term: a job skipped on some events
-  and not others can turn a failing head into a passing one, and a form the
-  lint cannot prove safe is never a pass. A test of the pull request's label
-  set is no such read, since it answers the same on every event. The lint
+  hold may read the event only through `github.event.pull_request`, the pull
+  request's own state, its label set included, which is the same whatever
+  event started the run. A term that reads the event otherwise (its action,
+  its label, its sender, the whole event or the whole `github` context, by
+  property or index, in any case) is a finding, unless it is the mirror's
+  skip term: a job skipped on some events and not others can turn a failing
+  head into a passing one, and a form the lint cannot prove safe is never a
+  pass. Other contexts (`needs`, `inputs`) are no read of the event. The lint
   reads job conditions only; a step that skips on a label event is review's to
   check.
 - `ci-hold-mirror`: applies to a workflow that answers an event for another
@@ -162,8 +164,10 @@ recognize is a finding to rewrite or excuse, never a pass.
   `format('<text>{0}<text>', github.run_id)`, then `||`, so the run cancels
   nothing; without it, the label's run cancels the real run in flight, and any
   other key could read the run id and still come to one text for every run.
-  Its `run-name` is exactly `${{ <the test> && <mirror name> ||
-  github.event_name == 'pull_request' && <real name> || '' }}`, each name a
+  Its `run-name` is exactly `${{ <the test> && <mirror name> || <event test> &&
+  <real name> || '' }}`, the event test `github.event_name == '<event>'` for
+  the workflow's one pull-request trigger, or
+  `startsWith(github.event_name, 'pull_request')`, which covers both; each name a
   quoted string or a `format()` whose pattern is one, the two with literal
   starts that differ (neither begins the other). So every mirror run's name
   starts one way and every real pull-request run's the other, and the mirror

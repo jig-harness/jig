@@ -464,27 +464,28 @@ export function ciHold(pipelines: Pipelines): Found[] {
   ];
 }
 
-/** Whether a term of a job's `if:` reads the event's action or its label, in
- * any spelling: a property (`github.event.action`), an index
- * (`github.event['label']`), in any case. The pull request's label set,
- * `github.event.pull_request.labels.*.name`, is not the event's label: a test
- * of it answers the same on every event. Quoted text is no read. */
-function readsEventLabel(term: string): boolean {
-  const withoutSet = term.replace(
-    /github\.event\.pull_request\.labels\.\*\.name/g,
-    "",
-  );
+/** Whether a term of a job's `if:` reads the event other than through
+ * `github.event.pull_request`: an action, a label, the sender, the whole event
+ * (`toJSON(github.event)`) or the whole context (`toJSON(github)`). The pull
+ * request's own state, its label set included, is the same whatever event
+ * started the run; anything else the event carries can differ between a label
+ * event and a push. An index (`github['event']['action']`) reads as a property;
+ * other quoted text is no read; names compare in any case. */
+function readsEvent(term: string): boolean {
+  const text = term
+    .replace(/\[\s*'([A-Za-z_][\w-]*)'\s*\]/g, ".$1")
+    .replace(/'[^']*'/g, "''");
   return (
-    /\[\s*'\s*(?:action|label)\s*'\s*\]/i.test(withoutSet) ||
-    /\b(?:action|label)\b/i.test(withoutSet.replace(/'[^']*'/g, "''"))
+    /\bgithub\s*\.\s*event\b(?!\s*\.\s*pull_request\b)/i.test(text) ||
+    /\bgithub\b(?!\s*\.)/i.test(text)
   );
 }
 
-/** Every job of a workflow in the hold whose `if:` reads the event's action or
- * label in any term but the mirror form's skip term. A job skipped on some
- * events and not on others can turn a failing head into a passing one, so a
- * form the lint cannot prove safe is a finding, never a pass. Jobs already
- * reported as unguarded are not reported again. */
+/** Every job of a workflow in the hold whose `if:` reads the event outside the
+ * pull request's own state in any term but the mirror form's skip term. A job
+ * skipped on some events and not on others can turn a failing head into a
+ * passing one, so a form the lint cannot prove safe is a finding, never a
+ * pass. Jobs already reported as unguarded are not reported again. */
 function labelEventConditions(
   pipelines: Pipelines,
   heavy: { wf: Workflow; jobs: Job[] }[],
@@ -499,7 +500,7 @@ function labelEventConditions(
       )
       .filter((job) =>
         (conjuncts(bare(condition(job))) ?? [bare(condition(job))]).some(
-          (term) => readsEventLabel(term) && !skip.test(term),
+          (term) => readsEvent(term) && !skip.test(term),
         ),
       )
       .map((job) =>
@@ -508,8 +509,8 @@ function labelEventConditions(
           job,
           "ci-hold-guard",
         )(
-          `job '${job.id}' decides on the event's action or label in a form the lint cannot prove safe, and a job skipped on some events and not others can turn a failing head into a passing one`,
-          `test the pull request's label set for the hold, and skip on another label's event only with the term !(github.event.label.name && github.event.label.name != '${label}') of the mirror form (${README}#ci-hold)`,
+          `job '${job.id}' reads the event outside github.event.pull_request in a form the lint cannot prove safe, and a job skipped on some events and not others can turn a failing head into a passing one`,
+          `read the pull request's state (github.event.pull_request.*) instead, test its label set for the hold, and skip on another label's event only with the term !(github.event.label.name && github.event.label.name != '${label}') of the mirror form (${README}#ci-hold)`,
         ),
       ),
   );
@@ -532,17 +533,30 @@ const mirrorStep = (job: Job, label: string) =>
 const RUN_NAME =
   "(?:format\\(\\s*'([^'{]*)[^']*'(?:\\s*,\\s*[A-Za-z_.]+)*\\s*\\)|'([^']*)')";
 
+/** The test of a run-name's real branch that covers every pull-request event
+ * `wf` runs on: `github.event_name == '<event>'` for its one such trigger, or
+ * `startsWith(github.event_name, 'pull_request')`, which covers both. */
+function pullRequestTest(wf: Workflow): string {
+  const events = PR_EVENTS.filter((event) => event in wf.on);
+  const covering =
+    "startsWith\\(\\s*github\\.event_name\\s*,\\s*'pull_request'\\s*\\)";
+  return events.length === 1
+    ? `(?:github\\.event_name\\s*==\\s*'${events[0]}'|${covering})`
+    : covering;
+}
+
 /** Whether `wf`'s run-name is exactly the mirror form's: `\${{ <the
- * other-label test> && <mirror name> || github.event_name == 'pull_request' &&
- * <real name> || '' }}`, the two names with literal starts that differ, neither
- * beginning the other. Then every mirror run's name starts one way and every
- * real pull-request run's the other; any other shape is not taken. */
+ * other-label test> && <mirror name> || <a test covering the workflow's
+ * pull-request events> && <real name> || '' }}`, the two names with literal
+ * starts that differ, neither beginning the other. Then every mirror run's name
+ * starts one way and every real pull-request run's the other; any other shape
+ * is not taken. */
 function marksMirrors(wf: Workflow, label: string): boolean {
   const name = wf.doc["run-name"];
   if (typeof name !== "string") return false;
   const m = name.match(
     new RegExp(
-      `^\\s*\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&\\s*${RUN_NAME}\\s*\\|\\|\\s*github\\.event_name\\s*==\\s*'pull_request'\\s*&&\\s*${RUN_NAME}\\s*\\|\\|\\s*''\\s*\\}\\}\\s*$`,
+      `^\\s*\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&\\s*${RUN_NAME}\\s*\\|\\|\\s*${pullRequestTest(wf)}\\s*&&\\s*${RUN_NAME}\\s*\\|\\|\\s*''\\s*\\}\\}\\s*$`,
     ),
   );
   const mirror = m?.[1] ?? m?.[2];
@@ -594,7 +608,7 @@ function mirrorRunFindings(
           found(
             "run-name",
             "no run-name marks such a run, so its required job cannot tell a mirror run from a real one",
-            `name a mirror run apart, e.g. run-name: \${{ github.event.label.name && github.event.label.name != '${label}' && format('ci mirror ({0} label)', github.event.label.name) || '' }}, and have the mirror step skip runs with that name`,
+            `name mirror and real runs apart, exactly as run-name: \${{ github.event.label.name && github.event.label.name != '${label}' && format('ci mirror ({0} label)', github.event.label.name) || github.event_name == 'pull_request' && format('ci - {0}', github.event.pull_request.title) || '' }} (startsWith(github.event_name, 'pull_request') where both pull-request events start the workflow), and have the mirror step leave out runs whose name starts like a mirror's`,
           ),
         ]
       : []),
