@@ -12,6 +12,7 @@ import {
   readlinkSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
   lstatSync,
 } from "node:fs";
@@ -156,6 +157,73 @@ test("dead holder and foreign directory are reclaimed", async () => {
     ).toBe("reclaimed");
     expect(existsSync(path)).toBe(false);
   }
+});
+test.skipIf(process.platform === "win32")(
+  "a holder whose pid now belongs to a newer process is reclaimed, and the reclaim says whose it was",
+  async () => {
+    // Windows keeps a lock on a pid that answers, as it always has.
+    const lock = join(scratch, "jig-lock.recycled");
+    symlinkSync(String(process.pid), lock);
+    const before = {
+      hostId: "",
+      host: "",
+      bootId: "",
+      pid: process.pid,
+      start: "Thu Jan  1 00:00:00 1970",
+    };
+    writeFileSync(`${lock}.holder`, JSON.stringify(before));
+    const r = await run([process.execPath, "-e", "console.log('reclaimed')"], {
+      LOCK_NAME: "recycled",
+    });
+    expectRunExit(r, 0);
+    expect(r.out.trim()).toBe("reclaimed");
+    expect(r.error).toContain(
+      `took over ${lock} from pid ${process.pid} on this host, started Thu Jan  1 00:00:00 1970: pid ${process.pid} now belongs to a process started `,
+    );
+    expect(existsSync(lock)).toBe(false);
+    expect(existsSync(`${lock}.holder`)).toBe(false);
+  },
+);
+test("a recorded holder written before the lock it stands beside judges nothing", async () => {
+  const lock = join(scratch, "jig-lock.leftover");
+  const leftover = `${lock}.holder`;
+  writeFileSync(
+    leftover,
+    JSON.stringify({ host: "", pid: process.pid, start: "never" }),
+  );
+  const older = new Date(Date.now() - 60_000);
+  utimesSync(leftover, older, older);
+  if (process.platform === "win32") writeFileSync(lock, String(process.pid));
+  else symlinkSync(String(process.pid), lock);
+  try {
+    const r = await run([process.execPath, "-e", ""], {
+      LOCK_NAME: "leftover",
+      LOCK_TIMEOUT: "0",
+    });
+    expectRunExit(r, 3);
+    expect(r.error).toContain(`held by pid ${process.pid}`);
+    expect(existsSync(lock)).toBe(true);
+  } finally {
+    rmSync(lock);
+    rmSync(leftover);
+  }
+});
+test("the holder's identity stands beside the lock while it runs, and goes with it", async () => {
+  const lock = join(scratch, "jig-lock.recorded");
+  const r = await run(
+    [
+      process.execPath,
+      "-e",
+      `console.log(require("node:fs").readFileSync(${JSON.stringify(`${lock}.holder`)}, "utf8"))`,
+    ],
+    { LOCK_NAME: "recorded" },
+  );
+  expectRunExit(r, 0);
+  const holder = JSON.parse(r.out) as { pid: number; hostId: string };
+  expect(holder.pid).toBeGreaterThan(0);
+  expect(typeof holder.hostId).toBe("string");
+  expect(existsSync(lock)).toBe(false);
+  expect(existsSync(`${lock}.holder`)).toBe(false);
 });
 test("command result propagates and lock releases", async () => {
   for (const code of [7, 0])

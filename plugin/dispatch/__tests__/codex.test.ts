@@ -21,7 +21,8 @@ import {
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
-import { bootId, readRecord } from "../lib/launches.ts";
+import { readRecord } from "../lib/launches.ts";
+import { bootId } from "../../shared/liveness.ts";
 import { formatReceipt } from "../lib/report.ts";
 import { writeWall } from "../lib/walls.ts";
 import type { TickReceipt } from "../receipts.ts";
@@ -131,6 +132,7 @@ describe("jig dispatch --apply on Codex accounts", () => {
       w,
       "20261030T200000Z-aaaaaaaa",
       {
+        hostId: "",
         host: hostname(),
         bootId: bootId(),
         pid: 1,

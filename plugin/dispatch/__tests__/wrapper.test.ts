@@ -54,6 +54,7 @@ describe("the wrapper", () => {
     const id = "20261031T080000Z-cccccccc";
     earlierRecord(w, { id, account: "a", token: "the-token" });
     claimed(w, id, {
+      hostId: "",
       host: "elsewhere",
       bootId: "",
       pid: 4242,

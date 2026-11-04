@@ -7,9 +7,13 @@
  * live, never what taking or retiring one means.
  *
  * A claim is `claim.<nonce>` inside the lock directory. Line 1 is
- * `<pid> <hostname> <platform>` — the liveness identity, and everything the protocol ever
- * reads. Line 2, when present, is one JSON object of OPERATOR DIAGNOSTICS:
- * which PR the owner is driving, from which worktree, since when, and where its
+ * `<pid> <hostname> <platform> <host id>` — the liveness identity, and
+ * everything the protocol ever reads. The pid, host name and host id are the
+ * shared process identity's (`shared/liveness.ts`), and a host is compared by
+ * its id first, so a claim this machine wrote under an earlier host name is
+ * still this host's; a claim written before host ids ends at the platform and
+ * is compared by name. Line 2, when present, is one JSON object of OPERATOR
+ * DIAGNOSTICS: which PR the owner is driving, from which worktree, since when, and where its
  * durable log is. Diagnostics are advisory by design: a claim with no second
  * line (or an unparsable one) is a valid claim whose owner has nothing to show
  * — never a protocol error — so refusals and listings degrade to pid/host, and
@@ -18,7 +22,11 @@
  * with pid/host alone that is an ambiguity a human has to resolve by hand.
  */
 
-import { hostname } from "node:os";
+import {
+  SESSION_LEASE_MIN,
+  sameHost,
+  thisHost,
+} from "../../../../shared/liveness.ts";
 import { isDigits } from "./cli.ts";
 import {
   type AccountIdentity,
@@ -61,21 +69,31 @@ export interface ClaimRecord {
   pid: number;
   host: string;
   platform: string | null;
+  /** The writer's host id; absent from a claim written before host ids. */
+  hostId?: string;
   diag: ClaimDiag | null;
 }
 
 /**
  * Serialize a claim. The diagnostics object is written compactly on one line,
  * so line 1 stays the whole identity. Older parsers still read the first two
- * tokens as pid and host; new readers also bind the PID namespace.
+ * tokens as pid and host; new readers also bind the PID namespace and the
+ * host id.
  */
 export function formatClaim(
   pid: number,
   host: string,
   diag?: ClaimDiag,
+  hostId = "",
 ): string {
-  const head = `${pid} ${host} ${process.platform}\n`;
+  const head = `${pid} ${host} ${process.platform}${hostId === "" ? "" : ` ${hostId}`}\n`;
   return diag === undefined ? head : `${head}${JSON.stringify(diag)}\n`;
+}
+
+/** This process's claim, its identity read from the shared module. */
+export function ownClaim(diag?: ClaimDiag): string {
+  const here = thisHost();
+  return formatClaim(process.pid, here.host, diag, here.hostId);
 }
 
 /**
@@ -232,20 +250,41 @@ export function parseClaimText(text: string): ClaimRecord | null {
   const nl = text.indexOf("\n");
   const head = nl === -1 ? text : text.slice(0, nl);
   const rest = nl === -1 ? "" : text.slice(nl + 1);
-  const [rawPid, rawHost = "", platform = null] = head.trim().split(/\s+/);
+  const [rawPid, rawHost = "", platform = null, hostId = ""] = head
+    .trim()
+    .split(/\s+/);
   if (!isDigits(rawPid ?? "")) return null;
   const pid = Number.parseInt(rawPid as string, 10);
   if (pid < 1 || !Number.isSafeInteger(pid)) return null;
-  return { pid, host: rawHost, platform, diag: parseDiag(rest) };
+  return {
+    pid,
+    host: rawHost,
+    platform,
+    ...(hostId === "" ? {} : { hostId }),
+    diag: parseDiag(rest),
+  };
+}
+
+/** The host a claim was written on, as the shared identity compares it. */
+interface ClaimHost {
+  host: string | null;
+  hostId?: string | undefined;
+}
+
+/** Whether a claim was written on this machine: by host id first, an empty host being this one. */
+function onThisHost(record: ClaimHost): boolean {
+  return sameHost(
+    { host: record.host ?? "", hostId: record.hostId },
+    thisHost(),
+  );
 }
 
 /** A host can expose multiple PID namespaces (native Windows and WSL).
  * Untagged older claims are POSIX-compatible; Windows cannot bind them safely. */
-export function samePidNamespace(record: {
-  host: string;
-  platform?: string | null;
-}): boolean {
-  if (record.host !== "" && record.host !== hostname()) return false;
+export function samePidNamespace(
+  record: ClaimHost & { platform?: string | null },
+): boolean {
+  if (!onThisHost(record)) return false;
   return record.platform == null
     ? process.platform !== "win32"
     : record.platform === process.platform;
@@ -268,7 +307,7 @@ export function samePidNamespace(record: {
  * prevent. What the window bounds is how long a driver may be entirely GONE —
  * killed, or its host suspended — before its claim may be recovered.
  */
-export const HEARTBEAT_STALE_MIN_DEFAULT = 360;
+export const HEARTBEAT_STALE_MIN_DEFAULT = SESSION_LEASE_MIN;
 
 export function heartbeatStaleMs(): number {
   const raw = process.env.DRIVE_PR_LOCK_HEARTBEAT_MIN ?? "";
@@ -287,16 +326,18 @@ export function heartbeatStaleMs(): number {
  * read — stays alive, since an unreadable answer is not evidence of
  * abandonment.
  */
-export function claimLive(record: {
-  pid: number;
-  host: string;
-  platform?: string | null;
-  ageMs: number | null;
-}): boolean {
+export function claimLive(
+  record: ClaimHost & {
+    pid: number;
+    platform?: string | null;
+    ageMs: number | null;
+  },
+): boolean {
   if (!samePidNamespace(record)) return true;
-  if (!pidAlive(record.pid, record.host)) return false;
-  if (record.host !== "" && record.host !== hostname()) return true;
-  return record.ageMs === null || record.ageMs <= heartbeatStaleMs();
+  return (
+    pidAlive(record.pid, "") &&
+    (record.ageMs === null || record.ageMs <= heartbeatStaleMs())
+  );
 }
 
 /**
@@ -315,8 +356,8 @@ export const STAGING_STALE_MS = 5 * 60_000;
  * Is a staging directory's named owner still live, by the two-tier age
  * policy `drive.ts`'s `sweepStaleStaging` reclaims by: a dead pid is dead
  * however young the directory; a live LOCAL pid ages out after
- * `STAGING_STALE_MS`; a foreign host's `pidAlive` reads unconditionally
- * `true` (unanswerable, not confirmed-alive), so it ages out only after the
+ * `STAGING_STALE_MS`; a foreign host's pid is not checked here at all
+ * (unanswerable, not confirmed-alive), so it ages out only after the
  * much longer `heartbeatStaleMs()` — bounding cross-host residue without
  * guessing at clock skew. `ageMs === null` stays alive, same as `claimLive`.
  *
@@ -325,19 +366,16 @@ export const STAGING_STALE_MS = 5 * 60_000;
  * forever) but wrong for staging, which nothing ever refreshes and which
  * this age fallback exists to bound.
  */
-export function stagingLive(record: {
-  pid: number;
-  host: string;
-  platform?: string | null;
-  ageMs: number | null;
-}): boolean {
-  if (
-    (record.host === "" || record.host === hostname()) &&
-    !samePidNamespace(record)
-  )
-    return true;
-  if (!pidAlive(record.pid, record.host)) return false;
-  const foreign = record.host !== "" && record.host !== hostname();
+export function stagingLive(
+  record: ClaimHost & {
+    pid: number;
+    platform?: string | null;
+    ageMs: number | null;
+  },
+): boolean {
+  const foreign = !onThisHost(record);
+  if (!foreign && !samePidNamespace(record)) return true;
+  if (!foreign && !pidAlive(record.pid, "")) return false;
   const staleAfter = foreign ? heartbeatStaleMs() : STAGING_STALE_MS;
   return record.ageMs === null || record.ageMs <= staleAfter;
 }

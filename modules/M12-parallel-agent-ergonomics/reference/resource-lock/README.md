@@ -87,9 +87,24 @@ reclaimer, so a crash can never wedge recovery.
   entry has no recorded owner to compare, so a tool that is still alive and
   removing its own leftover at the same moment is outside what this guards.
 
-The one residual caveat is process-id reuse: if the OS has recycled the dead
-holder's id for an unrelated live process, the lock looks held until
-`LOCK_TIMEOUT` elapses (then exit `3`) — the safe direction to fail. It never
+Process-id reuse is told apart by the holder's
+[process identity](../../../../GLOSSARY.md) (its host, its boot, its process id
+and its start time), which a holder writes beside the lock, in
+`<lock>.holder`, once it holds it, and removes before it releases. The lock
+itself still names only the process id, so a wrapper from an earlier version
+excludes this one as before. When the lock's process id answers, a contender
+reads the start time of the process that has it now, and a lock whose process
+id belongs to a process started at another time is reclaimed like a dead
+holder's. The recorded identity counts only when it names the lock's process
+id and was written no earlier than the lock, so a leftover never judges a
+later holder. A reclaim, and a wait that runs out, say whose lock it was and
+why.
+
+The residual caveat is reuse without that record: a lock an earlier version
+took, a holder that could not write its identity, or any lock on Windows,
+where the check reads no creation time. If the OS has recycled the dead
+holder's id for an unrelated live process there, the lock looks held until
+`LOCK_TIMEOUT` elapses (then exit `3`), the safe direction to fail. It never
 tears down a lock a live holder still owns.
 
 ## Files
@@ -97,7 +112,7 @@ tears down a lock a live holder still owns.
 | File | Role |
 |------|------|
 | `with-resource-lock.ts` | the mutex wrapper; lock via `LOCK_NAME`/`--lock`, waits + bypass via env |
-| `with-resource-lock.test.ts` | paired self-test (mutual exclusion, bypass, stale reclaim, exit codes) |
+| `with-resource-lock.test.ts` | paired self-test (mutual exclusion, bypass, stale reclaim, a reused process id, exit codes) |
 
 Run the self-test with `bun test ./with-resource-lock.test.ts`. It scrubs `CI`
 from its own environment first, so the locking assertions still lock when the test itself
