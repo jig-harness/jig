@@ -97,6 +97,17 @@ class RecordDefect extends Error {}
 const ISO_TIME =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
+/** A real calendar day and time, without Date.parse's day or midnight normalization. */
+function validTime(at: string): boolean {
+  return (
+    ISO_TIME.test(at) &&
+    Number.isFinite(Date.parse(at)) &&
+    Number(at.slice(11, 13)) < 24 &&
+    new Date(`${at.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) ===
+      at.slice(0, 10)
+  );
+}
+
 /** A hidden marker's name: lowercase words joined by `-`, in `:`-separated parts. */
 const MARKER_NAME = /^[a-z][a-z0-9-]*(?::[a-z0-9-]+)*$/;
 
@@ -158,11 +169,7 @@ function fieldFault(
       code: "bad-key",
       reason: `key ${shown(key)} is not a ${kind.name} key`,
     };
-  if (
-    typeof at !== "string" ||
-    !ISO_TIME.test(at) ||
-    !Number.isFinite(Date.parse(at))
-  )
+  if (typeof at !== "string" || !validTime(at))
     return {
       code: "bad-time",
       reason: `the time ${shown(at)} is not an ISO 8601 time`,

@@ -1574,8 +1574,9 @@ make, use the entry's term instead.
 - **Records registry** — the one list of every kind of record the plugin
   keeps, with where each lives, who writes it and its schema version
   (`plugin/shared/records/registry.ts`). A gate fails a hidden marker, a
-  drive state file or a table the code names that the registry does not
-  hold, so a new record cannot go unlisted
+  tagged drive state family or a SQLite table declaration the code names
+  that the registry does not hold. Review keeps arbitrary file-backed
+  records and dynamically assembled names in the inventory
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
 - **Component (of the `jig` command)** — one of the machine-level tools the
   plugin's `jig` command joins into one command line: resource collection

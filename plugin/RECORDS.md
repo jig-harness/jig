@@ -9,7 +9,7 @@ to trace every script to learn where a drive keeps its state, which comment
 the dispatcher reads, or what stops two writers from overwriting each other.
 
 This page lists every record the plugin keeps, **by record**: where it
-lives, its format, who writes it and what guards it. It is one of four views
+lives, its format, who writes it and what guards it. It is a view
 of the same system: the
 [lifecycle map](https://github.com/jig-harness/jig/blob/main/docs/LIFECYCLE.md)
 walks it by stage,
@@ -32,7 +32,9 @@ Every record below is registered in the
 medium, its owner, where it lives and its schema version. Jig's own gates
 fail a hidden marker, a drive state family or a SQLite table that the
 plugin's code names and the registry does not hold, and a registry entry the
-code no longer names, so a new record cannot go unlisted.
+code no longer names. This text check does not discover arbitrary file-backed
+records or names assembled at runtime. Adding or changing those records
+requires updating this inventory and the registry during review.
 
 A record that carries the
 [record envelope](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)

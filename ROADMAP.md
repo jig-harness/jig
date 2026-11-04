@@ -69,7 +69,8 @@ leaves behind: a drive's state on the machine, its ledger on the pull
 request, the dispatcher's launch records. Every record says what it is,
 what it is about, who wrote it and when, in the same fields: its
 [record envelope](GLOSSARY.md). One list names every record, and Jig's
-checks fail a new record that is missing from it. Each tool keeps its
+checks catch unregistered hidden-marker literals, tagged drive state
+families and SQLite table declarations; review keeps other records in the list. Each tool keeps its
 machine records in a database of its own, which an older version reads
 unless a change requires the newer one. A second machine reads from the
 pull request who holds a session and whether a follow-up finished, so two

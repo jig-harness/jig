@@ -4,8 +4,8 @@
  * kind, and the two records that carry the envelope first (the drive ledger
  * and the follow-up marker) still reading the forms written before it.
  */
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -33,6 +33,12 @@ import {
 import { NOT_RECORDS, RECORD_KINDS, recordKind } from "../records/registry.ts";
 import { digest, localWriter, readWriter } from "../records/writer.ts";
 
+const temporary: string[] = [];
+afterEach(() => {
+  for (const dir of temporary.splice(0))
+    rmSync(dir, { recursive: true, force: true });
+});
+
 const AT = "2026-11-04T09:30:00.000Z";
 
 function envelope(over: Partial<Envelope> = {}): Envelope {
@@ -49,6 +55,7 @@ function envelope(over: Partial<Envelope> = {}): Envelope {
 describe("the envelope codec", () => {
   it("round-trips a record through a file on disk", () => {
     const dir = mkdtempSync(join(tmpdir(), "records-"));
+    temporary.push(dir);
     const file = join(dir, "record.json");
     const payload = { run: "tick", record: "20261104T093000Z-aaaaaaaa" };
     writeFileSync(file, encode(envelope({ generation: 3 }), payload));
@@ -103,6 +110,7 @@ describe("the envelope codec", () => {
       [{ ...envelope(), key: "12; rm -rf /" }, "bad-key"],
       [{ ...envelope(), writer: { login: "x" } }, "bad-writer"],
       [{ ...envelope(), at: "yesterday" }, "bad-time"],
+      [{ ...envelope(), at: "2026-02-30T00:00:00Z" }, "bad-time"],
       [{ ...envelope(), generation: -1 }, "bad-generation"],
       [{ ledgerVersion: 1 }, "no-envelope"],
     ];
@@ -115,6 +123,32 @@ describe("the envelope codec", () => {
     expect(other.ok ? "ok" : other.failure.code).toBe("unexpected-kind");
     const plain = readEnvelope({ ...envelope(), kind: "dispatch-receipt" });
     expect(plain.ok ? "ok" : plain.failure.code).toBe("unenveloped-kind");
+  });
+
+  it("rejects impossible dates and key terminators in both readers and writers", () => {
+    for (const at of [
+      "2026-02-29T00:00:00Z",
+      "2024-04-31T10:00:00+02:00",
+      "2026-01-01T24:00:00Z",
+      `${AT}\n`,
+    ]) {
+      expect(readEnvelope(envelope({ at })).ok).toBe(false);
+      expect(() => encode(envelope({ at }), {})).toThrow(/strict form/);
+    }
+    for (const kind of ["drive-ledger", "dispatch-followup"]) {
+      for (const ending of ["\n", "\r", "\u2028", "\u2029"]) {
+        const value = envelope({ kind, key: `12${ending}` });
+        expect(readEnvelope(value).ok).toBe(false);
+        expect(() => encode(value, {})).toThrow(/strict form/);
+      }
+    }
+    for (const at of [
+      "2024-02-29T23:59:59Z",
+      "2026-02-28T23:59:59.123456+02:30",
+      "2000-02-29T00:00:00-05:00",
+    ]) {
+      expect(readEnvelope(envelope({ at })).ok).toBe(true);
+    }
   });
 
   it("keeps a writer from writing what a reader refuses", () => {

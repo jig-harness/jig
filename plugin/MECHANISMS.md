@@ -15,7 +15,7 @@ This page maps Jig **by mechanism**. For each part it names the
 that owns it (the script, where its state lives, what it refuses), the
 [reasoned parts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 that use it and what they are trusted to decide there, and who notices a
-failure and who is asked to fix it. It is one of four views of the same
+failure and who is asked to fix it. It is a view of the same
 system: the
 [lifecycle map](https://github.com/jig-harness/jig/blob/main/docs/LIFECYCLE.md)
 walks it by stage, with the skill that owns each,

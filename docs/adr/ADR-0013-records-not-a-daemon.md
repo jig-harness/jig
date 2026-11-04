@@ -31,8 +31,8 @@ lists them in one place ([plugin/RECORDS.md](../../plugin/RECORDS.md) now
 does).
 
 The obvious alternative is a resident coordinator: a daemon that every
-component talks to, or a message bus they publish on. Four facts weigh
-against it.
+component talks to, or a message bus they publish on. These constraints
+weigh against it.
 
 - **The actors rarely coexist.** A drive pass lives minutes, a dispatcher
   tick seconds, and a person answers a parked question hours later. A
@@ -48,12 +48,11 @@ against it.
   failures as values, and reserves a change of programming model for the
   day Jig holds a resident process with real concurrency. A coordinator
   daemon is that process.
-- **The early wake-up exists without one.** The `jig` plugin for Orca is a
-  worker that runs a tick when an agent's status changes
+- **An early wake-up is planned without one.** The planned `jig` plugin
+  for Orca would run a tick when an agent's status changes
   ([design/orca-integration.md](../../design/orca-integration.md#the-jig-plugin-for-orca)),
-  and the machine's timer stays the reconcile that catches what an event
-  missed. That is what a bus would add, with no process of Jig's own to
-  supervise.
+  with the machine's timer catching what an event misses. Until that
+  integration is built, the timer supplies the wake-ups.
 
 ## Decision
 
@@ -63,8 +62,9 @@ record kind is registered (`plugin/shared/records/registry.ts`) with its
 medium, its owner, where it lives and its schema version, and a record that
 carries the envelope says what it is, its key, who wrote it and when, in
 the same fields everywhere (`plugin/shared/records/envelope.ts`). A gate
-fails a hidden marker, a drive state file or a table the registry does not
-hold.
+fails a hidden-marker literal, a tagged drive state family or a SQLite
+table declaration the registry does not hold. Review must keep arbitrary
+file-backed records and dynamically assembled names in the inventory.
 
 Each component derives what to do from records it does not own and writes
 only its own: the dispatcher reads the drive ledger, the tracker and the

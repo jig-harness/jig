@@ -14,7 +14,8 @@
 // - every family the drive's state library tags a state-file pattern with
 //   (`family: "<name>"` in `plugin/skills/drive-pr/scripts/lib/state/`), so
 //   a new pattern either joins a registered family or registers its own;
-// - every SQLite table the code creates (`CREATE TABLE <name>`).
+// - SQLite CREATE TABLE declarations, case-insensitive across lines, with
+//   bare identifiers or names quoted with double quotes, backticks or brackets.
 //
 // Each must be a registered kind's marker, state family or table, or a
 // marker the registry lists as not a record (a generated file's banner, a
@@ -29,8 +30,8 @@
 //
 // Exit 1 on a finding, 2 when it cannot check (no `plugin/` directory, or a
 // file in scope unreadable).
-import { existsSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { readRegularFile, repoFiles } from "../lib/files.ts";
 import {
@@ -75,7 +76,8 @@ const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*)/;
 const MARKER_OPEN = /<!--(?:[ \t]|\\{1,2}s[*+?]?)*/g;
 const SPLICE = /^\$\{([A-Za-z_$][\w$]*)\}/;
 const FAMILY = /\bfamily:\s*"([a-z][a-z0-9-]*)"/g;
-const TABLE = /\bCREATE TABLE\s+(?:IF NOT EXISTS\s+)?([A-Za-z_]\w*)/g;
+const TABLE =
+  /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"([A-Za-z_]\w*)"|`([A-Za-z_]\w*)`|\[([A-Za-z_]\w*)\]|([A-Za-z_]\w*))/gi;
 const NAME_START = /^[A-Za-z]/;
 
 /** The string constants a file declares, by name. */
@@ -120,7 +122,8 @@ function captures(source: string, pattern: RegExp): string[] {
 export function namedIn(path: string, text: string): Named[] {
   const consts = constants(text);
   const family = path.startsWith(STATE_LIBRARY);
-  return text.split("\n").flatMap((source, index): Named[] => {
+  const lines = text.split("\n");
+  const named = lines.flatMap((source, index): Named[] => {
     if (COMMENT_LINE.test(source)) return [];
     const at = { file: path, line: index + 1 };
     return [
@@ -134,13 +137,21 @@ export function namedIn(path: string, text: string): Named[] {
         text: t,
         ...at,
       })),
-      ...captures(source, TABLE).map((t) => ({
-        what: "table" as const,
-        text: t,
-        ...at,
-      })),
     ];
   });
+  // Keep newlines for locations while skipping the same comment lines as markers.
+  const sql = lines
+    .map((line) => (COMMENT_LINE.test(line) ? " ".repeat(line.length) : line))
+    .join("\n");
+  for (const match of sql.matchAll(TABLE)) {
+    named.push({
+      what: "table",
+      text: match.slice(1).find((s) => s !== undefined) as string,
+      file: path,
+      line: sql.slice(0, match.index).split("\n").length,
+    });
+  }
+  return named;
 }
 
 /** Whether marker text `text` opens with `marker`, the next character unable to continue a name. */
@@ -211,9 +222,34 @@ function nameNamed(
   );
 }
 
+/** A regular owning file, with lexical and real paths contained in plugin/. */
+function ownerFault(root: string, owner: string): string | null {
+  const inside = (base: string, path: string) => {
+    const rel = relative(base, path);
+    return (
+      rel !== "" &&
+      rel !== ".." &&
+      !rel.startsWith(`..${sep}`) &&
+      !isAbsolute(rel)
+    );
+  };
+  try {
+    const plugin = resolve(root, "plugin");
+    const file = resolve(plugin, owner);
+    return inside(plugin, file) &&
+      inside(realpathSync(plugin), realpathSync(file)) &&
+      statSync(file).isFile()
+      ? null
+      : "is not a regular file under plugin/";
+  } catch (error) {
+    return `cannot be read: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
 /** What one registry entry claims that the code no longer has. */
 function goneFrom(root: string, named: Named[], kind: RecordKind): string[] {
   const name = kind.name;
+  const fault = ownerFault(root, kind.owner);
   return [
     ...(kind.markers ?? [])
       .filter((marker) => !markerNamed(named, marker))
@@ -231,10 +267,10 @@ function goneFrom(root: string, named: Named[], kind: RecordKind): string[] {
       : [
           `${name}'s table ${JSON.stringify(kind.table)} is created by no code under plugin/`,
         ]),
-    ...(existsSync(join(root, "plugin", kind.owner))
+    ...(fault === null
       ? []
       : [
-          `${name}'s ${kind.foreign === undefined ? "owner" : "reader"} plugin/${kind.owner} does not exist`,
+          `${name}'s ${kind.foreign === undefined ? "owner" : "reader"} plugin/${kind.owner} ${fault}`,
         ]),
   ];
 }

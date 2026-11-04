@@ -8,7 +8,9 @@ release: minor
   [plugin/RECORDS.md](../plugin/RECORDS.md): on the machine, in the working
   tree, on the forge and on the tracker, each with where it lives, its
   format, who writes it and what keeps two writers apart. Behind it is a
-  [records registry](../GLOSSARY.md) the plugin's own checks keep complete.
+  [records registry](../GLOSSARY.md) checked for unregistered hidden-marker
+  literals, tagged drive state families and SQLite table declarations;
+  review keeps other records in the inventory.
 - A [record envelope](../GLOSSARY.md): the fields a record carries to say
   what it is, its version, what it is about, who wrote it and when. The
   drive ledger on a pull request and the dispatcher's follow-up marker carry

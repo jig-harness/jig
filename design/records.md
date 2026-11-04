@@ -15,14 +15,15 @@ new marker or state file that no reader knows. A host sees only its own
 machine records, so a second host cannot tell who holds a launch or whether
 a follow-up ended. With this built, every record says what it is, its key,
 who wrote it and when, in the same fields; a registry lists every kind and
-a gate keeps it complete; the machine records sit in one database per
-component with migrations a reader can check; and what a second host needs
+a gate checks named markers, tagged drive state families and tables; review
+keeps other records in the inventory. The machine records sit in one database
+per component with migrations a reader can check; and what a second host needs
 travels on the forge, through one interface.
 
 This is the design of [plan.md](plan.md) item 37. Its first step is built:
 the envelope and its codec (`plugin/shared/records/envelope.ts`), the
-registry (`plugin/shared/records/registry.ts`), the gate that keeps the
-registry complete (`scripts/check-records-registry.ts`), the drive ledger
+registry (`plugin/shared/records/registry.ts`), the gate that checks those
+forms (`scripts/check-records-registry.ts`), the drive ledger
 and the follow-up marker carrying the envelope, and the view by record,
 [plugin/RECORDS.md](../plugin/RECORDS.md). Why there is no daemon or bus is
 [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md).
