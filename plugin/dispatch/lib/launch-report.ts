@@ -10,7 +10,7 @@ import {
   claimOf,
   type LaunchRecord,
   type LaunchRow,
-  type ProcessIdentity,
+  type LaunchClaim,
   recordOf,
 } from "./launches.ts";
 import { stateRoot } from "../receipts.ts";
@@ -28,7 +28,7 @@ export type LaunchSeen = "started" | "lost" | "not started";
 
 function launchSeen(
   record: LaunchRecord,
-  claim: ProcessIdentity | null | undefined,
+  claim: LaunchClaim | null | undefined,
 ): LaunchSeen {
   if (
     (claim !== undefined && claim !== null) ||

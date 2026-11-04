@@ -88,6 +88,8 @@ function endedHow(r: ReadRecord): string {
     return s.agent === undefined
       ? `its session exited, ${answer}`
       : `its agent is ${s.agent}, ${answer}`;
+  if (s.kind === "died")
+    return `its wrapper died without an exit (${s.reason}), ${answer}`;
   return `its wrapper died without an exit, ${answer}`;
 }
 

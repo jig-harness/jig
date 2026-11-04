@@ -11,11 +11,15 @@
  *
  * The lock is a file under the user's state directory (not the temporary
  * directory, which a launcher can change per process), named after the
- * workspace's path and created exclusively, holding its owner's pid and a
- * token. Release removes it only while it still holds that token. A lock
- * whose owner is no longer running is removed by one reclaimer at a time,
- * under a mutex file beside it; a mutex whose owner is gone is superseded by
- * a next-generation mutex, never moved or removed by another process.
+ * workspace's path and created exclusively, holding its owner's pid, a token
+ * and its owner's process identity (`liveness.ts`), one per line; a lock in
+ * its earlier two-line form is judged by its pid alone. Release removes it
+ * only while it still holds that token. A lock whose owner is no longer
+ * running (its pid gone, or now held by a process that started at another
+ * time) is removed by one reclaimer at a time, under a mutex file beside it,
+ * and the reclaimer reports whose it was and why it counts as gone; a mutex
+ * whose owner is gone is superseded by a next-generation mutex, never moved
+ * or removed by another process.
  * The lock is published whole (linked into place from a private file), so
  * an interrupted acquisition leaves no empty lock. A writer that cannot take the lock within its
  * deadline gets `null` and skips its write: the board is a convenience.
@@ -36,6 +40,16 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { swallow } from "./errors.ts";
+import {
+  decodeIdentity,
+  describeIdentity,
+  encodeIdentity,
+  isAliveSync,
+  legacyIdentity,
+  ownIdentity,
+  type ProcessIdentity,
+} from "./liveness.ts";
+import { log } from "./log.ts";
 
 /** Milliseconds a writer waits for the lock before it skips. */
 const CARD_LOCK_WAIT_MS = 5000;
@@ -78,21 +92,43 @@ function readLock(file: string): string | null {
   }
 }
 
-/** The pid a lock file's content records; `null` when it names none. */
-function pidOf(content: string): number | null {
-  const pid = Number(content.split("\n")[0]);
-  return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+/**
+ * The owner a lock or mutex file's content records: its identity when the
+ * third line holds one for the first line's pid, else that pid alone;
+ * `null` when it names none.
+ */
+function ownerOf(content: string): ProcessIdentity | null {
+  const [first, , third] = content.split("\n");
+  const pid = Number(first);
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  const recorded = third ? decodeIdentity(third) : null;
+  return recorded?.pid === pid ? recorded : legacyIdentity(pid);
 }
 
-/** Only a recorded owner the process table no longer has makes a lock stale. */
-function ownerGone(pid: number | null): boolean {
-  if (pid === null) return false;
-  try {
-    process.kill(pid, 0);
-    return false;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ESRCH";
-  }
+/**
+ * Why a recorded owner counts as gone, or `null` while it may still run:
+ * only an owner judged dead makes a lock stale, never one that cannot be read
+ * or judged.
+ */
+function ownerGone(
+  owner: ProcessIdentity | null,
+  deadline: number,
+): string | null {
+  if (owner === null) return null;
+  const verdict = isAliveSync(owner, undefined, deadline);
+  return verdict.ok && verdict.value.state === "dead"
+    ? `${describeIdentity(owner)}: ${verdict.value.reason}`
+    : null;
+}
+
+/** Why the owner a file's content records counts as gone; `null` while it may run, or when nothing was read. */
+function staleOwner(content: string | null, deadline: number): string | null {
+  return content === null ? null : ownerGone(ownerOf(content), deadline);
+}
+
+/** A lock or mutex file's content for this process: pid, a fresh token, identity. */
+function ownContent(): string {
+  return `${process.pid}\n${randomUUID()}\n${encodeIdentity(ownIdentity())}\n`;
 }
 
 /**
@@ -116,20 +152,24 @@ function ownerGone(pid: number | null): boolean {
  */
 function reclaim(lock: string, deadline: number): void {
   const judged = readLock(lock);
-  if (judged === null || !ownerGone(pidOf(judged))) return;
+  if (judged === null) return;
+  const gone = ownerGone(ownerOf(judged), deadline);
+  if (gone === null) return;
   const id = createHash("sha256").update(judged).digest("hex").slice(0, 16);
   const prefix = `${basename(lock)}.reclaim-${id}-`;
-  const content = `${process.pid}\n${randomUUID()}\n`;
+  const content = ownContent();
   let mutex: string;
   for (let generation = 1; ; generation++) {
     if (performance.now() >= deadline) return;
     mutex = join(dirname(lock), `${prefix}${generation}`);
     if (publish(mutex, content)) break;
-    const held = readLock(mutex);
-    if (held === null || !ownerGone(pidOf(held))) return;
+    if (staleOwner(readLock(mutex), deadline) === null) return;
   }
   try {
-    if (readLock(lock) === judged) rmSync(lock, { force: true });
+    if (readLock(lock) === judged) {
+      rmSync(lock, { force: true });
+      log.warn(`took over the card lock ${lock} from ${gone}`);
+    }
   } finally {
     rmSync(mutex, { force: true });
     sweep(lock, deadline);
@@ -154,7 +194,7 @@ function sweep(lock: string, deadline: number): void {
       : [];
     if (id === undefined || id === standingId(lock)) continue;
     const file = join(dir, name);
-    if (leftover(file, rest ?? "")) rmSync(file, { force: true });
+    if (leftover(file, rest ?? "", deadline)) rmSync(file, { force: true });
   }
 }
 
@@ -170,13 +210,15 @@ function standingId(lock: string): string | null {
  * Whether `file`, named `rest` after the prefix, is a mutex whose owner is gone
  * or a staging file whose publisher is gone.
  */
-function leftover(file: string, rest: string): boolean {
+function leftover(file: string, rest: string, deadline: number): boolean {
   if (/^\d+$/.test(rest)) {
-    const owner = readLock(file);
-    return owner !== null && ownerGone(pidOf(owner));
+    return staleOwner(readLock(file), deadline) !== null;
   }
   const staged = /^\d+\.init-(\d+)-/.exec(rest);
-  return staged !== null && ownerGone(Number(staged[1]));
+  return (
+    staged !== null &&
+    ownerGone(legacyIdentity(Number(staged[1])), deadline) !== null
+  );
 }
 
 /**
@@ -212,8 +254,7 @@ export async function withCardLock<T>(
   const root = options.root ?? defaultRoot();
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const lock = cardLockPath(workspace, root);
-  const token = randomUUID();
-  const content = `${process.pid}\n${token}\n`;
+  const content = ownContent();
   const deadline = performance.now() + (options.waitMs ?? CARD_LOCK_WAIT_MS);
   while (!tryTake(lock, content)) {
     reclaim(lock, deadline);

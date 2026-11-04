@@ -1265,8 +1265,10 @@ and per nudge attempted, which nothing removes; a notification about the
 stop of a launch it started has no row of its own, because that launch's
 ended row covers it). A database a newer plugin wrote is refused, with its
 version named, until the plugin is updated. A launch record a run cannot
-check (claimed on another host or before a reboot) holds its account's
-slot until a person clears it with `jig dispatch clear <record>`.
+check (claimed on another host, or while the process table cannot be read)
+holds its account's slot until a person clears it with
+`jig dispatch clear <record>`; one claimed on this host before it last
+restarted has died and frees its slot.
 
 ## Complete example
 

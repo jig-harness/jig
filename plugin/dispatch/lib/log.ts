@@ -273,6 +273,13 @@ function wallAtEnd(r: ReadRecord, endedAt: string): string | null {
     : null;
 }
 
+/** How a record whose wrapper left no exit ended, with why its process counts as gone. */
+function goneWithoutExit(s: ReadRecord["state"]): string {
+  return s.kind === "died"
+    ? `its wrapper is gone without an exit (${s.reason})`
+    : "its wrapper is gone without an exit";
+}
+
 /** A pickup's session's or a follow-up pass's class: its recorded result, a question it stopped on, else how it ended. */
 function sessionClass(
   r: ReadRecord,
@@ -293,7 +300,7 @@ function sessionClass(
       ? s.agent === undefined
         ? `its session exited ${s.exit.code ?? s.exit.signal ?? "without a code"}`
         : `its agent finished ${s.agent}`
-      : "its wrapper is gone without an exit";
+      : goneWithoutExit(s);
   const wall = wallAtEnd(r, endedAt);
   return wall === null
     ? { class: "died", reason: `no result recorded; ${how}` }
@@ -313,7 +320,7 @@ export function classifyEnded(
         ? s.exit.code === null
           ? `signal ${s.exit.signal ?? "unknown"}`
           : `exit ${s.exit.code}`
-        : "its wrapper is gone without an exit";
+        : goneWithoutExit(s);
     if (facts.takenOver)
       return { class: "stalled", reason: `taken over (${answer})` };
     if (s.kind === "ended" && s.exit.code !== null)
