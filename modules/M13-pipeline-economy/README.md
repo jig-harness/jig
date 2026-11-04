@@ -271,7 +271,7 @@ it: the label's name, and that removing it runs everything again.
 event is cheap where labels rarely change. A repository whose labels change
 often pays it many times over: a tool that shows a pull request's state as
 labels, such as Jig's [dispatcher](../../GLOSSARY.md), changes them at each
-step, and one change is two events, a removal and an addition. Each event's run
+step, and one change removes one label and adds another, each its own event. Each event's run
 cancels the one before it on the same head, so the minutes are wasted, a run
 cancelled that early can leave a cancelled check that no later run replaces,
 and a label added just after a release cancels the run the driver is waiting

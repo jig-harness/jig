@@ -12,8 +12,9 @@ repository that holds CI between review rounds.
   own so it cancels nothing, and the required check repeats the newest real
   run's result on the same commit, failing whenever it cannot show that result
   passed. A repository whose labels change often, such as one running the
-  dispatcher's labels, wants it: one change there is two label events, and
-  each used to start a full run that cancelled the one before. M13's piece 7
+  dispatcher's labels, wants it: one change there removes one label and adds
+  another, each its own event, and each event used to start a full run that
+  cancelled the one before. M13's piece 7
   says why the run cannot simply skip, and `mappings.md` gives its shape on
   GitHub Actions. A repository whose workflows run real CI on every label
   event needs no change.

@@ -348,6 +348,7 @@ correctly, stay with review.
 | `check-workflow-conventions.ts` | the gate: options, exceptions, report |
 | `inputs.ts` | reads the workflows, actions, configuration and exception list, failing closed |
 | `rules.ts` | the rules, one function each |
+| `workflow-reading.ts` | what the rules share: the finding they return, where in a workflow's text it points, how a job's `if:`, needs and steps read |
 | `check-workflow-conventions.test.ts` | paired self-test |
 | `check-workflow-conventions-mirror.test.ts` | the self-test of the CI hold's mirror form |
 | `test-support.ts` | what the self-tests share |

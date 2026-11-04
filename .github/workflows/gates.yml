@@ -19,8 +19,9 @@
 # the defaults.
 #
 # Any other label's event starts a mirror run. Pull requests here change labels
-# often (the dispatcher shows its state as labels, and one change is two
-# events), and a full run per event would cancel the run before it. A mirror run
+# often (the dispatcher shows its state as labels, and one change removes one
+# label and adds another, each its own event), and a full run per event would
+# cancel the run before it. A mirror run
 # skips every heavy job, cancels nothing (its concurrency group is its own), and
 # its `gates` job waits for the newest real run on the same head, then passes
 # only when that run's `gates` passed. It cannot simply skip: GitHub reads the

@@ -1,135 +1,35 @@
 // The workflow-convention lint's rules, one function each, over the parsed
 // workflows and composite actions (inputs.ts). Each returns its findings; a
 // finding names its job where it has one, so an exception can name the job.
-import type { Finding } from "../../../../lib/findings.ts";
 import { isRecord } from "../../../../lib/record.ts";
-import type { Action, Job, Settings, Workflow } from "./inputs.ts";
+import type { Job, Settings, Workflow } from "./inputs.ts";
+import {
+  PR_EVENTS,
+  README,
+  at,
+  bare,
+  callsWorkflow,
+  condition,
+  conjuncts,
+  escapeRegExp,
+  failsOnError,
+  isPullRequest,
+  lineOf,
+  needs,
+  runs,
+  steps,
+  topKey,
+  triggerLine,
+  type Found,
+  type Pipelines,
+} from "./workflow-reading.ts";
 
-export interface Found extends Finding {
-  file: string;
-  job?: string | undefined;
-}
-
-export interface Pipelines {
-  workflows: Workflow[];
-  actions: Action[];
-  settings: Settings;
-}
-
-const README =
-  "modules/M13-pipeline-economy/reference/workflow-conventions/README.md";
 /** The longest `timeout-minutes` a job may declare, in minutes. It is generous
  * on purpose (a timeout stops a hang, it does not police a slow run) and far
  * below GitHub's default of 360; a job that needs more is sharded, or carries a
  * reasoned exception. */
 const MAX_JOB_MINUTES = 60;
-const PR_EVENTS = ["pull_request", "pull_request_target"];
 const EXPRESSION = /\$\{\{/;
-
-const escapeRegExp = (text: string) =>
-  text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-/** The 1-based line of the first line matching `pattern` at or after `from`. */
-function lineOf(raw: string, pattern: RegExp, from = 0): number | undefined {
-  const lines = raw.split(/\r?\n/);
-  for (let i = from; i < lines.length; i++)
-    if (pattern.test(lines[i] ?? "")) return i + 1;
-  return undefined;
-}
-
-const topKey = (name: string) => new RegExp(`^["']?${name}["']?\\s*:`);
-
-/** The line of `name:` directly inside the top-level block `block:` (`jobs`,
- * `on`): only keys at the block's own indentation, before the next
- * top-level key, count, so a step or filter of the same name does not. */
-function blockKeyLine(
-  raw: string,
-  block: string,
-  name: string,
-): number | undefined {
-  const lines = raw.split(/\r?\n/);
-  const start = lines.findIndex((l) => topKey(block).test(l));
-  if (start < 0) return undefined;
-  let indent: string | undefined;
-  const key = new RegExp(`^["']?${escapeRegExp(name)}["']?\\s*:`);
-  for (let i = start + 1; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (!line.trim() || line.trimStart().startsWith("#")) continue;
-    const lead = line.match(/^\s*/)?.[0] ?? "";
-    if (!lead) return undefined;
-    indent ??= lead;
-    if (lead === indent && key.test(line.slice(lead.length))) return i + 1;
-  }
-  return undefined;
-}
-
-const jobLine = (wf: Workflow, id: string) => blockKeyLine(wf.raw, "jobs", id);
-
-const triggerLine = (wf: Workflow, event?: string) =>
-  (event ? blockKeyLine(wf.raw, "on", event) : undefined) ??
-  lineOf(wf.raw, topKey("on"));
-
-function at(wf: Workflow, job: Job | undefined, rule: string) {
-  return (problem: string, remedy: string): Found => ({
-    rule,
-    file: wf.file,
-    line: job ? jobLine(wf, job.id) : triggerLine(wf),
-    job: job?.id,
-    problem,
-    remedy,
-  });
-}
-
-const condition = (job: Job) =>
-  job.def.if === undefined ? "" : String(job.def.if);
-
-/** An `if:` without its optional `\${{ }}` wrapper. */
-const bare = (cond: string) =>
-  cond
-    .trim()
-    .replace(/^\$\{\{([\s\S]*)\}\}$/, "$1")
-    .trim();
-
-/** The `&&`-joined terms of an expression, split outside parentheses and
- * quoted strings. Undefined when an `||` stands anywhere outside a string, or
- * the quotes or parentheses do not balance: then no single term decides
- * whether the job runs. */
-function conjuncts(expr: string): string[] | undefined {
-  const terms: string[] = [];
-  let depth = 0;
-  let quoted = false;
-  let start = 0;
-  for (let i = 0; i < expr.length; i++) {
-    const c = expr[i];
-    // A quote inside a string is doubled (''), which toggles twice.
-    if (c === "'") quoted = !quoted;
-    else if (quoted) continue;
-    else if (c === "(") depth++;
-    else if (c === ")") depth--;
-    else if (expr.startsWith("||", i)) return undefined;
-    else if (depth === 0 && expr.startsWith("&&", i)) {
-      terms.push(expr.slice(start, i).trim());
-      start = i + 2;
-      i++;
-    }
-    if (depth < 0) return undefined;
-  }
-  if (quoted || depth) return undefined;
-  terms.push(expr.slice(start).trim());
-  return terms;
-}
-
-// inputs.ts has checked the shapes: `needs` is a job id or a list of them.
-const needs = (job: Job): string[] =>
-  typeof job.def.needs === "string"
-    ? [job.def.needs]
-    : ((job.def.needs as string[] | undefined) ?? []);
-
-const isPullRequest = (wf: Workflow) =>
-  PR_EVENTS.some((event) => event in wf.on);
-
-/** A reusable-workflow call: its timeout is the called workflow's jobs'. */
-const callsWorkflow = (job: Job) => typeof job.def.uses === "string";
 
 /** Every job has `timeout-minutes`, a positive number of minutes within the
  * ceiling. */
@@ -456,17 +356,6 @@ function skipsOtherLabels(cond: string, label: string): boolean {
 const onlyOnOtherLabels = (cond: string, label: string) =>
   new RegExp(`^${otherLabelTest(label)}$`).test(bare(cond));
 
-const runs = (step: Record<string, unknown>) => step.run !== undefined;
-
-/** Whether a failure of the job or step fails its caller: no
- * `continue-on-error`, or one that is plainly false. */
-const failsOnError = (def: Record<string, unknown>) =>
-  def["continue-on-error"] === undefined || def["continue-on-error"] === false;
-
-// inputs.ts has checked the shape: `steps` is a list of maps.
-const steps = (job: Job) =>
-  (job.def.steps as Record<string, unknown>[] | undefined) ?? [];
-
 /** Whether a job runs while held: it has no `if:` and needs no job, or its
  * whole `if:` is `!cancelled()`, so a needed job the hold skips does not skip
  * it too. Any other condition (`false`, a test of another value) may skip it,
@@ -586,6 +475,100 @@ const mirrorStep = (job: Job, label: string) =>
       onlyOnOtherLabels(String(step.if), label),
   );
 
+/** Whether `wf`'s run-name begins with the other-label test, marking a mirror
+ * run apart from a real one. */
+const marksMirrors = (wf: Workflow, label: string) =>
+  typeof wf.doc["run-name"] === "string" &&
+  new RegExp(`^\\s*\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&`).test(
+    wf.doc["run-name"],
+  );
+
+/** Whether `wf`'s concurrency group gives a mirror run a key of its own: its
+ * expression begins with the other-label test and a key holding the run id. */
+function isolatesMirrors(wf: Workflow, label: string): boolean {
+  const concurrency = wf.doc.concurrency;
+  const group = isRecord(concurrency) ? String(concurrency.group ?? "") : "";
+  return new RegExp(
+    `\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&[^|]*github\\.run_id[^|]*\\|\\|`,
+  ).test(group);
+}
+
+/** The mirror form's workflow-level findings: its concurrency group and its
+ * run-name. */
+function mirrorRunFindings(
+  wf: Workflow,
+  required: Job[],
+  label: string,
+): Found[] {
+  const found = (key: string, problem: string, remedy: string): Found => ({
+    rule: "ci-hold-mirror",
+    file: wf.file,
+    line: lineOf(wf.raw, topKey(key)) ?? triggerLine(wf),
+    problem: `the workflow runs a mirror of the hold label '${label}' on another label's event, but ${problem}`,
+    remedy: `${remedy} (${README}#ci-hold)`,
+  });
+  return [
+    ...(isolatesMirrors(wf, label)
+      ? []
+      : [
+          found(
+            "concurrency",
+            "its concurrency group is not that run's own, so the event cancels the real run in flight",
+            `begin the group's expression with the other-label test and a key of the run's own, e.g. group: ci-\${{ github.event.label.name && github.event.label.name != '${label}' && format('mirror-{0}', github.run_id) || github.ref }}`,
+          ),
+        ]),
+    ...(required.length && !marksMirrors(wf, label)
+      ? [
+          found(
+            "run-name",
+            "no run-name marks such a run, so its required job cannot tell a mirror run from a real one",
+            `name a mirror run apart, e.g. run-name: \${{ github.event.label.name && github.event.label.name != '${label}' && format('ci mirror ({0} label)', github.event.label.name) || '' }}, and have the mirror step skip runs with that name`,
+          ),
+        ]
+      : []),
+  ];
+}
+
+/** The mirror form's job findings: each required job runs and repeats the
+ * real result, and each heavy job skips. */
+function mirrorJobFindings(
+  wf: Workflow,
+  required: Job[],
+  heavyJobs: Job[],
+  label: string,
+): Found[] {
+  const requiredFound = required.flatMap((job): Found[] => {
+    const report = at(wf, job, "ci-hold-mirror");
+    if (skipsOtherLabels(condition(job), label))
+      return [
+        report(
+          `required job '${job.id}' skips on another label's event, and a skipped required check counts as passing`,
+          `let it run on that event and repeat the newest real run's result (${README}#ci-hold)`,
+        ),
+      ];
+    if (mirrorStep(job, label)) return [];
+    return [
+      report(
+        `required job '${job.id}' has no step that runs only on another label's event, so that event's run judges the jobs it skipped instead of repeating the newest real run's result`,
+        `add a run: step with if: \${{ github.event.label.name && github.event.label.name != '${label}' }} that repeats the newest real run's result and fails closed, and keep the steps that judge the jobs off that event (${README}#ci-hold)`,
+      ),
+    ];
+  });
+  const heavyFound = heavyJobs
+    .filter((job) => !skipsOtherLabels(condition(job), label))
+    .map((job) =>
+      at(
+        wf,
+        job,
+        "ci-hold-mirror",
+      )(
+        `heavy job '${job.id}' runs in full on another label's event, the work the mirror form exists to skip`,
+        `add the term !(github.event.label.name && github.event.label.name != '${label}') to its if: (${README}#ci-hold)`,
+      ),
+    );
+  return [...requiredFound, ...heavyFound];
+}
+
 /** The hold's mirror form, in every pull-request workflow that takes part in
  * it: a workflow that skips any job on another label's event, or whose
  * required job has a mirror step, or whose run-name tests for another label.
@@ -599,79 +582,18 @@ function mirrorForm(
   heavy: { wf: Workflow; jobs: Job[] }[],
   label: string,
 ): Found[] {
-  const { settings } = pipelines;
-  const other = otherLabelTest(label);
   return holdParticipants(pipelines, heavy).flatMap((wf) => {
-    const required = requiredJobs(wf, settings);
-    const runName =
-      typeof wf.doc["run-name"] === "string" ? wf.doc["run-name"] : "";
-    const named = new RegExp(`^\\s*\\$\\{\\{\\s*${other}\\s*&&`).test(runName);
+    const required = requiredJobs(wf, pipelines.settings);
     const inForm =
-      named ||
+      marksMirrors(wf, label) ||
       wf.jobs.some((job) => skipsOtherLabels(condition(job), label)) ||
       required.some((job) => mirrorStep(job, label));
     if (!inForm) return [];
-    const found: Found[] = [];
-    const at0 = (key: string, problem: string, remedy: string): Found => ({
-      rule: "ci-hold-mirror",
-      file: wf.file,
-      line: lineOf(wf.raw, topKey(key)) ?? triggerLine(wf),
-      problem,
-      remedy: `${remedy} (${README}#ci-hold)`,
-    });
-    const concurrency = wf.doc.concurrency;
-    const group = isRecord(concurrency) ? String(concurrency.group ?? "") : "";
-    if (
-      !new RegExp(
-        `\\$\\{\\{\\s*${other}\\s*&&[^|]*github\\.run_id[^|]*\\|\\|`,
-      ).test(group)
-    )
-      found.push(
-        at0(
-          "concurrency",
-          `the workflow runs a mirror of the hold label '${label}' on another label's event, but its concurrency group is not that run's own, so the event cancels the real run in flight`,
-          `begin the group's expression with the other-label test and a key of the run's own, e.g. group: ci-\${{ github.event.label.name && github.event.label.name != '${label}' && format('mirror-{0}', github.run_id) || github.ref }}`,
-        ),
-      );
-    if (required.length && !named)
-      found.push(
-        at0(
-          "run-name",
-          `the workflow runs a mirror of the hold label '${label}' on another label's event, but no run-name marks such a run, so its required job cannot tell a mirror run from a real one`,
-          `name a mirror run apart, e.g. run-name: \${{ github.event.label.name && github.event.label.name != '${label}' && format('ci mirror ({0} label)', github.event.label.name) || '' }}, and have the mirror step skip runs with that name`,
-        ),
-      );
-    for (const job of required) {
-      const report = at(wf, job, "ci-hold-mirror");
-      if (skipsOtherLabels(condition(job), label))
-        found.push(
-          report(
-            `required job '${job.id}' skips on another label's event, and a skipped required check counts as passing`,
-            `let it run on that event and repeat the newest real run's result (${README}#ci-hold)`,
-          ),
-        );
-      else if (!mirrorStep(job, label))
-        found.push(
-          report(
-            `required job '${job.id}' has no step that runs only on another label's event, so that event's run judges the jobs it skipped instead of repeating the newest real run's result`,
-            `add a run: step with if: \${{ github.event.label.name && github.event.label.name != '${label}' }} that repeats the newest real run's result and fails closed, and keep the steps that judge the jobs off that event (${README}#ci-hold)`,
-          ),
-        );
-    }
-    for (const { jobs } of heavy.filter((h) => h.wf === wf))
-      for (const job of jobs)
-        if (!skipsOtherLabels(condition(job), label))
-          found.push(
-            at(
-              wf,
-              job,
-              "ci-hold-mirror",
-            )(
-              `heavy job '${job.id}' runs in full on another label's event, the work the mirror form exists to skip`,
-              `add the term !(github.event.label.name && github.event.label.name != '${label}') to its if: (${README}#ci-hold)`,
-            ),
-          );
-    return found;
+    const heavyJobs = heavy.filter((h) => h.wf === wf).flatMap((h) => h.jobs);
+    return [
+      ...mirrorRunFindings(wf, required, label),
+      ...mirrorJobFindings(wf, required, heavyJobs, label),
+    ];
   });
 }
 

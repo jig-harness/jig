@@ -45,16 +45,15 @@ import {
   cacheEnvParity,
   catalogPaths,
   ciHold,
-  type Found,
   heavyPerChange,
   jobTimeout,
-  type Pipelines,
   pinnedUses,
   prConcurrency,
   pushPrPaths,
   requiredJobs,
   requiredNotPathFiltered,
 } from "./rules.ts";
+import type { Found, Pipelines } from "./workflow-reading.ts";
 
 const GATE = "workflow-conventions";
 const EXCEPTION_RULE = "exception-list";
