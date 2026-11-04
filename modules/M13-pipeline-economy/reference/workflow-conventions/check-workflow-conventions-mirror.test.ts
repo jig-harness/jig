@@ -190,6 +190,10 @@ test("a job may read the pull request's state and other contexts", () => {
     "needs.label.outputs.run == 'true'",
     "inputs.action == 'check'",
     "needs.build.outputs['label'] == 'run'",
+    "inputs.github == 'check'",
+    "needs.build.outputs.github == 'true'",
+    "toJSON(needs.github) != ''",
+    "needs['github'].result == 'success'",
   ])
     exits(
       run(["--root", mirrored({ e2eIf: `${HEAVY_IF} && ${term}` })]),
