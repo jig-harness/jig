@@ -239,7 +239,7 @@ assigned to the repository's factory identity, a re-arm for a drive its
 ledger shows stopped on a mechanical state (a usage limit, an answered
 park), a re-drive for a converged drive gone stale (its pull request now
 conflicts with its base, or its head moved past the head the drive
-verified), a follow-up for a merge, a notification for a drive only a
+verified) or for a drive that stopped on a conflict, a follow-up for a merge, a notification for a drive only a
 person can settle. A converged pull request its base merely moved past,
 still mergeable at the verified head, is left alone, and one whose
 mergeability the forge is still computing is reported and waits for a
@@ -270,10 +270,13 @@ so a launch whose answer is lost
 holds its slot and is retried only under its own record. A refusal
 `drive.ts` gives (another driver holds the pull request) is the stage's
 answer and is not launched again on the same ledger facts. A re-drive is
-launched once per change (the pull request's head, conflicting or not):
-the drive merges the base in through its conflict-resolve round, or
-reviews the new head in its ordinary rounds, and a conflict its repair
-budget cannot settle stops it for a person, as any conflict does. A record whose
+launched once per change: the drive merges the base in through its
+conflict-resolve round, or reviews the new head in its ordinary rounds. A
+converged drive's change is its pull request's head, conflicting or not. A
+drive that stopped on a conflict (exit `9`) is re-driven once per pair of its
+pull request's head and its base branch's head, whatever the forge reports of
+it by then, and a person is told only when that re-drive leaves it stopped `9`
+at the same pair; a head or a base that moves is a new attempt. A record whose
 process cannot be checked (another host or boot) holds its slot until a
 person clears it:
 

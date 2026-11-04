@@ -32,6 +32,21 @@ const LABEL_KEYS = ["enabled", "prefix", "only_labeled"];
 /** A GitHub label is at most 50 characters, and the longest name the prefix goes before is `followed-up`. */
 const MAX_PREFIX = 50 - "followed-up".length;
 
+/** `pull_requests.branch_name`'s default, the branch form of an item. */
+const BRANCH_PATTERN = "{key_lower}-{slug}";
+
+/** The repository's `pull_requests.branch_name`, from the same configuration as its section. */
+export function branchPattern(values: Record<string, unknown>): string {
+  const prs = values.pull_requests;
+  const pattern =
+    typeof prs === "object" && prs !== null
+      ? (prs as Record<string, unknown>).branch_name
+      : undefined;
+  return typeof pattern === "string" && pattern !== ""
+    ? pattern
+    : BRANCH_PATTERN;
+}
+
 class SectionError extends Error {}
 
 function text(value: unknown, field: string): string | null {
