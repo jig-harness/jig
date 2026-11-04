@@ -416,7 +416,7 @@ fields:
   drive.codex_bypass:
     type: boolean
     default: false
-    since: next
+    since: 0.132.0
     read_by: [drive-pr, do-item, dispatch]
     user_only: true
   drive.escape_baseline_doc:
