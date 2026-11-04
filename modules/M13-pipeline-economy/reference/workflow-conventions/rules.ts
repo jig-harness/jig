@@ -1,135 +1,35 @@
 // The workflow-convention lint's rules, one function each, over the parsed
 // workflows and composite actions (inputs.ts). Each returns its findings; a
 // finding names its job where it has one, so an exception can name the job.
-import type { Finding } from "../../../../lib/findings.ts";
 import { isRecord } from "../../../../lib/record.ts";
-import type { Action, Job, Settings, Workflow } from "./inputs.ts";
+import type { Job, Settings, Workflow } from "./inputs.ts";
+import {
+  PR_EVENTS,
+  README,
+  at,
+  bare,
+  callsWorkflow,
+  condition,
+  conjuncts,
+  escapeRegExp,
+  failsOnError,
+  isPullRequest,
+  lineOf,
+  needs,
+  runs,
+  steps,
+  topKey,
+  triggerLine,
+  type Found,
+  type Pipelines,
+} from "./workflow-reading.ts";
 
-export interface Found extends Finding {
-  file: string;
-  job?: string | undefined;
-}
-
-export interface Pipelines {
-  workflows: Workflow[];
-  actions: Action[];
-  settings: Settings;
-}
-
-const README =
-  "modules/M13-pipeline-economy/reference/workflow-conventions/README.md";
 /** The longest `timeout-minutes` a job may declare, in minutes. It is generous
  * on purpose (a timeout stops a hang, it does not police a slow run) and far
  * below GitHub's default of 360; a job that needs more is sharded, or carries a
  * reasoned exception. */
 const MAX_JOB_MINUTES = 60;
-const PR_EVENTS = ["pull_request", "pull_request_target"];
 const EXPRESSION = /\$\{\{/;
-
-const escapeRegExp = (text: string) =>
-  text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-/** The 1-based line of the first line matching `pattern` at or after `from`. */
-function lineOf(raw: string, pattern: RegExp, from = 0): number | undefined {
-  const lines = raw.split(/\r?\n/);
-  for (let i = from; i < lines.length; i++)
-    if (pattern.test(lines[i] ?? "")) return i + 1;
-  return undefined;
-}
-
-const topKey = (name: string) => new RegExp(`^["']?${name}["']?\\s*:`);
-
-/** The line of `name:` directly inside the top-level block `block:` (`jobs`,
- * `on`): only keys at the block's own indentation, before the next
- * top-level key, count, so a step or filter of the same name does not. */
-function blockKeyLine(
-  raw: string,
-  block: string,
-  name: string,
-): number | undefined {
-  const lines = raw.split(/\r?\n/);
-  const start = lines.findIndex((l) => topKey(block).test(l));
-  if (start < 0) return undefined;
-  let indent: string | undefined;
-  const key = new RegExp(`^["']?${escapeRegExp(name)}["']?\\s*:`);
-  for (let i = start + 1; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    if (!line.trim() || line.trimStart().startsWith("#")) continue;
-    const lead = line.match(/^\s*/)?.[0] ?? "";
-    if (!lead) return undefined;
-    indent ??= lead;
-    if (lead === indent && key.test(line.slice(lead.length))) return i + 1;
-  }
-  return undefined;
-}
-
-const jobLine = (wf: Workflow, id: string) => blockKeyLine(wf.raw, "jobs", id);
-
-const triggerLine = (wf: Workflow, event?: string) =>
-  (event ? blockKeyLine(wf.raw, "on", event) : undefined) ??
-  lineOf(wf.raw, topKey("on"));
-
-function at(wf: Workflow, job: Job | undefined, rule: string) {
-  return (problem: string, remedy: string): Found => ({
-    rule,
-    file: wf.file,
-    line: job ? jobLine(wf, job.id) : triggerLine(wf),
-    job: job?.id,
-    problem,
-    remedy,
-  });
-}
-
-const condition = (job: Job) =>
-  job.def.if === undefined ? "" : String(job.def.if);
-
-/** An `if:` without its optional `\${{ }}` wrapper. */
-const bare = (cond: string) =>
-  cond
-    .trim()
-    .replace(/^\$\{\{([\s\S]*)\}\}$/, "$1")
-    .trim();
-
-/** The `&&`-joined terms of an expression, split outside parentheses and
- * quoted strings. Undefined when an `||` stands anywhere outside a string, or
- * the quotes or parentheses do not balance: then no single term decides
- * whether the job runs. */
-function conjuncts(expr: string): string[] | undefined {
-  const terms: string[] = [];
-  let depth = 0;
-  let quoted = false;
-  let start = 0;
-  for (let i = 0; i < expr.length; i++) {
-    const c = expr[i];
-    // A quote inside a string is doubled (''), which toggles twice.
-    if (c === "'") quoted = !quoted;
-    else if (quoted) continue;
-    else if (c === "(") depth++;
-    else if (c === ")") depth--;
-    else if (expr.startsWith("||", i)) return undefined;
-    else if (depth === 0 && expr.startsWith("&&", i)) {
-      terms.push(expr.slice(start, i).trim());
-      start = i + 2;
-      i++;
-    }
-    if (depth < 0) return undefined;
-  }
-  if (quoted || depth) return undefined;
-  terms.push(expr.slice(start).trim());
-  return terms;
-}
-
-// inputs.ts has checked the shapes: `needs` is a job id or a list of them.
-const needs = (job: Job): string[] =>
-  typeof job.def.needs === "string"
-    ? [job.def.needs]
-    : ((job.def.needs as string[] | undefined) ?? []);
-
-const isPullRequest = (wf: Workflow) =>
-  PR_EVENTS.some((event) => event in wf.on);
-
-/** A reusable-workflow call: its timeout is the called workflow's jobs'. */
-const callsWorkflow = (job: Job) => typeof job.def.uses === "string";
 
 /** Every job has `timeout-minutes`, a positive number of minutes within the
  * ceiling. */
@@ -438,16 +338,23 @@ function guarded(cond: string, label: string): boolean {
   return conjuncts(bare(cond))?.some((t) => term.test(t)) ?? false;
 }
 
-const runs = (step: Record<string, unknown>) => step.run !== undefined;
+/** `github.event.label.name && github.event.label.name != '<label>'`: an event
+ * for a label other than the hold's. A pull request's other events carry no
+ * label, so the test is false on them. */
+const otherLabelTest = (label: string) =>
+  `github\\.event\\.label\\.name\\s*&&\\s*github\\.event\\.label\\.name\\s*!=\\s*'${escapeRegExp(label)}'`;
 
-/** Whether a failure of the job or step fails its caller: no
- * `continue-on-error`, or one that is plainly false. */
-const failsOnError = (def: Record<string, unknown>) =>
-  def["continue-on-error"] === undefined || def["continue-on-error"] === false;
+/** Whether an `if:` skips the job on another label's event: one of its
+ * `&&`-joined terms is exactly `!(<the other-label test>)`. */
+function skipsOtherLabels(cond: string, label: string): boolean {
+  const term = new RegExp(`^!\\s*\\(\\s*${otherLabelTest(label)}\\s*\\)$`);
+  return conjuncts(bare(cond))?.some((t) => term.test(t)) ?? false;
+}
 
-// inputs.ts has checked the shape: `steps` is a list of maps.
-const steps = (job: Job) =>
-  (job.def.steps as Record<string, unknown>[] | undefined) ?? [];
+/** Whether an `if:` is nothing but the other-label test, optionally inside
+ * `\${{ }}`: the condition of the step that repeats the real run's result. */
+const onlyOnOtherLabels = (cond: string, label: string) =>
+  new RegExp(`^${otherLabelTest(label)}$`).test(bare(cond));
 
 /** Whether a job runs while held: it has no `if:` and needs no job, or its
  * whole `if:` is `!cancelled()`, so a needed job the hold skips does not skip
@@ -550,9 +457,234 @@ export function ciHold(pipelines: Pipelines): Found[] {
   });
   return [
     ...unguarded,
+    ...labelEventConditions(pipelines, heavy, label, unguarded),
     ...missingEvents(pipelines, heavy, label),
     ...missingSentinel(pipelines, label),
+    ...mirrorForm(pipelines, heavy, label),
   ];
+}
+
+/** Whether a term of a job's `if:` reads the event other than through
+ * `github.event.pull_request`: an action, a label, the sender, the whole event
+ * (`toJSON(github.event)`) or the whole context (`toJSON(github)`). The pull
+ * request's own state, its label set included, is the same whatever event
+ * started the run; anything else the event carries can differ between a label
+ * event and a push. An index (`github['event']['action']`) reads as a property;
+ * other quoted text is no read, nor is a property of another context that is
+ * named `github` or ends in it (`inputs.github`, `inputs.use-github`); names
+ * compare in any case. */
+function readsEvent(term: string): boolean {
+  const text = term
+    .replace(/\[\s*'([A-Za-z_][\w-]*)'\s*\]/g, ".$1")
+    .replace(/'[^']*'/g, "''")
+    .replace(/\s+/g, " ")
+    .replace(/ ?\. ?/g, ".");
+  return (
+    /(?<!\.)(?<![\w-])github\.event\b(?!\.pull_request\b)/i.test(text) ||
+    /(?<!\.)(?<![\w-])github\b(?!\.)/i.test(text)
+  );
+}
+
+/** Every job of a workflow in the hold whose `if:` reads the event outside the
+ * pull request's own state in any term but the mirror form's skip term. A job
+ * skipped on some events and not on others can turn a failing head into a
+ * passing one, so a form the lint cannot prove safe is a finding, never a
+ * pass. Jobs already reported as unguarded are not reported again. */
+function labelEventConditions(
+  pipelines: Pipelines,
+  heavy: { wf: Workflow; jobs: Job[] }[],
+  label: string,
+  reported: Found[],
+): Found[] {
+  const skip = new RegExp(`^!\\s*\\(\\s*${otherLabelTest(label)}\\s*\\)$`);
+  return holdParticipants(pipelines, heavy).flatMap((wf) =>
+    wf.jobs
+      .filter(
+        (job) => !reported.some((f) => f.file === wf.file && f.job === job.id),
+      )
+      .filter((job) =>
+        (conjuncts(bare(condition(job))) ?? [bare(condition(job))]).some(
+          (term) => readsEvent(term) && !skip.test(term),
+        ),
+      )
+      .map((job) =>
+        at(
+          wf,
+          job,
+          "ci-hold-guard",
+        )(
+          `job '${job.id}' reads the event outside github.event.pull_request in a form the lint cannot prove safe, and a job skipped on some events and not others can turn a failing head into a passing one`,
+          `read the pull request's state (github.event.pull_request.*) instead, test its label set for the hold, and skip on another label's event only with the term !(github.event.label.name && github.event.label.name != '${label}') of the mirror form (${README}#ci-hold)`,
+        ),
+      ),
+  );
+}
+
+/** A required job's step that repeats the newest real run's result: a `run:`
+ * step whose whole `if:` is the other-label test, whose failure fails the job. */
+const mirrorStep = (job: Job, label: string) =>
+  failsOnError(job.def) &&
+  steps(job).some(
+    (step) =>
+      runs(step) &&
+      failsOnError(step) &&
+      step.if !== undefined &&
+      onlyOnOtherLabels(String(step.if), label),
+  );
+
+/** A run name: a quoted string, or a `format()` whose pattern is one and whose
+ * other arguments are contexts; the group is the name's literal start. */
+const RUN_NAME =
+  "(?:format\\(\\s*'([^'{]*)[^']*'(?:\\s*,\\s*[A-Za-z_.]+)*\\s*\\)|'([^']*)')";
+
+/** The test of a run-name's real branch that covers every pull-request event
+ * `wf` runs on: `github.event_name == '<event>'` for its one such trigger, or
+ * `startsWith(github.event_name, 'pull_request')`, which covers both. */
+function pullRequestTest(wf: Workflow): string {
+  const events = PR_EVENTS.filter((event) => event in wf.on);
+  const covering =
+    "startsWith\\(\\s*github\\.event_name\\s*,\\s*'pull_request'\\s*\\)";
+  return events.length === 1
+    ? `(?:github\\.event_name\\s*==\\s*'${events[0]}'|${covering})`
+    : covering;
+}
+
+/** Whether `wf`'s run-name is exactly the mirror form's: `\${{ <the
+ * other-label test> && <mirror name> || <a test covering the workflow's
+ * pull-request events> && <real name> || '' }}`, the two names with literal
+ * starts that differ, neither beginning the other. Then every mirror run's name
+ * starts one way and every real pull-request run's the other; any other shape
+ * is not taken. */
+function marksMirrors(wf: Workflow, label: string): boolean {
+  const name = wf.doc["run-name"];
+  if (typeof name !== "string") return false;
+  const m = name.match(
+    new RegExp(
+      `^\\s*\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&\\s*${RUN_NAME}\\s*\\|\\|\\s*${pullRequestTest(wf)}\\s*&&\\s*${RUN_NAME}\\s*\\|\\|\\s*''\\s*\\}\\}\\s*$`,
+    ),
+  );
+  const mirror = m?.[1] ?? m?.[2];
+  const real = m?.[3] ?? m?.[4];
+  return (
+    !!mirror && !!real && !real.startsWith(mirror) && !mirror.startsWith(real)
+  );
+}
+
+/** Whether `wf`'s concurrency group gives a mirror run a key of its own: its
+ * expression begins with the other-label test, `&&`, and a key that is exactly
+ * `github.run_id` or `format('<text>{0}<text>', github.run_id)`, then `||`. Any
+ * other key is not taken, since a key can read the run id and still come to
+ * the same text for every run. */
+function isolatesMirrors(wf: Workflow, label: string): boolean {
+  const concurrency = wf.doc.concurrency;
+  const group = isRecord(concurrency) ? String(concurrency.group ?? "") : "";
+  return new RegExp(
+    `\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&\\s*(?:github\\.run_id|format\\(\\s*'[^'{]*\\{0\\}[^'{]*'\\s*,\\s*github\\.run_id\\s*\\))\\s*\\|\\|`,
+  ).test(group);
+}
+
+/** The mirror form's workflow-level findings: its concurrency group and its
+ * run-name. */
+function mirrorRunFindings(
+  wf: Workflow,
+  required: Job[],
+  label: string,
+): Found[] {
+  const found = (key: string, problem: string, remedy: string): Found => ({
+    rule: "ci-hold-mirror",
+    file: wf.file,
+    line: lineOf(wf.raw, topKey(key)) ?? triggerLine(wf),
+    problem: `the workflow runs a mirror of the hold label '${label}' on another label's event, but ${problem}`,
+    remedy: `${remedy} (${README}#ci-hold)`,
+  });
+  return [
+    ...(isolatesMirrors(wf, label)
+      ? []
+      : [
+          found(
+            "concurrency",
+            "its concurrency group is not that run's own, so the event cancels the real run in flight",
+            `begin the group's expression with the other-label test and a key of the run's own, e.g. group: ci-\${{ github.event.label.name && github.event.label.name != '${label}' && format('mirror-{0}', github.run_id) || github.ref }}`,
+          ),
+        ]),
+    ...(required.length && !marksMirrors(wf, label)
+      ? [
+          found(
+            "run-name",
+            "no run-name marks such a run, so its required job cannot tell a mirror run from a real one",
+            `name mirror and real runs apart, exactly as run-name: \${{ github.event.label.name && github.event.label.name != '${label}' && format('ci mirror ({0} label)', github.event.label.name) || github.event_name == 'pull_request' && format('ci - {0}', github.event.pull_request.title) || '' }} (startsWith(github.event_name, 'pull_request') where both pull-request events start the workflow), and have the mirror step leave out runs whose name starts like a mirror's`,
+          ),
+        ]
+      : []),
+  ];
+}
+
+/** The mirror form's job findings: each required job runs and repeats the
+ * real result, and each heavy job skips. */
+function mirrorJobFindings(
+  wf: Workflow,
+  required: Job[],
+  heavyJobs: Job[],
+  label: string,
+): Found[] {
+  const requiredFound = required.flatMap((job): Found[] => {
+    const report = at(wf, job, "ci-hold-mirror");
+    if (skipsOtherLabels(condition(job), label))
+      return [
+        report(
+          `required job '${job.id}' skips on another label's event, and a skipped required check counts as passing`,
+          `let it run on that event and repeat the newest real run's result (${README}#ci-hold)`,
+        ),
+      ];
+    if (mirrorStep(job, label)) return [];
+    return [
+      report(
+        `required job '${job.id}' has no step that runs only on another label's event, so that event's run judges the jobs it skipped instead of repeating the newest real run's result`,
+        `add a run: step with if: \${{ github.event.label.name && github.event.label.name != '${label}' }} that repeats the newest real run's result and fails closed, and keep the steps that judge the jobs off that event (${README}#ci-hold)`,
+      ),
+    ];
+  });
+  const heavyFound = heavyJobs
+    .filter((job) => !skipsOtherLabels(condition(job), label))
+    .map((job) =>
+      at(
+        wf,
+        job,
+        "ci-hold-mirror",
+      )(
+        `heavy job '${job.id}' runs in full on another label's event, the work the mirror form exists to skip`,
+        `add the term !(github.event.label.name && github.event.label.name != '${label}') to its if: (${README}#ci-hold)`,
+      ),
+    );
+  return [...requiredFound, ...heavyFound];
+}
+
+/** The hold's mirror form, in every pull-request workflow that takes part in
+ * it: a workflow that skips any job on another label's event, or whose
+ * required job has a mirror step, or whose run-name tests for another label.
+ * Such a run must cancel nothing, so its concurrency group is its own (keyed by
+ * its run id); its required job must run and repeat the newest real run's
+ * result, since a skipped required check passes and a run with none leaves the
+ * check unreported; run-name must mark it, so a mirror never repeats another
+ * mirror; and every heavy job skips, which is the saving. */
+function mirrorForm(
+  pipelines: Pipelines,
+  heavy: { wf: Workflow; jobs: Job[] }[],
+  label: string,
+): Found[] {
+  return holdParticipants(pipelines, heavy).flatMap((wf) => {
+    const required = requiredJobs(wf, pipelines.settings);
+    const inForm =
+      marksMirrors(wf, label) ||
+      wf.jobs.some((job) => skipsOtherLabels(condition(job), label)) ||
+      required.some((job) => mirrorStep(job, label));
+    if (!inForm) return [];
+    const heavyJobs = heavy.filter((h) => h.wf === wf).flatMap((h) => h.jobs);
+    return [
+      ...mirrorRunFindings(wf, required, label),
+      ...mirrorJobFindings(wf, required, heavyJobs, label),
+    ];
+  });
 }
 
 /** The pull-request event types a workflow that honours the hold runs on:
