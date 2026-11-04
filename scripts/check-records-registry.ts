@@ -14,9 +14,9 @@
 // - every family the drive's state library tags a state-file pattern with
 //   (`family: "<name>"` in `plugin/skills/drive-pr/scripts/lib/state/`), so
 //   a new pattern either joins a registered family or registers its own;
-// - SQLite CREATE TABLE declarations, case-insensitive across lines, with
-//   bare identifiers or quoted names. Every table header is accounted for;
-//   names outside the bounded grammar below are findings, never omissions.
+// - SQLite CREATE TABLE declarations, read as SQL tokens after decoding source
+//   escapes, with comments as whitespace and bare or quoted names. Recognized
+//   headers with unsupported names are findings, never omissions.
 //
 // Each must be a registered kind's marker, state family or table, or a
 // marker the registry lists as not a record (a generated file's banner, a
@@ -26,8 +26,9 @@
 // code names any more, or a kind whose owner is not a file under `plugin/`,
 // is a finding too, so the registry cannot keep a kind that is gone.
 //
-// This is a text check, not a parser: nothing is lexed, so a marker in a
-// trailing comment after code is reported like one in a string.
+// This checks source text without evaluating expressions or assembling strings.
+// Marker matching does not lex comments: a marker in a trailing comment after
+// code is reported like one in a string.
 //
 // Exit 1 on a finding, 2 when it cannot check (no `plugin/` directory, or a
 // file in scope unreadable).
@@ -35,6 +36,7 @@ import { existsSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { readRegularFile, repoFiles } from "../lib/files.ts";
+import { sqlTables } from "./records-sql.ts";
 import {
   couldNotCheck,
   type Finding,
@@ -79,22 +81,6 @@ const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*)/;
 const MARKER_OPEN = /<!--(?:[ \t]|\\{1,2}s[*+?]?)*/g;
 const SPLICE = /^\$\{([A-Za-z_$][\w$]*)\}/;
 const FAMILY = /\bfamily:\s*"([a-z][a-z0-9-]*)"/g;
-const TABLE = /\bCREATE\s+(?:(?:TEMP|TEMPORARY|VIRTUAL)\s+)?TABLE\b/gi;
-// Text, not evaluated SQL: accept a complete literal name followed by a table
-// body, AS query or virtual-table USING clause. Schema-qualified, interpolated
-// and otherwise unsupported names fail closed. Quoted delimiters are doubled.
-const TABLE_NAME =
-  /^\s+(?:IF\s+NOT\s+EXISTS\s+)?("(?:[^"]|"")*"|`(?:[^`]|``)*`|\[[^\]]*\]|'(?:[^']|'')*'|[A-Za-z_]\w*)\s*(?=\(|AS\b|USING\b)/i;
-
-function tableName(rest: string): string | null {
-  const token = TABLE_NAME.exec(rest)?.[1];
-  if (!token) return null;
-  const delimiter = token[0];
-  if (delimiter === "[") return token.slice(1, -1);
-  if (delimiter === '"' || delimiter === "`" || delimiter === "'")
-    return token.slice(1, -1).replaceAll(delimiter + delimiter, delimiter);
-  return token;
-}
 const NAME_START = /^[A-Za-z]/;
 
 /** The string constants a file declares, by name. */
@@ -156,18 +142,16 @@ export function namedIn(path: string, text: string): Named[] {
       })),
     ];
   });
-  // Keep newlines for locations while skipping the same comment lines as markers.
-  const sql = lines
-    .map((line) => (COMMENT_LINE.test(line) ? " ".repeat(line.length) : line))
-    .join("\n");
-  for (const match of sql.matchAll(TABLE)) {
-    const name = tableName(sql.slice(match.index + match[0].length));
+  // Filter declaration starts, not their intervening lines: a SQL comment may
+  // start a source line and close before TABLE on that same line.
+  for (const { name, line } of sqlTables(text)) {
+    if (COMMENT_LINE.test(lines[line - 1] ?? "")) continue;
     named.push({
       what: "table",
       text: name ?? "unclassified CREATE TABLE declaration",
       ...(name === null ? { unclassified: true } : {}),
       file: path,
-      line: sql.slice(0, match.index).split("\n").length,
+      line,
     });
   }
   return named;

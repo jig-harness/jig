@@ -163,6 +163,42 @@ describe("what the code names", () => {
     ).toBe(false);
   });
 
+  test("SQL trivia and source escapes cannot hide declarations or change locations", () => {
+    for (const declaration of [
+      "CREATE /* migration */ TABLE new_records (id TEXT)",
+      "CREATE TEMP /* migration */ TABLE new_records (id TEXT)",
+      "CREATE-- migration\nTABLE new_records (id TEXT)",
+      "CREATE\n/* migration */ TABLE new_records (id TEXT)",
+      "CREATE /* migration\n * details\n */ TABLE new_records (id TEXT)",
+      "CREATE/*a*/TABLE/*b*/IF/*c*/NOT/*d*/EXISTS/*e*/new_records/*f*/(id TEXT)",
+      String.raw`CREATE\nTABLE new_records (id TEXT)`,
+      String.raw`CREATE\tTABLE\tnew_records (id TEXT)`,
+      String.raw`CREATE\x20TABLE new_records (id TEXT)`,
+      String.raw`CREATE\u0020TABLE new_records (id TEXT)`,
+      String.raw`CREATE\u{20}TABLE new_records (id TEXT)`,
+      String.raw`CREATE TABLE \"new_records\" (id TEXT)`,
+    ]) {
+      const named = namedIn(
+        "plugin/db.ts",
+        `const before = 1;\nconst sql = \`${declaration}\`;`,
+      );
+      expect(named).toEqual([
+        { what: "table", text: "new_records", file: "plugin/db.ts", line: 2 },
+      ]);
+      expect(findings(root, named, [], [])).toHaveLength(1);
+    }
+    expect(
+      namedIn("plugin/db.ts", 'CREATE TABLE "a/*literal*/b" (id TEXT)')[0]
+        ?.text,
+    ).toBe("a/*literal*/b");
+    expect(
+      namedIn(
+        "plugin/db.ts",
+        "CREATE /* TABLE fake ( */ TABLE real (id TEXT)",
+      ).map((n) => n.text),
+    ).toEqual(["real"]);
+  });
+
   test("table headers are accounted for even outside the supported name grammar", () => {
     for (const declaration of [
       'CREATE TABLE "new-records" (id TEXT)',
@@ -251,6 +287,9 @@ describe("the gate", () => {
       "CREATE TEMPORARY TABLE new_records (id TEXT)",
       "CREATE TABLE main.board_seen (id TEXT)",
       `CREATE TABLE ${splice("tableName")} (id TEXT)`,
+      "CREATE /* migration */ TABLE new_records (id TEXT)",
+      "CREATE TEMP /* migration */ TABLE new_records (id TEXT)",
+      String.raw`CREATE\nTABLE new_records (id TEXT)`,
     ]) {
       const dir = scratch({ "plugin/db.ts": `const sql = \`${sql}\`;` });
       const result = gate(root, dir);
