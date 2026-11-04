@@ -170,6 +170,12 @@ interface ListedPr {
   mergeable?: string;
   /** Its labels' names, when the read asked for them. */
   labels?: string[];
+  /** An open pull request's author, as the forge reports it. */
+  author?: { login: string; bot: boolean };
+  /** Whether an open pull request is a draft. */
+  isDraft?: boolean;
+  /** When an open pull request was last updated. */
+  updatedAt?: string;
 }
 
 /** Whether a read carries the pull requests' labels: only where the repository turns dispatch labels on. */
@@ -182,8 +188,24 @@ const NO_LABELS: LabelRead = { labels: false };
 /** The fields every listing reads. */
 const LISTED = ["number", "url", "title", "headRefName", "createdAt"];
 
-/** What an open pull request adds: its head commit, its base branch and its mergeability. */
-const OPEN_FIELDS = ["headRefOid", "baseRefName", "mergeable"];
+/** What an open pull request adds: its head commit, its base branch, its mergeability, and what the adoption rule reads (its author, whether it is a draft, its last update). */
+const OPEN_FIELDS = [
+  "headRefOid",
+  "baseRefName",
+  "mergeable",
+  "author",
+  "isDraft",
+  "updatedAt",
+];
+
+/** A pull request's author as the listing gives it (`{ login, is_bot }`); nothing when it does not read. */
+function authorOf(value: unknown): {
+  author?: { login: string; bot: boolean };
+} {
+  if (!isRecord(value) || typeof value.login !== "string" || value.login === "")
+    return {};
+  return { author: { login: value.login, bot: value.is_bot === true } };
+}
 
 /** A pull request's label names, or why they do not read. */
 function labelNames(value: unknown, what: string): string[] {
@@ -215,6 +237,9 @@ function listedPr(p: unknown, what: string, read = NO_LABELS): ListedPr {
     ...text("headRefOid"),
     ...text("baseRefName"),
     ...text("mergeable"),
+    ...text("updatedAt"),
+    ...authorOf(p.author),
+    ...(typeof p.isDraft === "boolean" ? { isDraft: p.isDraft } : {}),
     ...(read.labels ? { labels: labelNames(p.labels, what) } : {}),
   };
 }

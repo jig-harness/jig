@@ -161,7 +161,7 @@ guards keep one stage from starting twice:
 | Record | Read through | What the tick takes from it |
 | --- | --- | --- |
 | The tracker | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
-| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels | the drives to re-arm, take over or report; the follow-ups wanted, running or failed |
+| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels | the drives to re-arm, take over or report, and those to arm (a person's `drive` label, or the adoption rule); the follow-ups wanted, running or failed |
 | The session runtime | in Orca, `orca worktree ps --json` | which workspace holds which item or pull request, and whether an agent in it is working or waiting |
 
 **The tracker.** The interface gains one read, `assignedIssues(identity,
@@ -344,6 +344,31 @@ with theirs; with them off, no label is read or written.
   the scope again there. With `only_labeled` off, every open pull request
   is still read, so a drive a person armed by hand on an unlabelled pull
   request is found and gets its label.
+
+**Adoption** (optional). A pull request nobody armed is never driven
+otherwise: the drive label asks a person to notice each idle one, which is
+the polling the dispatcher exists to remove. A repository may therefore
+name an adoption rule (`dispatch.adopt`, off by default). Under it the
+tick reads an open pull request with no drive ledger as if it carried the
+`drive` command when its author is one of the rule's identities (by
+default the login the dispatcher reads the forge as, the identity the
+host's sessions open pull requests under) and the forge reports it
+updated within the rule's window (a week by default). The open listing
+carries each pull request's author, draft flag and last update for it. A
+draft is adopted like any other, since pull requests open as drafts and
+the drive marks them ready. A bot's pull request is adopted only where
+the rule names that bot: driving dependency updates stays a choice the
+repository makes by name. A pull request a person's `hold` label is on is
+never adopted, and one a person stopped carries a ledger that records the
+stop, so adoption, which reads only pull requests with no ledger, never
+reaches it. Everything after adoption is the `drive` command's: the plan
+arms it as a re-arm, once per head commit (its launch record's facts are
+a labelled arm's), on an admitted account, behind a serialized area's
+hold, and the fresh read before the launch applies the rule again. The
+report names each adopted pull request with the rule's reason (its
+author, its last update, the window), and the forge record counts them.
+The rule works with the labels on or off; beside `only_labeled` it is
+refused, since a pull request with no label of the set is never read.
 
 **Serialized areas** (optional). An area of the repository's change-area
 catalog (`drive.change_areas_catalog`, [M3](../modules/M3-change-area-catalog/README.md))

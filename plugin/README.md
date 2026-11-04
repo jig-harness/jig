@@ -455,6 +455,16 @@ dispatch --repo <path>` lists the missing ones beside the timer, and with
 with the command a person runs. A label write the forge refuses is reported in the receipt,
 and the run does not fail.
 
+**Adoption** (`dispatch.adopt` in the repository's
+[configuration](CONFIGURATION.md#dispatch), off by default) drives the
+repository's own recent pull requests without a label: an open pull
+request with no drive ledger, opened by one of the rule's authors (by
+default the login the dispatcher reads the forge as) and updated within
+its window (a week by default), draft or not, is armed as if it carried
+`jig:drive`, once per head commit. A bot's pull request is adopted only
+when the rule names the bot, and one carrying `jig:hold` never is. Each
+run reports every pull request the rule adopted, with the reason.
+
 **Serialized areas.** Some pull requests conflict with each other whenever
 two move at once: two migrations, two edits to one schema. An area of the
 repository's [change-area catalog](skills/change-areas/README.md#the-catalog)

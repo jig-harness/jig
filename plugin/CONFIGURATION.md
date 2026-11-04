@@ -1094,6 +1094,9 @@ repository. What a run may start is the machine's to say, in
 | `dispatch.labels.enabled` | `true` or `false` | `false`: no label is read or written. `true` turns the [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on (below) | dispatch |
 | `dispatch.labels.prefix` | string of at most 39 characters, with no comma and no space at either end | `jig:`: put before every label name (`jig:driving`, `jig:hold`). A repository whose label taxonomy has a convention of its own picks one that fits it | dispatch |
 | `dispatch.labels.only_labeled` | `true` or `false` | `false`: every open pull request is read for a drive ledger. `true` limits the dispatcher to the pull requests that carry a label of the set: one that carries none is never read, re-armed or followed up. Refused unless `enabled` is `true` | dispatch |
+| `dispatch.adopt.enabled` | `true` or `false` | `false`: a pull request with no drive ledger is driven only when a person labels it `drive`. `true` turns the adoption rule on (below). Refused beside `labels.only_labeled: true` | dispatch |
+| `dispatch.adopt.authors` | nonempty list of forge logins (a GitHub App's as `<name>[bot]`) | The login the dispatcher reads the forge as, the one the host's sessions open pull requests under: the authors whose pull requests the rule adopts | dispatch |
+| `dispatch.adopt.within` | duration | `168h` (a week): how recently a pull request must have been updated for the rule to adopt it | dispatch |
 
 An item is a pickup when it is assigned to `identity` and in one of
 `states`, and the person who made that assignment can write to the
@@ -1140,7 +1143,7 @@ take commands from a person. With the default prefix:
 | `jig:stale` | the dispatcher | the drive's stop no longer settles the pull request: it converged, then conflicted with its base or its head moved, or it stopped on a conflict. The dispatcher re-drives it |
 | `jig:held` | the dispatcher | the pull request waits its turn in a serialized change area (below): the dispatcher drives it once it leads |
 | `jig:followed-up` | the dispatcher | merged, and its follow-up is done |
-| `jig:drive` | a person | adopt a pull request with no drive ledger: the dispatcher arms a drive on it (the machine file's `rearm` stage), once per head commit, and replaces the label with the state label once the ledger exists |
+| `jig:drive` | a person | adopt a pull request with no drive ledger: the dispatcher arms a drive on it (the machine file's `rearm` stage), once per head commit, and replaces the label with the state label once the ledger exists. The adoption rule (`dispatch.adopt`, below) does the same for a repository's own recent pull requests without the label |
 | `jig:hold` | a person | stand the dispatcher down from this pull request: no stage runs on it while the label is there, and the dispatcher reports it and never removes it |
 
 A serialized change area (`serialize: true` on an area of the
@@ -1176,6 +1179,23 @@ must exist before a pull request opens with them. A write the forge
 refuses is reported and tried again at the next run; it does not fail the
 run. With `only_labeled` off, a drive a person armed by hand on a pull
 request with no label is still found, and gets its label at the next run.
+
+The adoption rule (`dispatch.adopt`) drives a repository's own recent pull
+requests without anyone labelling them. With it on, an open pull request
+with no drive ledger is armed as if a person had put `jig:drive` on it
+when its author is one of `adopt.authors` (by default the login the
+dispatcher reads the forge as, which is the identity the host's sessions
+open pull requests under) and it was updated within `adopt.within`. A
+draft is adopted like any other, since a drive marks its pull request
+ready. A bot's pull request (a dependency update, say) is adopted only
+when `authors` names the bot, and one carrying `jig:hold` never is. From
+there the `drive` label's rules apply unchanged: armed once per head
+commit, on an admitted account, behind a serialized area's hold, and a
+drive a person stopped is never re-armed, since its ledger records the
+stop. Each run's report names every pull request the rule adopted, with
+its author, its last update and the window, and the forge line counts
+them. It works with the labels on or off; under `labels.only_labeled` it
+is refused, since a pull request with no label of the set is never read.
 
 ### The machine's dispatch file
 
@@ -1272,6 +1292,10 @@ dispatch:
     enabled: true
     prefix: "jig:"
     only_labeled: false
+  adopt:
+    enabled: true
+    authors: [example-factory]
+    within: 168h
 gates:
   command: make check                    # required by resolve-review-comments
 review:

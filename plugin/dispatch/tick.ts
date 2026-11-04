@@ -101,6 +101,7 @@ import type {
 import { branchPattern, readSection } from "./lib/section.ts";
 import { observeContention } from "./lib/sources/contention.ts";
 import { readDrives } from "./lib/sources/ledgers.ts";
+import { adoptionNote, adoptionOf } from "./lib/adopt.ts";
 import { readPickups } from "./lib/sources/tracker.ts";
 import { copyLog, lineInputOf, writeTickLine } from "./lib/tick-line.ts";
 import { failureText } from "./lib/text.ts";
@@ -352,7 +353,15 @@ async function readForge(
     out.login = await resolveLogin();
     const toRead = managed(out.open);
     const unlabeled = out.open.length - toRead.length;
-    out.drives = await readDrives(repo.slug, out.login, toRead, nowMs, labels);
+    const adoption = adoptionOf(section, out.login);
+    out.drives = await readDrives(
+      repo.slug,
+      out.login,
+      toRead,
+      nowMs,
+      labels,
+      adoption,
+    );
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));
     const listed =
@@ -368,7 +377,7 @@ async function readForge(
       record: "forge",
       source: `gh ${repo.slug}`,
       ok: true,
-      detail: `${out.open.length} open pull request(s), ${out.drives.length} with a drive ledger${labelNote(labels, unlabeled)}; ${
+      detail: `${out.open.length} open pull request(s), ${out.drives.length} with a drive ledger${labelNote(labels, unlabeled)}${adoptionNote(adoption, out.drives)}; ${
         section.followupCommand === null
           ? "no dispatch.followup_command: no follow-ups"
           : `${out.merged.length} merged since ${since}`
@@ -514,6 +523,7 @@ async function applyStages(
         [listed],
         Date.now(),
         labels,
+        adoptionOf(section, login),
       );
       return again ?? null;
     },

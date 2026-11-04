@@ -290,7 +290,10 @@ development and shipped as a version.
   and `hold` as a person's commands, and last sets each managed pull
   request's state label from its ledger (`dispatch/lib/labels.ts`,
   `dispatch/lib/actions/labels.ts`); it never reads a state label to
-  decide what to start.
+  decide what to start. Where a repository turns its
+  [adoption rule](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  on, the tick arms a pull request with no ledger that the rule's author
+  and window match as it arms a labelled one (`dispatch/lib/adopt.ts`).
 - **Reasoned.** None inside the tick. It starts reasoned parts: a drive's
   passes (through `drive.ts`), a pickup's `/jig:do-item` session, and the
   repository's `dispatch.followup_command`. Its one keystroke into a
