@@ -234,7 +234,7 @@ development and shipped as a version.
   each until every process that creates them takes part in its admission
   protocol. A worktree Orca manages is eligible for collection when the machine entry
   names Orca's command, and an eligible one is removed only in a collecting
-  run (the configured weekday or disk pressure) once its proof of death
+  run (`--collect`, or `--scheduled` on the configured weekday or under disk pressure) once its proof of death
   holds; an ordinary run reports it as `would-collect` and removes nothing.
   Orca's registry stands in for the admission the opener does not hold, the
   base branch's copy of the remove hook runs, the unsent reflection findings
