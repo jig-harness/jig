@@ -108,39 +108,17 @@ shape structurally, each by the one form that is provably safe,
 rather than by a list of unsafe spellings: a spelling the lint does not
 recognize is a finding to rewrite or excuse, never a pass.
 
-- `ci-hold-events`: both label transitions start every pull-request workflow
-  that takes part in the hold, one with a guarded heavy job or a call to a
-  heavy workflow, or one holding a required check. Applying the label fires
-  only `labeled`, so without it no run reports under the hold and every check
-  keeps its pre-hold result; removing it fires only `unlabeled`, so without it
-  nothing runs again on the released head. There are two forms. In the first
-  the workflow lists `opened`, `synchronize`, `reopened`, `labeled` and
-  `unlabeled` under each of its `pull_request` and `pull_request_target`
-  triggers; listing any type replaces the three defaults, so they are listed
-  too. In the second, which spares a repository whose labels change often a
-  full run per label event
-  ([why](../../README.md#7-hold)), another workflow starts it. The workflow then
-  has `workflow_dispatch` with an input `held` of `type: boolean`, and lists
-  `opened`, `synchronize` and `reopened` or no `types:` at all. The other
-  workflow lists `labeled` and `unlabeled` under a `pull_request` or
-  `pull_request_target` trigger, and has a job with
-  `github.event.label.name == '<label>'` as an `&&`-joined term of its `if:`,
-  the exact label quoted, and a `run:` step with no `if:` that dispatches
-  the workflow by its file name (`gh workflow run <file>`, the file directly
-  after `run`, or the API's `actions/workflows/<file>/dispatches`) and names
-  `held`. Neither that job nor that step may set `continue-on-error`. A
-  workflow that has the trigger with no such reaction is held to the first form.
-  A `types:` that is not a list of names could not be checked. A pull-request
-  workflow with no heavy work and no required check is outside the hold and
-  needs none of this, so a cheap workflow leaves the hold by dropping its label
-  types, its guard and its `heavy` entry, with no exception.
-- `ci-hold-paths`: a workflow in the second form has no `paths` or
-  `paths-ignore` on its `pull_request` or `pull_request_target` trigger. A
-  dispatched run ignores the filter, so the release runs the workflow whatever
-  the pull request changed, and nothing fails to say so. Select jobs inside the
-  run and drop the filter, take the workflow out of the hold, or, where running
-  it on every release is worth it, record that in the exception list with the
-  reason. The first form needs none of this: a label event respects the filter.
+- `ci-hold-events`: every pull-request workflow that takes part in the
+  hold, one with a guarded heavy job or a call to a heavy workflow, or one
+  holding a required check, lists `opened`, `synchronize`, `reopened`,
+  `labeled` and `unlabeled` under each of its `pull_request` and
+  `pull_request_target` triggers. Applying the label fires only `labeled`,
+  so without it no run reports under the hold and every check keeps its
+  pre-hold result; removing it fires only `unlabeled`, so without it
+  nothing runs again on the released head. Listing any type replaces the
+  three defaults, so they are listed too. A `types:` that is not a list of
+  names could not be checked. A pull-request workflow with no heavy work
+  and no required check is outside the hold and needs none of this.
 - `ci-hold-guard`: every heavy job (see below) of a pull-request workflow
   skips while the label is present, and so does every job of a pull-request
   workflow that calls a heavy workflow of the repository, directly or
@@ -161,9 +139,7 @@ recognize is a finding to rewrite or excuse, never a pass.
   triggering runs, a guard that skipped on every `labeled` event would let
   any unrelated label replace a failing head's result with a passing skip,
   while this one skips only a pull request that carries the hold label and
-  runs real CI on any other label event. A workflow another one dispatches
-  also has `!inputs.held` as a term of the `if:`, since a dispatched run's
-  event holds no labels.
+  runs real CI on any other label event.
 - `ci-hold-sentinel`: some job of a pull-request workflow that holds a
   required check fails while the label is present, and its failure reaches
   that check. The job is the required job, or one the required job needs
@@ -175,9 +151,7 @@ recognize is a finding to rewrite or excuse, never a pass.
   `!cancelled()`) and has a `run:` step whose whole `if:` is
   `contains(<labels>, '<label>')`, optionally inside `${{ }}`; or the job's
   own whole `if:` is that test, it needs no job, and it has a `run:` step
-  with no `if:`. That test may be followed by `|| inputs.held`, which can only
-  fire it more often, and in a workflow another one dispatches it must be,
-  since a dispatched run's event holds no labels. Any other job condition, `false` included, may skip the job,
+  with no `if:`. Any other job condition, `false` included, may skip the job,
   and a skipped sentinel fails nothing. Neither the job nor that step may set `continue-on-error`,
   since a tolerated failure fails nothing. That step is where the held head
   fails, so it is visibly not mergeable. In the required job itself it may
@@ -341,11 +315,7 @@ to name it. A `timeout-minutes` written
 as an expression is accepted unchecked, since its value is known only at run
 time. The lint finds the sentinel step by its condition but cannot prove the
 step fails or read what it says: its script must exit non-zero with a
-message that names the label to remove, which review checks. Of the workflow
-that dispatches a held run, it reads the file name and the word `held`, not
-what value the step passes, and it does not check that the dispatched run tests
-the pull request's merge, or that a `workflow_dispatch` the workflow already had
-does nothing a hold must not trigger. Whether a concurrency key
+message that names the label to remove, which review checks. Whether a concurrency key
 covers what it cancels, and whether an aggregator's script judges each result
 correctly, stay with review.
 
@@ -357,6 +327,4 @@ correctly, stay with review.
 | `inputs.ts` | reads the workflows, actions, configuration and exception list, failing closed |
 | `rules.ts` | the rules, one function each |
 | `check-workflow-conventions.test.ts` | paired self-test |
-| `check-workflow-conventions-dispatch.test.ts` | the self-test of the CI hold's dispatched form |
-| `test-support.ts` | what the two self-tests share |
 | `fixtures/` | one small repository per case: a pass and a fail per rule, composite actions, unparseable input, a repeated key, stale, reasonless and unknown-rule exceptions, malformed configuration |

@@ -112,10 +112,7 @@ Cancel a run only when another run covers it.
   nothing of another: it gets its own slot.
 - **A concurrency key includes the ref or commit, the event, and every
   dispatch input.** A manually dispatched run is keyed by its own run id, not
-  by its inputs interpolated into the key. The exception is a run a workflow
-  dispatches in place of a pull request's own, as [the hold](#7-hold) can: it
-  shares that pull request's group, keyed by the pull request's number,
-  because whichever of the two is newer covers the older.
+  by its inputs interpolated into the key.
 - **A queue may keep only the newest waiting run per key.** On some
   providers a newer run cancels the older waiting one even where running
   ones are never cancelled, and nothing reports it as an error. A key that
@@ -250,10 +247,13 @@ Every one of these holds, or the saving turns a failure into a pass:
   cancelled run can leave the required job unstarted and skipped, and a
   skipped required job passes.
 - **Only the hold's own label skips work.** Each heavy job skips by testing
-  whether the pull request is held, never by the kind of event that started
-  the run. A run's result replaces the head's previous one, so a job that
-  skipped on any label event would let an unrelated label turn a failing head
-  into a passing skip.
+  whether the pull request carries the hold label, never by the kind of
+  event that started the run. The pipeline now runs on every label event,
+  and a run's result replaces the head's previous one, so a job that
+  skipped on any `labeled` event would let an unrelated label turn a
+  failing head into a passing skip. An unrelated label event on an unheld
+  pull request therefore runs real CI: the price of a run whose result
+  counts.
 - **Releasing the hold reruns every required check on the same head.**
   Every workflow that honours the label, and every one reporting a required
   check, runs on the label's removal, in full: the released head is the one
@@ -267,57 +267,6 @@ Every one of these holds, or the saving turns a failure into a pass:
 The held-head check's message says why the head failed and how to release
 it: the label's name, and that removing it runs everything again.
 
-Two forms meet these rules, and they differ in what any other label costs.
-
-- **The pipeline runs on label events itself.** It is the smaller form:
-  nothing but the pipeline's own trigger list and its label test. Every label
-  change on the pull request, the hold's or not, then runs the whole pipeline
-  on the same head, and that run's result replaces the last one. An unrelated
-  label costs a full run: the price of a run whose result counts. Where labels
-  rarely change, that price is small.
-- **A small workflow reacts to the hold label and starts the pipeline.** The
-  pipeline has no label trigger. The small workflow runs on every label event,
-  does nothing for any label but the hold's, and starts the pipeline on demand
-  on both of the hold's transitions, telling it whether the pull request is
-  held. Any other label starts nothing and cancels nothing. A repository whose
-  labels change often wants this form. A tool that shows a pull request's state
-  as labels, such as Jig's [dispatcher](../../GLOSSARY.md), changes them several
-  times per pull request, and one state change is two label events, one
-  removal and one addition. With the first form each of those events starts a
-  full run that cancels the one before it. The cost is more than the wasted
-  minutes: a run cancelled that early can leave a check under a name no later
-  run replaces, so a head whose gates all passed reads as broken. And a label
-  added just after a release cancels the run the driver is waiting for.
-
-The second form has limits of its own, which
-[mappings.md](mappings.md#hold) spells out: the run it starts must test the same
-merge a pull-request run tests, it cannot start a run for a pull request from a
-fork, and the label's application takes a little longer to reach the head.
-
-A repository with many workflows in its hold weighs three more things before
-it chooses, in this order.
-
-- **Shrink the hold first.** Only a workflow that reports a required check, or
-  whose heavy jobs are worth skipping, needs to take part. Cost is rarely spread
-  evenly: in one repository measured, two workflows made up about two thirds of
-  the minutes, and nearly every other one took about two minutes or less. A
-  cheap workflow can simply leave the hold. It drops its label events and its
-  skip, and runs on each push like any other. Fewer workflows then need either
-  form, and the two that matter may be the only ones left to move.
-- **A run started on demand ignores path filters.** A label event respects a
-  filter on the workflow's trigger, so a filtered workflow stays quiet when its
-  paths did not change. A dispatched run does not: the release runs that
-  workflow whatever the pull request changed, and nothing fails to say so. The
-  second form therefore suits a workflow without path filters. One that keeps
-  its filter either selects its jobs inside the run instead, leaves the hold, or
-  accepts that every release runs it.
-- **A workflow may already mean something when started on demand.** Its manual
-  run may deploy, or push an image. A hold's dispatch would trigger that, on
-  every application and removal of the label, unless the workflow tells the two
-  apart, so never dispatch such a workflow as it stands. Move the manual path
-  into a workflow of its own, or have those jobs skip when the run names a pull
-  request.
-
 The drive's last push is usually a held one, since no one knows a push is
 the last until review passes it, so the head the merge waits for carries
 the held run beside the release's run. Where the provider still shows the
@@ -326,8 +275,8 @@ failure on a mergeable head; one that was cancelled reads as superseded
 ([mappings.md](mappings.md#hold) says how each provider shows it). A driver
 that dies mid-round leaves the label on, and the pull request stays
 unmergeable until someone removes it; removing it by hand is the release and reruns
-everything. Never rerun the old run instead: a rerun replays what started it,
-the hold included, and fails on the same step.
+everything. Never rerun the old run instead: a rerun replays the event that
+carried the label and fails on the same step.
 
 **Open question: merge queues.** A merge-queue run carries no pull-request
 labels, so it neither skips nor fails on the hold; what a hold means once a
@@ -341,7 +290,7 @@ skill (`ci.hold_label`); the workflow side is an opt-in block in
 [mappings.md](mappings.md#hold) gives the trigger, guard and held-head
 check per provider; the
 [workflow-convention lint](reference/workflow-conventions/README.md#ci-hold)
-checks all three in the shapes it can prove safe.
+checks all three in the one shape it can prove safe.
 
 ### 8. Cache
 
@@ -573,8 +522,8 @@ reading it.
 - **Strict** — the workflow conventions are checked by a lint that fails
   closed on input it cannot parse and accepts only reasoned exceptions, which
   fail once they suppress nothing, and it fails a job timeout above an hour;
-  where a CI hold is used, the lint checks its label events or the workflow
-  that reacts to them, its guard and its held-head check; every cache has a retention bound that a prune or
+  where a CI hold is used, the lint checks its label events, its guard and
+  its held-head check; every cache has a retention bound that a prune or
   the store's eviction enforces, a declared cache that stores nothing is
   detected, a container build's cache mounts are checked on every step
   that reads the store, and only trusted contexts write to a shared cache

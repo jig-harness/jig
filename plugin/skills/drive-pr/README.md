@@ -194,22 +194,17 @@ expensive for that can let the drive suppress it between review rounds:
 2. Make every workflow that reports a required check, and every one with
    expensive jobs, honour it in the shape
    [M13's piece 7](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md#7-hold)
-   states. Both of the label's transitions must start them: without its
-   application, every required check keeps its pre-hold result until the next
-   push, which may never come; without its removal, the release runs nothing
-   again. Either trigger on `labeled` and `unlabeled` beside `opened`,
-   `synchronize` and `reopened` (listing any type replaces the defaults),
-   which runs real CI on every label change; or, where labels change often,
-   as they do under the dispatcher's labels, add a small workflow that reacts
-   to the hold label alone and starts them by `workflow_dispatch`, so no other
-   label starts or cancels a run
-   ([M13's mappings](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/mappings.md#hold)
-   give its shape, and its limit on a pull request from a fork). Skip the
+   states. Trigger on `labeled` and `unlabeled` beside `opened`,
+   `synchronize` and `reopened` (listing any type replaces the defaults):
+   without `labeled`, applying the label starts no run and every required
+   check keeps its pre-hold result until the next push, which may never
+   come; without `unlabeled`, the release runs nothing again. Skip the
    heavy jobs by testing the pull request's labels for the hold label,
-   `!contains(github.event.pull_request.labels.*.name, '<label>')`, and on a
-   dispatched run its `held` input, never by the event's action: a job that
+   `!contains(github.event.pull_request.labels.*.name, '<label>')`, never
+   by the event's action: with label events starting runs, a job that
    skipped on any `labeled` event would let an unrelated label replace a
-   failing head's result with a passing skip. And fail, rather than skip, a
+   failing head's result with a passing skip, so an unrelated label event
+   on an unheld pull request runs real CI. And fail, rather than skip, a
    required check while the label is present, from the run the label's
    application starts onward, with a message naming the label, so a held
    head is visibly not mergeable throughout. A step in the required job

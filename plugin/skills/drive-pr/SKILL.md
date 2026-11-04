@@ -267,9 +267,8 @@ reviewer continues independently.
 At reviewer convergence, `drive.ts` removes the label only when that same
 labelled event is still the newest transition of the label. A human
 remove/re-add therefore transfers control: the drive leaves the label
-untouched. Removing the owned label starts the required checks again, through
-each workflow's `unlabeled` trigger or a workflow that reacts to the label by
-dispatching them. The drive waits for successful exact-head required checks whose
+untouched. Removing the owned label fires every workflow's `unlabeled`
+trigger. The drive waits for successful exact-head required checks whose
 starts are no earlier than that server-side unlabeled-event timestamp and whose
 run ids exceed the pre-unlabel watermark. It then requires the overall
 non-reviewer CI verdict to be green before it writes the PR-global

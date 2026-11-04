@@ -417,8 +417,7 @@ reports to GitHub works (GitHub Actions, and GitLab CI, CircleCI, Buildkite
 or Jenkins through their GitHub integrations). Where the required checks
 cannot be read from branch protection, `ci.required_checks` names them.
 `ci.hold_label` is a GitHub label the repository's own workflows must honour;
-any CI that can read a pull request's labels can, and that both of the label's
-transitions can start, directly or through a small workflow that reacts to it.
+any CI that can read a pull request's labels can.
 
 Bound to GitHub Actions today:
 

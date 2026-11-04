@@ -15,10 +15,18 @@
 # every job but `gates` skips and `gates` cancels its own run, naming the
 # label. drive-pr adds the label before a review round's intermediate push and
 # removes it at convergence, which runs everything again on the head the merge
-# waits for. No label event starts a run here: pull requests change labels
-# often, one change is two events, and each would start and cancel a full run.
-# ci-hold.yml reacts to the hold label alone and dispatches this workflow with
-# the label's state in `held`, so both transitions still report on the head.
+# waits for. The label events start runs, so the workflow lists them beside
+# the defaults.
+#
+# Any other label's event starts a mirror run. Pull requests here change labels
+# often (the dispatcher shows its state as labels, and one change is two
+# events), and a full run per event would cancel the run before it. A mirror run
+# skips every heavy job, cancels nothing (its concurrency group is its own), and
+# its `gates` job waits for the newest real run on the same head, then passes
+# only when that run's `gates` passed. It cannot simply skip: GitHub reads the
+# required check from the newest run, so a run that skips `gates` under its own
+# name would pass the check, and one that reports no `gates` leaves the head
+# blocked. `run-name` marks a mirror run, so a mirror never copies another.
 #
 # Jobs are split no further than their work needs: the drive-pr suite has as
 # many shards as keep each under two minutes and no more, since each shard
@@ -36,121 +44,63 @@
 # names one. `gates` only reads the other jobs' results, so it runs on the
 # smallest, `ubuntu-slim`.
 name: gates
+run-name: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && format('gates mirror ({0} label)', github.event.label.name) || '' }}
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
-  # ci-hold.yml's way in. A run reports on the branch it is dispatched from,
-  # which must be the pull request's head; the areas job refuses anything else.
-  workflow_dispatch:
-    inputs:
-      pr:
-        description: The pull request to test; dispatch from its head branch
-        type: number
-        required: true
-      held:
-        description: The pull request carries the hold label, so the heavy jobs skip and `gates` cancels this run
-        type: boolean
-        required: true
 
 permissions:
   contents: read
 
-# A pull request's newer run cancels its older one, whether a push or the hold
-# label started either: the group names the pull request, since `github.ref`
-# differs between the two kinds of run. A run on main is never cancelled, nor
+# A pull request's newer push cancels its older run, and so does a change of the
+# hold label. A mirror run covers nothing a real run checks, so it is keyed by
+# its own run and cancels nothing. A run on main is never cancelled, nor
 # replaced while it waits, so every commit on main gets its checks: the release
 # workflow (release.yml) tags a release commit only once its own `gates` check
 # passed.
 concurrency:
-  group: gates-${{ github.event.pull_request.number || inputs.pr || github.sha }}
-  cancel-in-progress: ${{ github.event_name != 'push' }}
+  group: gates-${{ github.event.label.name && github.event.label.name != 'ci:hold' && format('mirror-{0}', github.run_id) || github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   areas:
     name: change areas
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !inputs.held }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: read
-      pull-requests: read
     outputs:
       areas: ${{ steps.resolve.outputs.areas }}
-      # Set on a dispatched run alone: the merge every job tests, and what it
-      # merged into. Empty, `ref` below leaves each checkout at the event's own
-      # commit and the changelog check reads the event's base.
-      merge: ${{ steps.merge.outputs.merge }}
-      base: ${{ steps.merge.outputs.base }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           # The resolver diffs against the merge base with the base branch.
           fetch-depth: 0
-      # A pull-request run tests the head merged into its base, so a dispatched
-      # run must too, and the result lands on the head, so the merge must hold
-      # that head: GitHub moves the merge ref in the background, and leaves it
-      # where it was while the pull request conflicts. Reading the pull request
-      # asks for the move. GitHub starts no pull-request run on a conflicting
-      # pull request, ci-hold.yml's included, so a conflict here arrived after
-      # the dispatch: there is no merge to test, and `gates` fails until a push
-      # resolves it. Later jobs take this one commit by its id, since the ref
-      # can move again while they wait.
-      - name: Find the merge a dispatched run tests
-        id: merge
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ inputs.pr }}
-        run: |
-          deadline=$((SECONDS + 120))
-          while :; do
-            mergeable=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .mergeable) || mergeable=unread
-            if [ "$mergeable" = false ]; then
-              echo "::error::pull request #$PR conflicts with its base, so there is no merge to test. Resolve the conflict; the push runs CI."
-              exit 1
-            fi
-            if git fetch --quiet origin "refs/pull/$PR/merge" &&
-              [ "$(git rev-parse --verify --quiet FETCH_HEAD^2)" = "$GITHUB_SHA" ]; then
-              break
-            fi
-            if [ "$SECONDS" -ge "$deadline" ]; then
-              echo "::error::refs/pull/$PR/merge does not merge $GITHUB_SHA, the head this run reports on, after two minutes (mergeable: $mergeable). Dispatch from the pull request's head branch, or push to run CI."
-              exit 1
-            fi
-            sleep 5
-          done
-          git checkout --quiet --detach FETCH_HEAD
-          {
-            echo "merge=$(git rev-parse HEAD)"
-            echo "base=$(git rev-parse HEAD^1)"
-          } >> "$GITHUB_OUTPUT"
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
       - name: Resolve the changed files to areas
         id: resolve
         env:
           EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha || steps.merge.outputs.base }}
+          BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          if [ "$EVENT" = push ]; then
-            bun scripts/change-areas.ts --all
-          else
+          if [ "$EVENT" = pull_request ]; then
             bun scripts/change-areas.ts --base "$BASE"
+          else
+            bun scripts/change-areas.ts --all
           fi
 
   gate-set:
     name: gates (linux)
     needs: areas
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !inputs.held }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
     runs-on: ubuntu-latest
     # The gate set's 20 minutes and the website steps' 10.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ needs.areas.outputs.merge }}
           # The ratchet and fallow's audit compare against the merge base
           # with main, which a shallow checkout does not have.
           fetch-depth: 0
@@ -230,9 +180,6 @@ jobs:
           # And Claude Code is fetched above, so the plugin check fails
           # without its validator instead of skipping it.
           JIG_REQUIRE_CLAUDE: "1"
-          # A dispatched run's event names no pull request for the changelog
-          # check to read its base from.
-          JIG_CHANGE_NOTES_BASE: ${{ needs.areas.outputs.base }}
         run: bun run gates
       # The website steps run after a failed gate set too, so one run reports
       # both. The build renders the live audit example with the audit skill's
@@ -259,7 +206,7 @@ jobs:
   drive-pr-suite:
     name: drive-pr suite (linux, ${{ matrix.shard }}/3)
     needs: areas
-    if: ${{ contains(needs.areas.outputs.areas, '"drive-pr"') && !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !inputs.held }}
+    if: ${{ contains(needs.areas.outputs.areas, '"drive-pr"') && !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
     strategy:
       fail-fast: false
       matrix:
@@ -270,7 +217,6 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ needs.areas.outputs.merge }}
           # The summary-findings tests position a reviewer against real commits
           # of this repository, which a shallow checkout does not have.
           fetch-depth: 0
@@ -297,21 +243,27 @@ jobs:
   # needs `actions: write`; this job checks out and runs nothing of the
   # repository. Where the token cannot cancel (a pull request from a fork gets
   # a read-only one), or the cancellation does not arrive, the step fails.
+  #
+  # In a mirror run it repeats the newest real run's `gates` result instead of
+  # judging the skipped jobs, and fails closed: on a real `gates` that did not
+  # pass, on no real run, on three API reads in a row that do not answer, and at
+  # its deadline, which outlasts the longest real run and ends inside the job's
+  # timeout.
   gates:
     needs: [areas, gate-set, drive-pr-suite]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-slim
-    timeout-minutes: 5
+    timeout-minutes: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && 50 || 5 }}
     permissions:
       actions: write
     steps:
       - name: Stop while the CI hold is on
-        if: ${{ contains(github.event.pull_request.labels.*.name, 'ci:hold') || inputs.held }}
+        if: ${{ contains(github.event.pull_request.labels.*.name, 'ci:hold') }}
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.api_url }}/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          echo "::error::held: this pull request carries the ci:hold label, so its heavy jobs were skipped. Remove the label (gh pr edit <PR> --remove-label ci:hold) to run everything again; never rerun this run, which replays the hold."
+          echo "::error::held: this pull request carries the ci:hold label, so its heavy jobs were skipped. Remove the label (gh pr edit <PR> --remove-label ci:hold) to run everything again; never rerun this run, which replays the labelled event."
           if curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$RUN_URL/cancel" > /dev/null; then
             # The cancellation ends this step; the deadline only bounds the wait.
             deadline=$((SECONDS + 120))
@@ -319,7 +271,62 @@ jobs:
             echo "::error::the run's cancellation did not arrive within two minutes"
           fi
           exit 1
+      - name: Repeat the newest real run's result
+        if: ${{ github.event.label.name && github.event.label.name != 'ci:hold' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SELF: ${{ github.run_id }}
+          # The start of every mirror run's name; run-name above writes it.
+          MIRROR: "gates mirror ("
+          DEADLINE_SECONDS: "2700"
+          GRACE_SECONDS: "60"
+          POLL_SECONDS: "10"
+        run: |
+          deadline=$((SECONDS + DEADLINE_SECONDS))
+          grace=$((SECONDS + GRACE_SECONDS))
+          misses=0
+          # One API read, bounded; the third failed read in a row ends the step.
+          read_api() {
+            if out=$(timeout 30 gh api "$@"); then misses=0; return 0; fi
+            misses=$((misses + 1))
+            if [ "$misses" -ge 3 ]; then
+              echo "::error::three API reads in a row failed, so this run cannot repeat the head's gates result. Push, or change a label again, to run CI."
+              exit 1
+            fi
+            return 1
+          }
+          while :; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::no real gates run on $HEAD_SHA completed before this run's deadline. Push, or change a label again, to run CI."
+              exit 1
+            fi
+            if read_api "repos/$GITHUB_REPOSITORY/actions/workflows/gates.yml/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=100" \
+              --jq '[.workflow_runs[] | select(.id != (env.SELF | tonumber) and (.display_title | startswith(env.MIRROR) | not))] | if length == 0 then "none" else (max_by(.id) | "\(.id) \(.status)") end'; then
+              if [ "$out" = none ]; then
+                if [ "$SECONDS" -ge "$grace" ]; then
+                  echo "::error::no real gates run exists on $HEAD_SHA, so there is no result to repeat. Push to run CI."
+                  exit 1
+                fi
+              else
+                run=${out%% *}
+                status=${out#* }
+                if [ "$status" = completed ] && read_api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?filter=latest&per_page=100" \
+                  --jq '[.jobs[] | select(.name == "gates")] | if length == 1 then (.[0].conclusion // "none") else "missing" end'; then
+                  url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run"
+                  if [ "$out" = success ]; then
+                    echo "::notice::the newest real gates run on this head passed: $url"
+                    exit 0
+                  fi
+                  echo "::error::the newest real gates run on this head did not pass (its gates job: $out): $url"
+                  exit 1
+                fi
+              fi
+            fi
+            sleep "$POLL_SECONDS"
+          done
       - name: Require every selected job
+        if: ${{ !(github.event.label.name && github.event.label.name != 'ci:hold') }}
         env:
           AREAS: ${{ needs.areas.result }}
           GATE_SET: ${{ needs.gate-set.result }}

@@ -1245,6 +1245,8 @@ type SuiteJob = {
 // review of the workflow catches it, as it does any other change to them.
 const SUITE_WORKFLOW_KEYS = new Set([
   "name",
+  // A run's name decides nothing about what the run runs.
+  "run-name",
   "on",
   "permissions",
   "concurrency",
