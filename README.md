@@ -2,9 +2,9 @@
 
 # Jig Harness
 
-Jig is the rules a repository's AI coding agents follow, the skills they run and
-the checks their work must pass. As a [harness](GLOSSARY.md), it carries each
-change from pickup to merge. What one session learns, the next one keeps.
+Jig is the rules a repository's AI coding agents follow, the step-by-step
+procedures they run and the checks their work must pass. As a
+[harness](GLOSSARY.md), it carries each change from pickup to merge. What one session learns, the next one keeps.
 
 **A jig for AI coding agents: modular delivery practices, shared skills and gates, and an auditor that scores your repository.**
 

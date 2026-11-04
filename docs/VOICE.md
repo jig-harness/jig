@@ -194,9 +194,9 @@ is, and "well" promises nothing a reader can check.
 
 After:
 
-> Jig is the rules a repository's AI coding agents follow, the skills they run
-> and the checks their work must pass. As a [harness](../GLOSSARY.md), it
-> carries each change from pickup to merge.
+> Jig is the rules a repository's AI coding agents follow, the step-by-step
+> procedures they run and the checks their work must pass. As a
+> [harness](../GLOSSARY.md), it carries each change from pickup to merge.
 
 The first sentence says what Jig is, in words a reader already has, as
 things a reader can check. The term of art comes second, after its plain
