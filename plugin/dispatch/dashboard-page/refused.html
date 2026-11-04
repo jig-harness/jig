@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="data:,">
+<title>Dispatch: refused</title>
+<style>:root { color-scheme: light dark; }
+body { margin: 0; }
+.dd {
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Ubuntu, Cantarell, "Noto Sans", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  --r-tag: 4px; --r: 8px; --r-card: 12px; --r-panel: 14px; --tap: 44px;
+  --outer: light-dark(#e8e4dd, #0d0b09);
+  --bg: light-dark(#f9f6f1, #1a1713);
+  --card: light-dark(#fffdfa, #23201c);
+  --sunk: light-dark(#f0ece5, #13100d);
+  --ink: light-dark(#251e18, #ebe7e0);
+  --muted: light-dark(#59514a, #b8b3ac);
+  --line: light-dark(#d5d0c8, #433f3a);
+  --line-strong: light-dark(#867f77, #847f78);
+  --accent: light-dark(#1a6444, #82d2a8);
+  --accent-hover: light-dark(#005031, #9fe7c0);
+  --on-accent: light-dark(#fcfaf6, #0e1913);
+  --accent-soft: light-dark(#dbf2e4, #1b3427);
+  --hl: light-dark(#f7e8af, #4e3e09);
+  --hl-line: light-dark(#815b1f, #ddc276);
+  --focus: light-dark(#0267c7, #7dbaff);
+  --bad: light-dark(#a8201a, #ff9e94);
+  --wait: light-dark(#6a3a9e, #cdb4f5);
+  --small: 14px;
+  container: page / inline-size;
+  min-height: 100vh; box-sizing: border-box;
+  background: var(--bg); color: var(--ink);
+  font: 400 15px/1.45 var(--sans);
+  -webkit-text-size-adjust: 100%;
+}
+.dd *, .dd *::before { box-sizing: border-box; }
+.dd a { color: var(--accent); text-underline-offset: 2px; }
+.dd a:hover { color: var(--accent-hover); }
+.dd :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+.dd h1, .dd h2, .dd h3, .dd p { margin: 0; }
+.dd h2 { font: 600 20px/1.2 var(--serif); }
+.dd h3 { font: 600 var(--small)/1.3 var(--sans); }
+.m { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
+.mut { color: var(--muted); }
+.sm { font-size: var(--small); }
+.nowrap { white-space: nowrap; }
+#line, #queue, #history, #legend { scroll-margin-top: 60px; }
+
+/* status strip: sticky on every viewport, carries the newest tick */
+.strip { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
+.strip.alarm { background: var(--sunk); border-bottom: 2px solid var(--line-strong); }
+.stripIn { display: flex; align-items: center; gap: 8px 12px; max-width: 1200px; margin: 0 auto; padding: 6px 16px; min-height: 48px; }
+.brand { display: flex; align-items: center; gap: 6px; flex: none; font: 600 18px/1 var(--serif); }
+.brand svg { width: 28px; height: 28px; display: block; }
+.brand span { display: none; }
+.tick { flex: 1 1 auto; min-width: 0; font-size: 14px; line-height: 1.25; }
+.tick b { font-weight: 600; }
+.stripLinks { display: flex; gap: 12px; flex: none; align-items: center; font-size: 14px; }
+.stripLinks a { display: inline-flex; align-items: center; min-height: 44px; }
+.ver { display: none; }
+
+/* the status mark: one role, one key cap */
+.mk { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1px solid currentColor; border-radius: 3px; font: 700 14px/1 var(--mono); vertical-align: -3px; }
+.r-needs { color: var(--hl-line); }
+.mk.r-needs { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.mk.r-needs::before { content: ""; width: 12px; height: 13px; background: radial-gradient(circle at 50% 26%, currentColor 0 24%, transparent 26%), radial-gradient(ellipse 50% 44% at 50% 100%, currentColor 0 98%, transparent 100%); }
+.r-working, .r-well { color: var(--accent); }
+.r-waiting { color: var(--wait); }
+.r-held, .r-stale, .r-unknown { color: var(--muted); }
+.r-badly { color: var(--bad); }
+.mk.plan { border-style: dashed; color: var(--muted); }
+
+/* chip: a closed vocabulary */
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border: 1px solid var(--line); border-radius: var(--r-tag); font: 400 14px/1.35 var(--mono); color: var(--muted); white-space: nowrap; }
+.chip b { font-weight: 700; color: var(--ink); }
+
+/* term popover: tap, click or focus; never hover alone */
+.terms { display: flex; flex-wrap: wrap; gap: 0 10px; margin: -4px 0 6px; align-items: center; }
+.termBtn { min-height: 44px; display: inline-flex; align-items: center; padding: 0; background: none; border: 0; color: inherit; font: inherit; cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
+.br { flex-basis: 100%; height: 0; }
+.slotLow { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 10px; }
+.slotLow .fold[data-open] { flex-basis: 100%; }
+.popPos { z-index: 8; }
+.pop { max-width: min(360px, calc(100cqw - 24px)); padding: 8px 12px; background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 14px/1.4 var(--sans); color: var(--ink); box-shadow: 0 2px 10px light-dark(rgba(37,30,24,.12), rgba(0,0,0,.45)); }
+.dd .pop:focus-visible { outline: none; }
+
+.main { max-width: 1200px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+/* the answer: the first question, stated */
+.answer { display: flex; flex-direction: column; gap: 4px; }
+.answer h1 { font: 600 24px/1.2 var(--serif); }
+.answer.loud { background: var(--hl); border: 1px solid var(--hl-line); border-radius: var(--r-panel); padding: 12px 16px; }
+.answer.loud p { color: var(--ink); }
+.banner { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; background: var(--sunk); border: 2px solid var(--line-strong); border-radius: var(--r-card); }
+.banner h2 { font-size: 18px; }
+.bannerBody { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+.grid { display: flex; flex-direction: column; gap: 16px; }
+.panel { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-panel); padding: 12px 12px 14px; min-width: 0; }
+.panelHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-bottom: 8px; }
+.panelHead .asof { margin-left: auto; }
+.asof { font-size: var(--small); color: var(--muted); }
+.lede { font-size: var(--small); color: var(--muted); margin-bottom: 8px; }
+.defect { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: var(--small); }
+
+/* a person's list */
+.needList { display: flex; flex-direction: column; gap: 0; }
+.need { padding: 10px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px; }
+.need:first-child { border-top: 0; padding-top: 2px; }
+.rowTop { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; }
+.rowTop .end { margin-left: auto; }
+.tgt { font: 600 15px/1.3 var(--mono); }
+.need .q { font-size: 15px; }
+.groupHead { padding-top: 10px; margin-top: 4px; border-top: 1px solid var(--line-strong); color: var(--muted); font: 600 14px/1.3 var(--sans); }
+.groupHead.first { border-top: 0; margin-top: 0; padding-top: 0; }
+.need.rest, .groupHead.rest { display: none; }
+.needList.all .need.rest { display: flex; }
+.needList.all .groupHead.rest { display: block; }
+.moreBtn { min-height: 44px; margin-top: 6px; width: 100%; background: transparent; color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 15px var(--sans); cursor: pointer; }
+.moreRow { display: flex; gap: 8px; margin-top: 6px; }
+.moreRow .moreBtn { margin-top: 0; }
+.goto { display: flex; flex-wrap: wrap; gap: 0 14px; align-items: center; font-size: var(--small); }
+.goto a { display: inline-flex; align-items: center; min-height: 44px; }
+.goto .noLink { color: var(--muted); padding-block: 4px; }
+.fold summary, .foldBtn { display: inline-flex; align-items: center; min-height: 44px; padding: 0; background: none; border: 0; cursor: pointer; font: inherit; font-size: var(--small); color: var(--muted); text-align: left; }
+.quote { margin: 4px 0 6px; padding: 8px 10px; background: var(--sunk); border-radius: var(--r); font: 400 14px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.path { user-select: all; overflow-wrap: anywhere; }
+
+/* the whole decision: Markdown a drive wrote, so its text is shown and nothing in it runs */
+.quote.md { font-family: var(--sans); white-space: normal; }
+.quote.md h1, .quote.md h2, .quote.md h3, .quote.md h4, .quote.md h5, .quote.md h6 { margin: 8px 0 2px; font: 600 14px/1.3 var(--sans); }
+.quote.md > :first-child { margin-top: 0; }
+.quote.md p { margin: 0 0 4px; }
+.quote.md ul, .quote.md ol { margin: 0 0 4px; padding-inline-start: 20px; }
+.quote.md code { font-family: var(--mono); font-size: 13px; }
+.quote.md pre { margin: 0 0 4px; white-space: pre-wrap; font-family: var(--mono); }
+.quote.md blockquote { margin: 0 0 4px; padding-inline-start: 10px; border-inline-start: 2px solid var(--line-strong); }
+.quote.md table { border-collapse: collapse; margin: 0 0 4px; }
+.quote.md th, .quote.md td { padding: 2px 6px; border: 1px solid var(--line); text-align: left; }
+
+/* copy control: one word, the same everywhere; it touches only the reader's clipboard */
+.copy { flex: none; display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 56px; padding: 2px 8px; background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-tag); font: 400 14px/1.2 var(--sans); cursor: pointer; white-space: nowrap; }
+.copy:hover { border-color: var(--line-strong); }
+.copyRow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 6px; }
+.clip, .say { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; overflow: hidden; pointer-events: none; }
+.goto .fold { order: 9; }
+.goto .fold[data-open] { flex-basis: 100%; }
+.kv dd { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.kv dd span { min-width: 0; overflow-wrap: anywhere; user-select: text; }
+.qTools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+
+/* an account row: the row is the cap, each cell one slot */
+.acct { padding: 8px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.acct:first-child { border-top: 0; padding-top: 0; }
+.acctHead { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; }
+.acctName { font-weight: 600; }
+.acctHead .end { margin-left: auto; }
+.pips { display: inline-flex; gap: 3px; }
+.pip { width: 10px; height: 10px; border: 1px solid var(--line-strong); border-radius: 2px; }
+.pip.on { background: var(--ink); border-color: var(--ink); }
+.slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 6px; }
+.slot { padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.slotFact { font-size: var(--small); line-height: 1.3; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 10px; margin: 0 0 6px; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+.kv dd.prose { font-family: var(--sans); }
+.wallLine { font-size: var(--small); }
+
+/* queue */
+.qGroup { padding-top: 8px; margin-top: 8px; border-top: 1px solid var(--line); }
+.qGroup.first { border-top: 0; margin-top: 0; padding-top: 0; }
+.qItem { display: flex; flex-direction: column; gap: 1px; padding: 5px 0; }
+.qItem.rest { display: none; }
+.qList.all .qItem.rest { display: flex; }
+.ghost { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line-strong); color: var(--muted); font-size: var(--small); }
+
+/* window and log */
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.segClasses { margin-top: 6px; }
+.fbtn { min-height: 44px; padding: 4px 10px; background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r-tag); font: 400 14px/1.2 var(--sans); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.fbtn[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+.fbtn[aria-pressed="true"] .mk { color: var(--bg); border-color: var(--bg); }
+.fbtn[aria-pressed="true"] .mk.r-needs { background: var(--bg); color: var(--ink); }
+.fbtn[aria-pressed="true"] .ct { color: var(--bg); }
+.fbtn:disabled { cursor: not-allowed; border-style: dotted; color: var(--muted); }
+.fbtn .ct { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 8px; margin-top: 10px; }
+.field { display: flex; flex-direction: column; gap: 2px; font-size: 14px; color: var(--muted); min-width: 0; }
+.selBtn, .fields input { width: 100%; min-height: 44px; padding: 4px 8px; background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 15px var(--sans); }
+.selBtn { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-inline: 12px 2px; text-align: left; cursor: default; }
+.selVal { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selIcon { display: flex; flex: none; }
+.selIcon svg { display: block; }
+.selBtn:disabled, .selBtn[data-disabled], .fields input:disabled { cursor: not-allowed; border-style: dotted; color: var(--muted); }
+.selPos { z-index: 8; }
+.selPop { min-width: var(--anchor-width); background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: 0 2px 10px light-dark(rgba(37,30,24,.12), rgba(0,0,0,.45)); font: 400 15px var(--sans); }
+.selList { max-height: min(320px, var(--available-height)); overflow-y: auto; padding: 4px; }
+.selItem { display: flex; align-items: center; min-height: 44px; padding: 4px 8px; border-radius: var(--r-tag); cursor: default; overflow-wrap: anywhere; }
+.selItem[data-highlighted] { background: var(--accent-soft); }
+.selItem[data-selected] { font-weight: 600; }
+.active { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; font-size: var(--small); }
+.linkLine { margin-top: 6px; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.meta { margin: 10px 0 2px; font-size: var(--small); color: var(--muted); }
+.recur { margin-top: 10px; padding: 8px 10px; background: var(--sunk); border-radius: var(--r); display: flex; flex-direction: column; gap: 2px; }
+.recurRow { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: center; min-height: 44px; }
+.rows { position: relative; margin-top: 4px; }
+.row { position: absolute; top: 0; left: 0; width: 100%; border-top: 1px solid var(--line); }
+.rowSum { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; width: 100%; padding: 8px 2px; min-height: 44px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cell-cls { grid-column: 1; grid-row: 1; min-width: 0; font-weight: 600; font-size: 14px; }
+.cell-time { grid-column: 2; grid-row: 1; color: var(--muted); font-size: 14px; }
+.cell-tgt { grid-column: 1 / -1; font-size: 14px; display: flex; flex-wrap: wrap; gap: 0 8px; align-items: center; min-width: 0; }
+.cell-acct, .cell-len { font-size: 14px; color: var(--muted); }
+.cell-acct { grid-column: 1; }
+.cell-len { grid-column: 2; }
+.cell-why { grid-column: 1 / -1; font-size: 14px; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.rowBody { padding: 0 2px 10px; }
+.foot { max-width: 1200px; margin: 0 auto; padding: 8px 16px 32px; display: flex; flex-direction: column; gap: 12px; }
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 10px 20px; margin-top: 8px; }
+.lgRole { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.lgRole .set { color: var(--muted); }
+.dd .lgMeta { margin-top: 4px; }
+.colophon { font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 2px 16px; }
+.colophon a { display: inline-flex; align-items: center; min-height: 44px; }
+.emptyLine { color: var(--muted); font-size: var(--small); }
+.dd .refusalBody { margin-top: 6px; }
+
+@container page (min-width: 900px) {
+  .dd { --small: 13px; }
+  .m { font-size: 0.93em; }
+  .mk { font-size: 12px; }
+  a.tgt { min-height: 0; }
+  .chip { font-size: 13px; }
+  .grid.loud .qList:not(.all) .qItem { flex-direction: row; align-items: center; gap: 8px; }
+  .grid.loud .qList:not(.all) .qItem .rowTop { flex: none; }
+  .grid.loud .qList:not(.all) .qItem div.sm { min-width: 0; flex: 1 1 0; }
+  .grid.loud .ghost p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .stripIn { padding: 4px 24px; min-height: 44px; }
+  .brand span { display: inline; }
+  .ver { display: inline; color: var(--muted); font-size: 13px; }
+  .tick { font-size: 14px; }
+  .main { padding: 14px 24px; gap: 12px; }
+  .foot { padding-inline: 24px; }
+  .answer { flex-direction: row; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .answer.loud { padding: 8px 14px; }
+  .answer h1 { font-size: 22px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: minmax(0, 6.4fr) minmax(0, 5.6fr); }
+  .grid.loud { grid-template-rows: auto auto auto 1fr; }
+  .grid.loud .pNeeds { grid-column: 1; grid-row: 1 / span 4; }
+  .grid.loud .pLine, .grid.loud .pQueue, .grid.loud .pWindow { grid-column: 2; }
+  .grid.quiet { grid-template-rows: auto auto 1fr; }
+  .grid.quiet .pLine { grid-column: 1; grid-row: 1 / span 3; }
+  .grid.quiet .pQueue, .grid.quiet .pWindow { grid-column: 2; }
+  .need { padding: 5px 0; gap: 1px; }
+  .br { display: none; }
+  .need .rowTop .end { order: 9; }
+  .termBtn { min-height: 22px; }
+  .terms { margin: -6px 0 2px; }
+  .acct { padding: 4px 0; gap: 3px; }
+  .slot { padding: 4px 8px; }
+  .fold summary, .foldBtn { min-height: 22px; }
+  .qItem { padding: 3px 0; }
+  .qGroup { padding-top: 5px; margin-top: 5px; }
+  .qItem .sm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ghost { margin-top: 5px; padding-top: 5px; }
+  .panel { padding: 10px 12px; }
+  .panelHead { margin-bottom: 4px; }
+  .need .q, .tgt { font-size: 14px; }
+  .need.rest, .qItem.rest { display: flex; }
+  .groupHead.rest { display: block; }
+  .moreBtn { display: none; }
+  .moreBtn.deskToo { display: block; }
+  .grid.loud .pQueue .moreBtn { display: block; min-height: 28px; margin-top: 4px; font-size: 13px; }
+  .grid.loud .qList:not(.all) .qItem.rest { display: none; }
+  .grid.loud .qList:not(.all) .qWhy, .grid.loud .qList:not(.all) .gnote:not(.keep) { display: none; }
+  .grid.loud .qList:not(.all) .qGroup:not(:has(.qItem:not(.rest))) { display: none; }
+  .goto a, .fold summary, .foldBtn, .stripLinks a, .colophon a { min-height: 24px; }
+  .copy { min-height: 22px; min-width: 0; padding: 0 6px; font-size: 13px; }
+  .kv dd { justify-content: flex-start; }
+  .grid.loud .qList:not(.all) .qTools { display: none; }
+  .fbtn { min-height: 26px; padding: 1px 7px; font-size: 13px; }
+  .winSeg { margin-left: auto; }
+  .fields { grid-template-columns: 1.1fr 0.8fr 0.9fr 1.3fr 1.2fr 1.2fr; }
+  .selBtn, .fields input { min-height: 32px; font-size: 14px; }
+  .selItem { min-height: 30px; font-size: 14px; }
+  .recurRow { min-height: 30px; }
+  .rowSum { grid-template-columns: 92px 170px minmax(0, 1fr) 136px 176px; align-items: baseline; padding: 5px 2px; min-height: 30px; }
+  .cell-time { grid-column: 1; grid-row: 1; font-size: 13px; }
+  .cell-cls { grid-column: 2; grid-row: 1; font-size: 13px; }
+  .cell-tgt { grid-column: 3; grid-row: 1; font-size: 13px; flex-wrap: nowrap; white-space: nowrap; overflow: hidden; }
+  .cell-acct { grid-column: 4; grid-row: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cell-len { grid-column: 5; grid-row: 1; font-size: 13px; }
+  .cell-why { grid-column: 2 / -1; grid-row: 2; font-size: 13px; -webkit-line-clamp: 1; }
+  .colophon { font-size: 13px; }
+  .lgRole { font-size: 13px; }
+}
+</style>
+</head>
+<body><div class="dd" style="color-scheme:light dark"><header class="strip alarm"><div class="stripIn"><div class="brand"><svg viewBox="-3.15 16.8 46 46" role="img" aria-label="Jig"><path fill="var(--ink)" d="m18.67 26.33v4.99c0 0.23-0.19 0.41-0.42 0.41h-5.2c-0.6 0-1.07 0.42-1.07 0.99v5.21c0 0.29-0.22 0.51-0.51 0.51h-5.57c-0.25 0-0.43-0.18-0.43-0.43v-8.99c0-0.5 0.18-0.95 0.53-1.28l1.25-1.22c0.36-0.35 0.86-0.57 1.38-0.57h9.62c0.23 0 0.42 0.16 0.42 0.38z"></path><path fill="var(--ink)" d="m21.03 26.33v4.99c0 0.23 0.19 0.41 0.42 0.41h5.16c0.6 0 1.09 0.42 1.09 0.99v5.15c0 0.32 0.23 0.57 0.55 0.57h5.55c0.24 0 0.41-0.15 0.41-0.39v-9.03c0-0.5-0.18-0.95-0.53-1.28l-1.25-1.22c-0.36-0.35-0.86-0.57-1.38-0.57h-9.6c-0.23 0-0.42 0.16-0.42 0.38z"></path><path fill="var(--ink)" d="m18.67 53.29v-4.92c0-0.24-0.19-0.42-0.42-0.42h-5.17c-0.61 0-1.1-0.49-1.1-1.1v-5.07c0-0.26-0.2-0.44-0.45-0.44h-5.61c-0.25 0-0.45 0.18-0.45 0.44v8.76c0 0.52 0.21 1.02 0.58 1.39l1.2 1.18c0.38 0.37 0.93 0.6 1.48 0.6h9.52c0.23 0 0.42-0.19 0.42-0.42z"></path><path fill="var(--ink)" d="m21.03 53.29v-4.92c0-0.24 0.19-0.42 0.42-0.42h5.16c0.62 0 1.11-0.46 1.11-1.07v-5.07c0-0.26 0.19-0.47 0.45-0.47h5.62c0.24 0 0.42 0.15 0.42 0.4v8.8c0 0.52-0.21 1.02-0.58 1.39l-1.2 1.21c-0.36 0.37-0.88 0.57-1.4 0.57h-9.58c-0.23 0-0.42-0.19-0.42-0.42z"></path><rect fill="var(--accent)" x="14.16" y="34.07" width="11.42" height="11.52" rx=".6523"></rect></svg><span>Dispatch</span></div><div class="tick" aria-live="polite"><b class="m">Newest tick not known</b> <span class="mut">the server refused this request</span></div><div class="stripLinks"><span class="ver m">this host</span><a href="#legend">Legend</a></div></div></header><main class="main"><section class="panel" aria-labelledby="h-ref"><h2 id="h-ref">The server refused this request: the token does not match.</h2><p class="refusalBody">Every request needs the token minted when the server started. A restart mints a new one, so an older link stops working. Open the URL the command printed, or start it on the host:</p><div class="quote path">jig dispatch dashboard</div><p class="sm mut">Nothing was read, so nothing is shown.</p></section></main><footer class="foot"><section class="panel" id="legend" aria-labelledby="h-legend"><h2 id="h-legend">Legend</h2><p class="lede lgMeta">These words group what the records say. Each outcome class keeps its own name everywhere; the word beside it only says what kind of fact it is.</p><div class="legend"><div class="lgRole"><div><span class="mk r-needs" aria-hidden="true"></span> <b>needs a person</b></div><div>The line waits on a human and nothing else will move it.</div><div class="set"><span>outcome class: </span><span class="m">parked for a person</span></div><div class="set"><span>ledger class: </span><span class="m">parked, needs-person, stopped-unknown</span></div><div class="set"><span>notify cause: </span><span class="m">parked, needs-person, stalled, double-claim, followup-failed, nudge-unanswered, stopped-unknown</span></div><div class="set"><span>label: </span><span class="m">parked</span></div></div><div class="lgRole"><div><span class="mk r-working" aria-hidden="true">~</span> <b>working</b></div><div>A session holds its slot and progresses as expected.</div><div class="set"><span>ledger class: </span><span class="m">driven</span></div><div class="set"><span>launch record: </span><span class="m">alive</span></div><div class="set"><span>agent state: </span><span class="m">working</span></div><div class="set"><span>label: </span><span class="m">driving</span></div></div><div class="lgRole"><div><span class="mk r-waiting" aria-hidden="true">…</span> <b>waiting</b></div><div>A session is alive but not progressing, or past an expectation.</div><div class="set"><span>ledger class: </span><span class="m">silent</span></div><div class="set"><span>notify cause: </span><span class="m">waiting, drifting</span></div><div class="set"><span>launch record: </span><span class="m">pending</span></div><div class="set"><span>agent state: </span><span class="m">waiting, blocked</span></div></div><div class="lgRole"><div><span class="mk r-held" aria-hidden="true">=</span> <b>held back</b></div><div>The dispatcher chose, by rule, not to start it.</div><div class="set"><span>ledger class: </span><span class="m">held, re-armable, stopped-by-person, unarmed, unplaced</span></div><div class="set"><span>launch outcome: </span><span class="m">waits, refused, reported</span></div><div class="set"><span>label: </span><span class="m">hold, held</span></div></div><div class="lgRole"><div><span class="mk r-well" aria-hidden="true">✓</span> <b>finished well</b></div><div>The stage achieved what it was started for.</div><div class="set"><span>outcome class: </span><span class="m">converged, merged</span></div><div class="set"><span>ledger class: </span><span class="m">done</span></div><div class="set"><span>agent state: </span><span class="m">done</span></div><div class="set"><span>label: </span><span class="m">converged, followed-up</span></div></div><div class="lgRole"><div><span class="mk r-badly" aria-hidden="true">×</span> <b>finished badly</b></div><div>The stage ended without achieving it.</div><div class="set"><span>outcome class: </span><span class="m">gates failed, died, stalled, refused, quota wall, double claim, unknown</span></div><div class="set"><span>ledger class: </span><span class="m">refused</span></div><div class="set"><span>launch record: </span><span class="m">died</span></div><div class="set"><span>launch outcome: </span><span class="m">failed, lost</span></div></div><div class="lgRole"><div><span class="mk r-stale" aria-hidden="true">≠</span> <b>stale</b></div><div>Finished well once, and the world moved.</div><div class="set"><span>ledger class: </span><span class="m">stale</span></div><div class="set"><span>label: </span><span class="m">stale</span></div></div><div class="lgRole"><div><span class="mk r-unknown" aria-hidden="true">?</span> <b>unknown</b></div><div>The dispatcher cannot tell.</div><div class="set"><span>launch record: </span><span class="m">unknown</span></div><div class="set"><span>label: </span><span class="m">unknown</span></div></div></div><details class="fold"><summary>Stages and their marks</summary><div class="seg"><span class="chip"><b>+</b>pickup</span><span class="chip"><b>↻</b>rearm</span><span class="chip"><b>⇄</b>takeover</span><span class="chip"><b>»</b>followup</span><span class="chip"><b>*</b>notify</span><span class="chip"><b>^</b>steer</span></div></details><details class="fold"><summary>How the numbers are counted</summary><dl class="kv"><div style="display:contents"><dt>class counts</dt><dd class="prose">Rows the filter keeps, per class, ignoring the class filter itself so another class can be chosen.</dd></div><div style="display:contents"><dt>slots held</dt><dd class="prose">Launch records pending, alive or unknown on the account, over its cap. A takeover and its replaced record count once.</dd></div><div style="display:contents"><dt>waited</dt><dd class="prose">From the hold’s beginning event to now, or to its ending event in the log.</dd></div><div style="display:contents"><dt>duration</dt><dd class="prose">Launch to end of the record.</dd></div><div style="display:contents"><dt>rounds</dt><dd class="prose">The ledger’s round at the end less its round at launch.</dd></div><div style="display:contents"><dt>threads</dt><dd class="prose">Unresolved review threads, the first time a tick saw each round. Unseen rounds are gaps.</dd></div></dl></details></section><div class="colophon m"><span>this host</span><span>not read</span><span>read-only: this page sends GET requests and writes nothing; Copy touches only your clipboard</span></div></footer></div></body>
+</html>

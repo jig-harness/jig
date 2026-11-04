@@ -92,13 +92,19 @@ export interface WaitingPark {
 }
 
 /**
- * Why a converged drive is stale: `cause` in words, for the report and the
- * outcome log; `change` names the pull request's state that made it so (its
- * head and whether it conflicts), for which a re-drive is launched once.
+ * Why a drive's stop no longer settles its pull request: `cause` in words, for
+ * the report and the outcome log; `change` names the state that made it so,
+ * for which a re-drive is launched once: for a converged drive its head and
+ * whether it conflicts, for a stop on a conflict (`conflictStop`) its head and
+ * its base branch's head.
  */
 export interface StaleCause {
   cause: string;
   change: string;
+  /** The drive stopped `9`: a re-drive that leaves it so at this change is a person's to settle. */
+  conflictStop?: true;
+  /** Changes an earlier launch of the same record may have acted on before a replay moved `change` on; each counts as re-driven. */
+  earlier?: string[];
 }
 
 /** One open pull request whose comments hold a drive ledger. */
@@ -113,7 +119,7 @@ export interface DrivenPr {
   evidence: Evidence;
   /** For a `parked` ledger: the decisions still unanswered. */
   waiting?: WaitingPark[];
-  /** For a `stale` ledger: what its stop does not fix. */
+  /** For a `stale` ledger: what its stop does not settle. */
   stale?: StaleCause;
   /** Its labels, read only where the repository turns dispatch labels on. */
   labels?: string[];
@@ -160,6 +166,8 @@ export interface Unplaced {
   target: string;
   record: RecordName;
   reason: string;
+  /** Set for an item assigned by someone who cannot write: only a person can settle it. */
+  cause?: "assigner-cannot-write";
 }
 
 /** What a notification is about. */
@@ -197,7 +205,7 @@ export interface Action {
   facts?: string;
   /** For a takeover: the launch record whose driver it replaces. */
   takeover?: string;
-  /** For a re-drive of a stale converged drive: why it is stale. */
+  /** For a re-drive: why the drive's stop no longer settles its pull request. */
   redrive?: StaleCause;
   /** For a notification: its cause. */
   cause?: NotifyCause;
@@ -277,6 +285,8 @@ export interface Running {
   stage: Stage;
   reason: string;
   evidence: Evidence;
+  /** Set when it runs past its expectation and a waiting notification stands, so it is reported rather than notified. */
+  drifting?: true;
 }
 
 /** How one record read for one repository. */

@@ -116,6 +116,7 @@ import {
   fetchTimeoutSeconds,
   type GitRunner,
   probeBaseDrift,
+  refuseOpenOperation,
   verifyRemoteIsPrRepo,
 } from "./lib/base-drift.ts";
 import { shellQuote } from "../../../shared/cli.ts";
@@ -701,13 +702,7 @@ async function main(): Promise<number> {
   if (!marker.ok) {
     fail(3, "base-sync: cannot read this worktree's git state — refusing");
   }
-  if (marker.marker !== null) {
-    fail(
-      3,
-      `base-sync: an unconcluded git operation (${marker.marker}) is already open in this worktree.`,
-      "Conclude or abort it first: git merge --abort / git cherry-pick --abort / git revert --abort / git rebase --abort",
-    );
-  }
+  if (marker.marker !== null) refuseOpenOperation(marker.marker);
 
   // `probeBaseDrift` below fetches the base branch unconditionally through
   // the drive's remote (`repository.remote`, else `origin`) — correct only

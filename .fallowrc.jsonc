@@ -6,6 +6,10 @@
     "scripts/*.ts",
     "audit/*.ts",
     "tools/**/*.ts",
+    "dashboard/build.ts",
+    "dashboard/serve-fixture.ts",
+    // The page's own entry, which the dashboard's build hands to the bundler.
+    "dashboard/src/main.tsx",
     "plugin/skills/*/scripts/*.ts",
     "plugin/skills/*/scripts/*/*.ts",
     "modules/*/reference/**/*.ts"

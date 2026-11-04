@@ -118,7 +118,7 @@ export interface LaunchRecord {
   marker: number | null;
   /** A drive's ledger round when it was launched, which its outcome row's rounds count from; `null` when unknown. */
   round?: number | null;
-  /** For a re-arm of a stale converged drive: why it was stale, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
+  /** For a re-drive: why it was launched, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
   redrive?: StaleCause | null;
   /** The vendor session id the tick minted for an interactive session and passed to its agent; `null` when none was. */
   sessionId?: string | null;
@@ -355,8 +355,16 @@ function isRedrive(value: unknown): boolean {
     value === null ||
     (isMapping(value) &&
       typeof value.cause === "string" &&
-      typeof value.change === "string")
+      typeof value.change === "string" &&
+      (value.earlier === undefined ||
+        (Array.isArray(value.earlier) &&
+          value.earlier.every((c) => typeof c === "string"))))
   );
+}
+
+/** Every change a re-drive record counts as acted on: the one it names now and the ones a replay moved on from. */
+export function redrivenChanges(redrive: StaleCause): string[] {
+  return [redrive.change, ...(redrive.earlier ?? [])];
 }
 
 /** A record as this version reads it: the fields an earlier version did not write, at their defaults. */
@@ -789,11 +797,19 @@ function latestRefusals(records: ReadRecord[]): Set<string> {
  * change a pull request has been re-driven for keeps one.
  */
 function latestRedrives(records: ReadRecord[]): Set<string> {
-  return latestIdsBy(records, (r) =>
-    isDrive(r.record) && r.record.redrive
-      ? `${r.record.repo}#${String(r.record.pr)}\0${r.record.redrive.change}`
-      : null,
-  );
+  // One pass: the newest record naming each change, over its whole history.
+  const latest = new Map<string, ReadRecord>();
+  for (const r of records) {
+    if (!isDrive(r.record) || !r.record.redrive) continue;
+    const prefix = `${r.record.repo}#${String(r.record.pr)}\0`;
+    for (const c of redrivenChanges(r.record.redrive)) {
+      const key = prefix + c;
+      const seen = latest.get(key);
+      if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
+        latest.set(key, r);
+    }
+  }
+  return new Set([...latest.values()].map((r) => r.record.id));
 }
 
 /** The ids of the latest record under each key `keyOf` gives; a record it gives `null` is not kept. */

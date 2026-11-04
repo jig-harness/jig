@@ -228,7 +228,7 @@ const DRIVE_EXITS: ReadonlyMap<number, [OutcomeClass, string]> = new Map([
   [20, ["refused", "taken over by another clone"]],
   [1, ["gates failed", "failed"]],
   [7, ["gates failed", "exit 7"]],
-  [9, ["gates failed", "exit 9"]],
+  [9, ["gates failed", "conflicting with its base"]],
   [12, ["gates failed", "exit 12"]],
   [15, ["gates failed", "exit 15"]],
 ]);
@@ -335,11 +335,15 @@ export function endedRow(
 ): EndedRow {
   const { record } = r;
   const placed = classifyEnded(r, endedAt, facts);
-  // A re-drive ends like any re-arm; its reason also names why the drive was stale.
+  // A re-drive ends like any re-arm; its reason also names why it was launched.
+  const redriven =
+    record.redrive?.conflictStop === true
+      ? "a drive that stopped on a conflict"
+      : "a stale converged pull request";
   const reason =
     record.redrive == null
       ? placed.reason
-      : `${placed.reason}; re-drive of a stale converged pull request: ${record.redrive.cause}`;
+      : `${placed.reason}; re-drive of ${redriven}: ${record.redrive.cause}`;
   const duration = Date.parse(endedAt) - Date.parse(record.createdAt);
   const start = record.round ?? null;
   return {

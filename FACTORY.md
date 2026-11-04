@@ -94,7 +94,9 @@ starts no stage twice. Then it starts:
   person answered.
 - **A [re-drive](GLOSSARY.md)** of each converged drive gone stale: its pull
   request now conflicts with its base, or its head moved past the head the
-  drive checked.
+  drive checked. A drive that stopped on a conflict it could not repair gets
+  one too, once for each state of its pull request and its base. A person hears
+  of it only if that re-drive stops the same way.
 - **The follow-up** after each merge, which settles what the merge owes.
 
 A tick reports what it would start, and why, before a team lets it start
@@ -146,9 +148,10 @@ ended. How it ended is one class from a closed list: converged, merged, a
 usage limit, parked for a person, stalled, died, refused, or gates failed.
 The log records a stop no class fits as unknown, and never drops it.
 
-One dashboard filters the log by time, repository, stage, account and class,
-and counts each class. A phone opens it as well as a desk. It writes nothing
-and makes no report files. A class that keeps coming back is a finding about
+One dashboard opens on what needs a person, which account holds which session
+and what comes next, as the newest tick found them. Below that it filters the
+log by time, repository, stage, account and class, and counts each class. A
+phone opens it as well as a desk. It writes nothing and makes no report files. A class that keeps coming back is a finding about
 the scaffolding, and [the learning loop](#the-loop-that-sharpens-it) is where
 a person approves the change.
 

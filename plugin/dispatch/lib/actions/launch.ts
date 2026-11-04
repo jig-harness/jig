@@ -274,6 +274,8 @@ async function callLaunch(
   const workspace = record.workspace as { id: string; path: string };
   // A record an older plugin wrote has no mark; the launch marks its workspace, so the record keeps the same one.
   record.mark = markOf(record);
+  // Persist before the runtime is called: a tick that dies awaiting its answer must still find what this launch acts on (a replay's change history included).
+  writeRecord(record, state.root);
   let receipt: RuntimeReceipt;
   try {
     receipt = await state.runtime.launch(

@@ -67,7 +67,7 @@ const MEANINGS: Record<StateName | CommandName, string> = {
   converged: "The drive converged at the pull request's head: a person merges",
   parked: "The drive stopped on something only a person settles",
   stale:
-    "The drive converged, then the pull request conflicted or moved: the dispatcher re-drives it",
+    "Its drive converged then went stale, or stopped on a conflict: the dispatcher re-drives it",
   held: "Waits its turn in a serialized change area: the dispatcher drives it once it leads",
   "followed-up": "Merged, and its follow-up is done",
   drive: "A person asks the dispatcher to drive this pull request",

@@ -225,6 +225,46 @@ request's head and whether it conflicts: its launch record keeps that
 change, and a later tick that finds the same change reports it however
 that launch ended, so a drive that converges again without settling it
 starts no loop.
+
+A drive that stopped `9` (conflicting with its base, its conflict-repair
+budget spent) is read beside the pull request too. Its conflict-resolve pass
+can fail for reasons a second try settles: an account's usage limit, a pass
+deadline, a base that moved under it. So it is
+re-driven as well, once per change, and here the change is the pair of the
+pull request's head and its base branch's head. That head is read from the
+branch itself, and only for a ledger that stopped `9`: the pull request's own
+`baseRefOid` stays at the commit the forge recorded when the pull request last
+moved, so it cannot say that the base did. The re-drive is owed whatever the
+forge reports now. Still conflicting, the conflict-resolve round tries again;
+mergeable (a person merged the base in, or the base moved past the conflict),
+the stop no longer describes the pull request, and the drive's ordinary rounds
+take it from there. A mergeability the forge is still computing, or a head or
+a base head that does not read, leaves it unplaced for that tick.
+
+A person is told only once this machine's re-drive of that change leaves the
+ledger stopped `9`, whether the re-drive stopped so itself or ended without
+writing a stop of its own (a refusal at its attach, a crash), since nothing
+else drives the pull request until its head or its base moves. Any other exit
+it stops on reads as that exit's row says. A stuck conflict therefore costs one
+launch per base move, and the base moving is what makes it a new attempt, so
+there is no loop: a re-drive that changes nothing leaves the change as it was,
+and a change is never re-driven twice. A converged drive's re-drive is keyed on
+its head and whether it conflicts, so one that stops `9` gets one more attempt
+under this key: at most one launch more. The serialized areas' holds and a
+person's `hold` label keep a re-drive off as they keep any re-arm, and a person's
+stop is never re-armed.
+
+A headless Claude pass can commit only where its approval source allows it: a permission mode `drive.pass_args` names, or an allow rule of Claude Code's own settings (`--allowedTools`, `permissions.allow`). A host opts in through its user layer, and a repository's own file takes precedence over it. Where nothing allows the commit, a conflict re-drive stops `9` again at the same change and the dispatcher notifies a person.
+
+A conflict-resolve pass does not leave its merge behind: a merge it started and
+did not conclude is aborted before the drive re-gates or stops
+([terminal states](../plugin/skills/drive-pr/references/terminal-states.md#repair-rounds)),
+so a re-drive finds a clean tree and an attach is not refused over a head that
+moved. A merge the tree already held when the pass started is not the pass's
+to discard: the pass finishes it or starts it over (`drive-pr` `SKILL.md` § 0),
+and a tree that holds one behind a moved head refuses the attach, which leaves
+the ledger stopped `9`, so a person is told.
+
 A stopped ledger with no exit has no known origin: `drives.ts --stop`
 records one, and so does the driver's own recovery after a crash, a thrown
 refusal or a signal, so the tick cannot read a person's decision into it.
@@ -234,6 +274,8 @@ refusal or a signal, so the tick cannot read a person's decision into it.
 | running, heartbeat inside the lease window | driven | nothing |
 | running, heartbeat past the lease window | silent | takes it over only when this machine's launch record started that driver; otherwise reports it |
 | stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified | stale | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head |
+| stopped `9` (conflicting with its base, its conflict-repair budget spent), this machine's records holding no re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
+| stopped `9`, this machine already having re-driven that change, however that launch ended | needs a person | notifies once per stop, with the exit and the drive's handoff |
 | stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
 | stopped `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
 | stopped with no exit | stopped, origin unknown | never re-armed, since it may be a person's stop; notifies once per stop, with the drive's handoff |
@@ -242,7 +284,7 @@ refusal or a signal, so the tick cannot read a person's decision into it.
 | stopped `4` (not judgeable yet: a converged drive that left the Ready mark to another driver, or whose final CI witness did not arrive) | re-armable | re-arms on any admitted account, as `drive-pr` asks an unattended wrapper to |
 | stopped `8`, an item unanswered | parked | notifies once per park |
 | stopped `11` or `13` | refused | nothing; another driver holds it |
-| stopped on any other exit (`1`, `2`, `6`, `7`, `9`, `12`, `14`, `15`, or one this table does not know) | needs a person | notifies once per stop, with the exit and the drive's handoff |
+| stopped on any other exit (`1`, `2`, `6`, `7`, `12`, `14`, `15`, or one this table does not know) | needs a person | notifies once per stop, with the exit and the drive's handoff |
 
 The tick reads every pull request merged after the date the follow-up
 stage was switched on for the repository (`followup_since` in the machine
@@ -944,12 +986,33 @@ never acted on: the stage keeps running and keeps its slot, and whether to
 stop it is a person's call. Stages the dispatcher did not launch carry no
 expectation.
 
-**The dashboard.** `jig dispatch dashboard` serves one page that reads the
-log when it is opened, filters it by time, repository, stage, account,
-class and reason in SQL over the log table, reading the rows and their
-counts in one read transaction, and shows the count of
-each class over the filtered window. A question about yesterday is a filter, not a report: no report
-file is ever generated, and nothing is written to disk but the log itself.
+**The dashboard.** `jig dispatch dashboard` serves one page that answers, in
+order, what needs a person, what is running on which account, what is coming
+and how it went ([the designed page](prototypes/dispatch-dashboard/README.md)).
+It reads two records and writes nothing.
+
+The first is the **line**, one row of the state database (`tick_line`): the
+needs, the accounts with their slots and walls, the sessions, the queue and the
+repositories as a tick found them, with that tick's receipt. A tick that read
+every repository the machine file lists replaces it at its end; a tick for one
+repository leaves it. Every read behind it stays in the tick: process liveness,
+walls, the machine file, titles, framed decisions. So each panel says which tick
+it is as of, never "live"; a timer that stopped shows as a tick older than the
+interval plus the longest recent tick; and a host may serve the page from a copy
+of the database and nothing else, which is how an isolated service runs it. The
+line is a view: a tick that cannot write it says so on its receipt and exits
+`1`, and what it launched stands. What no record holds stays off the page rather
+than being guessed.
+
+The second is the log, read when the page asks, every minute and on focus:
+filtered by time, repository, stage, account, class and reason in SQL over the
+log table, in one read transaction. It counts each class over the filtered
+window ignoring the class filter, so another class can still be chosen, and
+lists each bad class that ended on a repository on three or more of the last
+seven nights. A question about yesterday is a filter, not a report: no report
+file is ever generated. The filter is the page's query string, so a view is a
+link.
+
 The server runs while the command runs, started and stopped by a person
 (from a terminal on the host, which Orca's phone app reaches); nothing
 installs or keeps it running, so the dispatcher stays without a resident
@@ -957,8 +1020,18 @@ process. It listens on the address the machine file names
 (`dashboard.listen`, no default), and refuses an address outside the
 private and loopback ranges, so no route into the host is opened beyond
 the network the host already trusts. The URL it prints carries a token
-minted at start, and a request without it is refused: the log names
+minted at start, and a request without it is refused: these records name
 repositories, items and accounts.
+
+Each read answers with its value or a coded failure with a reason for a person,
+and a bug is caught once around the routes and logged with its stack
+([ADR-0012](../docs/adr/ADR-0012-failures-as-values.md)), so the page holds a code
+and a sentence, never a stack. It keeps the last data it read when the server
+stops answering, and shows nothing at all behind a refused token. The page is
+one HTML document the plugin carries, built from `dashboard/` on
+React, TanStack and Base UI, its script allowed by hash and able to reach only
+this server, since the text it shows comes from pull requests and its address
+holds the token.
 
 **Self-correction through the reflection loop.** A class that recurs is a
 finding about the scaffolding, not something the tick adjusts on its own.
@@ -1131,7 +1204,8 @@ One pull request each, in this order; each is usable on its own.
    verified head and mergeable is left alone; a mergeability still being
    computed leaves it unplaced. Waits on step 3 only. Usable alone: a
    pull request that converged and then conflicted no longer waits for a
-   person to notice.
+   person to notice. A drive that stopped `9` is re-driven through the same
+   launch, keyed on its head and its base branch's head.
 8. **Admit Codex accounts.** The drive skill documents the Codex pass
    command beside Claude Code's, with the pass model read per vendor from
    `routing.models`; the dispatcher admits `vendor: codex` accounts, on a

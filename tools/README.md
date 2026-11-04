@@ -16,6 +16,8 @@ Jig keeps those reusable command-line tools in one place.
 - `modules/M*/reference/` — the practice gates and worked examples already shipped
   with the modules. They stay beside the doctrine they enforce.
 - `scripts/` — Jig's own repository checks and build orchestration.
+- `dashboard/` — the source of the page `jig dispatch dashboard` serves, which
+  its build writes into the plugin ([dashboard/README.md](../dashboard/README.md)).
 
 A command binds a named host behind an interface when it needs one. Host names,
 tracker policies, gate commands and organization-specific values arrive from

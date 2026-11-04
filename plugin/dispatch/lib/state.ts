@@ -14,6 +14,7 @@
  * | `idle` | repository and claimed item | the stall clock starts once |
  * | `holds` | repository and pull request held behind another in a serialized area | the hold's start, written with its event row |
  * | `log` | outcome row | each row once: it is written in the same transaction as what it records |
+ * | `tick_line` | the newest tick from the machine file | one row, replaced by each such tick: the line as it found it and its receipt, which `jig dispatch dashboard` reads |
  *
  * The receipts, the account walls (which the drive's quota adapters write
  * from a pass, outside the tick), the tick lock and the rotation cursor stay
@@ -143,6 +144,14 @@ const MIGRATIONS: readonly string[] = [
     leader INTEGER NOT NULL,
     since TEXT NOT NULL,
     PRIMARY KEY (repo, pr)
+  );
+  `,
+  `
+  CREATE TABLE tick_line (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    run_id TEXT NOT NULL,
+    line TEXT NOT NULL,
+    receipt TEXT NOT NULL
   );
   `,
 ];
