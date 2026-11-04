@@ -109,13 +109,13 @@ import {
 } from "./lib/stop-request.ts";
 import * as ledgerStop from "./lib/ledger-stop.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { hostname } from "node:os";
 import { driveRepository } from "./lib/drive-repository.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CLAIM_PREFIX,
   type ClaimDiag,
+  type ClaimRecord,
   claimLive,
   diagLines,
   samePidNamespace,
@@ -196,6 +196,7 @@ interface LockRow {
   state: "live" | "stale" | "empty" | "contested" | "unreadable";
   pid: number | null;
   host: string | null;
+  hostId?: string | undefined;
   platform: string | null;
   nonce: string | null;
   refreshAgeSec: number | null;
@@ -232,10 +233,11 @@ interface LockRow {
  * never a competing driver — and the second-driver rule (SKILL.md § 6) does not
  * apply to it.
  *
- * Pid equality is only meaningful on the host that wrote the claim, so a
- * differing or absent host answers false — failing toward the safe reading
- * (a foreign driver), never toward "proceed". An unset $DRIVE_PR_SESSION means
- * the reader is not a pass at all, which answers false for the same reason.
+ * Pid equality is only meaningful on the host that wrote the claim, compared
+ * by host id first, so a differing or absent host answers false — failing
+ * toward the safe reading (a foreign driver), never toward "proceed". An
+ * unset $DRIVE_PR_SESSION means the reader is not a pass at all, which
+ * answers false for the same reason.
  *
  * A pid is REUSED, though, and that is the gap this function closes second: a
  * dead driver's still-fresh claim whose pid the OS handed to this pass's own
@@ -273,18 +275,14 @@ interface LockRow {
  * answer false rather than silently trusting pid+host over evidence that
  * contradicts it.
  */
-function ownParentDriver(
-  pid: number | null,
-  host: string | null,
-  diag: ClaimDiag | null,
-): boolean {
+function ownParentDriver(record: ClaimRecord): boolean {
+  const { pid, host, diag } = record;
   const session = process.env.DRIVE_PR_SESSION ?? "";
   if (
-    pid === null ||
     session === "" ||
     String(pid) !== session ||
-    host === null ||
-    host !== hostname()
+    host === "" ||
+    !samePidNamespace(record)
   ) {
     return false;
   }
@@ -349,12 +347,11 @@ function readLock(dir: string, kind: "pr" | "worktree", key: string): LockRow {
   }
   row.pid = record.pid;
   row.host = record.host;
+  row.hostId = record.hostId;
   row.platform = record.platform;
   row.nonce = (claims[0] as string).slice(CLAIM_PREFIX.length);
   row.diag = record.diag;
-  row.self =
-    samePidNamespace(record) &&
-    ownParentDriver(record.pid, record.host, record.diag);
+  row.self = ownParentDriver(record);
   row.refreshAgeSec = Math.max(0, Math.round(ageMs / 1000));
   row.state = claimLive({ ...record, ageMs }) ? "live" : "stale";
   return row;
@@ -670,10 +667,7 @@ async function gatherDoctorInput(
     row.diag?.worktree === undefined || row.diag.worktree === ""
       ? null
       : row.diag.worktree;
-  const isLocal = samePidNamespace({
-    host: row.host ?? "",
-    platform: row.platform,
-  });
+  const isLocal = samePidNamespace(row);
   // `passChild` is a pure walk over the shared snapshot — no subprocess of its
   // own, so it costs nothing to compute for every row. Gated on `isLocal`: a
   // foreign-host claim's `pid` is a number in a DIFFERENT machine's process
@@ -1072,7 +1066,7 @@ async function stop(
     return 3;
   }
   const pid = row.pid as number;
-  if (!samePidNamespace({ host: row.host ?? "", platform: row.platform })) {
+  if (!samePidNamespace(row)) {
     console.log(
       `PR #${pr}'s driver runs on ${row.host} (${row.platform ?? "unknown platform"}) — stop it from that PID namespace (pid ${pid}).`,
     );

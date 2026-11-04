@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { captureIdentity } from "../../shared/liveness.ts";
 import { clearMain } from "../clear.ts";
 import { type LaunchRecord, recordExit, writeRecord } from "../lib/launches.ts";
 import { closeStateDb, stateDb } from "../lib/state.ts";
@@ -129,19 +130,12 @@ describe("jig dispatch clear", () => {
   it("refuses an unreadable record whose claim is alive", async () => {
     const dir = root();
     writeRecord(record(), dir);
-    const claim = {
-      host: (await import("node:os")).hostname(),
-      bootId: (await import("../../shared/records/writer.ts")).bootId(),
-      pid: process.pid,
-      start: "",
-      claimedAt: "2026-01-01T00:00:00.000Z",
-    };
-    const { ownIdentity } = await import("../lib/launches.ts");
-    const own = await ownIdentity();
+    const own = await captureIdentity();
+    if (!own.ok) throw new Error(own.failure.reason);
+    const claim = { ...own.value, claimedAt: "2026-01-01T00:00:00.000Z" };
     stateDb(dir)
       .query("UPDATE launches SET record = 'not json', claim = ? WHERE id = ?")
-      .run(JSON.stringify(own ?? claim), ID);
-    if (own === null) return;
+      .run(JSON.stringify(claim), ID);
     expect(await clear(dir)).toBe(2);
     expect(present(dir)).toBe(true);
   });

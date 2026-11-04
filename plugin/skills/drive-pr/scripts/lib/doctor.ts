@@ -78,13 +78,16 @@
  * file did not anticipate must read as "cannot tell", never as "fine".
  */
 
+import { LEDGER_WINDOW_MIN } from "../../../../shared/liveness.ts";
 import { isDigits, shellQuote } from "./cli.ts";
 import type { PassChildAnswer } from "./pass-child.ts";
 import type { QuotaParkRecord } from "./state/schema.ts";
 
 /**
  * How long `lastProgressAt` may go unrefreshed on a LIVE lock before it
- * counts toward `WEDGED`, in minutes.
+ * counts toward `WEDGED`, in minutes: the ledger window, one of the clocks
+ * the shared process identity names (`LEDGER_WINDOW_MIN` in
+ * `shared/liveness.ts`), where its length is set.
  *
  * TWO HUNDRED FORTY, derived rather than guessed. `drive.ts` never invokes
  * `await-round.ts` at all (that script belongs to the SIBLING
@@ -110,7 +113,7 @@ import type { QuotaParkRecord } from "./state/schema.ts";
  * exactly the trade `passTimeoutSeconds`'s own header already refused to
  * make once.
  */
-export const STALL_THRESHOLD_MIN_DEFAULT = 240;
+export const STALL_THRESHOLD_MIN_DEFAULT = LEDGER_WINDOW_MIN;
 
 /**
  * `DRIVE_PR_STALL_MIN`, clamped — mirrors `heartbeatStaleMs()`'s own

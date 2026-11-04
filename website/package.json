@@ -8,6 +8,7 @@
     "check": "bun --bun astro check",
     "preview": "bun --bun astro preview",
     "jig-still": "bun scripts/jig-still.ts",
+    "dashboard-shots": "bun scripts/dashboard-shots.ts",
     "deploy": "bun run build && bunx --bun wrangler deploy"
   },
   "dependencies": {

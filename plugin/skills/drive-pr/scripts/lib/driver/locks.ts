@@ -4,7 +4,7 @@ import {
   CLAIM_PREFIX,
   parseClaimText,
   claimName,
-  formatClaim,
+  ownClaim,
   parseStagingHost,
   stagingLive,
   claimLive,
@@ -95,10 +95,11 @@ function newNonce(): string {
 
 /**
  * The one entry a lock instance publishes: `claim.<generation>`, whose format
- * — `<pid> <hostname>`, plus an optional operator-diagnostics line — lives in
- * `lib/claim.ts`, shared with the read-only listing (`drives.ts`)
- * so writer and reader cannot drift. Its mtime carries that instance's last
- * refresh; the hostname is what makes the pid check meaningful.
+ * — `<pid> <hostname> <platform> <host id>`, plus an optional
+ * operator-diagnostics line — lives in `lib/claim.ts`, shared with the
+ * read-only listing (`drives.ts`) so writer and reader cannot drift. Its
+ * mtime carries that instance's last refresh; the host id (the hostname, in a
+ * claim written before host ids) is what makes the pid check meaningful.
  *
  * The generation is in the NAME rather than in the contents, and that is the
  * whole design. Every destructive step of the protocol — a recoverer retiring
@@ -114,6 +115,8 @@ interface Claim {
   nonce: string;
   pid: number;
   host: string;
+  /** The writer's host id; absent from a claim written before host ids. */
+  hostId?: string | undefined;
   platform: string | null;
   /** The claim's diagnostics line — advisory, absent on older claims. */
   diag: ClaimDiag | null;
@@ -177,6 +180,7 @@ export function inspect(dir: string): Occupant {
         nonce: only.slice(CLAIM_PREFIX.length),
         pid: record.pid,
         host: record.host,
+        hostId: record.hostId,
         platform: record.platform,
         diag: record.diag,
       },
@@ -265,10 +269,7 @@ function takeLock(lock: DriveLock): boolean {
   try {
     rmSync(staging, { recursive: true, force: true });
     mkdirSync(staging, { recursive: true });
-    writeFileSync(
-      join(staging, claimName(nonce)),
-      formatClaim(process.pid, hostname(), lock.diag),
-    );
+    writeFileSync(join(staging, claimName(nonce)), ownClaim(lock.diag));
     renameWithRetry(staging, lock.dir);
   } catch (error) {
     console.error(
@@ -416,6 +417,7 @@ function claimAlive(claim: Claim, dir: string): boolean {
   return claimLive({
     pid: claim.pid,
     host: claim.host,
+    hostId: claim.hostId,
     platform: claim.platform,
     ageMs: lastRefreshAgeMs(dir, claim),
   });

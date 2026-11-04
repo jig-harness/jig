@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { processTable } from "../../shared/process-table.ts";
 import { type RunTab, readRunTabs } from "../../shared/orca-tabs.ts";
-import { bootId } from "../../shared/records/writer.ts";
+import { bootId } from "../../shared/liveness.ts";
 import { writeWall } from "../lib/walls.ts";
 import type { TickReceipt } from "../receipts.ts";
 import {
@@ -165,6 +165,7 @@ describe("jig dispatch --apply launches re-arms within account caps", () => {
       w,
       "20261030T200000Z-aaaaaaaa",
       {
+        hostId: "",
         host: hostname(),
         bootId: bootId(),
         pid: 1,
@@ -188,6 +189,7 @@ describe("jig dispatch --apply launches re-arms within account caps", () => {
       w,
       "20261030T203000Z-eeeeeeee",
       {
+        hostId: "",
         host: hostname(),
         bootId: bootId(),
         pid: 1,
@@ -250,6 +252,7 @@ describe("jig dispatch --apply launches re-arms within account caps", () => {
     const row = (await processTable())?.find((r) => r.pid === wedged.pid);
     earlierRecord(w, { id: "20261030T210000Z-bbbbbbbb", account: "a" });
     claimed(w, "20261030T210000Z-bbbbbbbb", {
+      hostId: "",
       host: hostname(),
       bootId: bootId(),
       pid: wedged.pid,
@@ -290,6 +293,7 @@ describe("jig dispatch --apply launches re-arms within account caps", () => {
       w,
       "20261030T210000Z-bbbbbbbb",
       {
+        hostId: "",
         host: hostname(),
         bootId: bootId(),
         pid: 2 ** 22 + 1,

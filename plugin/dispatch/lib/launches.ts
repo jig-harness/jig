@@ -11,22 +11,23 @@
  *   random token, the workspace, the dispatched mark its workspace carries
  *   and the runtime's answer to each launch;
  * - `claim`, the wrapper's (`run.ts`): the process identity it ran under
- *   (host, boot id, process id and the process's start time), set by an
- *   update that only fills an empty column, so exactly one wrapper ever
- *   claims a record;
+ *   (`shared/liveness.ts`: host id and name, boot id, process id and the
+ *   process's start time), set by an update that only fills an empty column,
+ *   so exactly one wrapper ever claims a record;
  * - `exit`, the wrapper's again: the stage's exit, once it ended; the first
  *   one written stands;
  * - `result`, an interactive session's own answer (`done` or `failed`),
  *   written once by `jig dispatch result` under the record's token.
  *
- * A record's state is read from those columns and the process table:
+ * A record's state is read from those columns and the process table, the
+ * claim judged by the shared rules (`shared/liveness.ts`):
  *
  * | Columns | State |
  * | --- | --- |
  * | an exit | ended, with the stage's exit |
  * | a claim whose process is alive under the same identity | alive |
- * | a claim from another host or boot, or an unreadable process table | unknown |
- * | a claim whose process is gone, and no exit | died |
+ * | a claim from another host, or an unreadable process table | unknown |
+ * | a claim whose process is gone, or from before this host last restarted, and no exit | died, with why |
  * | no claim | pending |
  *
  * Pending, alive and unknown records hold their stage and their account's
@@ -43,11 +44,16 @@
  * `waiting_episodes` table), and, once it ended, the time its outcome row
  * carries (`endedAt`), written in the same transaction as that row.
  */
-import { hostname } from "node:os";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
+import {
+  decodeIdentity,
+  type HostIdentity,
+  judge,
+  type ProcessIdentity,
+  thisHost,
+} from "../../shared/liveness.ts";
 import { type ProcessRow, processTable } from "../../shared/process-table.ts";
-import { bootId } from "../../shared/records/writer.ts";
 import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
 import type { StaleCause } from "./types.ts";
@@ -163,13 +169,8 @@ export interface WaitingEpisode {
   readAt: string;
 }
 
-/** The wrapper's process identity, as `drives.ts` captures a driver's. */
-export interface ProcessIdentity {
-  host: string;
-  bootId: string;
-  pid: number;
-  /** The process's start time as the process table reports it. */
-  start: string;
+/** The wrapper's process identity (`shared/liveness.ts`), and when it claimed the record. */
+export interface LaunchClaim extends ProcessIdentity {
   claimedAt: string;
 }
 
@@ -184,19 +185,19 @@ export interface LaunchExit {
 
 export type LaunchState =
   | { kind: "pending" }
-  | { kind: "alive"; process: ProcessIdentity }
+  | { kind: "alive"; process: LaunchClaim }
   | {
       kind: "unknown";
       reason: string;
-      process: ProcessIdentity;
+      process: LaunchClaim;
       /** It ended on its account's wall, which was never written: the whole account stays closed. */
       wallUnrecorded?: true;
     }
-  | { kind: "died"; process: ProcessIdentity }
+  | { kind: "died"; reason: string; process: LaunchClaim }
   | {
       kind: "ended";
       exit: LaunchExit;
-      process: ProcessIdentity | null;
+      process: LaunchClaim | null;
       /** An interactive session whose wrapper still runs: the state its agent finished in. */
       agent?: string;
     };
@@ -419,15 +420,14 @@ function isAttempt(value: unknown): value is LaunchAttempt {
   );
 }
 
-function isIdentity(value: unknown): value is ProcessIdentity {
-  return (
-    isMapping(value) &&
-    typeof value.host === "string" &&
-    typeof value.bootId === "string" &&
-    typeof value.pid === "number" &&
-    typeof value.start === "string" &&
-    typeof value.claimedAt === "string"
-  );
+/** A claim as written, one from before host ids included; `null` when it is not one. */
+function asClaim(value: unknown): LaunchClaim | null {
+  const identity = decodeIdentity(value);
+  return identity === null ||
+    !isMapping(value) ||
+    typeof value.claimedAt !== "string"
+    ? null
+    : { ...identity, claimedAt: value.claimedAt };
 }
 
 function isExit(value: unknown): value is LaunchExit {
@@ -560,24 +560,10 @@ export function readResult(
 }
 
 /** A row's claim: `undefined` when none, `null` when it does not read. */
-export function claimOf(row: LaunchRow): ProcessIdentity | null | undefined {
+export function claimOf(row: LaunchRow): LaunchClaim | null | undefined {
   const value = parseJson(row.claim, `the claim of launch record ${row.id}`);
   if (value === undefined) return undefined;
-  return isIdentity(value) ? value : null;
-}
-
-/** This process's identity, from the process table; `null` when the table cannot be read. */
-export async function ownIdentity(): Promise<ProcessIdentity | null> {
-  const rows = await processTable();
-  const row = rows?.find((r) => r.pid === process.pid);
-  if (row === undefined || row.start === "") return null;
-  return {
-    host: hostname(),
-    bootId: bootId(),
-    pid: process.pid,
-    start: row.start,
-    claimedAt: new Date().toISOString(),
-  };
+  return asClaim(value);
 }
 
 /**
@@ -586,7 +572,7 @@ export async function ownIdentity(): Promise<ProcessIdentity | null> {
  */
 export function claimRecord(
   id: string,
-  identity: ProcessIdentity,
+  identity: LaunchClaim,
   root = stateRoot(),
 ): boolean {
   const done = stateDb(root)
@@ -606,36 +592,18 @@ export function recordExit(
     .run(JSON.stringify(exit), id);
 }
 
-/** Whether a claimed process is the one running now under its pid. */
+/** Whether a claimed process is the one running now under its pid, by the shared rules. */
 function claimState(
-  identity: ProcessIdentity,
+  claim: LaunchClaim,
   rows: ProcessRow[] | null,
-  boot: string,
+  here: HostIdentity,
 ): LaunchState {
-  if (identity.host !== hostname())
-    return {
-      kind: "unknown",
-      reason: `claimed on host ${identity.host}, not this one`,
-      process: identity,
-    };
-  if (identity.bootId !== boot)
-    return {
-      kind: "unknown",
-      reason: "claimed before this host's last boot",
-      process: identity,
-    };
-  if (rows === null)
-    return {
-      kind: "unknown",
-      reason: "the process table cannot be read",
-      process: identity,
-    };
-  const row = rows.find((r) => r.pid === identity.pid);
-  const alive =
-    row !== undefined && row.start === identity.start && !/^Z/.test(row.stat);
-  return alive
-    ? { kind: "alive", process: identity }
-    : { kind: "died", process: identity };
+  const verdict = judge(claim, rows, here);
+  if (!verdict.ok)
+    return { kind: "unknown", reason: verdict.failure.reason, process: claim };
+  return verdict.value.state === "alive"
+    ? { kind: "alive", process: claim }
+    : { kind: "died", reason: verdict.value.reason, process: claim };
 }
 
 /** A row's exit, when it has one that reads. */
@@ -662,7 +630,8 @@ export function unrecordedWalls(ids: string[], root = stateRoot()): string[] {
   return found;
 }
 
-const NO_PROCESS: ProcessIdentity = {
+const NO_PROCESS: LaunchClaim = {
+  hostId: "",
   host: "",
   bootId: "",
   pid: 0,
@@ -674,7 +643,7 @@ const NO_PROCESS: ProcessIdentity = {
 function stateOf(
   row: LaunchRow,
   rows: ProcessRow[] | null,
-  boot = bootId(),
+  here: HostIdentity,
 ): LaunchState {
   const exit = exitOf(row);
   const claim = claimOf(row);
@@ -699,11 +668,14 @@ function stateOf(
       reason: "its claim does not read",
       process: NO_PROCESS,
     };
-  return claimState(claim, rows, boot);
+  return claimState(claim, rows, here);
 }
 
-/** Every record with its state, oldest first; a row that does not read is left out and named. */
-export async function readLaunches(root = stateRoot()): Promise<{
+/** Every record with its state as judged from `here`, oldest first; a row that does not read is left out and named. */
+export async function readLaunches(
+  root = stateRoot(),
+  here: HostIdentity = thisHost(),
+): Promise<{
   records: ReadRecord[];
   unreadable: string[];
 }> {
@@ -711,7 +683,6 @@ export async function readLaunches(root = stateRoot()): Promise<{
     .query("SELECT id, record, claim, exit, result FROM launches ORDER BY id")
     .all() as LaunchRow[];
   const rows = all.length === 0 ? [] : await processTable();
-  const boot = bootId();
   const control = controlRows(root);
   const records: ReadRecord[] = [];
   const unreadable: string[] = [];
@@ -723,7 +694,7 @@ export async function readLaunches(root = stateRoot()): Promise<{
     }
     records.push({
       record,
-      state: stateOf(row, rows, boot),
+      state: stateOf(row, rows, here),
       result: asResult(row.result),
     });
   }
@@ -913,7 +884,7 @@ export async function inspectRow(
   const rows = await processTable();
   return {
     record: recordOf(row, root),
-    state: stateOf(row, rows),
+    state: stateOf(row, rows, thisHost()),
     claim: row.claim,
     exit: row.exit,
   };

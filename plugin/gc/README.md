@@ -54,8 +54,11 @@ user's own fetches. See
 
 Scratch creators use `shared/gc-lock.ts` to hold shared admission while
 creating a scope and writing its owner record. Collectors take exclusive
-admission across the final proof and removal. An abandoned admission token
-blocks collection and needs inspection; it is never stolen on age.
+admission across the final proof and removal. Each admission token holds its
+creator's [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+(`shared/liveness.ts`). An abandoned admission token blocks collection and
+needs inspection; it is never stolen on age, and the refusal names its
+creator and why that creator counts as gone.
 Worktree openers have not adopted that protocol, so clean or merged worktrees
 are reported only, except those a workspace runtime manages.
 

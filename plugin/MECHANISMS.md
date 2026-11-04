@@ -246,6 +246,10 @@ development and shipped as a version.
   retention. State: one receipt per run under `~/.local/state/jig/gc/<date>/`. Refuses: an
   unreadable process identity or forge answer keeps the resource, and an
   abandoned admission token blocks collection rather than being taken over.
+  Each admission token holds its creator's
+  [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  (`shared/liveness.ts`), and the refusal names a stale one's creator and why
+  it counts as gone, for a person to remove.
 - **Reasoned.** None. Sessions only take part as owners: a scratch creator
   holds shared admission while it creates its folder (`shared/gc-lock.ts`).
 - **If it fails.** Exit 1 and a receipt that records the failure.
@@ -273,7 +277,12 @@ development and shipped as a version.
   terminal, and writes the account's wall on a usage-limit
   stop (exit 16); for a pickup or a follow-up it starts the account's agent
   as an interactive session on `/jig:do-item <key>` or the follow-up
-  command. It records the exit either way. Refuses: a record it cannot read
+  command. It records the exit either way. The claim is the wrapper's
+  [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+  recorded and judged by `shared/liveness.ts`: a record claimed on this host
+  before it last restarted has died, and its outcome row says so; one claimed
+  on another host, or whose process table cannot be read, is unknown and
+  holds its slot until a person clears it. Refuses: a record it cannot read
   or a target it cannot place is reported and never planned; an account
   whose configuration directory does not resolve to the identity the
   machine file names starts nothing (`dispatch/lib/accounts.ts`); a launch
@@ -366,7 +375,12 @@ development and shipped as a version.
   `~/.local/state/jig/drive-pr/<clone>/`
   (`skills/drive-pr/scripts/lib/state/store.ts`): rounds, the verified head,
   parked and held items, locks and
-  [leases](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). The
+  [leases](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). A
+  driver lock's claim (`skills/drive-pr/scripts/lib/claim.ts`) names its
+  holder by the shared
+  [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  (`shared/liveness.ts`), whose host id is compared before the host name, so
+  a renamed machine still knows its own driver. The
   [drive ledger](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   mirrors its resumable part as one comment on the pull request, written by
   the driver at each round boundary, park,

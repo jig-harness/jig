@@ -279,9 +279,13 @@ converged drive's change is its pull request's head, conflicting or not. A
 drive that stopped on a conflict (exit `9`) is re-driven once per pair of its
 pull request's head and its base branch's head, whatever the forge reports of
 it by then, and a person is told only when that re-drive leaves it stopped `9`
-at the same pair; a head or a base that moves is a new attempt. A record whose
-process cannot be checked (another host or boot) holds its slot until a
-person clears it:
+at the same pair; a head or a base that moves is a new attempt. A record
+claimed on this host before it last restarted has died, since a restart ends
+every process, and its outcome row says so; hosts are told apart by the
+[process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s
+host id, so a renamed host is still this one. A record whose process cannot
+be checked (claimed on another host, or the process table cannot be read)
+holds its slot until a person clears it:
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch clear <record>
