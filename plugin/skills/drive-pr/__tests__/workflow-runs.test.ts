@@ -467,6 +467,21 @@ describe("evidence is dropped only when a successor supplies a result", () => {
     expect(withoutSuperseded(runs, workflowRuns)).not.toContain(runs[0]);
   });
 
+  it("keeps an independent failure when the successor skips its name", () => {
+    const workflowRuns = [
+      workflowRun(40, "cancelled", T1),
+      workflowRun(41, "success", T2),
+    ];
+    const runs = [
+      job("unit", "failure", 40, { started: T1, completed: T2 }),
+      job("other", "cancelled", 40, { started: T1, completed: T2 }),
+      job("lint", "success", 41),
+      job("unit", "skipped", 41),
+    ];
+    expect(verdict(runs, workflowRuns)).toBe("failing: unit");
+    expect(failingCheckRunNames(runs, false, workflowRuns)).toEqual(["unit"]);
+  });
+
   it("does not explain two failures that started together as aggregators", () => {
     const workflowRuns = [workflowRun(40, "cancelled", T1)];
     const runs = [

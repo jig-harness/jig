@@ -445,7 +445,14 @@ function readChecks(
       )
       .sort((a, b) => a.id - b.id);
     const lastRan = ran.at(-1);
-    if (lastRan === undefined || !absent(lastRan)) return newest;
+    if (lastRan === undefined) return newest;
+    // A newer skip looked at nothing, so it answers neither an absence of
+    // evidence nor a failure or live job that ran before it.
+    if (!absent(lastRan))
+      return newest.conclusion === "skipped" &&
+        (failing(lastRan) || pending(lastRan))
+        ? lastRan
+        : newest;
     const evidence = ran.filter((r) => !absent(r)).at(-1);
     return evidence !== undefined && (failing(evidence) || pending(evidence))
       ? evidence
