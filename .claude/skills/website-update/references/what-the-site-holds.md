@@ -115,7 +115,7 @@ The parsers and what they read:
 | `principles.ts` | `principles/` | `# N — Title`, `**Why.**`, `**Consequences**`, the index table's third column; the index page also shows the README's first paragraph |
 | `skills.ts` | `plugin/README.md` | the `Skill` and `Agent` tables; the paragraph on how skills reach the tracker |
 | `factory.ts` | `FACTORY.md` | its section titles, the jobs, stations and levels tables and their column counts, the paragraphs it finds by their opening words |
-| `readme.ts` | `README.md` | the paragraph under the title, the problem, followed by the bold tagline; "Jig as a software factory" with its paragraphs before a list of jobs; "Ways to use" |
+| `readme.ts` | `README.md` | the paragraph under the title, what Jig is, followed by the bold tagline; "Jig as a software factory" with its paragraphs before a list of jobs; "Ways to use" |
 | `walkthrough.ts` | `website/src/data/walkthrough.yaml`, `FACTORY.md`, `plugin/README.md` | station names from the factory line; plugin skill names excluding agents; required text, matching Jig pull-request URLs and numbers, valid UTC dates and minutes, the first event's day, and chronological events and intervals |
 | `features.ts` | `FEATURES.md` | one `##` section per feature, opening with its problem line, a paragraph in double quotes; a list of `**Skills:**`, `**Practice:**` and `**On the roadmap:**` fields after the prose, skills by their link paths, modules by id, roadmap items as "item N"; an unknown field, or a feature without a problem line, prose or a practice, fails the build |
 | `adoption.ts` | `adoption/*.md` | the brownfield sections; the greenfield heading that names the phase count |

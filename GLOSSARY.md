@@ -1103,6 +1103,11 @@ make, use the entry's term instead.
 - **Deep-review tracker** — an optional table beside the *audit catalog* that
   versions the list of dimensions a deep review covers and queues a re-review
   of every area last reviewed under an older version.
+- **Harness (agent harness)** — the set of rules, skills and checks a
+  repository gives its AI coding agents, plus the tooling that carries a change
+  from pickup to merge. The agent supplies the model; the harness supplies
+  everything around it. Jig is a harness. See *review harness* for the
+  reviewer built on the same idea.
 - **Review harness** — an automated reviewer built as prompt *lenses* over a
   reusable engine, not a fixed static analyzer. Split into a repo-agnostic
   **core** (a tool registry of reviewers, a required verify step, and
@@ -1182,7 +1187,10 @@ make, use the entry's term instead.
   forge reports it in conflict with its base, or its head moved past the head
   the drive verified. It starts once per head, and the drive merges the base
   in or reviews the new head. A converged pull request its base merely moved
-  past, still mergeable at the verified head, is left alone.
+  past, still mergeable at the verified head, is left alone. A drive that
+  stopped on a conflict it could not repair is re-driven too, once for each
+  pair of its pull request's head and its base branch's head, and a person is
+  told only if that re-drive stops the same way.
 - **Permission mode (of a pass)** — the setting of an agent tool that
   decides which of its actions ask a person first. Claude Code's
   `default` mode asks before most edits and commands; a pass of a *PR

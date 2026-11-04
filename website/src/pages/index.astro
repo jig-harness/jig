@@ -21,12 +21,11 @@ const solo = allProfiles.find((p) => p.id === "solo-lite");
 if (!solo) throw new Error("profiles.yaml has no solo-lite profile");
 const soloCount = Object.keys(solo.targets).length;
 const levelNames = Object.values(LEVEL_NAME);
-// The hero is the README's opening: the problem's first sentence as the
-// headline, the rest of the problem below it, then the tagline that says
-// what Jig is.
-const [problemHead = "", ...problemRest] = r.opening.problem;
-const heroHead = await mdInline(problemHead, "README.md");
-const heroLede = await mdInline(problemRest.join(" "), "README.md");
+// The hero is the README's opening: the first sentence of what Jig is as
+// the headline, the rest of the statement below it, then the tagline.
+const [statementHead = "", ...statementRest] = r.opening.statement;
+const heroHead = await mdInline(statementHead, "README.md");
+const heroLede = await mdInline(statementRest.join(" "), "README.md");
 const heroTagline = await mdInline(r.opening.tagline.replace(/^\*\*|\*\*$/g, ""), "README.md");
 // What goes wrong: each feature's problem line from FEATURES.md, in its
 // order, linked to the feature's section on the features page.

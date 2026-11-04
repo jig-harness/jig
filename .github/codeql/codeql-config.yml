@@ -1,0 +1,8 @@
+# CodeQL's default setup merges this file into the configuration it generates.
+# The repository property `github-codeql-config-file` names it, at main, so a
+# branch behind main is scanned under the same configuration.
+paths-ignore:
+  # A design prototype is an external design session's export, kept for review:
+  # the raw export stays as delivered, its pages are generated from it, and
+  # nothing serves them to anyone. A finding in one has nothing to fix.
+  - design/prototypes

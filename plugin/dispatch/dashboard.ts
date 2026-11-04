@@ -1,166 +1,80 @@
 /**
- * `jig dispatch dashboard [--port <n>]`: one page over the outcome log
- * (`lib/log.ts`), served while the command runs. Each time the page asks
- * for rows it queries the log table once with its filters (time,
- * repository, stage, account, class and reason) and counts each class over
- * the rows that query returns; the database's WAL mode lets it read while a
- * tick writes. A question about yesterday is a filter, not a report:
- * nothing is generated per run and nothing is written to disk.
+ * `jig dispatch dashboard [--port <n>]`: the page over what the dispatcher
+ * recorded, served while the command runs. The page (`dashboard-page/`, built
+ * from `dashboard/`) reads two things and nothing else: the line
+ * the newest tick wrote (`GET /state`, `lib/line-store.ts`) and the outcome log
+ * (`GET /rows`, `lib/dashboard-log.ts`). Each read answers with its value or a
+ * coded failure; the one catch around them is the defect boundary, so a bug
+ * reaches the log with its stack and the page with its code alone. The
+ * database's WAL mode lets it read while a tick writes, and nothing is written
+ * to disk.
  *
  * It listens on the address the machine file names (`dashboard.listen`),
  * which must lie in the private or loopback ranges (`lib/listen.ts`), so a
  * phone on the host's private network reaches it and nothing else does.
  * The URL it prints carries a token minted at start; a request without it
- * is refused, since the log names repositories, items and accounts.
+ * is refused, since these records name repositories, items and accounts.
  * Nothing installs it or keeps it running: a person starts it from a
  * terminal on the host and stops it with Ctrl-C.
  */
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { ExitError } from "../shared/cli.ts";
+import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
+import { pluginVersion } from "../shared/plugin-version.ts";
+import type {
+  Answer,
+  RowsAnswer,
+  StateAnswer,
+} from "./lib/dashboard-contract.ts";
+import { queryLog } from "./lib/dashboard-log.ts";
+import { hostTimeZone } from "./lib/host-time.ts";
+import { readLine, readLineReceipt } from "./lib/line-store.ts";
 import type { Listen } from "./lib/listen.ts";
-import { type LogRow, OUTCOME_CLASSES, rowsOf } from "./lib/log.ts";
-import { existingStateDb } from "./lib/state.ts";
+import { existingStateDb, SCHEMA_VERSION } from "./lib/state.ts";
 import { stateRoot } from "./receipts.ts";
 
 /** The port the dashboard listens on when neither `--port` nor the address names one. */
 export const DEFAULT_PORT = 8765;
 
-/** What the page filters the log by; an absent field filters nothing. */
-interface DashboardFilter {
-  fromMs: number;
-  toMs: number;
-  repo?: string;
-  stage?: string;
-  account?: string;
-  class?: string;
-  /** Rows whose reason contains this text, whatever the case of its ASCII letters. */
-  reason?: string;
+/** Below this a body is sent as it is: compressing it saves nothing. */
+const COMPRESS_FROM_BYTES = 1024;
+
+/** The page's built files, beside this file. */
+const PAGE_DIR = join(import.meta.dir, "dashboard-page");
+
+/** The zone every time is shown in: the host's, as its newest tick recorded it, since this server may run on a copy of its database. */
+function shownTimeZone(root: string): string {
+  const line = readLine(root);
+  return (line.ok ? line.value?.timeZone : undefined) ?? hostTimeZone();
 }
 
-/** The most rows one query returns; the counts still cover every row the filter keeps. */
-const DASHBOARD_ROWS = 5000;
-
-const KEPT = `at_ms >= ?1 AND at_ms <= ?2
-         AND (?3 IS NULL OR repo = ?3)
-         AND (?4 IS NULL OR stage = ?4)
-         AND (?5 IS NULL OR account = ?5)
-         AND (?6 IS NULL OR bucket = ?6)
-         AND (?7 IS NULL OR instr(lower(reason), lower(?7)) > 0)`;
-
-function filterArgs(f: DashboardFilter) {
-  return [
-    f.fromMs,
-    f.toMs,
-    f.repo ?? null,
-    f.stage ?? null,
-    f.account ?? null,
-    f.class ?? null,
-    f.reason ?? null,
-  ];
-}
-
-/** The newest rows a filter keeps (at most `DASHBOARD_ROWS`), newest first, and how many classes' rows it keeps in all. */
-function filterRows(
-  root: string,
-  f: DashboardFilter,
-): { rows: LogRow[]; counts: Record<string, number> } {
-  const db = existingStateDb(root);
-  if (db === null) return { rows: [], counts: {} };
-  // One read transaction: a tick committing between the two queries shows in neither.
-  return db.transaction(() => {
-    const rows = db
-      .query(
-        `SELECT row FROM log WHERE ${KEPT}
-         ORDER BY at_ms DESC, seq DESC LIMIT ${DASHBOARD_ROWS}`,
-      )
-      .all(...filterArgs(f)) as Array<{ row: string }>;
-    const counted = db
-      .query(
-        `SELECT bucket, COUNT(*) AS n FROM log WHERE ${KEPT} GROUP BY bucket`,
-      )
-      .all(...filterArgs(f)) as Array<{ bucket: string; n: number }>;
-    return {
-      rows: rowsOf(rows),
-      counts: Object.fromEntries(counted.map((c) => [c.bucket, c.n])),
-    };
-  })();
-}
-
-/** The values each field takes in the window, for the page's choices. */
-function windowValues(
-  root: string,
-  f: DashboardFilter,
-): Record<"repo" | "stage" | "account" | "bucket", string[]> {
-  const out = { repo: [], stage: [], account: [], bucket: [] } as Record<
-    "repo" | "stage" | "account" | "bucket",
-    string[]
-  >;
-  const db = existingStateDb(root);
-  if (db === null) return out;
-  for (const field of ["repo", "stage", "account", "bucket"] as const)
-    out[field] = (
-      db
-        .query(
-          `SELECT DISTINCT ${field} AS value FROM log
-           WHERE at_ms >= ? AND at_ms <= ? AND ${field} IS NOT NULL`,
-        )
-        .all(f.fromMs, f.toMs) as Array<{ value: string }>
-    )
-      .map((r) => r.value)
-      .sort((a, b) => a.localeCompare(b));
-  return out;
-}
-
-function text(params: URLSearchParams, name: string): string | undefined {
-  const value = params.get(name)?.trim();
-  return value === undefined || value === "" ? undefined : value;
-}
-
-function time(params: URLSearchParams, name: string, fallback: number): number {
-  const value = text(params, name);
-  const ms = value === undefined ? Number.NaN : Date.parse(value);
-  return Number.isFinite(ms) ? ms : fallback;
-}
-
-const DAY_MS = 86_400_000;
-
-/** A filter from the page's query: `from` and `to` (any date `Date.parse` reads; the last day by default), and the fields. */
-function parseFilter(params: URLSearchParams, nowMs: number): DashboardFilter {
-  const filter: DashboardFilter = {
-    fromMs: time(params, "from", nowMs - DAY_MS),
-    toMs: time(params, "to", nowMs),
-  };
-  for (const name of ["repo", "stage", "account", "class", "reason"] as const) {
-    const value = text(params, name);
-    if (value !== undefined) filter[name] = value;
-  }
-  return filter;
-}
-
-/** The page's data for one query: the filtered rows, the counts, and the values each field takes in the window. */
+/** The answer to one query over the log: `GET /rows`. A database a newer plugin wrote is a failure, as any other read's is. */
 export function dashboardData(
   params: URLSearchParams,
   nowMs: number,
   root = stateRoot(),
-): Record<string, unknown> {
-  const filter = parseFilter(params, nowMs);
-  const { rows, counts } = filterRows(root, filter);
-  const values = windowValues(root, filter);
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  return {
-    from: new Date(filter.fromMs).toISOString(),
-    to: new Date(filter.toMs).toISOString(),
-    counts,
-    rows,
-    total,
-    truncated: total > rows.length,
-    options: {
-      repo: values.repo,
-      stage: values.stage,
-      account: values.account,
-      class: [...new Set([...OUTCOME_CLASSES, ...values.bucket])],
-    },
-  };
+): Outcome<RowsAnswer, "log-unreadable"> {
+  return attempt("log-unreadable", "the outcome log cannot be read", () =>
+    queryLog(params, nowMs, root, shownTimeZone(root)),
+  );
+}
+
+/** The newest tick's line and the server's own facts: `GET /state`. */
+function stateData(
+  nowMs: number,
+  root: string,
+): Outcome<StateAnswer, "line-unreadable"> {
+  const line = readLine(root);
+  if (!line.ok) return line;
+  return ok({
+    now: new Date(nowMs).toISOString(),
+    timeZone: line.value?.timeZone ?? hostTimeZone(),
+    plugin: pluginVersion(),
+    schema: SCHEMA_VERSION,
+    line: line.value,
+  });
 }
 
 function sameToken(given: string | null, token: string): boolean {
@@ -170,50 +84,221 @@ function sameToken(given: string | null, token: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** One built page, as the server sends it: the body, compressed once, and its policy. */
+interface Page {
+  body: string;
+  gzip: Uint8Array<ArrayBuffer>;
+  headers: Record<string, string>;
+}
+
+/**
+ * The policy a built page runs under. Decision text on the page comes from pull
+ * requests, and the page's address holds the token: only the page's own script
+ * runs, and it can reach this server and nothing else.
+ */
+function contentPolicy(html: string): string {
+  const script = /<script>([\s\S]*)<\/script>/i.exec(html)?.[1];
+  const scripts =
+    script === undefined
+      ? "'none'"
+      : `'sha256-${createHash("sha256").update(script).digest("base64")}'`;
+  return [
+    "default-src 'none'",
+    `script-src ${scripts}`,
+    // The primitives position their popups with inline styles.
+    "style-src 'unsafe-inline'",
+    "connect-src 'self'",
+    "img-src 'self' data:",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
+
+function readPage(name: string): Page {
+  const body = readFileSync(join(PAGE_DIR, name), "utf8");
+  return {
+    body,
+    gzip: Bun.gzipSync(body),
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": contentPolicy(body),
+    },
+  };
+}
+
+/** Whether the request's `Accept-Encoding` allows gzip: named with a quality above zero, or allowed by `*` when it is not named. */
+function acceptsGzip(request: Request): boolean {
+  const header = request.headers.get("accept-encoding");
+  if (header === null) return false;
+  let gzip: number | undefined;
+  let any: number | undefined;
+  for (const part of header.split(",")) {
+    const [name = "", ...params] = part.split(";").map((p) => p.trim());
+    const q = params
+      .map((p) => /^q=([0-9.]+)$/i.exec(p)?.[1])
+      .find((v) => v !== undefined);
+    const quality = q === undefined ? 1 : Number(q);
+    const coding = name.toLowerCase();
+    if (coding === "gzip") gzip = quality;
+    else if (coding === "*") any = quality;
+  }
+  return (gzip ?? any ?? 0) > 0;
+}
+
+function pageResponse(page: Page, request: Request, status = 200): Response {
+  return acceptsGzip(request)
+    ? new Response(page.gzip, {
+        status,
+        headers: { ...page.headers, "content-encoding": "gzip" },
+      })
+    : new Response(page.body, { status, headers: page.headers });
+}
+
+function jsonResponse(
+  text: string,
+  request: Request,
+  status: number,
+): Response {
+  const headers: Record<string, string> = {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
+  };
+  return Buffer.byteLength(text, "utf8") >= COMPRESS_FROM_BYTES &&
+    acceptsGzip(request)
+    ? new Response(Bun.gzipSync(text), {
+        status,
+        headers: { ...headers, "content-encoding": "gzip" },
+      })
+    : new Response(text, { status, headers });
+}
+
+function answered<T>(
+  outcome: Answer<T> | Outcome<T>,
+  request: Request,
+  status: number,
+): Response {
+  // A failure's cause is for the log: the page gets its code and reason.
+  const wire: Answer<T> = outcome.ok
+    ? outcome
+    : {
+        ok: false,
+        failure: { code: outcome.failure.code, reason: outcome.failure.reason },
+      };
+  return jsonResponse(JSON.stringify(wire), request, status);
+}
+
+/** A read's answer: 200 with its value, or 503 with its code and reason, which the server logs with what was thrown. */
+function readAnswer<T>(outcome: Outcome<T>, request: Request): Response {
+  if (outcome.ok) return answered(outcome, request, 200);
+  console.error(
+    `jig dispatch dashboard: ${outcome.failure.code}: ${outcome.failure.reason}`,
+    outcome.failure.cause ?? "",
+  );
+  return answered(outcome, request, 503);
+}
+
+/** `GET /receipt`: the newest tick's receipt, or, for a page naming the run it shows, a refusal when a newer tick took its place. */
+function receiptAnswer(url: URL, request: Request, root: string): Response {
+  const run = url.searchParams.get("run");
+  const stored = readLineReceipt(root);
+  if (!stored.ok) return readAnswer(stored, request);
+  if (run !== null && stored.value !== null && stored.value.runId !== run)
+    return answered(
+      failed(
+        "receipt-superseded",
+        `tick ${run} is no longer the newest; reload the page to read the newer receipt`,
+      ),
+      request,
+      409,
+    );
+  return stored.value === null
+    ? answered(
+        failed("no-receipt", "no tick has written a receipt here yet"),
+        request,
+        404,
+      )
+    : jsonResponse(stored.value.receipt, request, 200);
+}
+
 export interface Dashboard {
   url: string;
   stop(): void;
 }
 
-/** Serve the dashboard on `listen`, reading the log under `root`, until `stop`. */
+/** Serve the dashboard on `listen`, reading what the dispatcher recorded under `root`, until `stop`. */
 export function serveDashboard(options: {
   listen: Listen;
   port?: number;
   root?: string;
   token?: string;
+  /** The clock the answers read; the real one unless a check holds it still. */
+  now?: () => number;
 }): Dashboard {
   const token = options.token ?? crypto.randomUUID().replace(/-/g, "");
   const root = options.root ?? stateRoot();
+  const now = options.now ?? Date.now;
+  const page = readPage("index.html");
+  const refused = readPage("refused.html");
+
+  function route(request: Request, url: URL): Response {
+    if (url.pathname === "/") return pageResponse(page, request);
+    if (url.pathname === "/state")
+      return readAnswer(stateData(now(), root), request);
+    if (url.pathname === "/rows")
+      return readAnswer(dashboardData(url.searchParams, now(), root), request);
+    if (url.pathname === "/receipt") return receiptAnswer(url, request, root);
+    return answered(
+      failed("not-found", `this dashboard has no ${url.pathname}`),
+      request,
+      404,
+    );
+  }
+
   const server = Bun.serve({
     hostname: options.listen.host,
     port: options.port ?? options.listen.port ?? DEFAULT_PORT,
     fetch(request) {
       const url = new URL(request.url);
       if (request.method !== "GET")
-        return new Response("method not allowed", { status: 405 });
+        return answered(
+          failed("not-allowed", "this dashboard only reads"),
+          request,
+          405,
+        );
       if (!sameToken(url.searchParams.get("token"), token))
-        return new Response(
-          "this dashboard needs the token its command printed",
-          {
-            status: 403,
-          },
+        return url.pathname === "/"
+          ? pageResponse(refused, request, 403)
+          : answered(
+              failed(
+                "token-refused",
+                "this dashboard needs the token its command printed",
+              ),
+              request,
+              403,
+            );
+      try {
+        return route(request, url);
+      } catch (defect) {
+        console.error(
+          "jig dispatch dashboard: a defect while answering",
+          url.pathname,
+          defect,
         );
-      if (url.pathname === "/rows")
-        return Response.json(
-          dashboardData(url.searchParams, Date.now(), root),
-          {
-            headers: { "cache-control": "no-store" },
-          },
+        return answered(
+          failed(
+            "defect",
+            "the dashboard hit a bug answering this; the terminal it runs in has the details",
+          ),
+          request,
+          500,
         );
-      if (url.pathname === "/")
-        return new Response(PAGE, {
-          headers: {
-            "content-type": "text/html; charset=utf-8",
-            "cache-control": "no-store",
-            "referrer-policy": "no-referrer",
-          },
-        });
-      return new Response("not found", { status: 404 });
+      }
     },
   });
   const host = options.listen.host.includes(":")
@@ -243,7 +328,9 @@ export async function dashboardMain(
     ...(port === undefined ? {} : { port }),
   });
   console.log(`jig dispatch dashboard: ${dashboard.url}`);
-  console.log("It reads the outcome log when the page asks; Ctrl-C stops it.");
+  console.log(
+    "It reads what the dispatcher recorded when the page asks; Ctrl-C stops it.",
+  );
   await new Promise<void>((settle) => {
     for (const signal of ["SIGINT", "SIGTERM"] as const)
       process.once(signal, () => settle());
@@ -251,113 +338,3 @@ export async function dashboardMain(
   dashboard.stop();
   return 0;
 }
-
-const PAGE = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="no-referrer">
-<title>Dispatch outcomes</title>
-<style>
-:root { --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4; --card: #ffffff; --accent: #2563eb; }
-@media (prefers-color-scheme: dark) { :root { --bg: #161412; --fg: #f5f5f4; --muted: #a8a29e; --line: #2e2a27; --card: #1f1c1a; --accent: #60a5fa; } }
-* { box-sizing: border-box; }
-body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, sans-serif; }
-h1 { font-size: 1.2rem; margin: 0 0 12px; }
-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
-label { display: flex; flex-direction: column; font-size: .8rem; color: var(--muted); gap: 2px; }
-select, input, button { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); min-width: 0; }
-.presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.presets button { cursor: pointer; }
-.presets button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
-.counts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.count { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: .85rem; }
-.count b { font-variant-numeric: tabular-nums; }
-.row { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
-.row .head { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: .85rem; color: var(--muted); }
-.row .what { font-weight: 600; }
-.row .reason { margin-top: 4px; overflow-wrap: anywhere; }
-.empty, .meta { color: var(--muted); }
-</style>
-</head>
-<body>
-<h1>Dispatch outcomes</h1>
-<div class="presets" id="presets">
-  <button type="button" data-preset="today">Today</button>
-  <button type="button" data-preset="yesterday">Yesterday</button>
-  <button type="button" data-preset="7">7 days</button>
-  <button type="button" data-preset="30">30 days</button>
-</div>
-<form id="filters">
-  <label>From<input type="datetime-local" name="from"></label>
-  <label>To<input type="datetime-local" name="to"></label>
-  <label>Repository<select name="repo"></select></label>
-  <label>Stage<select name="stage"></select></label>
-  <label>Account<select name="account"></select></label>
-  <label>Class<select name="class"></select></label>
-  <label>Reason contains<input type="search" name="reason"></label>
-</form>
-<div class="counts" id="counts"></div>
-<p class="meta" id="meta"></p>
-<div id="rows"></div>
-<script>
-const token = new URLSearchParams(location.search).get("token") || "";
-const form = document.getElementById("filters");
-const pad = (n) => String(n).padStart(2, "0");
-const local = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
-let exact = null;
-let latest = 0;
-function preset(name) {
-  const now = new Date();
-  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  let from = midnight, to = now;
-  if (name === "yesterday") { from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1); to = new Date(midnight.getTime() - 1); }
-  else if (name !== "today") from = new Date(now.getTime() - Number(name) * 86400000);
-  form.from.value = local(from); form.to.value = local(to);
-  exact = { from: { text: form.from.value, iso: from.toISOString() }, to: { text: form.to.value, iso: to.toISOString() } };
-  for (const b of document.querySelectorAll("#presets button")) b.setAttribute("aria-pressed", String(b.dataset.preset === name));
-  load();
-}
-function fill(select, values) {
-  const keep = select.value;
-  select.replaceChildren(new Option("any", ""));
-  for (const v of values) select.add(new Option(v, v));
-  select.value = values.includes(keep) ? keep : "";
-}
-function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-function minutes(ms) { return ms === null || ms === undefined ? "" : Math.round(ms / 60000) + " min"; }
-function bound(k, v) { return exact && exact[k].text === v ? exact[k].iso : new Date(v).toISOString(); }
-async function load() {
-  const mine = ++latest;
-  const q = new URLSearchParams({ token });
-  for (const [k, v] of new FormData(form)) if (v !== "") q.set(k, k === "from" || k === "to" ? bound(k, v) : v);
-  const answer = await fetch("rows?" + q.toString(), { cache: "no-store" });
-  if (mine !== latest) return;
-  if (!answer.ok) { document.getElementById("meta").textContent = "The dashboard refused the request (" + answer.status + ")."; return; }
-  const data = await answer.json();
-  if (mine !== latest) return;
-  for (const name of ["repo", "stage", "account", "class"]) fill(form[name], data.options[name]);
-  const counts = document.getElementById("counts");
-  counts.replaceChildren(...Object.entries(data.counts).sort((a, b) => b[1] - a[1]).map(([k, n]) => { const c = el("span", "count", k + " "); c.append(el("b", "", String(n))); return c; }));
-  document.getElementById("meta").textContent = (data.truncated ? "newest " + data.rows.length + " of " + data.total + " rows (narrow the window or a filter to see the rest)" : data.rows.length + " row(s)") + " from " + new Date(data.from).toLocaleString() + " to " + new Date(data.to).toLocaleString();
-  const rows = document.getElementById("rows");
-  if (data.rows.length === 0) { rows.replaceChildren(el("p", "empty", "No rows in this window.")); return; }
-  rows.replaceChildren(...data.rows.map((r) => {
-    const card = el("div", "row");
-    const head = el("div", "head");
-    head.append(el("span", "", new Date(r.at).toLocaleString()), el("span", "what", (r.class ?? ("event: " + r.event))), el("span", "", r.stage + " " + r.target), el("span", "", r.repo));
-    if (r.account) head.append(el("span", "", r.account));
-    if (r.kind === "ended") { head.append(el("span", "", minutes(r.durationMs))); if (r.rounds !== null) head.append(el("span", "", r.rounds + " round(s)")); if (r.model) head.append(el("span", "", r.model)); } else if (typeof r.durationMs === "number") head.append(el("span", "", "waited " + minutes(r.durationMs)));
-    card.append(head, el("div", "reason", r.reason));
-    return card;
-  }));
-}
-form.addEventListener("change", load);
-form.reason.addEventListener("input", () => { clearTimeout(form.timer); form.timer = setTimeout(load, 300); });
-for (const b of document.querySelectorAll("#presets button")) b.addEventListener("click", () => preset(b.dataset.preset));
-preset("today");
-</script>
-</body>
-</html>
-`;

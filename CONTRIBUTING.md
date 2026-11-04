@@ -433,7 +433,8 @@ The example indexes open with a "generated" header naming their generator.
 The lockfiles and the vendored js-yaml builds cannot carry one, since each
 must stay byte for byte what its generator writes, so their entry is their
 marker; the bundle `tools/plugin/vendor-optique.ts` builds opens with a line
-naming that command.
+naming that command. The dashboard's built page is minified, so its entry is
+its marker too.
 
 A new derived file gets its entry in the pull request that adds it; the
 runner refuses an entry without a check.
@@ -585,6 +586,10 @@ work as part of the plugin:
   Optique, the command-line parser, built by `bun tools/plugin/vendor-optique.ts`
   from the names `tools/plugin/optique-entry.ts` lists, so a script that
   needs another of its functions adds the name there and runs that command.
+  A page the plugin serves is built the same way from source outside
+  `plugin/`, and minified, since a phone loads it: `plugin/dispatch/dashboard-page/`
+  is built by `bun dashboard/build.ts`
+  ([ADR-0001](docs/adr/ADR-0001-bun-typescript-toolchain.md)).
 - **Windows cancellation:** follow the scope and reconsideration conditions
   in [ADR-0008](docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md)
   when changing process launch, cancellation or the evidence that a

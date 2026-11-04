@@ -1,0 +1,151 @@
+/**
+ * The page's one query string: which window and filters the log shows, beside
+ * the `token` and `theme` it was opened with, so a phone's view is a link a
+ * laptop can open. A change replaces the address; it adds no history entry.
+ */
+import { useCallback, useRef, useState } from "react";
+import { instantOf } from "./format.ts";
+
+export const PRESETS = [
+  { id: "today", label: "Today" },
+  { id: "yesterday", label: "Yesterday" },
+  { id: "7d", label: "7 days" },
+  { id: "30d", label: "30 days" },
+] as const;
+
+export type Preset = (typeof PRESETS)[number]["id"];
+
+/** A named window, or `range` when `from` or `to` names one. */
+export type WindowChoice = Preset | "range";
+
+export interface LogFilter {
+  window: WindowChoice;
+  /** As a `datetime-local` control gives it: a time on the host's clock. */
+  from: string;
+  to: string;
+  repo: string;
+  stage: string;
+  account: string;
+  class: string;
+  reason: string;
+}
+
+const TEXT_FIELDS = ["repo", "stage", "account", "class", "reason"] as const;
+
+function presetOf(value: string | null): Preset {
+  return PRESETS.find((p) => p.id === value)?.id ?? "today";
+}
+
+/** The filter a query string names; what it leaves out filters nothing. */
+export function readFilter(search: string): LogFilter {
+  const params = new URLSearchParams(search);
+  const from = params.get("from") ?? "";
+  const to = params.get("to") ?? "";
+  return {
+    window: from !== "" || to !== "" ? "range" : presetOf(params.get("window")),
+    from,
+    to,
+    repo: params.get("repo") ?? "",
+    stage: params.get("stage") ?? "",
+    account: params.get("account") ?? "",
+    class: params.get("class") ?? "",
+    reason: params.get("reason") ?? "",
+  };
+}
+
+/** A filter with a change applied: picking a preset ends a range, and a range ends a preset. */
+export function applyPatch(
+  filter: LogFilter,
+  patch: Partial<LogFilter>,
+): LogFilter {
+  const next = { ...filter, ...patch };
+  if (patch.window !== undefined && patch.window !== "range")
+    return { ...next, from: "", to: "" };
+  if (patch.from !== undefined || patch.to !== undefined)
+    return { ...next, window: "range" };
+  return next;
+}
+
+/** Each value as it reads in the address: a space as `+`, slashes and colons left as they are. */
+function encoded(value: string): string {
+  return encodeURIComponent(value)
+    .replace(/%20/g, "+")
+    .replace(/%2F/g, "/")
+    .replace(/%3A/g, ":");
+}
+
+function filterPairs(filter: LogFilter): Array<[string, string]> {
+  const when: Array<[string, string]> =
+    filter.window === "range"
+      ? [
+          ["from", filter.from],
+          ["to", filter.to],
+        ]
+      : [["window", filter.window]];
+  const fields = TEXT_FIELDS.map((name): [string, string] => [
+    name,
+    filter[name],
+  ]);
+  return [...when, ...fields].filter(([, value]) => value !== "");
+}
+
+function queryOf(pairs: Array<[string, string]>): string {
+  return pairs.map(([k, v]) => `${k}=${encoded(v)}`).join("&");
+}
+
+/** The filter's part of the address, as the page shows it: `?window=7d&repo=example-org/web`. */
+export function viewQuery(filter: LogFilter): string {
+  return `?${queryOf(filterPairs(filter))}`;
+}
+
+/**
+ * The filter as `GET /rows` asks for it: a range's times become instants in the
+ * host's zone, which the server may not be running in. A time that already
+ * names its offset goes as it is.
+ */
+export function rowsQuery(filter: LogFilter, timeZone: string | null): string {
+  const pairs = filterPairs(filter).map(([name, value]): [string, string] => {
+    if ((name !== "from" && name !== "to") || timeZone === null)
+      return [name, value];
+    return [name, instantOf(value, timeZone) ?? value];
+  });
+  return queryOf(pairs);
+}
+
+/** The whole query string: what the page was opened with, then the filter. */
+export function pageQuery(filter: LogFilter, search: string): string {
+  const params = new URLSearchParams(search);
+  const kept = ["token", "theme"].flatMap((name): Array<[string, string]> => {
+    const value = params.get(name);
+    return value === null ? [] : [[name, value]];
+  });
+  return `?${queryOf([...kept, ...filterPairs(filter)])}`;
+}
+
+/** The token the page was opened with. */
+export function tokenOf(search: string): string {
+  return new URLSearchParams(search).get("token") ?? "";
+}
+
+/** The `color-scheme` the page asks for: a forced theme, or whatever the device follows. */
+export function schemeOf(search: string): string {
+  const theme = new URLSearchParams(search).get("theme");
+  return theme === "light" || theme === "dark" ? theme : "light dark";
+}
+
+/** The filter in the address, and how to change it. */
+export function useFilter(): [LogFilter, (patch: Partial<LogFilter>) => void] {
+  const [filter, setFilter] = useState(() => readFilter(location.search));
+  const latest = useRef(filter);
+  const patch = useCallback((change: Partial<LogFilter>) => {
+    const next = applyPatch(latest.current, change);
+    latest.current = next;
+    setFilter(next);
+    history.replaceState(
+      null,
+      "",
+      `${location.pathname}${pageQuery(next, location.search)}`,
+    );
+  }, []);
+  return [filter, patch];
+}

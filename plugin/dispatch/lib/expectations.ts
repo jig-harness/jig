@@ -267,6 +267,7 @@ export function planDrift(input: DriftInput): {
         stage,
         reason: `${reason}; not notified while its waiting notification stands`,
         evidence,
+        drifting: true,
       });
       continue;
     }

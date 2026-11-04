@@ -11,3 +11,6 @@
 .agents/skills/
 node_modules/
 dist/
+
+# The design-handback landing check's verification images (design-brief-builder).
+design/prototypes/*/.handback-render/
