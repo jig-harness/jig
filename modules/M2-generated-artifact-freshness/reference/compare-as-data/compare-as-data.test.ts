@@ -235,6 +235,53 @@ test("a number past the range of a double is refused, and YAML's own infinity is
   expect(result.stderr).toContain("is past the range of a double");
 });
 
+test("YAML overflow is refused for every sign and base, in values and keys", () => {
+  for (const sign of ["", "+", "-"])
+    for (const digits of [
+      `0b${"1".repeat(1100)}`,
+      `0o${"7".repeat(400)}`,
+      `0x${"F".repeat(300)}`,
+      "9".repeat(400),
+      "1.e400",
+      "1E+400",
+    ]) {
+      const literal = `${sign}${digits}`;
+      for (const text of [`n: ${literal}`, `${literal}: x`])
+        expect(() => parseData(text, "a.yaml")).toThrow(
+          "is past the range of a double",
+        );
+    }
+  expect(() => parseData("n: .1e400", "a.yaml")).toThrow(
+    "is past the range of a double",
+  );
+  expect(parseData("a: -0x1F\nb: +0b11\nc: -0o7", "a.yaml")).toEqual({
+    a: -31,
+    b: 3,
+    c: -7,
+  });
+});
+
+test("YAML numeric-looking strings remain strings in values and keys", () => {
+  for (const sign of ["", "+", "-"])
+    for (const digits of [
+      `0B${"1".repeat(1100)}`,
+      `0O${"7".repeat(400)}`,
+      `0X${"F".repeat(300)}`,
+      `0x${"F".repeat(300)}G`,
+      `0b${"1".repeat(1100)}2`,
+      `0o${"7".repeat(400)}8`,
+      "1e400suffix",
+      "1_000e400",
+      "Infinity",
+    ]) {
+      const literal = `${sign}${digits}`;
+      expect(parseData(`n: ${literal}`, "a.yaml")).toEqual({ n: literal });
+      expect(parseData(`${literal}: x`, "a.yaml")).toEqual({ [literal]: "x" });
+    }
+  for (const literal of ["+.1e400", "-.1e400"])
+    expect(parseData(`n: ${literal}`, "a.yaml")).toEqual({ n: literal });
+});
+
 test("a path that is not a regular file is refused before it is read", () => {
   const result = run([fixture("committed.json"), fixtures]);
   expectSpawnExit(result, 2);
