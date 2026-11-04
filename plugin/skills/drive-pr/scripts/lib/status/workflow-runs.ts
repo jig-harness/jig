@@ -1,10 +1,8 @@
 /**
  * The workflow runs behind a head's check runs. A check run reports one job;
- * whether its conclusion says anything about the code depends on the run it
- * belongs to. A job of a cancelled run proves nothing, and neither does a
- * job that failed only because the jobs it needs were cancelled, so a
- * cancelled check is an absence of evidence: never a failure to repair, and
- * never a pass.
+ * cancelled checks are an absence of evidence: never a failure to repair and
+ * never a pass. Every other unsuccessful job remains a failure, even in a
+ * cancelled run, until a later completed run replaces that run.
  *
  * The check suite id links the two: every job of a run carries it, and the
  * jobs on a head's check-run list are the run's jobs, so reading them costs no
@@ -51,13 +49,6 @@ export interface JobEvidence {
   conclusion: string | null;
   /** The check suite of the run it belongs to; absent when it names none. */
   suiteId?: number | null;
-}
-
-/** A job the timing of a cancellation can be read from. */
-export interface TimedJob extends JobEvidence {
-  id: number;
-  started: string | null;
-  completed?: string | null;
 }
 
 /**
@@ -274,121 +265,24 @@ export function withoutRerunning<T extends JobEvidence>(
 }
 
 /**
- * Whether a check name lost an unsuccessful job to a run being re-run and has
- * no success of its own left: the re-run's result is still owed, and a newer
- * skip of that name is not one. A success counts only from a later run than
- * the job it would replace: an older success predates the failure being re-run.
+ * A run being re-run still owes every unsuccessful job's result until it
+ * completes. Another run's success cannot discharge that obligation: run
+ * timestamps do not date jobs retained from an earlier attempt.
  */
-export function rerunAwaitsResult<
-  T extends JobEvidence & { appId?: number | null; app?: string },
->(jobs: readonly T[], workflowRuns: readonly WorkflowRun[] | null): boolean {
+export function rerunAwaitsResult(
+  jobs: readonly JobEvidence[],
+  workflowRuns: readonly WorkflowRun[] | null,
+): boolean {
   return unreplacedRerunJobs(jobs, workflowRuns).length > 0;
 }
 
-/**
- * The unsuccessful jobs of runs being re-run that a success from a later run
- * does not replace: their re-run's result is still owed. The proof and the
- * verdict both read replacement through this, so they cannot disagree on it.
- */
-export function unreplacedRerunJobs<
-  T extends JobEvidence & { appId?: number | null; app?: string },
->(jobs: readonly T[], workflowRuns: readonly WorkflowRun[] | null): T[] {
-  const kept = withoutRerunning(jobs, workflowRuns);
-  const rerunning = rerunningSuites(workflowRuns);
-  const startedOf = (suiteId: number | null | undefined): number => {
-    const run = (workflowRuns ?? []).find((r) => r.checkSuiteId === suiteId);
-    return run === undefined ? Number.NaN : Date.parse(run.startedAt);
-  };
-  return jobs
-    .filter((job) => !kept.includes(job))
-    .filter(
-      (job) =>
-        !kept.some(
-          (k) =>
-            k.name === job.name &&
-            k.appId === job.appId &&
-            k.app === job.app &&
-            k.conclusion === "success" &&
-            // A success in a run being re-run is a previous attempt's,
-            // retained: the rerun's start time says nothing about it.
-            !(
-              k.suiteId !== undefined &&
-              k.suiteId !== null &&
-              rerunning.has(k.suiteId)
-            ) &&
-            startedOf(k.suiteId) > startedOf(job.suiteId),
-        ),
-    );
-}
-
-/**
- * `jobs` less the unsuccessful ones of a run being re-run that a success from
- * a later run replaces: that success speaks for the name, whatever check-run
- * ids the two carry.
- */
-export function withoutReplacedRerunning<
-  T extends JobEvidence & { appId?: number | null; app?: string },
->(jobs: readonly T[], workflowRuns: readonly WorkflowRun[] | null): T[] {
-  const owed = new Set(unreplacedRerunJobs(jobs, workflowRuns));
-  const rerunning = rerunningSuites(workflowRuns);
-  return jobs.filter(
-    (job) =>
-      owed.has(job) ||
-      job.suiteId === undefined ||
-      job.suiteId === null ||
-      !rerunning.has(job.suiteId) ||
-      (job.conclusion !== null && PASSING_CONCLUSIONS.has(job.conclusion)),
-  );
-}
-
-/**
- * The ids of the failed jobs that say nothing about the code: in a cancelled
- * run, an aggregator that `needs` cancelled jobs starts once they have ended
- * and fails on their result. A failed job counts only when it started after a
- * job of its run was cancelled, and only when every failed job of that run
- * did: one that started earlier failed on its own, so it is a real failure,
- * and an aggregator beside it failed for a real reason too. A job that may
- * have run beside another job of its run is not an aggregator. Nothing is
- * explained in a run that was not cancelled.
- */
-export function failuresExplainedByCancellation(
-  jobs: readonly TimedJob[],
+/** The unsuccessful jobs whose own workflow run is still being re-run. */
+export function unreplacedRerunJobs<T extends JobEvidence>(
+  jobs: readonly T[],
   workflowRuns: readonly WorkflowRun[] | null,
-): Set<number> {
-  const explained = new Set<number>();
-  for (const run of workflowRuns ?? []) {
-    if (run.status !== "completed" || run.conclusion !== "cancelled") continue;
-    const own = jobs.filter((job) => job.suiteId === run.checkSuiteId);
-    const cancelledAt = own
-      .filter((job) => job.conclusion === "cancelled")
-      .map((job) => Date.parse(job.completed ?? ""))
-      .filter((at) => Number.isFinite(at));
-    if (cancelledAt.length === 0) continue;
-    const firstCancelled = Math.min(...cancelledAt);
-    const failed = own.filter(
-      (job) =>
-        job.status === "completed" &&
-        job.conclusion !== null &&
-        job.conclusion !== "cancelled" &&
-        !PASSING_CONCLUSIONS.has(job.conclusion),
-    );
-    // Timing is the only evidence of a dependency, so it must leave no
-    // doubt: the job started strictly after every other job of its run,
-    // failed siblings included, had completed, as an aggregator over all of
-    // them does. A job that could have run beside another stays a failure.
-    const allAfter = failed.every((job) => {
-      const startedAt = Date.parse(job.started ?? "");
-      return (
-        job.conclusion === "failure" &&
-        startedAt > firstCancelled &&
-        own
-          .filter((other) => other.id !== job.id)
-          .every((other) => Date.parse(other.completed ?? "") < startedAt)
-      );
-    });
-    if (allAfter) for (const job of failed) explained.add(job.id);
-  }
-  return explained;
+): T[] {
+  const kept = new Set(withoutRerunning(jobs, workflowRuns));
+  return jobs.filter((job) => !kept.has(job));
 }
 
 /**

@@ -257,11 +257,11 @@ describe("an aggregator that fails on cancelled needs", () => {
   const aggregator = (started = T3) =>
     job("gates", "failure", 40, { started, completed: T4 });
 
-  it("is the same absence of evidence when its run was cancelled", () => {
+  it("keeps a failed job failing even when it starts after cancellation", () => {
     const runs = [need(), aggregator()];
-    expect(verdict(runs, [cancelledRun])).toBe("cancelled: gates, suite");
-    expect(failingNames(runs, [], false, [cancelledRun])).toEqual([]);
-    expect(failingRunsOf(runs, [cancelledRun])).toEqual([]);
+    expect(verdict(runs, [cancelledRun])).toBe("failing: gates");
+    expect(failingNames(runs, [], false, [cancelledRun])).toEqual(["gates"]);
+    expect(failingRunsOf(runs, [cancelledRun])?.map((r) => r.id)).toEqual([40]);
   });
 
   it("goes with the run once another run replaced it", () => {
@@ -438,7 +438,7 @@ describe("a run being re-run", () => {
 });
 
 describe("evidence is dropped only when a successor supplies a result", () => {
-  it("keeps a cancellation-explained failure when the successor skips it", () => {
+  it("keeps a failed job when the successor skips it", () => {
     const workflowRuns = [
       workflowRun(40, "cancelled", T1),
       workflowRun(41, "success", T2),
@@ -454,7 +454,7 @@ describe("evidence is dropped only when a successor supplies a result", () => {
         (r) => r.name === "gates" && r.conclusion === "failure",
       )[0] as never,
     );
-    expect(verdict(runs, workflowRuns)).toBe("cancelled: gates");
+    expect(verdict(runs, workflowRuns)).toBe("failing: gates");
   });
 
   it("lets a successor that ran replace a job another successor skipped", () => {
@@ -520,7 +520,7 @@ describe("evidence is dropped only when a successor supplies a result", () => {
     ).toBe(true);
     expect(
       rerunAwaitsResult([failed, job("unit", "success", 41)], workflowRuns),
-    ).toBe(false);
+    ).toBe(true);
     expect(rerunAwaitsResult([failed], [workflowRun(40, "failure", T1)])).toBe(
       false,
     );
@@ -537,7 +537,7 @@ describe("evidence is dropped only when a successor supplies a result", () => {
     expect(verdict(runs, workflowRuns)).toBe("pending: unit");
   });
 
-  it("orders a rerun's replacement by run chronology, not suite id", () => {
+  it("keeps a rerun owed regardless of other runs' chronology", () => {
     const failed = job("unit", "failure", 40, { started: T1, completed: T2 });
     const rerun = workflowRun(40, null, T3, { attempt: 2 });
     expect(
@@ -555,10 +555,10 @@ describe("evidence is dropped only when a successor supplies a result", () => {
         ],
         [lowerRerun, workflowRun(40, "success", T3)],
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it("lets the verdict take a later run's success with the lower check id", () => {
+  it("keeps a rerun pending beside a later success with the lower check id", () => {
     // The success is created first, so its check-run id is the lower one.
     const success = job("unit", "success", 40);
     const failed = job("unit", "failure", 41, { started: T1, completed: T2 });
@@ -567,8 +567,8 @@ describe("evidence is dropped only when a successor supplies a result", () => {
       workflowRun(40, "success", T3),
     ];
     expect(success.id).toBeLessThan(failed.id);
-    expect(rerunAwaitsResult([failed, success], workflowRuns)).toBe(false);
-    expect(verdict([failed, success], workflowRuns)).toBe("green");
+    expect(rerunAwaitsResult([failed, success], workflowRuns)).toBe(true);
+    expect(verdict([failed, success], workflowRuns)).toBe("pending: unit");
   });
 
   it("does not let a retained success in a rerunning run replace another run's failure", () => {
@@ -582,6 +582,36 @@ describe("evidence is dropped only when a successor supplies a result", () => {
     ];
     expect(rerunAwaitsResult(runs, workflowRuns)).toBe(true);
     expect(verdict(runs, workflowRuns)).toBe("pending: unit");
+  });
+
+  it("keeps a rerun owed beside a completed partial rerun's retained success", () => {
+    const workflowRuns = [
+      workflowRun(40, "success", T3, { attempt: 2 }),
+      workflowRun(41, null, T2, { attempt: 2 }),
+    ];
+    const runs = [
+      job("unit", "success", 40, { started: T0, completed: T1 }),
+      job("lint", "success", 40, { started: T3, completed: T4 }),
+      job("unit", "failure", 41, { started: T1, completed: T2 }),
+    ];
+    expect(rerunAwaitsResult(runs, workflowRuns)).toBe(true);
+    expect(verdict(runs, workflowRuns)).toBe("pending: unit");
+    expect(
+      verdict(runs, [
+        workflowRun(40, "success", T3, { attempt: 2 }),
+        workflowRun(41, "success", T4, { attempt: 2 }),
+      ]),
+    ).toBe("failing: unit");
+  });
+
+  it("keeps sequential failures after a cancellation failing", () => {
+    const workflowRuns = [workflowRun(40, "cancelled", T1)];
+    const runs = [
+      job("tests", "cancelled", 40, { started: T0, completed: T1 }),
+      job("a", "failure", 40, { started: T2, completed: T3 }),
+      job("b", "failure", 40, { started: T4, completed: T4 }),
+    ];
+    expect(failingCheckRunNames(runs, false, workflowRuns)).toEqual(["a", "b"]);
   });
 
   it("does not explain two failures that started together as aggregators", () => {

@@ -19,10 +19,9 @@ import { ghCall, run, tsArgv } from "../proc.ts";
 import {
   type FailedRun,
   failedRunsOf,
-  failuresExplainedByCancellation,
   PASSING_CONCLUSIONS,
   rerunningSuites,
-  withoutReplacedRerunning,
+  unreplacedRerunJobs,
   type WorkflowRun,
   withoutSuperseded,
   workflowRunsBehind,
@@ -423,17 +422,8 @@ function readChecks(
   workflowRuns: readonly WorkflowRun[] | null,
 ): CheckReading {
   const own = runs.filter((r) => !isReviewerCheck(r));
-  // Read before the superseded cancellations go: the cancelled job an
-  // aggregator failed on is the proof that its failure explains nothing.
-  const explained = failuresExplainedByCancellation(own, workflowRuns);
-  // A success from a later run replaces a rerunning failure by run
-  // chronology, as the final CI proof reads it, not by check-run id.
-  const counted = withoutReplacedRerunning(
-    withoutSuperseded(own, workflowRuns),
-    workflowRuns,
-  );
-  const absent = (r: CheckRun) =>
-    r.conclusion === "cancelled" || explained.has(r.id);
+  const counted = withoutSuperseded(own, workflowRuns);
+  const absent = (r: CheckRun) => r.conclusion === "cancelled";
   const rerunning = rerunningSuites(workflowRuns);
   const cancelledSuites = new Set(
     (workflowRuns ?? [])
@@ -473,7 +463,12 @@ function readChecks(
   });
   return {
     failing: reading.filter(failing),
-    pending: reading.filter(pending),
+    pending: [
+      ...new Set([
+        ...reading.filter(pending),
+        ...unreplacedRerunJobs(counted, workflowRuns),
+      ]),
+    ],
     cancelled: reading.filter(absent),
   };
 }

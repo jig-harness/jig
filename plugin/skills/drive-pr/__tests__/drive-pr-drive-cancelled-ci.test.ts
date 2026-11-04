@@ -192,18 +192,17 @@ describe.skipIf(skipLongDriveFixture)("drive.ts on cancelled checks", () => {
     expectNoRepairPass(r.stderr);
   });
 
-  it("spends no pass on an aggregator that failed on cancelled needs", async () => {
+  it("repairs a failed job even when it started after cancellation", async () => {
     const r = await driveConverged(
       [
         { ...check("gates", "failure", 40), started: LATER },
         check("tests", "cancelled", 40),
       ],
       [workflowRun(40, "cancelled")],
-      { DRIVE_PR_FINAL_CI_WITNESS_POLLS: "1" },
+      { DRIVE_PR_CI_REPAIR_ROUNDS: "1" },
     );
-    exits(r, 4);
-    expect(r.stderr).toContain("'cancelled: gates, tests'");
-    expectNoRepairPass(r.stderr);
+    exits(r, 1);
+    expect(r.stderr).toContain("TASK=ci-repair RUNS=[40]");
   });
 
   it("repairs an aggregator in a run that was not cancelled", async () => {
@@ -292,6 +291,32 @@ describe("the proof announce-merge-ready relies on", () => {
         [workflowRun(40, "cancelled"), workflowRun(41, "success")],
       ),
       0,
+    );
+  });
+
+  it("does not certify a retained success while another run is being re-run", async () => {
+    await expectSpawnExited(
+      finalReady(
+        [check("tests", "failure", 40), check("tests", "success", 41)],
+        [
+          {
+            ...workflowRun(40, "failure", "pull_request", LATER),
+            status: "queued",
+            conclusion: null,
+            run_attempt: 2,
+          },
+          {
+            ...workflowRun(
+              41,
+              "success",
+              "pull_request",
+              "2026-09-10T10:02:00Z",
+            ),
+            run_attempt: 2,
+          },
+        ],
+      ),
+      4,
     );
   });
 

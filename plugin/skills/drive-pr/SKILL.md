@@ -286,10 +286,9 @@ Once the budget is spent — or on the first red if it is `0` — the drive take
 the original exit-`1` stop and hands the red CI back for repair.
 
 **A cancelled check is waited for, never repaired and never passed.** It says
-nothing about the code, so the verdict reads `cancelled: …`. That covers a
-check concluded `cancelled`, and a job of a cancelled workflow run that failed
-only after another job of that run was cancelled, as an aggregator fails on
-cancelled needs. Once a run of the same workflow on this head, started no
+nothing about the code, so the verdict reads `cancelled: …`. That covers only a
+check concluded `cancelled`; another failed job in the same cancelled run
+still counts as failing. Once a run of the same workflow on this head, started no
 earlier, has completed with a result, the cancelled run's checks no longer
 count at all, under whatever name they carry; the event that started either
 run does not matter. A failure beside a cancelled check is still a failure, and
