@@ -47,6 +47,21 @@ Orca is its first session runtime
 ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
 with others through the same interface.
 
+### 36. The dispatch board: what is driven and what is ready to merge
+
+The dispatch dashboard becomes a board. Every pull request and item the
+dispatcher knows of, whoever drives it, sits in one column: coming, picking
+up, driven, needs you, ready to merge, or merged. Ready to merge holds only
+what a person can merge now: converged, checks green, no conflict, and
+allowed by the repository's branch protection. The work that unblocks others
+comes first, each with a merge command that refuses a pull request changed
+since it was verified. Every pull request shows the same status at a glance: conflicts,
+checks with the failing ones named, unresolved review threads, and whether
+it is ready, with the reason when not. Work moves in any direction, and a
+pull request that was ready and moved back says why. A person is told once
+when a pull request becomes ready, and the history shows how long ready
+work waited and how much was lost to waiting. Merging stays a person's.
+
 ### 35. One jig command line
 
 The plugin's machine-level tools become one `jig` command on `PATH`, with

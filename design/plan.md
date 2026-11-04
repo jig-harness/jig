@@ -116,6 +116,39 @@ consumer repository three pull requests that touch one serialized area
 over a night are re-driven one at a time, the held ones carrying the
 `held` label until each leads.
 
+### 36. The dispatch board: what is driven and what is ready to merge
+
+The merge is the one stage of the execution line that stays a person's, and
+it sets the pace of the rest: each merge lets the dispatcher re-drive the
+pull requests that now conflict and start the next one in a serialized
+area. Yet the dispatch dashboard shows no merge queue: a converged,
+mergeable pull request is a class the tick reports and leaves alone, and a
+drive a person or another machine runs is not on the page either.
+[design/dispatch-board.md](dispatch-board.md) has how it works: the tick
+places every piece of work it reads in one column of a board (coming,
+picking up, driven, needs you, ready to merge, merged) by a pure function in
+`plugin/dispatch/lib/board.ts`, from the ledger and three more fields of the
+pull request listing (`isDraft`, `mergeStateStatus`, `reviewDecision`)
+plus one query per repository for each pull request's checks and review
+threads; every pull request card carries the same status row (conflicts,
+checks, unresolved threads, and the derived merge state with its
+conditions as a checklist); Ready to merge holds only what a person can
+merge now, ordered by what it unblocks then by wait, each with a merge
+command pinned to the verified head; a card moves in any direction and
+says where it came from when it moved back; a pull request that becomes
+ready is notified once per head; and the outcome log records when work
+became ready and why it left. Built in the design's order: the tick's
+placement, a design round, the page, then notifications and the history.
+
+Done when, on a host running Orca, a converged pull request with green
+checks that the forge lets merge is in Ready to merge with its pinned
+command within one interval and reaches a person's phone once, one whose
+base then conflicts is placed back with "was ready" and the cause at the
+next tick, a drive a person armed by hand shows in Driven, every pull
+request card shows its conflicts, checks, threads and merge state with the
+failing checks named, and the history view filtered to yesterday shows how
+many pull requests became ready, were merged, and were lost to waiting.
+
 ### 35. One jig command line
 
 The plugin's machine-level tools are separate commands with no shared
