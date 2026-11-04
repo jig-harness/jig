@@ -132,7 +132,7 @@ export const FIXED_PAGES: Readonly<Record<string, readonly Link[]>> = {
     {
       title: "With nobody at the keyboard",
       route: "/factory/unattended/",
-      note: "the dispatcher: what it starts every few minutes, what reaches a person, the outcome log, accounts and their usage limits, and what it never does",
+      note: "the dispatcher: what it starts every few minutes, what reaches a person, the outcome log and its dashboard, accounts and their usage limits, and what it never does",
     },
     {
       title: "Deciding what to build",

@@ -1,5 +1,6 @@
 ---
 import CrossSection from "../components/CrossSection.astro";
+import DashboardShot from "../components/DashboardShot.astro";
 import Ladder from "../components/Ladder.astro";
 import LevelGlyph from "../components/LevelGlyph.astro";
 import ModuleMap from "../components/ModuleMap.astro";
@@ -101,6 +102,7 @@ const LIMITS = [
           <a href="/features/">What you get: the skills, gates and loops, and what runs each →</a>
           <a href="#run">One real run: a pull request of Jig's own, from opening to follow-up ↓</a>
           <a href="#factory">Jig as a software factory: the line, and what it stands on ↓</a>
+          <a href="#dashboard">The morning after: one page says what needs you ↓</a>
           <a href="#limits">What Jig never does ↓</a>
           <a href="/adopt/existing/#profiles">Choose how far to go: {countWord(allProfiles.length)} profiles →</a>
         </div>
@@ -163,6 +165,27 @@ const LIMITS = [
       <a class="more" href="/factory/">Every station, who runs it, and what stays with a person →</a>
     </div>
     <CrossSection variant="mini" />
+  </section>
+
+  <section id="dashboard" class="dash wrap band" aria-labelledby="dash-h">
+    <div class="dash-text">
+      <span class="eyebrow">With nobody at the keyboard</span>
+      <h2 id="dash-h" class="display small-h">In the morning, one page says what needs you.</h2>
+      <p>
+        Through the night the dispatcher keeps the line moving. Every few minutes it starts what should be running and is
+        not. It never merges.
+      </p>
+      <p>
+        Its dashboard opens on what only you can settle: each question a review stopped to ask, with the recommended
+        answer beside it. Next come the sessions each account runs, and what starts next.
+      </p>
+      <p>
+        Below that, a log says how each session ended, by day, repository or account. The page opens on a phone as well
+        as a desk. It changes nothing: you answer on the pull request it links to.
+      </p>
+      <a class="more" href="/factory/unattended/#unattended-the-outcome-log-and-its-dashboard">The dispatcher: what it starts, and what it never does →</a>
+    </div>
+    <DashboardShot caption="The dashboard as the plugin serves it, over its own sample data, on a desk and on a phone." />
   </section>
 
   <section id="map" class="map-strip wrap band" aria-labelledby="map-h">
@@ -518,6 +541,32 @@ const LIMITS = [
   }
   .more {
     font-weight: 500;
+  }
+
+  /* The dispatch dashboard: what it answers on the left, its shot on the
+     right; one column below 900px. */
+  .dash {
+    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(24px, 4vw, 56px);
+  }
+  .dash-text {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+  .dash-text p {
+    margin: 0;
+    max-width: 52ch;
+    text-wrap: pretty;
+  }
+  @media (width > 900px) {
+    .dash {
+      grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+      align-items: center;
+    }
   }
 
   /* The map strip: what the map means on the left, the map on the right. */

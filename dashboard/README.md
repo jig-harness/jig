@@ -17,5 +17,9 @@ Why the page looks and reads as it does is the
 [design round](../design/prototypes/dispatch-dashboard/README.md), whose
 scenarios are `fixtures.ts` here.
 
+The site shows this page over the `loud` scenario; after a change to how the
+page looks, or to that scenario, take its shots again with
+`bun run dashboard-shots` in `website/`.
+
 It has a type-check project of its own, since it needs the browser's types and
 the rest of the repository must not see them; `bun run typecheck` runs both.
