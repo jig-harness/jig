@@ -5,6 +5,7 @@ import {
   isStringLiteral,
   isTaggedTemplateExpression,
   isTemplateLiteral,
+  type Expression,
   type TemplateLiteral,
   traverseFast,
 } from "@babel/types";
@@ -13,6 +14,21 @@ import {
 export interface SqlSource {
   text: string;
   lines: number[];
+  /** An unknown tag may transform the literal; its declarations cannot certify names. */
+  uncertain?: boolean;
+}
+
+/** Static property spelling, without evaluating a computed expression. */
+function rawTag(tag: Expression): boolean {
+  if (!isMemberExpression(tag) || !isIdentifier(tag.object, { name: "String" }))
+    return false;
+  if (!tag.computed) return isIdentifier(tag.property, { name: "raw" });
+  if (isStringLiteral(tag.property)) return tag.property.value === "raw";
+  return (
+    isTemplateLiteral(tag.property) &&
+    tag.property.expressions.length === 0 &&
+    tag.property.quasis[0]?.value.cooked === "raw"
+  );
 }
 
 const ESCAPES: Record<string, string> = {
@@ -87,20 +103,20 @@ export function sourceLiterals(source: string): SqlSource[] {
     allowReturnOutsideFunction: true,
   });
   const rawTemplates = new Set<TemplateLiteral>();
+  const unknownTemplates = new Set<TemplateLiteral>();
   const found: SqlSource[] = [];
   traverseFast(ast, (node) => {
     if (isTaggedTemplateExpression(node)) {
-      const tag = node.tag;
-      if (
-        isMemberExpression(tag) &&
-        !tag.computed &&
-        isIdentifier(tag.object, { name: "String" }) &&
-        isIdentifier(tag.property, { name: "raw" })
-      )
-        rawTemplates.add(node.quasi);
+      if (rawTag(node.tag)) rawTemplates.add(node.quasi);
+      else unknownTemplates.add(node.quasi);
     }
-    if (isTemplateLiteral(node))
-      found.push(template(source, node, rawTemplates.has(node)));
+    if (isTemplateLiteral(node)) {
+      if (unknownTemplates.has(node)) {
+        // Inspect both representations: neither is proven to be the tag's output.
+        for (const verbatim of [true, false])
+          found.push({ ...template(source, node, verbatim), uncertain: true });
+      } else found.push(template(source, node, rawTemplates.has(node)));
+    }
     if (isStringLiteral(node)) {
       const sql: SqlSource = { text: "", lines: [] };
       append(

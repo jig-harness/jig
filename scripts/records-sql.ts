@@ -94,7 +94,10 @@ function tablesIn(sql: SqlSource): { name: string | null; line: number }[] {
     if (!is(token, "CREATE")) continue;
     const header = new Tokens(sql.text, tokens.at);
     if (!tableHeader(header)) continue;
-    found.push({ name: literalName(header), line: sql.lines[start] ?? 1 });
+    found.push({
+      name: sql.uncertain ? null : literalName(header),
+      line: sql.lines[start] ?? 1,
+    });
   }
   return found;
 }

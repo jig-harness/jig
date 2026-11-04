@@ -271,6 +271,39 @@ describe("what the code names", () => {
     ).toEqual(["new_records"]);
   });
 
+  test("computed raw tags preserve escapes and unknown SQL tags cannot certify names", () => {
+    const sql = String.raw`CREATE /* \u002a/ TABLE launches ( */ TABLE new_records (id TEXT);`;
+    for (const tag of [
+      'String["raw"]',
+      "String['raw']",
+      "String[`raw`]",
+      'String["r\\u0061w"]',
+    ]) {
+      const source = `db.run(${tag}\`${sql}\`);`;
+      expect(tableNames(source)).toEqual(["new_records"]);
+      const dir = scratch({ "plugin/db.ts": source });
+      const result = gate(root, dir);
+      expectSpawnExit(result, 1);
+      expect(result.stderr.toString()).toContain('the table "new_records"');
+    }
+    for (const tag of ["raw", "String[key]", "custom.sql"]) {
+      for (const text of [
+        sql,
+        "CREATE TABLE launches (id TEXT)",
+        String.raw`CREATE\u0020TABLE launches (id TEXT)`,
+      ]) {
+        const named = namedIn("plugin/db.ts", `${tag}\`${text}\`;`);
+        expect(named.some((n) => n.unclassified)).toBe(true);
+        expect(
+          findings(root, named).some((f) =>
+            f.problem.includes("cannot classify"),
+          ),
+        ).toBe(true);
+      }
+    }
+    expect(tableNames("message`ordinary CLI help`;")).toEqual([]);
+  });
+
   test("SQL declaration starts exclude comments and quoted values", () => {
     for (const sql of [
       "SELECT 1; /* CREATE TABLE old_records (id TEXT); */",
