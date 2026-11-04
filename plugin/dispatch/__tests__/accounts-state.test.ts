@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   admitRearm,
   admitTakeover,
+  notAdmitted,
   passEnvironment,
   refreshWalls,
   slotsOf,
@@ -26,7 +27,8 @@ const account = (
 });
 
 /** A drive's pass under the drive's default deadline. */
-const PASS = { kind: "pass", deadlineSec: 5400 } as const;
+const ON = { on: true } as const;
+const PASS = { kind: "pass", deadlineSec: 5400, codex: ON } as const;
 
 const process = {
   host: "h",
@@ -67,6 +69,58 @@ function read(accountName: string, state: ReadRecord["state"]): ReadRecord {
     result: null,
   };
 }
+
+describe("a Codex account on a host's opt-in", () => {
+  const OFF = { on: false, why: "the host's reason" } as const;
+  const codex = { ...account("c", "/config/codex"), vendor: "codex" };
+  const table = () =>
+    slotTable([codex], [], Date.now(), "/nonexistent-state-root");
+
+  it("is refused for a pass and for an interactive session, saying why, and admitted once the host opted in", () => {
+    for (const launch of [
+      { kind: "pass", deadlineSec: 5400, codex: OFF },
+      { kind: "interactive", codex: OFF },
+    ] as const)
+      expect(admitRearm(table(), null, launch)).toEqual({
+        waits: expect.stringContaining("the host's reason: not admitted"),
+      });
+    for (const launch of [PASS, { kind: "interactive", codex: ON }] as const)
+      expect(admitRearm(table(), null, launch)).toMatchObject({
+        admitted: { account: { name: "c" } },
+      });
+  });
+
+  it("refuses a takeover, and names the account", () => {
+    const replaced = read("c", { kind: "alive", process });
+    replaced.record.vendor = "codex";
+    replaced.record.configDir = "/config/codex";
+    expect(admitTakeover(table(), replaced, 5400, OFF)).toEqual({
+      waits: expect.stringContaining("c: the host's reason"),
+    });
+    expect(admitTakeover(table(), replaced, 5400, ON)).toMatchObject({
+      admitted: { account: { name: "c" } },
+    });
+  });
+
+  it("leaves a Claude Code account alone, and still applies the deadline's rule", () => {
+    expect(notAdmitted([account("a")], 5400, OFF)).toEqual([]);
+    expect(notAdmitted([codex], 5400, ON)).toEqual([]);
+    expect(notAdmitted([codex], 0, ON)).toEqual([
+      {
+        account: "c",
+        vendor: "codex",
+        reason: expect.stringContaining("the pass deadline"),
+      },
+    ]);
+    expect(notAdmitted([codex], 5400, OFF)).toEqual([
+      {
+        account: "c",
+        vendor: "codex",
+        reason: "the host's reason: not admitted",
+      },
+    ]);
+  });
+});
 
 describe("account admission state", () => {
   it("closes an account whose launch ended on a wall that was never recorded", () => {
@@ -137,7 +191,7 @@ describe("account admission state", () => {
       "/nonexistent-state-root",
     );
     expect(slotsOf(table, replaced.record)?.account.name).toBe("b");
-    expect(admitTakeover(table, replaced, PASS.deadlineSec)).toEqual({
+    expect(admitTakeover(table, replaced, PASS.deadlineSec, ON)).toEqual({
       admitted: table[0] as (typeof table)[number],
     });
   });

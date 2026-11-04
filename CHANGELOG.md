@@ -384,6 +384,57 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.132.0] - 2026-11-04
+
+A drive's permission bypass is now a host's choice: a host opts in from its own user file once it has checked what its account can reach, and a repository's file can neither ask for it nor cancel it.
+
+### Fixed
+
+- The plugin's mechanisms page said every kind `jig gc` inventories is
+  report-only. It now says what holds: scratch folders and tool state are
+  reported, a worktree Orca manages is eligible for collection through Orca when
+  the machine entry names Orca's command, and is removed only in a collecting
+  run, while every other worktree is reported
+  ([MECHANISMS.md](plugin/MECHANISMS.md#resource-collection-jig-gc)).
+- A pass-argument list that ends in an option that needs a value, such as `[--permission-mode]` or `[--settings]`, stops the drive naming `drive.pass_args`, from the field and from `--pass-args`. `--permission-mode` alone was refused before; the others took the drive's `-p` as their value. `[--permission-mode, default]` still works.
+- The audit reports a repository's file that sets `clones`, `drive.pass_args` or `drive.codex_bypass` as an error rather than judging its value or calling it a field the skills ignore, and warns when this machine's user file holds a value a drive would stop on (`fact:user-layer-invalid`).
+- `drive-pr` no longer spends its CI-repair passes on a cancelled check. A check
+  concluded `cancelled` reads as `cancelled: …`: an absence of evidence. Other
+  failed jobs in a cancelled run remain failures. The drive waits for a run to replace it, on
+  `DRIVE_PR_FINAL_CI_WITNESS_POLLS`, and once a run of the same workflow on the
+  head has completed with a result the cancelled run's checks no longer count,
+  except that an unsuccessful check stays when the replacing runs report its
+  name only as skipped. With nothing to replace it the drive exits
+  `4`. A cancelled check never reads as passing, so a required check a held run
+  cancelled still blocks.
+- A workflow run being re-run keeps its unsuccessful jobs pending until it
+  completes; another run's success cannot clear that obligation from run-level
+  timestamps that may belong to a partial rerun.
+- A `drive-pr` CI-repair pass is told which runs failed, in
+  `DRIVE_PR_ROUND_FAILED_RUNS`, and re-runs those rather than a cancelled sibling
+  on the same head. A run created under the CI hold's label is left out, since a
+  re-run replays that event.
+
+### Security
+
+- **Breaking.** `drive.pass_args` is honoured only from the host's side: its user file, one run's environment variable, or `--pass-args` for one drive. A repository's own file that sets the field, an empty list included, or a file `JIG_OVERLAY` names, is refused with an error naming the field, and so is a `drive` section there that is not a mapping (`drive: null`, or `drive:` with nothing under it), since it would replace the host's whole section. A drive reads that file from the pull request's own checkout, so a pull request could give its own passes bypass. The whole field is refused because other options widen a pass as well (`--settings`, `--allowedTools`, `--mcp-config`). What a host adds to `~/.jig/jig.yaml`: `drive: { pass_args: [--permission-mode, bypassPermissions] }`, or the words it used. [A host's opt-in](plugin/CONFIGURATION.md#a-hosts-opt-in-to-bypass) says what that risks: a pass can then do anything the host's account can.
+- **Breaking.** A Codex pass no longer carries `--dangerously-bypass-approvals-and-sandbox` on every host. The new `drive.codex_bypass: true`, in the user file or one run's environment and refused in a repository's file the same way, turns it on. Without it a Codex pass command carries no bypass and Codex's own configuration decides; a hand-armed Codex drive still starts and its log says `inherited`. The dispatcher admits no Codex account on such a host, for a drive or for a pickup or follow-up session, and each run says why under `accepted, not admitted`. A launch record keeps what the tick admitted it under, and the launched wrapper does that without reading the setting again. What a host adds to `~/.jig/jig.yaml`: `drive: { codex_bypass: true }`.
+- **Order, before taking this release.** First add those lines to `~/.jig/jig.yaml` on each host that relied on a repository's file or on the Codex bypass; earlier releases already read `drive.pass_args` from there and ignore `drive.codex_bypass`, so this changes nothing until the release arrives. Then remove `drive.pass_args`, and any empty `drive:`, from each repository's `.config/jig.yaml`, and merge that into every open branch: every Jig script running in a checkout whose file still sets the field stops with the error, a drive on that branch included.
+
+## [0.131.0] - 2026-11-04
+
+The dispatcher no longer leaves a pull request that stopped on a conflict
+waiting for a person it may not need.
+
+### Changed
+
+- `jig dispatch` re-drives a drive that stopped with exit `9` (still conflicting with its base once its conflict-repair budget is spent), on any admitted account, once for each pair of the pull request's head and its base branch's head, whether the forge still reports it conflicting or now reports it mergeable. It tells a person only when that re-drive leaves the ledger stopped `9` at the same pair; a head or a base that moves is a new attempt. The tick reads the base branch's head for such a ledger only, and a head or a mergeability that does not read leaves the pull request unplaced for that tick. A headless Claude pass can commit only where its approval source allows it, such as a permission mode `drive.pass_args` names: see that field in [CONFIGURATION.md](plugin/CONFIGURATION.md#drive).
+- An outcome row for exit `9` now reads `exit 9 (conflicting with its base)`, still under the class `gates failed`.
+
+### Fixed
+
+- A `conflict-resolve` pass that stopped short of concluding its merge (its commit refused, its deadline reached) left the merge open in the tree, where the stop's own `Fix:` command, `base-sync.ts`, `finish-round.ts`, convergence and an attach over a moved head all refused it. `drive.ts` now aborts a merge the pass started and did not conclude before it re-gates or stops, and the driver log lists what the merge held. A merge the tree already held when the pass started is left to the pass, which `drive-pr`'s `SKILL.md` § 0 now tells to finish it or start it over, and the stop names it if it does neither.
+
 ## [0.130.0] - 2026-11-04
 
 `jig dispatch dashboard` is now the page that answers what needs you, what is
@@ -4948,7 +4999,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.130.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.132.0...HEAD
+[0.132.0]: https://github.com/jig-harness/jig/compare/v0.131.0...v0.132.0
+[0.131.0]: https://github.com/jig-harness/jig/compare/v0.130.0...v0.131.0
 [0.130.0]: https://github.com/jig-harness/jig/compare/v0.129.2...v0.130.0
 [0.129.2]: https://github.com/jig-harness/jig/compare/v0.129.1...v0.129.2
 [0.129.1]: https://github.com/jig-harness/jig/compare/v0.129.0...v0.129.1

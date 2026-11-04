@@ -101,6 +101,17 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    request. A contributor's pull request owes nothing here; the maintainer
    who merges it runs this step.
 
+**A host that drives Jig opts in.** Jig's pull requests edit its own skills
+under `.claude/skills/**`, and a pass started without a terminal is denied every
+write there unless its permission prompts are off. So a host that drives Jig
+sets `drive: { pass_args: [--permission-mode, bypassPermissions] }` in its own
+user file once it has checked what its account can reach, and `codex_bypass: true`
+beside it for a Codex account
+([a host's opt-in](plugin/CONFIGURATION.md#a-hosts-opt-in-to-bypass)). This
+repository's own file sets neither, since every Jig script refuses a
+repository's file that does. To drive one pull request on a host that has not
+opted in, arm it with `--pass-args "--permission-mode bypassPermissions"`.
+
 ## Jig's own skills
 
 Procedures for maintaining this repository, as opposed to the ones Jig ships

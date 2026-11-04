@@ -167,6 +167,43 @@ describe("retention", () => {
     ).toEqual(["20260101T000000Z-aaaaaaaa"]);
   });
 
+  it("keeps the latest record per change a replay moved on from, not only per current change", () => {
+    const dir = root();
+    const redrive = (
+      id: string,
+      change: string,
+      at: string,
+      earlier?: string[],
+    ) =>
+      ended(
+        record(id, {
+          createdAt: at,
+          redrive: {
+            cause: "conflicting",
+            change,
+            ...(earlier ? { earlier } : {}),
+          },
+        }),
+        0,
+        at,
+      );
+    const r1 = redrive(
+      "20260101T000000Z-aaaaaaaa",
+      "b",
+      "2026-01-01T00:00:00.000Z",
+      ["a"],
+    );
+    const r2 = redrive(
+      "20260102T000000Z-bbbbbbbb",
+      "b",
+      "2026-01-02T00:00:00.000Z",
+    );
+    // r1 is the only evidence that "a" was attempted, so it stays.
+    expect(pruneLaunches([r1, r2], Date.parse("2027-01-01"), 7, dir)).toEqual(
+      [],
+    );
+  });
+
   it("keeps the latest arm of a pull request with no ledger, per head, past the retention", () => {
     const dir = root();
     const arm = (id: string, head: string, at: string) =>

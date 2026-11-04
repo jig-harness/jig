@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -152,6 +152,65 @@ describe("the pass arguments", () => {
     });
     expectSpawnExit({ ...r, stdout: null }, 1);
     expect(r.stderr).toContain("drive.pass_args must be a list of words");
+  });
+
+  it.each([
+    ["the field", { JIG__DRIVE__PASS_ARGS: "[--permission-mode]" }, [], 1],
+    ["--pass-args", {}, ["--pass-args", "--permission-mode"], 2],
+    ["another value-taking option", {}, ["--pass-args", "--settings"], 2],
+  ])(
+    "stops a list that ends in an option without its value, from %s, naming drive.pass_args",
+    async (_, env, flags, exit) => {
+      const r = await dryRun(["claude", "-p", PROMPT], flags, env);
+      expectSpawnExit({ ...r, stdout: null }, exit);
+      expect(r.stderr).toContain("drive.pass_args");
+    },
+  );
+
+  it("keeps a list that gives the option its value", async () => {
+    const r = await dryRun(["claude", "-p", PROMPT], [], {
+      JIG__DRIVE__PASS_ARGS: "[--permission-mode, default]",
+    });
+    expect(wouldRun(r.stderr)).toBe(
+      `claude --model sonnet --permission-mode default -p ${PROMPT}`,
+    );
+  });
+
+  describe("from the host's side only", () => {
+    /** The dry run with `host` as the user file and `repository` as the repository's own file. */
+    async function layered(host: string | null, repository: string | null) {
+      const dir = mkdtempSync(join(tmpdir(), "drive-pass-args-layers-"));
+      const overlay = join(dir, "repository.yaml");
+      writeFileSync(
+        overlay,
+        `review:\n  reviewer_app: example-review\n${repository === null ? "" : `drive:\n  pass_args: ${repository}\n`}`,
+      );
+      if (host !== null)
+        writeFileSync(join(dir, "jig.yaml"), `drive:\n  pass_args: ${host}\n`);
+      return dryRun(["claude", "-p", PROMPT], [], {
+        JIG_HOME: dir,
+        JIG_OVERLAY: overlay,
+      });
+    }
+    const WORDS = "[--permission-mode, bypassPermissions]";
+
+    it("a host that opts in runs the pass with its words", async () => {
+      const r = await layered(WORDS, null);
+      expect(wouldRun(r.stderr)).toBe(
+        `claude --model sonnet --permission-mode bypassPermissions -p ${PROMPT}`,
+      );
+    });
+
+    it.each([
+      ["a host that never opted in", null, WORDS],
+      ["a repository's empty list", WORDS, "[]"],
+      ["a repository's own mode", WORDS, "[--permission-mode, acceptEdits]"],
+    ])("%s stops the drive naming the field", async (_, host, repository) => {
+      const r = await layered(host, repository);
+      expectSpawnExit({ ...r, stdout: null }, 1);
+      expect(r.stderr).toContain("drive.pass_args");
+      expect(r.stderr).not.toContain("would run");
+    });
   });
 
   it("prints a re-arm command that carries the words, and running it keeps them after the setting is gone", async () => {
