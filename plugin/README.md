@@ -308,9 +308,12 @@ route. Every drive runs under the pass deadline the run read
 (`DRIVE_PR_PASS_TIMEOUT` in its environment, else the drive's 90 minutes),
 written on its launch record and handed to `drive.ts` as `--pass-timeout`.
 A Codex pass has no turn cap of its own, so a `codex` account is not
-admitted for a drive while that deadline is `0`; an account of any other
+admitted for a drive while that deadline is `0`. A `codex` account is admitted
+for any launch only on a host that set
+[`drive.codex_bypass`](CONFIGURATION.md#a-hosts-opt-in-to-bypass): a pass needs
+that bypass to push, and nobody is there to approve. An account of any other
 vendor, which the drive documents no pass command for, is accepted by the
-machine file and never admitted. Each run reports both at its top
+machine file and never admitted. Each run reports these at its top
 (`accepted, not admitted`, with the reason) and in its receipt
 (`accountsNotAdmitted`). The `review-arbiter` agent and the turn-budget
 hook stay Claude Code's ([Codex notes](#codex-notes)).
@@ -834,7 +837,9 @@ committed: no copy of the skill, no install script, no generated files.
 
    Values that are yours rather than the repository's go in `~/.jig/jig.yaml`,
    which every repository on the machine reads below its own file; an
-   environment variable overrides both for one run. The
+   environment variable overrides both for one run. How far this host trusts
+   a drive's passes is only yours to say: a repository's file refuses
+   [those fields](CONFIGURATION.md#a-hosts-opt-in-to-bypass). The
    [configuration layers](CONFIGURATION.md#configuration-layers) section
    explains the order, and
    `bun <plugin>/skills/resolve-review-comments/scripts/jig-config.ts` shows
@@ -927,7 +932,6 @@ drive:
   max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
   pass_deadline_retries: 2    # passes killed at their deadline one drive restarts from, across re-arms; default 2
   pass_model: sonnet          # model each pass runs on: a model id, a Claude Code alias or a routing tier; default sonnet
-  pass_args: []               # extra words for a claude pass before -p; [--permission-mode, bypassPermissions] skips its permission prompts; default none
 ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
   hold_label: ci:hold         # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)
@@ -1092,9 +1096,11 @@ them together.
   file.
 - **The drive has a pass command for each.** Claude Code's
   (`claude -p "/jig:drive-pr <PR>"`) is the default; Codex's
-  (`codex exec --dangerously-bypass-approvals-and-sandbox "Use the
-  jig:drive-pr skill: /jig:drive-pr <PR>"`) is the one a drive armed from a
-  Codex session runs, and the one the dispatcher runs on a Codex account
+  (`codex exec "Use the jig:drive-pr skill: /jig:drive-pr <PR>"`, with
+  `--dangerously-bypass-approvals-and-sandbox` on a host that set
+  [`drive.codex_bypass`](CONFIGURATION.md#a-hosts-opt-in-to-bypass)) is the one
+  a drive armed from a Codex session runs, and the one the dispatcher runs on a
+  Codex account
   ([start command](skills/drive-pr/README.md#how-to-start-it)). A Codex
   pass runs on the execution tier of `routing.models.codex`, else Codex's
   own configured model; `--pass-model` overrides it with a model or a tier

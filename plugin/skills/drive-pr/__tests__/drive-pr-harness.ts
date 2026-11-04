@@ -265,6 +265,9 @@ export interface Fixture {
     app: string;
     /** ISO timestamp, or null for a queued attempt that has not started. */
     started?: string | null;
+    completed_at?: string;
+    /** Links the check to its workflow run in `workflow-runs.json`. */
+    check_suite?: { id: number };
   }>;
   statuses?: Array<{ context: string; state: string; description: string }>;
   /** Statuses reachable only on a SECOND API page — i.e. only with --paginate. */
@@ -541,16 +544,10 @@ export let tmpRoot: string;
 export let binDir: string;
 /**
  * A per-suite scratch `$HOME`, so a probe that resolves `resolveStateDir`'s
- * default (no `$DRIVE_PR_STATE_DIR` override — deliberately, to test the
- * default itself) writes under `<suiteHome>/.local/state/jig/`, never the real
- * `~/.local/state/jig` on whatever machine runs this suite.
- * `gitCleanEnv` sets this for every subprocess the suite spawns; a test
- * that wants the real value (none currently do) overrides it explicitly in
- * its own `env`, which still wins over `gitCleanEnv`'s spread.
- *
- * A SUBPROCESS env, never an in-process `process.env.HOME =`: under Bun,
- * `os.homedir` ignores a runtime `$HOME` change, so an in-process fake is
- * silently ineffective.
+ * default writes under `<suiteHome>/.local/state/jig/`, never the real
+ * `~/.local/state/jig`. `gitCleanEnv` sets this for every subprocess the suite
+ * spawns. A SUBPROCESS env, never an in-process `process.env.HOME =`: under
+ * Bun, `os.homedir` ignores a runtime `$HOME` change.
  */
 export let suiteHome: string;
 /**
@@ -2049,6 +2046,7 @@ for a in "$@"; do
     graphql)             emit "$F/threads.json"; exit 0 ;;
     *issues/*/timeline*) emit "$F/timeline.json"; exit 0 ;;
     *check-runs*)        emit "$F/check-runs.json"; exit 0 ;;
+    *actions/runs*)      emit "$F/workflow-runs.json"; exit 0 ;;
     # Query string included: drive-status.ts paginates this endpoint with an
     # explicit \`?per_page=\`, and a stub matching only the bare path would make
     # every commit-status test read as "API unreadable" instead of exercising it.
@@ -2354,6 +2352,7 @@ export function writeFixture(
         started_at: c.started,
       })),
     });
+  w("workflow-runs.json", { workflow_runs: [] });
   w("timeline.json", []);
   w("metrics-meta.json", {
     data: {

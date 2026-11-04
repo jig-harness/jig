@@ -1008,8 +1008,8 @@ routing below remain **exact**.
       It reads `do_item.arm_drive` (default `auto`: a terminal tab of this
       workspace where the session can open one, in Orca on a macOS or Linux
       host; the session's background execution elsewhere, Windows hosts
-      included), `drive.pass_model` (default `sonnet`) and
-      `drive.pass_args` (default none), and prints one
+      included), `drive.pass_model` (default `sonnet`) and, from the host's
+      user file or environment, `drive.pass_args` (default none), and prints one
       JSON object: `command`, the drive's start command on one line
       (`bun --cwd <tree> <drive.ts> <PR> --bots-only -- claude --model
       <model> -p "/jig:drive-pr --bots-only <PR>"`, the `drive.pass_args`
@@ -1028,7 +1028,8 @@ routing below remain **exact**.
       spawn nothing. The pass command is the documented one of the agent
       tool this session runs in: Claude Code's (`claude --model <model> -p
       "..."`) or Codex's (`codex exec … "Use the jig:drive-pr skill: …"`,
-      on `routing.models.codex`, overridden by `--pass-model`). A Codex session
+      on `routing.models.codex`, overridden by `--pass-model`, with its bypass
+      only on a host that set `drive.codex_bypass`). A Codex session
       that cannot open a tab gets `spawn`. In any other
       agent tool the script answers `print`. Do not guess one for another
       agent tool.

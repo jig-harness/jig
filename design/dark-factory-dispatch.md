@@ -254,7 +254,7 @@ under this key: at most one launch more. The serialized areas' holds and a
 person's `hold` label keep a re-drive off as they keep any re-arm, and a person's
 stop is never re-armed.
 
-A headless Claude pass can commit only where its approval source allows it: a permission mode `drive.pass_args` names, or an allow rule of Claude Code's own settings (`--allowedTools`, `permissions.allow`). A host opts in through its user layer, and a repository's own file takes precedence over it. Where nothing allows the commit, a conflict re-drive stops `9` again at the same change and the dispatcher notifies a person.
+A headless Claude pass can commit only where its approval source allows it: a permission mode `drive.pass_args` names, or an allow rule of Claude Code's own settings (`--allowedTools`, `permissions.allow`). Only a host's user file or one run's environment sets it; a repository's own file that sets it stops the drive. Where nothing allows the commit, a conflict re-drive stops `9` again at the same change and the dispatcher notifies a person.
 
 A conflict-resolve pass does not leave its merge behind: a merge it started and
 did not conclude is aborted before the drive re-gates or stops
@@ -738,7 +738,15 @@ do finish. The deadline can be switched off (`0`), and a Codex pass then
 has no bound at all, so the dispatcher admits a Codex account for an
 unattended pass only when the deadline in force for that launch is
 positive, and reports the account as accepted and not admitted
-otherwise. A Codex wall is recorded as a
+otherwise. A pass's bypass is the host's to give, once it has verified what
+its account reaches, so a Codex account is admitted for any launch only on a
+host that set `drive.codex_bypass` in its user file or the tick's environment;
+without it the account is reported the same way. A repository cannot give it:
+a pull request can edit the repository's file, and the tick reads the setting
+without one. The tick judges this once and the launch record keeps what it
+judged, so the launched wrapper, which can read another user layer from the
+tick's, does what was admitted rather than reading the setting again. A Codex
+wall is recorded as a
 Claude one is, by the drive's quota adapter for the vendor, keyed by the
 account; binding the pass through the account's own configuration
 directory is what lets the adapter attribute the wall to that account,
@@ -1205,7 +1213,8 @@ One pull request each, in this order; each is usable on its own.
    launch, keyed on its head and its base branch's head.
 8. **Admit Codex accounts.** The drive skill documents the Codex pass
    command beside Claude Code's, with the pass model read per vendor from
-   `routing.models`; the dispatcher admits `vendor: codex` accounts for
+   `routing.models`; the dispatcher admits `vendor: codex` accounts, on a
+   host that set `drive.codex_bypass`, for
    headless passes bound through `CODEX_HOME`, launches interactive
    sessions with Orca's Codex agent, and the live checks made for Claude
    (the launch binds the agent to the account; the runtime reports the
@@ -1213,7 +1222,8 @@ One pull request each, in this order; each is usable on its own.
    on a Codex account runs the Codex pass command with `CODEX_HOME` set and
    the Claude variables absent; an account of a vendor with no documented
    pass command is reported, never launched; a Codex account is reported,
-   never launched, while the inherited pass deadline is `0`; a Codex pass
+   never launched, while the inherited pass deadline is `0` or on a host
+   that has not set `drive.codex_bypass`; a Codex pass
    that outruns a positive deadline is terminated. Waits on step 3 and on
    step 4 for the interactive launch. Usable alone: a drive stopped on a Claude
    wall restarts on a Codex account.

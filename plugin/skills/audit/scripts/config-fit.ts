@@ -60,12 +60,10 @@ import {
   skillValidation,
 } from "./lib/section-validation.ts";
 import {
-  ENV_PREFIX,
   isMapping as isRecord,
   readConfigFile,
-  userConfigPath,
-  userLayerEnabled,
 } from "../../../shared/config-layers.ts";
+import { machineLayers } from "./lib/machine-layers.ts";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize, relative } from "node:path";
 import {
@@ -602,62 +600,6 @@ function staleSession(): Finding[] {
       message: `this session runs plugin ${pluginVersion()}, but ${newer} is installed: a session keeps the version it started with, so start a new session to audit with ${newer}`,
     },
   ];
-}
-
-/** The dotted paths of every value set in `config`. */
-function leafFields(config: Config, prefix = ""): string[] {
-  return Object.entries(config).flatMap(([key, value]) =>
-    isRecord(value)
-      ? leafFields(value, `${prefix}${key}.`)
-      : [`${prefix}${key}`],
-  );
-}
-
-/**
- * What the configuration layers of the machine running the audit add: the
- * audit judges the repository's file alone, but the skills on this machine,
- * and `trackerCheck`, also read the user file and the environment.
- */
-function machineLayers(config: Config, schema: Schema): Finding[] {
-  const findings: Finding[] = [];
-  const path = userConfigPath();
-  let user: Config | null = null;
-  try {
-    user = userLayerEnabled() ? readConfigFile(path) : null;
-  } catch (error) {
-    findings.push({
-      id: "fact:user-layer-unreadable",
-      severity: "warning",
-      message: `this machine's user file cannot be read, so every skill here refuses to run: ${error instanceof Error ? error.message : String(error)}`,
-    });
-  }
-  const refused = schema.fields
-    .filter((f) => f.repository_only && user && at(user, f.path) !== undefined)
-    .map((f) => f.path);
-  if (refused.length > 0)
-    findings.push({
-      id: "fact:user-layer-refused",
-      severity: "warning",
-      message: `this machine's ${path} sets ${refused.join(", ")}, which describe one repository: every skill here refuses the file until they move to the repository's file`,
-    });
-  const repository = new Set(leafFields(config));
-  const filled = user ? leafFields(user).filter((f) => !repository.has(f)) : [];
-  if (filled.length > 0)
-    findings.push({
-      id: "fact:user-layer",
-      severity: "info",
-      message: `on this machine ${path} sets ${filled.join(", ")}, which the repository's file leaves unset: the skills here use those values, others get the defaults. The audit judged the repository's file alone, except for the tracker check, which reads the configuration as the skills here do`,
-    });
-  const variables = Object.keys(process.env).filter((k) =>
-    k.startsWith(ENV_PREFIX),
-  );
-  if (variables.length > 0)
-    findings.push({
-      id: "fact:environment-layer",
-      severity: "info",
-      message: `${variables.join(", ")} set values for this run only; the audit ignored them, except for the tracker check, which reads the configuration as the skills here do`,
-    });
-  return findings;
 }
 
 /** What classic branch protection says about a branch. */

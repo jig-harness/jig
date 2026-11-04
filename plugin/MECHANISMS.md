@@ -230,10 +230,18 @@ development and shipped as a version.
 - **Deterministic.** `gc/` inventories the leftovers a repository declares
   (scratch folders, tool state, worktrees) and reports, with the evidence,
   which of them it could collect ([resource collection](gc/README.md)).
-  Today those kinds are report-only: collection stays off for each until
-  every process that creates them takes part in its admission protocol. The
-  one kind it removes is its own receipts past their retention. State: one
-  receipt per run under `~/.local/state/jig/gc/<date>/`. Refuses: an
+  Scratch folders and tool state are report-only: collection stays off for
+  each until every process that creates them takes part in its admission
+  protocol. A worktree Orca manages is eligible for collection when the machine entry
+  names Orca's command, and an eligible one is removed only in a collecting
+  run (`--collect`, or `--scheduled` on the configured weekday or under disk pressure) once its proof of death
+  holds; an ordinary run reports it as `would-collect` and removes nothing.
+  Orca's registry stands in for the admission the opener does not hold, the
+  base branch's copy of the remove hook runs, the unsent reflection findings
+  are parked, and `orca worktree rm` removes it
+  ([worktrees Orca manages](gc/README.md#worktrees-orca-manages)); every
+  other worktree is reported. It also removes its own receipts past their
+  retention. State: one receipt per run under `~/.local/state/jig/gc/<date>/`. Refuses: an
   unreadable process identity or forge answer keeps the resource, and an
   abandoned admission token blocks collection rather than being taken over.
 - **Reasoned.** None. Sessions only take part as owners: a scratch creator
@@ -674,6 +682,13 @@ stops a model. A team that runs passes unattended should know which:
   Under `bypassPermissions` only the runtime's own deny rules and hooks
   still stop a command
   ([permission mode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)).
+  A pass runs in that mode only on the host's say: the configuration reader
+  refuses the setting in a repository's file
+  (`shared/config-layers.ts`), and the dispatcher admits a Codex account only
+  on a host that opted in to its bypass (`dispatch/lib/accounts.ts`). A
+  checkout's own `.claude/settings.json` is outside that check, and a pull
+  request can edit it
+  ([a host's opt-in](CONFIGURATION.md#a-hosts-opt-in-to-bypass)).
   In Jig, `main`'s ruleset requires the gates and resolved threads but no
   approving review.
 - **A loosened ratchet.** The ratchet accepts a `Ratchet-Loosen` trailer in

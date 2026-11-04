@@ -5,12 +5,19 @@
  * through `CODEX_HOME` with the Claude Code variables gone; an account of a
  * vendor with no documented pass command is reported and never launched; a
  * Codex account is reported and never launched for a drive's pass while the
- * pass deadline is `0`, since nothing else would bound the pass; and a
+ * pass deadline is `0`, since nothing else would bound the pass, or for any
+ * launch on a host that has not opted in with `drive.codex_bypass`; and a
  * pickup on a Codex account starts Codex on the route's Codex model and
  * effort.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -65,10 +72,21 @@ afterEach(() => {
   current = null;
 });
 
-/** A quota-parked PR #7 whose workspace exists. */
+/** The host's opt-in: `drive.codex_bypass: true` in its user file. */
+function hostOptsIn(w: World): void {
+  delete w.env.JIG_USER_LAYER;
+  mkdirSync(join(w.home, ".jig"), { recursive: true });
+  writeFileSync(
+    join(w.home, ".jig", "jig.yaml"),
+    "drive:\n  codex_bypass: true\n",
+  );
+}
+
+/** A quota-parked PR #7 whose workspace exists, on a host that opted in. */
 function fixture(): World {
   const w = world();
   current = w;
+  hostOptsIn(w);
   w.setConfig(CONFIG);
   w.setPrs("open", [openPr(7, HEAD)]);
   w.setComments(7, [ledgerComment(701, stoppedLedger(7, 16))]);
@@ -137,6 +155,7 @@ describe("jig dispatch --apply on Codex accounts", () => {
     expect(readRecord(id, dispatchState(w))).toMatchObject({
       vendor: "codex",
       passTimeoutSec: 5400,
+      codexBypass: true,
       sessionId: null,
     });
 
@@ -188,6 +207,115 @@ describe("jig dispatch --apply on Codex accounts", () => {
       "account g (vendor another-agent) accepted, not admitted",
     );
     expect(terminalCreates(w)).toEqual([]);
+    expect(recordIds(w)).toEqual([]);
+  });
+
+  it.each([
+    ["has no user file", undefined],
+    [
+      "sets it to false",
+      (w: World) =>
+        writeFileSync(
+          join(w.home, ".jig", "jig.yaml"),
+          "drive:\n  codex_bypass: false\n",
+        ),
+    ],
+    [
+      "leaves the user layer out",
+      (w: World) => {
+        hostOptsIn(w);
+        w.env.JIG_USER_LAYER = "off";
+      },
+    ],
+  ])(
+    "reports a Codex account and never launches on it on a host that %s",
+    async (_, host) => {
+      const w = fixture();
+      rmSync(join(w.home, ".jig", "jig.yaml"), { force: true });
+      machineFile(w, [codexAccount(w, "c", "codex-account-c")]);
+      host?.(w);
+
+      const receipt = await tick(w);
+      expect(receipt.accountsNotAdmitted).toEqual([
+        {
+          account: "c",
+          vendor: "codex",
+          reason: expect.stringContaining("drive.codex_bypass"),
+        },
+      ]);
+      const [waiting] = launches(receipt);
+      expect(waiting?.outcome).toBe("waits");
+      expect(waiting?.detail).toContain("drive.codex_bypass");
+      expect(formatReceipt(receipt, "receipt.json")).toContain(
+        "account c (vendor codex) accepted, not admitted",
+      );
+      expect(terminalCreates(w)).toEqual([]);
+      expect(recordIds(w)).toEqual([]);
+    },
+  );
+
+  it("takes the host's opt-in from a variable as well, and never from the repository's file", async () => {
+    const w = fixture();
+    rmSync(join(w.home, ".jig", "jig.yaml"), { force: true });
+    machineFile(w, [codexAccount(w, "c", "codex-account-c")]);
+    w.setConfig(`${CONFIG}drive:\n  codex_bypass: true\n`);
+    const refused = await tick(w);
+    expect(refused.accountsNotAdmitted?.[0]?.reason).toContain(
+      "drive.codex_bypass",
+    );
+    expect(recordIds(w)).toEqual([]);
+
+    w.setConfig(CONFIG);
+    w.env.JIG__DRIVE__CODEX_BYPASS = "true";
+    const allowed = await tick(w);
+    expect(allowed.accountsNotAdmitted).toBeUndefined();
+    await waitFor("the drive", () => driveRuns(w).length === 1);
+    expect(driveRuns(w)[0]?.argv).toContain(
+      "--dangerously-bypass-approvals-and-sandbox",
+    );
+    await waitFor("the exit", () => exitWritten(w, launchedRecord(allowed)));
+  });
+
+  it("replays a lost launch under what the tick judged, and not once the host has stopped opting in", async () => {
+    const w = fixture();
+    machineFile(w, [codexAccount(w, "c", "codex-account-c")], {
+      runtime_timeout: "2s",
+    });
+    writeFileSync(join(w.dir, "orca-terminal-hang"), "");
+    const [lost] = launches(await tick(w));
+    expect(lost?.outcome).toBe("lost");
+    rmSync(join(w.dir, "orca-terminal-hang"));
+
+    rmSync(join(w.home, ".jig", "jig.yaml"));
+    const [held] = launches(await tick(w));
+    expect(held?.outcome).toBe("waits");
+    expect(held?.detail).toContain("drive.codex_bypass");
+    expect(driveRuns(w)).toEqual([]);
+
+    hostOptsIn(w);
+    const [replayed] = launches(await tick(w));
+    expect(replayed).toMatchObject({
+      outcome: "retried",
+      record: lost?.record,
+    });
+    await waitFor("the drive", () => driveRuns(w).length === 1);
+    expect(driveRuns(w)[0]?.argv).toContain(
+      "--dangerously-bypass-approvals-and-sandbox",
+    );
+    await waitFor("the exit", () => exitWritten(w, lost?.record ?? ""));
+  });
+
+  it("says why when the host's setting cannot be read, and admits nothing", async () => {
+    const w = fixture();
+    writeFileSync(
+      join(w.home, ".jig", "jig.yaml"),
+      "drive:\n  codex_bypass: yes please\n",
+    );
+    machineFile(w, [codexAccount(w, "c", "codex-account-c")]);
+    const receipt = await tick(w);
+    expect(receipt.accountsNotAdmitted?.[0]?.reason).toContain(
+      "drive.codex_bypass must be true or false",
+    );
     expect(recordIds(w)).toEqual([]);
   });
 
@@ -265,6 +393,28 @@ function codexRuns(w: World): Array<{
 }
 
 describe("jig dispatch --apply picks up an item on a Codex account", () => {
+  it("waits, naming the setting, on a host that has not opted in", async () => {
+    const w = world();
+    current = w;
+    w.setConfig(PICKUP_CONFIG);
+    w.setIssues([assignedIssue(12, "factory-bot", [])]);
+    w.setAssigner(12, "maintainer", "WRITE");
+    const overlay = join(w.root, "routing.yaml");
+    writeFileSync(overlay, PICKUP_CONFIG);
+    w.env.JIG_OVERLAY = overlay;
+    withOrigin(w);
+    machineFile(w, [codexAccount(w, "c", "codex-account-c")], {}, ["pickup"]);
+
+    const receipt = await applyTick(w, true);
+    expect(launches(receipt)[0]).toMatchObject({
+      action: "pickup",
+      outcome: "waits",
+      detail: expect.stringContaining("drive.codex_bypass"),
+    });
+    expect(codexRuns(w)).toEqual([]);
+    expect(recordIds(w)).toEqual([]);
+  });
+
   it("starts Codex on the route's Codex model and effort, bound through CODEX_HOME", async () => {
     const w = world();
     current = w;
@@ -279,6 +429,7 @@ describe("jig dispatch --apply picks up an item on a Codex account", () => {
     const c = codexAccount(w, "c", "codex-account-c");
     machineFile(w, [c], {}, ["pickup"]);
     inheritOtherAccounts(w);
+    hostOptsIn(w);
 
     const receipt = await applyTick(w, true);
     expect(launches(receipt)[0]).toMatchObject({

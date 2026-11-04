@@ -14,7 +14,8 @@
  *
  * The pass command is the session's own agent tool's documented one
  * (`pass-command.ts`): Claude Code's in a Claude Code session, Codex's in a
- * Codex session. Both use a tab where available, otherwise the
+ * Codex session, with the bypass only on a host that set
+ * `drive.codex_bypass`. Both use a tab where available, otherwise the
  * session's managed background execution. A session of any other tool,
  * or one no harness can be read for, prints Claude Code's command only: a guessed one for another agent
  * tool is worse than one left for a person to run.
@@ -160,15 +161,17 @@ export function sessionOverrides(
 /**
  * The pass command `vendor` runs on `model`: Claude Code's with `passArgs`
  * before its `-p`; Codex's with `-m` after `exec` (none when `model` is
- * `null`, so Codex's own configuration decides).
+ * `null`, so Codex's own configuration decides) and the bypass when
+ * `codexBypass` says the host opted in.
  */
 function passArgv(
   vendor: AccountVendor,
   pr: string,
   model: string | null,
   passArgs: readonly string[],
+  codexBypass: boolean,
 ): string[] {
-  const pass = passCommand(vendor, pr);
+  const pass = passCommand(vendor, pr, codexBypass);
   if (vendor === "codex")
     return model === null ? pass : withCodexModel(pass, model);
   const [claude, ...prompt] = pass;
@@ -183,13 +186,14 @@ function passArgv(
 /**
  * The argument list that starts the drive: `drive.ts` in the tree, its pass
  * (`vendor`'s documented pass command) on `model`, with `passArgs` before a
- * Claude Code pass's `-p`.
+ * Claude Code pass's `-p` and, on a host that opted in, a Codex pass's bypass.
  */
 export function driveArgv(
   request: ArmRequest,
   model: string | null,
   passArgs: readonly string[] = [],
   vendor: AccountVendor = "claude",
+  codexBypass = false,
 ): string[] {
   const { pr, tree, forward } = request;
   return [
@@ -201,7 +205,7 @@ export function driveArgv(
     "--bots-only",
     ...forward,
     "--",
-    ...passArgv(vendor, pr, model, passArgs),
+    ...passArgv(vendor, pr, model, passArgs, codexBypass),
   ];
 }
 
@@ -514,23 +518,32 @@ export interface ArmReport {
  * the extra pass arguments or the working tree could not be read. `command`
  * is built on `model` (the default where the configured one could not be
  * read) and `passArgs` (none where they could not be read) once the tree is
- * known, for `vendor`'s pass command (Claude Code's when none is named).
+ * known, for `vendor`'s pass command (Claude Code's when none is named), with
+ * a Codex pass's bypass only when `codexBypass` says the host opted in.
  */
 export function failedReport(
   request: { pr: string; tree: string | null; forward: string[] },
   setting: ArmReport["armDrive"],
-  pass: { model: ArmModel; passArgs: PassArgs; vendor?: AccountVendor },
+  pass: {
+    model: ArmModel;
+    passArgs: PassArgs;
+    vendor?: AccountVendor;
+    codexBypass?: boolean;
+  },
   reason: string,
 ): ArmReport {
   const { model, passArgs } = pass;
   const vendor = pass.vendor ?? "claude";
+  const codexBypass = pass.codexBypass === true;
   const tree = request.tree;
   const known = tree === null ? null : { ...request, tree };
   const argv =
-    known === null ? [] : driveArgv(known, model.model, passArgs.words, vendor);
+    known === null
+      ? []
+      : driveArgv(known, model.model, passArgs.words, vendor, codexBypass);
   const permission =
     vendor === "codex"
-      ? codexPermission(passArgv(vendor, request.pr, null, []))
+      ? codexPermission(passArgv(vendor, request.pr, null, [], codexBypass))
       : permissionMode(["claude", ...passArgs.words]);
   return {
     pr: request.pr,
@@ -561,6 +574,8 @@ export interface ArmInputs {
   /** The model of the session's agent tool's pass (`sessionVendor(env)`; Claude Code's for any other session). */
   model: ArmModel;
   passArgs: PassArgs;
+  /** Whether a Codex pass carries the bypass: the host's `drive.codex_bypass`. */
+  codexBypass?: boolean;
   env: Env;
   platform?: NodeJS.Platform;
 }
@@ -570,9 +585,14 @@ export async function arm(
   inputs: ArmInputs,
   deps: TabDeps,
 ): Promise<{ report: ArmReport; exit: number }> {
-  const { request, setting, model, passArgs, env } = inputs;
+  const { request, setting, model, passArgs, env, codexBypass } = inputs;
   const vendor = sessionVendor(env) ?? "claude";
-  const base = failedReport(request, setting, { model, passArgs, vendor }, "");
+  const base = failedReport(
+    request,
+    setting,
+    { model, passArgs, vendor, codexBypass: codexBypass === true },
+    "",
+  );
   const choice = chooseWay(setting.value, env, inputs.platform);
   if ("error" in choice)
     return { report: { ...base, reason: choice.error }, exit: 1 };
