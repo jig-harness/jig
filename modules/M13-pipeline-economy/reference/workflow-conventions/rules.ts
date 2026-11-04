@@ -476,11 +476,12 @@ export function ciHold(pipelines: Pipelines): Found[] {
 function readsEvent(term: string): boolean {
   const text = term
     .replace(/\[\s*'([A-Za-z_][\w-]*)'\s*\]/g, ".$1")
-    .replace(/'[^']*'/g, "''");
+    .replace(/'[^']*'/g, "''")
+    .replace(/\s+/g, " ")
+    .replace(/ ?\. ?/g, ".");
   return (
-    /(?<!\.\s*)(?<![\w-])github\s*\.\s*event\b(?!\s*\.\s*pull_request\b)/i.test(
-      text,
-    ) || /(?<!\.\s*)(?<![\w-])github\b(?!\s*\.)/i.test(text)
+    /(?<!\.)(?<![\w-])github\.event\b(?!\.pull_request\b)/i.test(text) ||
+    /(?<!\.)(?<![\w-])github\b(?!\.)/i.test(text)
   );
 }
 

@@ -61,8 +61,12 @@ function failsMirror(
 }
 
 test("a workflow in the mirror form passes, beside one in the existing form", () => {
-  exits(run(["--root", mirrored()]), 0, "the mirror form");
-  exits(run(["--root", holdTrigger(PR_HOLD)]), 0, "the existing form");
+  const mirror = run(["--root", mirrored()]);
+  exits(mirror, 0, "the mirror form");
+  expect(mirror.err).toBe("");
+  const existing = run(["--root", holdTrigger(PR_HOLD)]);
+  exits(existing, 0, "the existing form");
+  expect(existing.err).toBe("");
 });
 
 test("a workflow that skips on other labels' events needs a step that repeats the real result", () => {
@@ -196,12 +200,14 @@ test("a job may read the pull request's state and other contexts", () => {
     "needs['github'].result == 'success'",
     "inputs.use-github == 'true'",
     "needs.build.outputs['use-github'] == 'true'",
-  ])
-    exits(
-      run(["--root", mirrored({ e2eIf: `${HEAVY_IF} && ${term}` })]),
-      0,
-      term,
-    );
+  ]) {
+    const result = run([
+      "--root",
+      mirrored({ e2eIf: `${HEAVY_IF} && ${term}` }),
+    ]);
+    exits(result, 0, term);
+    expect({ term, rules: rulesOf(result.err) }).toEqual({ term, rules: [] });
+  }
 });
 
 test("a job that decides on the label event in another form is a finding, never a pass", () => {

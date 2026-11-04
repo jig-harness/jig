@@ -75,7 +75,9 @@ export function holdRepo(label: string, e2eIf: string, stepIf: string) {
   });
 }
 export const rulesOf = (err: string) =>
-  [...new Set([...err.matchAll(/: \[([a-z-]+)\] /g)].map((m) => m[1]))].sort();
+  [
+    ...new Set([...err.matchAll(/: \[([a-z-]+)\] /g)].map((m) => m[1] ?? "")),
+  ].sort((a, b) => a.localeCompare(b));
 
 export const job = (id: string, extra = "") =>
   `  ${id}:\n    runs-on: x\n    timeout-minutes: 5\n${extra}    steps:\n      - run: make ${id}\n`;
