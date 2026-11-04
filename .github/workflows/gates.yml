@@ -1,38 +1,6 @@
-# Every pull request and every push to main runs the gate set on Linux. The
-# drive-pr suite is long, so it runs in its own job, split into parallel
-# shards (see SEPARATE_SUITES in scripts/gates.ts); the website's checks, tests
-# and build run in the gate-set job after the gate set, so they cost no job of
-# their own.
-#
-# Which jobs a pull request runs comes from Jig's change-area catalog
-# (.config/change-areas.yaml, resolved by scripts/change-areas.ts): the
-# drive-pr suite runs when the `drive-pr` area is affected, and the website
-# steps when the `website` area is (the area takes in what the site reads,
-# through `site-sources`). A push to main runs everything.
-#
-# The CI hold (modules/M13-pipeline-economy/README.md#7-hold): while a pull
-# request carries the `ci:hold` label (`ci.hold_label` in .config/jig.yaml),
-# every job but `gates` skips and `gates` cancels its own run, naming the
-# label. drive-pr adds the label before a review round's intermediate push and
-# removes it at convergence, which runs everything again on the head the merge
-# waits for. The label events start runs, so the workflow lists them beside
-# the defaults.
-#
-# Jobs are split no further than their work needs: the drive-pr suite has as
-# many shards as keep each under two minutes and no more, since each shard
-# repeats the checkout and install.
-#
-# macOS and Windows run nothing here: the nightly workflow (nightly.yml) runs
-# the gate set and the drive-pr suite on them against main once a day, so a
-# change that breaks only there (a file name differing only by case, a
-# POSIX-only assumption) surfaces on main within a day rather than on its
-# pull request.
-#
-# Every job runs on GitHub's standard hosted runners: a public repository
-# uses them without charge, and `ubuntu-latest` there is a 4-vCPU machine.
-# The larger runners are charged even on a public repository, so no job
-# names one. `gates` only reads the other jobs' results, so it runs on the
-# smallest, `ubuntu-slim`.
+# PROBE ONLY, never merged: gates.yml's triggers, concurrency, job names and
+# conditions in the label-skip form, with the heavy steps stubbed. probe.txt
+# holds "<pass|fail> <seconds the gate set sleeps>".
 name: gates
 
 on:
@@ -44,195 +12,68 @@ on:
 permissions:
   contents: read
 
-# A pull request's newer push cancels its older run. A run on main is never
-# cancelled, nor replaced while it waits, so every commit on main gets its
-# checks: the release workflow (release.yml) tags a release commit only once
-# its own `gates` check passed.
 concurrency:
-  group: gates-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  group: gates-${{ github.event.label.name && github.event.label.name != 'ci:hold' && format('label-{0}', github.run_id) || github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   areas:
-    name: change areas
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') }}
+    name: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && 'change areas [label event]' || 'change areas' }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       areas: ${{ steps.resolve.outputs.areas }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          # The resolver diffs against the merge base with the base branch.
-          fetch-depth: 0
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
       - name: Resolve the changed files to areas
         id: resolve
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          if [ "$EVENT" = pull_request ]; then
-            bun scripts/change-areas.ts --base "$BASE"
-          else
-            bun scripts/change-areas.ts --all
-          fi
+        run: echo 'areas=["drive-pr"]' >> "$GITHUB_OUTPUT"
 
   gate-set:
-    name: gates (linux)
+    name: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && 'gates (linux) [label event]' || 'gates (linux)' }}
     needs: areas
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') }}
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
     runs-on: ubuntu-latest
-    # The gate set's 20 minutes and the website steps' 10.
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          # The ratchet and fallow's audit compare against the merge base
-          # with main, which a shallow checkout does not have.
-          fetch-depth: 0
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
-      # Built-ins only, so it runs before the install: an over-budget
-      # instruction chain or skill listing fails in seconds, and a broken
-      # install cannot keep the check from running.
-      - name: Check the always-loaded context budget
-        run: bun scripts/check-context-budget.ts
-      # Also built-ins only, and before the install on purpose: it judges
-      # which packages may run install scripts, so it runs before any could.
-      - name: Check the supply-chain policy lockstep
-        run: bun scripts/check-supply-chain-lockstep.ts
-      - name: Install locked dependencies, scripts off
-        run: bun install --frozen-lockfile --ignore-scripts
-      # Claude Code's validator checks the plugin as the tools install it
-      # (scripts/check-plugin.ts). The native binary comes from its platform
-      # package, which has no install script, rather than as a dependency,
-      # which would add hundreds of megabytes to every contributor's install.
-      # npm checks the tarball against the registry's integrity record for the
-      # pinned version; no hash of it is kept here.
-      - name: Fetch Claude Code for the plugin check
-        env:
-          # renovate: datasource=npm depName=@anthropic-ai/claude-code-linux-x64
-          CLAUDE_CODE_VERSION: 2.1.303
-        run: |
-          set -euo pipefail
-          dir="$RUNNER_TEMP/claude-code"
-          mkdir -p "$dir"
-          cd "$dir"
-          npm pack --silent "@anthropic-ai/claude-code-linux-x64@${CLAUDE_CODE_VERSION}" > /dev/null
-          tar -xzf anthropic-ai-claude-code-linux-x64-*.tgz
-          chmod +x package/claude
-          echo "$dir/package" >> "$GITHUB_PATH"
-      # Ubuntu's AppArmor refuses unprivileged user namespaces, which Chrome's
-      # sandbox needs. The design-brief renderer keeps the sandbox on because
-      # it renders untrusted bundles, so the runner gives Chrome's binary
-      # alone a profile that allows them, as Chromium's AppArmor guide
-      # describes, rather than lifting the restriction for every process.
-      # Exactly one profile may attach to the executable: two that match it
-      # equally deny its execution. So Ubuntu's shipped `chrome` profile is
-      # loaded and used when the image has it, and a profile of our own is
-      # added only when it does not.
-      - name: Allow Chrome's user-namespace sandbox
-        run: |
-          set -euo pipefail
-          shipped=/etc/apparmor.d/chrome
-          if [ -e "$shipped" ]; then
-            if ! sudo grep -Eq '^[[:space:]]*userns,' "$shipped"; then
-              echo "::error::$shipped attaches Chrome but does not allow user namespaces"
-              exit 1
-            fi
-            sudo apparmor_parser -r "$shipped"
-            exit 0
-          fi
-          sudo tee /etc/apparmor.d/jig-chrome > /dev/null <<'EOF'
-          abi <abi/4.0>,
-          include <tunables/global>
-          profile jig-chrome /opt/google/chrome/chrome flags=(unconfined) {
-            userns,
-          }
-          EOF
-          sudo apparmor_parser -r /etc/apparmor.d/jig-chrome
       - name: Run gate set
-        env:
-          # The drive-pr-suite job and the website steps below run the
-          # separate suites.
-          JIG_GATES_SKIP_SEPARATE_SUITES: "1"
-          # The runner image has Google Chrome, so a sheet's browser checks
-          # fail here when it is missing instead of being skipped with a
-          # warning.
-          JIG_REQUIRE_BROWSER: "1"
-          # The runner also has Chromium, which the design-brief tests would
-          # otherwise prefer; the AppArmor profile above attaches to Chrome's
-          # own executable alone, so they launch that one.
-          JIG_TEST_CHROMIUM: /opt/google/chrome/chrome
-          # And Claude Code is fetched above, so the plugin check fails
-          # without its validator instead of skipping it.
-          JIG_REQUIRE_CLAUDE: "1"
-        run: bun run gates
-      # The website steps run after a failed gate set too, so one run reports
-      # both. The build renders the live audit example with the audit skill's
-      # renderer, which needs the repository's own dependencies installed
-      # above.
-      - name: Install the website's locked dependencies, scripts off
-        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}
-        working-directory: website
-        run: bun install --frozen-lockfile --ignore-scripts
-      - name: Check the website's types
-        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}
-        working-directory: website
-        run: bun run check
-      # The gate set leaves these out (scripts/gates.ts SEPARATE_SUITES):
-      # they need the website's dependencies installed above.
-      - name: Test the document parsers
-        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}
-        run: bun run test ./website/
-      - name: Build the site and check its links
-        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}
-        working-directory: website
-        run: bun run build
+        run: |
+          read -r result pause < probe.txt
+          echo "probe: $result after ${pause}s"
+          sleep "$pause"
+          test "$result" = pass
 
   drive-pr-suite:
-    name: drive-pr suite (linux, ${{ matrix.shard }}/3)
+    name: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && 'drive-pr suite [label event]' || format('drive-pr suite (linux, {0}/3)', matrix.shard) }}
     needs: areas
-    if: ${{ contains(needs.areas.outputs.areas, '"drive-pr"') && !contains(github.event.pull_request.labels.*.name, 'ci:hold') }}
+    if: ${{ contains(needs.areas.outputs.areas, '"drive-pr"') && !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
     runs-on: ubuntu-latest
-    # A shard takes about a minute and a half.
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          # The summary-findings tests position a reviewer against real commits
-          # of this repository, which a shallow checkout does not have.
-          fetch-depth: 0
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
-      - name: Install locked dependencies, scripts off
-        run: bun install --frozen-lockfile --ignore-scripts
-      - name: Check terminal states against their documentation
-        if: matrix.shard == 1
-        run: bun plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts
       - name: Run this shard of the drive-pr suite
-        run: bun run test --shard=${{ matrix.shard }}/3 ./plugin/skills/drive-pr/
+        run: echo "shard ${{ matrix.shard }}"
 
-  # Branch protection requires a check named `gates`; this job reports it,
-  # passing only when the areas resolved, the gate set passed, and the
-  # drive-pr suite passed or was not needed. It runs on `!cancelled()`, not
-  # `always()`: `always()` also runs when a newer push cancelled this run, and
-  # would then report a failure for a head that is already superseded. It is
-  # never guarded by the hold: a skipped required check counts as passing.
-  #
-  # While held it cancels its own run rather than failing. A cancelled required
-  # check blocks the merge as a failed one does, but the drive's last push is
-  # usually held, so the released head keeps the held run beside the release's
-  # passing one: cancelled, it shows grey there instead of red. Cancelling
-  # needs `actions: write`; this job checks out and runs nothing of the
-  # repository. Where the token cannot cancel (a pull request from a fork gets
-  # a read-only one), or the cancellation does not arrive, the step fails.
+  literal-matrix:
+    name: literal matrix (${{ matrix.shard }}/2)
+    needs: areas
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
+    strategy:
+      matrix:
+        shard: [1, 2]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "shard ${{ matrix.shard }}"
+
   gates:
+    name: ${{ github.event.label.name && github.event.label.name != 'ci:hold' && 'gates [label event]' || 'gates' }}
     needs: [areas, gate-set, drive-pr-suite]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && !(github.event.label.name && github.event.label.name != 'ci:hold') }}
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
@@ -244,9 +85,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.api_url }}/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          echo "::error::held: this pull request carries the ci:hold label, so its heavy jobs were skipped. Remove the label (gh pr edit <PR> --remove-label ci:hold) to run everything again; never rerun this run, which replays the labelled event."
+          echo "::error::held: this pull request carries the ci:hold label, so its heavy jobs were skipped."
           if curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$RUN_URL/cancel" > /dev/null; then
-            # The cancellation ends this step; the deadline only bounds the wait.
             deadline=$((SECONDS + 120))
             while [ "$SECONDS" -lt "$deadline" ]; do sleep 5; done
             echo "::error::the run's cancellation did not arrive within two minutes"
