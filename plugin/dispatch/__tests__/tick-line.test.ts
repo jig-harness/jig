@@ -133,7 +133,11 @@ describe("the line a tick leaves", () => {
   it("not written, leaves the launches standing and says so on the receipt, with exit 1", async () => {
     const w = fixture();
     machineFile(w, [account(w, "a", "a@example.com")]);
-    await tick(w);
+    const first = await tick(w);
+    const record = first.repos[0]?.launches[0]?.record ?? "";
+    // The wrapper of the first tick's drive writes its exit into the same
+    // database after the tick returns; a write still in flight locks it.
+    await waitFor("the exit", () => exitWritten(w, record));
     const db = database(w);
     db.run("DROP TABLE tick_line");
     db.close();
