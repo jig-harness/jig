@@ -205,34 +205,42 @@ function replacedSuites(
 }
 
 /**
- * A cancelled job whose successor run reports the same name without a result
- * (it skipped): that job answers nothing, so the cancellation stays unknown.
+ * Whether a replaced run's job stays as evidence. It goes only when a
+ * successor reports its name with a result, or when no successor reports the
+ * name at all (a matrix template the later run expanded). A successor that
+ * reports the name without a result (it skipped) answers nothing, so the job
+ * stays, unless another successor did supply one. Jobs that passed never stay.
  */
 function answeredBySkip(
   job: JobEvidence,
   successors: readonly number[],
   jobs: readonly JobEvidence[],
 ): boolean {
-  if (job.name === undefined || job.conclusion !== "cancelled") return false;
-  return jobs.some(
+  if (job.name === undefined) return false;
+  if (job.conclusion !== null && PASSING_CONCLUSIONS.has(job.conclusion))
+    return false;
+  const reports = jobs.filter(
     (other) =>
       other.name === job.name &&
       other.suiteId !== undefined &&
       other.suiteId !== null &&
-      successors.includes(other.suiteId) &&
-      !(
-        other.status === "completed" &&
-        other.conclusion !== null &&
-        RESULT_CONCLUSIONS.has(other.conclusion)
-      ),
+      successors.includes(other.suiteId),
   );
+  const hasResultJob = reports.some(
+    (other) =>
+      other.status === "completed" &&
+      other.conclusion !== null &&
+      RESULT_CONCLUSIONS.has(other.conclusion),
+  );
+  return reports.length > 0 && !hasResultJob;
 }
 
 /**
  * `jobs` less those of a cancelled run another run has replaced, whatever the
  * name: a run cancelled before its matrix expanded leaves a check named after
  * the unexpanded template, which no later run ever reports under that name.
- * A cancelled job stays when the replacing run reports its name as skipped.
+ * An unsuccessful job stays when the replacing runs report its name only as
+ * skipped.
  */
 export function withoutSuperseded<T extends JobEvidence>(
   jobs: readonly T[],
@@ -297,16 +305,17 @@ export function failuresExplainedByCancellation(
         !PASSING_CONCLUSIONS.has(job.conclusion),
     );
     // Timing is the only evidence of a dependency, so it must leave no
-    // doubt: the job started strictly after every other job of its run had
-    // completed, as an aggregator over all of them does. A job that could
-    // have run beside another stays a failure.
-    const others = own.filter((job) => !failed.includes(job));
+    // doubt: the job started strictly after every other job of its run,
+    // failed siblings included, had completed, as an aggregator over all of
+    // them does. A job that could have run beside another stays a failure.
     const allAfter = failed.every((job) => {
       const startedAt = Date.parse(job.started ?? "");
       return (
         job.conclusion === "failure" &&
         startedAt > firstCancelled &&
-        others.every((other) => Date.parse(other.completed ?? "") < startedAt)
+        own
+          .filter((other) => other.id !== job.id)
+          .every((other) => Date.parse(other.completed ?? "") < startedAt)
       );
     });
     if (allAfter) for (const job of failed) explained.add(job.id);

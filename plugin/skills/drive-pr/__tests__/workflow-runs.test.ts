@@ -435,3 +435,45 @@ describe("a run being re-run", () => {
     expect(withoutRerunning(runs, null)).toEqual(runs);
   });
 });
+
+describe("evidence is dropped only when a successor supplies a result", () => {
+  it("keeps a cancellation-explained failure when the successor skips it", () => {
+    const workflowRuns = [
+      workflowRun(40, "cancelled", T1),
+      workflowRun(41, "success", T2),
+    ];
+    const runs = [
+      job("tests", "cancelled", 40, { started: T1, completed: T2 }),
+      job("gates", "failure", 40, { started: T3, completed: T4 }),
+      job("tests", "success", 41),
+      job("gates", "skipped", 41),
+    ];
+    expect(withoutSuperseded(runs, workflowRuns)).toContain(runs[1]);
+    expect(verdict(runs, workflowRuns)).toBe("cancelled: gates");
+  });
+
+  it("lets a successor that ran replace a job another successor skipped", () => {
+    const workflowRuns = [
+      workflowRun(40, "cancelled", T1),
+      workflowRun(41, "success", T2),
+      workflowRun(42, "success", T2),
+    ];
+    const runs = [
+      job("tests", "cancelled", 40),
+      job("lint", "success", 41),
+      job("tests", "skipped", 41),
+      job("tests", "success", 42),
+    ];
+    expect(withoutSuperseded(runs, workflowRuns)).not.toContain(runs[0]);
+  });
+
+  it("does not explain two failures that started together as aggregators", () => {
+    const workflowRuns = [workflowRun(40, "cancelled", T1)];
+    const runs = [
+      job("tests", "cancelled", 40, { started: T1, completed: T2 }),
+      job("a", "failure", 40, { started: T3, completed: T4 }),
+      job("b", "failure", 40, { started: T3, completed: T4 }),
+    ];
+    expect(failingCheckRunNames(runs, false, workflowRuns)).toEqual(["a", "b"]);
+  });
+});

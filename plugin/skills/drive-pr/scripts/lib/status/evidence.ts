@@ -421,11 +421,11 @@ function readChecks(
   runs: CheckRun[],
   workflowRuns: readonly WorkflowRun[] | null,
 ): CheckReading {
-  const counted = withoutSuperseded(
-    runs.filter((r) => !isReviewerCheck(r)),
-    workflowRuns,
-  );
-  const explained = failuresExplainedByCancellation(counted, workflowRuns);
+  const own = runs.filter((r) => !isReviewerCheck(r));
+  // Read before the superseded cancellations go: the cancelled job an
+  // aggregator failed on is the proof that its failure explains nothing.
+  const explained = failuresExplainedByCancellation(own, workflowRuns);
+  const counted = withoutSuperseded(own, workflowRuns);
   const absent = (r: CheckRun) =>
     r.conclusion === "cancelled" || explained.has(r.id);
   const rerunning = rerunningSuites(workflowRuns);
