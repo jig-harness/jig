@@ -66,6 +66,26 @@ areas:
     impliedBy: [plugin-shared, shared-lib, toolchain]
     deployTier: plugin
     generated:
+      - outputs:
+          - "plugin/dispatch/dashboard-page/index.html"
+          - "plugin/dispatch/dashboard-page/refused.html"
+          - "plugin/dispatch/dashboard-page/bundle.LICENSE"
+        source:
+          - "package.json"
+          - "bun.lock"
+          - "mise.toml"
+          - "dashboard/**"
+          - "plugin/dispatch/lib/dashboard-contract.ts"
+        command: "bun dashboard/build.ts"
+        check: "bun dashboard/build.ts --check"
+        notes: >-
+          The page jig dispatch dashboard serves. The plugin runs from a copy
+          without node_modules, so it carries the page as one HTML document
+          with its script and styles inline, built by Bun from the source in
+          dashboard/src and the pinned packages, minified since
+          a phone loads it (ADR-0001), with the licence of each package the
+          bundler read. dashboard/build.test.ts rebuilds and
+          compares the files as well.
       - outputs: ["plugin/LICENSE", "plugin/NOTICE"]
         source: ["LICENSE", "NOTICE"]
         command: "cp LICENSE NOTICE plugin/"
@@ -194,6 +214,16 @@ areas:
     paths: ["tools/**"]
     workspace: []
     impliedBy: [shared-lib, toolchain]
+    deployTier: none
+
+  dashboard:
+    title: "The source of the page jig dispatch dashboard serves"
+    # Built into plugin/dispatch/dashboard-page/, whose generated-file entry
+    # lists this source; the page reads the dispatcher's types.
+    category: tooling
+    paths: ["dashboard/**"]
+    workspace: []
+    impliedBy: [plugin, shared-lib, toolchain]
     deployTier: none
 
   module-reference:

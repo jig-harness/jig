@@ -53,6 +53,8 @@ export interface TickReceipt {
   unloggedOutcomes?: string[];
   /** Why the outcome log's text copy was not brought up to date. */
   logCopyFailed?: string;
+  /** Why the dashboard's line was not written: it keeps showing the tick before. */
+  lineFailed?: string;
   repos: RepoReport[];
 }
 
