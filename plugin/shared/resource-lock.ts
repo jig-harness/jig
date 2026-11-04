@@ -31,6 +31,17 @@
 // Windows publishes a prewritten PID file with an atomic hard link, requiring
 // no symbolic-link privileges and preserving the same owner-before-acquire rule.
 //
+// The holder's process identity (`liveness.ts`: host, boot, pid and start
+// time) stands beside the lock in `<lock>.holder`, written once the lock is
+// taken and removed before it is released or reclaimed. The lock itself
+// still names only the pid, so an earlier version of this script excludes
+// this one and judges its lock as it always has. A recorded identity is
+// trusted only when it names the lock's pid and was written no earlier than
+// the lock, so a leftover never judges a later holder; then a pid now held by
+// a process that started at another time no longer keeps a crashed holder's
+// lock. Without one, the pid alone decides, as before. A reclaim, and a wait
+// that runs out, say whose lock it was.
+//
 // CI bypass: on a CI runner each job already gets its own isolated machine, so
 // there is nothing to serialize and the wait is pure latency. If CI=1 (or
 // CI=true) or RESOURCE_LOCK_BYPASS=1, the command runs immediately, unlocked.
@@ -55,6 +66,8 @@ import {
   lstatSync,
   linkSync,
   readFileSync,
+  renameSync,
+  statSync,
   writeFileSync,
   mkdirSync,
   readlinkSync,
@@ -63,6 +76,16 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { swallow } from "./errors.ts";
+import {
+  decodeIdentity,
+  describeIdentity,
+  encodeIdentity,
+  isAliveSync,
+  legacyIdentity,
+  ownIdentity,
+  type ProcessIdentity,
+} from "./liveness.ts";
 /** The longest `LOCK_TIMEOUT` the lock accepts, in seconds. */
 export const MAX_TIMEOUT_SECONDS = 604800;
 const MIN_POLL_SECONDS = 0.001,
@@ -88,13 +111,53 @@ function holder(path: string, fileOwners = false): string | undefined {
     return errorCode(error) === "EINVAL" ? "" : undefined;
   }
 }
-function alive(pid: string): boolean {
-  if (!/^[1-9][0-9]*$/.test(pid)) return false;
+const holderFile = (path: string) => `${path}.holder`;
+// The identity recorded beside `path` when it names `pid` and is no older than
+// `path` itself; otherwise the pid alone, as an earlier holder wrote it.
+function recordedHolder(path: string, pid: string): ProcessIdentity {
   try {
-    process.kill(Number(pid), 0);
-    return true;
+    const recorded = decodeIdentity(readFileSync(holderFile(path), "utf8"));
+    if (
+      recorded !== null &&
+      String(recorded.pid) === pid &&
+      statSync(holderFile(path)).mtimeMs >= lstatSync(path).mtimeMs
+    )
+      return recorded;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+    swallow(error, "no holder recorded beside the lock; its pid decides");
+  }
+  return legacyIdentity(Number(pid));
+}
+// Whether the owner `seen` at `path` keeps it, and who that owner is: only an
+// owner judged dead, or an entry naming no owner, gives it up.
+function judgeOwner(
+  path: string,
+  seen: string,
+): { alive: boolean; who: string } {
+  if (!/^[1-9][0-9]*$/.test(seen))
+    return { alive: false, who: "an entry that names no owner" };
+  const holder = recordedHolder(path, seen);
+  const verdict = isAliveSync(holder);
+  const reason = verdict.ok ? verdict.value.reason : verdict.failure.reason;
+  return {
+    alive: !verdict.ok || verdict.value.state === "alive",
+    who: `${describeIdentity(holder)}: ${reason}`,
+  };
+}
+// Who holds `lock`, for a wait that ran out.
+function heldBy(lock: string, fileOwners: boolean): string {
+  const seen = holder(lock, fileOwners);
+  return seen === undefined ? "another worktree" : judgeOwner(lock, seen).who;
+}
+// Record this holder's identity beside the lock it has just taken.
+function recordHolder(lock: string): void {
+  const staged = `${lock}.holder.${process.pid}.${crypto.randomUUID()}`;
+  try {
+    writeFileSync(staged, encodeIdentity(ownIdentity()), { flag: "wx" });
+    renameSync(staged, holderFile(lock));
+  } catch (error) {
+    swallow(error, "the holder's identity is not recorded; its pid decides");
+    rmSync(staged, { force: true });
   }
 }
 function commandArguments(
@@ -225,15 +288,18 @@ export async function main(
   const unpublish = (path: string) => {
     if (holder(path, fileOwners) === owner) {
       try {
+        rmSync(holderFile(path), { force: true });
         rmSync(path);
       } catch {}
     }
   };
   // Remove `path` if its owner is dead (or it carries no owner at all), holding
-  // a claim named after that owner and re-reading under the claim first.
+  // a claim named after that owner and re-reading under the claim first. The
+  // identity recorded beside it goes first: no holder can record one while
+  // the stale entry stands.
   const reclaim = (path: string) => {
     const seen = holder(path, fileOwners);
-    if (seen === undefined || alive(seen)) return;
+    if (seen === undefined || judgeOwner(path, seen).alive) return;
     const claim = `${path}.reclaim.${/^[1-9][0-9]*$/.test(seen) ? seen : "foreign"}`;
     try {
       publish(claim);
@@ -242,11 +308,15 @@ export async function main(
       return;
     }
     try {
-      if (holder(path, fileOwners) === seen && !alive(seen))
+      const owner = judgeOwner(path, seen);
+      if (holder(path, fileOwners) === seen && !owner.alive) {
+        rmSync(holderFile(path), { force: true });
         rmSync(path, {
           recursive: !lstatSync(path).isSymbolicLink(),
           force: true,
         });
+        console.error(`resource lock: took over ${path} from ${owner.who}`);
+      }
     } catch {
     } finally {
       unpublish(claim);
@@ -273,10 +343,11 @@ export async function main(
   }
   if (!acquired) {
     console.error(
-      `ERROR: could not acquire lock '${name}' within ${timeout}s (held by another worktree?)`,
+      `ERROR: could not acquire lock '${name}' within ${timeout}s (held by ${heldBy(lock, fileOwners)})`,
     );
     return 3;
   }
+  recordHolder(lock);
   using release = registerCleanup(() => unpublish(lock));
   void release;
   return await run();

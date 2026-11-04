@@ -10,7 +10,7 @@ import { dump } from "../../shared/yaml.ts";
 import {
   claimRecord,
   type LaunchRecord,
-  type ProcessIdentity,
+  type LaunchClaim,
   recordExit,
   writeRecord,
 } from "../lib/launches.ts";
@@ -112,7 +112,7 @@ export function earlierRecord(
 export function claimed(
   w: World,
   id: string,
-  identity: ProcessIdentity,
+  identity: LaunchClaim,
   exit?: number,
 ): void {
   claimRecord(id, identity, dispatchState(w));

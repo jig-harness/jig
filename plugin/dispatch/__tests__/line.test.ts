@@ -138,6 +138,7 @@ function record(
   state: ReadRecord["state"] = {
     kind: "alive",
     process: {
+      hostId: "",
       host: "h",
       bootId: "b",
       pid: 1,

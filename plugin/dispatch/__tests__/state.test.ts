@@ -13,7 +13,8 @@ import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { processTable } from "../../shared/process-table.ts";
-import { bootId, readRecord } from "../lib/launches.ts";
+import { readRecord } from "../lib/launches.ts";
+import { bootId } from "../../shared/liveness.ts";
 import { readRows } from "../lib/log.ts";
 import { SCHEMA_VERSION, statePath } from "../lib/state.ts";
 import { SLUG, type World, world } from "./fixtures.ts";
@@ -127,6 +128,7 @@ describe("a tick killed between a launch record's end and its outcome row", () =
       w,
       RECORD,
       {
+        hostId: "",
         host: "elsewhere",
         bootId: "",
         pid: 1,
@@ -198,6 +200,7 @@ describe("jig dispatch clear", () => {
     const running = "20261101T090000Z-bbbbbbbb";
     earlierRecord(w, { id: unknown, account: "a" });
     claimed(w, unknown, {
+      hostId: "",
       host: "elsewhere",
       bootId: "",
       pid: 1,
@@ -209,6 +212,7 @@ describe("jig dispatch clear", () => {
     cleanups.push(() => driver.kill());
     const row = (await processTable())?.find((r) => r.pid === driver.pid);
     claimed(w, running, {
+      hostId: "",
       host: hostname(),
       bootId: bootId(),
       pid: driver.pid,
