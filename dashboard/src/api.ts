@@ -97,15 +97,27 @@ function areRecords(value: unknown): boolean {
   return Array.isArray(value) && value.every(isRecord);
 }
 
+/** A span the page adds to a tick's time and formats: non-negative, and the sum still a time `Intl` can show. */
+function isSpan(startedAt: string, span: unknown): span is number {
+  if (typeof span !== "number" || !Number.isFinite(span) || span < 0)
+    return false;
+  return Number.isFinite(new Date(Date.parse(startedAt) + span).getTime());
+}
+
 /** A line the page can lay out: the sections it walks are arrays of records, and the times it formats read. */
 function isLine(value: unknown): boolean {
   if (value === null) return true;
   return (
     isRecord(value) &&
+    typeof value.runId === "string" &&
     isTime(value.startedAt) &&
     isTime(value.finishedAt) &&
-    typeof value.intervalMs === "number" &&
-    Number.isFinite(value.intervalMs) &&
+    isSpan(value.startedAt, value.intervalMs) &&
+    isSpan(value.startedAt, value.longestTickMs) &&
+    isSpan(
+      value.startedAt,
+      (value.intervalMs as number) + (value.longestTickMs as number),
+    ) &&
     ["accounts", "sessions", "needs", "queue", "repos"].every((section) =>
       areRecords(value[section]),
     ) &&

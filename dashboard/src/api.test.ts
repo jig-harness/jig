@@ -45,6 +45,17 @@ describe("what a guard admits", () => {
     ).toBe(true);
   });
 
+  it("refuses a line whose run id or spans the page shows outside its panels and cannot", () => {
+    const refused = (change: Record<string, unknown>) =>
+      isStateAnswer({ ...STATE, line: { ...STATE.line, ...change } });
+    expect(refused({ runId: {} })).toBe(false);
+    expect(refused({ intervalMs: 1e100 })).toBe(false);
+    expect(refused({ longestTickMs: 1e100 })).toBe(false);
+    expect(refused({ intervalMs: -1 })).toBe(false);
+    expect(refused({ intervalMs: 8e15, longestTickMs: 8e15 })).toBe(false);
+    expect(refused({})).toBe(true);
+  });
+
   it("refuses rows with null counts, null options or entries that are not rows", () => {
     expect(isRowsAnswer({})).toBe(false);
     expect(isRowsAnswer({ counts: null, options: null, rows: [null] })).toBe(
