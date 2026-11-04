@@ -25,10 +25,12 @@ repository that holds CI between review rounds.
 
 ### Changed
 
-- The lint's `ci-hold-guard` also fails a job whose `if:` decides on the label
-  event itself (`github.event.label`, or a label action) in any form but the
-  mirror's skip term: a job skipped on a label event can turn a failing head
-  into a passing one. A workflow whose jobs test only the pull request's label
-  set, as the hold asks, is unaffected.
+- **Breaking** for a workflow of the hold whose job conditions read the
+  event's action or label: the lint's `ci-hold-guard` now fails a job whose
+  `if:` has such a term (`github.event.action`, `github.event.label`, in any
+  spelling) other than the mirror's skip term, since a job skipped on some
+  events and not others can turn a failing head into a passing one. Test the
+  pull request's label set instead, as the hold asks; a workflow that already
+  does is unaffected.
 - The audit's `ci-hold-fails-held-heads` and `ci-hold-shape-linted` criteria
   accept the mirror run beside real CI on every label event.

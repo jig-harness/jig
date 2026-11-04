@@ -111,6 +111,23 @@ test("a mirror run takes a concurrency group of its own", () => {
     "the run id only as quoted text, one key for every mirror",
     "its concurrency group",
   );
+  failsMirror(
+    mirrored({
+      group: `concurrency:\n  group: ci-\${{ ${OTHER} && github.run_id && 'mirror' || github.ref }}\n  cancel-in-progress: true\n`,
+    }),
+    "a key that reads the run id and drops it",
+    "its concurrency group",
+  );
+  exits(
+    run([
+      "--root",
+      mirrored({
+        group: `concurrency:\n  group: ci-\${{ ${OTHER} && github.run_id || github.ref }}\n  cancel-in-progress: true\n`,
+      }),
+    ]),
+    0,
+    "the run id alone as the key",
+  );
 });
 
 test("a mirror run is marked by run-name", () => {
@@ -125,6 +142,10 @@ test("a mirror run is marked by run-name", () => {
     [
       "a real run left to its default name",
       `format('ci mirror ({0} label)', github.event.label.name) || ''`,
+    ],
+    [
+      "a distinct name only where no pull-request run reaches it",
+      `'ci mirror' || github.event_name == 'pull_request' && 'ci mirror' || 'ci real'`,
     ],
     [
       "a real run's name that starts like the mirror's",
@@ -152,6 +173,18 @@ test("a job that decides on the label event in another form is a finding, never 
       "the other-label test spelled another way",
       `!contains(${LABELS}, 'hold') && github.event.label.name == 'hold'`,
     ],
+    [
+      "an index into the event",
+      `!contains(${LABELS}, 'hold') && github.event['label'].name == ''`,
+    ],
+    [
+      "an action compared in capitals",
+      `!contains(${LABELS}, 'hold') && github.event.action != 'LABELED'`,
+    ],
+    [
+      "an action that names no label",
+      `!contains(${LABELS}, 'hold') && github.event.action == 'synchronize'`,
+    ],
   ] as const) {
     const result = run([
       "--root",
@@ -169,7 +202,7 @@ test("a job that decides on the label event in another form is a finding, never 
       rules: ["ci-hold-guard"],
     });
     expect(result.err).toContain(
-      "job 'e2e' decides on the label event in a form the lint cannot prove safe",
+      "job 'e2e' decides on the event's action or label in a form the lint cannot prove safe",
     );
   }
 });

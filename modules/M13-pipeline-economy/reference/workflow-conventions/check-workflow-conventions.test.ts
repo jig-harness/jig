@@ -212,7 +212,8 @@ test("the hold guard names the exact label inside a negated contains", () => {
   for (const guard of [
     `!contains(${LABELS}, 'hold')`,
     `!(contains(${LABELS}, 'hold'))`,
-    `github.event.action != 'closed' && !contains(${LABELS}, 'hold')`,
+    `github.event_name == 'pull_request' && !contains(${LABELS}, 'hold')`,
+    `!contains(${LABELS}, 'hold') && !contains(${LABELS}, 'skip-e2e')`,
   ])
     expect({
       guard,
@@ -232,6 +233,9 @@ test("the hold guard names the exact label inside a negated contains", () => {
     "!contains('unrelated', 'hold')",
     `!(!contains(${LABELS}, 'hold'))`,
     `github.event.action != '!contains(${LABELS}, ''hold'')'`,
+    // Another term may test anything but the event's action or label: a
+    // skip that answers differently on a label event is never taken.
+    `github.event.action != 'closed' && !contains(${LABELS}, 'hold')`,
   ]) {
     const { code, err } = run(["--root", holdRepo("hold", guard, sentinelIf)]);
     expect({ guard, code, rules: rulesOf(err) }).toEqual({

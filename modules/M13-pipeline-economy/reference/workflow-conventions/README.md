@@ -141,12 +141,14 @@ recognize is a finding to rewrite or excuse, never a pass.
   while this one skips only a pull request that carries the hold label and
   runs real CI on any other label event, unless the workflow answers that
   event with a mirror (`ci-hold-mirror`). A job's `if:` in a workflow of the
-  hold that decides on the label event itself, reading `github.event.label` or
-  a label action from `github.event.action`, in any form but the mirror's skip
-  term, is a finding too: a job skipped on a label event can turn a failing
-  head into a passing one, and a form the lint cannot prove safe is never a
-  pass. It reads job conditions only; a step that skips on a label event is
-  review's to check.
+  hold with a term that reads the event's action or label, in any spelling
+  (`github.event.action`, `github.event['label']`, in any case), is a finding
+  too, unless the term is the mirror's skip term: a job skipped on some events
+  and not others can turn a failing head into a passing one, and a form the
+  lint cannot prove safe is never a pass. A test of the pull request's label
+  set is no such read, since it answers the same on every event. The lint
+  reads job conditions only; a step that skips on a label event is review's to
+  check.
 - `ci-hold-mirror`: applies to a workflow that answers an event for another
   label with a [mirror run](../../../../GLOSSARY.md): one where some job's
   `if:` has the `&&`-joined term `!(github.event.label.name &&
@@ -156,14 +158,18 @@ recognize is a finding to rewrite or excuse, never a pass.
   no label, so it is false on them. Such a workflow needs all of the
   [mirror's shape](../../README.md#7-hold), since each part missing has a
   failure of its own. Its workflow-level concurrency group's expression begins
-  with the test, `&&` and a key holding `github.run_id`, before any `||`, so
-  the run cancels nothing; without it, the label's run cancels the real run in
-  flight; the run id counts only outside quoted text. Its `run-name` begins
-  `${{ <the test> &&` and a name for the mirror, with a literal start, and goes
-  on to another name whose literal start differs from it (neither begins the
-  other), so the mirror step can leave mirror runs out and no real run passes
-  for one; without it, mirrors can wait on each other until the deadline, or
-  a real run's title can hide it from the mirror. Each required job neither carries the term, since a skipped
+  with the test, `&&`, and a key that is exactly `github.run_id` or
+  `format('<text>{0}<text>', github.run_id)`, then `||`, so the run cancels
+  nothing; without it, the label's run cancels the real run in flight, and any
+  other key could read the run id and still come to one text for every run.
+  Its `run-name` is exactly `${{ <the test> && <mirror name> ||
+  github.event_name == 'pull_request' && <real name> || '' }}`, each name a
+  quoted string or a `format()` whose pattern is one, the two with literal
+  starts that differ (neither begins the other). So every mirror run's name
+  starts one way and every real pull-request run's the other, and the mirror
+  step can leave mirror runs out without a title passing a real run off as
+  one; without it, mirrors can wait on each other until the deadline, or a
+  real run's title can hide it from the mirror. Each required job neither carries the term, since a skipped
   required check counts as passing, nor lacks a mirror step: a `run:` step
   whose whole `if:` is the test, optionally inside `${{ }}`, with no
   `continue-on-error` on it or on its job, since a run without one judges the

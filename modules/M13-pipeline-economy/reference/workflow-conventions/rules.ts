@@ -464,17 +464,27 @@ export function ciHold(pipelines: Pipelines): Found[] {
   ];
 }
 
-/** Whether a term of a job's `if:` decides on the event's own label or on a
- * label action, rather than on the pull request's label set. */
-const readsLabelEvent = (term: string) =>
-  /\bgithub\.event\.label\b/.test(term) ||
-  (/\bgithub\.event\.action\b/.test(term) && /labeled/.test(term));
+/** Whether a term of a job's `if:` reads the event's action or its label, in
+ * any spelling: a property (`github.event.action`), an index
+ * (`github.event['label']`), in any case. The pull request's label set,
+ * `github.event.pull_request.labels.*.name`, is not the event's label: a test
+ * of it answers the same on every event. Quoted text is no read. */
+function readsEventLabel(term: string): boolean {
+  const withoutSet = term.replace(
+    /github\.event\.pull_request\.labels\.\*\.name/g,
+    "",
+  );
+  return (
+    /\[\s*'\s*(?:action|label)\s*'\s*\]/i.test(withoutSet) ||
+    /\b(?:action|label)\b/i.test(withoutSet.replace(/'[^']*'/g, "''"))
+  );
+}
 
-/** Every job of a workflow in the hold whose `if:` decides on the label event
- * in any form but the mirror form's skip term. A job skipped on a label event
- * can turn a failing head into a passing one, so a form the lint cannot prove
- * safe is a finding, never a pass. Jobs already reported as unguarded are not
- * reported again. */
+/** Every job of a workflow in the hold whose `if:` reads the event's action or
+ * label in any term but the mirror form's skip term. A job skipped on some
+ * events and not on others can turn a failing head into a passing one, so a
+ * form the lint cannot prove safe is a finding, never a pass. Jobs already
+ * reported as unguarded are not reported again. */
 function labelEventConditions(
   pipelines: Pipelines,
   heavy: { wf: Workflow; jobs: Job[] }[],
@@ -489,7 +499,7 @@ function labelEventConditions(
       )
       .filter((job) =>
         (conjuncts(bare(condition(job))) ?? [bare(condition(job))]).some(
-          (term) => readsLabelEvent(term) && !skip.test(term),
+          (term) => readsEventLabel(term) && !skip.test(term),
         ),
       )
       .map((job) =>
@@ -498,7 +508,7 @@ function labelEventConditions(
           job,
           "ci-hold-guard",
         )(
-          `job '${job.id}' decides on the label event in a form the lint cannot prove safe, and a job skipped on a label event can turn a failing head into a passing one`,
+          `job '${job.id}' decides on the event's action or label in a form the lint cannot prove safe, and a job skipped on some events and not others can turn a failing head into a passing one`,
           `test the pull request's label set for the hold, and skip on another label's event only with the term !(github.event.label.name && github.event.label.name != '${label}') of the mirror form (${README}#ci-hold)`,
         ),
       ),
@@ -517,43 +527,42 @@ const mirrorStep = (job: Job, label: string) =>
       onlyOnOtherLabels(String(step.if), label),
   );
 
-/** Whether `wf`'s run-name begins with the other-label test, marking a mirror
- * run apart from a real one. */
+/** A run name: a quoted string, or a `format()` whose pattern is one and whose
+ * other arguments are contexts; the group is the name's literal start. */
+const RUN_NAME =
+  "(?:format\\(\\s*'([^'{]*)[^']*'(?:\\s*,\\s*[A-Za-z_.]+)*\\s*\\)|'([^']*)')";
+
+/** Whether `wf`'s run-name is exactly the mirror form's: `\${{ <the
+ * other-label test> && <mirror name> || github.event_name == 'pull_request' &&
+ * <real name> || '' }}`, the two names with literal starts that differ, neither
+ * beginning the other. Then every mirror run's name starts one way and every
+ * real pull-request run's the other; any other shape is not taken. */
 function marksMirrors(wf: Workflow, label: string): boolean {
   const name = wf.doc["run-name"];
-  const rest =
-    typeof name === "string"
-      ? name.match(
-          new RegExp(
-            `^\\s*\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&([\\s\\S]*)\\}\\}\\s*$`,
-          ),
-        )?.[1]
-      : undefined;
-  if (rest === undefined) return false;
-  // The literal start of each name the expression gives: the first is the
-  // mirror's, each one after an `||` or `&&` another branch's.
-  const starts = [
-    ...`&&${rest}`.matchAll(/(?:&&|\|\|)\s*(?:format\(\s*)?'([^'{]*)/g),
-  ].map((m) => m[1] ?? "");
-  const [mirror, ...others] = starts;
+  if (typeof name !== "string") return false;
+  const m = name.match(
+    new RegExp(
+      `^\\s*\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&\\s*${RUN_NAME}\\s*\\|\\|\\s*github\\.event_name\\s*==\\s*'pull_request'\\s*&&\\s*${RUN_NAME}\\s*\\|\\|\\s*''\\s*\\}\\}\\s*$`,
+    ),
+  );
+  const mirror = m?.[1] ?? m?.[2];
+  const real = m?.[3] ?? m?.[4];
   return (
-    !!mirror &&
-    others.some(
-      (real) => real && !real.startsWith(mirror) && !mirror.startsWith(real),
-    )
+    !!mirror && !!real && !real.startsWith(mirror) && !mirror.startsWith(real)
   );
 }
 
 /** Whether `wf`'s concurrency group gives a mirror run a key of its own: its
- * expression begins with the other-label test and a key that reads the run id,
- * outside any quoted text, before the first `||`. */
+ * expression begins with the other-label test, `&&`, and a key that is exactly
+ * `github.run_id` or `format('<text>{0}<text>', github.run_id)`, then `||`. Any
+ * other key is not taken, since a key can read the run id and still come to
+ * the same text for every run. */
 function isolatesMirrors(wf: Workflow, label: string): boolean {
   const concurrency = wf.doc.concurrency;
   const group = isRecord(concurrency) ? String(concurrency.group ?? "") : "";
-  const key = group.match(
-    new RegExp(`\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&([^|]*)\\|\\|`),
-  )?.[1];
-  return /\bgithub\.run_id\b/.test(key?.replace(/'[^']*'/g, "''") ?? "");
+  return new RegExp(
+    `\\$\\{\\{\\s*${otherLabelTest(label)}\\s*&&\\s*(?:github\\.run_id|format\\(\\s*'[^'{]*\\{0\\}[^'{]*'\\s*,\\s*github\\.run_id\\s*\\))\\s*\\|\\|`,
+  ).test(group);
 }
 
 /** The mirror form's workflow-level findings: its concurrency group and its
