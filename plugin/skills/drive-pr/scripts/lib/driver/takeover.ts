@@ -32,7 +32,7 @@ import { ExitError, fail, isDigits, sleep } from "./../cli.ts";
 
 import { helperTimeoutSeconds, pidAlive, run, tsArgv } from "./../proc.ts";
 
-import type { ClaimDiag } from "./../claim.ts";
+import { type ClaimDiag, samePidNamespace } from "./../claim.ts";
 
 import { accountHash, formatAccountIdentity } from "./../identity.ts";
 
@@ -68,6 +68,8 @@ interface DoctorRowJson {
   state: string;
   pid: number | null;
   host: string | null;
+  hostId?: string | undefined;
+  platform?: string | null;
   diag: ClaimDiag | null;
   doctor: { verdict: string; reason: string; recovery: string | null } | null;
 }
@@ -225,7 +227,10 @@ export async function decideTakeover(
 
 /** A stale lock admits a takeover only when its process is confirmed gone. */
 function requireProcessGone(pr: string, row: DoctorRowJson): void {
-  if (row.pid !== null && !pidAlive(row.pid, row.host ?? "")) return;
+  // A claim from this machine under an earlier host name is checked here, by
+  // its host id; one from another machine or pid namespace is never confirmed gone.
+  if (row.pid !== null && samePidNamespace(row) && !pidAlive(row.pid, ""))
+    return;
   refuse(
     pr,
     row,

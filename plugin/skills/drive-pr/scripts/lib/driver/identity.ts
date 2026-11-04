@@ -5,7 +5,7 @@ import {
   heartbeatStaleMs,
   type ClaimDiag,
   claimName,
-  formatClaim,
+  ownClaim,
 } from "./../claim.ts";
 
 import { type AccountIdentity, resolveAccountIdentity } from "./../identity.ts";
@@ -15,8 +15,6 @@ import { type DriveLock, inspect, claimWasTakenOver } from "./locks.ts";
 import { join } from "node:path";
 
 import { writeFileSync, existsSync, rmSync } from "node:fs";
-
-import { hostname } from "node:os";
 
 import { renameWithRetry } from "./../../../../../shared/rename-with-retry.ts";
 
@@ -250,7 +248,7 @@ function rewriteAccountIdentity(
   // atomic rename installs the new one.
   const tmp = join(lock.dir, `rewrite.${nonce}.${process.pid}`);
   try {
-    writeFileSync(tmp, formatClaim(process.pid, hostname(), updated));
+    writeFileSync(tmp, ownClaim(updated));
     // Re-confirmed IMMEDIATELY before the rename, not assumed from
     // `touchLock` having run earlier this same tick: `writeFileSync` above
     // is real disk I/O, wide enough for a concurrent recovery to delete
