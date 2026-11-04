@@ -15,7 +15,6 @@ gc:
   kinds: [tool-state, worktrees]
   worktree_roots:
     - ../../orca/workspaces/jig
-    - ../../worktrees/jig # Herdr-era worktrees, until none remain
     - .claude/worktrees # Claude Code's isolated subagent worktrees, inside the clone
 dispatch:
   # What `jig dispatch` wants after a merge here: Jig's own post-merge pass.
