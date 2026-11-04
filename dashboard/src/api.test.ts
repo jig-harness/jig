@@ -26,6 +26,25 @@ describe("what a guard admits", () => {
     expect(isStateAnswer(STATE)).toBe(true);
   });
 
+  it("takes a zone the formatter accepts, listed or not, and refuses one it rejects", () => {
+    expect(isStateAnswer({ ...STATE, timeZone: "Etc/GMT+5" })).toBe(true);
+    expect(isStateAnswer({ ...STATE, timeZone: "Not/AZone" })).toBe(false);
+  });
+
+  it("refuses a line whose links the page reads outside its panels and cannot", () => {
+    const line = {
+      ...STATE.line,
+      queue: [{ url: { toString: null } }],
+    };
+    expect(isStateAnswer({ ...STATE, line })).toBe(false);
+    expect(
+      isStateAnswer({
+        ...STATE,
+        line: { ...STATE.line, queue: [{ url: null }] },
+      }),
+    ).toBe(true);
+  });
+
   it("refuses rows with null counts, null options or entries that are not rows", () => {
     expect(isRowsAnswer({})).toBe(false);
     expect(isRowsAnswer({ counts: null, options: null, rows: [null] })).toBe(

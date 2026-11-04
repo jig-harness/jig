@@ -79,12 +79,18 @@ function isTime(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
-/** A zone the browser can show times in: the host names its own by the canonical name the browser lists, or UTC. */
+/** A zone the browser can show times in: one its formatter accepts, which is wider than the names it lists. */
 function isZone(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    (value === "UTC" || Intl.supportedValuesOf("timeZone").includes(value))
-  );
+  if (typeof value !== "string") return false;
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: value });
+    return true;
+  } catch (cause) {
+    // The formatter names a zone it does not know by a RangeError; any other
+    // failure is not an answer about the zone.
+    if (!(cause instanceof RangeError)) throw cause;
+    return false;
+  }
 }
 
 function areRecords(value: unknown): boolean {
@@ -102,6 +108,11 @@ function isLine(value: unknown): boolean {
     Number.isFinite(value.intervalMs) &&
     ["accounts", "sessions", "needs", "queue", "repos"].every((section) =>
       areRecords(value[section]),
+    ) &&
+    (["sessions", "needs", "queue"] as const).every((section) =>
+      (value[section] as Array<Record<string, unknown>>).every(
+        (entry) => entry.url === null || typeof entry.url === "string",
+      ),
     ) &&
     (value.needs as Array<Record<string, unknown>>).every(
       (need) => isTime(need.since) && Array.isArray(need.decisions),

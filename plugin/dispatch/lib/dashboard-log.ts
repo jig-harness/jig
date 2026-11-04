@@ -122,30 +122,35 @@ function recurringClasses(
     midnightIn(timeZone, nowMs, i + 1 - RECURRENCE_NIGHTS),
   );
   const groups = new Map<string, RecurringClass>();
-  const selected = db
-    .query(
-      `SELECT bucket, repo, at_ms FROM log
-       WHERE kind = 'ended' AND at_ms <= ?1 AND at_ms >= ?2
-         AND bucket NOT IN (${NOT_BAD.map((c) => `'${c}'`).join(", ")})`,
-    )
-    .all(nowMs, starts[0] ?? nowMs) as Array<{
-    bucket: string;
-    repo: string;
-    at_ms: number;
-  }>;
-  for (const row of selected) {
-    const key = `${row.bucket}\u0000${row.repo}`;
-    const group = groups.get(key) ?? {
-      class: row.bucket,
-      repo: row.repo,
-      nights: Array.from({ length: RECURRENCE_NIGHTS }, () => false),
-      rows: 0,
-    };
-    const day = starts.findLastIndex((start) => start <= row.at_ms);
-    if (day >= 0) group.nights[day] = true;
-    group.rows += 1;
-    groups.set(key, group);
-  }
+  // One grouped query per day: the result follows the classes that ended, not
+  // the sessions, however busy the week was.
+  const perDay = db.query(
+    `SELECT bucket, repo, COUNT(*) AS n FROM log
+     WHERE kind = 'ended' AND at_ms >= ?1 AND at_ms <= ?2
+       AND bucket NOT IN (${NOT_BAD.map((c) => `'${c}'`).join(", ")})
+     GROUP BY bucket, repo`,
+  );
+  starts.forEach((start, day) => {
+    const end =
+      day + 1 < starts.length ? (starts[day + 1] ?? nowMs) - 1 : nowMs;
+    const found = perDay.all(start, end) as Array<{
+      bucket: string;
+      repo: string;
+      n: number;
+    }>;
+    for (const row of found) {
+      const key = `${row.bucket}\u0000${row.repo}`;
+      const group = groups.get(key) ?? {
+        class: row.bucket,
+        repo: row.repo,
+        nights: Array.from({ length: RECURRENCE_NIGHTS }, () => false),
+        rows: 0,
+      };
+      group.nights[day] = true;
+      group.rows += row.n;
+      groups.set(key, group);
+    }
+  });
   return [...groups.values()]
     .filter((g) => g.nights.filter(Boolean).length >= RECURRENCE_AT_LEAST)
     .sort((a, b) => b.rows - a.rows);

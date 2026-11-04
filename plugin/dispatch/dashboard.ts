@@ -206,28 +206,24 @@ function readAnswer<T>(outcome: Outcome<T>, request: Request): Response {
 /** `GET /receipt`: the newest tick's receipt, or, for a page naming the run it shows, a refusal when a newer tick took its place. */
 function receiptAnswer(url: URL, request: Request, root: string): Response {
   const run = url.searchParams.get("run");
-  if (run !== null) {
-    const line = readLine(root);
-    if (!line.ok) return readAnswer(line, request);
-    if (line.value !== null && line.value.runId !== run)
-      return answered(
-        failed(
-          "receipt-superseded",
-          `tick ${run} is no longer the newest; reload the page to read the newer receipt`,
-        ),
-        request,
-        409,
-      );
-  }
-  const receipt = readLineReceipt(root);
-  if (!receipt.ok) return readAnswer(receipt, request);
-  return receipt.value === null
+  const stored = readLineReceipt(root);
+  if (!stored.ok) return readAnswer(stored, request);
+  if (run !== null && stored.value !== null && stored.value.runId !== run)
+    return answered(
+      failed(
+        "receipt-superseded",
+        `tick ${run} is no longer the newest; reload the page to read the newer receipt`,
+      ),
+      request,
+      409,
+    );
+  return stored.value === null
     ? answered(
         failed("no-receipt", "no tick has written a receipt here yet"),
         request,
         404,
       )
-    : jsonResponse(receipt.value, request, 200);
+    : jsonResponse(stored.value.receipt, request, 200);
 }
 
 export interface Dashboard {

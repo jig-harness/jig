@@ -75,14 +75,18 @@ export function readLine(
       );
 }
 
-/** The receipt of the tick that wrote the stored line, as its text; `null` before a tick wrote one. */
+/** The receipt of the tick that wrote the stored line, with that tick's run; `null` before a tick wrote one. One row is read, so the two always belong together. */
 export function readLineReceipt(
   root = stateRoot(),
-): Outcome<string | null, "line-unreadable"> {
+): Outcome<{ runId: string; receipt: string } | null, "line-unreadable"> {
   const row = attempt(
     "line-unreadable",
     "the newest tick's receipt cannot be read",
-    () => stored(root),
+    () =>
+      (existingStateDb(root)
+        ?.query("SELECT run_id AS runId, receipt FROM tick_line WHERE id = 1")
+        .get() as { runId: string; receipt: string } | null | undefined) ??
+      null,
   );
-  return row.ok ? ok(row.value?.receipt ?? null) : row;
+  return row;
 }
