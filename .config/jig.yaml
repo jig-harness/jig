@@ -27,6 +27,17 @@ dispatch:
   # `jig install dispatch --repo <clone> --yes` creates the labels.
   labels:
     enabled: true
+design_brief:
+  # Where finished design bundles land, one folder per flow, and what the
+  # design-handback landing check needs. The browser script finds the
+  # machine's Chromium; `JIG_CHROMIUM`, or the environment layer's
+  # `JIG__design_brief__handback__browser_executable`, names another.
+  prototypes: design/prototypes
+  handback:
+    widths: [390, 1440]
+    rubric: design/prototypes/rubric.md
+    scorecard: design/prototypes/dispatch-dashboard.scorecard.md
+    browser_executable: tools/design/chromium.sh
 gates:
   command: bun run gates
 review:

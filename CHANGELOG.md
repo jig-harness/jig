@@ -380,6 +380,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.129.2] - 2026-11-03
+
+### Added
+
+- The dispatch dashboard's design prototype, the returned round of an external design session prepared with the [design-brief-builder](plugin/skills/design-brief-builder/README.md) skill, lands under `design/prototypes/dispatch-dashboard/` with its scorecard and rubric; the plugin's NOTICE lists the React builds that prototype loads.
+
 ## [0.129.1] - 2026-11-03
 
 ### Changed
@@ -4909,7 +4915,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.129.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.129.2...HEAD
+[0.129.2]: https://github.com/jig-harness/jig/compare/v0.129.1...v0.129.2
 [0.129.1]: https://github.com/jig-harness/jig/compare/v0.129.0...v0.129.1
 [0.129.0]: https://github.com/jig-harness/jig/compare/v0.128.0...v0.129.0
 [0.128.0]: https://github.com/jig-harness/jig/compare/v0.127.1...v0.128.0
