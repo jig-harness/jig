@@ -5,8 +5,8 @@
  * child, with its own Jig home and working tree.
  */
 
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -19,6 +19,11 @@ const BYPASS_WORDS = ["--permission-mode", "bypassPermissions"];
 const CLAUDE = { CLAUDECODE: "1" };
 const CODEX = { CODEX_HOME: "/nonexistent-codex-home" };
 const CODEX_BYPASS = "--dangerously-bypass-approvals-and-sandbox";
+
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 /** The test's environment, without anything that chooses a harness or a layer. */
 function cleanEnv(extra: Record<string, string>): Record<string, string> {
@@ -39,6 +44,7 @@ function sides(
   repository?: string,
 ): Record<"home" | "tree", string> {
   const root = mkdtempSync(join(tmpdir(), "pass-args-host-"));
+  roots.push(root);
   const home = join(root, "home");
   const tree = join(root, "tree");
   mkdirSync(home);

@@ -81,6 +81,14 @@ test("a user file a drive would stop on is a warning about this machine", () => 
     (f) => f.id === "fact:user-layer-invalid",
   );
   expect(bypass?.message).toContain("drive.codex_bypass must be true or false");
+
+  for (const section of ["[]", "off"]) {
+    const shape = findings("", `drive: ${section}\n`).find(
+      (f) => f.id === "fact:user-layer-invalid",
+    );
+    expect(shape?.severity).toBe("warning");
+    expect(shape?.message).toContain("drive must be an object");
+  }
 });
 
 test("a user file a drive can use draws no finding but the fact that it adds them", () => {

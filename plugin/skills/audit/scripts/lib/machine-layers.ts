@@ -26,6 +26,9 @@ function leafFields(config: Config, prefix = ""): string[] {
 
 /** What is wrong with the host's own settings in its user file: a drive here stops on either. */
 function hostSettingProblems(user: Config): string[] {
+  const drive = user.drive;
+  if (drive !== undefined && drive !== null && !isRecord(drive))
+    return ["drive must be an object"];
   const problems: string[] = [];
   const words = at(user, "drive.pass_args");
   const wrong =
