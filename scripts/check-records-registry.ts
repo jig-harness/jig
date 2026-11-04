@@ -14,8 +14,9 @@
 // - every family the drive's state library tags a state-file pattern with
 //   (`family: "<name>"` in `plugin/skills/drive-pr/scripts/lib/state/`), so
 //   a new pattern either joins a registered family or registers its own;
-// - SQLite CREATE TABLE declarations, read as SQL tokens after decoding source
-//   escapes, with comments as whitespace and bare or quoted names. Recognized
+// - SQLite CREATE TABLE declarations in source string literals, read as SQL
+//   tokens with cooked escapes decoded and String.raw escapes preserved. Source
+//   comments, SQL comments and SQL quoted values cannot start declarations. Recognized
 //   headers with unsupported names are findings, never omissions.
 //
 // Each must be a registered kind's marker, state family or table, or a
@@ -142,10 +143,7 @@ export function namedIn(path: string, text: string): Named[] {
       })),
     ];
   });
-  // Filter declaration starts, not their intervening lines: a SQL comment may
-  // start a source line and close before TABLE on that same line.
   for (const { name, line } of sqlTables(text)) {
-    if (COMMENT_LINE.test(lines[line - 1] ?? "")) continue;
     named.push({
       what: "table",
       text: name ?? "unclassified CREATE TABLE declaration",

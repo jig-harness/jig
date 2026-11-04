@@ -116,7 +116,10 @@ describe("what the code names", () => {
       "family 1 new-family",
     ]);
     expect(
-      texts("plugin/db.ts", "  CREATE TABLE IF NOT EXISTS board_seen ("),
+      texts(
+        "plugin/db.ts",
+        'const sql = "CREATE TABLE IF NOT EXISTS board_seen (";',
+      ),
     ).toEqual(["table 1 board_seen"]);
   });
 
@@ -131,7 +134,7 @@ describe("what the code names", () => {
     ]) {
       const named = namedIn(
         "plugin/db.ts",
-        `const sql = \`\n${declaration}\n\`;`,
+        `const sql = \`\n${declaration.replaceAll("`", "\\`")}\n\`;`,
       );
       expect(named).toEqual([
         { what: "table", text: "new_records", file: "plugin/db.ts", line: 2 },
@@ -188,15 +191,65 @@ describe("what the code names", () => {
       expect(findings(root, named, [], [])).toHaveLength(1);
     }
     expect(
-      namedIn("plugin/db.ts", 'CREATE TABLE "a/*literal*/b" (id TEXT)')[0]
-        ?.text,
+      namedIn(
+        "plugin/db.ts",
+        `const sql = ${JSON.stringify('CREATE TABLE "a/*literal*/b" (id TEXT)')};`,
+      )[0]?.text,
     ).toBe("a/*literal*/b");
     expect(
       namedIn(
         "plugin/db.ts",
-        "CREATE /* TABLE fake ( */ TABLE real (id TEXT)",
+        'const sql = "CREATE /* TABLE fake ( */ TABLE real (id TEXT)";',
       ).map((n) => n.text),
     ).toEqual(["real"]);
+  });
+
+  const tableNames = (source: string) =>
+    namedIn("plugin/db.ts", source).map((n) => n.text);
+
+  test("SQL comments before CREATE stay inside the source literal", () => {
+    expect(
+      tableNames(
+        "const sql = `\n/* migration */ CREATE TABLE new_records (id TEXT);\n`;",
+      ),
+    ).toEqual(["new_records"]);
+  });
+
+  test("String.raw SQL templates preserve escapes", () => {
+    expect(
+      tableNames(
+        String.raw`const sql = String.raw\`CREATE /* \u002a/ TABLE launches ( */ TABLE new_records (id TEXT);\`;`.replaceAll(
+          "\\`",
+          "`",
+        ),
+      ),
+    ).toEqual(["new_records"]);
+  });
+
+  test("SQL declaration starts exclude comments and quoted values", () => {
+    for (const sql of [
+      "SELECT 1; /* CREATE TABLE old_records (id TEXT); */",
+      "SELECT 1; -- CREATE TABLE old_records (id TEXT);\n",
+      "SELECT 'CREATE TABLE old_records (id TEXT);';",
+      'SELECT "CREATE TABLE old_records (id TEXT);";',
+    ]) {
+      expect(tableNames(`const sql = ${JSON.stringify(sql)};`)).toEqual([]);
+      expect(
+        tableNames(
+          `const sql = ${JSON.stringify(`${sql}\nCREATE TABLE real_records (id TEXT);`)};`,
+        ),
+      ).toEqual(["real_records"]);
+    }
+    expect(
+      tableNames(
+        "// CREATE TABLE old_records (id TEXT);\n/* const sql = `CREATE TABLE old_records (id TEXT);`; */",
+      ),
+    ).toEqual([]);
+    expect(
+      tableNames(
+        'const sql = "CREATE TABLE one (id TEXT);"; const other = "CREATE TABLE two (id TEXT);";',
+      ),
+    ).toEqual(["one", "two"]);
   });
 
   test("table headers are accounted for even outside the supported name grammar", () => {
@@ -209,15 +262,21 @@ describe("what the code names", () => {
       "CREATE TABLE main.new_records (id TEXT)",
       `CREATE TABLE ${splice("tableName")} (id TEXT)`,
     ]) {
-      const named = namedIn("plugin/db.ts", declaration);
+      const named = namedIn("plugin/db.ts", `const sql = \`${declaration}\`;`);
       expect(named).toHaveLength(1);
       expect(findings(root, named, [], [])).toHaveLength(1);
     }
     expect(
-      namedIn("plugin/db.ts", 'CREATE TABLE "new-records" (id TEXT)')[0]?.text,
+      namedIn(
+        "plugin/db.ts",
+        `const sql = ${JSON.stringify('CREATE TABLE "new-records" (id TEXT)')};`,
+      )[0]?.text,
     ).toBe("new-records");
     expect(
-      namedIn("plugin/db.ts", 'CREATE TABLE "a""b" (id TEXT)')[0]?.text,
+      namedIn(
+        "plugin/db.ts",
+        `const sql = ${JSON.stringify('CREATE TABLE "a""b" (id TEXT)')};`,
+      )[0]?.text,
     ).toBe('a"b');
   });
 });

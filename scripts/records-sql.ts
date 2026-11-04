@@ -1,53 +1,10 @@
 /**
- * Read literal CREATE TABLE declarations from source text. Source escapes are
- * decoded once, with source locations retained; the SQL reader then consumes
- * tokens, treating comments as trivia only between tokens, never inside names.
+ * Read CREATE TABLE declarations inside source string literals. Cooked escapes
+ * are decoded once and String.raw templates retain their escapes, with source
+ * locations preserved. SQL comments and quoted values cannot start declarations.
  * This does not evaluate expressions or assemble SQL from separate strings.
  */
-interface Source {
-  text: string;
-  lines: number[];
-}
-
-const ESCAPES: Record<string, string> = {
-  n: "\n",
-  r: "\r",
-  t: "\t",
-  v: "\v",
-  f: "\f",
-  b: "\b",
-  "0": "\0",
-};
-
-function escapeValue(raw: string): string {
-  const code = raw.slice(1);
-  if (/^[ux]/i.test(code)) {
-    const digits = code.startsWith("u{") ? code.slice(2, -1) : code.slice(1);
-    const point = Number.parseInt(digits, 16);
-    return point <= 0x10ffff ? String.fromCodePoint(point) : raw;
-  }
-  if (code === "\n" || code === "\r\n") return "";
-  return ESCAPES[code] ?? code;
-}
-
-function decoded(source: string): Source {
-  const parts: string[] = [];
-  const lines: number[] = [];
-  let line = 1;
-  const sourceEscape =
-    /\\(?:u\{[\da-f]+\}|u[\da-f]{4}|x[\da-f]{2}|\r?\n|[\s\S])/iy;
-  for (let at = 0; at < source.length; ) {
-    sourceEscape.lastIndex = at;
-    const match = sourceEscape.exec(source);
-    const raw = match?.[0] ?? (source[at] as string);
-    const value = match ? escapeValue(raw) : raw;
-    parts.push(value);
-    for (let n = 0; n < value.length; n++) lines.push(line);
-    line += raw.split("\n").length - 1;
-    at += raw.length;
-  }
-  return { text: parts.join(""), lines };
-}
+import { sourceLiterals, type SqlSource } from "./records-source.ts";
 
 interface Token {
   text: string;
@@ -126,21 +83,18 @@ function literalName(tokens: Tokens): string | null {
 export function sqlTables(
   source: string,
 ): { name: string | null; line: number }[] {
-  const sql = decoded(source);
+  return sourceLiterals(source).flatMap(tablesIn);
+}
+
+function tablesIn(sql: SqlSource): { name: string | null; line: number }[] {
   const found: { name: string | null; line: number }[] = [];
-  const creates = /\bCREATE\b/gi;
-  for (
-    let match = creates.exec(sql.text);
-    match;
-    match = creates.exec(sql.text)
-  ) {
-    const tokens = new Tokens(sql.text, creates.lastIndex);
-    if (!tableHeader(tokens)) continue;
-    found.push({
-      name: literalName(tokens),
-      line: sql.lines[match.index] ?? 1,
-    });
-    creates.lastIndex = tokens.at;
+  const tokens = new Tokens(sql.text, 0);
+  for (let token = tokens.next(); token; token = tokens.next()) {
+    const start = tokens.at - token.text.length;
+    if (!is(token, "CREATE")) continue;
+    const header = new Tokens(sql.text, tokens.at);
+    if (!tableHeader(header)) continue;
+    found.push({ name: literalName(header), line: sql.lines[start] ?? 1 });
   }
   return found;
 }
