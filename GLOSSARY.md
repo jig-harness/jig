@@ -2188,6 +2188,22 @@ make, use the entry's term instead.
   skill (`code_stats.classify_command`) when globs cannot describe its
   layout: it reads the tracked paths and prints, per file, the area, kind,
   language or module that overrides the skill's own classification.
+- **Address** — the name that identifies one conversation partner of the
+  tooling, such as a drive or a follow-up, and keys its thread: the request,
+  the question, the answer and the outcome, each linked to the record it came
+  from. `jig ask` reads a thread by address and `jig send` writes a record
+  to one.
+- **Guard record** — the small file Jig's Orca plugin and `jig gc` share
+  without an awaited call: gc's *admission* for each worktree it is
+  collecting, the launches the plugin let through, and the plugin's
+  heartbeat. The plugin reads it to refuse a launch into a worktree gc is
+  removing.
+- **Admission** — gc's claim on one worktree in the *guard record* while it
+  makes its last checks and removes it. One not yet submitted for removal is
+  released on every exit and judged abandoned when its owner is no longer
+  alive; one submitted to Orca stays until the removal is known to have
+  settled, since the owner dying or the call failing does not say whether
+  Orca finished.
 
 ## External precondition
 
