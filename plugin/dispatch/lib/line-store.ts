@@ -63,7 +63,7 @@ function listOf(fields: Fields): (value: unknown) => boolean {
 const DECISION_FIELDS: Fields = {
   key: isString,
   kind: (value) => value === "thread" || value === "finding",
-  lines: Array.isArray,
+  lines: (value) => Array.isArray(value) && value.every(isString),
 };
 
 /** What the sessions view reads of each thread sample. */

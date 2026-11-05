@@ -223,6 +223,19 @@ describe("jig dispatch line --json", () => {
 
   it.each([
     ["a null decision", { needs: [{ ...NEED, decisions: [null] }] }],
+    [
+      "a decision line that is not text",
+      {
+        needs: [
+          {
+            ...NEED,
+            decisions: [
+              { key: "k", kind: "thread", lines: [{ toString: null }] },
+            ],
+          },
+        ],
+      },
+    ],
     ["a null thread sample", { sessions: [{ ...SESSION, samples: [null] }] }],
   ])("refuses a line with %s", (_name, change) => {
     const root = stateRootOf(freshHome());
