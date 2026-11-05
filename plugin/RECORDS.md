@@ -95,6 +95,7 @@ directory.
 | `scheduled-job` | a systemd user timer, a launchd job or a crontab line per component, and its launcher copy under `~/.local/state/jig/<component>/launcher/` | scheduler files | `runtime/scheduler.ts` | the install lock; staged and renamed |
 | `path-command` | `~/.local/bin/jig`, and its launcher copy under `~/.local/state/jig/launcher/` | a script carrying the line `jig: written by jig install` | `runtime/path-command.ts` | a file without that line is never replaced |
 | `evidence-record` | `~/.local/state/jig/evidence/<repo>/<tree>/<command>/<run id>.json` | JSON, `schema: jig-evidence/v1` | `shared/evidence.ts` | the run id is reserved by an exclusive log file; the record is renamed into place |
+| `host-id` | `~/.local/state/jig/host-id` | a random UUID and a newline | `shared/liveness.ts` | written to a temporary file created exclusively, then published by a link that fails while one exists; concurrent first readers adopt the first id |
 | `verification-fit-log` | `~/.local/state/jig/verification-fit.jsonl` | JSONL, `v: 1` | `skills/drive-pr/scripts/verification-fit.ts` | appended |
 | `trace` | `~/.local/state/jig/traces/<date>/<trace id>.jsonl`, when tracing is on | JSONL | `shared/trace.ts` | appended |
 | `orca-card-lock` | `~/.local/state/jig/orca-card-locks/` | a lock file | `shared/orca-card-lock.ts` | published whole by a link; a dead holder is reclaimed in generations |

@@ -327,6 +327,13 @@ const MACHINE: RecordKind[] = [
     version: 1,
   },
   {
+    name: "host-id",
+    medium: "machine",
+    owner: "shared/liveness.ts",
+    at: "~/.local/state/jig/host-id",
+    version: 0,
+  },
+  {
     name: "verification-fit-log",
     medium: "machine",
     owner: `${DRIVE}verification-fit.ts`,
