@@ -1409,10 +1409,8 @@ async function evaluateFresh(
   // when the state says so.
   //
   // drive-state's stderr is PASSED THROUGH: it writes there only what a human
-  // must act on (a malformed state file, or the ONE-TIME warning about a
-  // worktree-private state file the git-dir migration orphaned, guarded by a
-  // durable marker). This first drive-state call of an evaluation would
-  // otherwise consume that single showing invisibly.
+  // must act on (a malformed state, a database a newer plugin needs a newer
+  // reader for).
   const parked = await readParkedSets(ctx);
   if (parked === null) {
     return terminal(

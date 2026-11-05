@@ -585,12 +585,12 @@ describe("drive-state.ts durability", () => {
       expect(out).toContain("PRRT_parked");
     });
 
-    it("prefers itself over a compacted recollection, WITHOUT overclaiming exactness with the JSON", async () => {
+    it("prefers itself over a compacted recollection, WITHOUT overclaiming exactness with the stored state", async () => {
       // Deliberate, not decoration. A successor starting fresh has nothing to
       // weigh the file against; an agent resuming after a compaction still
       // holds a degraded summary of its own round and will prefer it unless
-      // the file says otherwise. But the claim stops there: the JSON write
-      // and this file's write are two separate `mv`s, so it cannot honestly
+      // the file says otherwise. But the claim stops there: the state's write
+      // and this file's write are two separate writes, so it cannot honestly
       // claim to be a transactional mirror of the state — it says so, and
       // points anything consequential back at `drive-state.ts` directly.
       const d = stateDirFor("handoff-authority");

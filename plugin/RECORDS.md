@@ -54,12 +54,22 @@ it; the other records adopt it one family at a time
 
 **How paths are written.** A path in the plugin is written from the plugin
 directory (`dispatch/lib/walls.ts`), as in [MECHANISMS.md](MECHANISMS.md).
-`<state dir>` is a drive's per-clone state directory,
+`<drive db>` is the drive's database, `~/.local/state/jig/drive-pr/state.sqlite`,
+one per machine, and `<state dir>` a clone's directory beside it,
 `~/.local/state/jig/drive-pr/<clone>/`, which
 `skills/drive-pr/scripts/lib/state/store.ts` resolves (`$DRIVE_PR_STATE_DIR`
-moves its root). `<dispatch>` is the dispatcher's,
+moves their root). `<dispatch>` is the dispatcher's,
 `~/.local/state/jig/dispatch/` (`dispatch/receipts.ts`). `<git dir>` is the
 working tree's own Git directory. `~/.jig/` is `$JIG_HOME` when it is set.
+
+**A component's database.** The drive's and the dispatcher's databases are
+SQLite, opened through `shared/records/db.ts`: a write-ahead log so a reader
+never waits on a writer, migrations that only move forward, the schema
+version in `PRAGMA user_version`, and a `db_meta` row (`db-meta`) holding the
+database's instance id and its minimum reader, the lowest schema version a
+plugin must know to use it. A plugin one release behind reads a database a
+newer one changed only additively, and refuses one that needs a newer
+reader, naming both versions.
 
 ## On the machine
 
@@ -68,23 +78,21 @@ directory.
 
 | Record | Where it lives | Format | Written by | What guards it |
 |--------|----------------|--------|------------|----------------|
-| `drive-state` | `<state dir>/drive-pr-<PR>.json` | JSON with no version field; a shape the store cannot use is refused (`isUsableState`) | `skills/drive-pr/scripts/lib/state/store.ts`, through `drive-state.ts` | the state lock (a directory created atomically, `lib/state/lock.ts`); a temporary file renamed over it; the lease fence checked inside the lock |
-| `drive-pr-lease` | `<state dir>/pr-drive-lease-<PR>-wt-<16 hex>.json` | JSON: holder, process, host, worktree, a generation per renewal | `skills/drive-pr/scripts/lib/state/lease-admission.ts` | a lock on the lease's path, then a renamed write |
-| `drive-tree-lease` | `<state dir>/drive-tree-lease-wt-<16 hex>.json` | JSON, a fresh token on every write | `skills/drive-pr/scripts/lib/state/lease-tree.ts` | its own lock; a rollback compares the token |
-| `drive-remote-lock` | `<state dir>/drive-pr-remote-lock-<PR>.lock/` | a directory lock | `skills/drive-pr/scripts/lib/state/lease-files.ts` | created atomically; a stale holder is broken by `lib/state/lock.ts`'s rules |
-| `drive-pr-lock`, `drive-worktree-lock` | `<state dir>/pr-drive-<PR>.lock/` and `pr-drive-worktree-<16 hex>.lock/`, each holding a `claim.<nonce>` | a directory; the claim names the process, host and platform, then its details as JSON | `skills/drive-pr/scripts/lib/driver/locks.ts` (the claim's format: `lib/claim.ts`) | staged under another name and renamed into place: one driver per pull request and per worktree; the worktree lock is taken first |
-| `drive-stop-completion` | `<state dir>/drive-pr-<PR>.stop-complete.<24 hex>.json` | JSON | `skills/drive-pr/scripts/lib/stop-request.ts` | created exclusively, then renamed; addressed by the stop's nonce |
+| `drive-state` | `<drive db>`, table `drive_state`, one row per clone and PR | the `DriveState` document as JSON, with its version in a column; a shape the store cannot use is refused (`isUsableState`) | `skills/drive-pr/scripts/lib/state/store.ts`, through `drive-state.ts` | the store's lock (`drive-lock`) around each read-modify-write; the lease fence checked inside the lock |
+| `drive-lock` | `<drive db>`, table `locks`, one row per clone and name: the store's per-PR lock `drive-pr-<PR>`, the driver locks `pr-drive-<PR>` and `pr-drive-worktree-<16 hex>`, the remote-mutation lock `drive-pr-remote-lock-<PR>`, the tree-lease guard `drive-tree-lease-wt-<16 hex>`, the reaper's `reap-state` | the holder's process identity (`shared/liveness.ts`), a token per acquisition, the heartbeat; a driver lock's diagnostics as JSON | `skills/drive-pr/scripts/lib/state/lock.ts`; the driver locks `skills/drive-pr/scripts/lib/driver/locks.ts` | taken by one statement that inserts or replaces the row it saw; released and renewed only under its token; a holder judged dead, or past its window, is replaced; a release deletes the row |
+| `drive-pr-lease` | `<drive db>`, table `leases`, one row per clone, PR and working tree | the holder's process identity, the lease shape (generation, start, renewal, expiry), the session's token and diagnostics | `skills/drive-pr/scripts/lib/state/lease-admission.ts` | read and written in one transaction; a generation drawn from `drive-counter`, kept on renewal and raised by every admission, which the fence compares |
+| `drive-tree-lease` | `<drive db>`, table `tree_leases`, one row per clone and working tree | as `drive-pr-lease`, with the PR it drives and a revision per write | `skills/drive-pr/scripts/lib/state/lease-tree.ts` | the tree-lease guard (`drive-lock`) and one transaction; a rollback compares the revision |
+| `drive-claim` | `<drive db>`, table `claims`: a held item's claim per key, the Ready mark's per PR | a token and when it was taken | `skills/drive-pr/scripts/lib/state/claims.ts` | created by an insert that does nothing when one exists; a stale claim is broken under the store's lock |
+| `drive-stop` | `<drive db>`, table `stops`, one row per driver lock and acquisition | when a stop was asked, and the pid that confirmed it | `skills/drive-pr/scripts/lib/stop-request.ts` | addressed by the lock's token, so a successor is never stopped; the request goes with the lock's release, the confirmation stays for `drives.ts --stop` |
+| `drive-ledger-driver` | `<drive db>`, table `driver_records`, one row per clone and PR | the driver's worktree, start, process and host, and whether it released its locks | `skills/drive-pr/scripts/lib/ledger-stop.ts` | updated and removed only while it names the same start |
+| `drive-state-import` | `<drive db>`, table `imports`, one row per clone | when an earlier release's state directory was read in, how many records, and the files it could not read | `skills/drive-pr/scripts/lib/state/import.ts` | written once, in the transaction that imports, at the first open of the database for that clone |
+| `drive-counter` | `<drive db>`, table `counters` | a number that only grows, such as the lease generation | `skills/drive-pr/scripts/lib/state/db.ts` | one statement increments and returns it |
 | `drive-log` | `<state dir>/drive-pr-<PR>.log`, rotated to `.log.1` | text lines | `skills/drive-pr/scripts/lib/driver-log.ts` | appended; only the driver that holds the lock rotates it |
-| `drive-ready-claim`, `drive-held-claim` | `<state dir>/drive-pr-<PR>.ready-claim`, `drive-pr-<PR>.held-claim.<key>.<16 hex>` | a token | `skills/drive-pr/scripts/lib/state/claims.ts` | created exclusively; a stale claim is broken under the state lock; released by a rename |
 | `drive-pass-handoff` | `<state dir>/drive-pr-<PR>.answers.json`, `drive-pr-<PR>.notice.md` | JSON; Markdown | `skills/drive-pr/scripts/lib/state/pass-handoff.ts` | renamed into place |
-| `drive-orphan-marker` | `<state dir>/.drive-pr-<PR>.orphan-warned` | empty, then one line | `skills/drive-pr/scripts/lib/state/orphans.ts` | created exclusively |
-| `drive-ledger-driver` | `<state dir>/ledger-driver-<PR>.json` | JSON: the driver's worktree, start, process and host | `skills/drive-pr/scripts/lib/ledger-stop.ts` | renamed into place; removed only while it names the same start |
 | `drive-report-memory` | `<state dir>/drives-report.json` | JSON: when the last morning report ran | `skills/drive-pr/scripts/lib/morning-report.ts` (`drives.ts --report`) | one writer, no lock |
-| `drive-reaper-snapshot`, `drive-reaper-lock` | `<state dir>/.reap-state-snapshot.json`, `.reap-state-delete.lock/` | JSON; a directory lock | `skills/drive-pr/scripts/reap-state.ts` | the snapshot is written under the delete lock |
-| `drive-legacy-migration` | `<state dir>/.migrated-from-legacy` | an empty file | `skills/drive-pr/scripts/lib/state/legacy-state.ts` | written once the old location's files have moved |
-| `drive-arm-output` | `<state dir>/drive-arm-<PR>.out` | output text | nothing in this version; `skills/drive-pr/scripts/lib/state/state-file-patterns.ts` recognises it so the reaper retires one | none |
+| `drive-arm-output` | `<state dir>/drive-arm-<PR>.out` | output text | nothing in this version; `skills/drive-pr/scripts/lib/state/artifacts.ts` recognises it so the reaper retires one | none |
 | `drive-clone-id` | `<git common dir>/drive-pr-clone-id` | a random id | `skills/drive-pr/scripts/lib/state/clone-key.ts` | created exclusively from a synced temporary file; a second writer adopts the first one's id |
-| `dispatch-launch`, `dispatch-thread-sample`, `dispatch-waiting-episode`, `dispatch-notice`, `dispatch-nudge`, `dispatch-followup-outcome`, `dispatch-idle`, `dispatch-hold`, `dispatch-outcome`, `dispatch-log-cursor`, `dispatch-tick-line` | `<dispatch>/state.sqlite`, one table each: `launches`, `thread_samples`, `waiting_episodes`, `notices`, `nudges`, `followup_outcomes`, `idle`, `holds`, `log`, `log_export`, `tick_line` | SQLite, with a write-ahead log so a reader never waits on a writer; its schema version in `PRAGMA user_version`, a newer one refused | the tick, through `dispatch/lib/state.ts` and each table's module; the wrapper `dispatch/run.ts` claims a launch and records its exit; `jig dispatch result` records a session's answer | ticks run one at a time under the tick lock, each write a transaction; a launch's claim, exit and result are each written once, by an update that fills an empty column |
+| `dispatch-launch`, `dispatch-thread-sample`, `dispatch-waiting-episode`, `dispatch-notice`, `dispatch-nudge`, `dispatch-followup-outcome`, `dispatch-idle`, `dispatch-hold`, `dispatch-outcome`, `dispatch-log-cursor`, `dispatch-tick-line` | `<dispatch>/state.sqlite`, one table each: `launches`, `thread_samples`, `waiting_episodes`, `notices`, `nudges`, `followup_outcomes`, `idle`, `holds`, `log`, `log_export`, `tick_line` | SQLite, through `shared/records/db.ts`; a newer schema read when it only gained tables or columns, refused when it needs a newer reader | the tick, through `dispatch/lib/state.ts` and each table's module; the wrapper `dispatch/run.ts` claims a launch and records its exit; `jig dispatch result` records a session's answer | ticks run one at a time under the tick lock, each write a transaction; a launch's claim, exit and result are each written once, by an update that fills an empty column |
 | `dispatch-receipt` | `<dispatch>/receipts/<date>/<run id>.json` | JSON, `version: 1` | `dispatch/receipts.ts` | created exclusively, synced and renamed; one per tick |
 | `dispatch-tick-lock` | `<dispatch>/tick.lock`, `<dispatch>/tick-index` | a process id; a counter | `dispatch/receipts.ts` | the lock is published by a link, which fails while one exists; the counter is written under it |
 | `dispatch-wall` | `<dispatch>/walls/<account>/<ms>-<8 hex>.json` | JSON | `dispatch/lib/walls.ts`, from `dispatch/run.ts` and `dispatch/lib/session-walls.ts` | one file per write; the wall is the latest reset of them all, so no write moves it earlier |
@@ -104,7 +112,8 @@ directory.
 | `orca-run-tab` | `~/.local/state/jig/orca-tabs/<handle>.json` | JSON, `version: 1` | `shared/orca-tabs.ts` | renamed into place |
 | `orca-board-card` | the session runtime's card for a workspace: its column and comment | text | `shared/orca-board.ts` | the card lock |
 | `gh-cache` | `~/.cache/jig/gh-cache/<hash>.json` | JSON, `v: 1` | `shared/gh-cache-storage.ts` | renamed into place; best effort, pruned |
-| `process-registry` | `<tmp>/jig-processes-<id>/` | JSON per process | `shared/process-registry.ts` | renamed into place; a completion is published once |
+| `db-meta` | every component's database, table `db_meta` | one row: the database's instance id, the schema version it was written for and its minimum reader | `shared/records/db.ts` | written in the migration's transaction |
+| `process-registry` | `<tmp>/jig-processes-<id>/`; a driver's on Windows, `<state dir>/pr-drive-<PR>.processes.<token>/` | JSON per process | `shared/process-registry.ts` | renamed into place; a completion is published once |
 | `resource-lock` | `<tmp>/jig-lock.<name>` | a link naming the holder's process | `shared/resource-lock.ts` | created atomically; a dead holder is reclaimed through a claim file |
 | `turn-budget-state` | `<tmp>/jig-turn-budget/<session>/state.json` | JSON | `hooks/turn-budget-guard.ts` | renamed into place |
 | `reflection-pending` | `~/.jig/pending/<repo>-<hash>/<time>-<16 hex>.jsonl` | JSONL, `v: 1` | `skills/reflect/scripts/lib/journal.ts`, also when `jig gc` removes a worktree | written whole and renamed; adopted by renaming a claim |
@@ -120,7 +129,7 @@ directory, or committed.
 | Record | Where it lives | Format | Written by | What guards it |
 |--------|----------------|--------|------------|----------------|
 | `drive-handoff` | `.context/pr-drive-<PR>.md` | Markdown: a block opening `<!-- machine block: … -->` regenerated from the state, and a narrative under `<!-- narrative below this line is agent-authored and preserved -->` | `skills/drive-pr/scripts/lib/state/handoff.ts` | rendered in the same hold of the state lock as the state it shows; renamed into place; the narrative is kept across regenerations |
-| `drive-mailbox` | `.context/drive-mailbox/inbox.jsonl`, `outbox.jsonl` | JSONL | any sender appends to the inbox through `skills/drive-pr/scripts/mailbox.ts`; only the driver appends to the outbox (`lib/state/mailbox.ts`) | append-only, each append under the file's own lock |
+| `drive-mailbox` | `.context/drive-mailbox/inbox.jsonl`, `outbox.jsonl` | JSONL | any sender appends to the inbox through `skills/drive-pr/scripts/mailbox.ts`; only the driver appends to the outbox (`lib/state/mailbox.ts`) | append-only, each append under the file's own lock, `<file>.lock`, created exclusively and removed on release (`lib/state/file-lock.ts`) |
 | `intent-chain` | `.context/intent-chain/<stem>.md` and `.current`, `pickups/<hash>.json`, and the pull request's pin `pr.<PR>.md` | Markdown opening `<!-- refocus-arm: on -->` or `off`; pickups as JSON | `skills/do-item/scripts/intent-chain.ts` and `lib/intent-chain-pickup.ts`; the pin `skills/drive-pr/scripts/capture-intent-chain.ts` | a file lock per chain; a new file published by a link that fails while one exists; a pickup never changes once written |
 | `foreground-wait` | `.context/foreground-wait/gen-<n>/` | process ids, a log, a result | `skills/drive-pr/scripts/foreground-wait.ts` | creating the next generation's folder is the claim; the result is renamed into place |
 | `red-team-run` | `.context/red-team/<slug>/` | the plan as JSON, and each persona's brief, reply and findings | `skills/red-team/scripts/lib/plan.ts` | one run per folder; a new run replaces it |

@@ -8,15 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  collectFindings,
-  recoverState,
-  checkLog,
-  runAtHead,
-} from "../scripts/portable.ts";
-
-import { recoveryCommand } from "../scripts/lib/state/orphans.ts";
-import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { collectFindings, checkLog, runAtHead } from "../scripts/portable.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -59,27 +51,6 @@ test("collection forwards scope to producer and passes records as data to filter
   expect(calls[1]?.argv.slice(-1)).toEqual(["42"]);
   expect(calls[1]?.stdin).toBe('{"path":"a & b"}\n');
   expect(result.stdout).toBe("labelled");
-});
-
-test("orphan recovery keeps both files intact if destination already exists", () => {
-  const root = temp();
-  const source = join(root, "old & one's.json");
-  const dest = join(root, "live.json");
-  writeFileSync(source, "parked decisions");
-  writeFileSync(dest, "live decisions");
-  expect(() => recoverState(source, dest)).toThrow();
-  expect(readFileSync(source, "utf8")).toBe("parked decisions");
-  expect(readFileSync(dest, "utf8")).toBe("live decisions");
-});
-
-test("orphan recovery publishes without clobber and only then removes the source", () => {
-  const root = temp();
-  const source = join(root, "old.json");
-  const dest = join(root, "new.json");
-  writeFileSync(source, "parked decisions");
-  recoverState(source, dest);
-  expect(existsSync(source)).toBe(false);
-  expect(readFileSync(dest, "utf8")).toBe("parked decisions");
 });
 
 test("the log probe refuses directories and does not create absent logs", () => {
@@ -129,23 +100,4 @@ test("a failed HEAD read never dispatches a held mutation", async () => {
     }),
   ).rejects.toMatchObject({ code: 1 });
   expect(calls).toBe(1);
-});
-
-test("the emitted recovery program preserves shell-sensitive paths", () => {
-  const root = temp();
-  const source = join(root, "orphan's $decision & é.json");
-  const destination = join(root, "live's $decision & é.json");
-  writeFileSync(source, "parked decisions");
-  const command = recoveryCommand(source, destination);
-  expect(command.startsWith('bun -e "')).toBe(true);
-  const program = command.slice('bun -e "'.length, -1);
-  expect(program).not.toMatch(/[$`"\\]/);
-  expect(program).not.toContain(source);
-  const result = Bun.spawnSync([process.execPath, "-e", program], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  expectSpawnExit(result, 0);
-  expect(existsSync(source)).toBe(false);
-  expect(readFileSync(destination, "utf8")).toBe("parked decisions");
 });

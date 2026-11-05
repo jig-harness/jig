@@ -171,9 +171,8 @@ configuration, because they describe one machine's layout:
 
 | Variable | What it does | Default |
 |----------|--------------|---------|
-| `DRIVE_PR_STATE_DIR` | State root; each clone uses `<root>/<clone-key>/` (an inherited resolved leaf is also accepted) | Root: `~/.local/state/jig/drive-pr/` |
+| `DRIVE_PR_STATE_DIR` | State root: the drive's database `<root>/state.sqlite`, and each clone's directory `<root>/<clone-key>/` (an inherited resolved clone directory is also accepted) | Root: `~/.local/state/jig/drive-pr/` |
 | `JIG_VERIFICATION_FIT_LOG` | Where `verification-fit.ts` appends its verdicts | `~/.local/state/jig/verification-fit.jsonl` |
-| `DRIVE_PR_REAPER_LAUNCHD_LABEL`, `DRIVE_PR_REAPER_CRONTAB_MARKER` | Name a scheduled `bun "<skill-dir>/scripts/reap-state.ts" --delete` job, so `migrate-state-dir.ts` refuses while it is enabled | Unset: no schedule is checked |
 
 `drives.ts` identifies each drive's repository in both human listings and
 JSON rows (`repository`): the owner/repository of the drive's remote
@@ -441,7 +440,7 @@ clone, a driver's exported state directory. Placing another clone's PR from insi
 whose state is under a relocated `DRIVE_PR_STATE_DIR` is refused (exit 2):
 arm it from a session outside the drive.
 
-`--bots-only` keeps it off human-authored threads (recommended for unattended runs). `--keep-draft` stops it marking the PR Ready (`pull_requests.mark_ready: never` does the same for every drive). `--max-rounds N` bounds the loop (default `drive.max_rounds`, else 10). `--dry-run` reports what each round would do and never invokes the pass. `--take-over` and `--window-reopened` pick a stopped drive up ([below](#picking-up-a-stopped-drive)). Starting it twice **in the same clone** is safe — see exit `11`. The lock lives in the per-clone state dir described below, so it covers this clone and its linked worktrees and nothing further. Another clone — another machine, a CI checkout — is held off by the [drive ledger](#where-its-state-lives) instead: while the ledger names a running driver in another clone, an arm is refused with exit `13`.
+`--bots-only` keeps it off human-authored threads (recommended for unattended runs). `--keep-draft` stops it marking the PR Ready (`pull_requests.mark_ready: never` does the same for every drive). `--max-rounds N` bounds the loop (default `drive.max_rounds`, else 10). `--dry-run` reports what each round would do and never invokes the pass. `--take-over` and `--window-reopened` pick a stopped drive up ([below](#picking-up-a-stopped-drive)). Starting it twice **in the same clone** is safe — see exit `11`. The lock lives in the drive's database, keyed by this clone, so it covers this clone and its linked worktrees and nothing further. Another clone — another machine, a CI checkout — is held off by the [drive ledger](#where-its-state-lives) instead: while the ledger names a running driver in another clone, an arm is refused with exit `13`.
 
 ### A stopped drive restarts itself
 
@@ -678,206 +677,46 @@ Orca failure only warns.
 
 ## Where its state lives
 
-- **The per-clone state dir** — `~/.local/state/jig/drive-pr/<clone-key>/` by default (`resolveStateDir()` in `<skill-dir>/scripts/lib/state/store.ts`; `$DRIVE_PR_STATE_DIR` relocates its root — § Relocating the state dir) — the drive state (rounds, attempts, verified commit, parked/held items, Ready-mark round), the locks, the leases. Clone-wide by design, *not* worktree-local: every linked worktree driving this PR shares one round budget, one parked set and one held batch, so a second worktree cannot silently re-arm an escalation the first one parked. The locks answer different questions, and only the PR-keyed one bears on "can this PR be driven twice":
-  - `pr-drive-<PR>.lock`, keyed by **PR** — refuses a second drive of *this PR* anywhere in the clone (exit `11`).
-  - `pr-drive-worktree-<key>.lock`, keyed by **working tree** (the filesystem canonical path of `--show-toplevel`, including Windows path aliases) — stops two drivers colliding over one checkout's files even when they drive *different* PRs. Separate worktrees are meant to run concurrently, so this key deliberately does not gate them.
+- **The drive's database** — `~/.local/state/jig/drive-pr/state.sqlite` by default, one per machine (`<skill-dir>/scripts/lib/state/db.ts`, opened through the plugin's shared `shared/records/db.ts`; `$DRIVE_PR_STATE_DIR` relocates its root — § Relocating the state dir). Every row is keyed by the clone it belongs to, so two clones on one machine never share a drive. It holds the drive state (rounds, attempts, verified commit, parked and held items, Ready-mark round) as one JSON document per pull request with its version, and as rows: the locks, the session and tree leases, the held-item and Ready-mark claims, the stop requests and the driver record a stop recovers from. Clone-wide by design, *not* worktree-local: every linked worktree driving this PR shares one round budget, one parked set and one held batch, so a second worktree cannot silently re-arm an escalation the first one parked. The driver locks answer different questions, and only the PR-keyed one bears on "can this PR be driven twice":
+  - `pr-drive-<PR>`, keyed by **PR** — refuses a second drive of *this PR* anywhere in the clone (exit `11`).
+  - `pr-drive-worktree-<key>`, keyed by **working tree** (the filesystem canonical path of `--show-toplevel`, including Windows path aliases) — stops two drivers colliding over one checkout's files even when they drive *different* PRs. Separate worktrees are meant to run concurrently, so this key deliberately does not gate them.
 
   Each held item's `actor` stamp reuses that same tree key, but it only **records** which tree made a promise — it grants no exclusivity of its own.
 
-  A lock's claim names its holder by process id, host name, platform and the machine's host id. The host comparison is the plugin's shared one ([`shared/liveness.ts`](../../shared/liveness.ts)): the host id is compared before the name, so a machine whose host name changed still recognises its own driver, and a claim from another machine is never judged by this one's process table. A claim records no boot or process start time, so whether its driver still runs is decided by the process id and the heartbeat age, and a process id reused after a restart can still read as live until the heartbeat ages out.
+  A lock or a lease names its holder by the plugin's shared process identity ([`shared/liveness.ts`](../../shared/liveness.ts)): the host id (compared before the host name, so a machine whose host name changed still recognises its own driver), the boot, the process id and its start time. A holder on another machine is never judged by this one's process table; one judged dead here (its pid gone, another process started under it, or the machine restarted since) is recovered at once, and one whose process still answers keeps its lock while it renews its heartbeat. On Windows a process records no start time and the machine no boot id, so a process id that now belongs to another process is not told apart from the holder: the lock is recovered when its heartbeat ages out. Releasing a lock deletes its row, so nothing is left behind. A session lease carries a generation that only grows: a command admitted on one generation is refused when it comes to mutate after another session took the lease over, and a pass whose lease was cleared and taken by a successor is refused its post (`assert-post-allowed.ts`).
+- **The clone's directory** — `~/.local/state/jig/drive-pr/<clone-key>/`, beside the database (`resolveStateDir()` in `<skill-dir>/scripts/lib/state/store.ts`): what is read or appended as a file and queried by nothing — the driver log (`drive-pr-<PR>.log`), the answers a re-arm kept for its pass (`drive-pr-<PR>.answers.json`), a pass notice too long for one variable (`drive-pr-<PR>.notice.md`), the arm output (`drive-arm-<PR>.out`), the morning report's memory (`drives-report.json`) and, on Windows, a driver's process registry.
 - **`.context/pr-drive-<PR>.md`** — the human-readable handoff: where the drive stands and how to resume.
-- **The drive ledger** — one comment on the pull request, opening with the hidden marker `<!-- drive-pr-ledger -->`, that mirrors the resumable part of the drive state so a drive started in another clone or on another machine picks up where the last one left off: the round and phase, the last counted and verified heads, the Ready mark, every parked item with its decision, every held item with its outcome and pushed commit, the takeovers, the driver's working tree and last heartbeat, and the last twenty lines of the handoff narrative. Nothing that identifies an account is posted: no account hash in the ledger or a takeover claim (the drive state keeps the quota park's account locally, so a re-arm from another clone simply tries, and the usage-limit handling meets the wall again if it is still there), and anything shaped like an email address or an account identifier in the narrative, a parked decision or a held finding's answer is replaced with `<redacted>`. It carries a version and a generation that grows with every write. The driver writes it at every round boundary, park and takeover, through a usage-limit sleep or a mailbox pause (as the wait starts, then every quarter of the shortest lease window any clone applies; a write that does not land is retried within minutes, and a newer takeover claim from another clone ends the wait with `TAKEN_OVER`), and when it stops. A driver stopped by `--stop` cannot write it itself, so `bun "<skill-dir>/scripts/drives.ts" --stop <PR>` marks the ledger stopped once the driver is witnessed gone. After Ctrl-C or another signal stop, run `--stop <PR>` or `--doctor` in that clone: against the driver record a driver marks released as it releases its locks, in the state directory, they do the same. Each writes only while the ledger still names that driver (its working tree, clone and run) with no newer takeover claim, so a successor's ledger is left as it is. A driver that kept its locks, because it could not witness its pass end or was killed outright, may have left that pass running, so nothing marks its ledger stopped: it keeps saying the driver runs, another clone waits for its heartbeat to age past the lease window, and this clone's next drive recovers the lock and continues the ledger. A reset keeps the ledger's generation, so the next drive does not seed back what the reset forgot. A drive that starts with no state for the pull request, or with state older than the ledger's generation, seeds its state from it; a ledger version it cannot read stops it with exit `1`, naming the version. Only a ledger written by the drive's own login or by an owner, member or collaborator is trusted; any other comment carrying the marker is ignored and reported. A ledger too long for one comment loses the held items' outcomes first and the narrative second, never a parked decision. `DRIVE_PR_LEDGER=off` drives without it.
+- **The drive ledger** — one comment on the pull request, opening with the hidden marker `<!-- drive-pr-ledger -->`, that mirrors the resumable part of the drive state so a drive started in another clone or on another machine picks up where the last one left off: the round and phase, the last counted and verified heads, the Ready mark, every parked item with its decision, every held item with its outcome and pushed commit, the takeovers, the driver's working tree and last heartbeat, and the last twenty lines of the handoff narrative. The driver's `clone` is the clone key and, after an `@`, the first 16 characters of the host's id (a digest of the machine's id), so a reader can tell which host claims the drive and the comment names no machine; a ledger an earlier release wrote, which names its clone another way, still seeds. Nothing that identifies an account is posted: no account hash in the ledger or a takeover claim (the drive state keeps the quota park's account locally, so a re-arm from another clone simply tries, and the usage-limit handling meets the wall again if it is still there), and anything shaped like an email address or an account identifier in the narrative, a parked decision or a held finding's answer is replaced with `<redacted>`. It carries a version and a generation that grows with every write. The driver writes it at every round boundary, park and takeover, through a usage-limit sleep or a mailbox pause (as the wait starts, then every quarter of the shortest lease window any clone applies; a write that does not land is retried within minutes, and a newer takeover claim from another clone ends the wait with `TAKEN_OVER`), and when it stops. A driver stopped by `--stop` cannot write it itself, so `bun "<skill-dir>/scripts/drives.ts" --stop <PR>` marks the ledger stopped once the driver is witnessed gone. After Ctrl-C or another signal stop, run `--stop <PR>` or `--doctor` in that clone: against the driver record a driver marks released as it releases its locks, they do the same. Each writes only while the ledger still names that driver (its working tree, clone and run) with no newer takeover claim, so a successor's ledger is left as it is. A driver that kept its locks, because it could not witness its pass end or was killed outright, may have left that pass running, so nothing marks its ledger stopped: it keeps saying the driver runs, another clone waits for its heartbeat to age past the lease window, and this clone's next drive recovers the lock and continues the ledger. A reset keeps the ledger's generation, so the next drive does not seed back what the reset forgot. A drive that starts with no state for the pull request, or with state older than the ledger's generation, seeds its state from it; a ledger version it cannot read stops it with exit `1`, naming the version. Only a ledger written by the drive's own login or by an owner, member or collaborator is trusted; any other comment carrying the marker is ignored and reported. A ledger too long for one comment loses the held items' outcomes first and the narrative second, never a parked decision. `DRIVE_PR_LEDGER=off` drives without it.
 - **GitHub** — the shared truth: threads and their resolution state, outcome replies, the drive's announce comments, the drive ledger and takeover claims, the reviewer check-runs.
 
-The state dir grows with every lock generation. `bun "<skill-dir>/scripts/reap-state.ts"`
-(dry-run by default, `--delete` to act) compacts what is still in use on POSIX
-systems, retains nonempty [directory fences](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on Windows, and
-deletes the files of merged PRs and removed worktrees; run it with `--delete`
-weekly from the machine's own scheduler if you drive many PRs.
-[Resource collection](../../gc/README.md)'s `tool-state` kind, once listed in
-`gc.kinds`, adds per-family receipts across configured clones but only
-reports, so it does not replace that schedule. [`SKILL.md`](SKILL.md) § Running
-it (the *State reaping* entry) explains what it may and may not delete.
-On Windows, the sweep upgrades older empty file fences by atomically publishing
-a complete directory fence. Failed publication retains its staging until a real
-nonempty directory fence can be verified. An existing empty directory that
-Windows refuses to replace remains unfinished; later sweeps reuse its staged
-fence. Nonempty files and symbolic links remain untouched.
+A database a newer plugin migrated is read as it is when every change since this plugin's version only added tables or columns, and refused, naming both versions, when it needs a newer reader. `bun "<skill-dir>/scripts/reap-state.ts"` (dry-run by default, `--delete` to act) removes a merged pull request's files from the clone's directory once no lease is live on it and they are a week idle, and the files an earlier release kept there a month after the database imported them; run it with `--delete` weekly from the machine's own scheduler if you drive many PRs. [Resource collection](../../gc/README.md)'s `tool-state` kind, once listed in `gc.kinds`, reports the same through the reaper's JSON but removes nothing. [`SKILL.md`](SKILL.md) § Running it (the *State reaping* entry) explains what it may and may not delete.
 
-On Windows, state writes and lock moves wait briefly for another process's
-sharing handle for up to two seconds before reporting failure. Lock failures include the filesystem
-error code. The state volume must support hard links; a refusal names
-`$DRIVE_PR_STATE_DIR` so you can choose another volume.
+## Upgrading from a release that kept files
 
-## Upgrading worktree identity
+A release before the database kept the drive's machine state as files in the clone's directory: a `drive-pr-<PR>.json` per pull request, the lease files, the lock directories and their tombstones, the claims and the driver record. The first open of the database for a clone reads that directory in once — every state, every lease that parses, the driver locks' claims with their last heartbeat, the held-item and Ready-mark claims and the driver record — records the import (when, how much, and the files it could not read), and leaves every file where it is, for a person to inspect. A lease is read in under a new generation; a lock that guarded one read-modify-write, a tombstone, a stop request or completion is not read, since none outlives the command that wrote it.
 
-Canonical worktree paths can produce different keys from earlier releases,
-including Windows path aliases. Existing actor stamps on held items, leases
-and worktree locks are not migrated. Upgrade while every participant in a
-clone is stopped; mixed versions can otherwise use different locks for the
-same checkout. Keep the old plugin copy available until cleanup is complete.
-Here, `<old-skill-dir>` means that copy's `drive-pr` skill directory.
-Prevent new work and automatic starts or restarts throughout this procedure.
-Use each participant's original state-directory configuration. For commands
-run from a worktree, unset `DRIVE_PR_WORKTREE` or set it explicitly to that
-intended tree; an inherited value overrides the current directory.
-
-1. **Inventory and finish held work with the old version.** Run
-   `bun "<old-skill-dir>/scripts/drives.ts" --doctor --json` for its health view
-   and reported `stateDir`; its rows omit some held-only and lease-only work.
-   Enumerate that actual directory. Include every `drive-pr-<PR>.json`,
-   `pr-drive-lease-<PR>-<actor>.json` and `drive-tree-lease-<actor>.json`,
-   taking PRs and worktrees from the records' `pr` and `worktree` fields where
-   present. Include claims in `pr-drive-<PR>.lock` and
-   `pr-drive-worktree-<key>.lock`. Defer on any unreadable or unaccounted record.
-   For every inventoried PR, finish pending replies and resolutions through
-   the old resolver. Confirm
-   `bun "<old-skill-dir>/scripts/drive-state.ts" held <PR>` returns `[]`.
-2. **Stop all old participants and repeat the inventory.** Run
-   `bun "<old-skill-dir>/scripts/drives.ts" --stop <PR>` for each live drive,
-   stop interactive and sessionless resolvers, and disable hooks and scheduled
-   reapers that can access this clone's state. Confirm the stop commands
-   succeed and the old `drives.ts` listing has no live drivers. Repeat the full
-   directory inventory and `held <PR>` checks after shutdown, before clearing
-   ownership. If new held work appears, finish it with the old version and
-   repeat shutdown and inventory.
-3. **Clear old ownership from each worktree.** Verify each lease's actor and
-   recorded worktree match the intended stopped tree. Run
-   `bun "<old-skill-dir>/scripts/drive-state.ts" clear-lease <PR>` from that
-   worktree, using its state-directory configuration and intended tree anchor,
-   for every PR it used. The plain command clears both its old-key per-PR lease
-   and its tree lease; `clear-lease --all` does not replace this step. Confirm
-   the inventoried per-PR and tree lease files were removed; then check
-   `bun "<old-skill-dir>/scripts/drive-state.ts" lease <PR> --all` returns `[]`
-   for every affected PR, and check the old `drives.ts` listing again.
-   The live-lease listing alone does not prove old lease files were removed.
-4. **Upgrade together, then resume.** Update every participant before
-   re-enabling hooks, reapers or drives. Preserve the state directory, round
-   budgets and parked work. Do not reset state or release unfinished held work
-   to make the upgrade proceed. If any old participant or ownership record
-   cannot be accounted for, defer the upgrade rather than clearing live
-   foreign ownership.
+Stop every drive before upgrading, or let it reach a terminal state: a drive still running the earlier release keeps writing files the database no longer reads, and its state after the import reaches this clone only through its ledger on the pull request, which a later drive seeds from when it is newer.
 
 ## Relocating the state dir
 
-`$DRIVE_PR_STATE_DIR` relocates the state root. With an override of
-`/absolute/shared-state`, each clone uses
-`/absolute/shared-state/<clone-key>/`. The default is
-`~/.local/state/jig/drive-pr/<clone-key>/`. The key is the first 16 hexadecimal
-characters of SHA-256 over a [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID) persisted as `drive-pr-clone-id` in Git's
-common directory (the path `git rev-parse` prints for `--git-common-dir`). It survives a clone move,
-is shared by linked worktrees, and differs between separate clones, including
-clones of the same remote repository. Remote owner/name is not the key. Commands that resolve state, including the
-reaper, need the owning clone as their Git context; an override path alone
-outside Git no longer identifies a state directory.
+`$DRIVE_PR_STATE_DIR` relocates the state root: the database and every clone's directory. With an override of `/absolute/shared-state`, the database is `/absolute/shared-state/state.sqlite` and each clone's directory `/absolute/shared-state/<clone-key>/`. The default root is `~/.local/state/jig/drive-pr/`. The key is the first 16 hexadecimal characters of SHA-256 over a [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID) persisted as `drive-pr-clone-id` in Git's common directory (the path `git rev-parse` prints for `--git-common-dir`). It survives a clone move, is shared by linked worktrees, and differs between separate clones, including clones of the same remote repository. Remote owner/name is not the key. Commands that resolve state, including the reaper, need the owning clone as their Git context; an override path alone outside Git does not identify a clone.
 
-Within that clone directory, `drive-pr-<N>.json`, its `.lock` mutex family,
-`pr-drive-<N>.lock` (the driver lock), `drive-pr-<N>.log`, held claims, and
-remote-mutation locks are keyed by PR number. PR leases add the worktree key;
-worktree locks and tree leases use the canonical checkout path's key. The
-intent-chain pin stays at `.context/intent-chain/pr.<N>.md` in the worktree
-(unless the separate `DRIVE_PR_INTENT_CHAIN_DIR` override relocates it);
-`await-round.ts`'s separate `resolve-review-rounds-<N>` counter and `.head`
-file stay in that worktree's Git directory. Neither uses the override.
+The intent-chain pin stays at `.context/intent-chain/pr.<N>.md` in the worktree (unless the separate `DRIVE_PR_INTENT_CHAIN_DIR` override relocates it); `await-round.ts`'s separate `resolve-review-rounds-<N>` counter and `.head` file stay in that worktree's Git directory. Neither uses the override.
 
-The driver exports its resolved clone directory to its passes. A path whose
-last component equals this clone's key is already resolved and is not nested
-again. A pass must keep that inherited path. The mutation fence checks the
-inherited directory identity before trusting leases. An unchanged device/inode
-pair retains its original meaning; birth time is not assumed reliable on every
-filesystem. Only a device mismatch requires the extra drift proof: matching
-inode, nonzero directory birth time and canonical target path. On macOS the arm also captures the
-stable volume UUID with deadlined `df` and `diskutil` reads. A changed device number is allowed
-only when those stronger fields agree, birth time is nonzero, and a fresh
-volume lookup confirms the same UUID on the live writable volume. Snapshot
-views supply no proof, even when they share a UUID with that volume. Another volume refuses even if it copied
-the directory's inode and birth time. If volume proof is unavailable, device
-comparison stays strict. Older baselines without a volume UUID remain strict. A new inode or an unreadable directory always refuses. A device mismatch also
-refuses if birth time, canonical target or volume proof does not agree.
-No pass changes the baseline; each check can recognize the same benign device
-drift independently. A driver armed before this upgrade needs a fresh arm to
-export the stronger baseline.
+The driver exports its resolved clone directory to its passes as `$DRIVE_PR_STATE_DIR`, and the database's instance id as `$DRIVE_PR_STATE_DIR_IDENTITY`. A path whose last component equals this clone's key is already resolved and is not nested again, and the database is the one beside it. A pass must keep that inherited path. Before a pass posts, the mutation fence checks that the database it reads is the one the driver opened: a database deleted and created again, or another file put in its place, has another instance id and does not hold the leases the drive's other sessions took, so the fence refuses rather than read no lease there as nobody driving. An override that arrives without the identity is refused too.
 
-**Upgrading a flat override:** any drive-shaped artifact directly in an
-unscoped override root causes a refusal naming the artifact and current clone.
-The old state format has no repository binding, so its owner is reported as
-unknown. The tool neither adopts it nor starts a fresh history beside it, and
-never automatically moves, quarantines or rewrites it. Stop all participants,
-identify which clone owns each artifact, and explicitly relocate each complete
-population into that clone's `<root>/<clone-key>/` using the procedure below.
-The refusal names this clone's expected leaf; use it as the destination only
-after confirming ownership. A file already mixed by multiple repositories needs human reconciliation
-against the PRs and their CI-hold events before relocation; a filename or a
-stored commit alone cannot establish ownership. Retain a backup. Relocation is
-reversible while participants remain stopped by moving the same population
-back with the migration command. Do not run old and new drivers together.
+**A root that holds a drive's files directly**, as a flat override from a release before clone directories, is refused with the artifact and the current clone named: those files carry no repository, so whose they are is unknown. The tool neither adopts them nor starts a fresh history beside them, and never moves or rewrites them. Stop all participants, identify which clone owns each file, and move each clone's files into `<root>/<clone-key>/` by hand; the database imports that directory at its first open.
 
-The override skips the older Git-common-directory migration guard; it does
-not move existing default state either. Migrate before exporting the new root.
-A legitimate use is choosing a volume outside an IDE or backup tool's watch.
+**The invariant is that every participant in one clone resolves the same root.** Two drivers that disagree open two databases: each mints a fresh, empty state for a PR the other is already driving, which presents as a drive silently restarting at round 0 with `verifiedSha` cleared while the real record sits in the other database. Changing it means changing it everywhere at once — a machine-wide export in the shell's startup file reaches the commands that shell starts, agent-tool hooks run in their own environment and need it in that tool's settings (Claude Code: `~/.claude/settings.json`'s `env`), and launchd/cron jobs read no shell startup file and need it written into their own configuration as an absolute path.
 
-**The invariant is that every participant in one clone resolves the same
-directory.** Two drivers that disagree do not share the lease mutex: each mints a
-fresh, empty state for a PR the other is already driving, which presents as a
-drive silently restarting at round 0 with `verifiedSha` cleared while the real
-record sits in the other directory. Changing it means changing it everywhere at
-once — a machine-wide export in the shell's startup file reaches the
-commands that shell starts, agent-tool hooks run in their own environment
-and need it in that tool's settings (Claude Code:
-`~/.claude/settings.json`'s `env`), and launchd/cron jobs read no shell startup
-file and need it written into their own configuration as an absolute path.
+To move a root:
 
-1. **Quiesce every participant.** Stop every live `drive.ts`
-   (`bun "<skill-dir>/scripts/drives.ts" --stop <PR>` per PR; for an old flat
-   override use the version that armed the driver, since the upgraded resolver
-   refuses that root; or wait
-   for each to reach a terminal state) and disable any scheduled
-   `bun "<skill-dir>/scripts/reap-state.ts" --delete` job (`launchctl unload`, or comment out the
-   `crontab -e` entry) — nothing may read or write the state directory during
-   the move.
-2. **Migrate.** Move a whole state root (one subdirectory per clone), or one
-   clone's directory, into the current root:
+1. **Quiesce every participant.** Stop every live `drive.ts` (`bun "<skill-dir>/scripts/drives.ts" --stop <PR>` per PR, or wait for each to reach a terminal state) and disable any scheduled `bun "<skill-dir>/scripts/reap-state.ts" --delete` job — nothing may open the database during the move.
+2. **Move the root whole**: the database with its `state.sqlite-wal` and `state.sqlite-shm` files when they are there, and every clone's directory, into the new root, with the file tools of your choice. Nothing in it names its own path.
+3. **Only after that, export** `$DRIVE_PR_STATE_DIR` at the new root for every participant at once — the shell profile, the agent tool's settings and any scheduled job's configuration. Exporting before the move makes participants create a fresh database at the destination while the real record remains at the source.
+4. **Verify and re-arm.** From a fresh shell, run `bun "<skill-dir>/scripts/drives.ts"` and confirm the moved drives are listed, then re-arm the stopped drives and re-enable the reaper.
 
-   ```bash
-   bun "<skill-dir>/scripts/migrate-state-dir.ts" --from <old dir> [--to <new root>]
-   ```
-
-   `--to` defaults to the current state root
-   (`~/.local/state/jig/drive-pr`); `~` is expanded. To move one clone's
-   directory to an exact destination instead, pass both absolute paths:
-   `bun "<skill-dir>/scripts/migrate-state-dir.ts" /absolute/current/state-dir /absolute/new-root/<clone-key>`; replace `<clone-key>` with the key from this clone's current default directory. The exact destination must end with that key.
-
-   It refuses unless every source-named driver lock is stale and, when
-   `DRIVE_PR_REAPER_LAUNCHD_LABEL` or `DRIVE_PR_REAPER_CRONTAB_MARKER` names a
-   scheduled reaper, that schedule is positively verified as disabled. It
-   enumerates the artifact population shared with `reap-state.ts`, fails
-   closed on any unknown drive-pr-shaped entry, and moves the artifacts rather
-   than the containing directory — never the clone's git common directory
-   itself, which for the legacy in-repository location *is* that directory
-   (normally `.git`). On one filesystem each artifact lands through atomic
-   `rename(2)`; across filesystems it copies the population to a private
-   staging directory, verifies content hashes, publishes it, and only then
-   removes the sources. Success reports every moved name and family after
-   verifying that the source has no classified artifacts left and the
-   destination has the full population.
-3. **Only after that success, export** `$DRIVE_PR_STATE_DIR` at the new root
-   (or its resolved `<clone-key>` directory, when the destination is not the default) for every participant at once —
-   the shell profile and the agent tool's settings. Exporting before the
-   migration makes participants mint a fresh state universe at the destination
-   while the real record remains at the source. Leave a scheduled job's own
-   configuration untouched until this point: re-enabling it before the move is
-   confirmed would point the reaper at the old location.
-4. **Verify, re-arm and re-enable.** From a fresh shell, run
-   `bun "<skill-dir>/scripts/drives.ts"` and confirm that no drives
-   remain live from before the move and that the new directory holds the moved
-   files. Then re-arm the stopped drives, and update and re-enable any
-   scheduled reaper so it picks up the new path.
-
-A machine-wide export reaches every clone on that machine equally, and that is
-safe however many clones the machine runs: each clone resolves its own
-`<root>/<clone-key>/` leaf, so the same PR number in two independent clones
-names two separate state files, locks and logs. Export the root, not one
-clone's leaf, when several clones share it.
+A machine-wide export reaches every clone on that machine equally, and that is safe however many clones the machine runs: each clone's rows are keyed by its own key, so the same PR number in two independent clones names two separate states, locks and logs. Export the root, not one clone's directory, when several clones share it.
 
 ## Stopping and resuming safely
 

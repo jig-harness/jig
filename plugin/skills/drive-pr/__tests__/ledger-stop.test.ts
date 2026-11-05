@@ -6,19 +6,12 @@
  * ledger is left as it is. And a seed the state store refuses keeps its exit.
  */
 import { describe, expect, it } from "bun:test";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
-import { formatClaim } from "../scripts/lib/claim.ts";
 import {
   markDriverRecordReleased,
   writeDriverRecord,
@@ -32,7 +25,7 @@ import {
   renderClaim,
 } from "../scripts/lib/state/ledger.ts";
 import { cloneId } from "../scripts/lib/state/ledger-mirror.ts";
-import { leasePathFor } from "../scripts/lib/state/lease.ts";
+import { leaseRef } from "../scripts/lib/state/lease.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
 import {
   SCRIPTS,
@@ -42,6 +35,7 @@ import {
   ledgerBody,
 } from "./ledger-forge-fixtures.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { driverRecordRow, putLease, putLock } from "./state-rows.ts";
 
 interface Stage {
   forge: FakeForge;
@@ -83,13 +77,13 @@ function stage(
   return { forge, leaf, actor, started };
 }
 
-/** PR 999's lock, claimed by `pid` driving from the forge's repository. */
+/** PR 999's lock, held by `pid` driving from the forge's repository. */
 function plantLock(s: Stage, pid: number): void {
-  const lock = join(s.leaf, "pr-drive-999.lock");
-  mkdirSync(lock, { recursive: true });
-  writeFileSync(
-    join(lock, "claim.feedc0de"),
-    formatClaim(pid, hostname(), {
+  putLock(s.leaf, "pr-drive-999", {
+    token: "feedc0de",
+    pid,
+    host: hostname(),
+    diag: {
       pr: "999",
       worktree: s.forge.repo,
       log: join(s.leaf, "drive-pr-999.log"),
@@ -100,8 +94,8 @@ function plantLock(s: Stage, pid: number): void {
         provenance: "none",
         reason: "test",
       },
-    }),
-  );
+    },
+  });
 }
 
 async function drives(s: Stage, args: string[]) {
@@ -207,7 +201,6 @@ describe("drives.ts --stop marks the stopped driver's ledger", () => {
         { stdout: "ignore", stderr: "ignore" },
       );
       plantLock(s, owner.pid);
-      const record = join(s.leaf, "ledger-driver-999.json");
       writeDriverRecord(s.leaf, "999", {
         worktree: s.forge.repo,
         started: s.started,
@@ -220,12 +213,12 @@ describe("drives.ts --stop marks the stopped driver's ledger", () => {
       await owner.exited;
       expectSpawnExit(r, 0);
       expect(driverOf(s)?.state).toBe("running");
-      expect(JSON.parse(readFileSync(record, "utf8")).released).toBe(true);
+      expect(driverRecordRow(s.leaf, "999")?.released).toBe(1);
       rmSync(join(s.forge.dir, "fail-list-after"));
       // The stopped driver's abandoned lock is still in place.
       expectSpawnExit(await drives(s, ["--doctor"]), 0);
       expect(driverOf(s)).toMatchObject({ actor: s.actor, state: "stopped" });
-      expect(existsSync(record)).toBe(false);
+      expect(driverRecordRow(s.leaf, "999")).toBeNull();
     },
     60_000,
   );
@@ -233,22 +226,18 @@ describe("drives.ts --stop marks the stopped driver's ledger", () => {
 
 /** The driver record `s`'s driver leaves, `released` as it releases its locks. */
 async function plantRecord(s: Stage, released: boolean): Promise<void> {
-  writeFileSync(
-    join(s.leaf, "ledger-driver-999.json"),
-    JSON.stringify({
-      worktree: s.forge.repo,
-      started: s.started,
-      pid: await deadPid(),
-      host: hostname(),
-      ...(released ? { released: true } : {}),
-    }),
-  );
+  writeDriverRecord(s.leaf, "999", {
+    worktree: s.forge.repo,
+    started: s.started,
+    pid: await deadPid(),
+    host: hostname(),
+    ...(released ? { released: true as const } : {}),
+  });
 }
 
 describe("marking a driver record released", () => {
   it("marks only the record of the acquisition releasing its locks", () => {
     const s = stage();
-    const path = join(s.leaf, "ledger-driver-999.json");
     const record = {
       worktree: s.forge.repo,
       started: s.started,
@@ -257,11 +246,14 @@ describe("marking a driver record released", () => {
     };
     writeDriverRecord(s.leaf, "999", record);
     markDriverRecordReleased(s.leaf, "999", "2000-01-01T00:00:00.000Z");
-    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(record);
-    markDriverRecordReleased(s.leaf, "999", s.started);
-    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
+    expect(driverRecordRow(s.leaf, "999")).toMatchObject({
       ...record,
-      released: true,
+      released: 0,
+    });
+    markDriverRecordReleased(s.leaf, "999", s.started);
+    expect(driverRecordRow(s.leaf, "999")).toMatchObject({
+      ...record,
+      released: 1,
     });
   });
 });
@@ -279,7 +271,7 @@ describe("recovering the ledger of a driver that could not write it", () => {
       const r = await drives(s, args);
       expectSpawnExit(r, args[0] === "--stop" ? 1 : 0);
       expect(driverOf(s)?.state).toBe("running");
-      expect(existsSync(join(s.leaf, "ledger-driver-999.json"))).toBe(true);
+      expect(driverRecordRow(s.leaf, "999")).not.toBeNull();
     }
   });
 
@@ -349,7 +341,7 @@ describe("recovering the ledger of a driver that could not write it", () => {
       const r = await drives(s, args);
       expectSpawnExit(r, args[0] === "--stop" ? 1 : 0);
       expect(driverOf(s)).toMatchObject({ actor: s.actor, state: "stopped" });
-      expect(existsSync(join(s.leaf, "ledger-driver-999.json"))).toBe(false);
+      expect(driverRecordRow(s.leaf, "999")).toBeNull();
     }
   });
 
@@ -394,25 +386,13 @@ async function driveState(s: Stage, args: string[], stdin = "") {
 describe("a seed the state store refuses", () => {
   it("keeps exit 13 when another working tree holds the pull request", async () => {
     const s = stage({ clone: "clone-elsewhere", state: "stopped" });
-    // Another tree's live session lease on PR 999: a plain record whose pid
-    // (this test's own) is alive and whose lastSeen is fresh.
+    // Another tree's live session lease on PR 999: a lease whose pid (this
+    // test's own) is alive and whose lastSeen is fresh.
     const foreign = "wt-0000000000000dea";
-    writeFileSync(
-      leasePathFor(s.leaf, "999", foreign),
-      JSON.stringify({
-        holder: "session",
-        pid: process.pid,
-        host: hostname(),
-        platform: process.platform,
-        actor: foreign,
-        worktree: "/some/other/tree",
-        startedAt: new Date().toISOString(),
-        lastSeen: new Date().toISOString(),
-        command: "hold",
-        generation: "a".repeat(32),
-        sessionStarted: "",
-      }),
-    );
+    putLease(leaseRef(s.leaf, "999", foreign), {
+      worktree: "/some/other/tree",
+      command: "hold",
+    });
     const driver = JSON.stringify(join(SCRIPTS, "lib", "driver", "ledger.ts"));
     const proc = Bun.spawn(
       [

@@ -119,16 +119,16 @@ describe("classifyDrive — fail-closed guards (rule 1 and friends)", () => {
     expect(row.reason).toContain("lock is contested");
   });
 
-  it("an unreadable state file is UNKNOWN, even on a live lock, via the stateReadable guard specifically", () => {
+  it("an unreadable stored state is UNKNOWN, even on a live lock, via the stateReadable guard specifically", () => {
     const row = classifyDrive(baseInput({ stateReadable: false }), NOW);
     expect(row.verdict).toBe("UNKNOWN");
-    expect(row.reason).toContain("state file could not be read");
+    expect(row.reason).toContain("stored state could not be read");
   });
 
-  it("an unreadable state file does NOT preempt DEAD_WITH_LEFTOVERS when the leftovers probe independently confirms stranded work", () => {
+  it("an unreadable stored state does NOT preempt DEAD_WITH_LEFTOVERS when the leftovers probe independently confirms stranded work", () => {
     // `gatherDoctorInput` runs the leftovers probe off the WORKTREE, not the
-    // state file, so it answers this question regardless of whether the
-    // state snapshot parsed — an old/malformed state file (reachable right
+    // stored state, so it answers this question regardless of whether the
+    // state snapshot parsed — an old/malformed stored state (reachable right
     // after a rollout that rejects every pre-existing shape, like this PR's
     // own) must not discard evidence already established independently.
     const row = classifyDrive(
@@ -142,7 +142,7 @@ describe("classifyDrive — fail-closed guards (rule 1 and friends)", () => {
     expect(row.verdict).toBe("DEAD_WITH_LEFTOVERS");
   });
 
-  it("an unreadable state file with no live driver and a CLEAN or uninspectable worktree is still UNKNOWN via the stateReadable guard", () => {
+  it("an unreadable stored state with no live driver and a CLEAN or uninspectable worktree is still UNKNOWN via the stateReadable guard", () => {
     // Pins the narrow scope of the carve-out above: only a POSITIVE,
     // independently-confirmed leftovers finding may fall through it. Neither
     // a clean worktree nor an uninspectable one may.
@@ -155,14 +155,14 @@ describe("classifyDrive — fail-closed guards (rule 1 and friends)", () => {
       NOW,
     );
     expect(clean.verdict).toBe("UNKNOWN");
-    expect(clean.reason).toContain("state file could not be read");
+    expect(clean.reason).toContain("stored state could not be read");
 
     const uninspectable = classifyDrive(
       baseInput({ stateReadable: false, lockState: "stale", leftovers: null }),
       NOW,
     );
     expect(uninspectable.verdict).toBe("UNKNOWN");
-    expect(uninspectable.reason).toContain("state file could not be read");
+    expect(uninspectable.reason).toContain("stored state could not be read");
   });
 
   it("an unprobeable pass child (null) with stale progress is UNKNOWN, never WEDGED", () => {
@@ -355,7 +355,7 @@ describe("classifyDrive — precedence order", () => {
     // A state-only row (no lock at all) always has `worktreePath: null`, so
     // `leftovers` is always `null` too. Branch 2's "could not inspect" answer
     // must be a WEAKER fact than a park this classifier already knows for
-    // certain from the state file, not one that pre-empts it, so
+    // certain from the stored state, not one that pre-empts it, so
     // `classifyDrive` must check `quotaPark` before returning UNKNOWN here.
     const row = classifyDrive(
       baseInput({

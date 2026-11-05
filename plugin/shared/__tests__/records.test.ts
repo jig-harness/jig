@@ -231,7 +231,9 @@ describe("the registry", () => {
   it("states the versions the code writes", () => {
     expect(recordKind(LEDGER_KIND)?.version).toBe(LEDGER_VERSION);
     expect(recordKind(FOLLOWUP_KIND)?.version).toBe(FOLLOWUP_VERSION);
-    const tables = RECORD_KINDS.filter((k) => k.table !== undefined);
+    const tables = RECORD_KINDS.filter(
+      (k) => k.table !== undefined && k.at.includes("/dispatch/"),
+    );
     expect(tables.length).toBeGreaterThan(0);
     for (const kind of tables) expect(kind.version).toBe(SCHEMA_VERSION);
   });

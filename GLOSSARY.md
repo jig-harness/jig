@@ -1312,15 +1312,14 @@ make, use the entry's term instead.
   shared module records and judges it for the *dispatcher*'s *launch
   records*, resource collection's admission tokens and the machine-wide
   locks (the one heavy test runs wait on, and the one over an Orca workspace
-  card's comment). The drive's locks share only its host comparison: their
-  claims record the process id and host, not the boot or start time.
+  card's comment) and the drive's locks and leases.
   *Avoid*: a bare process id as proof that a holder still runs.
-- **Directory fence** — a nonempty directory retained at the path reserved
-  for one lock acquisition after its release or recovery. A delayed process
-  trying to move that same acquisition there cannot replace the nonempty
-  directory, so it cannot remove a newer holder's lock. Windows retains this
-  shape because a directory move there can replace an ordinary file.
-  *Avoid*: directory guard.
+- **Minimum reader** — the lowest schema version a program must know to use
+  a database, recorded in the database beside its own version. A change that
+  only adds (a table, a column with a default) leaves it where it was, so a
+  copy of the program one release behind keeps using a database a newer copy
+  changed; a change that alters or removes what older copies read raises it,
+  and an older copy then refuses the database and names both versions.
 - **Control channel** — the way a person, or the session that started it,
   reaches an agent running unattended without killing it, kept with that
   agent's worktree (in its *worktree scratch*, or in the runner that started

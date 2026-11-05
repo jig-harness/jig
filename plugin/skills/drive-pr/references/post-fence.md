@@ -243,6 +243,6 @@ compare the *shared* export set symbol by symbol; none exists.
 None of that changes the decision above — it argues for it. The reason to keep
 the lease reader out of `resolve-review-comments` is precisely that a hand-ported
 copy drifts, and the copy that drifted here is the cheap one, whose contract
-belongs to the runtime. A copy of `drive-pr`'s lease file format would be the
+belongs to the runtime. A copy of `drive-pr`'s lease rows' format would be the
 expensive one, and its drift would be silent in the direction that posts.
 This decision introduces no new copy, so it adds no gate.

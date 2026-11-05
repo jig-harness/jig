@@ -29,7 +29,7 @@
  * Every forge read goes through `ghCall`, under its deadline; one that fails
  * is said in the report, never read as nothing.
  */
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type DispatchedWorkspace,
@@ -46,7 +46,7 @@ import {
   dispatchSince,
 } from "./morning-report-dispatch.ts";
 import { renderMorningReport } from "./morning-report-render.ts";
-import { resolveStateDir } from "./state/store.ts";
+import { resolveStateDir, stateRows } from "./state/store.ts";
 import { ghCall } from "./proc.ts";
 import { readReversals, type ReversalRead } from "./provisional.ts";
 import {
@@ -74,8 +74,6 @@ export const FIRST_REPORT_HOURS = 24;
 
 /** Where the last report's time is remembered, in the state directory. */
 export const REPORT_MEMORY = "drives-report.json";
-
-const STATE_FILE = /^drive-pr-(\d+)\.json$/;
 
 export interface ReportProvisional {
   at: string;
@@ -345,30 +343,30 @@ async function viewPr(pr: string): Promise<PrView | null> {
   }
 }
 
-/** The states in the state directory, by pull request; unreadable ones named. */
+/** The clone's states, by pull request, with when each was written; unreadable ones named. */
 function localStates(
   stateDir: string,
   unread: string[],
 ): Map<string, { state: DriveState; mtime: number }> {
   const out = new Map<string, { state: DriveState; mtime: number }>();
-  let entries: string[] = [];
+  let rows: { pr: string; text: string; v: number; at: string }[] = [];
   try {
-    entries = readdirSync(stateDir);
-  } catch {
-    unread.push(`the state directory ${stateDir} could not be read`);
+    rows = [...stateRows(stateDir)];
+  } catch (err) {
+    swallow(err, "the drive's database could not be read");
+    unread.push(`the drive states of ${stateDir} could not be read`);
   }
-  for (const entry of entries) {
-    const pr = STATE_FILE.exec(entry)?.[1];
-    if (pr === undefined) continue;
-    const file = join(stateDir, entry);
+  for (const row of rows) {
     try {
-      const state: unknown = JSON.parse(readFileSync(file, "utf8"));
-      if (isUsableState(state, Number(pr)))
-        out.set(pr, { state, mtime: statSync(file).mtimeMs });
+      const state: unknown = JSON.parse(row.text);
+      if (isUsableState(state, Number(row.pr)))
+        out.set(row.pr, { state, mtime: Date.parse(row.at) });
       else
-        unread.push(`the drive state of #${pr} is not one this version reads`);
+        unread.push(
+          `the drive state of #${row.pr} is not one this version reads`,
+        );
     } catch {
-      unread.push(`the drive state of #${pr} could not be read`);
+      unread.push(`the drive state of #${row.pr} could not be read`);
     }
   }
   return out;
@@ -408,6 +406,7 @@ export function rememberedSince(stateDir: string): string | null {
 }
 
 export function rememberReport(stateDir: string, at: string): void {
+  mkdirSync(stateDir, { recursive: true });
   writeFileSync(
     join(stateDir, REPORT_MEMORY),
     `${JSON.stringify({ lastReportAt: at })}\n`,

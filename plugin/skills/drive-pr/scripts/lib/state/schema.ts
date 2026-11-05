@@ -2,7 +2,7 @@
  * The drive-state document: its shape, its validator, and its fresh default.
  *
  * ABSENT and MALFORMED are different answers, and collapsing them is a
- * fail-open. A drive with no state file has nothing to lose, so a fresh empty
+ * fail-open. A drive with no stored state has nothing to lose, so a fresh empty
  * object is correct. A file that EXISTS but does not parse is the opposite
  * case: it is the only record of the parked human decisions, the durable round
  * budget and the verified SHA, and substituting fresh state there silently
@@ -129,7 +129,7 @@ export interface HeldItem {
    * WHICH driver created this hold — `lib/state/actor.ts`'s worktree-derived
    * id, recorded by every writer (`hold`, `restore-held`) for both kinds.
    *
-   * The state file is shared by every driver working one PR (`store.ts` keys
+   * The stored state is shared by every driver working one PR (`store.ts` keys
    * it per clone, by default under `~/.local/state/jig/drive-pr/<cloneKey>/`,
    * on purpose), so without this the batch is one anonymous list and nothing
    * can tell driver A's holds from driver B's.
@@ -219,7 +219,7 @@ export type CiHoldState =
  * optional-and-defaulted tier.
  *
  * Four of these once carried `?`, with the validator and every consumer reading
- * them through `?? 0` / `?? []`, so a state file written before the field
+ * them through `?? 0` / `?? []`, so a stored state written before the field
  * existed and one written after were both accepted by one parser. That is the
  * accepts-both-shapes tolerance this state format deliberately does not carry
  * before general availability, and it was reported as such on the two newest of
@@ -297,7 +297,7 @@ export interface DriveState {
    * REQUIRED, not `?? ''`-defaulted — the same "no optional-and-defaulted
    * tier" stance this interface already takes for `lastEscalatedRound` and
    * `lastEscalatedInvariant` (see their own comments), for the identical
-   * reason: a state file written before this field existed has no opinion on
+   * reason: a stored state written before this field existed has no opinion on
    * whether the drive it describes ever progressed, and defaulting that
    * silence to `''` ("never") would be indistinguishable from a REAL "never"
    * on a drive that is in fact healthy — exactly the false reading a
@@ -417,7 +417,7 @@ export interface DriveState {
  * window is safely ACKNOWLEDGED (`foldRoundPaths` below). The predicate reads
  * exactly two adjacent entries, so anything ≥2 is behaviourally sufficient;
  * the surplus is for a human reading `drive-state.ts round-paths` (or the
- * state file), who wants the shape of the whole drive rather than only its
+ * stored state), who wants the shape of the whole drive rather than only its
  * last two rounds. This is a floor, not a hard cap — see `foldRoundPaths`.
  */
 export const ROUND_PATHS_WINDOW = 12;
@@ -430,7 +430,7 @@ export const ROUND_PATH_MAX_LENGTH = 512;
 
 /**
  * Cap on `lastEscalatedInvariant`'s length — generous for "one
- * sentence" while still bounding a state file rewritten under a lock on every
+ * sentence" while still bounding a stored state rewritten under a lock on every
  * mutation. The CLI refuses an over-cap `--invariant` outright rather than
  * silently truncating it: a truncated claim can read as a DIFFERENT, narrower
  * claim than the one actually made, which is worse than asking the caller to
@@ -663,7 +663,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   }
   // Present AND well-typed, on the same terms as every other counter here —
   // backward compatibility before general availability is deliberately not
-  // offered, so a state file written before this field existed is REFUSED by
+  // offered, so a stored state written before this field existed is REFUSED by
   // `store.read` rather than silently migrated to a zeroed baseline. A
   // tolerated-absent `lastEscalatedRound` would read as "never acknowledged",
   // which re-arms a duty a human already discharged — the same re-arm shape
@@ -683,7 +683,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   )
     return false;
   // Same REQUIRED-not-optional stance as `lastEscalatedRound` above, added in
-  // the same PR that added the field: a state file written before
+  // the same PR that added the field: a stored state written before
   // it existed is refused rather than tolerated with a `?? ''` default,
   // consistent with this interface's own "no optional-and-defaulted tier"
   // rule. Length-capped and newline-free against the writer's own refusal
@@ -923,7 +923,7 @@ export function withProgress(
  * `ReflectCounters`: a caller legitimately holds a partial set (drive-status
  * reads it back out of `drive-state.ts get`'s stdout), and tolerating absence
  * at a FUNCTION boundary is not the accepts-both-stored-shapes tolerance
- * `DriveState` documents rejecting. Nothing here decides whether a state FILE
+ * `DriveState` documents rejecting. Nothing here decides whether a stored STATE
  * is usable.
  */
 export interface EscalationState {
@@ -1102,7 +1102,7 @@ export function foldRoundPaths(
  * the counters one at a time out of `drive-state.ts`'s stdout and assembles
  * them here, so a caller legitimately holds a partial set. Tolerating absence
  * at a function boundary is not the accepts-both-stored-shapes tolerance
- * `DriveState` documents rejecting; nothing here decides whether a state FILE
+ * `DriveState` documents rejecting; nothing here decides whether a stored STATE
  * is usable.
  */
 export interface ReflectCounters {
@@ -1117,7 +1117,7 @@ export function reflectDepthPastLast(s: ReflectCounters): number {
     (s.rounds ?? 0) - (s.lastReflectedRound ?? 0),
     (s.attempts ?? 0) - (s.lastReflectedAttempts ?? 0),
   );
-  // A state file that PARSES but carries a non-numeric counter (`{"rounds":"x"}`)
+  // A stored state that PARSES but carries a non-numeric counter (`{"rounds":"x"}`)
   // yields NaN, and every consumer compares with `depth > threshold`, which NaN
   // makes false — the duty would go silently OFF on the one input that cannot
   // be trusted, against the stated fail-open. The

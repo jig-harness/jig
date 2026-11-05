@@ -113,7 +113,7 @@ export async function runDriverRounds({
   const prevFingerprint: string | null = null;
   const noopRounds = 0;
   // Repair-round budgets. In-memory for the reason `ciRepairRounds`
-  // documents — a new `DriveState` field would refuse every state file written
+  // documents — a new `DriveState` field would refuse every stored state written
   // before it existed, stopping the whole fleet's in-flight drives — and on
   // the `noopRounds` precedent directly above, whose reset-across-restarts
   // semantics operators already know from the skill's `README.md`.

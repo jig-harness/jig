@@ -511,7 +511,7 @@ follows, as one armed in the background is. One armed in the background
 outlives the session that spawned it, so its console is not where you look:
 
 - **Driver log** — every line the driver prints is also appended to
-  `<state dir>/drive-pr-<PR>.log`, next to the per-PR state, each line
+  `<state dir>/drive-pr-<PR>.log`, in the clone's directory, each line
   starting with its time in UTC (`2026-01-02T03:04:05.006Z`) and a level
   (`INFO` for standard output, `WARN` for standard error). Before it grows
   past 10 megabytes (10,485,760 bytes) the file moves to
@@ -564,15 +564,14 @@ outlives the session that spawned it, so its console is not where you look:
   `lib/state/schema.ts`) and `quotaPark` (recorded by `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts"
   quota-park`, cleared by the next progress event). `bun
   "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --doctor` sweeps every drive in
-  the state universe — every *lock* `drives.ts` already enumerates, plus every
-  lock-less `drive-pr-<PR>.json` state file that is either *unreadable* or
-  *actionable* (a recorded `quotaPark`, or a non-empty `parked` list) — never an
-  exhaustive union with every state file that exists: a readable, inert one
-  (no park, nothing parked) has no verdict this sweep can reach other than
-  `UNKNOWN`, and including it would bury the actionable rows under hundreds
-  of `UNKNOWN` ones (`drive.ts` `rmdir`s its lock slot
-  on every normal exit, including both quota-park exits and the HITL-park
-  exit, so a parked drive that exited cleanly leaves no lock behind — see
+  the clone — every *lock* `drives.ts` already enumerates, plus every
+  lock-less PR state that is either *unreadable* or *actionable* (a recorded
+  `quotaPark`, or a non-empty `parked` list) — never every state there is: a
+  readable, inert one (no park, nothing parked) has no verdict this sweep can
+  reach other than `UNKNOWN`, and including it would bury the actionable rows
+  under hundreds of `UNKNOWN` ones (`drive.ts` releases its locks on every
+  normal exit, including both quota-park exits and the HITL-park exit, so a
+  parked drive that exited cleanly leaves no lock behind — see
   `listStateOnlyRows` in `drives.ts`) — and
   classifies each one — `HEALTHY`, `WEDGED`, `DEAD_WITH_LEFTOVERS`,
   `QUOTA_PARKED`, `NEEDS_HUMAN` or `UNKNOWN` (never a false `HEALTHY` — see
@@ -595,89 +594,47 @@ outlives the session that spawned it, so its console is not where you look:
   machine's own scheduler (cron, launchd, a scheduled task) — a per-machine
   install the skill does not ship.
 
-  **A state file missing these fields is refused, not migrated** — `DriveState`
+  **A state missing these fields is refused, not migrated** — `DriveState`
   has no optional-and-defaulted tier (see that interface's own header), so an
-  older file stops at its next state read with the ordinary "not usable drive
-  state" refusal, naming the file. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" reset <PR>` is the recovery;
+  older one stops at its next state read with the ordinary "not usable drive
+  state" refusal, naming the PR. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" reset <PR>` is the recovery;
   re-arming afterwards restarts the round budget. Defaulting the silence would
   make "never progressed" indistinguishable from "predates the field" — the
   false reading `--doctor` exists to prevent.
 - **State reaping** — `bun "${CLAUDE_SKILL_DIR}/scripts/reap-state.ts"`
-  (dry-run by default, `--delete` to act) bounds the *inodes* this skill leaves
-  in its state dir (see below) — not, on its own, the entry count that drives
-  every enumeration of it. `lock.ts` mints a permanent quarantine entry per lock
-  generation on the *happy* path, so the state dir's entry count grows without
-  bound even though `sweepLockQuarantine` compacts each one to a single inode
-  on POSIX systems
-  — in a directory the lease and census reads enumerate several times per
-  round. It compacts
-  (`sweepLockQuarantine`) anything still in use on POSIX systems, and deletes
-  a family outright only on the *lifecycle* predicate: PR
-  merged (or gone from GitHub — a genuinely nonexistent PR number, never a
-  repository/auth/transport error) with no live lease, or a tree lease whose
-  worktree no longer exists. A closed-but-unmerged PR is deliberately
-  excluded — GitHub permits reopening it with no time limit — so its family is
-  only ever compacted. **Compaction shrinks inodes, not directory
-  entries**: `sweepLockQuarantine` collapses a quarantine directory into a
-  single empty file at the same path, because that file is the fence a later
-  `rename(2)` has to fail against. Windows keeps the nonempty
-  [directory fence](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
-  a directory rename there can replace a regular file. The sweep upgrades older
-  empty file fences by publishing a complete directory fence atomically;
-  staging is retained until the canonical path is a real nonempty directory.
-  An empty directory Windows refuses to replace remains unfinished and reuses
-  its staged fence; nonempty files and symbolic links remain untouched.
-  A family still in use therefore keeps every
-  entry it has ever minted, and only *retire* removes any — so a
-  `drive-tree-lease-wt-*` family whose worktree still exists never shrinks at
-  all. On a clone with many long-lived worktrees the entry count grows without
-  bound even when this reaper runs correctly every week, until a single
-  `readdir` of the directory takes seconds — and an IDE or other tool
-  watching that directory pays the same cost. Every gate
-  fails closed, and the idle guard (`--min-age-days`, default 7) is an extra
-  bound on top of the lifecycle predicate, never a substitute — a pure age
-  sweep here is unsafe. Run it with `--delete` on a schedule (weekly is
-  enough) from the machine's own scheduler; that schedule is what deletes.
-  Resource collection's `tool-state` kind reports the same families with
-  receipts across configured clones once a repository lists it in `gc.kinds`
-  and runs `bun --no-env-file --config="${CLAUDE_SKILL_DIR}/../../gc/bunfig.toml" "${CLAUDE_SKILL_DIR}/../../jig.ts" gc install --repo <repository>`,
+  (dry-run by default, `--delete` to act) removes files from the clone's
+  directory beside the database: a PR's logs, kept answers, notices and arm
+  output only when the PR is merged (or gone from GitHub — a genuinely
+  nonexistent PR number, never a repository/auth/transport error), no lease
+  is live on it, and nothing in the family was touched for `--min-age-days`
+  (default 7); and the files an earlier release kept there, once the
+  database's import of them is 30 days old. A closed-but-unmerged PR is
+  deliberately kept — GitHub permits reopening it with no time limit. A name
+  it does not recognise is never removed, and every gate fails closed. It
+  also expires trace days older than 14 days. The database's rows are not
+  its business: a lock's release deletes its row. Run it with `--delete` on a
+  schedule (weekly is enough) from the machine's own scheduler; that
+  schedule is what deletes. Resource collection's `tool-state` kind reports
+  the same families with receipts across configured clones once a
+  repository lists it in `gc.kinds` and runs `bun --no-env-file --config="${CLAUDE_SKILL_DIR}/../../gc/bunfig.toml" "${CLAUDE_SKILL_DIR}/../../jig.ts" gc install --repo <repository>`,
   which previews, then the same command with `--yes` to confirm. It never
   passes `--delete`, so keep the reaper's own schedule beside it.
   The [collection reference](../../gc/README.md) describes its confirmed
   bounds.
-- **Windows filesystem access** — state writes and lock moves retry sharing
-  errors (`EPERM`, `EACCES`, `EBUSY`) for up to two seconds. Exclusive directory
-  creation also retries a pending deletion; an actual occupant still refuses
-  the claim. Worktree keys resolve the filesystem's canonical path before
-  hashing, including Windows path aliases. When upgrading from raw-path keys,
-  follow [Upgrading worktree identity](README.md#upgrading-worktree-identity)
-  before starting a new-version participant: old actor stamps are not migrated.
-  The state volume must support
-  hard links; a refusal names `$DRIVE_PR_STATE_DIR` so it can be relocated.
-- **State directory** — `resolveStateDir()` (`lib/state/store.ts`) defaults to
-  `~/.local/state/jig/drive-pr/<clone-key>/`, one directory per clone
-  (`<clone-key>` is a SHA-256 hash of a persisted per-clone identifier in
-  `--git-common-dir`, so two worktrees of one clone share it and two separate
-  clones never collide; `--git-dir` would fragment state per worktree
-  instead) — *deliberately* outside the repository tree, because the
-  unbounded quarantine growth above inside `--git-common-dir` (`.git`) lands
-  in the very directory every git-aware tool on the machine walks. The legacy
-  layout kept state in `--git-common-dir` itself. A clone whose
-  `--git-common-dir` still holds state from that layout refuses (exit 2,
-  naming the found entries) rather than silently starting a fresh drive over
-  it, which would leave two sessions resolving different directories with
-  neither error surfacing. Run the one-time fix: `bun
-  "${CLAUDE_SKILL_DIR}/scripts/migrate-legacy-state.ts" --apply` — bare,
-  with no `--apply`, it only reports what it would do and changes nothing (same
-  dry-run-by-default posture as `reap-state.ts`'s `--delete`). Idempotent,
-  copies (never moves) durable content, refuses if a live driver is still
-  using the legacy location, and leaves inert lock/quarantine debris behind
-  (reported, safe to remove manually once confident — see the script's own
-  header for why it does not delete that itself). State that already lives in
-  some other directory outside the repository (another default location, or
-  a previous `$DRIVE_PR_STATE_DIR`) moves with `bun "${CLAUDE_SKILL_DIR}/scripts/migrate-state-dir.ts" --from <old
-  dir>` instead: [README.md § Relocating the state
-  dir](README.md#relocating-the-state-dir).
+- **The drive's database** — `lib/state/db.ts`: one SQLite file per
+  machine, `~/.local/state/jig/drive-pr/state.sqlite`, every row keyed by
+  the clone (`<clone-key>`, a SHA-256 hash of a persisted per-clone
+  identifier in `--git-common-dir`, so two worktrees of one clone share it
+  and two separate clones never collide). It holds the drive state, the
+  locks, the leases, the claims, the stop requests and the driver record;
+  the clone's directory beside it (`resolveStateDir()`, `lib/state/store.ts`)
+  keeps the driver log and the files handed to a pass. A database a newer
+  plugin needs a newer reader for stops a command with exit 2, naming both
+  versions. A clone's directory an earlier release filled with state files
+  is read in once at the first open and left in place
+  ([README.md § Upgrading from a release that kept files](README.md#upgrading-from-a-release-that-kept-files)).
+  Worktree keys resolve the filesystem's canonical path before hashing,
+  including Windows path aliases.
 - **The drive ledger** — the state's resumable subset, mirrored into one
   hidden-marker comment on the PR (`<!-- drive-pr-ledger -->`,
   `lib/state/ledger.ts`): the record envelope (kind `drive-ledger`, its
@@ -716,23 +673,22 @@ outlives the session that spawned it, so its console is not where you look:
   the ledger still names that driver. A driver that kept its locks, over a
   pass it could not witness gone or killed outright, leaves its ledger
   running.
-- **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state root,
-  preserving one `<clone-key>/` directory per clone (the hash of its persisted
-  [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved leaf;
-  a pass must not change it. Unscoped flat artifacts cause a refusal: their old
-  schema has no repository binding, so never adopt or relocate them by guessing.
-  Stop all participants and have a human establish ownership first. The inherited
-  identity guard tolerates device-number drift only with matching inode,
-  nonzero birth time, canonical target path and the same macOS volume UUID;
-  unavailable volume proof keeps device comparison strict. Replacement still refuses.
-  A workspace manager that launches sessions must forward the setting too. **Every
-  participant in one clone must resolve the same directory**: two drivers that
-  disagree do not share the lease mutex, and each silently restarts the drive
-  at round 0. So if you find it set and did not set it yourself, leave it
-  alone — never unset or override it for one session, worktree or command.
-  Relocating it is a human, machine-wide procedure (quiesce every driver and
-  any scheduled reaper, run `bun "${CLAUDE_SKILL_DIR}/scripts/migrate-state-dir.ts"`, then export everywhere at
-  once): [README.md § Relocating the state
+- **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state
+  root: the database and one `<clone-key>/` directory per clone (the hash of
+  its persisted [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved
+  clone directory and its database's identity; a pass must not change
+  either, and the fence refuses a post when the database is not the one the
+  driver opened. A root holding a drive's files directly causes a refusal:
+  those files have no repository binding, so never adopt or relocate them
+  by guessing. Stop all participants and have a human establish ownership
+  first. A workspace manager that launches sessions must forward the setting
+  too. **Every participant in one clone must resolve the same root**: two
+  drivers that disagree open two databases, and each silently restarts the
+  drive at round 0. So if you find it set and did not set it yourself, leave
+  it alone — never unset or override it for one session, worktree or
+  command. Relocating it is a human, machine-wide procedure (quiesce every
+  driver and any scheduled reaper, move the root whole, then export
+  everywhere at once): [README.md § Relocating the state
   dir](README.md#relocating-the-state-dir).
 - **Session banner** — `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --here` reports whether a live driver is
   working the worktree it runs in. Its silence means "checked, and clear"; a
@@ -2162,7 +2118,7 @@ repeated `--fingerprint` flags and answer in a single comment.
 
 The **fix-dependent** outcomes — `accepted` and `moot` — are **held exactly like
 an accepted thread**, with one difference: a thread's reply is already posted
-to GitHub by hold time, so its text survives independently of this state file.
+to GitHub by hold time, so its text survives independently of this state.
 A finding's is not — `bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts" --pushed-sha` can't legally run
 until step 6, after the push, so at hold time the reasoning exists nowhere but
 your own context. `hold` needs it on stdin, not just `--outcome` — and that
@@ -3638,7 +3594,7 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   `drive-status.ts` gate runs, so a push that lands without one reads as a
   match even though it was never the push the hold was waiting on — the stamp
   is what actually closes that. Per-hold rather than PR-global because this
-  state file is shared by every driver of the PR, so one pointer vouched for
+  state is shared by every driver of the PR, so one pointer vouched for
   holds whose fix a push never contained. The raw mutation has
   no notion of which push justifies it either way. Just before resolving, it
   re-reads the thread and refuses (restoring the hold) when anything landed

@@ -14,19 +14,13 @@ import assert from "node:assert/strict";
  */
 
 import { afterAll, beforeAll, expect } from "bun:test";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
 import { resolveActor } from "../scripts/lib/state/actor";
 import { freshState } from "../scripts/lib/state/schema";
 import { worktreeLockName } from "../scripts/lib/state/store";
+import { readState, writeState } from "./state-rows.ts";
 // Imported, never restated: every fixture age below is derived from the
 // production floor, so raising it cannot silently leave a probe sitting
 // underneath it and passing vacuously.
@@ -40,11 +34,8 @@ export const REPO_ROOT = join(import.meta.dir, "..", "..", "..", "..");
 
 /** Seed historical global verification without bypassing the production gate. */
 export function writeVerifiedSha(stateDir: string, sha: string): void {
-  const path = join(stateDir, "drive-pr-999.json");
-  const state = existsSync(path)
-    ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>)
-    : freshState(999);
-  writeFileSync(path, JSON.stringify({ ...state, verifiedSha: sha }));
+  const state = readState(stateDir, "999") ?? freshState(999);
+  writeState(stateDir, "999", { ...state, verifiedSha: sha });
 }
 /**
  * The worktree lock's file name, resolved through the SAME function drive.ts
@@ -1337,7 +1328,7 @@ if [ "$has_input" -eq 1 ]; then
   # release-held call — a window the claim-step's own exit-3 abort cannot
   # cover, since the claim already succeeded before this point.
   if [ -f "$F/corrupt-state-on-post" ]; then
-    printf 'not json' > "\${DRIVE_PR_STATE_DIR:?}/drive-pr-999.json"
+    "${process.execPath}" "${join(import.meta.dir, "fixtures", "corrupt-state.ts")}" "\${DRIVE_PR_STATE_DIR:?}" 999
   fi
   input=$(cat)
   printf '%s' "$input" >> "$F/posted.jsonl"
