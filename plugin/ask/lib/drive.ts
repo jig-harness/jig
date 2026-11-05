@@ -44,12 +44,12 @@ import {
   type SharedClaim,
   winners,
 } from "../../shared/records/shared.ts";
-import { isTrustedAuthor } from "../../shared/trusted-authors.ts";
 import { isDrive } from "../../dispatch/lib/launches.ts";
 import { driveClass, lastEnded } from "../../dispatch/lib/log.ts";
 import {
   classifyLedger,
   type ParkReading,
+  type PrFacts,
 } from "../../dispatch/lib/sources/ledgers.ts";
 import { statePath } from "../../dispatch/lib/state.ts";
 import type { Holder, Last, ThreadEntry, WaitsOn } from "./answer.ts";
@@ -57,6 +57,7 @@ import {
   type CommentFields,
   commentFields,
   type PullDoc,
+  readBranchHead,
   readComments,
 } from "./forge.ts";
 import { driveRow, type DriveRow } from "./local.ts";
@@ -74,6 +75,7 @@ import {
   answerEntries,
   claimEntries,
   commentUrl,
+  countsAsAnswer,
   localLaunchEntries,
   logEntries,
   loggedRecords,
@@ -111,16 +113,11 @@ function answered(
   key: string,
   at: string | undefined,
   comments: readonly CommentFields[],
-  self: string | null,
 ): boolean {
   if (at === undefined) return false;
   const after = Date.parse(at);
   return comments.some(
-    (c) =>
-      isTrustedAuthor(c.login, c.association, self) &&
-      Date.parse(c.createdAt) > after &&
-      !c.body.includes("<!--") &&
-      answersKey(c.body, key),
+    (c) => countsAsAnswer(c, after) && answersKey(c.body, key),
   );
 }
 
@@ -128,13 +125,10 @@ function answered(
 function parkReading(
   ledger: Ledger,
   comments: readonly CommentFields[] | null,
-  self: string | null,
 ): ParkReading {
   if (comments === null)
     return { unreadable: "the pull request's comments, which did not read" };
-  const waiting = ledger.parked.filter(
-    (p) => !answered(p.key, p.at, comments, self),
-  );
+  const waiting = ledger.parked.filter((p) => !answered(p.key, p.at, comments));
   return {
     answered: ledger.parked.length - waiting.length,
     waiting: waiting.map((p) => `${p.kind} ${p.key}`),
@@ -188,13 +182,18 @@ function waitsOnOf(
   r: DriveReads,
   ctx: AskContext,
   held: boolean,
+  base: PrFacts["base"],
 ): WaitsOn {
   const placed = classifyLedger(
     ledger,
     Date.now(),
     stallThresholdMs(),
-    parkReading(ledger, r.comments, ctx.login),
-    { head: r.pull.head, mergeable: r.pull.mergeable },
+    parkReading(ledger, r.comments),
+    {
+      head: r.pull.head,
+      mergeable: r.pull.mergeable,
+      ...(base === undefined ? {} : { base }),
+    },
   );
   // A dispatcher re-arms what settles by itself: this machine's, or one whose launch claims are on the pull request.
   const dispatched = ctx.dispatches || current(r.claims) !== null;
@@ -206,7 +205,12 @@ function waitsOnOf(
           why: `${why}; no dispatcher is known to re-arm it`,
         };
   // A launch that holds the drive says nothing of a park nobody answered or of a ledger gone silent.
-  if (held && placed.class !== "parked" && placed.class !== "stale")
+  if (
+    held &&
+    placed.class !== "parked" &&
+    placed.class !== "stale" &&
+    placed.class !== "silent"
+  )
     return "none";
   switch (placed.class) {
     case "driven":
@@ -413,7 +417,7 @@ function recordEntries(
     ...claimEntries(r.claims, name, url, loggedRecords(r.rows)),
     ...localLaunchEntries(r.records, name, claimed, path),
     ...logEntries(r.rows, name, path),
-    ...answerEntries(comments, ctx.login, name, url),
+    ...answerEntries(comments, name, url),
     ...ledgerEntries(
       ledger,
       name,
@@ -540,8 +544,15 @@ export async function askDrive(ctx: AskContext): Promise<StationAnswer> {
   };
   const ledger = ledgerOf(reads.snapshot);
   const read = typeof ledger === "string" ? null : ledger;
-  const { state, detail } = stateOf(ledger, doc, reads.row);
+  const { state, detail } = pull.read
+    ? stateOf(ledger, doc, reads.row)
+    : {
+        state: "unknown",
+        detail:
+          "the pull request did not read, so whether it is open, merged or closed is not known",
+      };
   const holder = holderOf(reads, read, ctx);
+  const base = await baseHeadOf(ctx, read, doc);
   const entries = recordEntries(reads, read, ctx);
   if (ctx.thread) entries.push(...(await threadReads(reads, ctx)));
   return {
@@ -552,12 +563,36 @@ export async function askDrive(ctx: AskContext): Promise<StationAnswer> {
     state,
     stateDetail: detail,
     waitsOn:
-      doc.state !== "OPEN" || read === null
+      !pull.read || doc.state !== "OPEN" || read === null
         ? "none"
-        : waitsOnOf(read, reads, ctx, holder !== "none"),
+        : waitsOnOf(read, reads, ctx, holder !== "none", base),
     last: lastOf(reads),
     entries,
   };
+}
+
+/** The head of the pull request's base branch, which the classifier reads only for a ledger that stopped on a conflict; noted in the sources. */
+async function baseHeadOf(
+  ctx: AskContext,
+  ledger: Ledger | null,
+  doc: PullDoc,
+): Promise<PrFacts["base"]> {
+  if (
+    ledger === null ||
+    doc.state !== "OPEN" ||
+    ledger.driver.state !== "stopped" ||
+    ledger.driver.exit !== DRIVE_EXIT.PR_CONFLICTING
+  )
+    return undefined;
+  if (doc.baseRef === "")
+    return { unreadable: "the forge reports no base branch for it" };
+  const head = await readBranchHead(ctx.reading, ctx.address.repo, doc.baseRef);
+  ctx.reading.note({
+    record: "base-branch",
+    read: head.ok,
+    ...(head.ok ? {} : { detail: head.failure.reason }),
+  });
+  return head.ok ? { oid: head.value } : { unreadable: head.failure.reason };
 }
 
 /** The doctor's verdict on a drive, in words, with the recovery it gives. */

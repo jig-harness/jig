@@ -114,10 +114,9 @@ export function outcomeRows(
   root: string,
   repo: string,
   target: string,
-  limit?: number,
 ): LogRow[] {
   const read = attempt("unreadable", "the outcome log does not read", () =>
-    rowsFor(repo, target, root, limit),
+    rowsFor(repo, target, root),
   );
   reading.note(
     read.ok

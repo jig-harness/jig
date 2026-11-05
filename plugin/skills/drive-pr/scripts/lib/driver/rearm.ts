@@ -265,7 +265,7 @@ function closesFence(line: string, marker: string, open: string): boolean {
 }
 
 /** A comment a person wrote after the park, not one the drive wrote. */
-function isAnswer(c: CommentLike, after: number): boolean {
+export function isAnswer(c: CommentLike, after: number): boolean {
   return (
     TRUSTED_ASSOCIATIONS.has(c.association) &&
     Date.parse(c.at) > after &&

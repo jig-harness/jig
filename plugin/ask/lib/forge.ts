@@ -24,6 +24,8 @@ export interface PullDoc {
   url: string;
   state: "OPEN" | "CLOSED" | "MERGED";
   head: string;
+  /** The branch it merges into. */
+  baseRef: string;
   author: string;
   labels: string[];
   /** `MERGEABLE`, `CONFLICTING`, or `UNKNOWN` while the forge computes it. */
@@ -93,11 +95,28 @@ export async function readPull(
     state:
       v.merged === true ? "MERGED" : v.state === "open" ? "OPEN" : "CLOSED",
     head,
+    baseRef: isRecord(v.base) ? text(v.base.ref) : "",
     author: isRecord(v.user) ? text(v.user.login) : "",
     labels,
     mergeable: mergeability(v.mergeable),
     mergedAt: typeof v.merged_at === "string" ? v.merged_at : null,
   });
+}
+
+/** The commit a branch of the repository is at now; `absent` when it has none. */
+export async function readBranchHead(
+  reading: Reading,
+  repo: string,
+  branch: string,
+): Promise<Outcome<string, "absent" | "unreadable">> {
+  const ref = branch.split("/").map(encodeURIComponent).join("/");
+  const got = await get(reading, `repos/${repo}/git/ref/heads/${ref}`);
+  if (!got.ok) return got;
+  const v = json(got.value);
+  const sha = isRecord(v) && isRecord(v.object) ? text(v.object.sha) : "";
+  return sha === ""
+    ? failed("unreadable", `branch ${branch}'s ref names no commit`)
+    : ok(sha);
 }
 
 /** Every page of a listing, as the forge's objects. */

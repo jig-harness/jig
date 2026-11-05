@@ -191,28 +191,20 @@ export function insertRow(db: Database, row: LogRow): boolean {
  * name it: `PR #<n>`, or an item's key), in the order they were written;
  * none before the database exists. One lookup through the `target` index,
  * which also reads the rows a copy one release behind wrote without it
- * (their target is in the row's own text). With `limit`, only the newest
- * `limit` of them.
+ * (their target is in the row's own text).
  */
 export function rowsFor(
   repo: string,
   target: string,
   root = stateRoot(),
-  limit?: number,
 ): LogRow[] {
   const db = existingStateDb(root);
   if (db === null) return [];
-  const bound = limit === undefined ? "" : " LIMIT ?";
   const selected = db
     .query(
-      `SELECT row FROM log WHERE repo = ? AND (target = ? OR (target IS NULL AND CASE WHEN json_valid(row) THEN json_extract(row, '$.target') END = ?)) ORDER BY seq${limit === undefined ? "" : " DESC"}${bound}`,
+      "SELECT row FROM log WHERE repo = ? AND (target = ? OR (target IS NULL AND CASE WHEN json_valid(row) THEN json_extract(row, '$.target') END = ?)) ORDER BY seq",
     )
-    .all(
-      ...(limit === undefined
-        ? [repo, target, target]
-        : [repo, target, target, limit]),
-    ) as Array<{ row: string }>;
-  if (limit !== undefined) selected.reverse();
+    .all(repo, target, target) as Array<{ row: string }>;
   return rowsOf(selected).filter((r) => r.target === target);
 }
 

@@ -107,6 +107,23 @@ function needsOf(ctx: AskContext): LineNeed[] {
   );
 }
 
+/** The tick's needs that still hold of the item as the tracker reads it now: a closed item, or one the factory identity no longer holds or waits on, has none. */
+function currentNeeds(
+  needs: LineNeed[],
+  issue: Issue,
+  identity: string | null,
+  member: Membership,
+): LineNeed[] {
+  if (DONE_TYPES.has(issue.state.type)) return [];
+  if (
+    identity !== null &&
+    member.claimed === false &&
+    member.assigned === false
+  )
+    return [];
+  return needs;
+}
+
 /** Whether the tracker lists the item among the factory identity's claims and its waiting assignments, as the dispatcher reads them; `null` when a list did not read. */
 interface Membership {
   claimed: boolean | null;
@@ -255,13 +272,13 @@ export async function askPickup(
   if (found.value === null)
     return nothing("no such item", `the tracker has no item ${address.key}`);
   const issue = found.value;
-  const needs = needsOf(ctx);
   const local = await dispatcherReads(
     ctx,
     (r) => r.record.action === "pickup" && r.record.item === address.key,
     address.key,
   );
   const member = await membershipOf(ctx, tracker);
+  const needs = currentNeeds(needsOf(ctx), issue, tracker.identity, member);
   const { state, detail } = stateOf(issue, tracker.identity, needs, member);
   const holding = holdingRecord(local.records);
   const path = ctx.dispatcher === null ? "" : statePath(ctx.dispatcher);
@@ -294,7 +311,8 @@ async function assignment(
   member: Membership,
 ): Promise<ThreadEntry[]> {
   const { identity } = tracker;
-  if (!ctx.thread || identity === null || !member.assigned) return [];
+  if (!ctx.thread || identity === null || !(member.assigned || member.claimed))
+    return [];
   const by = await trackerRead(ctx, () =>
     openTracker(tracker.config, tracker.root).assignedBy(
       ctx.address.key,
@@ -310,11 +328,12 @@ async function assignment(
   if ("why" in by || !by.value.trusted) return [];
   return [
     {
-      at: issue.updatedAt ?? "",
+      // The tracker reports who assigned the item, not when; the item's last update is not that time.
+      at: "",
       kind: "request",
       from: by.value.name,
       to: ctx.name,
-      text: `assigned to ${identity}`,
+      text: `assigned to ${identity} (the tracker records no time for the assignment)`,
       record: {
         kind: "tracker-claim",
         ...(issue.url === null ? {} : { url: issue.url }),

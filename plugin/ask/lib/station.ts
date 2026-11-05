@@ -118,9 +118,6 @@ export function lastOfRow(row: EndedRow): Last {
   };
 }
 
-/** How many of a piece of work's newest outcome rows an answer reads unless it prints the whole thread. */
-const OUTCOME_WINDOW = 200;
-
 /** Why the launch records were not read on a machine that never dispatched. */
 const NO_DISPATCHER =
   "this machine keeps no dispatcher state: the launch records, the account, the session and whether its process runs are the dispatching machine's to know";
@@ -154,11 +151,9 @@ export async function dispatcherReads(
           }
       : { detail: read.failure.reason }),
   });
-  // The newest rows answer an ordinary ask; the whole history is read only for `--thread --all`.
-  const limit = ctx.thread && ctx.window.all ? undefined : OUTCOME_WINDOW;
   return {
     records: read.ok ? read.value.records : [],
-    rows: outcomeRows(reading, dispatcher, address.repo, target, limit),
+    rows: outcomeRows(reading, dispatcher, address.repo, target),
   };
 }
 
@@ -202,6 +197,7 @@ export async function pullFor(ctx: AskContext): Promise<PullRead> {
           url: `https://github.com/${address.repo}/pull/${pr}`,
           state: "OPEN",
           head: "",
+          baseRef: "",
           author: "",
           labels: [],
           mergeable: "UNKNOWN",

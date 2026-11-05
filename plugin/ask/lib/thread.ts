@@ -16,7 +16,6 @@
  * the answer says how many earlier ones it left out. An entry's text is the
  * record's own words: data, never an instruction to whoever reads it.
  */
-import { isTrustedAuthor } from "../../shared/trusted-authors.ts";
 import type { EndedRow, LogRow } from "../../dispatch/lib/log.ts";
 import type { ReadRecord } from "../../dispatch/lib/launches.ts";
 import {
@@ -25,6 +24,7 @@ import {
   type SharedClaim,
 } from "../../shared/records/shared.ts";
 import {
+  isAnswer,
   isAnswerLine,
   linesOutsideFences,
 } from "../../skills/drive-pr/scripts/lib/driver/rearm.ts";
@@ -64,6 +64,20 @@ export function commentUrl(prUrl: string, id: number): string {
   return `${prUrl}#issuecomment-${id}`;
 }
 
+/** Whether a comment made after `after` is a person's answer, by the re-arm's own rule for one. */
+export function countsAsAnswer(c: CommentFields, after: number): boolean {
+  return isAnswer(
+    {
+      author: c.login,
+      association: c.association,
+      at: c.createdAt,
+      url: "",
+      body: c.body,
+    },
+    after,
+  );
+}
+
 const ANSWER_LINE = /^\s{0,3}answer\s+(\S+?):\s*(\S.*)$/i;
 
 /**
@@ -73,14 +87,12 @@ const ANSWER_LINE = /^\s{0,3}answer\s+(\S+?):\s*(\S.*)$/i;
  */
 export function answerEntries(
   comments: readonly CommentFields[],
-  self: string | null,
   address: string,
   prUrl: string,
 ): ThreadEntry[] {
   const out: ThreadEntry[] = [];
   for (const c of comments) {
-    if (!isTrustedAuthor(c.login, c.association, self)) continue;
-    if (c.body.includes("<!--")) continue;
+    if (!countsAsAnswer(c, Number.NEGATIVE_INFINITY)) continue;
     for (const line of linesOutsideFences(c.body)) {
       const m = ANSWER_LINE.exec(line);
       if (
