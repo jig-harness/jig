@@ -42,6 +42,7 @@ import {
   open,
   type ReadClaim,
   type SharedClaim,
+  winners,
 } from "../../shared/records/shared.ts";
 import { isTrustedAuthor } from "../../shared/trusted-authors.ts";
 import { isDrive } from "../../dispatch/lib/launches.ts";
@@ -57,13 +58,13 @@ import {
   commentFields,
   type PullDoc,
   readComments,
-  readLabelEvents,
 } from "./forge.ts";
 import { driveRow, type DriveRow } from "./local.ts";
 import {
   type AskContext,
   dispatcherReads,
   holdingRecord,
+  labelThread,
   lastOfRow,
   pullFor,
   recordHolder,
@@ -73,7 +74,6 @@ import {
   answerEntries,
   claimEntries,
   commentUrl,
-  labelRequests,
   localLaunchEntries,
   logEntries,
   loggedRecords,
@@ -183,7 +183,12 @@ function stateOf(
 }
 
 /** What the drive waits on, from the class the dispatcher's classifier places its ledger in. */
-function waitsOnOf(ledger: Ledger, r: DriveReads, ctx: AskContext): WaitsOn {
+function waitsOnOf(
+  ledger: Ledger,
+  r: DriveReads,
+  ctx: AskContext,
+  held: boolean,
+): WaitsOn {
   const placed = classifyLedger(
     ledger,
     Date.now(),
@@ -192,7 +197,7 @@ function waitsOnOf(ledger: Ledger, r: DriveReads, ctx: AskContext): WaitsOn {
     { head: r.pull.head, mergeable: r.pull.mergeable },
   );
   // A dispatcher re-arms what settles by itself: this machine's, or one whose launch claims are on the pull request.
-  const dispatched = ctx.dispatches || r.claims.length > 0;
+  const dispatched = ctx.dispatches || current(r.claims) !== null;
   const rearm = (why: string): WaitsOn =>
     dispatched
       ? { waiting: why }
@@ -200,6 +205,9 @@ function waitsOnOf(ledger: Ledger, r: DriveReads, ctx: AskContext): WaitsOn {
           person: "re-arm",
           why: `${why}; no dispatcher is known to re-arm it`,
         };
+  // A launch that holds the drive says nothing of a park nobody answered or of a ledger gone silent.
+  if (held && placed.class !== "parked" && placed.class !== "stale")
+    return "none";
   switch (placed.class) {
     case "driven":
       return "none";
@@ -285,15 +293,22 @@ function holderOf(
 /** The last ended launch: the outcome log's row, else the latest claim's end on the forge. */
 function lastOf(r: DriveReads): Last | null {
   const row = lastEnded(r.rows, ["rearm", "takeover"]);
-  if (row !== null) return lastOfRow(row);
-  const ended = r.claims
-    .filter(
-      (c): c is ReadClaim =>
-        c.trusted && c.says.ok && c.says.value.end !== null,
-    )
+  const fromRow = row === null ? null : lastOfRow(row);
+  const ended = winners(r.claims)
+    .filter((c) => c.says.value.end !== null)
     .sort((a, b) => b.id - a.id)[0];
-  const end = ended?.says.value.end;
-  if (ended === undefined || end == null) return null;
+  const claimed = ended === undefined ? null : lastOfClaim(r, ended);
+  // The newer of the two ends: another host may have ended a launch after this machine's last row.
+  if (fromRow === null || claimed === null) return fromRow ?? claimed;
+  return (Date.parse(claimed.at) || 0) > (Date.parse(fromRow.at) || 0)
+    ? claimed
+    : fromRow;
+}
+
+/** A launch claim's end as the last launch. */
+function lastOfClaim(r: DriveReads, ended: ReadClaim): Last | null {
+  const end = ended.says.value.end;
+  if (end == null) return null;
   if (end.state === "died")
     return {
       class: "died",
@@ -388,8 +403,8 @@ function recordEntries(
   const url = r.pull.url;
   const canonical = r.snapshot?.canonical?.comment;
   const claimed = new Set(
-    r.claims.flatMap((c) =>
-      c.says.ok && c.says.value.record !== null ? [c.says.value.record] : [],
+    winners(r.claims).flatMap((c) =>
+      c.says.value.record !== null ? [c.says.value.record] : [],
     ),
   );
   const path = ctx.dispatcher === null ? "" : statePath(ctx.dispatcher);
@@ -413,18 +428,8 @@ async function threadReads(
   r: DriveReads,
   ctx: AskContext,
 ): Promise<ThreadEntry[]> {
-  const { reading, address, labelPrefix } = ctx;
-  const events = await readLabelEvents(reading, address.repo, r.pull.number);
-  reading.note({
-    record: "label-event",
-    read: events.ok,
-    ...(events.ok ? {} : { detail: events.failure.reason }),
-  });
-  const names = [`${labelPrefix}drive`, `${labelPrefix}hold`];
   return [
-    ...(events.ok
-      ? labelRequests(events.value, names, ctx.name, r.pull.url)
-      : []),
+    ...(await labelThread(ctx, r.pull.number, r.pull.url)),
     ...mailboxEntries(r.row, ctx),
   ];
 }
@@ -547,9 +552,9 @@ export async function askDrive(ctx: AskContext): Promise<StationAnswer> {
     state,
     stateDetail: detail,
     waitsOn:
-      holder !== "none" || doc.state !== "OPEN" || read === null
+      doc.state !== "OPEN" || read === null
         ? "none"
-        : waitsOnOf(read, reads, ctx),
+        : waitsOnOf(read, reads, ctx, holder !== "none"),
     last: lastOf(reads),
     entries,
   };

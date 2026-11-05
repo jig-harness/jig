@@ -7,10 +7,10 @@ import type { Address } from "../../shared/address.ts";
 import type { EndedRow, LogRow } from "../../dispatch/lib/log.ts";
 import { holds, type ReadRecord } from "../../dispatch/lib/launches.ts";
 import type { Holder, Last, ThreadEntry, WaitsOn } from "./answer.ts";
-import { type PullDoc, readPull } from "./forge.ts";
+import { type PullDoc, readLabelEvents, readPull } from "./forge.ts";
 import { launchesWhere, outcomeRows } from "./local.ts";
 import type { Reading } from "./reading.ts";
-import type { ThreadWindow } from "./thread.ts";
+import { labelRequests, type ThreadWindow } from "./thread.ts";
 
 /** What a station's reader reads with. */
 export interface AskContext {
@@ -31,8 +31,8 @@ export interface AskContext {
   checkout: string | null;
   /** Whether this machine's dispatch file lists the repository. */
   dispatches: boolean;
-  /** The dispatch labels' prefix (`dispatch.labels.prefix`), `jig:` where the configuration does not say. */
-  labelPrefix: string;
+  /** The dispatch labels' prefix (`dispatch.labels.prefix`); `null` when no checkout's configuration here says. */
+  labelPrefix: string | null;
 }
 
 /** What a station's reader answers. */
@@ -118,6 +118,9 @@ export function lastOfRow(row: EndedRow): Last {
   };
 }
 
+/** How many of a piece of work's newest outcome rows an answer reads unless it prints the whole thread. */
+const OUTCOME_WINDOW = 200;
+
 /** Why the launch records were not read on a machine that never dispatched. */
 const NO_DISPATCHER =
   "this machine keeps no dispatcher state: the launch records, the account, the session and whether its process runs are the dispatching machine's to know";
@@ -138,15 +141,24 @@ export async function dispatcherReads(
     dispatcher,
     (r) => r.record.repo === address.repo && keep(r),
   );
+  const skipped = read.ok ? read.value.unreadable : [];
   reading.note({
     record: "dispatch-launch",
-    read: read.ok,
+    read: read.ok && skipped.length === 0,
     local: true,
-    ...(read.ok ? {} : { detail: read.failure.reason }),
+    ...(read.ok
+      ? skipped.length === 0
+        ? {}
+        : {
+            detail: `${skipped.length} launch record(s) do not read and are left out: ${skipped.join("; ")}`,
+          }
+      : { detail: read.failure.reason }),
   });
+  // The newest rows answer an ordinary ask; the whole history is read only for `--thread --all`.
+  const limit = ctx.thread && ctx.window.all ? undefined : OUTCOME_WINDOW;
   return {
-    records: read.ok ? read.value : [],
-    rows: outcomeRows(reading, dispatcher, address.repo, target),
+    records: read.ok ? read.value.records : [],
+    rows: outcomeRows(reading, dispatcher, address.repo, target, limit),
   };
 }
 
@@ -196,4 +208,35 @@ export async function pullFor(ctx: AskContext): Promise<PullRead> {
           mergedAt: null,
         },
   };
+}
+
+/** With `--thread`: the `drive` and `hold` label requests on a pull request's timeline, noted in the sources; none when the prefix or the timeline is not known. */
+export async function labelThread(
+  ctx: AskContext,
+  number: number,
+  url: string,
+): Promise<ThreadEntry[]> {
+  const { reading, address, labelPrefix } = ctx;
+  if (labelPrefix === null) {
+    reading.note({
+      record: "label-event",
+      read: false,
+      detail:
+        "the dispatch label prefix is the repository's configuration to name, and no checkout of it is on this machine",
+    });
+    return [];
+  }
+  const events = await readLabelEvents(reading, address.repo, number);
+  reading.note({
+    record: "label-event",
+    read: events.ok,
+    ...(events.ok ? {} : { detail: events.failure.reason }),
+  });
+  if (!events.ok) return [];
+  return labelRequests(
+    events.value,
+    [`${labelPrefix}drive`, `${labelPrefix}hold`],
+    ctx.name,
+    url,
+  );
 }

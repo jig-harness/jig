@@ -24,7 +24,10 @@ import {
   winners,
   type SharedClaim,
 } from "../../shared/records/shared.ts";
-import { answersKey } from "../../skills/drive-pr/scripts/lib/driver/rearm.ts";
+import {
+  isAnswerLine,
+  linesOutsideFences,
+} from "../../skills/drive-pr/scripts/lib/driver/rearm.ts";
 import type { ThreadEntry } from "./answer.ts";
 import type { CommentFields, LabelEvent } from "./forge.ts";
 
@@ -65,7 +68,7 @@ const ANSWER_LINE = /^\s{0,3}answer\s+(\S+?):\s*(\S.*)$/i;
 
 /**
  * Every `answer <key>: <text>` line a trusted author wrote in a comment, as
- * the re-arm reads one (`answersKey`: outside a fenced or indented block). A
+ * the re-arm reads one (outside a fenced or indented block). A
  * comment carrying a hidden marker is a script's, never a person's answer.
  */
 export function answerEntries(
@@ -78,9 +81,17 @@ export function answerEntries(
   for (const c of comments) {
     if (!isTrustedAuthor(c.login, c.association, self)) continue;
     if (c.body.includes("<!--")) continue;
-    for (const line of c.body.split("\n")) {
+    for (const line of linesOutsideFences(c.body)) {
       const m = ANSWER_LINE.exec(line);
-      if (m === null || !answersKey(c.body, m[1] as string)) continue;
+      if (
+        m === null ||
+        !isAnswerLine(
+          line,
+          line.trim(),
+          `answer ${m[1] as string}:`.toLowerCase(),
+        )
+      )
+        continue;
       out.push({
         at: c.createdAt,
         kind: "answer",

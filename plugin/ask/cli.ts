@@ -115,13 +115,13 @@ function waitingMain(args: AskArguments): number {
   return ASK_EXIT.ANSWERED;
 }
 
-/** The dispatch labels' prefix the repository's configuration in its checkout here names; `jig:` where it names none or there is no checkout. */
-function labelPrefixAt(checkout: string | null): string {
-  if (checkout === null) return "jig:";
+/** The dispatch labels' prefix the repository's configuration in its checkout here names; `null` where there is no checkout or its configuration does not read. */
+function labelPrefixAt(checkout: string | null): string | null {
+  if (checkout === null) return null;
   const section = attempt("unreadable", "", () =>
     dispatchSection(layeredConfig(checkout).values),
   );
-  return section.ok ? section.value.labels.prefix : "jig:";
+  return section.ok ? section.value.labels.prefix : null;
 }
 
 /** An address as written, resolved in full and its key checked; every refusal a usage error. */

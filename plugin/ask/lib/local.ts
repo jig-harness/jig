@@ -91,10 +91,12 @@ export function dispatcherRoot(): string | null {
 export async function launchesWhere(
   root: string,
   keep: (r: ReadRecord) => boolean,
-): Promise<Outcome<ReadRecord[], "unreadable">> {
+): Promise<
+  Outcome<{ records: ReadRecord[]; unreadable: string[] }, "unreadable">
+> {
   try {
-    const { records } = await readLaunches(root);
-    return ok(records.filter(keep));
+    const { records, unreadable } = await readLaunches(root);
+    return ok({ records: records.filter(keep), unreadable });
   } catch (error) {
     return failed(
       "unreadable",
@@ -112,9 +114,10 @@ export function outcomeRows(
   root: string,
   repo: string,
   target: string,
+  limit?: number,
 ): LogRow[] {
   const read = attempt("unreadable", "the outcome log does not read", () =>
-    rowsFor(repo, target, root),
+    rowsFor(repo, target, root, limit),
   );
   reading.note(
     read.ok

@@ -21,6 +21,7 @@ import {
   type AskContext,
   dispatcherReads,
   holdingRecord,
+  labelThread,
   lastOfRow,
   pullFor,
   recordHolder,
@@ -65,10 +66,10 @@ function stateOf(
     return { state: "claimed", detail: `${by} has no answer yet` };
   if (end.state === "died")
     return { state: "failed", detail: `${by}: its pass died: ${end.reason}` };
-  return end.outcome === "failed"
+  return end.outcome !== "done"
     ? {
         state: "failed",
-        detail: `${by}: its pass ended without recording done`,
+        detail: `${by}: its pass ended without recording done${end.outcome === null ? " (no result recorded)" : ""}`,
       }
     : {
         state: "done",
@@ -114,9 +115,19 @@ function lastOf(
   rows: readonly LogRow[],
 ): Last | null {
   const row = lastEnded(rows, ["followup"]);
-  if (row !== null) return lastOfRow(row);
-  const end = marker?.says.value.end ?? null;
-  if (marker === null || end === null) return null;
+  const fromRow = row === null ? null : lastOfRow(row);
+  const claimed = marker === null ? null : lastOfMarker(marker);
+  // The newer of the two ends: another host may have ended a pass after this machine's last row.
+  if (fromRow === null || claimed === null) return fromRow ?? claimed;
+  return (Date.parse(claimed.at) || 0) > (Date.parse(fromRow.at) || 0)
+    ? claimed
+    : fromRow;
+}
+
+/** A marker's end as the last pass. */
+function lastOfMarker(marker: ReadClaim): Last | null {
+  const end = marker.says.value.end;
+  if (end === null) return null;
   // A person's run marked done carries no time of its own: the marker's.
   const at = end.at === "" ? marker.createdAt : end.at;
   if (end.state === "died")
@@ -135,7 +146,9 @@ function lastOf(
 }
 
 /** The follow-up markers among the pull request's comments, noted in the sources. */
-async function markersOf(ctx: AskContext): Promise<SharedClaim[]> {
+async function markersOf(
+  ctx: AskContext,
+): Promise<{ claims: SharedClaim[]; read: boolean }> {
   const { reading, address } = ctx;
   const pr = Number(address.key);
   const listed = await readComments(reading, address.repo, pr);
@@ -144,14 +157,17 @@ async function markersOf(ctx: AskContext): Promise<SharedClaim[]> {
     read: listed.ok,
     ...(listed.ok ? {} : { detail: listed.failure.reason }),
   });
-  return listed.ok
-    ? sharedClaimsFrom(
-        "followup",
-        listed.value,
-        { repo: address.repo, pr },
-        ctx.login,
-      )
-    : [];
+  return {
+    read: listed.ok,
+    claims: listed.ok
+      ? sharedClaimsFrom(
+          "followup",
+          listed.value,
+          { repo: address.repo, pr },
+          ctx.login,
+        )
+      : [],
+  };
 }
 
 /** The `followup` station's answer. */
@@ -160,7 +176,7 @@ export async function askFollowup(ctx: AskContext): Promise<StationAnswer> {
   if (pull.absent) return pull.answer;
   const { doc } = pull;
   const pr = doc.number;
-  const markers = await markersOf(ctx);
+  const { claims: markers, read: markersRead } = await markersOf(ctx);
   const marker = markerOf(winners(markers));
   const local = await dispatcherReads(
     ctx,
@@ -168,17 +184,24 @@ export async function askFollowup(ctx: AskContext): Promise<StationAnswer> {
     `PR #${pr}`,
   );
   const rows = local.rows.filter((r) => r.stage === "followup");
-  const merged = pull.read ? doc.state === "MERGED" : true;
-  const { state, detail } = stateOf(
-    merged,
-    marker,
-    unreadable(markers).length > 0,
-  );
+  const { state, detail } = !pull.read
+    ? {
+        state: "unknown",
+        detail:
+          "the pull request did not read, so whether it merged is not known",
+      }
+    : !markersRead
+      ? {
+          state: "unknown",
+          detail:
+            "the pull request's comments did not read, so whether a follow-up marker exists is not known",
+        }
+      : stateOf(doc.state === "MERGED", marker, unreadable(markers).length > 0);
   const holding = holdingRecord(local.records);
   const path = ctx.dispatcher === null ? "" : statePath(ctx.dispatcher);
   const claimed = new Set(
-    markers.flatMap((c) =>
-      c.says.ok && c.says.value.record !== null ? [c.says.value.record] : [],
+    winners(markers).flatMap((c) =>
+      c.says.value.record !== null ? [c.says.value.record] : [],
     ),
   );
   return {
@@ -195,6 +218,7 @@ export async function askFollowup(ctx: AskContext): Promise<StationAnswer> {
       ...claimEntries(markers, ctx.name, doc.url, loggedRecords(rows)),
       ...localLaunchEntries(local.records, ctx.name, claimed, path),
       ...logEntries(rows, ctx.name, path),
+      ...(ctx.thread ? await labelThread(ctx, pr, doc.url) : []),
     ],
   };
 }

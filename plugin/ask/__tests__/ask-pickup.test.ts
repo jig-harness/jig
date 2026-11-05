@@ -42,15 +42,46 @@ function world(): AskWorld {
         variables: Record<string, unknown>;
       };
       const op = /query\s+(\w+)/.exec(query)?.[1];
+      // The factory identity's items: #12 waits, #13 is in progress.
+      if (op === "TrackerIssues") {
+        const sub = {
+          subIssues: { pageInfo: { hasNextPage: false }, nodes: [] },
+        };
+        return Response.json({
+          data: {
+            repository: {
+              issues: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  issueNode({
+                    number: 12,
+                    repo: REPO,
+                    assignee: "factory-bot",
+                    extra: sub,
+                  }),
+                  issueNode({
+                    number: 13,
+                    repo: REPO,
+                    assignee: "factory-bot",
+                    labels: ["In Progress"],
+                    extra: sub,
+                  }),
+                ],
+              },
+            },
+          },
+        });
+      }
       if (op !== "TrackerIssue")
         return Response.json({ errors: [{ message: `unhandled ${op}` }] });
       return Response.json({
         data: oneIssue(
-          variables.number === 12
+          variables.number === 12 || variables.number === 13
             ? issueNode({
-                number: 12,
+                number: variables.number,
                 repo: REPO,
                 assignee: "factory-bot",
+                ...(variables.number === 13 ? { labels: ["In Progress"] } : {}),
                 extra: {
                   subIssues: { pageInfo: { hasNextPage: false }, nodes: [] },
                 },
@@ -74,9 +105,16 @@ describe("jig ask pickup", () => {
     expect(answer.key).toBe("#12");
     expect(answer.state).toBe("assigned");
     expect(answer.holder).toBe("none");
-    expect(answer.sources.trackerCalls).toBe(1);
+    expect(answer.sources.trackerCalls).toBe(3);
     expect(answer.sources.forgeCalls).toBe(0);
     expect(w.calls()).toEqual([]);
+  });
+
+  it("reads an item in the dispatcher's in-progress state as claimed", async () => {
+    const w = world();
+    const r = await w.ask([`pickup@${REPO}#13`, "--json"]);
+    expectSpawnExit(r, 0);
+    expect((JSON.parse(r.stdout) as AskAnswer).state).toBe("claimed");
   });
 
   it("exits 1 for an item the tracker does not have, and 2 for a key not in its form", async () => {

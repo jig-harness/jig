@@ -56,6 +56,20 @@ function ended(
 }
 
 describe("the outcome log's key column", () => {
+  it("reads only the newest rows when a limit is given, oldest first", () => {
+    const r = root();
+    for (const [id, hour] of [
+      ["a", "10"],
+      ["b", "11"],
+      ["c", "12"],
+    ] as const)
+      writeRow(ended(id, "PR #7", `2026-11-01T${hour}:00:00.000Z`), r);
+    writeRow(ended("x", "PR #8", "2026-11-01T13:00:00.000Z"), r);
+    expect(
+      rowsFor("example-org/example-repo", "PR #7", r, 2).map((x) => x.key),
+    ).toEqual(["ended b", "ended c"]);
+  });
+
   it("reads one key's rows, and its last ended launch among the stages asked for", () => {
     const r = root();
     writeRow(ended("a", "PR #7", "2026-11-01T10:00:00.000Z"), r);

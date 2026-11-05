@@ -17,7 +17,10 @@ import {
 } from "../../skills/do-item/scripts/lib/tracker/config.ts";
 import { issueKeysOf } from "../../skills/do-item/scripts/lib/tracker/keys.ts";
 import { remoteUrl } from "../../skills/do-item/scripts/lib/tracker/github/refs.ts";
-import type { Issue } from "../../skills/do-item/scripts/lib/tracker/port.ts";
+import type {
+  CanonicalState,
+  Issue,
+} from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { dispatchSection } from "../../dispatch/lib/section.ts";
 import { lastEnded } from "../../dispatch/lib/log.ts";
 import { readLine } from "../../dispatch/lib/line-store.ts";
@@ -44,6 +47,8 @@ export interface RepoTracker {
   root: string;
   /** The factory identity whose assigned items are pickups; `null` when the repository names none. */
   identity: string | null;
+  /** The canonical states `dispatch.states` lists, where an assigned item waits to be picked up. */
+  states: string[];
 }
 
 /** The tracker of the checkout at `root`, or why it is not known. */
@@ -76,6 +81,7 @@ export function trackerAt(
     keys: (input) => keys.normalize(input),
     root,
     identity: section.ok ? section.value.identity : null,
+    states: section.ok ? section.value.states : [],
   });
 }
 
@@ -101,10 +107,17 @@ function needsOf(ctx: AskContext): LineNeed[] {
   );
 }
 
+/** Whether the tracker lists the item among the factory identity's claims and its waiting assignments, as the dispatcher reads them; `null` when a list did not read. */
+interface Membership {
+  claimed: boolean | null;
+  assigned: boolean | null;
+}
+
 function stateOf(
   issue: Issue,
   identity: string | null,
   needs: readonly LineNeed[],
+  member: Membership,
 ): { state: string; detail: string } {
   const where = `${issue.state.name} (${issue.state.type || "no category"})`;
   if (DONE_TYPES.has(issue.state.type))
@@ -116,12 +129,20 @@ function stateOf(
   if (stalled !== undefined)
     return { state: "stalled", detail: stalled.reason };
   const who = issue.assignee ?? "nobody";
-  if (issue.state.type === "started" && issue.assignee !== null)
+  if (member.claimed === true)
     return { state: "claimed", detail: `${where}, assigned to ${who}` };
-  if (identity !== null && issue.assignee === identity)
+  if (member.assigned === true && identity !== null)
     return {
       state: "assigned",
       detail: `${where}, assigned to the factory identity ${identity}`,
+    };
+  if (
+    identity !== null &&
+    (member.claimed === null || member.assigned === null)
+  )
+    return {
+      state: "unknown",
+      detail: `${where}, assigned to ${who}; the tracker's lists of ${identity}'s items did not read, so whether the dispatcher holds it is not known`,
     };
   return { state: "not assigned", detail: `${where}, assigned to ${who}` };
 }
@@ -130,10 +151,13 @@ function waitsOnOf(
   state: string,
   needs: readonly LineNeed[],
   ctx: AskContext,
+  held: boolean,
 ): WaitsOn {
+  // The tick's own need comes first: a session that runs may be the one waiting on a person.
   const need = needs[0];
   if (need !== undefined)
     return { person: personAct(need.cause), why: need.reason };
+  if (held) return "none";
   if (state === "assigned" && ctx.dispatches)
     return { waiting: "the dispatcher's next tick, which starts the pick-up" };
   return "none";
@@ -161,6 +185,40 @@ async function trackerRead<T>(
       why: `the tracker's read failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
+}
+
+/** The factory identity's claimed and waiting items, as the dispatcher reads them (the tracker resolves the identity), and whether this item is among them. */
+async function membershipOf(
+  ctx: AskContext,
+  tracker: RepoTracker,
+): Promise<Membership> {
+  const { identity } = tracker;
+  if (identity === null) return { claimed: false, assigned: false };
+  const key = ctx.address.key;
+  const listed = async (
+    states: ReadonlyArray<CanonicalState>,
+  ): Promise<boolean | null> => {
+    if (states.length === 0) return false;
+    const read = await trackerRead(ctx, () =>
+      openTracker(tracker.config, tracker.root).assignedIssues(
+        identity,
+        states,
+      ),
+    );
+    return "value" in read
+      ? read.value.some((i) => i.identifier === key)
+      : null;
+  };
+  const claimed = await listed(["in_progress"]);
+  const assigned = await listed(tracker.states as CanonicalState[]);
+  ctx.reading.note({
+    record: "tracker-assignment-list",
+    read: claimed !== null && assigned !== null,
+    ...(claimed !== null && assigned !== null
+      ? {}
+      : { detail: `the items assigned to ${identity} did not read` }),
+  });
+  return { claimed, assigned };
 }
 
 /** Who holds a pick-up nobody on this machine launched: the tracker claim's assignee, where the item is claimed. */
@@ -203,7 +261,8 @@ export async function askPickup(
     (r) => r.record.action === "pickup" && r.record.item === address.key,
     address.key,
   );
-  const { state, detail } = stateOf(issue, tracker.identity, needs);
+  const member = await membershipOf(ctx, tracker);
+  const { state, detail } = stateOf(issue, tracker.identity, needs, member);
   const holding = holdingRecord(local.records);
   const path = ctx.dispatcher === null ? "" : statePath(ctx.dispatcher);
   const last = lastEnded(local.rows, ["pickup"]);
@@ -217,10 +276,10 @@ export async function askPickup(
         : recordHolder(holding, null),
     state,
     stateDetail: detail,
-    waitsOn: holding === null ? waitsOnOf(state, needs, ctx) : "none",
+    waitsOn: waitsOnOf(state, needs, ctx, holding !== null),
     last: last === null ? null : lastOfRow(last),
     entries: [
-      ...(await assignment(ctx, tracker, issue)),
+      ...(await assignment(ctx, tracker, issue, member)),
       ...localLaunchEntries(local.records, name, new Set(), path),
       ...logEntries(local.rows, name, path),
     ],
@@ -232,10 +291,10 @@ async function assignment(
   ctx: AskContext,
   tracker: RepoTracker,
   issue: Issue,
+  member: Membership,
 ): Promise<ThreadEntry[]> {
   const { identity } = tracker;
-  if (!ctx.thread || identity === null || issue.assignee !== identity)
-    return [];
+  if (!ctx.thread || identity === null || !member.assigned) return [];
   const by = await trackerRead(ctx, () =>
     openTracker(tracker.config, tracker.root).assignedBy(
       ctx.address.key,

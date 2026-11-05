@@ -749,7 +749,7 @@ key is checked against its tracker's or forge's form before anything is
 read; a pick-up's key needs a checkout of the repository on this machine,
 whose configuration names the tracker.
 
-**The answer.** Every answer prints the address in full and five fields:
+**The answer.** Every answer prints the address in full and these fields:
 
 | Field | What it says |
 | --- | --- |
