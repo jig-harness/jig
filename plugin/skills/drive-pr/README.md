@@ -225,9 +225,13 @@ expensive for that can let the drive suppress it between review rounds:
 The drive then adds the label before its first intermediate push, once the
 PR-open run of every required check has completed, and records the GitHub
 timeline event that added it. At convergence it removes the label only if
-that event is still the newest transition of the label (a person who removes
-and re-adds it takes control), and certifies the head only on required checks
-that started after the removal. When someone else removes the label, the
+that event is still the newest transition of the label, and certifies the
+head only on required checks that started after the removal. The label is a
+CI cost setting, not a way to steer the drive: a label the drive has no
+record of, because an earlier run lost track of it, a drive that died left
+it, or someone else added it, is adopted and removed at convergence like its
+own. To stop a drive, run `bun "<skill-dir>/scripts/drives.ts" --stop <PR>`,
+or stand the dispatcher down with its `jig:hold` label. When someone else removes the label, the
 drive accepts only checks that started strictly after that removal; GitHub
 records the removal to the second, so a run that started in the same second
 has to be rerun. A pull request that conflicts with its base runs no
@@ -236,7 +240,9 @@ not completed and GitHub reports the conflict, the drive pushes the
 conflict resolution without the label, and the push that clears the conflict
 runs full CI. A mergeability GitHub has not computed or the drive cannot
 read keeps the wait. A drive that dies mid-round leaves the label
-behind; see [§ The exit states](#the-exit-states--what-you-do-now) for the recovery.
+behind; the next drive on the pull request adopts it, and
+[§ The exit states](#the-exit-states--what-you-do-now) has the recovery
+when no drive will run again.
 
 ### Push hold
 

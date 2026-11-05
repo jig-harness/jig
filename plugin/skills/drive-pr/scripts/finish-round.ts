@@ -1338,7 +1338,7 @@ async function main(): Promise<number> {
     return done(
       4,
       "CI_HOLD_WAIT",
-      `the CI hold label is not safely owned on the current PR head; wait for initial CI or reconcile the external label, then re-run`,
+      `the CI hold is not ready on the current PR head; wait for the checks the ci-hold line names, then re-run`,
     );
   }
   if (holdRes.code !== 0) {
@@ -1366,8 +1366,11 @@ async function main(): Promise<number> {
     },
   );
   if (pushRes.stdout !== "") process.stderr.write(pushRes.stdout);
-  // `disabled` and `conflicting` pushed without a hold: none rolls back.
-  const unheld = ["disabled", "conflicting"].includes(holdRes.stdout.trim());
+  // `disabled` and `conflicting` pushed without a hold, and `adopted` under a
+  // label this push did not add: none rolls back.
+  const unheld = ["disabled", "conflicting", "adopted"].includes(
+    holdRes.stdout.trim(),
+  );
   if (pushRes.code !== 0 && !unheld) {
     const rollback = await run(
       tsArgv(ciHold, ["rollback", pr, "--expect-head", report.head]),

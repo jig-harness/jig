@@ -89,9 +89,12 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    removing it runs them in full. Any other label's event starts a mirror
    run: it skips the heavy jobs, cancels no run, and its `gates` waits for the
    newest real run on the head and repeats its result, holding a runner while
-   it waits. A drive that stopped can leave the label
-   behind; remove it by hand (`gh pr edit <PR> --remove-label ci:hold`),
-   never by rerunning the held run.
+   it waits. The label only saves CI: a drive adopts one it did not add, and
+   a person stops a drive with `jig:hold` or `drives.ts --stop`, not with
+   the label. A drive that
+   stopped for good can leave the label behind; remove it by hand
+   (`gh pr edit <PR> --remove-label ci:hold`), never by rerunning the held
+   run.
 4. The pull request may merge once a round after Ready has settled: every
    reviewer has reported on the current head, no thread or summary finding is
    left unanswered, and the required checks are green. A person merges; an

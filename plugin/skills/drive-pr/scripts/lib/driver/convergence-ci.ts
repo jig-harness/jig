@@ -45,8 +45,8 @@ export async function releaseAndReadFinalCi(
   // `disabled` and nothing below waits on an unlabel). Release only
   // after convergence, the clean-tree certification, and the Ready
   // transition above have all settled. `ci-hold.ts` compares the
-  // persisted labelled timeline-event id before removing anything, so a
-  // human remove/re-add is never mistaken for a label this driver owns.
+  // persisted labelled timeline-event id before removing anything, and
+  // adopts a live label it holds no record of, then removes it.
   const finalCiSignals = await context.finalCiWait.prime();
   const release = await run(
     tsArgv(ciHold, ["release", context.pr, "--expect-head", reviewedHead]),
@@ -55,7 +55,7 @@ export async function releaseAndReadFinalCi(
   if (release.code === 5) return 5;
   if (release.code === 4) {
     console.error(
-      "review converged, but the CI hold label is externally owned or the head moved; not removing it or reporting merge-ready",
+      "review converged, but the head moved or the CI hold label changed during its release; not reporting merge-ready",
     );
     return 4;
   }
