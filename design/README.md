@@ -71,6 +71,7 @@ with the review.
 | [One look for Jig's pages, and a theme a repository can set](ui-theming.md) | 38; Later: a repository's theme |
 | [The dispatch board, what is driven and what is ready to merge](dispatch-board.md) | 36 |
 | [Records: one envelope, one registry, records shared across hosts](records.md) | 37 |
+| [Addresses: asking and telling the stations of the line](addresses.md) | 39 |
 
 ## Starting a design
 

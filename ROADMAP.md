@@ -299,6 +299,19 @@ will follow the reader's light or dark setting and carry Jig's mark as its
 icon. Every text colour will meet WCAG AA, the Web Content Accessibility
 Guidelines' minimum contrast, in both modes.
 
+### 39. Addresses: asking and telling the stations of the line
+
+Every station on a piece of work will have an address, such as
+`drive@jig#456`: the drive of pull request 456. `jig ask <address>` will
+say who holds the station, what state it is in and what it waits on. It
+will also show what was said to the station and by it. It reads the
+tracker, the pull request and the dispatching machine's records.
+`jig send <address> <verb>` will write the assignment, label or comment
+the line already acts on, from a closed list of verbs. An operator skill
+will turn a question such as "what is waiting on me" into those
+commands. Nothing new is stored, and no agent has to keep running for an
+address to answer.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** A reusable reconciler for
