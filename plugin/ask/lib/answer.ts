@@ -48,7 +48,9 @@ export type PersonAct = (typeof PERSON_ACTS)[number];
 
 /** What a station waits on: nothing, something that settles by itself, or a person's act. */
 export type WaitsOn =
-  "none" | { waiting: string } | { person: PersonAct; why: string };
+  | "none"
+  | { waiting: string }
+  | { person: PersonAct; why: string };
 
 /** The last launch of the station that ended. */
 export interface Last {
@@ -78,7 +80,11 @@ export interface Sources {
 
 /** The kinds of entry a thread holds. */
 export type EntryKind =
-  "request" | "question" | "answer" | "launch" | "outcome";
+  | "request"
+  | "question"
+  | "answer"
+  | "launch"
+  | "outcome";
 
 /** One record of an address's correspondence. */
 export interface ThreadEntry {
