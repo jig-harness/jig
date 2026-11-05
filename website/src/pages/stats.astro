@@ -1,0 +1,624 @@
+---
+import Base from "../layouts/Base.astro";
+import { anchorFor } from "../lib/glossary.ts";
+import { codeStats, glossary, modules, skills } from "../lib/data/index.ts";
+import {
+  areaRows,
+  commitOf,
+  fmt,
+  fmtBytes,
+  moduleParents,
+  moduleRows,
+  percent,
+  ROOT_MODULE,
+  rows,
+  testToCode,
+  topLanguages,
+} from "../lib/data/code-stats.ts";
+import { REPO_URL } from "../lib/routes.ts";
+
+const report = codeStats();
+const { totals, unclassified, vendored } = report;
+const commit = commitOf(report);
+const counted = new Date(report.generatedAt).toLocaleDateString("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+const ratio = testToCode(report);
+const areas = areaRows(report);
+const kinds = rows(report.byKind);
+const languages = topLanguages(report, 12);
+const mods = moduleRows(report);
+const parents = moduleParents(mods);
+const maxModule = Math.max(1, ...mods.map((m) => m.code));
+const width = (part: number, whole: number) => `--w:${whole ? ((part / whole) * 100).toFixed(2) : 0}%`;
+
+/** A glossary term's anchor; a term the glossary lacks fails the build. */
+const term = (name: string) => {
+  const anchor = anchorFor(glossary(), name);
+  if (!anchor) throw new Error(`stats: no glossary entry for "${name}"`);
+  return anchor;
+};
+const T = {
+  loc: term("LOC"),
+  ratio: term("test-to-code ratio"),
+  unclassified: term("unclassified share"),
+  dimensions: term("code-stats dimensions"),
+  vendoring: term("vendoring"),
+  fixture: term("test fixture"),
+};
+
+/* A module this site has a page for links to it: a skill, or a practice
+   module. */
+const skillNames = new Set(skills().map((s) => s.name));
+const moduleIds = new Map(modules().map((m) => [m.dir, m.id]));
+const pageOf = (name: string): string | undefined => {
+  const skill = /^plugin\/skills\/([^/]+)$/.exec(name)?.[1];
+  if (skill && skillNames.has(skill)) return `/skills/${skill}/`;
+  const id = moduleIds.get(name);
+  return id ? `/modules/${id}/` : undefined;
+};
+const parentLabel = (p: string) => (p ? `${p}/` : "top-level folders");
+const config = `${REPO_URL}/blob/main/.config/jig.yaml`;
+---
+
+<Base
+  title="Code statistics"
+  description="What Jig's repository is made of: its files by area, kind, language and module, counted by the code-stats skill at the commit the site was built from."
+>
+  <section class="page wrap">
+    <div class="intro">
+      <span class="eyebrow">Code statistics · Jig's own repository</span>
+      <h1 class="display">What Jig is made of.</h1>
+      <p>
+        The <a href="/skills/code-stats/">code-stats skill</a> measures a repository. It sorts every file git tracks by
+        what the file is for, what it is, its language and its module, then counts its lines. These are the skill's <a class="term" href={`/glossary/#${T.dimensions}`} data-term={T.dimensions}>dimensions</a>.
+        This page shows the skill's report on Jig's own repository.
+      </p>
+      <p>
+        The site's build runs the skill on the commit it builds, so the figures change with every deploy and no copy of
+        them sits in the repository. The page shows totals only and names no single file. A team gets the same report on
+        its own repository by running <code>/jig:code-stats</code>.
+      </p>
+      <p class="stamp muted">
+        Counted at commit {
+          commit.dirty ? (
+            <code>{commit.sha}</code>
+          ) : (
+            <a class="out" href={`${REPO_URL}/commit/${commit.sha}`}><code>{commit.sha}</code></a>
+          )
+        }{commit.dirty && " with uncommitted changes"} on {counted}.
+      </p>
+    </div>
+
+    <dl class="tiles">
+      <div class="tile">
+        <dt>Files counted</dt>
+        <dd class="figure">{fmt(totals.files)}</dd>
+        <dd class="sub">{fmtBytes(totals.bytes)}, {fmt(totals.rawLines)} lines in all</dd>
+      </div>
+      <div class="tile">
+        <dt>
+          <a class="term" href={`/glossary/#${T.loc}`} data-term={T.loc}>Lines of code</a>
+        </dt>
+        <dd class="figure">{fmt(totals.codeLines)}</dd>
+        <dd class="sub">besides {fmt(totals.commentLines)} comment lines and {fmt(totals.blankLines)} blank lines</dd>
+      </div>
+      <div class="tile">
+        <dt>
+          <a class="term" href={`/glossary/#${T.ratio}`} data-term={T.ratio}>Test-to-code ratio</a>
+        </dt>
+        <dd class="figure">{ratio.ratio.toFixed(2)}</dd>
+        <dd class="sub">{fmt(ratio.test)} lines of tests to {fmt(ratio.code)} lines of code in the {ratio.area} area</dd>
+      </div>
+      <div class="tile">
+        <dt>
+          <a class="term" href={`/glossary/#${T.unclassified}`} data-term={T.unclassified}>Unclassified share</a>
+        </dt>
+        <dd class="figure">{percent(unclassified.files, totals.files)}</dd>
+        <dd class="sub">
+          of the files ({fmt(unclassified.files)}), and {percent(unclassified.codeLines, totals.codeLines)} of the lines of
+          code
+        </dd>
+      </div>
+    </dl>
+    <p class="note">
+      {
+        vendored.included ? (
+          "Vendored files, another project's code kept in this one, are counted."
+        ) : (
+          <>
+            {fmt(vendored.excludedFiles)}{" "}
+            <a class="term" href={`/glossary/#${T.vendoring}`} data-term={T.vendoring}>vendored</a> files (
+            {fmtBytes(vendored.excludedBytes)}), another project's code kept in this one, are left out of every figure.
+          </>
+        )
+      }
+    </p>
+
+    <h2 class="h2" id="areas">By area: what each file is for</h2>
+    <p class="lead">
+      Jig's <a class="out" href={config}>configuration</a> names its areas, and the first area whose rule matches a file
+      takes it. A file no rule places falls to the default area. Code and tests count the lines of code of the files
+      that are code or tests. All counts every file, documents included.
+    </p>
+    <div class="scroll">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th scope="col">Area</th>
+            <th scope="col">What it holds</th>
+            <th scope="col" class="n">Files</th>
+            <th scope="col" class="n">Code</th>
+            <th scope="col" class="n">Tests</th>
+            <th scope="col" class="n">All</th>
+            <th scope="col" class="share">Share of all</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            areas.map((a) => (
+              <tr>
+                <th scope="row">
+                  <span class="mono">{a.name}</span>
+                  {a.default && <span class="tag">default</span>}
+                </th>
+                <td class="desc">{a.description}</td>
+                <td class="n">{fmt(a.files)}</td>
+                <td class="n">{fmt(a.codeLoc)}</td>
+                <td class="n">{fmt(a.testLoc)}</td>
+                <td class="n">{fmt(a.code)}</td>
+                <td class="share">
+                  <span class="meter" aria-hidden="true">
+                    <span class="fill" style={width(a.code, totals.codeLines)} />
+                  </span>
+                  <span class="pct">{percent(a.code, totals.codeLines)}</span>
+                </td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="h2" id="kinds">By kind: what each file is</h2>
+    <p class="lead">
+      A kind says what a file is: code, a test, documentation or a <a class="term" href={`/glossary/#${T.fixture}`} data-term={T.fixture}>fixture</a>, among others.
+      The skill detects it from the
+      file itself, and the configuration corrects it where the detection is wrong.
+    </p>
+    <div class="scroll">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th scope="col">Kind</th>
+            <th scope="col" class="n">Files</th>
+            <th scope="col" class="n">Size</th>
+            <th scope="col" class="n">Lines of code</th>
+            <th scope="col" class="share">Share of lines of code</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            kinds.map((k) => (
+              <tr>
+                <th scope="row">
+                  <span class="mono">{k.name}</span>
+                </th>
+                <td class="n">{fmt(k.files)}</td>
+                <td class="n">{fmtBytes(k.bytes)}</td>
+                <td class="n">{fmt(k.code)}</td>
+                <td class="share">
+                  <span class="meter" aria-hidden="true">
+                    <span class="fill" style={width(k.code, totals.codeLines)} />
+                  </span>
+                  <span class="pct">{percent(k.code, totals.codeLines)}</span>
+                </td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="h2" id="languages">By language</h2>
+    <p class="lead">
+      The languages with the most lines of code, of every kind. The skill reads a file's language from its extension or
+      its first line.
+    </p>
+    <div class="scroll">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th scope="col">Language</th>
+            <th scope="col" class="n">Files</th>
+            <th scope="col" class="n">Lines of code</th>
+            <th scope="col" class="share">Share of lines of code</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            languages.named.map((l) => (
+              <tr>
+                <th scope="row">{l.name}</th>
+                <td class="n">{fmt(l.files)}</td>
+                <td class="n">{fmt(l.code)}</td>
+                <td class="share">
+                  <span class="meter" aria-hidden="true">
+                    <span class="fill" style={width(l.code, totals.codeLines)} />
+                  </span>
+                  <span class="pct">{percent(l.code, totals.codeLines)}</span>
+                </td>
+              </tr>
+            ))
+          }
+          {
+            languages.rest && (
+              <tr class="rest">
+                <th scope="row">{fmt(languages.rest.languages)} other languages</th>
+                <td class="n">{fmt(languages.rest.files)}</td>
+                <td class="n">{fmt(languages.rest.code)}</td>
+                <td class="share">
+                  <span class="meter" aria-hidden="true">
+                    <span class="fill" style={width(languages.rest.code, totals.codeLines)} />
+                  </span>
+                  <span class="pct">{percent(languages.rest.code, totals.codeLines)}</span>
+                </td>
+              </tr>
+            )
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="h2" id="modules">By module</h2>
+    <p class="lead">
+      A module is a part of the repository that is a unit of its own. Each skill of the plugin, each of its runtime
+      parts, each practice module and each tool is one, and every other top-level folder is one. A module's lines of
+      code count every file in it: its code, its tests, its documents and the data its tests read.
+    </p>
+    <div class="filter" data-filter hidden>
+      <span class="filter-label">Show</span>
+      <button type="button" aria-pressed="true" data-parent="*">all {fmt(mods.length)}</button>
+      {
+        parents.map((p) => (
+          <button type="button" aria-pressed="false" data-parent={p.parent}>
+            <span class:list={[{ mono: p.parent }]}>{parentLabel(p.parent)}</span> {fmt(p.modules)}
+          </button>
+        ))
+      }
+    </div>
+    <div class="scroll">
+      <table class="grid modules" data-sortable>
+        <thead>
+          <tr>
+            <th scope="col" data-sort="name">Module</th>
+            <th scope="col" class="n" data-sort="files">Files</th>
+            <th scope="col" class="n raw" data-sort="raw">All lines</th>
+            <th scope="col" class="share" data-sort="code" aria-sort="descending">Lines of code</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            mods.map((m) => {
+              const href = pageOf(m.name);
+              const label =
+                m.name === ROOT_MODULE ? (
+                  <span>Files at the root</span>
+                ) : (
+                  <span class="mono">
+                    {m.parent && <span class="muted">{m.parent}/</span>}
+                    <wbr />
+                    {m.leaf}
+                  </span>
+                );
+              return (
+                <tr data-parent={m.parent} data-name={m.name} data-files={m.files} data-raw={m.raw} data-code={m.code}>
+                  <th scope="row">{href ? <a href={href}>{label}</a> : label}</th>
+                  <td class="n">{fmt(m.files)}</td>
+                  <td class="n raw">{fmt(m.raw)}</td>
+                  <td class="share">
+                    <span class="val">{fmt(m.code)}</span>
+                    <span class="meter" aria-hidden="true">
+                      <span class="fill" style={width(m.code, maxModule)} />
+                    </span>
+                  </td>
+                </tr>
+              );
+            })
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <p class="source">
+      <a href="/skills/code-stats/">How the code-stats skill counts</a>
+      <a class="out" href={config}>Jig's code-stats configuration</a>
+    </p>
+  </section>
+</Base>
+
+<script>
+  // The module table's controls: sort by a column, and show the modules of
+  // one folder. Without them the table shows every module, most lines first.
+  const table = document.querySelector<HTMLTableElement>("[data-sortable]");
+  const body = table?.tBodies[0];
+  const filter = document.querySelector<HTMLElement>("[data-filter]");
+  if (table && body && filter) {
+    const rowsOf = () => [...body.rows];
+    const heads = [...table.querySelectorAll<HTMLTableCellElement>("th[data-sort]")];
+    for (const th of heads) {
+      const key = th.dataset.sort ?? "";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "sort";
+      button.append(...th.childNodes);
+      th.append(button);
+      button.addEventListener("click", () => {
+        const was = th.getAttribute("aria-sort");
+        const dir = was === "descending" ? "ascending" : was === "ascending" ? "descending" : key === "name" ? "ascending" : "descending";
+        for (const h of heads) h.removeAttribute("aria-sort");
+        th.setAttribute("aria-sort", dir);
+        const sign = dir === "ascending" ? 1 : -1;
+        const sorted = rowsOf().sort((a, b) => {
+          const x = a.dataset[key] ?? "";
+          const y = b.dataset[key] ?? "";
+          const by = key === "name" ? x.localeCompare(y) : Number(x) - Number(y);
+          return sign * by || (a.dataset.name ?? "").localeCompare(b.dataset.name ?? "");
+        });
+        body.append(...sorted);
+      });
+    }
+    filter.hidden = false;
+    const buttons = [...filter.querySelectorAll<HTMLButtonElement>("button[data-parent]")];
+    for (const b of buttons)
+      b.addEventListener("click", () => {
+        const parent = b.dataset.parent;
+        for (const o of buttons) o.setAttribute("aria-pressed", String(o === b));
+        for (const row of rowsOf()) row.hidden = parent !== "*" && row.dataset.parent !== parent;
+      });
+  }
+</script>
+
+<style>
+  .intro code,
+  .lead code {
+    font-size: 0.92em;
+  }
+  .stamp {
+    font-size: 14.5px;
+  }
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+    gap: 12px;
+    margin: 8px 0 12px;
+  }
+  .tile {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--r-card);
+    padding: 14px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .tile dt {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .tile dt a {
+    color: inherit;
+  }
+  .tile dd {
+    margin: 0;
+  }
+  .figure {
+    font-family: var(--sans);
+    font-size: clamp(32px, 3.4vw, 44px);
+    font-weight: 600;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  .sub {
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .note {
+    font-size: 14.5px;
+    color: var(--muted);
+    margin: 0 0 8px;
+  }
+  .h2 {
+    font-family: var(--serif);
+    font-size: clamp(24px, 2.4vw, 32px);
+    font-weight: 500;
+    margin: 44px 0 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .lead {
+    max-width: 72ch;
+    margin: 0 0 14px;
+    font-size: 15.5px;
+  }
+  .scroll {
+    position: relative;
+    overflow-x: auto;
+    max-width: 100%;
+  }
+  .grid {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14.5px;
+    line-height: 1.45;
+  }
+  .grid th,
+  .grid td {
+    padding: 8px 14px 8px 0;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: middle;
+  }
+  .grid thead th {
+    font: 600 12px/1.3 var(--sans);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom-color: var(--line-strong);
+    vertical-align: bottom;
+    white-space: nowrap;
+  }
+  .grid tbody th {
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .grid .n {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .grid .desc {
+    color: var(--muted);
+    min-width: 220px;
+    max-width: 46ch;
+  }
+  .mono {
+    font-family: var(--mono);
+    font-size: 13.5px;
+  }
+  .grid tbody th a {
+    text-decoration-color: var(--accent);
+  }
+  .share {
+    width: 32%;
+    min-width: 150px;
+    white-space: nowrap;
+  }
+  .share > .meter {
+    display: inline-block;
+    vertical-align: middle;
+    width: calc(100% - 52px);
+    height: 12px;
+  }
+  /* A module's bar is against the largest module, its figure before it. */
+  .modules .share > .meter {
+    width: calc(100% - 72px);
+  }
+  .val {
+    display: inline-block;
+    width: 64px;
+    margin-right: 8px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    vertical-align: middle;
+  }
+  /* One bar per row, from a baseline on the left: a single measure, so one
+     hue; the figure beside or before it carries the value. */
+  .fill {
+    display: block;
+    height: 100%;
+    width: var(--w);
+    min-width: 2px;
+    background: var(--accent);
+    border-radius: 0 4px 4px 0;
+  }
+  .pct {
+    display: inline-block;
+    width: 48px;
+    margin-left: 4px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    vertical-align: middle;
+  }
+  .tag {
+    margin-left: 8px;
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-tag);
+    padding: 1px 5px;
+    color: var(--muted);
+  }
+  .rest th {
+    font-style: italic;
+  }
+  .filter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 10px;
+  }
+  .filter-label {
+    font-size: 13.5px;
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .filter button {
+    font: 13.5px var(--sans);
+    color: var(--ink);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    padding: 4px 9px;
+    min-height: 32px;
+    cursor: pointer;
+  }
+  .filter button .mono {
+    font-size: 12.5px;
+  }
+  .filter button:hover {
+    border-color: var(--accent);
+  }
+  .filter button[aria-pressed="true"] {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  :global(.grid th .sort) {
+    all: unset;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+  }
+  :global(.grid th .sort:focus-visible) {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  :global(.grid th .sort:hover) {
+    color: var(--ink);
+  }
+  :global(.grid th[aria-sort="descending"] .sort::after) {
+    content: " ↓";
+  }
+  :global(.grid th[aria-sort="ascending"] .sort::after) {
+    content: " ↑";
+  }
+  @media (max-width: 700px) {
+    .modules tbody th {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .modules .raw {
+      display: none;
+    }
+    .share {
+      width: auto;
+      min-width: 110px;
+    }
+    .grid .desc {
+      min-width: 180px;
+    }
+  }
+</style>
