@@ -275,6 +275,34 @@ export function ownIdentity(): ProcessIdentity {
   return { ...own, host: hostname() };
 }
 
+/**
+ * The identity of process `pid` on this host, read alone and synchronously,
+ * for a record that names another process of this machine (a drive's session
+ * lease names the driver, not the command writing it): an empty start time
+ * when the process table cannot be read or has no such process.
+ */
+function identityOfPid(pid: number): ProcessIdentity {
+  if (pid === process.pid) return ownIdentity();
+  const row = processRow(pid);
+  return {
+    ...thisHost(),
+    pid,
+    start: row === null || row === "absent" ? "" : row.start,
+  };
+}
+
+/**
+ * The identity a lock, a lease or a claim records for process `pid` of this
+ * host, for `isAliveSync` to judge later: with its start time where reading
+ * it is one `ps`, and without it on Windows, where reading it costs a
+ * PowerShell start and the quick check does not read it.
+ */
+export function lockIdentity(pid = process.pid): ProcessIdentity {
+  if (process.platform === "win32")
+    return { ...thisHost(), host: hostname(), pid, start: "" };
+  return identityOfPid(pid);
+}
+
 /** The identity a record in the earlier pid-only form stands for: this host, no start time. */
 export function legacyIdentity(pid: number): ProcessIdentity {
   return { hostId: "", host: "", bootId: "", pid, start: "" };

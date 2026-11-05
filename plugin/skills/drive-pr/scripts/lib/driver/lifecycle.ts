@@ -1,5 +1,5 @@
 /** Keep cancellation and descendant cleanup attached to the driver until all retained work settles. */
-import type { DriveLock } from "./locks.ts";
+import { type DriveLock, processRegistryDir, renewLock } from "./locks.ts";
 
 import {
   registerSignalHandler,
@@ -24,13 +24,9 @@ import {
 
 import { fail } from "./../cli.ts";
 
-import { join } from "node:path";
-
-import { mkdirSync, utimesSync, existsSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 
 import { PROCESS_REGISTRY_ENV } from "./../../../../../shared/process-registry.ts";
-
-import { claimName } from "./../claim.ts";
 
 /** Conventional exit status for the driver's signal and cooperative stop paths. */
 export function driverStopExitCode(sig: string): number {
@@ -72,7 +68,8 @@ export function installStopControls(
       !shuttingDown &&
       held.some(
         (lock) =>
-          lock.nonce !== undefined && driverStopRequested(lock.dir, lock.nonce),
+          lock.nonce !== undefined &&
+          driverStopRequested(lock.stateDir, lock.name, lock.nonce),
       )
     ) {
       requested = true;
@@ -197,9 +194,14 @@ export function driverStopCompletionCleanup(held: DriveLock[]): Disposable {
       for (const lock of held)
         if (
           lock.nonce !== undefined &&
-          driverStopRequested(lock.dir, lock.nonce)
+          driverStopRequested(lock.stateDir, lock.name, lock.nonce)
         )
-          publishDriverStopCompletion(lock.dir, lock.nonce, process.pid);
+          publishDriverStopCompletion(
+            lock.stateDir,
+            lock.name,
+            lock.nonce,
+            process.pid,
+          );
     } catch (error) {
       held.length = 0;
       throw error;
@@ -213,7 +215,7 @@ export function createDriverRegistry(held: DriveLock[]): void {
   if (process.platform === "win32") {
     const prLock = held[held.length - 1];
     if (prLock?.nonce !== undefined) {
-      const registry = join(prLock.dir, `processes.${prLock.nonce}`);
+      const registry = processRegistryDir(prLock) as string;
       mkdirSync(registry);
       driverRegistry = registry;
       process.env[PROCESS_REGISTRY_ENV] = registry;
@@ -259,62 +261,30 @@ async function stopActivePass(
       "  A released lock plus a live pass is two drivers on one tree. Leaving the",
     );
     console.error(
-      "  lock costs a refusal instead: remove the lock dir once the pass is gone.",
+      "  lock costs a refusal instead: run drives.ts --stop once the pass is gone.",
     );
   }
   return gone;
 }
 
 /**
- * Refresh this process's claim on a lock it holds, and notice if it has
- * stopped holding it.
- *
- * `utimes` on the claim's own generation-keyed name is the whole operation.
- * There is no ownership check in front of it to race, because the only entry
- * it can reach is the one this process published — a successor's carries a
- * different name and is not addressable from here at all.
- *
- * So a MISSING claim is the takeover signal, and it is exact: the only thing
- * that removes `claim.<ours>` is a recovery of this generation. A refresh that
- * fails for any other reason must not be read that way — a drive must not die
- * because it could not write — so the absence is confirmed before the drive
- * gives up on a lock it may still hold.
+ * Renew this driver's heartbeat on `lock`. A renewal that finds the lock no
+ * longer carries this acquisition's token means another driver recovered it:
+ * the takeover is noted and the active pass stopped. A renewal that fails
+ * (the database was busy past its wait) is transient: the next heartbeat
+ * tries again, and the lock is still this driver's.
  */
 export function touchLock(lock: DriveLock): void {
   if (lock.nonce === undefined) return; // never taken
-  const claim = join(lock.dir, claimName(lock.nonce));
-  const now = Date.now() / 1000;
+  let renewed: boolean;
   try {
-    utimesSync(claim, now, now);
-    return;
+    renewed = renewLock(lock);
   } catch {
-    if (existsSync(claim)) return; // transient: the claim is still ours
+    return;
   }
-  // Our GENERATION is gone, so another driver recovered this path while we
-  // believed we held it. A drive that keeps going from here is the second
-  // driver the lock exists to prevent, so record it and let the loop stop;
-  // `release` will not touch the successor's lock, because the only name it
-  // removes is ours.
-  noteTakeover(lock);
+  if (!renewed) noteTakeover(lock);
 }
 
-/**
- * The one response to a detected takeover, called the moment one is detected
- * and before anything else is done or printed about it: `compromised` is what
- * stops the driver log rotating (`mayRotateDriverLog`), and a diagnostic
- * written while it is still unset could rename the log over the successor's
- * history.
- *
- * Recording it is not enough on its own: the loop only reads `compromised`
- * at a round boundary, and a pass already running does not pause at one. So
- * the pass is stopped HERE, the moment ownership is lost — the
- * fire-and-forget is deliberate, since a timer callback cannot block and
- * `stop()` is synchronous up to the SIGTERM; the loop awaits the same handle
- * before it decides anything. The quota sleep is aborted for the same
- * reason: `stopActivePass` is a no-op when nothing is running, which is
- * exactly the state the driver is in for up to six hours while sleeping out a
- * short quota window, and a controller with no listener is a harmless no-op.
- */
 export function noteTakeover(lock: DriveLock): void {
   if (driverRuntime.compromised !== "") return;
   driverRuntime.compromised = lock.what;

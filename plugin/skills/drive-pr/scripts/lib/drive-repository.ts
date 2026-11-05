@@ -1,7 +1,7 @@
 /** Repository labels for a listing of one clone's state, without network calls. */
 import { consumerRoot, readRemoteName } from "../../../../shared/consumer.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "./proc.ts";
-import { resolveLegacyStateDir } from "./state/store.ts";
+import { resolveCommonDir } from "./state/store.ts";
 
 const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
 
@@ -50,6 +50,6 @@ export async function driveRepository(): Promise<string> {
   // common directory. Never print a raw remote URL: it may carry credentials.
   return (
     (result?.code === 0 ? repositoryLabel(result.stdout.trim()) : "") ||
-    (await resolveLegacyStateDir())
+    (await resolveCommonDir())
   );
 }
