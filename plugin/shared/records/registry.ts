@@ -58,6 +58,15 @@ export interface NotARecord {
 /** A pull request's number: the key of a record about one pull request. */
 const PR_NUMBER = /^[1-9]\d*$/;
 
+/**
+ * The keys of the claims on the forge (`forge-claims.ts`): what is claimed on
+ * the pull request the claim's comment is on.
+ */
+const TAKEOVER_KEY = /^takeover:\d+$/;
+/** A follow-up claim's key; one written before claims (version 1) is its pull request's number. */
+const FOLLOWUP_KEY = /^(?:followup|[1-9]\d*)$/;
+const MERGE_READY_KEY = /^merge-ready:[0-9a-f]{7,64}$/;
+
 const DRIVE = "skills/drive-pr/scripts/";
 const STATE = `${DRIVE}lib/state/`;
 const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
@@ -537,26 +546,28 @@ const FORGE: RecordKind[] = [
     name: "drive-takeover-claim",
     medium: "forge",
     owner: `${STATE}ledger-forge.ts`,
-    at: "a comment on the pull request per claim",
+    at: "a claim comment on the pull request per takeover (`forge-claims.ts`)",
     markers: ["drive-pr-takeover-claim", "drive-pr-takeover-claim-data"],
-    version: 0,
+    version: 1,
+    key: TAKEOVER_KEY,
   },
   {
     name: "dispatch-followup",
     medium: "forge",
     owner: "dispatch/lib/followup-marker.ts",
-    at: "a comment on the merged pull request",
+    at: "a claim comment on the merged pull request (`forge-claims.ts`)",
     markers: ["jig-dispatch-followup", "jig-dispatch-followup-data"],
-    version: 1,
-    key: PR_NUMBER,
+    version: 2,
+    key: FOLLOWUP_KEY,
   },
   {
     name: "drive-merge-ready",
     medium: "forge",
-    owner: `${DRIVE}announce-merge-ready.ts`,
-    at: "a comment on the pull request, per verified head",
-    markers: ["drive-pr-merge-ready"],
-    version: 0,
+    owner: `${DRIVE}lib/announce.ts`,
+    at: "a claim comment on the pull request per verified head (`forge-claims.ts`)",
+    markers: ["drive-pr-merge-ready", "drive-pr-merge-ready-data"],
+    version: 1,
+    key: MERGE_READY_KEY,
   },
   {
     name: "summary-answer",

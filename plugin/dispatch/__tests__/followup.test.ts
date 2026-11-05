@@ -275,6 +275,43 @@ describe("jig dispatch --apply follows up a merge", () => {
     expect(markers(w).map((m) => m.id)).toEqual([904]);
   });
 
+  it("leaves one claim when a manual run and a tick race on a pull request: the tick stands down before it starts anything", async () => {
+    const { w } = fixture();
+    // The manual run's marker lands while the tick's post is in flight, with the lower id.
+    writeFileSync(
+      join(w.dir, "race-on-claim"),
+      JSON.stringify(forgeComment(50, manualMarker(false, POST))),
+    );
+    const r = await applyTick(w, true);
+    expect(launches(r)).toEqual([
+      expect.objectContaining({ target: "PR #9", outcome: "refused" }),
+    ]);
+    expect(JSON.stringify(launches(r))).toContain("comment 50");
+    expect(markers(w).map((m) => m.id)).toEqual([50]);
+    expect(recordIds(w)).toEqual([]);
+    expect(claudeRuns(w)).toEqual([]);
+    const check = ["marker", "check", "9", "--comment", "50", "--repo", SLUG];
+    expectSpawnExit(await w.dispatch(check), 0);
+  });
+
+  it("leaves one claim when a manual run's post races the tick's marker: the manual run stops before it acts", async () => {
+    const { w } = fixture();
+    writeFileSync(
+      join(w.dir, "race-on-claim"),
+      JSON.stringify(
+        forgeComment(
+          50,
+          tickMarker("20261030T200000Z-aaaaaaaa", POST),
+          "drive-bot",
+        ),
+      ),
+    );
+    const r = await w.dispatch(["marker", "claim", "9", "--repo", SLUG]);
+    expectSpawnExit(r, 3);
+    expect(r.stderr).toContain("comment 50");
+    expect(markers(w).map((m) => m.id)).toEqual([50]);
+  });
+
   it("claims a follow-up with a manual marker and checks the claim before each act", async () => {
     const { w } = fixture();
     const claimed = await w.dispatch(["marker", "claim", "9", "--repo", SLUG]);

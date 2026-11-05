@@ -1,13 +1,14 @@
 /**
  * The follow-ups in the plan: every pull request merged since the
- * follow-up stage's start, classified by its follow-up markers
- * (`followup-marker.ts`), this machine's launch records and the follow-ups'
- * outcome records (`followup-outcomes.ts`):
+ * follow-up stage's start, classified by its follow-up markers (claims of
+ * the shared forge-claims module, read through `followup-marker.ts`), this
+ * machine's launch records and the follow-ups' outcome records
+ * (`followup-outcomes.ts`):
  *
  * | Markers | The tick |
  * | --- | --- |
  * | none trusted | wants a follow-up (an untrusted one is ignored, and named) |
- * | more than one trusted | reports both; a person settles which run stands |
+ * | more than one trusted | reports them, naming the earliest, which holds the follow-up for the marker commands; a person settles which run stands |
  * | a trusted one that does not read | reports it, starts nothing |
  * | a manual run's, marked done | quiet: done |
  * | a manual run's, not marked done | quiet: held by that run, reported with its author and age |
@@ -162,7 +163,7 @@ function planMerged(
     plan.unplaced.push({
       target,
       record: "forge",
-      reason: `it carries ${trusted.length} trusted follow-up markers (comments ${trusted.map((m) => m.id).join(", ")}): two runs may have claimed it, a person settles which stands`,
+      reason: `it carries ${trusted.length} trusted follow-up markers (comments ${trusted.map((m) => m.id).join(", ")}): two runs may have claimed it; the earliest, comment ${trusted[0]?.id}, holds it by the claim rule, and a person settles which run stands`,
     });
     return;
   }

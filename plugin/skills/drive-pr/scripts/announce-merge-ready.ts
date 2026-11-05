@@ -30,7 +30,15 @@
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { announcedIds, announcements, OPENER } from "./lib/announce.ts";
+import {
+  announcedIds,
+  announcements,
+  headMarker,
+  OPENER,
+  postAnnouncement,
+  readAnnouncement,
+  withdrawAnnouncement,
+} from "./lib/announce.ts";
 import { parsePrSnapshot } from "./lib/ci-hold.ts";
 import { ciHoldLabelSetting } from "./lib/overlay.ts";
 
@@ -48,7 +56,6 @@ import {
   tsArgv,
   unconcludedGitOpMarker,
 } from "./lib/proc.ts";
-import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const driveStatus = join(here, "drive-status.ts");
@@ -301,7 +308,7 @@ async function main(): Promise<number> {
   // gated by its own checks.
   async function retractStale(liveHead: string): Promise<void> {
     if (liveHead === "") return;
-    const all = await announcements(pr, TRUSTED_ASSOCIATIONS);
+    const all = await announcements(pr);
     if (all === null) return;
     for (const { id, head: sha } of all) {
       if (sha === liveHead) continue;
@@ -343,11 +350,7 @@ async function main(): Promise<number> {
       console.error(
         `vouches for ${sha}, which PR #${pr} has moved past (now ${liveHead}).`,
       );
-      const del = await ghCall(
-        ["api", "-X", "DELETE", `repos/{owner}/{repo}/issues/comments/${id}`],
-        { stdout: "ignore", stderr: "ignore" },
-      );
-      if (del.code !== 0) {
+      if (!(await withdrawAnnouncement(pr, id))) {
         console.error(
           `announce-merge-ready: could NOT delete comment ${id} — remove it by hand.`,
         );
@@ -400,7 +403,7 @@ async function main(): Promise<number> {
     // ordinary stale-head cleanup above cannot remove it because its marker
     // still names the live head, so retract it explicitly before refusing.
     if (!dryRun) {
-      const standing = await announcements(pr, TRUSTED_ASSOCIATIONS);
+      const standing = await announcements(pr);
       if (standing === null) {
         fail(
           1,
@@ -408,13 +411,9 @@ async function main(): Promise<number> {
         );
       }
       for (const id of announcedIds(standing, live.head)) {
-        const del = await ghCall(
-          ["api", "-X", "DELETE", `repos/{owner}/{repo}/issues/comments/${id}`],
-          { stdout: "ignore", stderr: "inherit" },
-        );
-        if (del.code !== 0) {
+        if (!(await withdrawAnnouncement(pr, id))) {
           fail(
-            del.code,
+            1,
             `announce-merge-ready: could not withdraw held-head announcement ${id} — remove it by hand.`,
           );
         }
@@ -538,7 +537,7 @@ async function main(): Promise<number> {
   const finalCi = await finalCiProof();
   if (finalCi !== 0) {
     if (!dryRun && finalCi === 4) {
-      const standing = await announcements(pr, TRUSTED_ASSOCIATIONS);
+      const standing = await announcements(pr);
       if (standing === null) {
         fail(
           1,
@@ -546,11 +545,7 @@ async function main(): Promise<number> {
         );
       }
       for (const id of announcedIds(standing, head)) {
-        const del = await ghCall(
-          ["api", "-X", "DELETE", `repos/{owner}/{repo}/issues/comments/${id}`],
-          { stdout: "ignore", stderr: "inherit" },
-        );
-        if (del.code !== 0) {
+        if (!(await withdrawAnnouncement(pr, id))) {
           fail(
             1,
             `announce-merge-ready: final CI proof is stale, but comment ${id} could not be withdrawn; remove it manually.`,
@@ -586,7 +581,7 @@ async function main(): Promise<number> {
 
   // Idempotent per head: a driver re-run, or a resumed session, must not
   // stack announcements on the same SHA.
-  const marker = `<!-- drive-pr-merge-ready: ${head} -->`;
+  const marker = headMarker(head);
 
   // The head the gate above confirmed live must be the head the status call
   // describes; the pre-POST read covers any drift after this point.
@@ -602,7 +597,7 @@ async function main(): Promise<number> {
   // The sweep runs AFTER the cleanup, so it can never name a comment the
   // cleanup has just deleted — which would otherwise exit 0 reporting
   // "already announced" about a comment that no longer exists.
-  const sweep = await announcements(pr, TRUSTED_ASSOCIATIONS);
+  const sweep = await announcements(pr);
   if (sweep === null) {
     fail(
       1,
@@ -615,13 +610,8 @@ async function main(): Promise<number> {
   async function confirmFinalCi(staleIds: number[] = []): Promise<number> {
     const rc = await finalCiProof();
     if (!dryRun && rc === 4) {
-      for (const id of staleIds) {
-        const del = await ghCall(
-          ["api", "-X", "DELETE", `repos/{owner}/{repo}/issues/comments/${id}`],
-          { stdout: "ignore", stderr: "inherit" },
-        );
-        if (del.code !== 0) return del.code;
-      }
+      for (const id of staleIds)
+        if (!(await withdrawAnnouncement(pr, id))) return 1;
     }
     return rc === 5 ? 5 : rc === 0 ? 0 : 1;
   }
@@ -870,13 +860,7 @@ async function main(): Promise<number> {
         `announce-merge-ready: withdrawing now-stale announcement(s) on ${head} — ` +
           `${liveConfirmedHeld ? `${holdName()} was applied` : liveConfirmedDraft ? "the PR is a draft again" : "mergeability changed"} after they were posted.`,
       );
-      for (const id of ids) {
-        const del = await ghCall(
-          ["api", "-X", "DELETE", `repos/{owner}/{repo}/issues/comments/${id}`],
-          { stdout: "ignore", stderr: "inherit" },
-        );
-        if (del.code !== 0) return del.code;
-      }
+      for (const id of ids) if (!(await withdrawAnnouncement(pr, id))) return 1;
     }
     return rc;
   }
@@ -918,8 +902,7 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  let body = `${OPENER}
-
+  let text = `
 The review drive converged on \`${short(head)}\`:
 
 - \`${reviewer}\` completed its review of this exact head (reviewed-SHA verified via ${source})
@@ -956,248 +939,182 @@ so this is the driver reporting that it has nothing left to do, not an
 approval.`;
 
   if (followups.replace(/\s/g, "") !== "") {
-    body += `
+    text += `
 
 ## Suggested follow-ups
 
 ${followups}`;
   }
 
-  body += `
+  text += `
 
 ${marker}`;
 
+  // The merge-readiness predicate: the PR's live state, then the tree, then
+  // the final CI proof, each read afresh, and the first that fails answers.
+  // Every success return and the post itself sit behind it. Every check the
+  // announcement is gated on belongs inside this function, a merge-readiness
+  // predicate another component defines included, so no path announces
+  // without it.
+  async function mergeReady(): Promise<{
+    rc: number;
+    failed: "state" | "tree" | "ci" | null;
+  }> {
+    const liveRc = await checkLiveState();
+    if (liveRc !== 0) return { rc: liveRc, failed: "state" };
+    const cleanRc = await checkWorktreeClean(head);
+    if (cleanRc !== 0) return { rc: cleanRc, failed: "tree" };
+    const ciRc = await confirmFinalCi();
+    return { rc: ciRc, failed: ciRc === 0 ? null : "ci" };
+  }
+
   if (dryRun) {
-    // Same re-check once more, this time before the dry-run success return:
-    // `--dry-run` never posts, but it is still a success return, and everything
-    // since the up-front pass (the sweep, the liveness re-reads, body
-    // construction itself) is elapsed time an edit can land in. Printing "here
-    // is what would be announced" over a tree that no longer matches the
-    // up-front check is the same false success as posting it for real would be.
-    //
-    // State before tree, matching every other guard pair in this function —
-    // including `isDraft`, not just mergeability: a Ready→draft conversion in
-    // the same window is exactly what the withdrawal guards elsewhere in this
-    // function exist for, and `--dry-run` reporting "would announce" on a
-    // now-draft PR is the same stale-eligibility mistake as posting for real
-    // would be.
-    const preDryRunLiveRc = await checkLiveState();
-    if (preDryRunLiveRc !== 0) return preDryRunLiveRc;
-    const preDryRunCleanRc = await checkWorktreeClean(head);
-    if (preDryRunCleanRc !== 0) return preDryRunCleanRc;
-    const preDryRunFinalCiRc = await confirmFinalCi();
-    if (preDryRunFinalCiRc !== 0) return preDryRunFinalCiRc;
-    process.stdout.write(`${body}\n`);
+    // Asked once more before the dry-run success return: `--dry-run` never
+    // posts, but it is still a success return, and everything since the
+    // up-front pass (the sweep, the liveness re-reads, body construction
+    // itself) is elapsed time an edit, a Ready→draft conversion or a base
+    // advance can land in. Reporting "would announce" then is the same false
+    // success as posting would be.
+    const { rc: dryRunRc } = await mergeReady();
+    if (dryRunRc !== 0) return dryRunRc;
+    process.stdout.write(`${OPENER}\n${text}\n`);
     return 0;
   }
 
-  // Re-check the head one more time, immediately before posting. The
-  // `checkLiveState` above already covered the idempotence decision;
-  // composing the body and the dry-run branch open a second, smaller window
-  // after that, and this is the narrowest point left to close it before a new
-  // comment actually gets written.
-  // Nothing was posted yet on this path, so a failure here is a plain refusal
-  // — there is no announcement to withdraw.
-  const prePostRc = await checkLiveState();
+  // Asked one more time immediately before posting. The `checkLiveState`
+  // above already covered the idempotence decision; composing the body and
+  // the dry-run branch open a second, smaller window after that, and this is
+  // the narrowest point left to close it before a comment gets written.
+  // Nothing was posted yet on this path, so a failure here is a plain
+  // refusal — there is no announcement to withdraw.
+  const { rc: prePostRc } = await mergeReady();
   if (prePostRc !== 0) return prePostRc;
 
-  // Same reasoning as the head re-check just above, for the tree rather than
-  // the PR: body construction and the dry-run branch are further elapsed time
-  // since the up-front cleanliness pass, and this is the narrowest point left
-  // to close that window before a real comment gets written. Nothing was
-  // posted yet, so a failure here is a plain refusal.
-  const prePostCleanRc = await checkWorktreeClean(head);
-  if (prePostCleanRc !== 0) return prePostCleanRc;
-  const prePostFinalCiRc = await confirmFinalCi();
-  if (prePostFinalCiRc !== 0) return prePostFinalCiRc;
-
-  const post = await ghCall(
-    ["api", `repos/{owner}/{repo}/issues/${pr}/comments`, "--input", "-"],
-    { stdin: JSON.stringify({ body }), stderr: "inherit" },
-  );
-  if (post.code !== 0) return post.code;
-  let posted: Record<string, unknown>;
-  try {
-    posted = JSON.parse(post.stdout) as Record<string, unknown>;
-  } catch {
-    posted = {};
-  }
-  const postedId = Number(posted.id ?? 0);
-  // A comment is LIVE on the PR at this point. Without its id, every mechanism
-  // that follows targets comment 0: `withdrawPosted` DELETEs a non-existent
-  // comment, so the post-write fail-closed withdrawal silently cannot retract
-  // the real one; the duplicate reconciliation compares `lowest !== postedId`,
-  // which is always true, so it deletes 0 and leaves two announcements
-  // standing. This script's stated posture — withdraw THIS PROCESS'S OWN
-  // comment if the world moved — is unachievable from here, so say so and name
-  // the artefact rather than proceed through it.
-  if (!Number.isInteger(postedId) || postedId <= 0) {
-    fail(
-      1,
-      `announce-merge-ready: POSTED an announcement for ${head} on PR #${pr}, but the`,
-      "API response carried no usable comment id. This process can no longer withdraw",
-      "its own comment, so neither the post-write recheck nor the duplicate",
-      "reconciliation below can run. Inspect the PR by hand and delete the comment if",
-      "the head has moved or the PR is no longer open.",
+  // The announce posts only inside its claim: the comment is a claim on this
+  // head (`lib/announce.ts`, through the shared forge-claims module), posted
+  // only while `mergeReady` holds, and it stands only once the read-back
+  // shows it the earliest trusted announcement of the head and `mergeReady`
+  // still holds. Every other outcome withdraws it.
+  const published = await postAnnouncement(pr, head, text);
+  if (!published.ok) {
+    // A comment without a usable id may be LIVE on the PR, and nothing
+    // after this point can withdraw a comment it cannot name.
+    if (published.failure.code === "no-comment-id")
+      fail(
+        1,
+        `announce-merge-ready: POSTED an announcement for ${head} on PR #${pr}, but ${published.failure.reason}.`,
+        "This process can no longer withdraw its own comment, so neither the post-write",
+        "recheck nor the duplicate reconciliation below can run. Inspect the PR by hand",
+        "and delete the comment if the head has moved or the PR is no longer open.",
+      );
+    console.error(
+      `announce-merge-ready: could not post the announcement: ${published.failure.reason}`,
     );
+    return 1;
   }
+  const { id: postedId, url, posted } = published.value;
 
-  // The check above is still check-then-act: the GET and the POST are
-  // separate operations, so a push landing between them narrows the window
-  // without closing it, and the reconciliation below only dedupes MARKER IDS
-  // — two announcements for one head, not one announcement for a head nobody
-  // reviewed.
-  //
-  // Closing it needs the only move available after an unconditional write:
-  // re-read, and withdraw THIS PROCESS'S OWN comment if the world moved. The
-  // withdrawal machinery already exists for the duplicate-announcement race,
-  // and deleting by the posted id means it can never touch a comment written
-  // by anyone else. Between the wrong announcement standing and a brief one
-  // that is then retracted, the retraction is the honest artefact.
+  // The checks before the post are check-then-act: the reads and the POST are
+  // separate operations, so a push, a base advance, a Ready→draft conversion
+  // or an edit in the working directory landing between them, or during the
+  // POST itself, narrows the window without closing it. The only move left
+  // after an unconditional write is to ask again, and withdraw THIS
+  // PROCESS'S OWN comment, by its own id, if the answer changed. Every
+  // non-zero answer withdraws here, including the ones the pre-post
+  // withdrawal guard refuses to act on (an unreadable read, a mergeability
+  // GitHub is still computing): that guard decides whether to delete an
+  // announcement an EARLIER run posted and may still be correct, while this
+  // one is this process's own comment, written seconds ago, and "cannot
+  // confirm" fails its claim as surely as "confirmed changed". The exit codes
+  // are the checks' own, so a merged PR still exits 5 and a moved head 4.
   //
   // Residual, stated rather than papered over: a reader who sees the comment
   // in the seconds before the withdrawal has still seen it, and a failed
-  // DELETE leaves it standing — which is why that path says so loudly rather
-  // than exiting 0. The post-write re-read below is held to the same
-  // fail-closed posture as everything before it: an UNREADABLE confirmation
-  // is not weaker evidence than a confirmed change, it is the same absence of
-  // proof, so it withdraws and refuses exactly like one.
+  // DELETE leaves it standing, which is why that path says so loudly.
   async function withdrawPosted(): Promise<boolean> {
-    const del = await ghCall(
-      [
-        "api",
-        "-X",
-        "DELETE",
-        `repos/{owner}/{repo}/issues/comments/${postedId}`,
-      ],
-      { stdout: "ignore", stderr: "ignore" },
-    );
-    if (del.code === 0) return true;
+    if (await withdrawAnnouncement(pr, postedId)) return true;
     console.error(
       `announce-merge-ready: could NOT withdraw comment ${postedId} — it is still`,
     );
     console.error(`on PR #${pr}, vouching for ${head}. Delete it by hand.`);
     return false;
   }
-
-  // The post-write re-read is `checkLiveState`, NOT `readLiveness`.
-  //
-  // `readLiveness` answers state and head only, and the comment's claim is
-  // broader than both: a base branch that advances between the pre-POST check
-  // and the POST flips this PR to CONFLICTING while the head stays exactly
-  // where it was, so a state+head confirmation passes and leaves a "Safe to
-  // merge" comment standing on a PR that no longer merges. `checkLiveState`
-  // reads mergeability in the same round-trip and is already the pre-POST gate,
-  // so asking the same question on both sides of the write is one function
-  // rather than two divergent copies of the predicate.
-  //
-  // EVERY non-zero return withdraws here, including the ones the PRE-POST
-  // withdrawal guard deliberately refuses to act on (rc 1 unreadable, rc 4 with
-  // mergeable UNKNOWN/malformed). That is not a contradiction of that guard —
-  // it is a different question. Pre-POST, a withdrawal deletes an announcement
-  // some EARLIER run posted and may still be correct, so it demands
-  // positively-parsed CONFLICTING. Here the target is this process's own
-  // comment, written seconds ago; "cannot confirm" and "confirmed changed" both
-  // fail the one claim it makes, and the cost of being wrong is a re-run rather
-  // than a destroyed artefact. That is the same fail-closed posture the
-  // unreadable-state branch already has.
-  //
-  // The exit codes are `checkLiveState`'s own, so a merged/closed PR still
-  // exits 5 and a moved head still exits 4 — split, because a merge usually
-  // leaves the head untouched and folding it into the retry class invites a
-  // caller to wait for a new head that is not coming.
-  const afterRc = await checkLiveState();
-  if (afterRc !== 0) {
-    console.error(
-      `announce-merge-ready: posted, but PR #${pr} no longer confirms the claim above`,
-    );
-    console.error(
-      `(see the reason immediately preceding) — withdrawing this announcement of ${head}.`,
-    );
-    if (!(await withdrawPosted())) return 1;
-    return afterRc;
-  }
-
-  // Same question once more, on the tree rather than the PR: the POST is itself
-  // a real round-trip, and an edit can land in the working directory while it
-  // is in flight — the exact loss mode this whole guard exists to close, now
-  // discovered on the far side of a write that already happened.
-  // withdrawPosted() is the only response available after an unconditional
-  // write: this process's own comment, deleted by its own id, never anyone
-  // else's — between a wrong announcement standing and a brief one that gets
-  // retracted, the retraction is the honest artefact, same as `afterRc` above.
-  const afterCleanRc = await checkWorktreeClean(head);
-  if (afterCleanRc !== 0) {
-    console.error(
-      `announce-merge-ready: posted, but this worktree now holds uncommitted state —`,
-    );
-    console.error(`withdrawing this announcement of ${head}.`);
-    if (!(await withdrawPosted())) return 1;
-    return afterCleanRc;
-  }
-  const afterFinalCiRc = await confirmFinalCi();
-  if (afterFinalCiRc !== 0) {
-    if (!(await withdrawPosted())) return 1;
-    return afterFinalCiRc;
-  }
-
-  // The check above is check-then-act, and GitHub offers no create-if-absent
-  // for a comment: two drivers on one PR can both finish the sweep before
-  // either posts, and both then announce. Serialising is not available, so
-  // converge afterwards instead — comment ids are monotonic, so "the lowest
-  // id carrying this marker wins, everyone else withdraws their OWN comment"
-  // settles to exactly one announcement no matter how the two interleave, and
-  // never touches a comment this process did not write.
-  //
-  // Residual, stated rather than papered over: if list-after-write lags for
-  // BOTH drivers they each see only themselves and both survive. That is
-  // strictly better than before and cannot be closed without a real lease.
-  const reconcileSweep = await announcements(pr, TRUSTED_ASSOCIATIONS);
-  if (reconcileSweep !== null) {
-    const ids = announcedIds(reconcileSweep, head);
-    const lowest = ids.at(0);
-    if (lowest !== undefined && lowest !== postedId) {
+  async function stillReady(): Promise<number> {
+    const { rc, failed } = await mergeReady();
+    if (rc === 0) return 0;
+    if (failed === "state") {
       console.error(
-        `announce-merge-ready: raced another driver on ${head} — withdrawing this duplicate`,
+        `announce-merge-ready: posted, but PR #${pr} no longer confirms the claim above`,
       );
-      const del = await ghCall(
-        [
-          "api",
-          "-X",
-          "DELETE",
-          `repos/{owner}/{repo}/issues/comments/${postedId}`,
-        ],
-        { stdout: "ignore", stderr: "inherit" },
+      console.error(
+        `(see the reason immediately preceding) — withdrawing this announcement of ${head}.`,
       );
-      if (del.code !== 0) return del.code;
-      // Our own duplicate is gone — the rival's announcement is what stands.
-      // This process wrote none of its content, but "leaves nothing on the
-      // floor" is a claim about the PR's actual state, not just about this
-      // process's own artefacts, and the DELETE above was itself a real
-      // round-trip an edit could have landed during — so it is re-checked
-      // like every other exit-0 in this function, one last time.
-      //
-      // State before tree, same as everywhere else — including `isDraft`
-      // — and on a
-      // confirmed answer this now withdraws the RIVAL's surviving comment
-      // too, not merely refuses: a
-      // confirmed draft must not retain a standing announcement, whoever
-      // posted it, so `withdrawIfConfirmedStale` runs against `[lowest]` —
-      // what's actually standing at this point — rather than the pre-POST
-      // `existingIds`, which named nothing here (the rival's comment did not
-      // exist yet when that sweep ran).
-      const raceLiveRc = await withdrawIfConfirmedStale(
-        await checkLiveState(),
-        [lowest],
-      );
-      if (raceLiveRc !== 0) return raceLiveRc;
-      const raceCleanRc = await checkWorktreeClean(head);
-      if (raceCleanRc !== 0) return raceCleanRc;
-      const raceFinalCiRc = await confirmFinalCi([lowest]);
-      if (raceFinalCiRc !== 0) return raceFinalCiRc;
-      return 0;
     }
-  } else {
+    if (failed === "tree") {
+      console.error(
+        `announce-merge-ready: posted, but this worktree now holds uncommitted state —`,
+      );
+      console.error(`withdrawing this announcement of ${head}.`);
+    }
+    return (await withdrawPosted()) ? rc : 1;
+  }
+
+  const afterRc = await stillReady();
+  if (afterRc !== 0) return afterRc;
+
+  // GitHub offers no create-if-absent for a comment: two drivers on one PR
+  // can both finish the sweep before either posts, and both then announce.
+  // The claim settles it afterwards instead: the read-back weighs every
+  // trusted announcement of this head, the earliest comment wins, and every
+  // other driver withdraws its OWN comment, which settles to one
+  // announcement however the two interleave and never touches a comment this
+  // process did not write. A read-back that does not list this comment yet
+  // reads again a few times; one that never lists it cannot say whether an
+  // earlier announcement stands, so this one is withdrawn.
+  //
+  // Residual, stated rather than papered over: if the listing lags for BOTH
+  // drivers past each one's read-back, each sees itself the earliest and
+  // both survive. That cannot be closed without a conditional create.
+  const back = await readAnnouncement(pr, posted);
+  if (back.ok && back.value.verdict === "lost") {
+    console.error(
+      `announce-merge-ready: posted, but ${back.value.reason}, so whether an earlier announcement of ${head} stands is unknown — withdrawing this one; re-run.`,
+    );
+    await withdrawPosted();
+    return 1;
+  }
+  const lowest =
+    back.ok && back.value.verdict === "lost-to" ? back.value.winner?.id : null;
+  if (lowest !== undefined && lowest !== null) {
+    console.error(
+      `announce-merge-ready: raced another driver on ${head} — withdrawing this duplicate`,
+    );
+    if (!(await withdrawAnnouncement(pr, postedId))) return 1;
+    // Our own duplicate is gone — the rival's announcement is what stands.
+    // This process wrote none of its content, but "leaves nothing on the
+    // floor" is a claim about the PR's actual state, not just about this
+    // process's own artefacts, and the DELETE above was itself a real
+    // round-trip an edit could have landed during — so it is re-checked
+    // like every other exit-0 in this function, one last time.
+    //
+    // State before tree, same as everywhere else — including `isDraft` — and
+    // on a confirmed answer this withdraws the RIVAL's surviving comment
+    // too, not merely refuses: a confirmed draft must not retain a standing
+    // announcement, whoever posted it, so `withdrawIfConfirmedStale` runs
+    // against `[lowest]`, what is actually standing at this point, rather
+    // than the pre-POST `existingIds`, which named nothing here (the rival's
+    // comment did not exist yet when that sweep ran).
+    const raceLiveRc = await withdrawIfConfirmedStale(await checkLiveState(), [
+      lowest,
+    ]);
+    if (raceLiveRc !== 0) return raceLiveRc;
+    const raceCleanRc = await checkWorktreeClean(head);
+    if (raceCleanRc !== 0) return raceCleanRc;
+    const raceFinalCiRc = await confirmFinalCi([lowest]);
+    if (raceFinalCiRc !== 0) return raceFinalCiRc;
+    return 0;
+  }
+  if (!back.ok) {
     console.error(
       "announce-merge-ready: posted, but could not re-read comments to check for a",
     );
@@ -1207,46 +1124,15 @@ ${marker}`;
   }
 
   // The LAST possible point before the last possible success return: the
-  // reconciliation sweep just above is itself a real round-trip, and this is
-  // the narrowest window left to close before reporting the announcement — by
+  // read-back just above is itself a real round-trip, and this is the
+  // narrowest window left to close before reporting the announcement — by
   // now confirmed OURS — as done. Unlike the race branch above, our own
-  // comment IS the one standing here, so anything the state check below
-  // catches means withdrawing it, same as `afterRc` right after the POST.
-  //
-  // State before tree, matching every other guard pair in this function
-  // (`prePostRc`/`prePostCleanRc`, `afterRc`/`afterCleanRc`) — `isDraft`
-  // included, not just mergeability, because the reconciliation sweep is a
-  // real round-trip an owner's Ready→draft conversion can land in exactly
-  // like any other.
-  const finalLiveRc = await checkLiveState();
-  if (finalLiveRc !== 0) {
-    console.error(
-      `announce-merge-ready: posted, but PR #${pr} no longer confirms the claim above`,
-    );
-    console.error(
-      `(see the reason immediately preceding) — withdrawing this announcement of ${head}.`,
-    );
-    if (!(await withdrawPosted())) return 1;
-    return finalLiveRc;
-  }
+  // comment IS the one standing here, so anything this catches means
+  // withdrawing it, as right after the POST.
+  const finalRc = await stillReady();
+  if (finalRc !== 0) return finalRc;
 
-  // Same reasoning as the state check above, for the tree rather than the PR.
-  const finalCleanRc = await checkWorktreeClean(head);
-  if (finalCleanRc !== 0) {
-    console.error(
-      `announce-merge-ready: posted, but this worktree now holds uncommitted state —`,
-    );
-    console.error(`withdrawing this announcement of ${head}.`);
-    if (!(await withdrawPosted())) return 1;
-    return finalCleanRc;
-  }
-  const finalFinalCiRc = await confirmFinalCi();
-  if (finalFinalCiRc !== 0) {
-    if (!(await withdrawPosted())) return 1;
-    return finalFinalCiRc;
-  }
-
-  process.stdout.write(`${String(posted.html_url ?? "")}\n`);
+  process.stdout.write(`${url}\n`);
   return 0;
 }
 

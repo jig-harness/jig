@@ -1,11 +1,13 @@
 /**
  * `jig dispatch marker claim|check|done <PR>`: how a follow-up command
- * honours the follow-up marker (`lib/followup-marker.ts`), whether a person
- * ran it or the tick started it.
+ * honours the follow-up marker (`lib/followup-marker.ts`), a claim of the
+ * shared forge-claims module (`shared/records/forge-claims.ts`), whether a
+ * person ran it or the tick started it.
  *
- * - `claim` posts a manual run's marker and reads the markers back: when an
- *   earlier trusted marker is there, it deletes its own and exits 3, and
- *   the run stops before it acts. It prints the marker's comment id.
+ * - `claim` posts a manual run's marker and reads the markers back, again a
+ *   few times while the listing does not show it yet: when an earlier
+ *   trusted marker is there, it deletes its own and exits 3, and the run
+ *   stops before it acts. It prints the marker's comment id.
  * - `check --comment <id>` reads the markers again before an act that
  *   writes outside the pull request: it exits 3 when a trusted marker
  *   earlier than `<id>` has appeared, and the run stops.
@@ -20,16 +22,17 @@
  * a comment that is not a trusted marker of this pull request; 3 an earlier
  * marker holds the follow-up.
  */
+import { check, post, withdraw } from "../shared/records/forge-claims.ts";
 import { localWriter } from "../shared/records/writer.ts";
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import {
-  deleteMarker,
-  earlierThan,
-  readBack,
   editMarker,
+  FOLLOWUP_CLAIM,
+  FOLLOWUP_KEY,
+  followupTarget,
+  manualClaim,
   manualMarker,
-  postMarker,
-  readMarkers,
+  markerStanding,
 } from "./lib/followup-marker.ts";
 import { repoTarget } from "./lib/forge.ts";
 import { failureText } from "./lib/text.ts";
@@ -54,41 +57,41 @@ function stop(code: number, message: string): number {
 
 async function claim(slug: string, pr: number): Promise<number> {
   const login = await resolveLogin();
-  const posted = await postMarker(
-    slug,
-    pr,
-    manualMarker(false, { pr, writer: localWriter("forge", login) }),
+  const target = followupTarget(slug, pr);
+  const posted = await post(
+    target,
+    FOLLOWUP_CLAIM,
+    manualClaim(false, { pr, writer: localWriter("forge", login) }),
+    { self: login },
   );
-  if (typeof posted === "string")
-    return stop(1, `the marker could not be posted: ${posted}`);
-  const seen = readBack(await readMarkers(slug, pr, login), posted, {
-    kind: "manual",
-  });
+  if (!posted.ok)
+    return stop(1, `the marker could not be posted: ${posted.failure.reason}`);
+  const { id } = posted.value;
+  const seen = markerStanding(posted.value.standing, { kind: "manual" });
   if (seen.kind === "stands") {
-    console.log(JSON.stringify({ pr, comment: posted }));
+    console.log(JSON.stringify({ pr, comment: id }));
     return 0;
   }
   if (seen.kind === "done")
     return stop(
       1,
-      `the posted marker (comment ${posted}) was marked done before the read-back finished; it is kept as the completion record, so do not act`,
+      `the posted marker (comment ${id}) was marked done before the read-back finished; it is kept as the completion record, so do not act`,
     );
-  const deleted = await deleteMarker(slug, posted);
-  const kept =
-    deleted === ""
-      ? ""
-      : `; its own marker (comment ${posted}) could not be deleted (${deleted}): delete it by hand`;
+  const deleted = await withdraw(target, id);
+  const kept = deleted.ok
+    ? ""
+    : `; its own marker (comment ${id}) could not be deleted (${deleted.failure.reason}): delete it by hand`;
   if (seen.kind === "unreadable")
     return stop(1, `the markers could not be read back: ${seen.reason}${kept}`);
   if (seen.kind === "missing")
     return stop(
       1,
-      `the read-back does not list the posted marker (comment ${posted}); retry${kept}`,
+      `the read-back does not list the posted marker (comment ${id}); retry${kept}`,
     );
   if (seen.kind === "altered")
     return stop(
       1,
-      `the posted marker (comment ${posted}) no longer reads as a manual run's marker${kept}`,
+      `the posted marker (comment ${id}) no longer reads as a manual run's marker${kept}`,
     );
   return stop(
     EARLIER,
@@ -101,28 +104,33 @@ async function checkOrDone(
   args: MarkerArguments & { comment: number },
 ): Promise<number> {
   const login = await resolveLogin();
-  const markers = await readMarkers(slug, args.pr, login);
-  if ("unreadable" in markers)
-    return stop(1, `the markers could not be read: ${markers.unreadable}`);
-  const own = markers.find((m) => m.id === args.comment && m.trusted);
-  if (own === undefined)
+  const seen = await check(
+    followupTarget(slug, args.pr),
+    FOLLOWUP_CLAIM,
+    FOLLOWUP_KEY,
+    args.comment,
+    { self: login },
+  );
+  if (!seen.ok)
+    return stop(1, `the markers could not be read: ${seen.failure.reason}`);
+  const { own, verdict, winner } = seen.value;
+  if (own === null || !own.trusted)
     return stop(
       2,
       `comment ${args.comment} is not a trusted follow-up marker of PR #${args.pr}`,
     );
-  if (own.run.kind === "unreadable")
+  if (!own.record.ok)
     return stop(
       2,
-      `comment ${args.comment} no longer reads as a follow-up marker: ${own.run.reason}`,
+      `comment ${args.comment} no longer reads as a follow-up marker: ${own.record.failure.reason}`,
     );
-  const earlier = earlierThan(markers, args.comment);
-  if (earlier !== null)
+  if (verdict === "lost-to" && winner !== null)
     return stop(
       EARLIER,
-      `an earlier marker (comment ${earlier.id} by ${earlier.login}) holds the follow-up; stop before acting`,
+      `an earlier marker (comment ${winner.id} by ${winner.login}) holds the follow-up; stop before acting`,
     );
   if (args.verb === "check") return 0;
-  if (own.run.kind !== "manual")
+  if (own.record.value.payload.run !== "manual")
     return stop(
       2,
       `comment ${args.comment} is the tick's marker: its session records its result through jig dispatch result`,

@@ -1,33 +1,53 @@
 /**
- * The announcement sweep for announce-merge-ready.ts: which comments on the
- * PR are genuine merge-ready announcements, from whom, for which head.
+ * The merge-ready announcement as a claim on the forge, for
+ * announce-merge-ready.ts: a claim of the shared forge-claims module
+ * (`shared/records/forge-claims.ts`) per pull request and head, keyed
+ * `merge-ready:<head>`. Of the trusted announcements of one head the earliest
+ * comment wins, so a second driver never announces over an earlier one, and
+ * an announcement is withdrawn through that module.
  *
  * A comment counts as an announcement only if EVERY test below holds.
  *
- * SHAPE — it opens with the announcement's own first line and ENDS with a
- * head marker. The marker alone is not enough: it is predictable, so anyone
- * quoting it while discussing this script (or pasting a worked example) would
- * otherwise be read as the existing announcement, suppressing a real one, and
- * during a race such a comment could become the lowest id and make a driver
- * delete its own genuine announcement.
+ * SHAPE — it opens with the announcement's own first line, and holds its
+ * record in the claim's data marker (or, in the form written before the
+ * record, ENDS with a head marker). The marker alone is not enough: it is
+ * predictable, so anyone quoting it while discussing this script (or pasting
+ * a worked example) would otherwise be read as the existing announcement,
+ * suppressing a real one, and during a race such a comment could become the
+ * lowest id and make a driver delete its own genuine announcement. Every
+ * announcement still ends with the head marker, so a driver of the release
+ * before claims reads it too.
  *
  * AUTHORITY — `author_association` must be one GitHub itself vouches for as
- * having write access. Shape alone is a body predicate, and a PR comment is
+ * having write access (`shared/trusted-authors.ts`, the one rule every claim
+ * is read by). Shape alone is a body predicate, and a PR comment is
  * world-writable: both strings are public and fixed, so any commenter at all
  * can reproduce an exact announcement and reach the same two outcomes
  * deliberately rather than by accident. `author_association` is computed
  * server-side from repository permissions and cannot be set by comment
  * content, which is what makes it the half shape cannot supply.
  *
- * It is an ASSOCIATION, never a login. Two drivers on one PR may authenticate
- * as different accounts, and filtering to one login blinds each to the
- * other's announcement — re-opening the duplicate the reconciliation exists
- * to settle. The set is read from `summary-findings.ts`, which gates the
- * addressed markers on the same question about the same comment stream; a
- * local copy would be a second answer to drift.
+ * It is an ASSOCIATION, never a login: the announcement passes the rule no
+ * login of its own. Two drivers on one PR may authenticate as different
+ * accounts, and filtering to one login blinds each to the other's
+ * announcement — re-opening the duplicate the claim exists to settle.
  */
 
-import { ghCall } from "./proc.ts";
+import { failed, ok, type Outcome } from "../../../../shared/outcome.ts";
+import {
+  type ClaimKind,
+  type ClaimRecord,
+  type ClaimTarget,
+  list,
+  type Posted,
+  publish,
+  type PostCode,
+  type Published,
+  readBack,
+  type Standing,
+  withdraw,
+} from "../../../../shared/records/forge-claims.ts";
+import { localWriter } from "../../../../shared/records/writer.ts";
 
 /** The announcement's literal opening line. Load-bearing, not decoration. */
 export const OPENER = "**Safe to merge from the driver's perspective.**";
@@ -35,6 +55,41 @@ export const OPENER = "**Safe to merge from the driver's perspective.**";
 export interface Announcement {
   id: number;
   head: string;
+}
+
+/** What an announcement claims: the head it vouches for. */
+function headKey(head: string): string {
+  return `merge-ready:${head}`;
+}
+
+/** The marker every announcement ends with, naming its head. */
+export function headMarker(head: string): string {
+  return `<!-- drive-pr-merge-ready: ${head} -->`;
+}
+
+const HEAD_MARKER = /<!-- drive-pr-merge-ready: ([0-9a-f]{7,40}) -->$/;
+
+/** An announcement written before it carried a record: its head, from the marker it ends with. */
+function legacyAnnouncement(
+  body: string,
+): Outcome<ClaimRecord, "unreadable"> | null {
+  const m = body.replace(/\s+$/, "").match(HEAD_MARKER);
+  return m === null
+    ? failed("unreadable", "it ends with no head marker")
+    : ok({ key: headKey(m[1] ?? ""), at: "", payload: {}, legacy: true });
+}
+
+/** The merge-ready announcement as a kind of forge claim. */
+export const MERGE_READY: ClaimKind = {
+  name: "drive-merge-ready",
+  opens: OPENER,
+  data: "<!-- drive-pr-merge-ready-data",
+  legacy: legacyAnnouncement,
+};
+
+/** The pull request, in the checkout's own repository. */
+function onPr(pr: string): ClaimTarget {
+  return { repo: "{owner}/{repo}", number: Number(pr) };
 }
 
 /**
@@ -59,46 +114,52 @@ export interface Announcement {
  */
 export async function announcements(
   pr: string,
-  trusted: Set<string>,
 ): Promise<Announcement[] | null> {
-  const r = await ghCall(
-    [
-      "api",
-      "--paginate",
-      "--slurp",
-      `repos/{owner}/{repo}/issues/${pr}/comments?per_page=100`,
-    ],
-    { stderr: "ignore" },
+  const listing = await list(onPr(pr), MERGE_READY);
+  if (!listing.ok) return null;
+  return listing.value.flatMap((c) =>
+    c.trusted && c.record.ok && c.record.value.key.startsWith("merge-ready:")
+      ? [{ id: c.id, head: c.record.value.key.slice("merge-ready:".length) }]
+      : [],
   );
-  if (r.code !== 0) return null;
-  let pages: unknown;
-  try {
-    pages = JSON.parse(r.stdout);
-  } catch {
-    return null;
-  }
-  const pageList = Array.isArray(pages) ? pages : [pages];
-  const out: Announcement[] = [];
-  const markerRe = /<!-- drive-pr-merge-ready: ([0-9a-f]{7,40}) -->$/;
-  for (const page of pageList) {
-    const comments = Array.isArray(page) ? page : [];
-    for (const c of comments as Array<Record<string, unknown>>) {
-      const association = String(c.author_association ?? "");
-      if (!trusted.has(association)) continue;
-      const body = String(c.body ?? "")
-        .replaceAll("\r", "")
-        .replace(/\s+$/, "");
-      if (!body.startsWith(OPENER)) continue;
-      const m = body.match(markerRe);
-      if (!m) continue;
-      out.push({ id: Number(c.id ?? 0), head: m[1] ?? "" });
-    }
-  }
-  out.sort((a, b) => a.id - b.id);
-  return out;
 }
 
 /** Just the ids announcing THIS head — the idempotence question. */
 export function announcedIds(all: Announcement[], head: string): number[] {
   return all.filter((a) => a.head === head).map((a) => a.id);
+}
+
+/**
+ * Post the announcement of `head` on the pull request, its claim's record
+ * between the opening line and `text` (which ends with the head marker). It
+ * is not read back here: the caller re-checks the PR and the tree first, then
+ * reads the claim back with `readAnnouncement`.
+ */
+export function postAnnouncement(
+  pr: string,
+  head: string,
+  text: string,
+): Promise<Outcome<Published, PostCode>> {
+  return publish(onPr(pr), MERGE_READY, {
+    key: headKey(head),
+    writer: localWriter("forge"),
+    payload: {},
+    text,
+  });
+}
+
+/** How the posted announcement stands among the announcements of its head, read back. */
+export function readAnnouncement(
+  pr: string,
+  posted: Posted,
+): Promise<Outcome<Standing, "unreadable">> {
+  return readBack(onPr(pr), MERGE_READY, posted);
+}
+
+/** Withdraw an announcement; `true` once it is gone. */
+export async function withdrawAnnouncement(
+  pr: string,
+  id: number,
+): Promise<boolean> {
+  return (await withdraw(onPr(pr), id)).ok;
 }

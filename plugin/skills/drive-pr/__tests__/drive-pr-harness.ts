@@ -1339,11 +1339,19 @@ if [ "$has_input" -eq 1 ]; then
   if [ -f "$F/corrupt-state-on-post" ]; then
     printf 'not json' > "\${DRIVE_PR_STATE_DIR:?}/drive-pr-999.json"
   fi
-  cat >> "$F/posted.jsonl"
+  input=$(cat)
+  printf '%s' "$input" >> "$F/posted.jsonl"
   n=1
   [ -f "$F/posted-seq" ] && n=$(( $(< "$F/posted-seq") + 1 ))
   printf '%s' "$n" > "$F/posted-seq"
   id=$(( \${DRIVE_PR_POSTED_ID_BASE:-9000} + n ))
+  # A claim this stub accepts (a merge-ready announcement or a takeover claim)
+  # is listed by the comment sweeps after it, as the real API lists a comment
+  # once it exists: the claim's read-back finds it there (see swept() below).
+  if printf '%s' "$input" | jq -e '.body | (startswith("**Safe to merge from the driver") or startswith("<!-- drive-pr-takeover-claim -->"))' >/dev/null 2>&1; then
+    printf '%s' "$input" | jq -c --argjson id "$id" \\
+      '{id: $id, body: .body, user: {login: "drive-user"}, author_association: "OWNER"}' >> "$F/accepted.jsonl"
+  fi
   out=$(jq -nc --argjson id "$id" \\
     '{id: $id, html_url: "https://example.invalid/posted/\\($id)"}')
   if [ -n "$filter" ]; then printf '%s' "$out" | jq -r "$filter"; else printf '%s' "$out"; fi
@@ -1386,29 +1394,38 @@ if [ -f "$F/paginate-fails" ] && [ "$announce_sweep" -eq 1 ]; then
   exit 1
 fi
 
+# What an announcement sweep lists: the comments in "$1", then each claim
+# this stub accepted, less every comment deleted since. DELETED
+# comments stop being returned, as the real API would have it. Without that, a
+# sweep taken AFTER a retraction still sees the comment it just removed — so
+# any probe about what the script does with a post-cleanup read would be
+# answering from pre-cleanup data, and could pass while the bug it targets
+# stands.
+swept() {
+  gone='[]'
+  if [ -f "$F/deleted.jsonl" ]; then
+    gone=$(jq -R -s 'split("\\n") | map(select(length > 0) | tonumber)' "$F/deleted.jsonl")
+  fi
+  accepted='[]'
+  [ -f "$F/accepted.jsonl" ] && accepted=$(jq -s '.' "$F/accepted.jsonl")
+  jq -c --argjson gone "$gone" --argjson accepted "$accepted" \\
+    '(. + $accepted) | map(select(.id as $i | ($gone | index($i)) == null))' \\
+    "$1" > "$F/swept-comments.json"
+  emit "$F/swept-comments.json"
+}
+
 # Model the residue of an INTERRUPTED earlier run: a real announcement, from a
 # trusted author, whose marker names a head the PR has since moved past. Present
 # in every sweep from the start — unlike the race fixture below, nothing this run
 # does creates it. Scoped to the live head the sweep cannot see it at all, so
 # this is the fixture that says whether the stale-announcement retraction works.
 if [ -f "$F/stale-announcement" ] && [ "$announce_sweep" -eq 1 ]; then
-  # DELETED comments stop being returned, as the real API would have it.
-  # Without that, a sweep taken AFTER a retraction still sees the comment it
-  # just removed — so any probe about what the script does with a post-cleanup
-  # read would be answering from pre-cleanup data, and could pass while the bug
-  # it targets stands.
-  gone='[]'
-  if [ -f "$F/deleted.jsonl" ]; then
-    gone=$(jq -R -s 'split("\\n") | map(select(length > 0) | tonumber)' "$F/deleted.jsonl")
-  fi
   jq -nc --arg o "\${DRIVE_PR_ANNOUNCE_OPENER_FIXTURE:-}" \\
          --arg stale "$(< "$F/stale-announcement")" \\
-         --argjson gone "$gone" \\
     '[{id: 7, body: ($o + "\\n\\nan earlier run was killed before it could withdraw this\\n\\n<!-- drive-pr-merge-ready: " + $stale + " -->"),
-       user: {login: "other"}, author_association: "OWNER"}]
-     | map(select(.id as $i | ($gone | index($i)) == null))' \\
+       user: {login: "other"}, author_association: "OWNER"}]' \\
     > "$F/stale-comments.json"
-  emit "$F/stale-comments.json"
+  swept "$F/stale-comments.json"
   exit 0
 fi
 
@@ -2061,7 +2078,10 @@ for a in "$@"; do
         emit "$F/status.json"
       fi
       exit 0 ;;
-    *issues/*/comments*) emit "$F/issue-comments.json"; exit 0 ;;
+    *issues/*/comments*)
+      if [ "$announce_sweep" -eq 1 ]; then swept "$F/issue-comments.json"
+      else emit "$F/issue-comments.json"; fi
+      exit 0 ;;
     *pulls/*/comments*)  emit "$F/pull-comments.json"; exit 0 ;;
   esac
 done

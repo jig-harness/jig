@@ -25,7 +25,9 @@ the envelope and its codec (`plugin/shared/records/envelope.ts`), the
 registry (`plugin/shared/records/registry.ts`), the gate that checks those
 forms (`scripts/check-records-registry.ts`), the drive ledger
 and the follow-up marker carrying the envelope, and the view by record,
-[plugin/RECORDS.md](../plugin/RECORDS.md). Why there is no daemon or bus is
+[plugin/RECORDS.md](../plugin/RECORDS.md). So is its fourth: the
+forge-claims module (`plugin/shared/records/forge-claims.ts`). Why there is
+no daemon or bus is
 [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md).
 
 ## How it works
@@ -88,13 +90,37 @@ file, which a person reads.
 
 ### One forge-claims module
 
-The takeover claim, the follow-up marker and the drive ledger each arbitrate
-their own way today. One module, over the codec's marker form, holds one
-rule: for each key and generation, the earliest comment from a trusted
-author wins, and every act outside the pull request re-checks the claim
-first. The ledger's lowest-id rule, the takeover claim's earliest-per-
-generation rule and the follow-up marker's earlier-comment rule become that
-one rule.
+A claim on the forge is a comment that says "this is mine to do": the
+takeover claim, the follow-up marker and the merge-ready announcement. One
+module, `plugin/shared/records/forge-claims.ts`, posts, reads back and
+decides all three. A claim comment opens with its kind's line, holds the
+envelope in the codec's marker form, its `key` what is claimed
+(`takeover:<generation>`, `followup`, `merge-ready:<head>`), and ends with
+text a person reads. One rule decides: for each key and generation, the
+earliest comment from a trusted author wins (`plugin/shared/trusted-authors.ts`
+names who is trusted, for every claim). The takeover's rule adds the lease
+window as a lapse window, past which a later claim replaces a winner whose
+owner never wrote the ledger. The forge has no conditional create for a
+comment and its listing can lag, so `post` reads the claims back, reads
+again a bounded number of times while the listing does not show the
+caller's comment, and then reports the claim lost rather than counting a
+comment it never saw; `check` re-reads it before each act outside the pull
+request, and `withdraw` deletes the caller's own. The residue it cannot
+close, two read-backs that each lag past the other's comment, is named in
+the module's header with what each kind's callers do once a read lists
+both.
+
+Each kind keeps its comment form and still reads the form written before
+it for one release: the takeover claim and the announcement gained the
+envelope, and the follow-up marker's key became `followup` in its version
+2, its earlier versions read through the kind's own reader. The
+announcement became a claim per pull request and head, so a second driver
+cannot announce over an earlier trusted announcement of the same head, and
+it is posted only inside its claim: behind its merge-readiness check, read
+back, and withdrawn through the module. The drive ledger, rewritten in
+place rather than claimed, still picks its canonical comment in its own
+reader by the same lowest-trusted-id rule, and the deferred entries in a
+pull request's body keep their reread-and-retry write.
 
 ### Records a second host reads
 
@@ -134,8 +160,10 @@ One pull request each, in this order; each is usable on its own.
    dispatcher's database opened through it, then the drive's state
    directory moved into its own database, its files still read for one
    release.
-4. **One forge-claims module**: the ledger, the takeover claim and the
-   follow-up marker arbitrated by its one rule.
+4. **One forge-claims module** (built): `plugin/shared/records/forge-claims.ts`,
+   with the takeover claim, the follow-up marker and the merge-ready
+   announcement as its claims, decided by its one rule and each kind's
+   earlier form still readable.
 5. **Records a second host reads**: `SharedRecords` on the forge, the
    launch and the follow-up's end published, and one owner host per
    repository for the board, notifications and history rows.

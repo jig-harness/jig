@@ -1598,6 +1598,17 @@ make, use the entry's term instead.
   that the registry does not hold. Review keeps arbitrary file-backed
   records and dynamically assembled names in the inventory
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Forge claim** — a comment a script posts on a pull request to say "this
+  is mine to do" (a driver taking over a drive, a run following up a merge,
+  a driver announcing a head safe to merge), carrying a *record envelope*
+  whose key names what it claims. Every kind is posted, read back and
+  decided by one module (`plugin/shared/records/forge-claims.ts`) under one
+  rule: of the trusted claims on one key, the earliest comment wins (a
+  takeover claim whose owner never acted lapses after the lease window), and
+  a later claimant stands down. The forge cannot create
+  a comment only if none exists, so the claim is read back after posting and
+  checked again before each act it guards
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
 - **Component (of the `jig` command)** — one of the machine-level tools the
   plugin's `jig` command joins into one command line: resource collection
   (`jig gc`) and the *dispatcher* (`jig dispatch`). Each defines its command
@@ -1894,7 +1905,7 @@ make, use the entry's term instead.
   still holds for another one. The dispatcher reports it and starts
   nothing for it.
 - **Follow-up marker** — a hidden-marker comment on a merged pull request
-  that claims its follow-up, so one run settles the merge: the
+  that claims its follow-up (a *forge claim*), so one run settles the merge: the
   *dispatcher* posts one before it starts the follow-up's session, and a
   follow-up a person runs by hand posts one too and marks it done when it
   succeeds. Of two, the earlier comment wins, and the later run stands

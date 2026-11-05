@@ -846,8 +846,10 @@ heartbeat (the time of its last write) is older than the lease window, the
 doctor's stall threshold (`DRIVE_PR_STALL_MIN`, floor 240 minutes); a fresher
 one is refused with exit `11`. Once it holds its locks the taker posts an
 append-only claim on the PR (`<!-- drive-pr-takeover-claim -->`: its tree,
-clone, the ledger generation it read, the time) and reads the claims back; a
-read-back that fails refuses the takeover (exit `1`). Of the claims on one
+clone, the ledger generation it read, the time), a claim of the shared
+forge-claims module, and reads the claims back, again a few times while the
+listing does not show its own; a read-back that fails, or never lists the
+claim, refuses the takeover (exit `1`). Of the claims on one
 generation the earliest comment id wins, and a later claimant stands down
 with exit `20` (`TAKEN_OVER`): at once when it sees the earlier claim, and at
 its next round boundary when a lagging read hid it. The winner seeds this clone's
@@ -3378,11 +3380,14 @@ clean-tree gate exists because the first two are claims about the remote:
 neither sees an edit no round shipped, and a merge is exactly when an unshipped
 local edit dies silently with the worktree.
 
-It posts once per head. The pre-post sweep settles every sequential re-run; the
-concurrent case it cannot (two drivers both pass the sweep before either posts)
-is settled afterwards instead — comment ids are monotonic, so the lowest id
-carrying the head's marker wins and every other driver withdraws its **own**
-comment.
+It posts once per head: the announcement is a claim per pull request and head
+of the shared forge-claims module, posted only while its merge-readiness checks
+hold. The pre-post sweep settles every sequential re-run; the concurrent case
+it cannot (two drivers both pass the sweep before either posts) is settled by
+the claim's read-back instead — comment ids are monotonic, so the earliest
+trusted announcement of the head wins and every other driver withdraws its
+**own** comment. A read-back that never lists the comment it posted withdraws
+it and exits `1`.
 
 It re-reads the PR's `state` **and** head at each of the points below, and the
 same condition means the same thing at every one: a PR that is no longer `OPEN`

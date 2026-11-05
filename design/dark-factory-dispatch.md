@@ -138,9 +138,12 @@ guards keep one stage from starting twice:
   follow-up wanted again. Whoever posts a marker, the tick or a
   manual run, reads the markers back after posting, and of two trusted
   markers on one pull request the earlier comment wins, as the drive's
-  takeover claims do: the later poster deletes its marker and stands down
-  (the tick ends its launch record without starting a session; a manual run
-  stops before it acts). A read-back that fails starts nothing. The forge
+  takeover claims do: both are claims of one module,
+  `plugin/shared/records/forge-claims.ts`, under its one rule. The later
+  poster deletes its marker and stands down (the tick ends its launch record
+  without starting a session; a manual run stops before it acts). A
+  read-back that does not list the new marker reads again a few times; one
+  that fails, or never lists it, starts nothing. The forge
   offers no conditional create for a comment, so the read-back is not
   atomic: a read that lags can omit a marker posted a moment earlier, and
   two runs can each read themselves the winner. The follow-up command

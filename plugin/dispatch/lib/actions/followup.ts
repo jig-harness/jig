@@ -16,25 +16,27 @@
  *    workspace named for the follow-up and the pull request (`dispatched`
  *    in `runtime/port.ts`), under the launch record's id minted here;
  * 4. write the launch record, which holds the slot from here on;
- * 5. post the marker naming the record, then read the markers back: an
+ * 5. post the marker naming the record, a claim of the forge-claims
+ *    module (`shared/records/forge-claims.ts`), which reads it back: an
  *    earlier trusted marker wins, and this one is deleted and the record
- *    removed without starting anything; a read-back that fails starts
- *    nothing either;
+ *    removed without starting anything; a read-back that fails, or that
+ *    never lists the marker, starts nothing either;
  * 6. `launch` the session under the record's token.
  *
  * The marker is the one thing the dispatcher writes to the forge.
  */
+import { post, read, withdraw } from "../../../shared/records/forge-claims.ts";
 import { localWriter } from "../../../shared/records/writer.ts";
 import { admittedVendor, type Slots } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
 import {
-  deleteMarker,
-  readBack,
-  postMarker,
+  FOLLOWUP_CLAIM,
+  FOLLOWUP_KEY,
+  followupTarget,
+  markerStanding,
   readMarkers,
-  tickMarker,
-  trustedMarkers,
+  tickClaim,
 } from "../followup-marker.ts";
 import {
   type LaunchRecord,
@@ -113,11 +115,16 @@ async function changed(
 ): Promise<string | null> {
   const hold = await heldNow(ctx, pr);
   if (hold !== null) return hold;
-  const markers = await readMarkers(repo.slug, pr, ctx.login);
-  if ("unreadable" in markers) return markers.unreadable;
-  const trusted = trustedMarkers(markers);
-  if (trusted.length > 0)
-    return `a follow-up marker appeared since the plan read it (comment ${trusted[0]?.id} by ${trusted[0]?.login})`;
+  const claims = await read(
+    followupTarget(repo.slug, pr),
+    FOLLOWUP_CLAIM,
+    FOLLOWUP_KEY,
+    { self: ctx.login },
+  );
+  if (!claims.ok) return claims.failure.reason;
+  const [first] = claims.value;
+  if (first !== undefined)
+    return `a follow-up marker appeared since the plan read it (comment ${first.id} by ${first.login})`;
   let sessions: SessionsReport;
   try {
     sessions = await ctx.sessions();
@@ -165,25 +172,26 @@ async function claim(
   ctx: FollowupContext,
   record: LaunchRecord & { pr: number },
 ): Promise<string | null> {
-  const posted = await postMarker(
-    repo.slug,
-    record.pr,
-    tickMarker(record.id, {
+  const claimed = await post(
+    followupTarget(repo.slug, record.pr),
+    FOLLOWUP_CLAIM,
+    tickClaim(record.id, {
       pr: record.pr,
       writer: localWriter("forge", ctx.login),
     }),
+    { self: ctx.login },
   );
-  if (typeof posted === "string") {
+  if (!claimed.ok) {
     dropRecord(state, record);
-    return `the follow-up marker could not be posted: ${posted}`;
+    return `the follow-up marker could not be posted: ${claimed.failure.reason}`;
   }
+  const posted = claimed.value.id;
   record.marker = posted;
   writeRecord(record, state.root);
-  const seen = readBack(
-    await readMarkers(repo.slug, record.pr, ctx.login),
-    posted,
-    { kind: "tick", record: record.id },
-  );
+  const seen = markerStanding(claimed.value.standing, {
+    kind: "tick",
+    record: record.id,
+  });
   if (seen.kind === "stands") return null;
   const why =
     seen.kind === "unreadable"
@@ -209,8 +217,8 @@ async function relinquish(
   posted: number,
   why: string,
 ): Promise<string> {
-  const deleted = await deleteMarker(repo.slug, posted);
-  if (deleted === "") {
+  const deleted = await withdraw({ repo: repo.slug }, posted);
+  if (deleted.ok) {
     dropRecord(state, record);
     return why;
   }
@@ -219,7 +227,7 @@ async function relinquish(
     { at: new Date().toISOString(), code: null, signal: null },
     state.root,
   );
-  return `${why}; its own marker (comment ${posted}) could not be deleted (${deleted}), so its record ends failed`;
+  return `${why}; its own marker (comment ${posted}) could not be deleted (${deleted.failure.reason}), so its record ends failed`;
 }
 
 /** The launch record of a follow-up, before it holds its slot. */

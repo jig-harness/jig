@@ -1,36 +1,51 @@
 /**
- * The follow-up marker: a hidden-marker comment on a merged pull request
- * that claims its follow-up. The tick posts one naming its launch record
- * before it starts the follow-up's session; a follow-up a person runs by
- * hand posts one saying so (`run: manual`) and edits it to `outcome: done`
- * once its last act succeeded.
+ * The follow-up marker: a claim comment on a merged pull request that claims
+ * its follow-up, a claim of the shared forge-claims module
+ * (`shared/records/forge-claims.ts`), which posts it, reads it back and
+ * decides it. The tick posts one naming its launch record before it starts
+ * the follow-up's session; a follow-up a person runs by hand posts one
+ * saying so (`run: manual`) and edits it to `outcome: done` once its last act
+ * succeeded.
  *
  * From its second line the marker holds its record in the records codec's
  * marker form (`shared/records/envelope.ts`): the envelope (kind
- * `dispatch-followup`, the pull request as its key, the writer and the time)
- * beside the run, then one line a person reads.
+ * `dispatch-followup`, `followup` as the key it claims, the writer and the
+ * time) beside the pull request and the run, then one line a person reads.
  *
  *   <!-- jig-dispatch-followup -->
  *   <!-- jig-dispatch-followup-data
- *   {"kind":"dispatch-followup","v":1,"key":"<PR>",…,"run":"tick","record":"<launch record id>"}
+ *   {"kind":"dispatch-followup","v":2,"key":"followup",…,"pr":<PR>,"run":"tick","record":"<launch record id>"}
  *   -->
  *   jig dispatch follow-up · record: <launch record id>
  *
  * A manual run's record carries `"run":"manual"` and its `outcome`,
- * `running` or `done`. A marker posted before the envelope, whose second
- * line is `jig dispatch follow-up · record: <id>` or
- * `jig dispatch follow-up · run: manual · outcome: running|done`, still reads.
+ * `running` or `done`. A marker in an earlier form still reads: version 1,
+ * whose key was the pull request's number, and the line form written before
+ * the envelope, whose second line is `jig dispatch follow-up · record: <id>`
+ * or `jig dispatch follow-up · run: manual · outcome: running|done`.
  *
  * A marker counts only when written by the dispatcher's own login or by an
  * owner, member or collaborator, as the drive trusts a ledger; of two
- * trusted markers the earlier comment (the lower id) wins. Every forge call
- * goes through `ghCall`, under its deadline, and either answers or says why
- * it could not.
+ * trusted markers the earlier comment (the lower id) wins, by the
+ * forge-claims rule. A pull request has one follow-up, so a trusted marker
+ * whose record does not read still claims it and holds against every later
+ * one, until a person settles it. Every forge call goes through `ghCall`,
+ * under its deadline, and either answers or says why it could not.
  */
-import { isRecord } from "../../shared/guards.ts";
-import { decodeMarker, encodeMarker } from "../../shared/records/envelope.ts";
+import { failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { decodeMarker } from "../../shared/records/envelope.ts";
+import {
+  type ClaimDraft,
+  type ClaimKind,
+  type ClaimRecord,
+  type ClaimTarget,
+  claimBody,
+  type ListedClaim,
+  list,
+  readClaim,
+  type Standing,
+} from "../../shared/records/forge-claims.ts";
 import type { Writer } from "../../shared/records/writer.ts";
-import { TRUSTED_ASSOCIATIONS } from "../../shared/trusted-authors.ts";
 import { forge } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { isRecordId } from "./launches.ts";
 import type { FollowupMarker } from "./types.ts";
@@ -41,7 +56,10 @@ export const MARKER = "<!-- jig-dispatch-followup -->";
 export const FOLLOWUP_KIND = "dispatch-followup";
 
 /** The version of the marker's record this version writes. */
-export const FOLLOWUP_VERSION = 1;
+export const FOLLOWUP_VERSION = 2;
+
+/** What a marker claims: the one follow-up of the pull request it is on. */
+export const FOLLOWUP_KEY = "followup";
 
 /** The hidden marker its record is written in. */
 const DATA = "jig-dispatch-followup-data";
@@ -53,114 +71,156 @@ export interface MarkerPost {
   at?: string;
 }
 
-function markerBody(
+/** The pull request `pr` of repository `slug`, as a claim's target. */
+export function followupTarget(slug: string, pr: number): ClaimTarget {
+  return { repo: slug, number: pr };
+}
+
+const isText = (v: unknown): v is string => typeof v === "string";
+
+/** Why a record's run is not a tick's or a manual run's, or `null`. */
+function runFault(payload: Record<string, unknown>): string | null {
+  const { run, record, outcome } = payload;
+  if (run === "tick" && isText(record) && isRecordId(record)) return null;
+  if (run === "manual" && (outcome === "running" || outcome === "done"))
+    return null;
+  return "its record is neither a tick's nor a manual run's";
+}
+
+/** Why a read record is not a follow-up claim on `target`, or `null` when it is one. */
+function followupFault(
+  r: ClaimRecord,
+  target: ClaimTarget | null,
+): string | null {
+  if (!r.legacy && target !== null && r.payload.pr !== target.number)
+    return `its record names pull request #${String(r.payload.pr)}`;
+  return runFault(r.payload);
+}
+
+function legacyRecord(
+  payload: Record<string, unknown>,
+  at = "",
+): Outcome<ClaimRecord, "unreadable"> {
+  return ok({ key: FOLLOWUP_KEY, at, payload, legacy: true });
+}
+
+/** A marker of version 1, whose key was its pull request's number. */
+function versionOne(
+  body: string,
+  target: ClaimTarget | null,
+): Outcome<ClaimRecord, "unreadable"> {
+  const read = decodeMarker(body, DATA, FOLLOWUP_KIND);
+  if (!read.ok)
+    return failed(
+      "unreadable",
+      `its record does not read: ${read.failure.reason}`,
+    );
+  const { envelope, payload } = read.value;
+  if (target !== null && envelope.key !== String(target.number))
+    return failed(
+      "unreadable",
+      `its record names pull request #${envelope.key}`,
+    );
+  return legacyRecord(payload, envelope.at);
+}
+
+/** A marker in a form written before this version's: version 1, or the line form. */
+function legacyMarker(
+  body: string,
+  target: ClaimTarget | null,
+): Outcome<ClaimRecord, "unreadable"> {
+  const line = body.split("\n")[1]?.trim() ?? "";
+  if (line === `<!-- ${DATA}`) return versionOne(body, target);
+  const tick = /^jig dispatch follow-up · record: (\S+)$/.exec(line);
+  if (tick !== null) return legacyRecord({ run: "tick", record: tick[1] });
+  const manual =
+    /^jig dispatch follow-up · run: manual · outcome: (running|done)$/.exec(
+      line,
+    );
+  if (manual !== null)
+    return legacyRecord({ run: "manual", outcome: manual[1] });
+  return failed(
+    "unreadable",
+    `its body does not read as a marker: ${JSON.stringify(line.slice(0, 80))}`,
+  );
+}
+
+/** The follow-up marker as a kind of forge claim. */
+export const FOLLOWUP_CLAIM: ClaimKind = {
+  name: FOLLOWUP_KIND,
+  opens: MARKER,
+  data: `<!-- ${DATA}`,
+  onlyKey: FOLLOWUP_KEY,
+  shape: followupFault,
+  legacy: legacyMarker,
+};
+
+function markerClaim(
   post: MarkerPost,
   run: Record<string, unknown>,
   line: string,
-): string {
-  const envelope = {
-    kind: FOLLOWUP_KIND,
-    v: FOLLOWUP_VERSION,
-    key: String(post.pr),
+): ClaimDraft {
+  return {
+    key: FOLLOWUP_KEY,
     writer: post.writer,
-    at: post.at ?? new Date().toISOString(),
+    ...(post.at === undefined ? {} : { at: post.at }),
+    payload: { pr: post.pr, ...run },
+    text: `jig dispatch follow-up · ${line}`,
   };
-  return [
-    MARKER,
-    encodeMarker(DATA, envelope, run),
-    `jig dispatch follow-up · ${line}`,
-  ].join("\n");
 }
 
-/** A tick's marker, naming the launch record it starts the follow-up under. */
-export function tickMarker(record: string, post: MarkerPost): string {
-  return markerBody(post, { run: "tick", record }, `record: ${record}`);
+/** A tick's claim, naming the launch record it starts the follow-up under. */
+export function tickClaim(record: string, post: MarkerPost): ClaimDraft {
+  return markerClaim(post, { run: "tick", record }, `record: ${record}`);
 }
 
-/** A manual run's marker, carrying its own outcome. */
-export function manualMarker(done: boolean, post: MarkerPost): string {
+/** A manual run's claim, carrying its own outcome. */
+export function manualClaim(done: boolean, post: MarkerPost): ClaimDraft {
   const outcome = done ? "done" : "running";
-  return markerBody(
+  return markerClaim(
     post,
     { run: "manual", outcome },
     `run: manual · outcome: ${outcome}`,
   );
 }
 
-function unreadable(reason: string): FollowupMarker["run"] {
-  return { kind: "unreadable", reason };
+/** A tick's marker body. */
+export function tickMarker(record: string, post: MarkerPost): string {
+  return claimBody(FOLLOWUP_CLAIM, tickClaim(record, post));
 }
 
-/** What a marker's record says about pull request `pr`, or why it does not read. */
-function recordRun(body: string, pr: number): FollowupMarker["run"] {
-  const read = decodeMarker(body, DATA, FOLLOWUP_KIND);
-  if (!read.ok)
-    return unreadable(`its record does not read: ${read.failure.reason}`);
-  const { envelope, payload } = read.value;
-  if (envelope.key !== String(pr))
-    return unreadable(`its record names pull request #${envelope.key}`);
-  if (
-    payload.run === "tick" &&
-    typeof payload.record === "string" &&
-    isRecordId(payload.record)
-  )
-    return { kind: "tick", record: payload.record };
-  if (
-    payload.run === "manual" &&
-    (payload.outcome === "running" || payload.outcome === "done")
-  )
-    return { kind: "manual", done: payload.outcome === "done" };
-  return unreadable("its record is neither a tick's nor a manual run's");
+/** A manual run's marker body. */
+export function manualMarker(done: boolean, post: MarkerPost): string {
+  return claimBody(FOLLOWUP_CLAIM, manualClaim(done, post));
+}
+
+/** What a marker's record says about its run, or why it does not read. */
+function runOf(
+  record: Outcome<ClaimRecord, "unreadable">,
+): FollowupMarker["run"] {
+  if (!record.ok) return { kind: "unreadable", reason: record.failure.reason };
+  const { payload } = record.value;
+  return payload.run === "tick"
+    ? { kind: "tick", record: String(payload.record) }
+    : { kind: "manual", done: payload.outcome === "done" };
 }
 
 /** What a marker on pull request `pr` says, or why it does not read. */
 export function markerRun(body: string, pr: number): FollowupMarker["run"] {
-  const line = body.split("\n")[1]?.trim() ?? "";
-  if (line === `<!-- ${DATA}`) return recordRun(body, pr);
-  const tick = /^jig dispatch follow-up · record: (\S+)$/.exec(line);
-  if (tick !== null && isRecordId(tick[1] as string))
-    return { kind: "tick", record: tick[1] as string };
-  const manual =
-    /^jig dispatch follow-up · run: manual · outcome: (running|done)$/.exec(
-      line,
-    );
-  if (manual !== null) return { kind: "manual", done: manual[1] === "done" };
-  return unreadable(
-    `its body does not read as a marker: ${JSON.stringify(line.slice(0, 80))}`,
+  return runOf(
+    readClaim(FOLLOWUP_CLAIM, body, followupTarget("", pr)) ??
+      failed("unreadable", "its body does not open with the marker"),
   );
 }
 
-function text(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-/** A comment's author, and whether the dispatcher trusts what they write. */
-function authorOf(
-  c: Record<string, unknown>,
-  self: string | null,
-): { login: string; trusted: boolean } {
-  const login = isRecord(c.user) ? text(c.user.login) : "";
-  return {
-    login,
-    trusted:
-      (self !== null && login === self) ||
-      TRUSTED_ASSOCIATIONS.has(text(c.author_association)),
-  };
-}
-
-function markerOf(
-  c: unknown,
-  self: string | null,
-  pr: number,
-): FollowupMarker | null {
-  if (!isRecord(c) || typeof c.id !== "number") return null;
-  const body = text(c.body).replace(/\r\n/g, "\n");
-  if (!body.startsWith(`${MARKER}\n`) && body !== MARKER) return null;
+/** A listed claim comment as the dispatcher reads a marker. */
+function markerOf(c: ListedClaim): FollowupMarker {
   return {
     id: c.id,
-    ...authorOf(c, self),
-    createdAt: text(c.created_at),
-    run: markerRun(body, pr),
+    login: c.login,
+    trusted: c.trusted,
+    createdAt: c.createdAt,
+    run: runOf(c.record),
   };
 }
 
@@ -170,50 +230,10 @@ export async function readMarkers(
   pr: number,
   self: string | null,
 ): Promise<FollowupMarker[] | { unreadable: string }> {
-  const r = await forge([
-    "api",
-    "--paginate",
-    "--slurp",
-    `repos/${slug}/issues/${pr}/comments?per_page=100`,
-  ]);
-  if (!r.ok) return { unreadable: `the comments could not be read (${r.why})` };
-  let pages: unknown;
-  try {
-    pages = JSON.parse(r.stdout);
-  } catch {
-    return { unreadable: "the comment listing is not JSON" };
-  }
-  const out: FollowupMarker[] = [];
-  for (const page of Array.isArray(pages) ? pages : [pages]) {
-    if (!Array.isArray(page))
-      return { unreadable: "the comment listing is not a list" };
-    for (const c of page) {
-      const marker = markerOf(c, self, pr);
-      if (marker !== null) out.push(marker);
-    }
-  }
-  return out.sort((a, b) => a.id - b.id);
-}
-
-/** Post a marker: its comment id, or why the post failed. */
-export async function postMarker(
-  slug: string,
-  pr: number,
-  body: string,
-): Promise<number | string> {
-  const r = await forge(
-    ["api", `repos/${slug}/issues/${pr}/comments`, "--input", "-"],
-    JSON.stringify({ body }),
-  );
-  if (!r.ok) return r.why;
-  try {
-    const posted: unknown = JSON.parse(r.stdout);
-    return isRecord(posted) && typeof posted.id === "number"
-      ? posted.id
-      : "the forge answered the post without a comment id";
-  } catch {
-    return "the forge answered the post without JSON";
-  }
+  const listing = await list(followupTarget(slug, pr), FOLLOWUP_CLAIM, self);
+  return listing.ok
+    ? listing.value.map(markerOf)
+    : { unreadable: listing.failure.reason };
 }
 
 /** Rewrite a marker's body; `""` when it was written, else why not. */
@@ -236,33 +256,11 @@ export async function editMarker(
   return r.ok ? "" : r.why;
 }
 
-/** Delete a marker; `""` when it was deleted, else why not. */
-export async function deleteMarker(slug: string, id: number): Promise<string> {
-  const r = await forge([
-    "api",
-    "-X",
-    "DELETE",
-    `repos/${slug}/issues/comments/${id}`,
-  ]);
-  return r.ok ? "" : r.why;
-}
-
 /** The trusted markers, earliest first. */
 export function trustedMarkers(
   markers: readonly FollowupMarker[],
 ): FollowupMarker[] {
   return markers.filter((m) => m.trusted);
-}
-
-/**
- * After posting the marker `own`: the earlier trusted marker that wins over
- * it, or `null` when `own` is the earliest.
- */
-export function earlierThan(
-  markers: readonly FollowupMarker[],
-  own: number,
-): FollowupMarker | null {
-  return trustedMarkers(markers).find((m) => m.id < own) ?? null;
 }
 
 /** The run a posted marker must still read as: the tick's own record, or a manual run. */
@@ -274,17 +272,6 @@ function readsAs(run: FollowupMarker["run"], expected: ExpectedRun) {
   return run.kind === "tick" && run.record === expected.record;
 }
 
-/** Whether the read-back lists marker `id` as a trusted marker that still reads as `expected`: a listing that lags behind the post does not, and an edited body is not the claim. */
-export function listsOwn(
-  markers: readonly FollowupMarker[],
-  id: number,
-  expected: ExpectedRun,
-): boolean {
-  return trustedMarkers(markers).some(
-    (m) => m.id === id && readsAs(m.run, expected),
-  );
-}
-
 /** What the read-back after posting marker `own` shows: it stands, or why not. `done` is a manual claim already marked done, which is kept. */
 export type ReadBack =
   | { kind: "stands" }
@@ -294,25 +281,27 @@ export type ReadBack =
   | { kind: "done" }
   | { kind: "earlier"; marker: FollowupMarker };
 
-export function readBack(
-  markers: FollowupMarker[] | { unreadable: string },
-  own: number,
+/**
+ * The marker's standing after a read (`forge-claims.ts`'s `post` or
+ * `check`), as the follow-up's callers act on it. An earlier trusted marker
+ * wins; a marker the read never listed is `missing`; one whose body no
+ * longer says what its poster wrote is `altered`.
+ */
+export function markerStanding(
+  seen: Outcome<Standing, "unreadable">,
   expected: ExpectedRun,
 ): ReadBack {
-  if ("unreadable" in markers)
-    return { kind: "unreadable", reason: markers.unreadable };
-  const earlier = earlierThan(markers, own);
-  if (earlier !== null) return { kind: "earlier", marker: earlier };
-  if (listsOwn(markers, own, expected)) return { kind: "stands" };
-  const listed = trustedMarkers(markers).find((m) => m.id === own);
-  if (listed === undefined) return { kind: "missing" };
+  if (!seen.ok) return { kind: "unreadable", reason: seen.failure.reason };
+  const { verdict, winner, own, listing } = seen.value;
+  const earlier = listing.find((c) => c.id === winner?.id);
+  if (verdict === "lost-to" && earlier !== undefined)
+    return { kind: "earlier", marker: markerOf(earlier) };
+  if (own === null || !own.trusted) return { kind: "missing" };
+  const run = runOf(own.record);
+  if (verdict === "holds" && readsAs(run, expected)) return { kind: "stands" };
   // A person finished the manual run between the post and the read-back: the
   // completion stands, so the claimant stops without deleting it.
-  if (
-    expected.kind === "manual" &&
-    listed.run.kind === "manual" &&
-    listed.run.done
-  )
+  if (expected.kind === "manual" && run.kind === "manual" && run.done)
     return { kind: "done" };
   return { kind: "altered" };
 }
