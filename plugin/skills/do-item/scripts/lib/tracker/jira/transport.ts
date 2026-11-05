@@ -88,7 +88,7 @@ function cancelled(signal: AbortSignal | undefined): signal is AbortSignal {
   return signal?.aborted === true;
 }
 
-function abortedError(signal: AbortSignal): JiraApiError {
+export function abortedError(signal: AbortSignal): JiraApiError {
   const reason: unknown = signal.reason;
   return new JiraApiError(
     `Jira request cancelled: ${reason instanceof Error ? reason.message : String(reason)}`,
@@ -346,7 +346,7 @@ export async function offsetPages(
 ): Promise<Record<string, unknown>[]> {
   const out: Record<string, unknown>[] = [];
   const guard = idGuard(opts.where);
-  for (let startAt = 0; ; ) {
+  for (let startAt = 0; ;) {
     const query = { ...request.query, startAt, maxResults: PAGE };
     const page = await transport({ ...request, query }, opts.signal);
     const items = offsetItems(page, opts);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { TrackerConfigError } from "../scripts/lib/tracker/config-error.ts";
 import { parseJiraSettings } from "../scripts/lib/tracker/jira/settings.ts";
+import { JiraApiError } from "../scripts/lib/tracker/jira/transport.ts";
 import { TrackerRequestError } from "../scripts/lib/tracker/port.ts";
 import {
   type Call,
@@ -43,6 +44,25 @@ const SITE_FIELDS = [
   },
   { id: "customfield_10100", name: "Team", schema: { type: "option" } },
   { id: "customfield_10101", name: "Team", schema: { type: "option" } },
+  {
+    id: "customfield_10110",
+    name: "Notes",
+    schema: {
+      type: "string",
+      custom: "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+    },
+  },
+  {
+    id: "description",
+    name: "Description",
+    schema: { type: "string", system: "description" },
+  },
+  // A display name that is another field's id.
+  {
+    id: "customfield_10120",
+    name: "customfield_10050",
+    schema: { type: "option" },
+  },
 ];
 
 const FIELD_LABELS = {
@@ -175,6 +195,61 @@ describe("Jira adapter: fields read as labels", () => {
     const err = await rejection(t.getIssue("ENG-1"));
     expect(err).toBeInstanceOf(TrackerConfigError);
     expect(String(err)).toContain('of type "user"');
+  });
+
+  it("refuses a rich-text field, whose values are not strings", async () => {
+    for (const name of ["Notes", "Description"]) {
+      const fieldLabels =
+        name === "Notes" ? { Notes: "n:" } : { Description: "d:" };
+      const { t } = jira(
+        routes({ "GET field": SITE_FIELDS, "GET issue/ENG-1": TAGGED }),
+        overlay(fieldLabels),
+      );
+      const err = await rejection(t.getIssue("ENG-1"));
+      expect(err).toBeInstanceOf(TrackerConfigError);
+      expect(String(err)).toContain("rich text");
+    }
+  });
+
+  it("reads a number in a form JQL matches", async () => {
+    const { t } = jira(
+      routes({
+        "POST search/jql": page(),
+        "GET field": SITE_FIELDS,
+        "GET issue/ENG-1": issue({
+          key: "ENG-1",
+          fields: { customfield_10080: 0.0000001 },
+        }),
+      }),
+      overlay({ "Story Points": "points:" }),
+    );
+    expect((await t.getIssue("ENG-1"))?.labels).toEqual(["points:0.0000001"]);
+  });
+
+  it("takes an exact id before a display name", async () => {
+    const { t } = jira(
+      routes({
+        "POST search/jql": page(),
+        "GET field": SITE_FIELDS,
+        "GET issue/ENG-1": TAGGED,
+      }),
+      overlay({ customfield_10050: "size:" }),
+    );
+    expect((await t.getIssue("ENG-1"))?.labels).toContain("size:M");
+  });
+
+  it("reports a failed field read as an error, not a missing issue", async () => {
+    const { t } = jira(
+      routes({
+        "GET field": new JiraApiError("not found", {
+          status: 404,
+          notFound: true,
+        }),
+        "GET issue/ENG-1": TAGGED,
+      }),
+      overlay(),
+    );
+    expect(await rejection(t.getIssue("ENG-1"))).toBeInstanceOf(JiraApiError);
   });
 
   it("selects a pool by a field's values, in JQL on that field", async () => {

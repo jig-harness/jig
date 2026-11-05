@@ -194,6 +194,17 @@ export interface FieldLabel {
   match: "string" | "number" | null;
 }
 
+/** A number without exponent notation, the form a JQL number literal takes. */
+function numberText(n: number): string {
+  const plain = String(n);
+  return /e/i.test(plain)
+    ? n.toLocaleString("en-US", {
+        useGrouping: false,
+        maximumFractionDigits: 20,
+      })
+    : plain;
+}
+
 /**
  * The values of a field read as labels: strings, numbers and options, or a
  * list of them. Each is trimmed, since a label holds no whitespace; an
@@ -204,7 +215,7 @@ function fieldValues(v: unknown, where: string): string[] {
   if (v === null || v === undefined) return [];
   if (Array.isArray(v))
     return v.flatMap((x, i) => fieldValues(x, `${where}[${i}]`));
-  if (typeof v === "number") return [String(v)];
+  if (typeof v === "number") return [numberText(v)];
   const text = isRecord(v) ? v.value : v;
   if (typeof text === "string") return text.trim() === "" ? [] : [text.trim()];
   throw new JiraApiError(

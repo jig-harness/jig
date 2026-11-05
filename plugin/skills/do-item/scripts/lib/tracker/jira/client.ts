@@ -30,6 +30,7 @@ import { KEY, ORDER, OPEN } from "./jql.ts";
 import type { JiraModel } from "./model.ts";
 import type { JiraSettings, LinkedRelation } from "./settings.ts";
 import {
+  abortedError,
   JiraApiError,
   type JiraTransport,
   offsetPages,
@@ -105,9 +106,10 @@ export interface Client {
   /**
    * The fields `issue_tracker.jira.field_labels` names, each resolved to
    * exactly one field of the site; read once, and without a request when
-   * none is configured.
+   * none is configured. An aborted `signal` ends the wait, not the shared
+   * read other callers may be waiting on.
    */
-  fieldLabels(): Promise<FieldLabel[]>;
+  fieldLabels(signal?: AbortSignal): Promise<FieldLabel[]>;
   /** The account id an identity (account id, email or display name) names. */
   accountId(identity: string): Promise<string>;
   /** Whether the account can be assigned issues in the project; cached. */
@@ -190,6 +192,17 @@ function clauseOf(id: string): string {
   return custom === null ? id : `cf[${custom[1]}]`;
 }
 
+/** Whether the schema is a multiline custom field, the description or the environment: Jira returns them as ADF documents. */
+function holdsRichText(schema: unknown): boolean {
+  if (!isRecord(schema)) return false;
+  const { custom, system } = schema;
+  return (
+    (typeof custom === "string" && custom.endsWith(":textarea")) ||
+    system === "description" ||
+    system === "environment"
+  );
+}
+
 /**
  * How JQL matches one value of a field of this schema exactly, or a refusal
  * for a type whose values do not read as labels (a user, a date, a
@@ -202,6 +215,11 @@ function matchOf(
 ): FieldLabel["match"] {
   const type = isRecord(schema) ? schema.type : undefined;
   const items = isRecord(schema) ? schema.items : undefined;
+  if (holdsRichText(schema))
+    throw new TrackerConfigError(
+      at,
+      `${at}: the field '${name}' holds rich text, which does not read as a label; only single-line text, number, select, checkbox and labels fields do`,
+    );
   if (type === "string") return null;
   if (type === "number") return "number";
   if (type === "option") return "string";
@@ -209,7 +227,7 @@ function matchOf(
     return "string";
   throw new TrackerConfigError(
     at,
-    `${at}: the field '${name}' is of type ${JSON.stringify(type)}${items === undefined ? "" : ` of ${JSON.stringify(items)}`}; only text, number, select, checkbox and labels fields read as labels`,
+    `${at}: the field '${name}' is of type ${JSON.stringify(type)}${items === undefined ? "" : ` of ${JSON.stringify(items)}`}; only single-line text, number, select, checkbox and labels fields read as labels`,
   );
 }
 
@@ -225,6 +243,17 @@ export interface ClientOptions {
   model: JiraModel;
   settings: JiraSettings;
   transport: JiraTransport;
+}
+
+/** `promise`, or a refusal as soon as `signal` aborts; the promise itself runs on. */
+function until<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(abortedError(signal));
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(resolve, reject).finally(() => {
+      signal.removeEventListener("abort", abort);
+    });
+  });
 }
 
 export function jiraClient(opts: ClientOptions): Client {
@@ -268,8 +297,8 @@ export function jiraClient(opts: ClientOptions): Client {
   }
 
   /** The fields every issue read asks for, with those read as labels. */
-  async function fieldsToRead(): Promise<string[]> {
-    return [...FIELDS, ...(await client.fieldLabels()).map((f) => f.id)];
+  async function fieldsToRead(signal?: AbortSignal): Promise<string[]> {
+    return [...FIELDS, ...(await client.fieldLabels(signal)).map((f) => f.id)];
   }
 
   const client: Client = {
@@ -280,13 +309,16 @@ export function jiraClient(opts: ClientOptions): Client {
     transport,
 
     async issue(key, signal) {
+      // Resolved before the issue's own 404 handler: a failed field read is
+      // not a missing issue.
+      const read = (await fieldsToRead(signal)).join(",");
       let raw: unknown;
       try {
         raw = await transport(
           {
             method: "GET",
             path: `issue/${encodeURIComponent(key)}`,
-            query: { fields: (await fieldsToRead()).join(",") },
+            query: { fields: read },
           },
           signal,
         );
@@ -294,7 +326,7 @@ export function jiraClient(opts: ClientOptions): Client {
         if (err instanceof JiraApiError && err.notFound) return null;
         throw err;
       }
-      return parseIssue(raw, site, await client.fieldLabels());
+      return parseIssue(raw, site, await client.fieldLabels(signal));
     },
 
     async mustIssue(key, signal) {
@@ -308,8 +340,8 @@ export function jiraClient(opts: ClientOptions): Client {
     },
 
     async search(jql, where, signal, fields) {
-      const extra = await client.fieldLabels();
-      const read = fields ?? (await fieldsToRead());
+      const extra = await client.fieldLabels(signal);
+      const read = fields ?? (await fieldsToRead(signal));
       return (await searchPages(transport, jql, read, where, signal)).map((i) =>
         parseIssue(i, site, extra),
       );
@@ -464,9 +496,10 @@ export function jiraClient(opts: ClientOptions): Client {
       return types;
     },
 
-    fieldLabels() {
+    fieldLabels(signal) {
       const configured = Object.entries(settings.fieldLabels);
       if (configured.length === 0) return Promise.resolve([]);
+      if (signal?.aborted === true) return Promise.reject(abortedError(signal));
       labelFields ??= (async () => {
         const raw = await get("field");
         if (!Array.isArray(raw))
@@ -481,9 +514,9 @@ export function jiraClient(opts: ClientOptions): Client {
         });
         return configured.map(([name, prefix]) => {
           const at = `issue_tracker.jira.field_labels.${name}`;
-          const matches = all.filter(
-            (f) => f.id === name || same(f.name, name),
-          );
+          const byId = all.filter((f) => f.id === name);
+          const matches =
+            byId.length > 0 ? byId : all.filter((f) => same(f.name, name));
           if (matches.length !== 1)
             throw new TrackerConfigError(
               at,
@@ -503,7 +536,7 @@ export function jiraClient(opts: ClientOptions): Client {
       labelFields.catch(() => {
         labelFields = undefined;
       });
-      return labelFields;
+      return signal === undefined ? labelFields : until(labelFields, signal);
     },
 
     accountId(identity) {
