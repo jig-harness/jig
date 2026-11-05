@@ -112,7 +112,7 @@ export function fieldOfLabel(
 const NUMBER = /^-?\d+(\.\d+)?$/;
 
 /** A value of `field` as a JQL literal, or a refusal where JQL cannot match it exactly. */
-function valueOf(field: FieldLabel, value: string, label: string): string {
+function jqlValue(field: FieldLabel, value: string, label: string): string {
   if (field.match === "string") return quote(value);
   if (field.match === "number" && NUMBER.test(value)) return value;
   throw new TrackerRequestError(
@@ -136,7 +136,7 @@ function split(
     else
       byField.set(found.field, [
         ...(byField.get(found.field) ?? []),
-        valueOf(found.field, found.value, label),
+        jqlValue(found.field, found.value, label),
       ]);
   }
   return { plain, byField };
@@ -150,7 +150,7 @@ export function hasLabel(
   const found = fieldOfLabel(label, fields);
   return found === null
     ? `labels = ${quote(label)}`
-    : `${found.field.clause} = ${valueOf(found.field, found.value, label)}`;
+    : `${found.field.clause} = ${jqlValue(found.field, found.value, label)}`;
 }
 
 /** The issues carrying at least one of `labels`. */

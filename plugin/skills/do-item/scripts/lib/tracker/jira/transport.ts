@@ -346,7 +346,7 @@ export async function offsetPages(
 ): Promise<Record<string, unknown>[]> {
   const out: Record<string, unknown>[] = [];
   const guard = idGuard(opts.where);
-  for (let startAt = 0; ;) {
+  for (let startAt = 0; ; ) {
     const query = { ...request.query, startAt, maxResults: PAGE };
     const page = await transport({ ...request, query }, opts.signal);
     const items = offsetItems(page, opts);
