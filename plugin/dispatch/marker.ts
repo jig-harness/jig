@@ -99,6 +99,40 @@ async function claim(slug: string, pr: number): Promise<number> {
   );
 }
 
+type Seen = Extract<Awaited<ReturnType<typeof check>>, { ok: true }>["value"];
+
+/**
+ * Whether the marker `check` and `done` were given may be acted on: its run,
+ * or the exit code and message that stop the command.
+ */
+function ownStanding(
+  { own, verdict, winner }: Seen,
+  args: MarkerArguments & { comment: number },
+): { refused: { code: number; message: string } } | { run: unknown } {
+  if (own === null || !own.trusted)
+    return {
+      refused: {
+        code: 2,
+        message: `comment ${args.comment} is not a trusted follow-up marker of PR #${args.pr}`,
+      },
+    };
+  if (!own.record.ok)
+    return {
+      refused: {
+        code: 2,
+        message: `comment ${args.comment} no longer reads as a follow-up marker: ${own.record.failure.reason}`,
+      },
+    };
+  if (verdict === "lost-to" && winner !== null)
+    return {
+      refused: {
+        code: EARLIER,
+        message: `an earlier marker (comment ${winner.id} by ${winner.login}) holds the follow-up; stop before acting`,
+      },
+    };
+  return { run: own.record.value.payload.run };
+}
+
 async function checkOrDone(
   slug: string,
   args: MarkerArguments & { comment: number },
@@ -113,24 +147,11 @@ async function checkOrDone(
   );
   if (!seen.ok)
     return stop(1, `the markers could not be read: ${seen.failure.reason}`);
-  const { own, verdict, winner } = seen.value;
-  if (own === null || !own.trusted)
-    return stop(
-      2,
-      `comment ${args.comment} is not a trusted follow-up marker of PR #${args.pr}`,
-    );
-  if (!own.record.ok)
-    return stop(
-      2,
-      `comment ${args.comment} no longer reads as a follow-up marker: ${own.record.failure.reason}`,
-    );
-  if (verdict === "lost-to" && winner !== null)
-    return stop(
-      EARLIER,
-      `an earlier marker (comment ${winner.id} by ${winner.login}) holds the follow-up; stop before acting`,
-    );
+  const standing = ownStanding(seen.value, args);
+  if ("refused" in standing)
+    return stop(standing.refused.code, standing.refused.message);
   if (args.verb === "check") return 0;
-  if (own.record.value.payload.run !== "manual")
+  if (standing.run !== "manual")
     return stop(
       2,
       `comment ${args.comment} is the tick's marker: its session records its result through jig dispatch result`,

@@ -141,6 +141,36 @@ function planTickMarker(
   );
 }
 
+/** A merged pull request with no trusted follow-up marker: the tick wants one. */
+function wantFollowup(
+  input: FollowupInput,
+  pr: MarkedPr,
+  ignored: readonly { id: number; login: string }[],
+  want: Want,
+): void {
+  want(
+    {
+      stage: "followup",
+      target: `PR #${pr.number}`,
+      record: "forge",
+      reason: `merged ${pr.mergedAt} with no follow-up marker; run ${input.command} ${pr.number}`,
+      evidence: {
+        url: pr.url,
+        head: pr.head,
+        mergedAt: pr.mergedAt,
+        ...(ignored.length === 0
+          ? {}
+          : {
+              ignoredMarkers: ignored
+                .map((m) => `${m.id} by ${m.login}`)
+                .join(", "),
+            }),
+      },
+    },
+    (w) => w.prs.includes(pr.number),
+  );
+}
+
 /** One merged pull request: wanted, running, quiet, failed or unplaced. */
 function planMerged(
   input: FollowupInput,
@@ -169,27 +199,7 @@ function planMerged(
   }
   const [marker] = trusted;
   if (marker === undefined) {
-    want(
-      {
-        stage: "followup",
-        target,
-        record: "forge",
-        reason: `merged ${pr.mergedAt} with no follow-up marker; run ${input.command} ${pr.number}`,
-        evidence: {
-          url: pr.url,
-          head: pr.head,
-          mergedAt: pr.mergedAt,
-          ...(ignored.length === 0
-            ? {}
-            : {
-                ignoredMarkers: ignored
-                  .map((m) => `${m.id} by ${m.login}`)
-                  .join(", "),
-              }),
-        },
-      },
-      (w) => w.prs.includes(pr.number),
-    );
+    wantFollowup(input, pr, ignored, want);
     return;
   }
   if (marker.run.kind === "unreadable") {

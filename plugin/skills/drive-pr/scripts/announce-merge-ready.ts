@@ -257,6 +257,25 @@ function refuseUnreadable(all: Announcement[], when: string): void {
   }
 }
 
+/** What to say before withdrawing an announcement the live state no longer backs. */
+function withdrawNote(
+  failed: "state" | "tree" | "ci" | null,
+  pr: string,
+  head: string,
+): string[] {
+  if (failed === "state")
+    return [
+      `announce-merge-ready: posted, but PR #${pr} no longer confirms the claim above`,
+      `(see the reason immediately preceding) — withdrawing this announcement of ${head}.`,
+    ];
+  if (failed === "tree")
+    return [
+      "announce-merge-ready: posted, but this worktree now holds uncommitted state —",
+      `withdrawing this announcement of ${head}.`,
+    ];
+  return [];
+}
+
 async function main(): Promise<number> {
   let pr = "";
   let dryRun = false;
@@ -1064,20 +1083,7 @@ ${marker}`;
   async function stillReady(): Promise<number> {
     const { rc, failed } = await mergeReady();
     if (rc === 0) return 0;
-    if (failed === "state") {
-      console.error(
-        `announce-merge-ready: posted, but PR #${pr} no longer confirms the claim above`,
-      );
-      console.error(
-        `(see the reason immediately preceding) — withdrawing this announcement of ${head}.`,
-      );
-    }
-    if (failed === "tree") {
-      console.error(
-        `announce-merge-ready: posted, but this worktree now holds uncommitted state —`,
-      );
-      console.error(`withdrawing this announcement of ${head}.`);
-    }
+    for (const line of withdrawNote(failed, pr, head)) console.error(line);
     return (await withdrawPosted()) ? rc : 1;
   }
 
