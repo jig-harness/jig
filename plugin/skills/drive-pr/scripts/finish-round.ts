@@ -276,11 +276,8 @@ function emit(report: Report, asJson: boolean): void {
 }
 
 function prefixLines(prefix: string, text: string): string {
-  return text
-    .split("\n")
-    .filter((l, i, all) => !(l === "" && i === all.length - 1))
-    .map((l) => `${prefix}${l}`)
-    .join("\n");
+  const body = text.endsWith("\n") ? text.slice(0, -1) : text;
+  return body === "" ? "" : `${prefix}${body.replaceAll("\n", `\n${prefix}`)}`;
 }
 
 /**

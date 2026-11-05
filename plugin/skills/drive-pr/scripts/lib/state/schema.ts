@@ -565,6 +565,69 @@ function hasUsableOptionalFields(s: Record<string, unknown>): boolean {
   ].every(Boolean);
 }
 
+const isNonEmptyString = (v: unknown): v is string =>
+  typeof v === "string" && v.length > 0;
+const isSingleLine = (v: unknown): boolean =>
+  isNonEmptyString(v) && !/\r|\n/.test(v);
+const isSha = (v: unknown): boolean => typeof v === "string" && isGitSha(v);
+const isTimestamp = (v: unknown): boolean =>
+  typeof v === "string" && Number.isFinite(Date.parse(v));
+const isOptionalBoolean = (v: unknown): boolean =>
+  v === undefined || typeof v === "boolean";
+
+/** The fields only one phase of a recorded CI hold carries. */
+function hasUsablePhaseFields(hold: Record<string, unknown>): boolean {
+  switch (hold.phase) {
+    case "acquiring":
+      return (
+        (hold.previousEventId === null ||
+          isNonEmptyString(hold.previousEventId)) &&
+        isSha(hold.head) &&
+        (hold.label === undefined || isNonEmptyString(hold.label))
+      );
+    case "held":
+      return (
+        isNonEmptyString(hold.eventId) &&
+        isOptionalBoolean(hold.adopted) &&
+        isSha(hold.addedAtHead)
+      );
+    case "releasing":
+      return (
+        isOptionalBoolean(hold.adopted) &&
+        isSha(hold.head) &&
+        isNonEmptyString(hold.heldEventId) &&
+        isSha(hold.addedAtHead) &&
+        isSingleLine(hold.heldActor) &&
+        isTimestamp(hold.heldCreatedAt)
+      );
+    case "released":
+      return (
+        isNonEmptyString(hold.eventId) &&
+        isSha(hold.head) &&
+        (hold.source === "external" ||
+          (hold.source === "drive" && hold.checkRunWatermark !== 0))
+      );
+    default:
+      return false;
+  }
+}
+
+/** Whether a recorded CI hold has the shape its phase requires. */
+function isUsableCiHold(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return false;
+  const hold = value as Record<string, unknown>;
+  const watermark = hold.checkRunWatermark;
+  return (
+    hasUsablePhaseFields(hold) &&
+    typeof watermark === "number" &&
+    Number.isSafeInteger(watermark) &&
+    watermark >= 0 &&
+    isSingleLine(hold.actor) &&
+    isTimestamp(hold.createdAt)
+  );
+}
+
 export function isUsableState(v: unknown, pr: number): v is DriveState {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
   const s = v as Record<string, unknown>;
@@ -582,94 +645,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   if (!isCount(s.lastReflectedRound)) return false;
   if (!isCount(s.lastReflectedAttempts)) return false;
   if (!isCount(s.readyMarkedRound)) return false;
-  if (s.ciHold !== null) {
-    if (typeof s.ciHold !== "object" || Array.isArray(s.ciHold)) return false;
-    const hold = s.ciHold as Record<string, unknown>;
-    if (
-      hold.phase !== "acquiring" &&
-      hold.phase !== "held" &&
-      hold.phase !== "releasing" &&
-      hold.phase !== "released"
-    )
-      return false;
-    if (
-      (hold.phase === "held" || hold.phase === "released") &&
-      (typeof hold.eventId !== "string" || hold.eventId.length === 0)
-    )
-      return false;
-    if (hold.phase === "acquiring") {
-      if (
-        hold.previousEventId !== null &&
-        (typeof hold.previousEventId !== "string" ||
-          hold.previousEventId.length === 0)
-      )
-        return false;
-      if (typeof hold.head !== "string" || !isGitSha(hold.head)) return false;
-      if (
-        hold.label !== undefined &&
-        (typeof hold.label !== "string" || hold.label.length === 0)
-      )
-        return false;
-    }
-    if (
-      (hold.phase === "held" || hold.phase === "releasing") &&
-      hold.adopted !== undefined &&
-      typeof hold.adopted !== "boolean"
-    )
-      return false;
-    if (hold.phase === "held") {
-      if (typeof hold.addedAtHead !== "string" || !isGitSha(hold.addedAtHead))
-        return false;
-    } else if (
-      hold.phase !== "acquiring" &&
-      (typeof hold.head !== "string" || !isGitSha(hold.head))
-    ) {
-      return false;
-    }
-    if (
-      (hold.phase === "acquiring" ||
-        hold.phase === "held" ||
-        hold.phase === "released" ||
-        hold.phase === "releasing") &&
-      (typeof hold.checkRunWatermark !== "number" ||
-        !Number.isSafeInteger(hold.checkRunWatermark) ||
-        hold.checkRunWatermark < 0)
-    )
-      return false;
-    if (
-      hold.phase === "released" &&
-      hold.source !== "drive" &&
-      hold.source !== "external"
-    )
-      return false;
-    if (
-      hold.phase === "released" &&
-      hold.source === "drive" &&
-      hold.checkRunWatermark === 0
-    )
-      return false;
-    if (hold.phase === "releasing") {
-      if (
-        typeof hold.heldEventId !== "string" ||
-        hold.heldEventId.length === 0 ||
-        typeof hold.addedAtHead !== "string" ||
-        !isGitSha(hold.addedAtHead) ||
-        typeof hold.heldActor !== "string" ||
-        hold.heldActor.length === 0 ||
-        /\r|\n/.test(hold.heldActor) ||
-        typeof hold.heldCreatedAt !== "string" ||
-        !Number.isFinite(Date.parse(hold.heldCreatedAt))
-      )
-        return false;
-    }
-    if (typeof hold.actor !== "string" || hold.actor.length === 0) return false;
-    if (/\r|\n/.test(hold.actor)) return false;
-    if (
-      typeof hold.createdAt !== "string" ||
-      !Number.isFinite(Date.parse(hold.createdAt))
-    )
-      return false;
-  }
+  if (s.ciHold !== null && !isUsableCiHold(s.ciHold)) return false;
   // Present AND well-typed, on the same terms as every other counter here —
   // backward compatibility before general availability is deliberately not
   // offered, so a stored state written before this field existed is REFUSED by
