@@ -277,23 +277,32 @@ test.skipIf(onWindows)(
   },
 );
 
-test.skipIf(onWindows)(
-  "jig upgrade fails an installed job it cannot read instead of skipping it as absent",
-  () => {
-    const m = machine("cron");
-    expectSpawnExit(m.jig(["install", "gc", "--yes"]), 0);
-    const crontab = join(m.state, "crontab");
-    writeFileSync(
-      crontab,
-      readFileSync(crontab, "utf8").replace("'env'", "'nv'"),
-    );
-    const result = m.jig(["upgrade"]);
-    expectSpawnExit(result, 1);
-    expect(result.stdout.toString()).toContain("jig-gc: failed");
-  },
-);
+for (const variant of SCHEDULERS)
+  test.skipIf(onWindows)(
+    `jig upgrade fails an installed job it cannot read instead of skipping it as absent (${variant})`,
+    () => {
+      const m = machine(variant);
+      expectSpawnExit(m.jig(["install", "gc", "--yes"]), 0);
+      const job =
+        m.variant === "launchd"
+          ? join(m.home, "Library", "LaunchAgents", "dev.jig.gc.plist")
+          : m.variant === "cron"
+            ? join(m.state, "crontab")
+            : join(m.home, ".config", "systemd", "user", "jig-gc.service");
+      writeFileSync(
+        job,
+        readFileSync(job, "utf8")
+          .replace("ProgramArguments", "InvalidArguments")
+          .replace("ExecStart=", "InvalidStart=")
+          .replace("'env'", "'nv'"),
+      );
+      const result = m.jig(["upgrade"]);
+      expectSpawnExit(result, 1);
+      expect(result.stdout.toString()).toContain("jig-gc: failed");
+    },
+  );
 
-test.skipIf(onWindows)(
+test.skipIf(onWindows || !SCHEDULERS.some((name) => name === "systemd"))(
   "jig doctor fails a job whose timer is missing while its service remains, instead of skipping it as absent",
   () => {
     const m = machine("systemd");

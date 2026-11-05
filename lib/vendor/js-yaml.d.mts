@@ -11,6 +11,7 @@ export class Type {
   readonly tag: string;
   /** The options the type was built from. */
   readonly options: TypeOptions;
+  resolve(data: string): boolean;
   construct(data: string): unknown;
 }
 export interface TypeOptions {
