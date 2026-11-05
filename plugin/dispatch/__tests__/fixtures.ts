@@ -3,7 +3,8 @@
  * each pull request's comments in a file), wrapped by a `gh` that also
  * answers the calls the tick adds (the repository view, the configuration
  * file on the default branch, the pull request listings, and a comment's
- * update or removal on whichever pull request holds it); a fake `orca`
+ * update or removal on whichever pull request holds it, an update refused
+ * while `comment-edit-fail` exists); a fake `orca`
  * answering `repo list` and `worktree ps` from files, listing the worktrees
  * it creates there under the name asked for, and keeping a workspace's
  * comment, unread mark and name (`worktree set`, `worktree show`) in that
@@ -67,9 +68,10 @@ if (args[0] === "api" && args[1] === "graphql" && args.some((a) => a.includes("r
 }
 const single = args[0] === "api" && args.includes("-X") ? /issues\\/comments\\/(\\d+)$/.exec(args.find((a) => /issues\\/comments\\/\\d+$/.test(a)) ?? "") : null;
 if (single !== null) {
-  // A comment's update or removal, on whichever pull request's file holds it.
+  // A comment's update or removal, on whichever pull request's file holds it; an update is refused while comment-edit-fail exists.
   const id = Number(single[1]);
   const method = args[args.indexOf("-X") + 1];
+  if (method === "PATCH" && fs.existsSync(F + "/comment-edit-fail")) { process.stderr.write("gh: Resource not accessible by integration (HTTP 403)\\n"); process.exit(1); }
   const input = method === "PATCH" ? JSON.parse(fs.readFileSync(0, "utf8")) : null;
   for (const name of fs.readdirSync(F).filter((n) => /^comments-\\d+\\.json$/.test(n))) {
     const all = JSON.parse(fs.readFileSync(F + "/" + name, "utf8"));
@@ -270,7 +272,7 @@ if (file === null) { process.stdout.write(JSON.stringify({ ok: false, error: { c
 answer(JSON.parse(fs.readFileSync(F + "/" + file, "utf8")));
 `;
 
-/** The drive the wrapper starts in tests: it records how it was started and exits with `drive-exit`'s code. */
+/** The drive the wrapper starts in tests: it records how it was started, runs while `drive-hold` exists, and exits with `drive-exit`'s code. */
 const FAKE_DRIVE = `const fs = require("node:fs");
 const F = process.env.DISPATCH_FAKE_DIR;
 fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
@@ -282,6 +284,8 @@ fs.appendFileSync(F + "/drive-runs.jsonl", JSON.stringify({
   anthropicKey: process.env.ANTHROPIC_API_KEY ?? null,
   openaiKey: process.env.OPENAI_API_KEY ?? null,
 }) + "\\n");
+const until = Date.now() + 60000;
+while (fs.existsSync(F + "/drive-hold") && Date.now() < until) Bun.sleepSync(50);
 process.exit(fs.existsSync(F + "/drive-exit") ? Number(fs.readFileSync(F + "/drive-exit", "utf8")) : 0);
 `;
 

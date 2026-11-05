@@ -394,10 +394,11 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 `claim` exits `3` when an earlier marker holds the follow-up, and `check`
 does when one has appeared since, so the run stops before it acts. Only a
 marker written by the dispatcher's own login or by an owner, member or
-collaborator counts. When a dispatched follow-up's pass ends, its result
-is kept in an outcome record per pull request that never expires, and the
-next run writes it onto the marker (`outcome: done` or `failed`), where
-another host reads it; a follow-up that failed, or whose marker names a
+collaborator counts. When a dispatched follow-up's pass ends, its wrapper
+writes the result onto the marker (`outcome: done` or `failed`), where
+another host reads it, and the next run writes it there when the wrapper
+could not; the result is also kept in an outcome record per pull request
+that never expires. A follow-up that failed, or whose marker names a
 launch record this machine no longer has and carries no answer, is notified
 once and never started again: delete its marker to have it run again. A pass that cannot finish without a person stops and
 ends its output with a line starting `Question:`; the notification carries
@@ -442,8 +443,11 @@ dispatching it with its own accounts. They coordinate through
 on the forge (`records.shared: forge`, the only medium today): before a host
 launches a drive it posts a launch claim on the pull request, a hidden-marker
 comment naming its launch record and the host, beside the launch record, and
-a follow-up's claim is its marker, which now names its host too. The host
-that made a claim writes its launch's end onto it at its next `--apply` run.
+a follow-up's claim is its marker, which now names its host too. A launch's
+end is on its claim as soon as the launch ends: the wrapper that ran it
+writes the end right after it records the exit. A write the forge refuses
+is one line on the wrapper's output; then, as for a wrapper killed before
+its write, the host's next `--apply` run writes the end instead.
 Every run reads every host's claims: a launch another host's claim holds is
 reported as held by that host and never started twice; a refusal, a re-drive
 of the same change or an arm at the same head another host made counts as

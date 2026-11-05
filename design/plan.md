@@ -248,52 +248,6 @@ in place from a local marketplace leaves that folder untouched, records the
 skip in the receipt and still runs the job, and a pinned machine or one with
 `upgrade: off` runs no upgrade.
 
-### 37. Records: one envelope, one registry, records shared across hosts
-
-The execution line's parts coordinate through the records each leaves
-behind, and most families of records have their own envelope, their own
-writer identity and their own versioning: the drive's state file carries no
-version, the dispatcher's database a schema version. A host keeps its launches and follow-up outcomes to itself, so a
-second host cannot see what another holds or finished.
-[design/records.md](records.md) has how it works: every record carries one
-envelope (`kind`, `v`, `key`, `writer`, `at`, `generation`) through one
-codec for a file and a hidden marker on the forge; a registry lists every
-kind and a gate keeps it complete; one identity and lease module
-(`plugin/shared/liveness.ts`); the machine records in SQLite through
-`plugin/shared/records/db.ts`, one database per component, with additive
-migrations and a minimum-reader version, the mailbox and handoff staying
-files in the working tree; one forge-claims module whose one rule is that
-the earliest trusted comment per key and generation wins, every outward act
-re-checking it; a `SharedRecords` interface, forge-backed first, so a
-second host sees who holds a launch and whether a follow-up ended, with one
-owner host per repository for the board, notifications and history rows;
-and the dispatcher reading the drive's exit codes from its terminal-state
-registry, one round counter, and mailbox directives addressed to a driver
-generation. No daemon or bus coordinates them
-([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). Built in the
-design's order; built so far: the envelope, the registry
-and its gate, the ledger and the follow-up marker carrying the envelope
-([plugin/RECORDS.md](../plugin/RECORDS.md)); the liveness module; the
-machine's records in SQLite, the drive's state among them; the forge
-claims (the takeover claim, the follow-up marker and the merge-ready
-announcement as claims of `plugin/shared/records/forge-claims.ts`); the
-dispatcher reading the drive's own records (its exit codes from the
-terminal-state registry, one review round record, and a mailbox stop addressed
-to a driver generation); and the records a second host reads (`SharedRecords`
-on the forge, a launch claim beside each drive's launch, the follow-up marker
-carrying its answer, and one owner host per repository).
-
-Done when every record kind the plugin keeps is registered and the gate
-fails an unregistered marker, state file or table; the identity read by a
-launch claim, a drive lease and a worktree hook comes from one module; the
-drive's machine state lives in its own SQLite database that an older plugin
-refuses only when a migration requires it; the takeover claim, the
-follow-up marker and the merge-ready announcement are arbitrated by one
-rule; a second host reading
-the forge refuses to launch a pull request another host holds and does not
-start a follow-up another host finished; and the dispatcher names no drive
-exit code of its own.
-
 ### 3. The kickoff family
 
 The greenfield kickoff becomes a living skill instead of a frozen seed, with
@@ -986,6 +940,25 @@ question names the person it waits on.
     ([CONTRIBUTING.md § Toolchain](../CONTRIBUTING.md#toolchain) records
     the gap), so a Windows host needs those steps in its own shell first,
     and the provider tried there once it has them.
+- **A control-plane service for the shared records.** The hosts that
+  dispatch one repository publish who holds a launch and how it ended on the
+  forge, and each reads the others' at its next tick
+  ([plugin/RECORDS.md](../plugin/RECORDS.md#on-the-forge-and-the-tracker)).
+  A small service with a database, which the hosts write to and a person
+  reads, not a message bus, joins as a second implementation behind the same
+  interface (`plugin/shared/records/shared.ts`) under its own
+  `records.shared` value. Build it when one of
+  [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md#when-to-reopen)'s
+  conditions holds: hosts dispatching one repository must see each other's
+  state within seconds rather than at their next tick, a nudge to a running
+  session needs a connection rather than a terminal keystroke, or someone
+  outside a host must be told that a dispatching host has stopped.
+- **The mailbox as every session's inbox.** The
+  [drive mailbox](../GLOSSARY.md) reaches a drive's driver only, and the
+  dispatcher's one nudge, the `continue` it types into a session whose usage
+  limit has reset, is a keystroke into that session's terminal. Open the
+  mailbox to every session the line starts once a second mechanical nudge
+  exists that needs it.
 - **Change-area consumer lint.** The `lint-consumers` check moves into the
   [change-areas skill](../plugin/skills/change-areas/README.md): the path
   lists in agent rules, hook configuration and CI workflow triggers checked

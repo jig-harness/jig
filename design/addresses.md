@@ -98,7 +98,7 @@ additive migration, so `last` is one lookup in a table that only grows.
 
 **Away from the machine that dispatched the work**, `ask` answers from the
 forge and the tracker: the state, what it waits on, the thread, and from
-the shared records of [item 37](records.md) which host holds a launch and
+the shared records of [item 37](../plugin/RECORDS.md) which host holds a launch and
 how the last one ended. The account, the session and whether the process
 is alive are that machine's to know, and `sources` says the launch records
 were not read.

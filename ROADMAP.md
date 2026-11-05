@@ -80,21 +80,6 @@ machine receives nothing. Help for every command and shell completion come
 from the same definitions that parse the command line, and the jobs a
 machine already installed keep running unchanged.
 
-### 37. Records every part of the line can read
-
-Jig's parts never share a process. They work together through what each
-leaves behind: a drive's state on the machine, its ledger on the pull
-request, the dispatcher's launch records. Every record says what it is,
-what it is about, who wrote it and when, in the same fields: its
-[record envelope](GLOSSARY.md). One list names every record, and Jig's
-checks catch unregistered hidden-marker literals, tagged drive state
-families and SQLite table declarations; review keeps other records in the list. Each tool keeps its
-machine records in a database of its own, which an older version reads
-unless a change requires the newer one. A second machine reads from the
-pull request who holds a session and whether a follow-up finished, so two
-machines do not start the same work. No resident service coordinates them,
-since every message has to outlive its sender anyway.
-
 ### 3. The kickoff family
 
 A `kickoff` skill that starts a new repository from nothing: requirements,
@@ -356,6 +341,13 @@ address to answer.
   for Herdr; and the tool and the launcher's Orca provider on Windows, where
   the tool's host steps (`sh`, `test`, `mkdir`) need the host's own shell
   first.
+- **A control-plane service for the shared records.** A small service with a
+  database joins the forge as a shared-record implementation when
+  [ADR-0013's conditions](docs/adr/ADR-0013-records-not-a-daemon.md#when-to-reopen)
+  hold. Those cover state shared within seconds, session nudges needing a
+  connection, and notification outside a host when it stops.
+- **The mailbox as every session's inbox.** Open the drive mailbox to every
+  session the execution line starts once a second mechanical nudge needs it.
 - **Change-area consumer lint.** The
   [change-areas skill](plugin/skills/change-areas/README.md) checks the path
   lists in agent rules, hook configuration and CI workflow triggers against
