@@ -232,6 +232,20 @@ describe("jig dispatch --apply follows up a merge", () => {
     expect(action?.evidence.question).toContain("which version?");
   });
 
+  it("keeps a question whose multi-byte character arrives split across two writes", async () => {
+    const { w } = fixture();
+    const [launched] = launches(await applyTick(w, false));
+    const id = String(launched?.record);
+    await waitFor("the pass", () => claudeRuns(w).length === 1);
+    writeFileSync(join(w.dir, "claude-split"), "");
+    writeFileSync(join(w.dir, "claude-said"), "Question: publish café?\n");
+    writeFileSync(join(w.dir, "claude-exit"), "1");
+    await waitFor("the exit", () => exitWritten(w, id));
+    const after = await applyTick(w, false);
+    const [action] = after.repos[0]?.actions ?? [];
+    expect(action?.evidence.question).toBe("publish café?");
+  });
+
   it("runs the pass with the permission settings of the host's user layer", async () => {
     const { w } = fixture();
     // Only the home directory places the user layer, and no other layer speaks.

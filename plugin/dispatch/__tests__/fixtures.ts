@@ -288,7 +288,16 @@ if (fs.existsSync(F + "/claude-stubborn")) {
 }
 const until = Date.now() + 60000;
 while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(50);
-if (fs.existsSync(F + "/claude-said")) process.stdout.write(fs.readFileSync(F + "/claude-said", "utf8"));
+if (fs.existsSync(F + "/claude-said")) {
+  const said = fs.readFileSync(F + "/claude-said");
+  // With \`claude-split\` present, the first multi-byte character is cut between two writes.
+  const cut = fs.existsSync(F + "/claude-split") ? said.findIndex((b) => b >= 0xc0) + 1 : 0;
+  if (cut > 0) {
+    process.stdout.write(said.subarray(0, cut));
+    Bun.sleepSync(300);
+  }
+  process.stdout.write(said.subarray(cut));
+}
 process.exit(Number(fs.existsSync(F + "/claude-exit") ? fs.readFileSync(F + "/claude-exit", "utf8") : 0) || 0);
 `;
 

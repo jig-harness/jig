@@ -63,7 +63,9 @@
  */
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { swallow } from "../shared/errors.ts";
+import { stopWindowsTree } from "../shared/process-tree.ts";
 import { captureIdentity } from "../shared/liveness.ts";
 import {
   driveExitClosesTab,
@@ -172,12 +174,22 @@ function runStage(
   return new Promise((settle) => {
     // A pass under a deadline leads its own process group, so the deadline reaches what the agent started too.
     const grouped = options.deadlineSec > 0 && process.platform !== "win32";
+    // Windows has no process group to signal; its tree is walked and ended by identity.
+    const treed = options.deadlineSec > 0 && process.platform === "win32";
     const child = spawn(argv[0] as string, argv.slice(1), {
       cwd,
       env,
       detached: grouped,
       stdio: options.keepOutput ? ["inherit", "pipe", "inherit"] : "inherit",
     });
+    const endWindowsTree = async () => {
+      if (!treed || child.pid === undefined) return;
+      try {
+        await stopWindowsTree(child.pid, 0);
+      } catch (error) {
+        swallow(error, "the pass's tree is gone or unreadable");
+      }
+    };
     const signalTree = (name: NodeJS.Signals) => {
       if (grouped && child.pid !== undefined) {
         try {
@@ -189,6 +201,8 @@ function runStage(
       }
       child.kill(name);
     };
+    // A multi-byte character can be split across chunks; the decoder holds its first bytes until the rest arrive.
+    const decoder = new StringDecoder("utf8");
     let line = "";
     let question = "";
     const endLine = () => {
@@ -199,7 +213,7 @@ function runStage(
     };
     let drained = !options.keepOutput;
     child.stdout?.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf8");
+      const text = decoder.write(chunk);
       if (!process.stdout.write(chunk)) {
         child.stdout?.pause();
         process.stdout.once("drain", () => child.stdout?.resume());
@@ -224,7 +238,12 @@ function runStage(
             `jig dispatch run: the pass ran past its ${options.deadlineSec}s deadline; stopping it`,
           );
           signalTree("SIGTERM");
-          timers.push(setTimeout(() => signalTree("SIGKILL"), STOP_GRACE_MS));
+          timers.push(
+            setTimeout(() => {
+              signalTree("SIGKILL");
+              void endWindowsTree();
+            }, STOP_GRACE_MS),
+          );
         }, options.deadlineSec * 1000),
       );
     let ended = false;
@@ -238,6 +257,7 @@ function runStage(
         const gone = Date.now() + DRAIN_MS;
         while (groupAlive(child.pid) && Date.now() < gone) await Bun.sleep(20);
       }
+      await endWindowsTree();
       for (const name of FORWARDED) process.off(name, forward);
       // The output's last bytes can follow the exit; a grandchild that keeps the pipe open is not waited for, and its pipe is let go.
       const until = Date.now() + DRAIN_MS;
@@ -245,6 +265,10 @@ function runStage(
       if (!drained) {
         child.stdout?.removeAllListeners("data");
         child.stdout?.destroy();
+      }
+      for (const part of decoder.end().split("\n")) {
+        const room = QUESTION_PREFIX.length + QUESTION_CHARS - line.length;
+        if (room > 0) line += part.slice(0, room);
       }
       endLine();
       settle({
