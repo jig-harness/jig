@@ -1,10 +1,12 @@
 /**
- * The page's disclosures and its term popovers.
+ * The page's disclosures and its hints: popovers that say what a word, a chip
+ * or a panel means.
  */
 import { Collapsible } from "@base-ui/react/collapsible";
 import { Popover } from "@base-ui/react/popover";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { CopyButton } from "./copy.tsx";
+import { sourceMeaning, stageMeaning } from "./status.ts";
 import type { EvidenceRow } from "./view.ts";
 
 /** The element popups render into, so they keep the page's tokens and width rules. */
@@ -53,12 +55,24 @@ export function Pips({ on }: { on: boolean[] }) {
     ));
 }
 
-/** A term and what it means, opened by a tap, a click or keyboard focus; hover alone reveals nothing. */
-export function Term({
-  word,
+/** How long a pointer rests on a hint before it opens, and stays away before it closes. */
+const HOVER_OPEN_MS = 200;
+const HOVER_CLOSE_MS = 150;
+
+/**
+ * A hint: a trigger and what it means, opened by hovering, a tap, a click or
+ * keyboard focus, so a phone with no hover reaches it too.
+ */
+export function Hint({
+  label,
+  className,
+  trigger,
   children,
 }: {
-  word: string;
+  /** The popup's accessible name, and the trigger's when `trigger` is not text. */
+  label: string;
+  className: string;
+  trigger: ReactNode;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -66,12 +80,16 @@ export function Term({
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
-        className="termBtn"
+        className={className}
+        openOnHover
+        delay={HOVER_OPEN_MS}
+        closeDelay={HOVER_CLOSE_MS}
+        aria-label={typeof trigger === "string" ? undefined : label}
         onFocus={(event) => {
           if (event.currentTarget.matches(":focus-visible")) setOpen(true);
         }}
       >
-        {word}
+        {trigger}
       </Popover.Trigger>
       <Popover.Portal container={root}>
         <Popover.Positioner
@@ -83,7 +101,7 @@ export function Term({
         >
           <Popover.Popup
             className="pop"
-            aria-label={word}
+            aria-label={label}
             initialFocus={false}
             finalFocus={false}
           >
@@ -92,5 +110,70 @@ export function Term({
         </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>
+  );
+}
+
+/** A term and what it means. */
+export function Term({
+  word,
+  children,
+}: {
+  word: string;
+  children: ReactNode;
+}) {
+  return (
+    <Hint className="termBtn" label={word} trigger={word}>
+      {children}
+    </Hint>
+  );
+}
+
+/** A stage's chip, which says what the stage does. */
+export function StageHint({ mark, stage }: { mark: string; stage: string }) {
+  return (
+    <Hint
+      className="chipBtn"
+      label={`Stage ${stage}`}
+      trigger={
+        <span className="chip">
+          <b>{mark}</b>
+          {stage}
+        </span>
+      }
+    >
+      <b>{stage}</b>: {stageMeaning(stage)}
+    </Hint>
+  );
+}
+
+/** A queued target's source chip, which says where it came from. */
+export function SourceHint({ source }: { source: string }) {
+  return (
+    <Hint
+      className="chipBtn"
+      label={`Source ${source}`}
+      trigger={<span className="chip">{source}</span>}
+    >
+      <b>{source}</b>: {sourceMeaning(source)}
+    </Hint>
+  );
+}
+
+/** The `?` beside a panel's heading: what the panel shows and how to read it. */
+export function PanelHelp({
+  panel,
+  children,
+}: {
+  panel: string;
+  children: ReactNode;
+}) {
+  return (
+    <Hint
+      className="helpBtn"
+      label={`About ${panel}`}
+      trigger={<span aria-hidden="true">?</span>}
+    >
+      {children}
+    </Hint>
   );
 }

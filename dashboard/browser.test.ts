@@ -1,8 +1,10 @@
 /**
  * The page in a real browser, against the real server over each scenario: what
  * only a rendered page can show. Every scenario at a phone's width and a
- * laptop's, light and dark, for overflow, requests, errors and the strip's fact;
- * then the behaviours one scenario at a time.
+ * laptop's, light and dark, in its Now and History views, for overflow,
+ * requests, errors and the strip's fact; then the layout, the reads and the
+ * filters one scenario at a time. What a person opens and copies is
+ * `browser-interactions.test.ts`.
  *
  * It drives Chromium through `playwright-core`, from `JIG_CHROMIUM`, `JIG_TEST_CHROMIUM` or the
  * Playwright cache. Where none is found the checks cannot run and are skipped
@@ -11,11 +13,10 @@
  * read as a pass. Set `DASHBOARD_SHOTS=<dir>` to also write one image per
  * scenario, width and theme.
  */
-import { afterAll, describe, expect, it } from "bun:test";
-import { type Browser, chromium, type Page } from "playwright-core";
+import { describe, expect } from "bun:test";
+import type { Page } from "playwright-core";
 import {
   bottomOf,
-  chromiumPath,
   CONNECTION_LOST,
   loseServer,
   open,
@@ -26,71 +27,22 @@ import {
   shortControls,
   shows,
   start,
-  staysAway,
   until,
   type Watched,
 } from "./browser-page.ts";
+import {
+  browserSuite,
+  LAPTOP,
+  openView,
+  PHONE,
+  TIMEOUT,
+  TOKEN,
+} from "./browser-suite.ts";
 import { SCENARIOS, type ScenarioId } from "./fixtures.ts";
-import { FIXTURE_TOKEN } from "./serve-fixture.ts";
 
-const TOKEN = FIXTURE_TOKEN;
-const TIMEOUT = 60_000;
-
-const PHONE = { width: 390, height: 844 };
-const LAPTOP = { width: 1440, height: 900 };
-
-let browser: Browser | undefined;
-let missing = "";
-const executablePath = chromiumPath();
-if (executablePath === null) missing = "no Chromium in the Playwright cache";
-else
-  try {
-    browser = await chromium.launch({ executablePath, headless: true });
-  } catch (error) {
-    missing =
-      error instanceof Error ? (error.message.split("\n")[0] ?? "") : "";
-  }
-
-afterAll(async () => {
-  await browser?.close();
-});
-
-if (!browser && process.env.JIG_REQUIRE_BROWSER === "1")
-  it("a browser is available where one is required", () => {
-    // JIG_REQUIRE_BROWSER=1 makes a missing browser fail instead of skip; the
-    // failure names why none was found.
-    expect({ chromium: missing }).toEqual({ chromium: "found" });
-  });
-else if (!browser)
-  console.warn(
-    `dispatch-dashboard browser checks: skipped (${missing}). Set JIG_REQUIRE_BROWSER=1 to make this an error.`,
-  );
-
-const browserIt = browser ? it : it.skip;
-
-/** The browser, inside a check that only runs when there is one. */
-function requireBrowser(): Browser {
-  if (browser === undefined) throw new Error("no browser");
-  return browser;
-}
-
-const running = new Map<ScenarioId, Promise<Served>>();
-
-function served(scenario: ScenarioId): Promise<Served> {
-  const known = running.get(scenario);
-  if (known !== undefined) return known;
-  const started = start(scenario);
-  running.set(scenario, started);
-  return started;
-}
-
-afterAll(async () => {
-  for (const server of running.values()) await (await server).stop();
-});
+const { browserIt, requireBrowser, served } = await browserSuite();
 
 const WRONG_TOKEN = "wrong-token";
-/** Longer than any hover delay a popover would open after. */
-const HOVER_WATCH_MS = 600;
 const LONG_VIEW =
   "window=30d&repo=example-org/web&class=gates+failed&reason=conflict";
 
@@ -100,17 +52,17 @@ function addressOf(server: Served, scenario: ScenarioId): string {
   return scenario === "long" ? `${server.url}&${LONG_VIEW}` : server.url;
 }
 
-/** What each scenario's strip must say. */
+/** How fresh each scenario's strip must say the page is. */
 const TICK_FACT: Record<ScenarioId, RegExp> = {
-  quiet: /Tick 16:45, 2 min ago\s*next due 16:50/,
-  loud: /Tick 16:45, 2 min ago\s*next due 16:50/,
-  hung: /Tick 16:45, 2 min ago\s*next due 16:50/,
-  queue: /Tick 16:45, 2 min ago\s*next due 16:50/,
-  stopped: /Tick 16:00, 47 min ago\s*next was due 16:05, overdue 42 min/,
-  gone: /Tick 16:40, 7 min ago\s*server not answering/,
-  token: /Newest tick not known\s*the server refused this request/,
-  empty: /No tick yet\s*no receipt on this host/,
-  long: /Tick 16:45, 2 min ago\s*next due 16:50/,
+  quiet: /^Updated 2 min ago$/,
+  loud: /^Updated 2 min ago$/,
+  hung: /^Updated 2 min ago$/,
+  queue: /^Updated 2 min ago$/,
+  stopped: /^Updated 47 min ago · overdue$/,
+  gone: /^Updated 7 min ago · offline$/,
+  token: /^Not read: the server refused$/,
+  empty: /^No tick yet$/,
+  long: /^Updated 2 min ago$/,
 };
 
 /** What each scenario's answer must say first. */
@@ -165,14 +117,16 @@ async function openCell(
   return { server, watched };
 }
 
-/** Waits until a cell's strip states its tick and the page has settled. */
+/** Waits until a cell's strip says how fresh it is and the page has settled. */
 async function cellSettled(page: Page, scenario: ScenarioId): Promise<void> {
-  await shows(page, ".tick b");
+  await shows(page, ".tick .fresh");
   await until("the strip states its fact", async () =>
-    TICK_FACT[scenario].test((await page.locator(".tick").innerText()) ?? ""),
+    TICK_FACT[scenario].test(
+      ((await page.locator(".tick").innerText()) ?? "").trim(),
+    ),
   );
   if (ANSWER[scenario] !== undefined) await shows(page, ".answer");
-  if (scenario !== "token") await shows(page, "#history h2");
+  if (scenario !== "token") await shows(page, ".pLine h2");
   await settled(page);
 }
 
@@ -237,6 +191,18 @@ describe("every scenario, at each width and in each theme", () => {
                 );
               await expectFrame(page, viewport, theme);
               if (name === "phone") await expectPhone(page, viewport, scenario);
+              if (scenario !== "token") {
+                await openView(page, "History");
+                await shows(page, "#history h2");
+                await settled(page);
+                await shoot(
+                  page,
+                  `${scenario}-${viewport.width}-${theme}-history`,
+                );
+                await expectFrame(page, viewport, theme);
+                if (name === "phone")
+                  expect(await shortControls(page)).toEqual([]);
+              }
               expect(watched.otherOrigins).toEqual([]);
               expect(watched.problems).toEqual([]);
             } finally {
@@ -250,7 +216,7 @@ describe("every scenario, at each width and in each theme", () => {
 
 describe("the desktop fold", () => {
   browserIt(
-    "loud at 1440: every panel's first screen ends within 900 px",
+    "loud at 1440: every panel of Now ends its first screen within 900 px",
     async () => {
       const server = await served("loud");
       const { page, context } = await open(
@@ -260,14 +226,13 @@ describe("the desktop fold", () => {
         LAPTOP,
       );
       try {
-        await shows(page, ".pWindow .fbtn");
+        await shows(page, ".pQueue");
         await settled(page);
         // What needs you runs past the fold by design: its heading and first rows must stand above it.
         expect(await bottomOf(page, ".pNeeds .need")).toBeLessThanOrEqual(900);
         expect(await page.locator(".pNeeds .need").count()).toBeGreaterThan(5);
         expect(await bottomOf(page, ".pLine")).toBeLessThanOrEqual(900);
         expect(await bottomOf(page, ".pQueue")).toBeLessThanOrEqual(900);
-        expect(await bottomOf(page, ".pWindow")).toBeLessThanOrEqual(900);
       } finally {
         await context.close();
       }
@@ -278,7 +243,7 @@ describe("the desktop fold", () => {
 
 describe("the reshaped page", () => {
   browserIt(
-    "with no needs the answer is a plain line and the line takes the wide column",
+    "with no needs the answer is a plain line and what is running takes the wide column",
     async () => {
       const server = await served("quiet");
       const { page, context } = await open(
@@ -342,14 +307,14 @@ describe("the server gone", () => {
       const { page, context, problems } = await open(
         requireBrowser(),
         server.origin,
-        server.url,
+        `${server.url}&view=history`,
         LAPTOP,
         "light",
         [CONNECTION_LOST],
       );
       try {
-        await shows(page, ".pNeeds");
         await shows(page, ".selBtn");
+        await settled(page);
         expect(await page.locator(".banner").count()).toBe(0);
         expect(await page.locator(".selBtn").first().isDisabled()).toBe(false);
 
@@ -364,18 +329,13 @@ describe("the server gone", () => {
         expect(banner).toContain("Last read 16:47; retrying every 60 s.");
         expect(banner).toContain("jig dispatch dashboard");
 
-        expect(await page.locator(".pNeeds .need").count()).toBeGreaterThan(5);
         expect(await page.locator(".row").count()).toBeGreaterThan(0);
-        expect(await page.locator(".tick").innerText()).toContain(
-          "server not answering",
-        );
-        expect(await page.locator(".answer h1").innerText()).toBe(
-          "8 needed a person at the 16:40 tick.",
+        expect((await page.locator(".tick").innerText()).trim()).toBe(
+          "Updated 7 min ago · offline",
         );
         expect(await page.locator(".colophon").innerText()).toContain(
           "last read 16:47 host time",
         );
-
         for (const selector of [".selBtn", ".fields input", ".pWindow .fbtn"]) {
           const controls = page.locator(selector);
           const count = await controls.count();
@@ -383,6 +343,13 @@ describe("the server gone", () => {
           for (let i = 0; i < count; i++)
             expect(await controls.nth(i).isDisabled()).toBe(true);
         }
+
+        await openView(page, "Now");
+        await shows(page, ".pNeeds");
+        expect(await page.locator(".pNeeds .need").count()).toBeGreaterThan(5);
+        expect(await page.locator(".answer h1").innerText()).toBe(
+          "8 needed a person at the 16:40 tick.",
+        );
         expect(problems).toEqual([]);
       } finally {
         await context.close();
@@ -480,7 +447,7 @@ describe("a long history", () => {
       const { page, context } = await open(
         requireBrowser(),
         server.origin,
-        `${server.url}&${LONG_VIEW}`,
+        `${server.url}&view=history&${LONG_VIEW}`,
         LAPTOP,
       );
       try {
@@ -522,7 +489,7 @@ describe("the filters", () => {
       const { page, context } = await open(
         requireBrowser(),
         server.origin,
-        server.url,
+        `${server.url}&view=history`,
         LAPTOP,
       );
       try {
@@ -550,6 +517,7 @@ describe("the filters", () => {
           async () => page.url().includes("reason=exit"),
         );
         expect(page.url()).toContain(`token=${TOKEN}`);
+        expect(page.url()).toContain("view=history");
         await until("the rows have narrowed", async () => {
           const meta = await page.locator(".meta").innerText();
           return meta.startsWith("5 rows");
@@ -598,7 +566,7 @@ describe("the filters", () => {
       const { page, context } = await open(
         requireBrowser(),
         server.origin,
-        server.url,
+        `${server.url}&view=history`,
         LAPTOP,
       );
       try {
@@ -640,9 +608,14 @@ describe("a host in another time zone", () => {
         await route.fulfill({ response, json: body });
       });
       try {
-        await page.goto(server.url);
+        await page.goto(`${server.url}&view=history`);
         await shows(page, ".row");
-        expect(await page.locator(".tick").innerText()).toContain("Tick 01:45");
+        await page.locator(".fresh").click();
+        await shows(page, ".pop");
+        expect(await page.locator(".pop").innerText()).toContain(
+          "the 01:45 tick",
+        );
+        await page.keyboard.press("Escape");
         const from = page.locator('input[type="datetime-local"]').first();
         await from.fill("2026-11-04T01:00");
         await until("the page asks for the instant", async () =>
@@ -665,230 +638,6 @@ describe("a host in another time zone", () => {
   );
 });
 
-describe("the disclosures", () => {
-  browserIt(
-    "a fold opens by keyboard and shows its evidence",
-    async () => {
-      const server = await served("quiet");
-      const { page, context } = await open(
-        requireBrowser(),
-        server.origin,
-        server.url,
-        LAPTOP,
-      );
-      try {
-        await shows(page, ".slot");
-        const fold = page.locator(".slot .foldBtn").first();
-        await fold.focus();
-        expect(await page.locator(".slot .kv").count()).toBe(0);
-        await page.keyboard.press("Enter");
-        await shows(page, ".slot .kv");
-        expect(await fold.getAttribute("aria-expanded")).toBe("true");
-        expect(await page.locator(".slot .kv").innerText()).toContain(
-          "Retry the webhook on a 5xx",
-        );
-        await page.keyboard.press("Space");
-        await until(
-          "the fold has closed",
-          async () => (await page.locator(".slot .kv").count()) === 0,
-        );
-      } finally {
-        await context.close();
-      }
-    },
-    TIMEOUT,
-  );
-
-  browserIt(
-    "a log row opens by keyboard to its whole reason",
-    async () => {
-      const server = await served("quiet");
-      const { page, context } = await open(
-        requireBrowser(),
-        server.origin,
-        server.url,
-        LAPTOP,
-      );
-      try {
-        await shows(page, ".rowSum");
-        const row = page.locator(".rowSum").first();
-        await row.focus();
-        await page.keyboard.press("Enter");
-        await shows(page, ".rowBody");
-        expect(await row.getAttribute("aria-expanded")).toBe("true");
-        expect(await page.locator(".rowBody").innerText()).toContain(
-          "exit 0 (converged)",
-        );
-      } finally {
-        await context.close();
-      }
-    },
-    TIMEOUT,
-  );
-
-  browserIt(
-    "a term opens by tap or focus, and hover alone reveals nothing",
-    async () => {
-      const server = await served("quiet");
-      const { page, context } = await open(
-        requireBrowser(),
-        server.origin,
-        server.url,
-        LAPTOP,
-      );
-      try {
-        await shows(page, ".termBtn");
-        const term = page.locator(".termBtn", { hasText: "wall" });
-        await term.hover();
-        expect(await staysAway(page, ".pop", HOVER_WATCH_MS)).toBe(true);
-
-        await term.click();
-        await shows(page, ".pop");
-        expect(await page.locator(".pop").innerText()).toContain("usage limit");
-        await page.keyboard.press("Escape");
-        await until(
-          "the term has closed",
-          async () => (await page.locator(".pop").count()) === 0,
-        );
-
-        await page.locator(".pLine h2").click();
-        await page.keyboard.press("Tab");
-        await shows(page, ".pop");
-        expect(await page.locator(".pop").innerText()).toContain(
-          "concurrent-session",
-        );
-      } finally {
-        await context.close();
-      }
-    },
-    TIMEOUT,
-  );
-
-  browserIt(
-    "the whole decision renders its Markdown",
-    async () => {
-      const server = await served("loud");
-      const { page, context } = await open(
-        requireBrowser(),
-        server.origin,
-        server.url,
-        PHONE,
-      );
-      try {
-        await shows(page, ".need");
-        await page
-          .locator(".need .foldBtn", { hasText: "The whole decision" })
-          .first()
-          .click();
-        await shows(page, ".quote.md");
-        expect(await page.locator(".quote.md h2").first().innerText()).toBe(
-          "Question",
-        );
-        expect(await page.locator(".quote.md li").count()).toBe(2);
-      } finally {
-        await context.close();
-      }
-    },
-    TIMEOUT,
-  );
-
-  browserIt(
-    "on plain http, where the browser has no clipboard API, Copy still takes the answer line",
-    async () => {
-      const server = await served("loud");
-      // A name that is not loopback makes this a real insecure context.
-      const plain = await chromium.launch({
-        executablePath: executablePath ?? "",
-        headless: true,
-        args: ["--host-resolver-rules=MAP dispatch.invalid 127.0.0.1"],
-      });
-      try {
-        const address = server.url.replace("127.0.0.1", "dispatch.invalid");
-        const { page } = await open(
-          plain,
-          new URL(address).origin,
-          address,
-          PHONE,
-        );
-        await shows(page, ".need");
-        expect(
-          await page.evaluate(() => [
-            window.isSecureContext,
-            "clipboard" in navigator,
-          ]),
-        ).toEqual([false, false]);
-        const copy = page.getByRole("button", {
-          name: "Copy the answer line for PR #456",
-        });
-        await copy.click();
-        await until(
-          "the button says it copied",
-          async () => (await copy.innerText()) === "Copied",
-        );
-        expect(await page.locator(".clip").inputValue()).toBe(
-          "answer PRRT_x1: ",
-        );
-        expect(await page.locator(".say").innerText()).toBe("Copied");
-        await until(
-          "the button is back to its word",
-          async () => (await copy.innerText()) === "Copy answer line",
-        );
-      } finally {
-        await plain.close();
-      }
-    },
-    TIMEOUT,
-  );
-});
-
-describe("a phone with everything open", () => {
-  browserIt(
-    "evidence, long values and the filter's options still fit and stay tall enough",
-    async () => {
-      const server = await served("hung");
-      const { page, context, problems } = await open(
-        requireBrowser(),
-        server.origin,
-        server.url,
-        PHONE,
-      );
-      try {
-        await shows(page, ".slot");
-        await page
-          .getByRole("button", { name: /^Show all/ })
-          .first()
-          .click();
-        const folds = page.locator(".foldBtn[aria-expanded='false']");
-        for (let left = await folds.count(); left > 0; left--)
-          await folds.first().click();
-        await page.locator(".rowSum").first().click();
-        await shows(page, ".rowBody");
-        const overflow = await page.evaluate(
-          () =>
-            document.documentElement.scrollWidth -
-            document.documentElement.clientWidth,
-        );
-        expect(overflow).toBeLessThanOrEqual(0);
-        expect(await shortControls(page)).toEqual([]);
-
-        await page.locator(".selBtn").first().click();
-        await shows(page, '[role="option"]');
-        const heights = await page.evaluate(() =>
-          [...document.querySelectorAll('[role="option"]')].map(
-            (option) => option.getBoundingClientRect().height,
-          ),
-        );
-        expect(heights.length).toBeGreaterThan(1);
-        for (const height of heights) expect(height).toBeGreaterThanOrEqual(44);
-        expect(problems).toEqual([]);
-      } finally {
-        await context.close();
-      }
-    },
-    TIMEOUT,
-  );
-});
-
 describe("what fails", () => {
   browserIt(
     "a coded failure says its reason and keeps the last data",
@@ -897,7 +646,7 @@ describe("what fails", () => {
       const { page, context, problems } = await open(
         requireBrowser(),
         server.origin,
-        server.url,
+        `${server.url}&view=history`,
         LAPTOP,
         "light",
         [/status of 503/],
@@ -923,7 +672,7 @@ describe("what fails", () => {
         expect(banner).toContain("the outcome log cannot be read");
         expect(banner).toContain("log-unreadable");
         expect(await page.locator(".row").count()).toBe(rows);
-        expect(await page.locator(".pLine").count()).toBe(1);
+        expect(await page.locator(".pWindow").count()).toBe(1);
 
         // A new question that fails keeps the last answer too.
         await page.getByRole("button", { name: "7 days" }).click();
@@ -961,12 +710,11 @@ describe("what fails", () => {
         const panels = await page.locator(".defect").count();
         expect(panels).toBe(1);
         expect(await page.locator(".defect").innerText()).toContain(
-          "The line hit a bug and stopped here",
+          "What is running hit a bug and stopped here",
         );
         expect(await page.locator(".defect .copy").count()).toBe(1);
         expect(await page.locator(".defect").innerText()).not.toContain(" at ");
         expect(await page.locator(".pQueue").count()).toBe(1);
-        await shows(page, ".row");
         await shows(page, ".answer");
 
         await page.unroute("**/state*");
