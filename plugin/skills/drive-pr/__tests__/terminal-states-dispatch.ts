@@ -94,10 +94,17 @@ function lineOf(sourceFile: ts.SourceFile, node: ts.Node): number {
   );
 }
 
-/** `expr` without the parentheses around it. */
-function unparenthesized(expr: ts.Expression): ts.Expression {
+/** `expr` without the parentheses and the type-only wrappers (`as`, `satisfies`, `<T>`, `!`) around it. */
+function unwrapped(expr: ts.Expression): ts.Expression {
   let current = expr;
-  while (ts.isParenthesizedExpression(current)) current = current.expression;
+  while (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isTypeAssertion(current) ||
+    ts.isNonNullExpression(current)
+  )
+    current = current.expression;
   return current;
 }
 
@@ -105,7 +112,7 @@ function unparenthesized(expr: ts.Expression): ts.Expression {
 function accessedName(expr: ts.Expression): string | null {
   if (ts.isPropertyAccessExpression(expr)) return expr.name.text;
   if (ts.isElementAccessExpression(expr)) {
-    const key = unparenthesized(expr.argumentExpression);
+    const key = unwrapped(expr.argumentExpression);
     return ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)
       ? key.text
       : null;
@@ -115,7 +122,7 @@ function accessedName(expr: ts.Expression): string | null {
 
 /** `exit` or `code` when `expr` is a property or a variable of that name, else `null`. */
 function exitOperand(operand: ts.Expression): "exit" | "code" | null {
-  const expr = unparenthesized(operand);
+  const expr = unwrapped(operand);
   const name = accessedName(expr);
   return name === "exit" || name === "code" ? name : null;
 }
@@ -156,7 +163,7 @@ function collectionSource(
   const kind = node.expression.text;
   const argument = node.arguments?.[0];
   if ((kind !== "Set" && kind !== "Map") || argument === undefined) return null;
-  const first = unparenthesized(argument);
+  const first = unwrapped(argument);
   return ts.isArrayLiteralExpression(first)
     ? { kind, elements: first.elements }
     : null;
@@ -197,8 +204,8 @@ function noteCollection(node: ts.Node, note: Note): void {
     const key =
       collection.kind === "Set"
         ? element
-        : ts.isArrayLiteralExpression(unparenthesized(element))
-          ? (unparenthesized(element) as ts.ArrayLiteralExpression).elements[0]
+        : ts.isArrayLiteralExpression(unwrapped(element))
+          ? (unwrapped(element) as ts.ArrayLiteralExpression).elements[0]
           : undefined;
     if (key !== undefined)
       note(key, DRIVE_EXIT_CODES, `in a new ${collection.kind}`);
@@ -218,7 +225,7 @@ function noteCase(node: ts.Node, note: Note): void {
 function objectKey(node: ts.Node): NodeFinding | null {
   if (!ts.isPropertyAssignment(node)) return null;
   const key = ts.isComputedPropertyName(node.name)
-    ? unparenthesized(node.name.expression)
+    ? unwrapped(node.name.expression)
     : node.name;
   if (!ts.isNumericLiteral(key)) return null;
   const value = Number(key.text);

@@ -127,6 +127,19 @@ const C = new Map([([18, "stopped"])]);
     ).toEqual([8, 9, 11, 13, 16, 18]);
   });
 
+  test("is found through type-only wrappers on the collection, its entries and its keys", async () => {
+    expect(
+      await valuesIn(`
+const A = new Set([11, 13] as const);
+const B = new Map([[16, "quota wall"]] as const);
+const C = new Map([[18, "stopped"] as const]);
+const D = new Set([(20 satisfies number)]);
+const E = new Map([[(9 as number), "x"]]);
+function f(l: { exit: number }) { return (l as { exit: number }).exit === 8; }
+`),
+    ).toEqual([11, 13, 16, 18, 20, 9, 8]);
+  });
+
   test("is not found through a bracket access whose key is not a literal", async () => {
     expect(
       await valuesIn(
