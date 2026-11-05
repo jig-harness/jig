@@ -387,6 +387,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.144.0] - 2026-11-05
+
+### Added
+
+- **`jig dispatch line --json`** prints what the newest tick found as one JSON document: the answer the dashboard's `GET /state` gives for the same state database, from the same read, so a program beside the dispatcher (an editor's plugin, a status bar) reads the line without opening the database. Its `line` is versioned by its own `version` field. It takes no lock and never creates the database: with no database or no line yet it prints the answer with `line` set to `null` and exits 0; a line that cannot be read exits 1 with one line on standard error ([plugin/README.md](plugin/README.md#the-dispatcher)).
+
 ## [0.143.0] - 2026-11-05
 
 ### Added
@@ -5349,7 +5355,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.143.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.144.0...HEAD
+[0.144.0]: https://github.com/jig-harness/jig/compare/v0.143.0...v0.144.0
 [0.143.0]: https://github.com/jig-harness/jig/compare/v0.142.1...v0.143.0
 [0.142.1]: https://github.com/jig-harness/jig/compare/v0.142.0...v0.142.1
 [0.142.0]: https://github.com/jig-harness/jig/compare/v0.141.0...v0.142.0
