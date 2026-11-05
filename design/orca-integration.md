@@ -111,8 +111,12 @@ with the code that writes it. The hook refuses a launch into a worktree gc
 holds, with the reason ("jig gc is removing this worktree"), and notes
 every launch it lets through in the same record, so gc's re-read sees a
 launch that passed just before the admission even before Orca's registry
-lists it, and keeps that worktree. gc releases its admission once
-`orca worktree rm` returns. The hook decides before any awaited host call
+lists it, and keeps that worktree. gc releases its admission on every
+exit: once `orca worktree rm` returns, and when a proof, a teardown step or
+the removal fails or throws. The admission names its owner by the
+machine-wide holder record, so a gc that crashed leaves one the hook and the
+next gc see is abandoned and ignore, while a live gc's admission still
+excludes. The hook decides before any awaited host call
 and within Orca's 2 s deadline, since an awaited call ahead of its refusal
 can fail or time out and let the launch through.
 
@@ -120,10 +124,14 @@ The guard fails open: a hook that throws, runs past its deadline or whose
 worker is down lets the launch through, as Orca's default for a hook
 (`onError` left at `pass`) does. A guard that failed closed would refuse
 every agent launch in Orca, Jig's or not, whenever the plugin's worker
-crashed. So gc trusts the guard only while the plugin's heartbeat in the
-guard record is fresh. With a stale heartbeat, or no plugin, gc collects as
-it does without the guard, with the registry as its last check, and its
-receipt says the collection was unguarded.
+crashed. So gc treats the guard as best-effort protection, never as an
+exclusion it can certify. A fresh heartbeat shows the worker was alive, not
+that it is alive when `orca worktree rm` runs, and a single hook that throws
+passes a launch while heartbeats continue; the registry and the
+process-holder check stay gc's last checks either way. With a stale
+heartbeat, or no plugin, gc collects as it does without the guard, and its
+receipt says the collection was unguarded; with a fresh one the receipt says
+guarded, meaning the launches the hook mediated.
 
 What the guard does not cover: an agent a person types into a plain shell
 in the worktree is not a launch Orca makes, and no hook sees it. gc's
@@ -180,7 +188,10 @@ that can refuse the removal and has a deadline long enough for a
 repository's remove hook, which the 2 s of Orca's other hooks is not.
 Through it the plugin runs the remove hook and the reflection park, and
 refuses the removal when either fails, as the workspace tool's `remove`
-does.
+does. gc's own removal has already run both, so it marks the removal it
+makes in the guard record, and the hook, finding the mark for that
+worktree, skips the teardown and lets the removal through: each removal runs
+its teardown once.
 
 **Skills as a contribution point, when its format is defined.** Orca's
 plugin manifest reserves `contributes.skills` and refuses a value in it.
@@ -240,7 +251,10 @@ workspace a person removed ends at the next tick, not the next interval.
 The worktree's folder is gone by then, so the plugin finds the repository
 from what it recorded when it learned the workspace. On `workspace.created`
 it logs the workspace and records its folder and repository, and starts
-nothing; the table above says when the create hook joins. One setting names the `jig` command; the plugin calls
+nothing. At startup the worker seeds the same record from Orca's existing
+workspaces, so one created before the plugin was enabled or the worker
+restarted resolves too; when a removed workspace still resolves to no
+repository, the machine's timer tick processes it; the table above says when the create hook joins. One setting names the `jig` command; the plugin calls
 the installed `jig` plugin and bundles nothing, so Jig's rules stay in Jig
 and ship through Jig's own release channel.
 
@@ -284,7 +298,7 @@ spike on fixture data, shot in light and dark, picks the drawing mode and
 finds what fits the sidebar's width before the first view is built. A
 panel has no network: it asks its worker through `plugin.request` (host
 API 1.2), and the worker runs `jig` as the person. The panel stores
-nothing, and has three views:
+nothing, and has these views:
 
 - **Inbox**, where it opens: everything waiting on the person across the
   machine file's repositories, read from the newest tick's line. That is

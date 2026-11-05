@@ -283,8 +283,10 @@ to the person; its Herdr provider starts the configured agent.
 tooling supports, beside Herdr, the runtime it targets first. A small
 plugin Orca loads runs a dispatcher tick the moment an agent stops or
 waits. On an Orca host the plugin will also refuse to start an agent in a
-worktree `jig gc` is removing. No agent then starts between gc's last check
-and the removal. The plugin will show what waits on a person in Orca's
+worktree `jig gc` is removing, for every launch Orca makes through its
+launchers, so a launch gc's last check could miss is turned away. The
+protection is best-effort: a restored session, a hook that fails and a
+plugin that is down are not covered. The plugin will show what waits on a person in Orca's
 status bar and in a panel. The panel opens on that person's inbox, with the
 dispatch board beside it. The dispatcher will read each account's usage
 from Orca's command line once Orca offers it. The plugin is Orca-bound.
