@@ -274,9 +274,12 @@ generation. No daemon or bus coordinates them
 design's order; built so far: the envelope, the registry
 and its gate, the ledger and the follow-up marker carrying the envelope
 ([plugin/RECORDS.md](../plugin/RECORDS.md)); the liveness module; the
-machine's records in SQLite, the drive's state among them; and the forge
+machine's records in SQLite, the drive's state among them; the forge
 claims (the takeover claim, the follow-up marker and the merge-ready
-announcement as claims of `plugin/shared/records/forge-claims.ts`).
+announcement as claims of `plugin/shared/records/forge-claims.ts`); and the
+dispatcher reading the drive's own records (its exit codes from the
+terminal-state registry, one review round record, and a mailbox stop addressed
+to a driver generation).
 
 Done when every record kind the plugin keeps is registered and the gate
 fails an unregistered marker, state file or table; the identity read by a
