@@ -715,7 +715,8 @@ describe.skipIf(
     });
     expect(line(gc(f, ["--collect", "--json"]))).toMatchObject({
       outcome: "refused",
-      reason: "Orca's registry reports an agent working in the worktree",
+      reason:
+        "Orca's registry reports an agent working in the worktree; unguarded: the Orca plugin has written no heartbeat",
     });
     expect(existsSync(f.tree)).toBe(true);
     expect(existsSync(join(f.root, "hook-ran"))).toBe(false);

@@ -289,11 +289,13 @@ export async function runtimeWorktreeProof(
     return { state: "finding", reason: "worktree root is not a directory" };
   const registry = await orcaLiveness(runtime.orca, path);
   const proof = registry ?? (await worktreeProof(path, policy, idleDays, true));
+  const guard = guardLabel();
   return {
     ...proof,
+    reason: `${proof.reason}; ${guard.reason}`,
     details: {
       ...(isMapping(proof.details) ? proof.details : {}),
-      guard: guardLabel().label,
+      guard: guard.label,
     },
   };
 }

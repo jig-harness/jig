@@ -157,7 +157,9 @@ file in the same directory, named so it does not end in `.json` (Jig's start
 with `.` and end in `.tmp`), then renames it into place; nobody edits a file
 in place or reads, changes and rewrites a shared one. gc publishes an
 admission with a link instead of a rename, so a second collector's link fails
-rather than replacing it.
+rather than replacing it. It replaces an admission whose holder is dead only
+while it holds a lock file created exclusively beside it
+(`admissions/.<key>.json.reclaim`), after reading the admission again.
 
 | File | Written by | Kind |
 | ---- | ---------- | ---- |
@@ -210,9 +212,11 @@ reads, so a launch and a collection that overlap are seen by at least one of
 them. A refused launch's marker keeps the worktree for this collection,
 which costs a later run and loses nothing.
 
-**Reading.** A heartbeat that is missing, does not parse, or has a `kind`,
-`v` or envelope a reader does not know counts as absent. An admission or a
-launch marker in that state counts as present: the plugin refuses the launch,
+**Reading.** A heartbeat that is missing, does not parse, lacks its `pid` or
+`pluginVersion`, or has a `kind`, `v` or envelope a reader does not know
+counts as absent. An admission or a
+launch marker in that state (a launch marker also when its `path`,
+`workspaceId` or `agent` is missing) counts as present: the plugin refuses the launch,
 and gc keeps the worktree and leaves the file for a person to inspect.
 
 **Constants.**

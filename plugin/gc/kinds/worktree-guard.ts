@@ -36,6 +36,17 @@ export function guardLabel(root = guardRoot()): {
   };
 }
 
+/** When each guard directory was last swept: a run collects many checkouts, and one sweep serves them. */
+const swept = new Map<string, number>();
+const SWEEP_EVERY_MS = 600_000;
+
+function sweepOncePerRun(root: string): void {
+  const last = swept.get(root);
+  if (last !== undefined && Date.now() - last < SWEEP_EVERY_MS) return;
+  swept.set(root, Date.now());
+  sweepLaunches(root);
+}
+
 /**
  * Collect one worktree Orca reports at `path` under gc's admission. `body`
  * removes it; the `launched` it is given says, when read, why a launch
@@ -59,19 +70,25 @@ export async function guardedCollection(
     details,
   });
   if (path === null) return kept("Orca's path of the worktree is unknown");
-  sweepLaunches(root);
+  sweepOncePerRun(root);
   const admission = admit(path, root);
   if (!admission.ok) return kept(admission.failure.reason);
+  // The heartbeat is read again at each launch check, the last one being the
+  // checkpoint before removal, and the receipt records that observation.
+  let observed = guard;
   try {
     const early = launchVeto(admission.value, root);
     if (early !== null) return kept(early);
-    const done = await body(() => launchVeto(admission.value, root));
+    const done = await body(() => {
+      observed = guardLabel(root);
+      return launchVeto(admission.value, root);
+    });
     return {
       ...done,
-      reason: `${done.reason}; ${guard.reason}`,
+      reason: `${done.reason}; ${observed.reason}`,
       details: {
         ...(isMapping(done.details) ? done.details : details),
-        guard: guard.label,
+        guard: observed.label,
       },
     };
   } finally {

@@ -19,7 +19,8 @@
  * as Orca reports it, unnormalised. Every file carries the record envelope
  * (`records/envelope.ts`) and is published whole: written to a temporary
  * file in its directory and renamed (or, for an admission, linked) into
- * place, so a reader never sees a partial one.
+ * place, so a reader never sees a partial one. A stale admission is replaced
+ * under a `.<key>.json.reclaim` lock created exclusively beside it.
  *
  * What a reader makes of a file it cannot read fails closed for gc: an
  * admission or a launch marker that does not parse, or names a version this
@@ -37,7 +38,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { errnoCode, swallow } from "./errors.ts";
 import {
   decodeIdentity,
@@ -91,6 +92,28 @@ function stagedBeside(dir: string, name: string): string {
   return join(dir, `.${name}.${process.pid}.${randomUUID()}.tmp`);
 }
 
+/** What is wrong with `payload`'s kind-specific fields, or `null` when each is present with its type. */
+function missingFields(
+  payload: Record<string, unknown>,
+  fields: Record<string, "string" | "number">,
+): string | null {
+  for (const [name, type] of Object.entries(fields)) {
+    const value = payload[name];
+    const good =
+      type === "string"
+        ? typeof value === "string" && value !== ""
+        : typeof value === "number" && Number.isInteger(value);
+    if (!good) return `its ${name} is missing or not a ${type}`;
+  }
+  return null;
+}
+
+const LAUNCH_FIELDS = {
+  path: "string",
+  workspaceId: "string",
+  agent: "string",
+} as const;
+
 // The heartbeat --------------------------------------------------------------
 
 /** Whether the plugin guards launches now, and why gc says so. */
@@ -119,8 +142,15 @@ export function guardState(root = guardRoot(), now = Date.now()): GuardState {
     return unguarded(
       `the Orca plugin's heartbeat does not read (${read.ok ? `version ${read.value.envelope.v}` : read.failure.reason})`,
     );
-  const age = Math.round((now - Date.parse(read.value.envelope.at)) / 1000);
-  if (Math.abs(age) * 1000 > HEARTBEAT_FRESH_MS)
+  const shape = missingFields(read.value.payload, {
+    pid: "number",
+    pluginVersion: "string",
+  });
+  if (shape !== null)
+    return unguarded(`the Orca plugin's heartbeat does not read (${shape})`);
+  const elapsed = now - Date.parse(read.value.envelope.at);
+  const age = Math.round(elapsed / 1000);
+  if (Math.abs(elapsed) > HEARTBEAT_FRESH_MS)
     return unguarded(`the Orca plugin's heartbeat is ${age} s old`);
   return {
     guarded: true,
@@ -271,7 +301,14 @@ function publish(
   return replaceDead(staged, file, text.value);
 }
 
-/** Replace the admission `text` at `file` with `staged` when its holder is judged dead. */
+/**
+ * Replace the admission `text` at `file` with `staged` when its holder is
+ * judged dead. Two collectors can read the same dead admission, so the
+ * replacement runs under a reclaim lock created exclusively beside it: the
+ * holder of the lock reads the admission again, replaces it only while it is
+ * still the one judged, and a contender that finds the lock taken or the
+ * admission changed is refused.
+ */
 function replaceDead(
   staged: string,
   file: string,
@@ -290,15 +327,42 @@ function replaceDead(
       "held",
       `another collection holds ${file} (${who}: ${verdict.ok ? verdict.value.reason : verdict.failure.reason})`,
     );
+  const lock = join(dirname(file), `.${basename(file)}.reclaim`);
   try {
-    renameWithRetry(staged, file);
-    return ok(true);
+    writeFileSync(lock, `${encodeIdentity(ownIdentity())}\n`, {
+      flag: "wx",
+      mode: 0o600,
+    });
   } catch (error) {
+    if (errnoCode(error) === "EEXIST")
+      return failed(
+        "held",
+        `another collection is replacing the stale admission ${file}; if no collection runs, remove ${lock} after inspection`,
+      );
     return failed(
       "unwritable",
       `the stale admission ${file} cannot be replaced`,
       error,
     );
+  }
+  try {
+    const now = readText(file);
+    if (!now.ok) return now;
+    if (now.value !== null && now.value !== text)
+      return failed("held", `another collection took ${file} first`);
+    if (now.value !== null) rmSync(file, { force: true });
+    linkSync(staged, file);
+    return ok(true);
+  } catch (error) {
+    if (errnoCode(error) === "EEXIST")
+      return failed("held", `another collection took ${file} first`);
+    return failed(
+      "unwritable",
+      `the stale admission ${file} cannot be replaced`,
+      error,
+    );
+  } finally {
+    rmSync(lock, { force: true });
   }
 }
 
@@ -308,18 +372,44 @@ function replaceDead(
  * Why a launch marker keeps the worktree `admission` admits, or `null`: a
  * marker whose `at` is within `LAUNCH_SETTLING_MS` of `now` (an agent Orca's
  * registry may not list yet), or not before the admission (a launch the hook
- * let through while gc held it). A marker that cannot be read, does not parse
- * or names a version this one does not know keeps it too.
+ * let through while gc held it). A marker that cannot be read, does not parse,
+ * lacks a field of its kind or names a version this one does not know keeps it
+ * too. A sweep interrupted while it held the marker aside leaves it under
+ * another name; that copy counts when the canonical file is absent.
  */
 export function launchVeto(
   admission: Pick<Admission, "key" | "at">,
   root = guardRoot(),
   now = Date.now(),
 ): string | null {
-  const file = join(root, "launches", `${admission.key}.json`);
+  const dir = join(root, "launches");
+  const name = `${admission.key}.json`;
+  const canonical = vetoOf(join(dir, name), admission, now);
+  if (canonical !== undefined) return canonical;
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir).filter((entry) =>
+      entry.startsWith(`.${name}.sweep.`),
+    );
+  } catch (error) {
+    swallow(error, "no launch markers are listed; none is set aside");
+  }
+  for (const entry of names) {
+    const aside = vetoOf(join(dir, entry), admission, now);
+    if (typeof aside === "string") return aside;
+  }
+  return null;
+}
+
+/** A marker's veto, `null` when it keeps nothing, `undefined` when there is no such file. */
+function vetoOf(
+  file: string,
+  admission: Pick<Admission, "key" | "at">,
+  now: number,
+): string | null | undefined {
   const text = readText(file);
   if (!text.ok) return `the launch marker ${file} cannot be read`;
-  if (text.value === null) return null;
+  if (text.value === null) return undefined;
   const read = decode(text.value, LAUNCH_KIND);
   if (!read.ok)
     return `the launch marker ${file} does not read (${read.failure.reason})`;
@@ -328,6 +418,9 @@ export function launchVeto(
     return `the launch marker ${file} is version ${v}, which this version of Jig does not read`;
   if (key !== admission.key)
     return `the launch marker ${file} names another worktree's key`;
+  const shape = missingFields(read.value.payload, LAUNCH_FIELDS);
+  if (shape !== null)
+    return `the launch marker ${file} does not read (${shape})`;
   const launched = Date.parse(at);
   if (launched >= Date.parse(admission.at))
     return `Orca launched an agent in the worktree at ${at}, after gc's admission`;
@@ -342,7 +435,11 @@ function launchedAt(file: string): number | null {
   const text = readText(file);
   if (!text.ok || text.value === null) return null;
   const read = decode(text.value, LAUNCH_KIND);
-  if (read.ok && read.value.envelope.v === GUARD_VERSION)
+  if (
+    read.ok &&
+    read.value.envelope.v === GUARD_VERSION &&
+    missingFields(read.value.payload, LAUNCH_FIELDS) === null
+  )
     return Date.parse(read.value.envelope.at);
   try {
     return statSync(file).mtimeMs;
@@ -390,8 +487,9 @@ function sweepOne(
     return false;
   }
   const stillOld = old(launchedAt(aside));
-  if (!stillOld) restore(aside, file);
-  remove(aside);
+  // A marker rewritten meanwhile stays where launchVeto reads it, under the
+  // aside's name, until it is back or a newer one stands in its place.
+  if (stillOld || restore(aside, file)) remove(aside);
   return stillOld;
 }
 
@@ -415,11 +513,13 @@ function remove(file: string): boolean {
 }
 
 /** Put a marker rewritten during the sweep back, unless a newer one took its place. */
-function restore(aside: string, file: string): void {
+function restore(aside: string, file: string): boolean {
   try {
     linkSync(aside, file);
+    return true;
   } catch (error) {
-    if (errnoCode(error) !== "EEXIST")
-      swallow(error, "the rewritten marker could not be put back");
+    if (errnoCode(error) === "EEXIST") return true;
+    swallow(error, "the rewritten marker stays aside, where it still counts");
+    return false;
   }
 }

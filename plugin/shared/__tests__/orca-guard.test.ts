@@ -156,6 +156,22 @@ describe("the heartbeat", () => {
     heartbeat(root, new Date(now), { v: 2 });
     expect(guardState(root, now).guarded).toBe(false);
   });
+
+  it("is unguarded without the kind's own fields", () => {
+    const root = scratch();
+    heartbeat(root, new Date(now), { pid: undefined });
+    expect(guardState(root, now).guarded).toBe(false);
+    heartbeat(root, new Date(now), { pluginVersion: undefined });
+    expect(guardState(root, now).guarded).toBe(false);
+  });
+
+  it("compares the raw age to the window, not the rounded one", () => {
+    const root = scratch();
+    heartbeat(root, new Date(now - HEARTBEAT_FRESH_MS - 499));
+    expect(guardState(root, now).guarded).toBe(false);
+    heartbeat(root, new Date(now - HEARTBEAT_FRESH_MS));
+    expect(guardState(root, now).guarded).toBe(true);
+  });
 });
 
 describe("the admission", () => {
@@ -236,13 +252,19 @@ describe("the admission", () => {
     }
   });
 
-  it("admits exactly one of several collectors racing for one worktree", async () => {
-    const root = scratch();
-    const signals = scratch();
-    const script = join(signals, "contender.ts");
-    writeFileSync(
-      script,
-      `import { existsSync, writeFileSync } from "node:fs";
+  it.each([
+    ["an empty slot", false],
+    ["a dead holder's admission", true],
+  ])(
+    "admits exactly one of several collectors racing for %s",
+    async (_name, seeded) => {
+      const root = scratch();
+      if (seeded) admit(PATH, root, new Date(), deadHolder());
+      const signals = scratch();
+      const script = join(signals, "contender.ts");
+      writeFileSync(
+        script,
+        `import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { admit } from ${JSON.stringify(MODULE)};
 const [root, signals, index] = process.argv.slice(2);
@@ -258,36 +280,64 @@ writeFileSync(join(signals, "result-" + index + ".json"), JSON.stringify(admissi
 until("done");
 if (admission.ok) admission.value.release();
 `,
-    );
-    const count = 6;
-    const children = Array.from({ length: count }, (_, i) =>
-      Bun.spawn([process.execPath, script, root, signals, String(i)], {
-        stdout: "pipe",
-        stderr: "pipe",
-      }),
-    );
-    writeFileSync(join(signals, "go"), "");
-    const deadline = Date.now() + 30_000;
-    const results = () =>
-      readdirSync(signals).filter((name) => name.startsWith("result-"));
-    while (results().length < count && Date.now() < deadline)
-      await Bun.sleep(20);
-    writeFileSync(join(signals, "done"), "");
-    for (const child of children) await expectSpawnExited(child, 0);
-    const answers = results().map((name) =>
-      JSON.parse(readFileSync(join(signals, name), "utf8")),
-    );
-    expect(answers).toHaveLength(count);
-    expect(answers.filter((a) => a.ok)).toHaveLength(1);
-    expect(answers.filter((a) => !a.ok).map((a) => a.code)).toEqual(
-      Array(count - 1).fill("held"),
-    );
-    expect(readdirSync(join(root, "admissions"))).toEqual([]);
-  }, 60_000);
+      );
+      const count = 6;
+      const children = Array.from({ length: count }, (_, i) =>
+        Bun.spawn([process.execPath, script, root, signals, String(i)], {
+          stdout: "pipe",
+          stderr: "pipe",
+        }),
+      );
+      writeFileSync(join(signals, "go"), "");
+      const deadline = Date.now() + 30_000;
+      const results = () =>
+        readdirSync(signals).filter((name) => name.startsWith("result-"));
+      while (results().length < count && Date.now() < deadline)
+        await Bun.sleep(20);
+      writeFileSync(join(signals, "done"), "");
+      for (const child of children) await expectSpawnExited(child, 0);
+      const answers = results().map((name) =>
+        JSON.parse(readFileSync(join(signals, name), "utf8")),
+      );
+      expect(answers).toHaveLength(count);
+      expect(answers.filter((a) => a.ok)).toHaveLength(1);
+      expect(answers.filter((a) => !a.ok).map((a) => a.code)).toEqual(
+        Array(count - 1).fill("held"),
+      );
+      expect(readdirSync(join(root, "admissions"))).toEqual([]);
+    },
+    60_000,
+  );
 });
 
 describe("launch markers", () => {
   const admittedAt = "2026-11-05T12:00:00.000Z";
+  it("keep the worktree when a field of the kind is missing, however old", () => {
+    const root = scratch();
+    launchMarker(root, new Date(Date.parse(admittedAt) - DAY_MS), {
+      agent: undefined,
+    });
+    const admission = { key: guardKey(PATH), at: admittedAt };
+    expect(launchVeto(admission, root, Date.parse(admittedAt))).toContain(
+      "does not read",
+    );
+  });
+
+  it("still count under the name a sweep set them aside by", () => {
+    const root = scratch();
+    const file = launchMarker(root, new Date(Date.parse(admittedAt) + 1000));
+    const aside = join(
+      root,
+      "launches",
+      `.${guardKey(PATH)}.json.sweep.1.abc.tmp`,
+    );
+    renameSync(file, aside);
+    const admission = { key: guardKey(PATH), at: admittedAt };
+    expect(launchVeto(admission, root, Date.parse(admittedAt))).toContain(
+      "after gc's admission",
+    );
+  });
+
   const admitted = Date.parse(admittedAt);
   const admission = { key: guardKey(PATH), at: admittedAt };
 
