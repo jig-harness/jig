@@ -93,6 +93,11 @@ const ROOT_PAGES: readonly Link[] = [
     route: "/whats-new/",
     note: "every release of the jig plugin, and the open roadmap",
   },
+  {
+    title: "Code statistics",
+    route: "/stats/",
+    note: "what Jig's own repository is made of, by area, kind, language and module, counted by the code-stats skill at the commit the site was built from",
+  },
 ];
 
 /** The pages of each section that are not one-per-module, skill or principle. */
