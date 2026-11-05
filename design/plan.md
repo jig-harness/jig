@@ -824,7 +824,7 @@ since the last start, and either stays pending while the machine-wide
 tick lock refuses it and survives an event that arrives while that tick
 processes the repository.
 
-### 36. One look for Jig's pages
+### 38. One look for Jig's pages
 
 The pages Jig's tooling draws pick their own colours: the dispatch
 dashboard wears Jig's look in light and dark, the decision, explainer and
@@ -860,7 +860,7 @@ and each genre's contrast test holds its light and dark pairs.
   mark, the rest of the colours derived from the accent so that contrast
   holds in both modes, applied by the dashboard's server and written into
   each sheet. Its shape is in [design/ui-theming.md](ui-theming.md#a-repositorys-theme);
-  build it after item 36, when a team that uses Jig asks for it.
+  build it after item 38, when a team that uses Jig asks for it.
 - **More skills.** `scaffolding-update` (keeps agent instruction files in step
   with decisions and audits them; M0), with its paths as configuration; and a
   SOLID-principles review skill, once its generic procedure is separated from

@@ -287,7 +287,7 @@ dispatcher will read each account's usage from Orca's command line once
 Orca offers it, and a small plugin Orca loads will run a dispatcher tick
 the moment an agent stops or waits. The plugin is Orca-bound.
 
-### 36. One look for Jig's pages
+### 38. One look for Jig's pages
 
 The pages Jig's tooling draws will share one look: the dispatch dashboard,
 the decision, explainer and audit sheets, and the code-stats report. Each

@@ -13,7 +13,7 @@ team that wants the pages to look like its own tools has nothing to change.
 With this built, every page wears one look in both modes and carries the
 mark, and a team can give its pages its own accent colour and mark.
 
-This is the design of [plan.md](plan.md) item 36 (one look) and of the
+This is the design of [plan.md](plan.md) item 38 (one look) and of the
 plan's later item, a repository's theme. The dashboard's icon is built:
 `dashboard/build.ts` inlines the adaptive mark.
 
