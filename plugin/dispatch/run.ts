@@ -236,7 +236,12 @@ function runStage(
       detached: grouped,
       stdio: options.keepOutput ? ["inherit", "pipe", "inherit"] : "inherit",
     });
-    const watch = treed ? watchWindowsTree(child.pid) : NO_WATCH;
+    const watch = treed
+      ? watchWindowsTree(
+          child.pid,
+          () => child.exitCode === null && child.signalCode === null,
+        )
+      : NO_WATCH;
     let treeEnded = true;
     const endWindowsTree = async () => {
       treeEnded = await watch.end();
