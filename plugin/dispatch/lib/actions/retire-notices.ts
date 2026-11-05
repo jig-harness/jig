@@ -23,16 +23,12 @@
  * sends a cause again.
  */
 import type { Database } from "bun:sqlite";
-import { gitIdentityEnv, run } from "../../../shared/proc.ts";
 import { carries } from "../notices.ts";
-import { probeFailure } from "../text.ts";
+import { retirementCheckoutVeto } from "../retire-checkout.ts";
 import type { Workspace } from "../runtime/port.ts";
 import { stateDb } from "../state.ts";
 import type { RepoReport, RetireOutcome } from "../types.ts";
 import { type ApplyState, enforcedDeadlineMs, outOfTime } from "./launch.ts";
-
-/** Seconds each git call that proves the checkout holds nothing of a person's may take. */
-const GIT_TIMEOUT_SEC = 30;
 
 /** What the retire step reads from the tick's notifications. */
 export interface RetireInput {
@@ -92,28 +88,6 @@ function standing(report: RepoReport, input: RetireInput): string | null {
   if (named !== undefined) return `${named} still stands`;
   const kept = input.records.find((r) => r.workspace === w.path && !r.lasting);
   return kept === undefined ? null : `${kept.key} still has its record`;
-}
-
-/** Why git shows something of a person's in the checkout; `null` when it shows none. */
-async function gitHolds(
-  path: string,
-  remaining: () => number,
-): Promise<string | null> {
-  const git = (args: string[]) =>
-    run(["git", "-C", path, "-c", "core.fsmonitor=false", ...args], {
-      timeoutSec: Math.max(
-        0.001,
-        Math.min(GIT_TIMEOUT_SEC, remaining() / 1000),
-      ),
-      env: gitIdentityEnv(),
-    });
-  const status = await git(["status", "--porcelain"]);
-  if (status.code !== 0) return probeFailure("git status", status);
-  if (status.stdout.trim() !== "") return "git reports changes in it";
-  const held = await git(["branch", "-r", "--contains", "HEAD"]);
-  if (held.code !== 0)
-    return probeFailure("git branch --remotes --contains HEAD", held);
-  return held.stdout.trim() === "" ? "its commit is on no remote branch" : null;
 }
 
 /** Why the workspace stays, or the reason it is removed. */
@@ -183,7 +157,7 @@ export async function retireNotices(
       : enforcedDeadlineMs(state.machine) -
         (Date.now() - state.startedAt) -
         state.machine.runtimeTimeoutMs;
-  const held = await gitHolds(w.path, remaining);
+  const held = await retirementCheckoutVeto(w.path, remaining);
   if (held !== null) {
     report.noticesWorkspace = outcome("refused", `${held}; left for a person`);
     return;
@@ -204,8 +178,10 @@ export async function retireNotices(
       lost: true,
       detail: error instanceof Error ? error.message : String(error),
     }));
+  // A refused or lost removal may have observed an unread card after the tick.
+  // Start a fresh linger rather than reusing a time no longer vouched for.
+  clearRead(db, repo);
   if (receipt.ok) {
-    clearRead(db, repo);
     db.query("DELETE FROM notices_content WHERE workspace = ?").run(w.path);
   }
   report.noticesWorkspace = receipt.ok

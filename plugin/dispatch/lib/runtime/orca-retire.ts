@@ -6,13 +6,15 @@
  * card is read again (`orca worktree show`): a comment or an unread mark
  * other than the one the tick decided on means a message arrived or was
  * read meanwhile, and nothing is removed. One deadline covers the lock's
- * wait and every call.
+ * wait and every call. Orca has no conditional removal command; the final
+ * listing comparison narrows but cannot eliminate a concurrent external edit.
  */
 import { gitIdentityEnv, run } from "../../../shared/proc.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
-import { call } from "./orca-comment.ts";
+import { call, withCardDeadline } from "./orca-comment.ts";
 import { probeFailure } from "../text.ts";
+import { retirementCheckoutVeto } from "../retire-checkout.ts";
 import type { RuntimeReceipt } from "./port.ts";
 
 export async function orcaRetire(
@@ -21,14 +23,13 @@ export async function orcaRetire(
   timeoutMs: number,
   lock: CardLock = withCardLock,
 ): Promise<RuntimeReceipt> {
-  const start = performance.now();
-  const remaining = (): number => timeoutMs - (performance.now() - start);
   let locked: { value: RuntimeReceipt } | null;
   try {
-    locked = await lock(
+    locked = await withCardDeadline(
       target.path,
-      () => retireUnlocked(target, expected, remaining),
-      { waitMs: Math.max(0, Math.min(timeoutMs, 5000)) },
+      timeoutMs,
+      (remaining) => retireUnlocked(target, expected, remaining),
+      lock,
     );
   } catch (error) {
     return {
@@ -87,6 +88,7 @@ async function retireUnlocked(
   const safe = await safety(
     target,
     expected.branch ?? "jig-dispatch-notices",
+    expected,
     remaining,
   );
   if (safe !== null)
@@ -109,39 +111,40 @@ async function retireUnlocked(
 async function safety(
   target: { id: string; path: string },
   branch: string,
+  expected: { comment: string; unread: boolean },
   remaining: () => number,
 ): Promise<string | null> {
-  for (const [args, accepts, why] of [
+  if (remaining() <= 0) return "the runtime deadline passed";
+  const head = await run(
     [
-      ["symbolic-ref", "--short", "HEAD"],
-      (text: string) => text.trim() === branch,
-      "its branch changed",
+      "git",
+      "-C",
+      target.path,
+      "-c",
+      "core.fsmonitor=false",
+      "symbolic-ref",
+      "--short",
+      "HEAD",
     ],
-    [
-      ["status", "--porcelain"],
-      (text: string) => text.trim() === "",
-      "git reports changes in it",
-    ],
-    [
-      ["branch", "-r", "--contains", "HEAD"],
-      (text: string) => text.trim() !== "",
-      "its commit is on no remote branch",
-    ],
-  ] as const) {
-    if (remaining() <= 0) return "the runtime deadline passed";
-    const done = await run(
-      ["git", "-C", target.path, "-c", "core.fsmonitor=false", ...args],
-      {
-        env: gitIdentityEnv(),
-        timeoutSec: Math.max(0.001, remaining() / 1000),
-      },
-    );
-    if (done.code !== 0) return probeFailure(`git ${args.join(" ")}`, done);
-    if (!accepts(done.stdout)) return why;
-  }
+    { env: gitIdentityEnv(), timeoutSec: Math.max(0.001, remaining() / 1000) },
+  );
+  if (head.code !== 0) return probeFailure("git symbolic-ref", head);
+  if (head.stdout.trim() !== branch) return "its branch changed";
+  const veto = await retirementCheckoutVeto(target.path, remaining);
+  if (veto !== null) return veto;
+  if (remaining() <= 0) return "the runtime deadline passed";
   const listed = await call(["worktree", "ps", "--limit", "2000"], remaining());
   if (!listed.ok) return listed.why;
-  const ps = listed.result;
+  return listingVeto(listed.result, target, branch, expected);
+}
+
+/** Validate the final whole runtime listing against the card the tick authorized. */
+function listingVeto(
+  ps: unknown,
+  target: { id: string; path: string },
+  branch: string,
+  expected: { comment: string; unread: boolean },
+): string | null {
   if (
     !isRecord(ps) ||
     ps.truncated !== false ||
@@ -164,5 +167,7 @@ async function safety(
     row.unverifiableTerminalCount !== 0
   )
     return "its identity, branch, agents or terminals changed";
+  if (row.comment !== expected.comment || row.unread !== expected.unread)
+    return "its comment or unread mark changed before removal";
   return null;
 }

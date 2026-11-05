@@ -190,6 +190,10 @@ const MIGRATIONS: readonly Migration[] = [
       comment TEXT NOT NULL
     );`,
   },
+  {
+    additive: true,
+    sql: "ALTER TABLE notices_content ADD COLUMN repo TEXT;",
+  },
 ];
 
 /** The schema version this plugin writes. */

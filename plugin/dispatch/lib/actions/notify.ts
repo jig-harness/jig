@@ -65,7 +65,11 @@ import type {
   RepoTarget,
 } from "../types.ts";
 import { type ApplyState, openWithinBudget, outOfTime } from "./launch.ts";
-import { ownsComment, recordComment } from "./notices-content.ts";
+import {
+  ownsComment,
+  pruneComments,
+  recordComment,
+} from "./notices-content.ts";
 import { retireNotices } from "./retire-notices.ts";
 
 /** The branch of a repository's notices workspace. */
@@ -292,6 +296,7 @@ async function sendTo(
   causes: Cause[],
   suppress: (cause: Cause, workspace: string) => void,
   root: string,
+  repo: string,
 ): Promise<NotifyOutcome[]> {
   const already = causes.filter((c) =>
     carries(workspace.comment, c.notice.key),
@@ -330,7 +335,7 @@ async function sendTo(
   const known = !workspace.unread || ownsComment(workspace, root);
   const receipt = await deliver(state, workspace, message);
   if (known && receipt.ok && receipt.comment === expected)
-    recordComment(workspace.path, expected, root);
+    recordComment(workspace, expected, root, repo);
   for (const c of send) {
     const why = notArrived(receipt, c);
     if (why === null) suppress(c, workspace.path);
@@ -489,6 +494,7 @@ export async function applyNotices(
   lingerMs: number,
 ): Promise<void> {
   const root = state.root ?? stateRoot();
+  if (sessions.ok) pruneComments(repo.slug, sessions.workspaces, root);
   const causes = report.actions.filter(isCause);
   const written = await sendNotices(state, repo, report, sessions, {
     causes,
@@ -567,7 +573,7 @@ async function sendNotices(
   );
   for (const { workspace, causes: mine } of groups.values())
     report.notifications.push(
-      ...(await sendTo(state, workspace, mine, suppressed, root)),
+      ...(await sendTo(state, workspace, mine, suppressed, root, repo.slug)),
     );
   return new Set(groups.keys());
 }

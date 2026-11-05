@@ -7,7 +7,7 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { statePath } from "../lib/state.ts";
@@ -98,6 +98,26 @@ async function opened(w: World): Promise<string> {
 }
 
 describe("jig dispatch --apply retires the notices workspace", () => {
+  it("prunes ownership snapshots when their workspace leaves the runtime", async () => {
+    const w = fixture();
+    await opened(w);
+    const before = new Database(statePath(dispatchState(w)));
+    before.run(
+      "INSERT INTO notices_content (workspace, comment, repo) VALUES (?, ?, ?)",
+      ["/other-repository/notices", "other notices", "other/repo"],
+    );
+    before.close();
+    w.setWorkspaces([{ path: w.repo, branch: "feature/other" }]);
+    await tick(w);
+    const db = new Database(statePath(dispatchState(w)));
+    try {
+      expect(db.query("SELECT workspace FROM notices_content").all()).toEqual([
+        { workspace: "/other-repository/notices" },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
   it("closes a new notices workspace's terminals, and keeps it while its cause stands unread", async () => {
     const w = fixture();
     const path = await opened(w);
@@ -289,6 +309,117 @@ describe("jig dispatch --apply retires the notices workspace", () => {
     expect(outcome(await tick(w))?.outcome).toBe("kept");
     expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
   });
+
+  for (const change of [{ comment: "Personal notes" }, { unread: true }])
+    it(`keeps card changes after the first reread: ${JSON.stringify(change)}`, async () => {
+      const w = fixture(`${CONFIG}dispatch:\n  notices_linger: 0s\n`);
+      const path = await opened(w);
+      read(w, path);
+      const row = psRows(w).find((r) => r.path === path);
+      if (!row) throw new Error("missing workspace");
+      writeFileSync(
+        join(w.dir, "orca-show-card.json"),
+        JSON.stringify({
+          id: `repo-1::${path}`,
+          path,
+          comment: row.comment,
+          isUnread: false,
+        }),
+      );
+      writeFileSync(join(w.dir, "orca-on-show.json"), JSON.stringify(change));
+      expect(outcome(await tick(w))?.outcome).toBe("kept");
+      expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
+    });
+
+  it("restarts linger when the runtime observes an unread card", async () => {
+    const w = fixture();
+    const path = await opened(w);
+    read(w, path);
+    await tick(w);
+    backdate(w, 61 * 60_000);
+    writeFileSync(
+      join(w.dir, "orca-on-show.json"),
+      JSON.stringify({ unread: true }),
+    );
+    expect(outcome(await tick(w))?.outcome).toBe("kept");
+    read(w, path);
+    expect(outcome(await tick(w))?.detail).toContain("dispatch.notices_linger");
+    expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
+  });
+
+  for (const hidden of ["ignored", "assume-unchanged", "skip-worktree"])
+    it(`preserves personal files hidden by ${hidden}`, async () => {
+      const w = fixture(`${CONFIG}dispatch:\n  notices_linger: 0s\n`);
+      writeFileSync(join(w.repo, "tracked.txt"), "original\n");
+      for (const args of [
+        ["add", "tracked.txt"],
+        [
+          "-c",
+          "user.name=Tester",
+          "-c",
+          "user.email=test@example.com",
+          "commit",
+          "-qm",
+          "seed tracked file",
+        ],
+        ["push", "-q", "origin", "main"],
+      ])
+        expectSpawnExit(
+          Bun.spawnSync(["git", "-C", w.repo, ...args], { env: w.env }),
+          0,
+        );
+      const path = await opened(w);
+      if (hidden === "ignored") {
+        const exclude = Bun.spawnSync([
+          "git",
+          "-C",
+          path,
+          "rev-parse",
+          "--git-path",
+          "info/exclude",
+        ]);
+        expectSpawnExit(exclude, 0);
+        writeFileSync(
+          resolve(path, exclude.stdout.toString().trim()),
+          "personal.env\n",
+        );
+        writeFileSync(join(path, "personal.env"), "personal secret\n");
+      } else {
+        const files = Bun.spawnSync(["git", "-C", path, "ls-files", "-z"]);
+        expectSpawnExit(files, 0);
+        const file = files.stdout.toString().split("\0")[0] as string;
+        const flagged = Bun.spawnSync([
+          "git",
+          "-C",
+          path,
+          "update-index",
+          `--${hidden}`,
+          "--",
+          file,
+        ]);
+        expectSpawnExit(flagged, 0);
+        writeFileSync(join(path, file), "personal changes\n");
+      }
+      read(w, path);
+      const row = psRows(w).find((r) => r.path === path);
+      if (!row) throw new Error("missing workspace");
+      const child = join(w.root, "retire-runtime.ts");
+      writeFileSync(
+        child,
+        `
+        import { orcaRetire } from ${JSON.stringify(new URL("../lib/runtime/orca-retire.ts", import.meta.url).pathname)};
+        console.log(JSON.stringify(await orcaRetire(
+          ${JSON.stringify({ id: `repo-1::${path}`, path })},
+          ${JSON.stringify({ comment: row.comment, unread: false })}, 5000,
+        )));
+      `,
+      );
+      const runtime = await w.dispatch([], child);
+      expectSpawnExit(runtime, 0);
+      expect(JSON.parse(runtime.stdout)).toMatchObject({ ok: false });
+      expect(outcome(await tick(w))?.outcome).toBe("refused");
+      expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
+    });
 
   it("reports an initial terminal close failure with its safe manual retry", async () => {
     const w = fixture();
