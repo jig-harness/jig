@@ -279,11 +279,3 @@ export function driverRecordRow(
     .query("SELECT * FROM driver_records WHERE clone = ? AND pr = ?")
     .get(drive.clone, pr) as Record<string, unknown> | null;
 }
-
-/** Every stop row of the clone. */
-export function stopRows(stateDir: string): Record<string, unknown>[] {
-  const drive = driveDb(stateDir);
-  return drive.db
-    .query("SELECT * FROM stops WHERE clone = ? ORDER BY lock, nonce")
-    .all(drive.clone) as Record<string, unknown>[];
-}

@@ -38,8 +38,13 @@
  *      usage error
  *   3  --place: the PR is in another repository with no clone mapped; the
  *      command to run there is printed
+ *   4  --place in a pass of the running drive of that PR ($DRIVE_PR_TARGET
+ *      names it): a pass never arms its own drive; its driver attached the
+ *      tree at its start, and the pass works the round
  *   5  the PR is not open
- *  11  a live driver holds this working tree or the PR: nothing moved
+ *  11  a live driver holds this working tree or the PR: nothing moved. A
+ *      pass of the driver that holds both is not refused: it attaches under
+ *      its driver's locks
  */
 import { fail, runMain } from "./lib/cli.ts";
 import { AttachRefusal, attachOff, attachPr } from "./lib/attach.ts";
@@ -48,6 +53,7 @@ import {
   type PrRef,
   parsePrRef,
   placePr,
+  refersToCheckout,
 } from "./lib/attach-place.ts";
 
 const USAGE = "usage: attach-pr.ts <PR> [--place | --created]";
@@ -81,7 +87,26 @@ async function attachHere(args: Args): Promise<number> {
   return 11;
 }
 
+/**
+ * Whether this process is a pass of the running drive of PR `ref`: the number
+ * is the drive's, and a qualified reference names this checkout's repository.
+ */
+async function passOfDrive(ref: PrRef): Promise<boolean> {
+  const target = process.env.DRIVE_PR_TARGET ?? "";
+  return (
+    target !== "" &&
+    Number(target) === Number(ref.pr) &&
+    (await refersToCheckout(ref, process.cwd()))
+  );
+}
+
 async function place(args: Args): Promise<number> {
+  if (await passOfDrive(args.ref)) {
+    console.error(
+      `attach-pr: this process is a pass of the running drive of PR #${Number(args.ref.pr)} ($DRIVE_PR_TARGET names it), and a pass never arms or places its own drive: its driver attached this tree at its start. Work the round (drive-pr SKILL.md § Driver pass).`,
+    );
+    return 4;
+  }
   // Read before placement, which can create a tree: an invalid switch
   // refuses before anything is done.
   const off = attachOff("attach-pr.ts");

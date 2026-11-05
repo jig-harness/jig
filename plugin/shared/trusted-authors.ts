@@ -14,3 +14,20 @@ export const TRUSTED_ASSOCIATIONS = new Set([
   "MEMBER",
   "COLLABORATOR",
 ]);
+
+/**
+ * Whether a record's comment counts: written by `self`, the forge login the
+ * reading script is signed in as (`null` when it does not know it), or by an
+ * author the forge vouches for. The drive ledger and every claim on the
+ * forge (`records/forge-claims.ts`) are read through this one rule.
+ */
+export function isTrustedAuthor(
+  login: string,
+  association: string,
+  self: string | null,
+): boolean {
+  return (
+    (self !== null && self !== "" && login === self) ||
+    TRUSTED_ASSOCIATIONS.has(association)
+  );
+}

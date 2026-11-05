@@ -1278,10 +1278,22 @@ make, use the entry's term instead.
 - **Drive mailbox** — the one way to reach a running *PR drive loop* from
   outside it: append-only files in the working tree into which a person, or
   the session that started the drive, writes a note or a directive, and
-  which only the driver answers. A note is context a pass may read; a
+  which only the drive answers. A note is context a pass may read; a
   directive (hold the push, pause, stop) is enforced by the drive's own
-  scripts, whatever a pass does
+  scripts, whatever a pass does, and the driver acknowledges each directive
+  it acted on. A stop may name a *driver generation*, and then ends that
+  driver alone
   ([drive-pr](plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)).
+- **Driver generation** — the number a *PR drive loop*'s driver draws when it
+  starts, one more than the last driver of the same pull request in that
+  clone, which it prints and records in its lock. A *drive mailbox* stop that
+  names it ends that driver and no later one
+  ([drive-pr](plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)).
+- **Review round record** — the one count of a pull request's review rounds,
+  one round per distinct head reviewed, kept in the drive's database and
+  counted into by a *PR drive loop* and by a review loop run by hand alike, so
+  the drive's round budget, its *drive ledger* and the decline ladder's round
+  read one number ([records](plugin/RECORDS.md#on-the-machine)).
 - **Mirror run** — the run a continuous-integration workflow makes for an
   event of a pull-request label other than the *CI hold*'s, where labels
   change too often for each event to run real CI: it skips the expensive
@@ -1597,6 +1609,17 @@ make, use the entry's term instead.
   that the registry does not hold. Review keeps arbitrary file-backed
   records and dynamically assembled names in the inventory
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Forge claim** — a comment a script posts on a pull request to say "this
+  is mine to do" (a driver taking over a drive, a run following up a merge,
+  a driver announcing a head safe to merge), carrying a *record envelope*
+  whose key names what it claims. Every kind is posted, read back and
+  decided by one module (`plugin/shared/records/forge-claims.ts`) under one
+  rule: of the trusted claims on one key, the earliest comment wins (a
+  takeover claim whose owner never acted lapses after the lease window), and
+  a later claimant stands down. The forge cannot create
+  a comment only if none exists, so the claim is read back after posting and
+  checked again before each act it guards
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
 - **Component (of the `jig` command)** — one of the machine-level tools the
   plugin's `jig` command joins into one command line: resource collection
   (`jig gc`) and the *dispatcher* (`jig dispatch`). Each defines its command
@@ -1898,7 +1921,7 @@ make, use the entry's term instead.
   still holds for another one. The dispatcher reports it and starts
   nothing for it.
 - **Follow-up marker** — a hidden-marker comment on a merged pull request
-  that claims its follow-up, so one run settles the merge: the
+  that claims its follow-up (a *forge claim*), so one run settles the merge: the
   *dispatcher* posts one before it starts the follow-up's session, and a
   follow-up a person runs by hand posts one too and marks it done when it
   succeeds. Of two, the earlier comment wins, and the later run stands

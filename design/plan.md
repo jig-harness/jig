@@ -253,8 +253,7 @@ skip in the receipt and still runs the job, and a pinned machine or one with
 The execution line's parts coordinate through the records each leaves
 behind, and most families of records have their own envelope, their own
 writer identity and their own versioning: the drive's state file carries no
-version, the takeover claim none, the dispatcher's database a schema
-version. A host keeps its launches and follow-up outcomes to itself, so a
+version, the dispatcher's database a schema version. A host keeps its launches and follow-up outcomes to itself, so a
 second host cannot see what another holds or finished.
 [design/records.md](records.md) has how it works: every record carries one
 envelope (`kind`, `v`, `key`, `writer`, `at`, `generation`) through one
@@ -274,15 +273,18 @@ generation. No daemon or bus coordinates them
 ([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). Built in the
 design's order; built so far: the envelope, the registry
 and its gate, the ledger and the follow-up marker carrying the envelope
-([plugin/RECORDS.md](../plugin/RECORDS.md)); the liveness module; and the
-machine's records in SQLite, the drive's state among them.
+([plugin/RECORDS.md](../plugin/RECORDS.md)); the liveness module; the
+machine's records in SQLite, the drive's state among them; and the forge
+claims (the takeover claim, the follow-up marker and the merge-ready
+announcement as claims of `plugin/shared/records/forge-claims.ts`).
 
 Done when every record kind the plugin keeps is registered and the gate
 fails an unregistered marker, state file or table; the identity read by a
 launch claim, a drive lease and a worktree hook comes from one module; the
 drive's machine state lives in its own SQLite database that an older plugin
-refuses only when a migration requires it; the ledger, the takeover claim
-and the follow-up marker are arbitrated by one rule; a second host reading
+refuses only when a migration requires it; the takeover claim, the
+follow-up marker and the merge-ready announcement are arbitrated by one
+rule; a second host reading
 the forge refuses to launch a pull request another host holds and does not
 start a follow-up another host finished; and the dispatcher names no drive
 exit code of its own.
@@ -824,6 +826,23 @@ since the last start, and either stays pending while the machine-wide
 tick lock refuses it and survives an event that arrives while that tick
 processes the repository.
 
+### 38. One look for Jig's pages
+
+The pages Jig's tooling draws pick their own colours: the dispatch
+dashboard wears Jig's look in light and dark, the decision, explainer and
+audit sheets share a neutral blue in light only, and the code-stats report
+has a blue of its own. [design/ui-theming.md](ui-theming.md) has how it
+works. What it will build: one set of colour names with a light and a dark
+value each (`plugin/shared/theme.ts`, the dashboard's values), with every
+text-on-background pair held to WCAG AA; the dashboard, the sheet kit and
+the code-stats report reading their colours from it; dark mode for the
+sheets; Jig's mark as every page's icon; and a test that the site's shared
+colours agree. One pull request, the design's first step.
+
+Done when every page Jig's tooling draws takes its colours from
+`theme.ts`, follows the reader's light or dark setting, carries Jig's mark,
+and each genre's contrast test holds its light and dark pairs.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the
@@ -839,6 +858,11 @@ processes the repository.
   version; the event kept as an issue property. Its shape and open questions
   are in [design/reflection.md](reflection.md#jira-store-future); build
   it when a team that tracks its work in Jira needs it.
+- **A repository's theme.** A `ui` section with an accent colour and a
+  mark, the rest of the colours derived from the accent so that contrast
+  holds in both modes, applied by the dashboard's server and written into
+  each sheet. Its shape is in [design/ui-theming.md](ui-theming.md#a-repositorys-theme);
+  build it after item 38, when a team that uses Jig asks for it.
 - **More skills.** `scaffolding-update` (keeps agent instruction files in step
   with decisions and audits them; M0), with its paths as configuration; and a
   SOLID-principles review skill, once its generic procedure is separated from

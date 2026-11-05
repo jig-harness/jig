@@ -275,7 +275,7 @@ development and shipped as a version.
   the session to the admitted account: for a drive it starts
   `skills/drive-pr/scripts/drive.ts`, whose passes run with no person at a
   terminal, and writes the account's wall on a usage-limit
-  stop (exit 16); for a follow-up it starts the account's agent as a
+  stop (`QUOTA_PARKED`, exit 16); for a follow-up it starts the account's agent as a
   headless pass on the follow-up command, with the host's `drive.pass_args`
   and under the pass deadline; for a pickup it starts the account's agent
   as an interactive session on `/jig:do-item <key>`. It records the exit
@@ -295,7 +295,12 @@ development and shipped as a version.
   and each tab it opens as the dispatcher's, and keeps the
   [dispatched mark](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   in the workspace's comment and on the launch record, by one convention
-  every runtime takes (`dispatch/lib/runtime/port.ts`). Where a repository turns
+  every runtime takes (`dispatch/lib/runtime/port.ts`). The wrapper, the
+  launch records, the outcome log and the ledger classifier read every exit
+  of a drive by its name in drive-pr's terminal-state registry
+  (`skills/drive-pr/scripts/lib/status/terminal-states.ts`'s `DRIVE_EXIT` and
+  the sets beside it), never as a number of their own, and the registry's
+  consistency test fails a dispatcher file that restates one. Where a repository turns
   [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   on, the tick reads the pull requests' labels with them, reads `drive`
   and `hold` as a person's commands, and last sets each managed pull
@@ -356,16 +361,22 @@ development and shipped as a version.
 - **Deterministic.** The
   [follow-up marker](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), a
   hidden-marker comment on a merged pull request, claims its follow-up
-  (`dispatch/lib/followup-marker.ts`). The tick posts one naming its launch
+  (`dispatch/lib/followup-marker.ts`). It is a
+  [forge claim](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) of
+  the shared module `shared/records/forge-claims.ts`, which posts it, reads
+  it back (again a few times while the listing does not show it yet) and
+  decides it by the claims' one rule. The tick posts one naming its launch
   record before it starts the session. A run by hand uses
   `jig dispatch marker claim`, `check` before each act outside the pull
   request, and `done` at the end (`dispatch/marker.ts`). A marker counts only
   when the dispatcher's own login or an owner, member or collaborator wrote
   it. Of two trusted markers the commands stand down for the earlier
-  comment; the dispatcher instead reports a conflict and plans no follow-up
-  until a person settles the duplicate (`dispatch/lib/plan-followups.ts`).
-  Refuses: exit 3 when an earlier marker holds the follow-up, exit 2 for a
-  comment that is not a trusted marker.
+  comment; the dispatcher instead reports a conflict, naming the earlier,
+  and plans no follow-up until a person settles the duplicate
+  (`dispatch/lib/plan-followups.ts`). Refuses: exit 3 when an earlier marker
+  holds the follow-up, exit 2 for a comment that is not a trusted marker,
+  exit 1 when the markers cannot be read or the read-back never lists the
+  marker it posted.
 - **Reasoned.** The follow-up session decides what the merge still owes and
   does it; it calls the marker commands at the points its instructions name.
 - **If it fails.** The follow-up session stops on any non-zero exit. A
@@ -380,9 +391,12 @@ development and shipped as a version.
   with its exit code. Its machine state lives in one SQLite database per
   machine, `~/.local/state/jig/drive-pr/state.sqlite`
   (`skills/drive-pr/scripts/lib/state/db.ts`, opened through
-  `shared/records/db.ts`), every row keyed by the clone: rounds, the
-  verified head, parked and held items as one JSON document per pull
-  request, and the locks, [leases](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  `shared/records/db.ts`), every row keyed by the clone: the verified head,
+  parked and held items as one JSON document per pull request, the review
+  round record (`review_rounds`, `skills/drive-pr/scripts/lib/state/review-rounds.ts`),
+  one row per head counted, which a hand-driven review loop counts into too,
+  so the drive's rounds, its ledger and `current-round.ts` read one number, and
+  the locks, [leases](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   and claims as rows. A lock or lease names its holder by the shared
   [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   (`shared/liveness.ts`), whose host id is compared before the host name, so
@@ -402,6 +416,15 @@ development and shipped as a version.
   (`skills/drive-pr/scripts/lib/state/ledger.ts`,
   `skills/drive-pr/scripts/lib/state/ledger-forge.ts`); a ledger counts only
   when the drive's own login or an owner, member or collaborator wrote it.
+  A takeover is a
+  [forge claim](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+  read back and decided by `shared/records/forge-claims.ts`: per ledger
+  generation the earliest trusted claim wins, with the lease window as its
+  lapse window. So is the merge-ready announcement
+  (`skills/drive-pr/scripts/announce-merge-ready.ts`, through
+  `skills/drive-pr/scripts/lib/announce.ts`): one per pull request and head,
+  posted only while the head's merge readiness holds, and of two the earlier
+  stands and the later is withdrawn.
   A round's finish is one script,
   `skills/drive-pr/scripts/finish-round.ts`, which sequences the CI hold,
   the push (`skills/drive-pr/scripts/guarded-push.ts`, which re-checks the
@@ -443,7 +466,16 @@ development and shipped as a version.
   where the repository runs it last in its pre-push hook, catches a hold
   sent while that hook runs; `pause` holds the driver at its next check,
   and ends it with exit 19 after `DRIVE_PR_PAUSE_MAX_SEC` (30 minutes by
-  default); `stop` ends it at the next round boundary with exit 18. An
+  default); `stop` ends it at the next round boundary with exit 18. A `stop`
+  may name a driver generation, the number each driver draws at its start,
+  prints and carries in its lock's claim (`skills/drive-pr/scripts/lib/state/mailbox-stop.ts`):
+  it ends that driver alone, and a later driver ignores it; a `stop` naming
+  none ends every later driver in the tree until `resume --target stop`.
+  `skills/drive-pr/scripts/drives.ts --stop` is a send of the same directive,
+  addressed to the live driver's generation and marked `now`: the driver
+  reads its mailbox for it every quarter second and cancels its active pass
+  at once. The driver appends an `ack` of each directive it acted on to the
+  outbox, so a sender sees it took effect. An
   unreadable mailbox stops the drive with exit 1. The
   [CI hold](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a label
   (`ci.hold_label`) the drive puts on the pull request between rounds so
@@ -455,8 +487,10 @@ development and shipped as a version.
   directive or a note; a pass may read the notes (`mailbox.ts check`), and
   they never change what a round does. No reasoned part touches the CI hold
   label.
-- **If it fails.** The drive's exit names the directive. Whoever sent it
-  resumes it (`resume --target <directive>`) before the drive is re-armed. A
+- **If it fails.** The drive's exit names the directive, and the outbox its
+  `ack`. A `pause`, or a `stop` naming no generation, is resumed by whoever
+  sent it (`resume --target <directive>`) before the drive is re-armed; a
+  `stop` addressed to one generation needs nothing. A
   drive that stopped can leave the CI hold label behind; a person removes
   it by hand.
 
@@ -686,11 +720,10 @@ stops a model. A team that runs passes unattended should know which:
 - **Comments a script trusts by their author.** A ledger and a takeover
   claim count when the drive's own login or an owner, member or
   collaborator wrote them; a follow-up marker when the dispatcher's own
-  login or one of those wrote it; an answer to a thread or a parked
-  question when an owner, member or collaborator wrote it
-  (`shared/trusted-authors.ts`,
-  `skills/drive-pr/scripts/lib/state/ledger-forge.ts`,
-  `dispatch/lib/followup-marker.ts`,
+  login or one of those wrote it; a merge-ready announcement, an answer to a
+  thread or a parked question when an owner, member or collaborator wrote it
+  (`shared/trusted-authors.ts`, `shared/records/forge-claims.ts`,
+  `skills/drive-pr/scripts/lib/state/ledger.ts`,
   `skills/drive-pr/scripts/lib/driver/rearm.ts`). A pass signed in as the
   same login as the person can therefore post a comment those scripts would
   trust; only the instructions say it must not.

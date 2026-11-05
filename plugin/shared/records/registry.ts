@@ -58,6 +58,15 @@ export interface NotARecord {
 /** A pull request's number: the key of a record about one pull request. */
 const PR_NUMBER = /^[1-9]\d*$/;
 
+/**
+ * The keys of the claims on the forge (`forge-claims.ts`): what is claimed on
+ * the pull request the claim's comment is on.
+ */
+const TAKEOVER_KEY = /^takeover:\d+$/;
+/** A follow-up claim's key; one written before claims (version 1) is its pull request's number. */
+const FOLLOWUP_KEY = /^(?:followup|[1-9]\d*)$/;
+const MERGE_READY_KEY = /^merge-ready:[0-9a-f]{7,64}$/;
+
 const DRIVE = "skills/drive-pr/scripts/";
 const STATE = `${DRIVE}lib/state/`;
 const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
@@ -66,7 +75,7 @@ const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
 const DISPATCH_DB = 4;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 2;
+const DRIVE_DB = 3;
 const RRC = "skills/resolve-review-comments/scripts/";
 const REFLECT = "skills/reflect/scripts/";
 
@@ -128,7 +137,9 @@ const DRIVE_STATE: RecordKind[] = [
   driveTable("drive-pr-lease", `${STATE}lease-admission.ts`, "leases"),
   driveTable("drive-tree-lease", `${STATE}lease-tree.ts`, "tree_leases"),
   driveTable("drive-claim", `${STATE}claims.ts`, "claims"),
-  driveTable("drive-stop", `${DRIVE}lib/stop-request.ts`, "stops"),
+  // No longer written: kept in the schema so an earlier release still opens
+  // the database. A stop is now a mailbox directive (`drive-mailbox`).
+  driveTable("drive-stop", `${STATE}db.ts`, "stops"),
   driveTable(
     "drive-ledger-driver",
     `${DRIVE}lib/ledger-stop.ts`,
@@ -136,6 +147,11 @@ const DRIVE_STATE: RecordKind[] = [
   ),
   driveTable("drive-state-import", `${STATE}import.ts`, "imports"),
   driveTable("drive-counter", `${STATE}db.ts`, "counters"),
+  driveTable(
+    "review-round-counter",
+    `${STATE}review-rounds.ts`,
+    "review_rounds",
+  ),
   driveFile(
     "drive-log",
     `${DRIVE}lib/driver-log.ts`,
@@ -454,13 +470,6 @@ const TREE: RecordKind[] = [
   ),
   plain(
     "tree",
-    "review-round-counter",
-    `${RRC}await-round.ts`,
-    "<git dir>/resolve-review-rounds-<PR>, and .head",
-    0,
-  ),
-  plain(
-    "tree",
     "reflection-journal",
     `${REFLECT}lib/journal.ts`,
     "<git dir>/jig/reflection-journal.jsonl",
@@ -496,26 +505,28 @@ const FORGE: RecordKind[] = [
     name: "drive-takeover-claim",
     medium: "forge",
     owner: `${STATE}ledger-forge.ts`,
-    at: "a comment on the pull request per claim",
+    at: "a claim comment on the pull request per takeover (`forge-claims.ts`)",
     markers: ["drive-pr-takeover-claim", "drive-pr-takeover-claim-data"],
-    version: 0,
+    version: 1,
+    key: TAKEOVER_KEY,
   },
   {
     name: "dispatch-followup",
     medium: "forge",
     owner: "dispatch/lib/followup-marker.ts",
-    at: "a comment on the merged pull request",
+    at: "a claim comment on the merged pull request (`forge-claims.ts`)",
     markers: ["jig-dispatch-followup", "jig-dispatch-followup-data"],
-    version: 1,
-    key: PR_NUMBER,
+    version: 2,
+    key: FOLLOWUP_KEY,
   },
   {
     name: "drive-merge-ready",
     medium: "forge",
-    owner: `${DRIVE}announce-merge-ready.ts`,
-    at: "a comment on the pull request, per verified head",
-    markers: ["drive-pr-merge-ready"],
-    version: 0,
+    owner: `${DRIVE}lib/announce.ts`,
+    at: "a claim comment on the pull request per verified head (`forge-claims.ts`)",
+    markers: ["drive-pr-merge-ready", "drive-pr-merge-ready-data"],
+    version: 1,
+    key: MERGE_READY_KEY,
   },
   {
     name: "summary-answer",

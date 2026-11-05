@@ -1002,9 +1002,14 @@ Placement decisions that matter:
 
 - **It lives in `await-round.ts`**, the one script both harness paths call, so a
   Claude `/loop` session that never invokes `converge.ts` still gets it.
-- **The count persists in the git dir**, so rounds worked across separate
-  invocations — even hours apart — add up to one session total. A per-process
-  counter would reset every pass and never reach the threshold.
+- **The count is the PR's review round record**, keyed by head and kept in
+  `/drive-pr`'s database, so rounds worked across separate invocations — even
+  hours apart, or by a drive — add up. A per-process counter would reset every
+  pass and never reach the threshold. Convergence settles the rounds counted
+  so far, so the next review of the PR is weighed on its own, while the PR's
+  round ordinal (`current-round.ts`) keeps counting. Without `/drive-pr`
+  installed beside this skill nothing keeps the count and the prompt never
+  fires.
 
 It fires at wind-down rather than mid-loop because that is the only point where
 there is something settled to reflect *on*: while rounds are still arriving the
