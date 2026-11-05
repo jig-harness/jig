@@ -12,7 +12,14 @@ export type FoldComponent = ComponentType<{
   children: ReactNode;
 }>;
 
-export function Legend({ Fold }: { Fold: FoldComponent }) {
+export function Legend({
+  Fold,
+  stages = true,
+}: {
+  Fold: FoldComponent;
+  /** Whether to list the stages' marks, which the help view lists with their meanings. */
+  stages?: boolean;
+}) {
   return (
     <section className="panel" id="legend" aria-labelledby="h-legend">
       <h2 id="h-legend">Legend</h2>
@@ -36,16 +43,18 @@ export function Legend({ Fold }: { Fold: FoldComponent }) {
           </div>
         ))}
       </div>
-      <Fold label="Stages and their marks">
-        <div className="seg">
-          {STAGE_LEGEND.map((s) => (
-            <span className="chip" key={s.name}>
-              <b>{s.mark}</b>
-              {s.name}
-            </span>
-          ))}
-        </div>
-      </Fold>
+      {stages ? (
+        <Fold label="Stages and their marks">
+          <div className="seg">
+            {STAGE_LEGEND.map((s) => (
+              <span className="chip" key={s.name}>
+                <b>{s.mark}</b>
+                {s.name}
+              </span>
+            ))}
+          </div>
+        </Fold>
+      ) : null}
       <Fold label="How the numbers are counted">
         <dl className="kv">
           {COUNT_NOTES.map((c) => (

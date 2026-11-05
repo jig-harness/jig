@@ -25,6 +25,7 @@ import {
   machineFile,
   waitFor,
   exitWritten,
+  recordIds,
 } from "./launch-fixtures.ts";
 
 const CONFIG = `issue_tracker:
@@ -135,9 +136,9 @@ describe("the line a tick leaves", () => {
     machineFile(w, [account(w, "a", "a@example.com")]);
     const first = await tick(w);
     const record = first.repos[0]?.launches[0]?.record ?? "";
-    // The wrapper of the first tick's drive writes its exit into the same
-    // database after the tick returns; a write still in flight locks it.
-    await waitFor("the exit", () => exitWritten(w, record));
+    await waitFor("the first launch's exit before changing its database", () =>
+      exitWritten(w, record),
+    );
     const db = database(w);
     db.run("DROP TABLE tick_line");
     db.close();
@@ -151,5 +152,8 @@ describe("the line a tick leaves", () => {
     );
     expect(receipt.exitStatus).toBe(1);
     expect(receipt.completed).toBe(true);
+    const launch = receipt.repos[0]?.launches[0];
+    expect(launch?.outcome).toBe("launched");
+    expect(recordIds(w)).toContain(launch?.record ?? "");
   });
 });

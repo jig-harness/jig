@@ -171,20 +171,6 @@ export async function until(
   throw new BrowserCheckError(`timed out waiting until ${what}`);
 }
 
-/** Watches, up to a deadline, that a selector does not show. */
-export async function staysAway(
-  page: Page,
-  selector: string,
-  forMs: number,
-): Promise<boolean> {
-  const deadline = Date.now() + forMs;
-  while (Date.now() < deadline) {
-    if ((await page.locator(selector).count()) > 0) return false;
-    await Bun.sleep(25);
-  }
-  return true;
-}
-
 /** Waits until the page has its answers and has laid out the rows it holds. */
 export async function settled(page: Page): Promise<void> {
   await page.waitForLoadState("networkidle");
@@ -228,7 +214,8 @@ export function bottomOf(page: Page, selector: string): Promise<number> {
 /** Stops the server under an open page, and waits for the page to say so. */
 export async function loseServer(page: Page, server: Served): Promise<void> {
   await shows(page, ".pNeeds");
-  await shows(page, ".selBtn");
+  // Both reads answered first, so what the page keeps includes the log.
+  await settled(page);
   await server.stop();
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await shows(page, ".banner");

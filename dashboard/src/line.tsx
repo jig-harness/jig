@@ -1,16 +1,22 @@
 /**
- * The line: accounts and sessions as one surface. Each account is a row and each
- * held slot a box inside it, so which session holds which slot is a position
- * rather than a join.
+ * What is running: accounts and sessions as one surface. Each account is a row
+ * and each held slot a box inside it, so which session holds which slot is a
+ * position rather than a join.
  */
-import type { ReactNode } from "react";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
-import { Evidence, Fold, Pips, Term } from "./fold.tsx";
-import { Mark, StageChip } from "./marks.tsx";
-import { ROLES } from "./status.ts";
+import {
+  Evidence,
+  Fold,
+  Hint,
+  PanelHelp,
+  Pips,
+  StageHint,
+  Term,
+} from "./fold.tsx";
+import { Mark } from "./marks.tsx";
+import { ROLES, TERMS } from "./status.ts";
 import {
   accountView,
-  asOfOf,
   type Clock,
   repoRow,
   repoSummary,
@@ -18,34 +24,6 @@ import {
   slotView,
   type SlotView,
 } from "./view.ts";
-
-const TERMS: Array<{ word: string; meaning: ReactNode }> = [
-  {
-    word: "slot",
-    meaning:
-      "One of an account’s concurrent-session places, held by a launch record that is pending, alive or unknown. A takeover and the record it replaces count as one. A parked drive holds none.",
-  },
-  {
-    word: "wall",
-    meaning:
-      "A subscription account’s usage limit, recorded once a session stops on it. The account is left out of every launch until the wall’s reset.",
-  },
-  {
-    word: "rearm",
-    meaning:
-      "Restarting a stopped drive, the unattended review loop on a pull request. A takeover replaces a wedged driver’s slot with a new one.",
-  },
-  {
-    word: "drifting",
-    meaning:
-      "A running stage outside its expectation: threads not falling, no pull request in time. Reported and notified, never acted on.",
-  },
-  {
-    word: "nudge",
-    meaning:
-      "The one fixed prompt the dispatcher may send by itself: “continue”, to a session waiting after a usage limit that has since reset.",
-  },
-];
 
 function Slot({ slot }: { slot: SlotView }) {
   return (
@@ -64,7 +42,7 @@ function Slot({ slot }: { slot: SlotView }) {
             {slot.target}
           </a>
         )}
-        <StageChip mark={slot.mark} stage={slot.stage} />
+        <StageHint mark={slot.mark} stage={slot.stage} />
       </div>
       <div className="slotLow">
         <div className="slotFact">{slot.fact}</div>
@@ -88,13 +66,18 @@ export function LinePanel({
   return (
     <section className="panel pLine" id="line" aria-labelledby="h-line">
       <div className="panelHead">
-        <h2 id="h-line">The line</h2>
+        <h2 id="h-line">What is running</h2>
+        <PanelHelp panel="What is running">
+          Each account the machine file lists, with its concurrent-session
+          slots. A box is one slot and the session holding it; an account at its
+          cap or behind a usage wall gets no new launch until a slot frees or
+          the wall resets.
+        </PanelHelp>
         {line === null ? null : (
           <span className="m sm">
             {slotSummary(line.accounts, clock.nowMs)}
           </span>
         )}
-        <span className="asof m">{asOfOf(line, clock.timeZone)}</span>
       </div>
       <div className="terms sm mut">
         <span>Reading it:</span>
@@ -112,9 +95,14 @@ export function LinePanel({
             <div className="acctHead">
               <span className="m acctName">{account.name}</span>
               <span className="chip">{account.vendor}</span>
-              <span className="pips" aria-hidden="true">
-                <Pips on={account.pips} />
-              </span>
+              <Hint
+                className="pips pipsBtn"
+                label={`${account.name} slots`}
+                trigger={<Pips on={account.pips} />}
+              >
+                One square per concurrent-session slot on {account.name}; a
+                filled one is held by a session: {account.heldText} held.
+              </Hint>
               <span className="m sm">{account.heldText}</span>
               {account.state === null ? null : (
                 <span className="sm end">

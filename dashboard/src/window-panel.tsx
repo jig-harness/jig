@@ -5,6 +5,7 @@ import { Toggle } from "@base-ui/react/toggle";
 import { ToggleGroup } from "@base-ui/react/toggle-group";
 import type { RowsAnswer } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { classChips, type RowClock, windowText } from "./log-view.ts";
+import { PanelHelp } from "./fold.tsx";
 import { Mark } from "./marks.tsx";
 import { type LogFilter, PRESETS, type Preset } from "./search.ts";
 
@@ -25,6 +26,11 @@ export function WindowPanel({
     <section className="panel pWindow" aria-labelledby="h-window">
       <div className="panelHead">
         <h2 id="h-window">Window</h2>
+        <PanelHelp panel="Window">
+          The time the log below covers, and how many launches ended in each
+          outcome class over it. Pick a class to show only its rows; pick it
+          again to show all.
+        </PanelHelp>
         <span className="sm mut">{windowText(answer, rowClock)}</span>
         <ToggleGroup
           className="seg winSeg"

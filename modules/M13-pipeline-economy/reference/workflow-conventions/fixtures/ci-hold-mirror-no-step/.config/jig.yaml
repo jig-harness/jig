@@ -1,0 +1,3 @@
+ci:
+  required_checks: [verdict]
+  hold_label: ci:hold

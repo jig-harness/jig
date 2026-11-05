@@ -2,6 +2,7 @@
  * The small shapes the page repeats: the status mark, the stage chip and the
  * logo. No hooks, so the page a refused request gets can use them with no script.
  */
+import type { ReactNode } from "react";
 import type { Role } from "./status.ts";
 
 /** A role's key cap. The recorded word always stands beside it. */
@@ -13,9 +14,18 @@ export function Mark({ role }: { role: Role }) {
   );
 }
 
-export function StageChip({ mark, stage }: { mark: string; stage: string }) {
+/** A stage's chip; `title` says what the stage does where a popover cannot open. */
+export function StageChip({
+  mark,
+  stage,
+  title,
+}: {
+  mark: string;
+  stage: string;
+  title?: string;
+}) {
   return (
-    <span className="chip">
+    <span className="chip" title={title}>
       <b>{mark}</b>
       {stage}
     </span>
@@ -47,18 +57,22 @@ function Logo() {
   );
 }
 
-/** The status strip: sticky on every viewport, carrying the newest tick's one fact. */
+/**
+ * The status strip: sticky on every viewport, carrying how fresh the page is,
+ * the views, and the page's own tools. It holds no hooks; the live page passes
+ * its interactive parts in.
+ */
 export function Strip({
-  main,
-  sub,
+  fresh,
   alarm,
-  version,
+  nav,
+  tools,
 }: {
-  main: string;
-  sub: string;
+  /** How fresh what the page shows is, in a few words. */
+  fresh: ReactNode;
   alarm: boolean;
-  /** `plugin 0.0.0`; left out when nothing was read. */
-  version: string | null;
+  nav?: ReactNode;
+  tools?: ReactNode;
 }) {
   return (
     <header className={alarm ? "strip alarm" : "strip"}>
@@ -67,16 +81,28 @@ export function Strip({
           <Logo />
           <span>Dispatch</span>
         </div>
+        {nav}
         <div className="tick" aria-live="polite">
-          <b className="m">{main}</b> <span className="mut">{sub}</span>
+          {fresh}
         </div>
-        <div className="stripLinks">
-          <span className="ver m">
-            this host{version === null ? "" : ` · ${version}`}
-          </span>
-          <a href="#legend">Legend</a>
-        </div>
+        {tools === undefined ? null : <div className="stripTools">{tools}</div>}
       </div>
     </header>
+  );
+}
+
+/** Freshness as plain words, for the page that runs no script. */
+export function FreshWords({
+  short,
+  alarm,
+}: {
+  short: string;
+  alarm: boolean;
+}) {
+  return (
+    <span className={alarm ? "fresh late" : "fresh"}>
+      <span className="dot" aria-hidden="true" />
+      {short}
+    </span>
   );
 }
