@@ -3,6 +3,7 @@ import {
   areaRows,
   commitOf,
   fmtBytes,
+  moduleHref,
   moduleParents,
   moduleRows,
   parseCodeStats,
@@ -198,6 +199,20 @@ describe("the page's figures", () => {
       { parent: "lib", modules: 2, code: 130 },
       { parent: "", modules: 2, code: 20 },
     ]);
+  });
+
+  test("a skill or a practice module links to its page, any other module to none", () => {
+    const pages = {
+      skills: new Set(["audit"]),
+      modules: new Map([["modules/M2-generated-artifact-freshness", "M2"]]),
+    };
+    expect(moduleHref("plugin/skills/audit", pages)).toBe("/skills/audit/");
+    expect(moduleHref("plugin/skills/unknown", pages)).toBeUndefined();
+    expect(moduleHref("plugin/skills/audit/lib", pages)).toBeUndefined();
+    expect(moduleHref("modules/M2-generated-artifact-freshness", pages)).toBe(
+      "/modules/M2/",
+    );
+    expect(moduleHref("tools/plugin", pages)).toBeUndefined();
   });
 
   test("a commit with uncommitted changes is marked, and its hash kept", () => {

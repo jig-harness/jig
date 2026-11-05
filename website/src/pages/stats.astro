@@ -7,6 +7,7 @@ import {
   commitOf,
   fmt,
   fmtBytes,
+  moduleHref,
   moduleParents,
   moduleRows,
   percent,
@@ -50,15 +51,9 @@ const T = {
   fixture: term("test fixture"),
 };
 
-/* A module this site has a page for links to it: a skill, or a practice
-   module. */
-const skillNames = new Set(skills().map((s) => s.name));
-const moduleIds = new Map(modules().map((m) => [m.dir, m.id]));
-const pageOf = (name: string): string | undefined => {
-  const skill = /^plugin\/skills\/([^/]+)$/.exec(name)?.[1];
-  if (skill && skillNames.has(skill)) return `/skills/${skill}/`;
-  const id = moduleIds.get(name);
-  return id ? `/modules/${id}/` : undefined;
+const pages = {
+  skills: new Set(skills().map((s) => s.name)),
+  modules: new Map(modules().map((m) => [m.dir, m.id])),
 };
 const parentLabel = (p: string) => (p ? `${p}/` : "top-level folders");
 const config = `${REPO_URL}/blob/main/.config/jig.yaml`;
@@ -303,7 +298,7 @@ const config = `${REPO_URL}/blob/main/.config/jig.yaml`;
         <tbody>
           {
             mods.map((m) => {
-              const href = pageOf(m.name);
+              const href = moduleHref(m.name, pages);
               const label =
                 m.name === ROOT_MODULE ? (
                   <span>Files at the root</span>

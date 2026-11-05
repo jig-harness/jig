@@ -16,12 +16,12 @@ export const CODE_STATS_SCRIPT =
   "plugin/skills/code-stats/scripts/code-stats.ts";
 
 /** The report could not be made or is not one this page renders. */
-export class CodeStatsReportError extends Error {
+class CodeStatsReportError extends Error {
   override name = "CodeStatsReportError";
 }
 
 /** The one report shape this page renders. */
-export const SCHEMA = "code-stats/v1";
+const SCHEMA = "code-stats/v1";
 
 /** One group's counts: files, bytes, all lines, LOC, comment and blank lines. */
 export interface Bucket {
@@ -276,7 +276,7 @@ export function rows(group: Record<string, Bucket>): Named[] {
 }
 
 /** Buckets by LOC, most first, then by name. */
-export function byLoc(list: Named[]): Named[] {
+function byLoc(list: Named[]): Named[] {
   return [...list].sort(
     (a, b) => b.code - a.code || a.name.localeCompare(b.name),
   );
@@ -320,6 +320,20 @@ export function moduleRows(report: CodeStats): ModuleRow[] {
       leaf: at < 0 ? m.name : m.name.slice(at + 1),
     };
   });
+}
+
+/**
+ * The site's page for a module, when it has one: a skill's page, or a
+ * practice module's, by the folder the module is.
+ */
+export function moduleHref(
+  name: string,
+  pages: { skills: ReadonlySet<string>; modules: ReadonlyMap<string, string> },
+): string | undefined {
+  const skill = /^plugin\/skills\/([^/]+)$/.exec(name)?.[1];
+  if (skill && pages.skills.has(skill)) return `/skills/${skill}/`;
+  const id = pages.modules.get(name);
+  return id ? `/modules/${id}/` : undefined;
 }
 
 /** The folders that hold modules, by the LOC of their modules, most first. */
