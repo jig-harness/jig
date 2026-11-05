@@ -4,14 +4,14 @@
  * and the agents shared. Between them they start one follow-up and one
  * re-arm, each naming the other's launch as held by that host; the host that
  * does not own the repository writes no notification and no history row for
- * it; a follow-up one host launched reads as done on the other once its
- * session recorded its result; a driver one host started that fell silent
- * past the lease window is taken over from the other; and a launch another
- * host's claim holds is reported, not started, until that host writes its
- * end.
+ * it; a follow-up one host launched reads as done on the other as soon as its
+ * pass ended, the answer its wrapper wrote; a driver one host started that
+ * fell silent past the lease window is taken over from the other; and a
+ * launch another host's claim holds is reported, not started, until that
+ * host writes its end.
  */
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { claimBody } from "../../shared/records/forge-claims.ts";
@@ -70,7 +70,10 @@ interface Host {
 
 let current: World | null = null;
 afterEach(() => {
-  if (current !== null) writeFileSync(join(current.dir, "claude-exit"), "");
+  if (current !== null) {
+    writeFileSync(join(current.dir, "claude-exit"), "");
+    rmSync(join(current.dir, "drive-hold"), { force: true });
+  }
   current?.close();
   current = null;
 });
@@ -273,6 +276,8 @@ describe("two hosts dispatching one repository", () => {
       prs: PRS,
     });
 
+    // Host A's re-arm runs until the test lets its drive end.
+    writeFileSync(join(w.dir, "drive-hold"), "");
     const first = await tick(a);
     const rearm = onlyLaunch(first);
     expect(rearm).toMatchObject({
@@ -281,7 +286,6 @@ describe("two hosts dispatching one repository", () => {
       outcome: "launched",
     });
     await waitFor("the re-arm", () => driveRuns(w).length === 1);
-    await waitFor("its exit", () => exitWritten(a, String(rearm.record)));
     expect(launchClaims(w, 7)).toContain(`record: ${rearm.record}`);
 
     // PR #9 merges; host B's tick finds host A's re-arm still claimed, and follows #9 up.
@@ -298,6 +302,13 @@ describe("two hosts dispatching one repository", () => {
     expect(held).toContain(String(rearm.record));
     await waitFor("the follow-up's pass", () => claudeRuns(w).length === 1);
 
+    // Host A's drive ends: its wrapper writes the re-arm's end onto its claim, with no tick of host A's between.
+    rmSync(join(w.dir, "drive-hold"));
+    await waitFor("its exit", () => exitWritten(a, String(rearm.record)));
+    await waitFor("its end on the claim", () =>
+      launchClaims(w, 7).includes("· ended exit 0"),
+    );
+
     // The re-armed driver runs; host A's next tick finds host B's follow-up claimed.
     w.setComments(7, [
       runningLedger(ago(5), ago(1)),
@@ -308,8 +319,6 @@ describe("two hosts dispatching one repository", () => {
     const claimed = heldWhy(third, "PR #9");
     expect(claimed).toContain(`held by host ${hostIn(second)}`);
     expect(claimed).toContain(String(followup.record));
-    // Host A wrote its re-arm's end onto its claim.
-    expect(launchClaims(w, 7)).toContain("· ended exit 0");
 
     expect(driveRuns(w)).toHaveLength(1);
     expect(claudeRuns(w)).toHaveLength(1);
@@ -376,7 +385,7 @@ describe("two hosts dispatching one repository", () => {
     expect(repoOf(owner)?.shared?.owner).toBe(true);
   }, 60_000);
 
-  it("reads a follow-up one host ran as done on the other, once its session recorded its result", async () => {
+  it("reads a follow-up one host ran as done on the other as soon as its pass ended", async () => {
     const w = fixture();
     w.setPrs("merged", [mergedPr(9, HEAD_9, "2026-10-31T12:00:00Z")]);
     const a = host(w, "a", { stages: ["followup"], owner: true, prs: PRS });
@@ -385,25 +394,28 @@ describe("two hosts dispatching one repository", () => {
     const first = await tick(a);
     const id = String(launches(first)[0]?.record);
     await waitFor("the pass", () => claudeRuns(w).length === 1);
-    const token = readRecord(id, a.state)?.token ?? "";
-    expectSpawnExit(await a.dispatch(["result", id, token, "done"]), 0);
-    writeFileSync(join(w.dir, "claude-exit"), "");
-    await waitFor("the exit", () => exitWritten(a, id));
 
-    // Until host A writes the answer onto its marker, host B reads the follow-up as host A's.
+    // While the pass runs, host B reads the follow-up as host A's.
     const before = await tick(b);
     expect(launches(before)).toEqual([]);
     expect(running(before, "PR #9")?.reason).toContain(
       `held by host ${hostIn(first)}`,
     );
 
-    const settled = await tick(a);
-    expect(repoOf(settled)?.quiet).toContainEqual(
-      expect.objectContaining({ target: "PR #9", class: "followup-done" }),
-    );
-    const [marker] = comments(w, 9).filter((c) => c.body.startsWith(MARKER));
-    expect(marker?.body.split("\n").at(-1)).toBe(
-      `jig dispatch follow-up · record: ${id} · outcome: done`,
+    // The pass records done and ends: its wrapper writes the answer onto the marker, with no tick of host A's between.
+    const token = readRecord(id, a.state)?.token ?? "";
+    expectSpawnExit(await a.dispatch(["result", id, token, "done"]), 0);
+    writeFileSync(join(w.dir, "claude-exit"), "");
+    await waitFor("the exit", () => exitWritten(a, id));
+    const answered = () =>
+      comments(w, 9)
+        .find((c) => c.body.startsWith(MARKER))
+        ?.body.split("\n")
+        .at(-1);
+    await waitFor(
+      "the answer on the marker",
+      () =>
+        answered() === `jig dispatch follow-up · record: ${id} · outcome: done`,
     );
 
     const after = await tick(b);
@@ -414,6 +426,11 @@ describe("two hosts dispatching one repository", () => {
     const done = repoOf(after)?.quiet.find((q) => q.target === "PR #9");
     expect(done?.class).toBe("followup-done");
     expect(done?.why).toContain(`host ${hostIn(first)}`);
+
+    const settled = await tick(a);
+    expect(repoOf(settled)?.quiet).toContainEqual(
+      expect.objectContaining({ target: "PR #9", class: "followup-done" }),
+    );
     expect(claudeRuns(w)).toHaveLength(1);
   }, 90_000);
 
@@ -426,6 +443,9 @@ describe("two hosts dispatching one repository", () => {
     const record = String(launches(first)[0]?.record);
     await waitFor("the re-arm", () => driveRuns(w).length === 1);
     await waitFor("its exit", () => exitWritten(a, record));
+    await waitFor("its end on the claim", () =>
+      launchClaims(w, 7).includes("· ended exit 0"),
+    );
 
     // Host A's claim was made six hours ago; the driver its launch started has been silent for five.
     const claimed = comments(w, 7)

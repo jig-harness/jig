@@ -143,7 +143,7 @@ development and shipped as a version.
 | [Dispatcher's tick](#the-dispatchers-tick) | `dispatch/tick.ts`, `dispatch/run.ts` | the sessions it starts | its receipt; the morning report | a person; a Jig change |
 | [Dispatcher's records](#the-dispatchers-records-receipts-outcome-log-dashboard-notifications) | `dispatch/receipts.ts`, `dispatch/lib/log.ts`, `dispatch/dashboard.ts`, `dispatch/lib/notices.ts` | a dispatched session records its result | the dashboard; the morning report | a person, through `/jig:reflect` |
 | [Follow-up marker](#the-follow-up-marker) | `dispatch/marker.ts`, `dispatch/lib/followup-marker.ts`, `shared/records/shared-forge.ts` | the follow-up session | the follow-up session (exit 1, 2 or 3) | a person deletes or marks the marker |
-| [Shared records](#shared-records-several-hosts-on-one-repository) | `shared/records/shared.ts`, `shared/records/shared-forge.ts`, `dispatch/lib/shared-launches.ts` | none | the tick's report and receipt | a person (a claim to delete, an `owner` to set); a Jig change |
+| [Shared records](#shared-records-several-hosts-on-one-repository) | `shared/records/shared.ts`, `shared/records/shared-forge.ts`, `dispatch/lib/shared-launches.ts`, `dispatch/run.ts` | none | the wrapper's output; the tick's report and receipt | a person (a claim to delete, an `owner` to set); a Jig change |
 | [The drive](#the-drive-driver-locks-leases-ledger) | `skills/drive-pr/scripts/drive.ts` and its libraries | drive passes; the session that arms it | its exit state; the dispatcher; the morning report | the dispatcher re-arms mechanical stops; a person the rest |
 | [Steering a drive](#steering-a-running-drive-the-mailbox-and-the-ci-hold) | `skills/drive-pr/scripts/mailbox.ts`, `skills/drive-pr/scripts/ci-hold.ts` | the session that armed the drive; a person | `guarded-push.ts`'s exit 17; the drive's exit 18, 19 or 1 | the sender resumes the directive; a person removes a leftover label |
 | [Review threads](#review-threads-and-the-arbiter) | `skills/resolve-review-comments/scripts/` | drive pass; the arbiter | the pass (non-zero exit), then `drive.ts` | the next pass, or a person on a park |
@@ -283,7 +283,9 @@ development and shipped as a version.
   and under the pass deadline; for a pickup it starts the account's agent
   as an interactive session on `/jig:do-item <key>`. It records the exit
   every way, with the last question of a follow-up pass that stopped short
-  of done. The claim is the wrapper's
+  of done, and then writes a drive's or a follow-up's end onto the
+  [shared claim](#shared-records-several-hosts-on-one-repository) the tick
+  made for its launch. The claim is the wrapper's
   [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
   recorded and judged by `shared/liveness.ts`: a record claimed on this host
   before it last restarted has died, and its outcome row says so; one claimed
@@ -371,8 +373,9 @@ development and shipped as a version.
   the shared module `shared/records/forge-claims.ts`, which posts it, reads
   it back (again a few times while the listing does not show it yet) and
   decides it by the claims' one rule. The tick posts one naming its launch
-  record and its host before it starts the session, and writes the
-  follow-up's answer onto it once that record ends. A run by hand uses
+  record and its host before it starts the session; the wrapper writes the
+  follow-up's answer onto it when the pass ends, and the next tick writes
+  it where the wrapper could not. A run by hand uses
   `jig dispatch marker claim`, `check` before each act outside the pull
   request, and `done` at the end (`dispatch/marker.ts`). A marker counts only
   when the dispatcher's own login or an owner, member or collaborator wrote
@@ -398,17 +401,21 @@ development and shipped as a version.
   implementation (`shared/records/shared-forge.ts`) posts it as a
   [forge claim](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on
   the attempt after the latest and reads it back; the follow-up marker is the
-  follow-up's. The host that made a claim writes its launch's end onto it at
-  its next `--apply` run (`dispatch/lib/shared-launches.ts`). Every run reads
-  every host's claims beside its own launch records, and the receipt records
-  each read and write and the forge budget left. Refuses: a launch another
-  host's current claim with no end holds (reported as held by that host), a
-  launch whose claim loses its attempt (withdrawn, the launch record given
-  back), and a pull request whose claims do not read (unplaced). A takeover
-  of a driver another host started needs its ledger's heartbeat past the
-  lease window, never a claim alone. One host owns each repository
-  (`owner` in the machine file): only it notifies, writes the dispatch labels
-  and writes outcome-log rows for what it did not launch.
+  follow-up's. A launch's end reaches its claim when the launch ends: the
+  wrapper `dispatch/run.ts` writes it onto the claim right after it records
+  the stage's exit, each forge call under a short deadline. The host's next
+  `--apply` run is the backstop: it writes the end of every claim of its own
+  whose launch record ended and still has none (a wrapper killed before its
+  write, a forge that refused it; `dispatch/lib/shared-launches.ts`). Every
+  run reads every host's claims beside its own launch records, and the
+  receipt records each read and write and the forge budget left. Refuses: a
+  launch another host's current claim with no end holds (reported as held by
+  that host), a launch whose claim loses its attempt (withdrawn, the launch
+  record given back), and a pull request whose claims do not read
+  (unplaced). A takeover of a driver another host started needs its ledger's
+  heartbeat past the lease window, never a claim alone. One host owns each
+  repository (`owner` in the machine file): only it notifies, writes the
+  dispatch labels and writes outcome-log rows for what it did not launch.
 - **Reasoned.** None. The claims coordinate launches and never authorize an
   act a person takes.
 - **Boundary.** The forge offers no conditional create for a comment, so two
@@ -416,9 +423,11 @@ development and shipped as a version.
   launch; the stage's own refusal (the drive's lock and ledger claim,
   `do-item`'s claim, a follow-up's re-check before each act) is the
   backstop.
-- **If it fails.** A claim whose host never writes its end holds its pull
-  request until a person deletes the comment; a forge that cannot be read
-  leaves the pull request unplaced for the tick. A defect is a Jig change.
+- **If it fails.** An end the wrapper could not write is one line on its
+  output, and the next tick writes it. A claim whose host never writes its
+  end holds its pull request until a person deletes the comment; a forge that
+  cannot be read leaves the pull request unplaced for the tick. A defect is a
+  Jig change.
 
 ### The drive: driver, locks, leases, ledger
 

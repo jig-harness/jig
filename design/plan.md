@@ -248,52 +248,6 @@ in place from a local marketplace leaves that folder untouched, records the
 skip in the receipt and still runs the job, and a pinned machine or one with
 `upgrade: off` runs no upgrade.
 
-### 37. Records: one envelope, one registry, records shared across hosts
-
-The execution line's parts coordinate through the records each leaves
-behind, and most families of records have their own envelope, their own
-writer identity and their own versioning: the drive's state file carries no
-version, the dispatcher's database a schema version. A host keeps its launches and follow-up outcomes to itself, so a
-second host cannot see what another holds or finished.
-[design/records.md](records.md) has how it works: every record carries one
-envelope (`kind`, `v`, `key`, `writer`, `at`, `generation`) through one
-codec for a file and a hidden marker on the forge; a registry lists every
-kind and a gate keeps it complete; one identity and lease module
-(`plugin/shared/liveness.ts`); the machine records in SQLite through
-`plugin/shared/records/db.ts`, one database per component, with additive
-migrations and a minimum-reader version, the mailbox and handoff staying
-files in the working tree; one forge-claims module whose one rule is that
-the earliest trusted comment per key and generation wins, every outward act
-re-checking it; a `SharedRecords` interface, forge-backed first, so a
-second host sees who holds a launch and whether a follow-up ended, with one
-owner host per repository for the board, notifications and history rows;
-and the dispatcher reading the drive's exit codes from its terminal-state
-registry, one round counter, and mailbox directives addressed to a driver
-generation. No daemon or bus coordinates them
-([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). Built in the
-design's order; built so far: the envelope, the registry
-and its gate, the ledger and the follow-up marker carrying the envelope
-([plugin/RECORDS.md](../plugin/RECORDS.md)); the liveness module; the
-machine's records in SQLite, the drive's state among them; the forge
-claims (the takeover claim, the follow-up marker and the merge-ready
-announcement as claims of `plugin/shared/records/forge-claims.ts`); the
-dispatcher reading the drive's own records (its exit codes from the
-terminal-state registry, one review round record, and a mailbox stop addressed
-to a driver generation); and the records a second host reads (`SharedRecords`
-on the forge, a launch claim beside each drive's launch, the follow-up marker
-carrying its answer, and one owner host per repository).
-
-Done when every record kind the plugin keeps is registered and the gate
-fails an unregistered marker, state file or table; the identity read by a
-launch claim, a drive lease and a worktree hook comes from one module; the
-drive's machine state lives in its own SQLite database that an older plugin
-refuses only when a migration requires it; the takeover claim, the
-follow-up marker and the merge-ready announcement are arbitrated by one
-rule; a second host reading
-the forge refuses to launch a pull request another host holds and does not
-start a follow-up another host finished; and the dispatcher names no drive
-exit code of its own.
-
 ### 3. The kickoff family
 
 The greenfield kickoff becomes a living skill instead of a frozen seed, with
@@ -805,24 +759,36 @@ beside the rounds.
 
 Jig's tooling reaches [Orca](https://www.onorca.dev) in places built
 on their own (the workspace tool behind the launcher, `do-item`'s board
-updates and workspace names, the dispatcher's session runtime), and the
-rest of the execution line meets it only in part: collection through
-Orca still races an agent started between its last registry read and the
-removal, the dispatcher cannot read an account's usage from Orca's command
-line, and Orca's plugin system has no Jig in it. [design/orca-integration.md](orca-integration.md)
-has how it works, in classes built in order. Still open: closing the
-collection gap, by every launch and open path taking `gc`'s session
-admission around the launch or Orca refusing a removal atomically while an
-agent starts or lives; what Jig asks of Orca (usage per account from the command line; a phone push only when an
-agent needs input; filed by a person, each with its pull request offered),
-and a worker-only plugin in its own repository that runs a
-`jig dispatch --apply` tick when an agent's status changes, with no panel
-until a panel can receive data. One pull request per step, in the design's
-order; the plugin waits on item 33's tick.
+updates and workspace names, the dispatcher's session runtime, and a
+plugin Orca loads that wakes the dispatcher when an agent's status
+changes), and the rest of the execution line meets it only in part:
+collection through Orca still races an agent started between its last
+registry read and the removal, and the dispatcher cannot read an account's
+usage from Orca's command line. [design/orca-integration.md](orca-integration.md)
+has how it works, in classes built in order. Still open, on Orca 1.4.248's
+plugin hooks: the launch guard, in which `jig gc` takes its admission in a
+guard record before its last registry read and the plugin's
+`agent.launch.before` hook, reading that record without an awaited call,
+refuses a launch into a worktree gc holds; a spike on binding a launch to
+its account through the same hook; the plugin's status bar item; and the
+Jig panel, which opens on the person's inbox with the board and the
+addresses beside it. Also open: what Jig asks of Orca (usage per account
+from the command line; a phone push only when an agent needs input; a hook
+before a workspace's removal; filed by a person, each with its pull request
+offered). One pull request per step, in the design's order.
 
-Done when no launch can slip between the registry read and `orca worktree
-rm` of a collected checkout, the dispatcher's account cap reads `orca
-account usage --json` where Orca has it, and an agent in a Jig repository reaching `waiting`, `blocked` or `done`
+Done when a launch Orca makes into a worktree `jig gc` is collecting is
+refused by the plugin's guard whenever the hook runs and reads the record
+(a hook that throws, runs past its deadline or whose worker is down lets the
+launch through, and a fresh heartbeat does not promise otherwise; tests cover
+each of those cases and an admission abandoned after gc submitted its
+removal), a launch the guard let through just before gc's admission
+keeps that worktree, and with a stale heartbeat gc collects as before and
+its receipt says the collection was unguarded; the plugin's status bar
+flags a tick older than twice the interval; the panel's inbox lists the
+needs, with their decisions, that the dashboard's Now view lists for the
+same tick; the dispatcher's account cap reads `orca
+account usage --json` where Orca has it; and an agent in a Jig repository reaching `waiting`, `blocked` or `done`
 under the plugin has a tick pending from the moment the event arrives, while the plugin's worker lives (a restart loses the pending flag and the machine's timer tick then processes the repository):
 the first event after a minute of quiet starts it at once, an event during
 a running tick or the minute after a start waits for one trailing tick
@@ -847,6 +813,43 @@ colours agree. One pull request, the design's first step.
 Done when every page Jig's tooling draws takes its colours from
 `theme.ts`, follows the reader's light or dark setting, carries Jig's mark,
 and each genre's contrast test holds its light and dark pairs.
+
+### 39. Addresses: asking and telling the stations of the line
+
+Where a piece of work stands is read from many places (the dispatcher's
+report, receipts and log, the dashboard, the ledger comment, the drive's
+doctor), and a person steers the line with a different gesture for each
+case: an assignment, a label, an `answer` comment, a mailbox directive.
+Every session and interface that shows or steers the line reads those
+records its own way. [design/addresses.md](addresses.md) has how it works.
+What it will build: an address for every station on a piece of work,
+`station@repository#key` (`drive@jig#456`), resolved from the records the
+line already keeps and declared nowhere; `jig ask <address>`, which answers
+who holds the station, its state, what it waits on and its last outcome,
+names every record it could not read, with `--thread` adds the address's
+correspondence (requests, questions, answers, launches and outcomes, each
+linked to its record) in one shape the command line and a panel both
+read, and with `--waiting` lists every address that waits on a person,
+from the newest tick's line; `jig send <address> <verb>`, which writes the one record
+the line already acts on, from a closed list of verbs, and refuses a
+person's commands inside a session the line started; an operator skill
+that turns a person's sentence into those commands and holds no state;
+a launch's result naming what follows it; and a park naming the person it
+waits on. No agent stays resident to hold an address, and no daemon or
+queue holds a request
+([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). One pull
+request per step, in the design's order; `ask` comes first.
+
+Done when `jig ask` answers the address of a pick-up, a drive and a
+follow-up on the machine that dispatched them and, from the forge and the
+tracker alone, on a machine that did not, saying what it could not read;
+an address nobody holds answers with its last outcome; the thread a panel
+shows for an address is the one `jig ask --thread` prints; each verb of
+`jig send` writes a record its reader acts on at its next run, and a
+session the line started is refused the verbs that are a person's; the
+operator answers "where does this stand" and "what waits on me" from those
+commands alone; every ended launch names what follows it; and every parked
+question names the person it waits on.
 
 ## Later
 
@@ -937,6 +940,25 @@ and each genre's contrast test holds its light and dark pairs.
     ([CONTRIBUTING.md § Toolchain](../CONTRIBUTING.md#toolchain) records
     the gap), so a Windows host needs those steps in its own shell first,
     and the provider tried there once it has them.
+- **A control-plane service for the shared records.** The hosts that
+  dispatch one repository publish who holds a launch and how it ended on the
+  forge, and each reads the others' at its next tick
+  ([plugin/RECORDS.md](../plugin/RECORDS.md#on-the-forge-and-the-tracker)).
+  A small service with a database, which the hosts write to and a person
+  reads, not a message bus, joins as a second implementation behind the same
+  interface (`plugin/shared/records/shared.ts`) under its own
+  `records.shared` value. Build it when one of
+  [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md#when-to-reopen)'s
+  conditions holds: hosts dispatching one repository must see each other's
+  state within seconds rather than at their next tick, a nudge to a running
+  session needs a connection rather than a terminal keystroke, or someone
+  outside a host must be told that a dispatching host has stopped.
+- **The mailbox as every session's inbox.** The
+  [drive mailbox](../GLOSSARY.md) reaches a drive's driver only, and the
+  dispatcher's one nudge, the `continue` it types into a session whose usage
+  limit has reset, is a keystroke into that session's terminal. Open the
+  mailbox to every session the line starts once a second mechanical nudge
+  exists that needs it.
 - **Change-area consumer lint.** The `lint-consumers` check moves into the
   [change-areas skill](../plugin/skills/change-areas/README.md): the path
   lists in agent rules, hook configuration and CI workflow triggers checked

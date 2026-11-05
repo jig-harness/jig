@@ -31,6 +31,7 @@ import {
   withLimit,
 } from "../../../shared/orca-workspace/runner.ts";
 import { failureText } from "../text.ts";
+import { call } from "./orca-comment.ts";
 import type {
   Dispatched,
   ItemTarget,
@@ -88,18 +89,59 @@ export function openPullRequestWorkspace(
 /**
  * The repository's notices workspace: its branch, cut from the
  * repository's base when new, with nothing linked. The dispatcher writes
- * only its comment and never launches an agent into it.
+ * only its comment and never launches an agent into it, so the
+ * repository's create hook does not run there (what it installs would be
+ * ignored content that keeps the workspace from being retired), and the first
+ * terminal Orca gives a new workspace is closed (`orca terminal close
+ * --all`): the card is its comment, not an idle shell. A close that fails
+ * leaves the workspace opened, the failure in the receipt's detail.
  */
-export function openNoticesWorkspace(
+export async function openNoticesWorkspace(
   repo: { id: string; path: string },
   target: NoticesTarget,
   timeoutMs: number,
 ): Promise<RuntimeReceipt> {
-  return open(
+  const started = Date.now();
+  const opened = await open(
     repo,
-    { branch: target.notices, dispatched: target.dispatched, createFlags: [] },
+    {
+      branch: target.notices,
+      dispatched: target.dispatched,
+      createFlags: [],
+      createHook: false,
+    },
     timeoutMs,
   );
+  if (!opened.ok || opened.workspace === undefined || opened.reattached)
+    return withoutReattached(opened);
+  const closed = await call(
+    [
+      "terminal",
+      "close",
+      "--worktree",
+      `path:${opened.workspace.path}`,
+      "--all",
+    ],
+    Math.max(1, timeoutMs - (Date.now() - started)),
+  );
+  return withoutReattached({
+    ...opened,
+    ...(closed.ok
+      ? {}
+      : {
+          cleanupFailure: `${closed.why}; inspect the workspace's terminals, then retry closing the idle initial shell with Orca; automatic retries could close personal work`,
+        }),
+    detail: closed.ok
+      ? `${opened.detail}, its terminals closed`
+      : `${opened.detail}; its terminals were not closed: ${closed.why}`,
+  });
+}
+
+function withoutReattached(
+  receipt: RuntimeReceipt & { reattached?: boolean },
+): RuntimeReceipt {
+  const { reattached: _, ...rest } = receipt;
+  return rest;
 }
 
 /** An item's workspace: its branch, from the repository's base when new, its issue linked. */
@@ -121,9 +163,14 @@ export function openItemWorkspace(
 
 async function open(
   repo: { id: string; path: string },
-  options: { branch: string; dispatched: Dispatched; createFlags: string[] },
+  options: {
+    branch: string;
+    dispatched: Dispatched;
+    createFlags: string[];
+    createHook?: boolean;
+  },
   timeoutMs: number,
-): Promise<RuntimeReceipt> {
+): Promise<RuntimeReceipt & { reattached?: boolean }> {
   const lines: string[] = [];
   const ctx = withLimit(
     localContext((line) => lines.push(line)),
@@ -137,11 +184,15 @@ async function open(
       name: options.dispatched.name,
       comment: options.dispatched.mark,
       createFlags: options.createFlags,
+      ...(options.createHook === undefined
+        ? {}
+        : { createHook: options.createHook }),
     });
     return {
       ok: true,
       detail: `${opened.reattached ? "reattached" : "opened"} ${opened.worktree.path}${opened.hookRan ? ", create hook ran" : ""}`,
       workspace: { id: opened.worktree.id, path: opened.worktree.path },
+      reattached: opened.reattached,
     };
   } catch (error) {
     return {

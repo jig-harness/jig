@@ -537,6 +537,22 @@ export function readRecord(
 }
 
 /**
+ * A record whose stage's exit is written, with its state and its answer as a
+ * tick reads them; `null` when there is none, it does not read, or no exit is
+ * written yet.
+ */
+export function readEnded(id: string, root = stateRoot()): ReadRecord | null {
+  const row = launchRow(id, root);
+  const record = row === null ? null : recordOf(row, root);
+  if (row === null || record === null || exitOf(row) === null) return null;
+  return {
+    record,
+    state: stateOf(row, null, thisHost()),
+    result: asResult(row.result),
+  };
+}
+
+/**
  * Record a session's or a follow-up pass's answer: true when this call wrote it,
  * false when the record already had one, which stands.
  */

@@ -51,7 +51,12 @@
  * effort, bound to its account the same way.
  *
  * The exit of a follow-up's pass or a pickup's session is recorded, and no
- * wall is written for it. Once the exit is recorded, a run that left
+ * wall is written for it. Once the exit is recorded, the wrapper writes the
+ * launch's end onto the shared claim this host made for it (a drive's launch
+ * claim, a follow-up's marker; `lib/shared-launches.ts`'s `settleAtExit`), so
+ * another host reads the end when the launch ends; a write that fails is one
+ * line on its output, and the host's next tick with `--apply` writes the end
+ * instead. Then a run that left
  * nothing for a person (a drive whose exit the registry's
  * `driveExitClosesTab` closes on, a session or a follow-up pass that
  * recorded `done`) closes its terminal tab, when the tick recorded it as a
@@ -85,11 +90,13 @@ import {
   claimRecord,
   isDrive,
   type LaunchRecord,
+  readEnded,
   readRecord,
   readResult,
   recordExit,
 } from "./lib/launches.ts";
 import { probeWall } from "./lib/quota-probe.ts";
+import { settleAtExit } from "./lib/shared-launches.ts";
 import {
   followupPassArgv,
   QUESTION_PREFIX,
@@ -454,6 +461,7 @@ async function wrap(id: string, token: string): Promise<number> {
   } catch (error) {
     console.error(`jig dispatch run: ${failureText(error)}; not starting`);
     recordExit(id, { at: new Date().toISOString(), code: 2, signal: null });
+    await endSharedClaim(id);
     return 2;
   }
   const ran = await runStage(
@@ -490,8 +498,28 @@ async function finishRun(
     ...(wallUnrecorded ? { wallUnrecorded: true as const } : {}),
     ...saidOf(record, ran),
   });
+  await endSharedClaim(id);
   await closeTabIfDone(record, code);
   return code ?? 1;
+}
+
+/**
+ * Write the launch's end onto its shared claim, now that its exit is
+ * recorded. What could not be written is one line here each, and the next
+ * tick writes it; the wrapper's exit stays the stage's.
+ */
+async function endSharedClaim(id: string): Promise<void> {
+  let failures: string[];
+  try {
+    const ended = readEnded(id);
+    failures = ended === null ? [] : await settleAtExit(ended);
+  } catch (error) {
+    failures = [failureText(error)];
+  }
+  for (const why of failures)
+    console.error(
+      `jig dispatch run: the launch's end is not on its claim (${why}); the next tick writes it`,
+    );
 }
 
 /** Close the run's tab when the run left nothing for a person; a failure only says so. */

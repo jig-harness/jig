@@ -81,7 +81,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 5;
+const DISPATCH_DB = 8;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 3;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -205,6 +205,16 @@ const DISPATCHER: RecordKind[] = [
     "waiting_episodes",
   ),
   dispatchTable("dispatch-notice", "dispatch/lib/actions/notify.ts", "notices"),
+  dispatchTable(
+    "dispatch-notices-content",
+    "dispatch/lib/actions/notices-content.ts",
+    "notices_content",
+  ),
+  dispatchTable(
+    "dispatch-notices-read",
+    "dispatch/lib/actions/retire-notices.ts",
+    "notices_read",
+  ),
   dispatchTable("dispatch-nudge", "dispatch/lib/actions/steer.ts", "nudges"),
   dispatchTable(
     "dispatch-followup-outcome",

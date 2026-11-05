@@ -15,6 +15,20 @@ function seconds(ms: number): number {
   return Math.max(0.001, ms / 1000);
 }
 
+/** Hold the card lock with one monotonic budget covering its wait and the operation. */
+export function withCardDeadline<T>(
+  path: string,
+  timeoutMs: number,
+  operation: (remaining: () => number) => Promise<T>,
+  lock: CardLock,
+): Promise<{ value: T } | null> {
+  const start = performance.now();
+  const remaining = () => timeoutMs - (performance.now() - start);
+  return lock(path, () => operation(remaining), {
+    waitMs: Math.max(0, Math.min(timeoutMs, 5000)),
+  });
+}
+
 type CallAnswer =
   | { ok: true; result: unknown }
   | { ok: false; lost: boolean; why: string };
