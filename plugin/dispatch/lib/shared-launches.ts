@@ -529,7 +529,11 @@ async function settleRecordClaims(
     return [
       `PR #${owed.pr}: the claims could not be read: ${read.failure.reason}`,
     ];
-  const failures: string[] = [];
+  // A trusted malformed companion may hide another obligation of this launch.
+  // Report it independently of the readable claims whose ends can be written.
+  const unread = unreadClaims(read);
+  const failures: string[] =
+    unread === null ? [] : [`PR #${owed.pr}: ${unread}`];
   const matches = readable(read.value).filter(
     (c) =>
       c.says.value.record === r.record.id &&

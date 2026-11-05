@@ -120,6 +120,32 @@ function claimLine(w: World): string {
 const ticked = (w: World) => existsSync(join(dispatchState(w), "receipts"));
 
 describe("the wrapper ends its launch's shared claim", () => {
+  for (const trusted of [true, false]) {
+    it(`settles readable claims and ${trusted ? "reports" : "ignores"} a ${trusted ? "trusted" : "untrusted"} malformed companion`, async () => {
+      const w = world();
+      current = w;
+      const host = launched(w);
+      const comments = JSON.parse(
+        readFileSync(join(w.dir, "comments-7.json"), "utf8"),
+      ) as ReturnType<typeof forgeComment>[];
+      const bad = forgeComment(
+        706,
+        `${LAUNCH_MARKER}\nnot a readable claim`,
+        trusted ? "drive-bot" : "outsider",
+      );
+      if (!trusted) bad.author_association = "NONE";
+      w.setComments(7, [...comments, bad]);
+      const r = await runWrapper(w, ID, TOKEN);
+      expectSpawnExit(r, EXIT, "the wrapper");
+      const updated = JSON.parse(
+        readFileSync(join(w.dir, "comments-7.json"), "utf8"),
+      ) as Array<{ body: string }>;
+      expect(updated[0]?.body).toContain(`host: ${host} · ended exit ${EXIT}`);
+      expect(r.stderr.includes("the next tick writes it")).toBe(trusted);
+      if (trusted) expect(r.stderr).toContain("706");
+    });
+  }
+
   for (const body of [null, `${LAUNCH_MARKER}\nnot a readable claim`]) {
     it(`reports an inconclusive listing when the claim is ${body === null ? "missing" : "unreadable"}`, async () => {
       const w = world();
