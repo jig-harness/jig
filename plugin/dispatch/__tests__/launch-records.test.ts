@@ -164,7 +164,7 @@ describe("settled claim ends", () => {
     expect(settled([claim(1, { at: "x" }), bad])).toEqual([]);
   });
 
-  it("settles a record old enough to predate shared claims without one", () => {
+  it("never settles a record that has no claim of its own, however old", () => {
     const later = (nowIso: string) =>
       settledRecords(
         new Map([[7, { ok: true, value: [] }]]) as never,
@@ -174,7 +174,7 @@ describe("settled claim ends", () => {
         nowIso,
       );
     expect(later("2026-01-02T00:00:00.000Z")).toEqual([]);
-    expect(later("2026-02-01T00:00:00.000Z")).toEqual([rec.record.id]);
+    expect(later("2026-02-01T00:00:00.000Z")).toEqual([]);
   });
 
   it("keeps a record unsettled while any of its claims still has no confirmed end", () => {

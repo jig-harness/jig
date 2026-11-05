@@ -483,9 +483,6 @@ export async function settleOwnClaims(
   return failures;
 }
 
-/** How long a finished record may owe a claim end that never reads: past it, a listing that omits the claim is a record that never had one. */
-const CLAIMLESS_SETTLE_MS = 3 * 86_400_000;
-
 /**
  * The finished drive records whose end is positively confirmed: this host's
  * own claims for the record all read with their end, or their end was written
@@ -493,8 +490,9 @@ const CLAIMLESS_SETTLE_MS = 3 * 86_400_000;
  * unreadable in confirms nothing, so that record's pull request is read again.
  * A trusted claim that does not read could conceal another obligation, so any
  * such claim on the pull request keeps every record on it unsettled. A record
- * old enough that no lagging listing explains a missing claim predates shared
- * claims: it owes no end and settles without one.
+ * with no claim of its own never settles: nothing here can tell a launch that
+ * predates shared claims from one whose claim a listing omits, and settling the
+ * second would skip its pull request for good.
  */
 export function settledRecords(
   claims: DriveClaims,
@@ -515,11 +513,7 @@ export function settledRecords(
         (c) =>
           c.says.value.host === host && c.says.value.record === r.record.id,
       );
-      if (own.length === 0)
-        return (
-          Date.parse(nowIso) - Date.parse(r.record.createdAt) >=
-          CLAIMLESS_SETTLE_MS
-        );
+      if (own.length === 0) return false;
       return own.every((c) => written.has(c.id) || !open(c));
     })
     .map((r) => r.record.id);
