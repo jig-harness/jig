@@ -1583,6 +1583,21 @@ make, use the entry's term instead.
 - **Command-line boundary** — the one wrapper around a script's entry point
   that turns its result or failure into an exit code and a message, so every
   script reports failures the same way.
+- **Record envelope** — the fields a record Jig keeps carries to say what
+  it is, whatever its medium (a file on the machine, a file in the working
+  tree, a hidden comment on the forge or the tracker): its kind, its kind's
+  schema version, its key (what it is about), who wrote it, when, and for a
+  record rewritten in place its generation. A reader checks the envelope
+  against a strict form before it reads the rest, which is data and never a
+  command
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Records registry** — the one list of every kind of record the plugin
+  keeps, with where each lives, who writes it and its schema version
+  (`plugin/shared/records/registry.ts`). A gate fails a hidden marker, a
+  tagged drive state family or a SQLite table declaration the code names
+  that the registry does not hold. Review keeps arbitrary file-backed
+  records and dynamically assembled names in the inventory
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
 - **Component (of the `jig` command)** — one of the machine-level tools the
   plugin's `jig` command joins into one command line: resource collection
   (`jig gc`) and the *dispatcher* (`jig dispatch`). Each defines its command

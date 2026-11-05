@@ -13,9 +13,13 @@
  *
  * The comment opens with `<!-- drive-pr-ledger -->`, carries a short summary
  * a person can read on the pull request, and holds the data as JSON inside a
- * second HTML comment. Every `<` and `>` in that JSON is written as a Unicode
- * escape, which JSON allows inside a string and which leaves nothing in the
- * data that could close the comment early.
+ * second HTML comment, written by the records codec
+ * (`shared/records/envelope.ts`): the record envelope (kind `drive-ledger`,
+ * its version, the pull request as its key, the writer and the time) beside
+ * the ledger's own fields, with every `<` and `>` escaped. The data keeps its
+ * own `ledgerVersion` beside the envelope's `v`, so a reader written before
+ * the envelope still reads it, and a ledger written before the envelope (no
+ * `kind`, `ledgerVersion: 1`) still reads here.
  *
  * A ledger is trusted only when its author is the drive's own login or
  * carries the owner, member or collaborator association GitHub computes from
@@ -24,6 +28,16 @@
  */
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
+import {
+  commentSafe,
+  encode,
+  markerText,
+  readEnvelope,
+} from "../../../../../shared/records/envelope.ts";
+import {
+  localWriter,
+  type Writer,
+} from "../../../../../shared/records/writer.ts";
 import { stallThresholdMs } from "../doctor.ts";
 import { TRUSTED_ASSOCIATIONS } from "../../summary-findings.ts";
 import {
@@ -48,7 +62,10 @@ export const CLAIM_MARKER = "<!-- drive-pr-takeover-claim -->";
 const LEDGER_DATA = "drive-pr-ledger-data";
 const CLAIM_DATA = "drive-pr-takeover-claim-data";
 
-/** The ledger shape this version reads and writes. */
+/** The ledger's kind in the records registry (`shared/records/registry.ts`). */
+export const LEDGER_KIND = "drive-ledger";
+
+/** The ledger shape this version reads and writes: the envelope's `v`, and `ledgerVersion` beside it. */
 export const LEDGER_VERSION = 1;
 
 /** GitHub's issue-comment body limit, measured here in UTF-8 bytes. */
@@ -235,11 +252,24 @@ function ledgerHeld(h: HeldItem): LedgerHeld {
   };
 }
 
-/** JSON with every `<` and `>` escaped, so it cannot close an HTML comment. */
-function commentSafeJson(value: unknown): string {
-  return JSON.stringify(value)
-    .replaceAll("<", "\\u003c")
-    .replaceAll(">", "\\u003e");
+/**
+ * The ledger's data block: the record envelope, with the pull request as its
+ * key, the heartbeat as its time and the ledger's generation as its own,
+ * beside the rest of the ledger's fields.
+ */
+function ledgerData(l: Ledger, writer: Writer): string {
+  const { generation, ...fields } = l;
+  return encode(
+    {
+      kind: LEDGER_KIND,
+      v: LEDGER_VERSION,
+      key: String(l.pr),
+      writer,
+      at: l.driver.heartbeat,
+      generation,
+    },
+    { ...fields },
+  );
 }
 
 /** A Markdown line whose agent-authored parts cannot open an HTML tag. */
@@ -257,7 +287,7 @@ function summaryText(text: string): string {
     .trim();
 }
 
-function ledgerBody(l: Ledger, parkedList: boolean): string {
+function ledgerBody(l: Ledger, parkedList: boolean, writer: Writer): string {
   const d = l.driver;
   const lines = [
     LEDGER_MARKER,
@@ -279,7 +309,7 @@ function ledgerBody(l: Ledger, parkedList: boolean): string {
       "",
       `Cut to the forge's size limit: ${l.cut.join(", ")} dropped.`,
     );
-  lines.push("", `<!-- ${LEDGER_DATA}`, commentSafeJson(l), "-->");
+  lines.push("", `<!-- ${LEDGER_DATA}`, ledgerData(l, writer), "-->");
   return `${lines.join("\n")}\n`;
 }
 
@@ -291,40 +321,33 @@ function bytes(text: string): number {
  * The comment body for `ledger`, cut to `limit`: held items' outcomes go
  * first, the narrative second, then the visible list of parked decisions
  * (the data keeps every one). A parked decision is never dropped, so a body
- * that still does not fit is an error, not a smaller ledger.
+ * that still does not fit is an error, not a smaller ledger. `writer` is the
+ * envelope's: this process, with the forge login where the caller knows it.
  */
 export function renderLedger(
   ledger: Ledger,
   limit = FORGE_BODY_LIMIT,
+  writer: Writer = localWriter("forge"),
 ): { body: string; ledger: Ledger } | { error: string } {
   let l: Ledger = { ...ledger, cut: [] };
-  let body = ledgerBody(l, true);
+  let body = ledgerBody(l, true, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
   l = {
     ...l,
     held: l.held.map(({ outcome: _dropped, reason: _answer, ...rest }) => rest),
     cut: ["held items' outcomes"],
   };
-  body = ledgerBody(l, true);
+  body = ledgerBody(l, true, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
   l = { ...l, narrative: [], cut: [...l.cut, "the narrative"] };
-  body = ledgerBody(l, true);
+  body = ledgerBody(l, true, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
   l = { ...l, cut: [...l.cut, "the visible list of parked decisions"] };
-  body = ledgerBody(l, false);
+  body = ledgerBody(l, false, writer);
   if (bytes(body) <= limit) return { body, ledger: l };
   return {
     error: `the parked decisions alone exceed the forge's ${limit}-byte comment limit; the ledger was not written`,
   };
-}
-
-function dataBlock(body: string, name: string): string | null {
-  const open = `<!-- ${name}\n`;
-  const start = body.indexOf(open);
-  if (start === -1) return null;
-  const end = body.indexOf("\n-->", start + open.length);
-  if (end === -1) return null;
-  return body.slice(start + open.length, end);
 }
 
 /** Does this comment open with the marker (a quotation mid-body does not)? */
@@ -424,31 +447,70 @@ function ledgerFault(v: Record<string, unknown>): string {
     .join(", ");
 }
 
+type LedgerFields = { fields: Record<string, unknown> } | ParsedLedger;
+
+const malformed = (reason: string): ParsedLedger => ({
+  kind: "malformed",
+  reason,
+});
+
+/** The fields of a ledger written with the envelope, its generation the envelope's. */
+function envelopedFields(data: Record<string, unknown>): LedgerFields {
+  const read = readEnvelope(data, LEDGER_KIND);
+  if (!read.ok)
+    return read.failure.code === "newer-version"
+      ? { kind: "unknown-version", version: data.v }
+      : malformed(read.failure.reason);
+  const { envelope, payload } = read.value;
+  if (data.ledgerVersion !== undefined && data.ledgerVersion !== envelope.v)
+    return malformed(
+      `ledgerVersion ${JSON.stringify(data.ledgerVersion)} is not the envelope's version ${envelope.v}`,
+    );
+  if (envelope.key !== String(payload.pr))
+    return malformed(
+      `the envelope's key ${envelope.key} names another pull request`,
+    );
+  const { v, generation } = envelope;
+  return { fields: { ...payload, ledgerVersion: v, generation } };
+}
+
+/**
+ * The ledger's fields in a data block: an enveloped ledger's, or those of a
+ * ledger written before the envelope, which `ledgerVersion` alone versions.
+ * A newer `ledgerVersion` or envelope version reads as a future ledger,
+ * whichever form carries it; any other version is damage.
+ */
+function ledgerFields(data: Record<string, unknown>): LedgerFields {
+  const version = data.ledgerVersion;
+  if (isCount(version) && version > LEDGER_VERSION)
+    return { kind: "unknown-version", version };
+  if ("kind" in data) return envelopedFields(data);
+  return version === LEDGER_VERSION
+    ? { fields: data }
+    : malformed(
+        `ledgerVersion ${JSON.stringify(version) ?? "is missing"} is not a version`,
+      );
+}
+
 /** Parse a ledger comment body; `null` when the body is not a ledger. */
 export function parseLedger(body: string): ParsedLedger | null {
   if (!opensWith(body, LEDGER_MARKER)) return null;
-  const raw = dataBlock(body.replaceAll("\r", ""), LEDGER_DATA);
-  if (raw === null) return { kind: "malformed", reason: "no data block" };
-  let data: unknown;
+  const raw = markerText(body, LEDGER_DATA);
+  if (!raw.ok) return { kind: "malformed", reason: "no data block" };
+  let parsed: unknown;
   try {
-    data = JSON.parse(raw);
+    parsed = JSON.parse(raw.value);
   } catch {
     return { kind: "malformed", reason: "the data block is not JSON" };
   }
-  if (!isRecord(data))
+  if (!isRecord(parsed))
     return { kind: "malformed", reason: "the data block is not an object" };
-  // Only a version number reads as a future ledger; anything else is damage.
-  if (data.ledgerVersion !== LEDGER_VERSION)
-    return isCount(data.ledgerVersion) && data.ledgerVersion > LEDGER_VERSION
-      ? { kind: "unknown-version", version: data.ledgerVersion }
-      : {
-          kind: "malformed",
-          reason: `ledgerVersion ${JSON.stringify(data.ledgerVersion) ?? "is missing"} is not a version`,
-        };
-  const fault = ledgerFault(data);
+  const read = ledgerFields(parsed);
+  if (!("fields" in read)) return read;
+  const fault = ledgerFault(read.fields);
   if (fault !== "")
     return { kind: "malformed", reason: `ill-formed field(s): ${fault}` };
-  return { kind: "ledger", ledger: data as unknown as Ledger };
+  return { kind: "ledger", ledger: read.fields as unknown as Ledger };
 }
 
 /** The append-only takeover claim's comment body. */
@@ -458,7 +520,7 @@ export function renderClaim(claim: TakeoverClaim): string {
     `**Drive claim** · \`drive-pr-takeover-claim\` · a driver in another clone claims the drive of this pull request: a takeover from a driver whose ledger heartbeat is older than the lease window, or a start where no driver of that clone held it. Of the claims on one ledger generation the earliest wins; a driver that finds a newer claim than its own stops at its next round boundary.`,
     "",
     `<!-- ${CLAIM_DATA}`,
-    commentSafeJson(claim),
+    commentSafe(JSON.stringify(claim)),
     "-->",
     "",
   ].join("\n");
@@ -466,11 +528,11 @@ export function renderClaim(claim: TakeoverClaim): string {
 
 export function parseClaim(body: string): TakeoverClaim | null {
   if (!opensWith(body, CLAIM_MARKER)) return null;
-  const raw = dataBlock(body.replaceAll("\r", ""), CLAIM_DATA);
-  if (raw === null) return null;
+  const raw = markerText(body, CLAIM_DATA);
+  if (!raw.ok) return null;
   let v: unknown;
   try {
-    v = JSON.parse(raw);
+    v = JSON.parse(raw.value);
   } catch (err) {
     // A claim whose data does not parse claims nothing.
     swallow(err, "a takeover claim's data is not JSON");

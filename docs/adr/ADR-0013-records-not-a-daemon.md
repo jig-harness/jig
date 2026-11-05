@@ -1,0 +1,124 @@
+---
+title: "ADR-0013: Components share records, not a daemon"
+type: adr
+status: draft
+description: "Jig's components share registered records on the machine, in the working tree and on the forge and tracker, and each derives what to do from records it does not own; no resident daemon or message bus coordinates them, with the conditions for reopening that"
+lifecycle: permanent
+version: "1.0"
+last_updated: 2026-11-04
+owner: maintainers
+decision_date: 2026-11-04
+supersedes: ~
+superseded_by: ~
+tags: [adr, records, dispatcher, drive, dark-factory]
+---
+
+# ADR-0013: Components share records, not a daemon
+
+**Status:** Draft · **Date:** 2026-11-04 · **Deciders:** Jig's maintainers through pull-request review
+
+## Context
+
+Jig's execution line is several programs that never share a process: the
+[dispatcher](../../GLOSSARY.md)'s tick, a drive's loop control and the
+passes it starts, a pickup's session, a follow-up, `jig gc`, a person's own
+session. They coordinate through what each leaves behind: a drive's state on
+the machine, its mailbox in the working tree, its ledger on the pull
+request, the dispatcher's launch records, a follow-up marker, a claim on the
+tracker. Each of those records was designed on its own, with its own
+envelope, its own idea of who wrote it and its own versioning, and nothing
+lists them in one place ([plugin/RECORDS.md](../../plugin/RECORDS.md) now
+does).
+
+The obvious alternative is a resident coordinator: a daemon that every
+component talks to, or a message bus they publish on. These constraints
+weigh against it.
+
+- **The actors rarely coexist.** A drive pass lives minutes, a dispatcher
+  tick seconds, and a person answers a parked question hours later. A
+  message from one to another must outlive its sender anyway, so every
+  message is a durable record whether or not a bus carries it.
+- **A bus across hosts needs an inbound route.** The dispatcher runs on a
+  host that accepts no connection from outside: it reads the forge and the
+  tracker and starts sessions, and listens only on a private address for its
+  dashboard ([ADR-0011](ADR-0011-the-dispatcher-targets-orca-first.md)
+  declines a webhook-fed daemon for the same reason).
+- **A supervised process with real concurrency is a threshold.**
+  [ADR-0012](ADR-0012-failures-as-values.md) keeps plain TypeScript with
+  failures as values, and reserves a change of programming model for the
+  day Jig holds a resident process with real concurrency. A coordinator
+  daemon is that process.
+- **An early wake-up is planned without one.** The planned `jig` plugin
+  for Orca would run a tick when an agent's status changes
+  ([design/orca-integration.md](../../design/orca-integration.md#the-jig-plugin-for-orca)),
+  with the machine's timer catching what an event misses. Until that
+  integration is built, the timer supplies the wake-ups.
+
+## Decision
+
+Jig's components share records through registered envelopes on three
+media: the machine, the working tree, and the forge and tracker. Every
+record kind is registered (`plugin/shared/records/registry.ts`) with its
+medium, its owner, where it lives and its schema version, and a record that
+carries the envelope says what it is, its key, who wrote it and when, in
+the same fields everywhere (`plugin/shared/records/envelope.ts`). A gate
+fails a hidden-marker literal, a tagged drive state family or a SQLite
+table declaration the registry does not hold. Review must keep arbitrary
+file-backed records and dynamically assembled names in the inventory.
+
+Each component derives what to do from records it does not own and writes
+only its own: the dispatcher reads the drive ledger, the tracker and the
+running sessions, and keeps only what it did. No resident daemon or message
+bus coordinates them.
+
+## Alternatives considered
+
+- **A NATS-like message bus.** Rejected: the senders are gone before the
+  receivers start, so every subject would need a durable stream, which is a
+  record store with a server in front of it. Across hosts it needs the
+  inbound route the dispatcher refuses, and its server is a process to
+  supervise and upgrade on every host.
+- **An event log as the source of truth.** Rejected: the dispatcher derives
+  what is wanted from records it does not own (the forge's pull requests and
+  their ledgers, the tracker's items, the runtime's sessions), which change
+  without telling it. A log of its own events cannot say what is wanted; it
+  can only say what it did, which the outcome log already keeps.
+
+## Consequences
+
+### Benefits
+
+- Nothing has to be running for the line to resume: a stopped host loses no
+  message, and the next tick reads the same records.
+- A new reader of a record needs its registry entry and the codec, not a
+  connection.
+- The forge and the tracker stay the place a second host and a person read
+  the same facts.
+
+### Costs
+
+- A second host sees another host's state only as fast as the forge
+  carries it, a tick or a round behind.
+- Every record is polled; a change is noticed at the next read, not pushed.
+- The registry is one more thing a change must update, held by its gate.
+
+## When to reopen
+
+Reopen this when one of these holds:
+
+- a second host must see another's state within seconds, not at its next
+  tick;
+- a nudge to a running session needs a connection rather than a keystroke
+  into its terminal;
+- someone outside a host must be told that a dispatching host has stopped.
+
+Then build a small control-plane service with a database, which the hosts
+write to and a person reads, not a bus.
+
+## Extraction (decisions-become-checks)
+
+`scripts/check-records-registry.ts` in the gates fails a hidden-marker
+literal, a drive state-file family or a SQLite table under `plugin/` that
+the registry does not hold, and a registry entry the code no longer names.
+That no component opens a listening socket other than the dashboard's is
+not checked; review holds it.

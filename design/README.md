@@ -69,6 +69,7 @@ with the review.
 | [The dispatcher, a tick that starts the execution line's stages](dark-factory-dispatch.md) | 33 |
 | [Jig in the Orca ecosystem](orca-integration.md) | 34 |
 | [The dispatch board, what is driven and what is ready to merge](dispatch-board.md) | 36 |
+| [Records: one envelope, one registry, records shared across hosts](records.md) | 37 |
 
 ## Starting a design
 
