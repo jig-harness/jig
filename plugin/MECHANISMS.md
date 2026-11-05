@@ -15,12 +15,14 @@ This page maps Jig **by mechanism**. For each part it names the
 that owns it (the script, where its state lives, what it refuses), the
 [reasoned parts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 that use it and what they are trusted to decide there, and who notices a
-failure and who is asked to fix it. It is the third view of the same
+failure and who is asked to fix it. It is a view of the same
 system: the
 [lifecycle map](https://github.com/jig-harness/jig/blob/main/docs/LIFECYCLE.md)
-walks it by stage, with the skill that owns each, and
+walks it by stage, with the skill that owns each,
 [FACTORY.md](https://github.com/jig-harness/jig/blob/main/FACTORY.md) walks it
-by station.
+by station, and [RECORDS.md](RECORDS.md) lists it by record: every file,
+table, comment and label the parts below share, where it lives, who writes
+it and what guards it.
 
 **How paths are written.** A path in the plugin is written in full from the
 plugin directory (`dispatch/lib/launches.ts`,
