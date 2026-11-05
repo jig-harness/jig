@@ -384,6 +384,15 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.139.1] - 2026-11-05
+
+### Fixed
+
+- The `jig dispatch dashboard` tab shows Jig's mark as its icon, in the
+  colours of the reader's light or dark theme, instead of a blank one. The
+  page holds the icon itself, so the browser still never asks the server
+  for a file without the page's token.
+
 ## [0.139.0] - 2026-11-05
 
 ### Added
@@ -5202,7 +5211,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.139.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.139.1...HEAD
+[0.139.1]: https://github.com/jig-harness/jig/compare/v0.139.0...v0.139.1
 [0.139.0]: https://github.com/jig-harness/jig/compare/v0.138.0...v0.139.0
 [0.138.0]: https://github.com/jig-harness/jig/compare/v0.137.0...v0.138.0
 [0.137.0]: https://github.com/jig-harness/jig/compare/v0.136.0...v0.137.0
