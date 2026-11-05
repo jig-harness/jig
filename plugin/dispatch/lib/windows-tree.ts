@@ -6,7 +6,7 @@
  * pass started can still be found and ended.
  */
 import { swallow } from "../../shared/errors.ts";
-import { processTable } from "../../shared/process-table.ts";
+import { processTable, type ProcessRow } from "../../shared/process-table.ts";
 import type { WindowsTreeState } from "../../shared/process-tree.ts";
 import { stopWindowsTree } from "../../shared/process-tree.ts";
 import {
@@ -34,6 +34,24 @@ export const NO_WATCH: TreeWatch = {
   },
 };
 
+/** Add what one snapshot shows of the pass's tree to what was recorded. */
+function absorb(
+  tree: WindowsTreeState,
+  rows: ProcessRow[],
+  root: ProcessRow,
+): void {
+  const captured = partitionProcessTree(root.pid, rows);
+  tree.unknownDescendants ??= new Set();
+  trackPartitionUncertainty(captured, rows, tree.unknownDescendants);
+  if (captured.uncertain.length > 0) tree.complete = false;
+  for (const row of captured.targets) {
+    const known = tree.targets.some(
+      (t) => t.pid === row.pid && t.start === row.start,
+    );
+    if (!known) tree.targets.push(row);
+  }
+}
+
 /**
  * `owned` says the pass's child handle is still unreaped: while it is, the pid
  * cannot belong to anything else, and a root missing from a snapshot is a gap.
@@ -45,41 +63,29 @@ export function watchWindowsTree(
   const tree: WindowsTreeState = { root: null, targets: [] };
   let capturing: Promise<void> | null = null;
   let sampling = pid !== undefined;
+  const snapshot = async (pass: number) => {
+    const rows = await processTable();
+    const root = rows?.find((row) => row.pid === pass);
+    return { rows, root: root?.start ? root : undefined };
+  };
   const record = async () => {
     if (pid === undefined) return;
     // A capture begun while the pass was owned keeps its uncertainty even if the pass exits mid-snapshot.
     const ownedAtStart = owned();
+    const gap = () => {
+      if (ownedAtStart) tree.complete = false;
+    };
     try {
-      const rows = await processTable();
-      if (rows === null) {
-        if (ownedAtStart) tree.complete = false;
-        return;
-      }
-      const root = rows.find((row) => row.pid === pid);
-      if (root?.start === undefined || root.start === "") {
-        // Still owned after the snapshot yet not visible: unreadable, not gone.
-        if (ownedAtStart && owned()) tree.complete = false;
-        return;
-      }
-      if (tree.root === null) {
-        // Binding needs the unreaped child handle after the snapshot returns: only then is the pid not a reused one.
-        if (!owned()) return;
-        tree.root = { pid, start: root.start };
-      }
-      if (root.start !== tree.root.start) return;
-      const captured = partitionProcessTree(root.pid, rows);
-      tree.unknownDescendants ??= new Set();
-      trackPartitionUncertainty(captured, rows, tree.unknownDescendants);
-      if (captured.uncertain.length > 0) tree.complete = false;
-      for (const row of captured.targets) {
-        const known = tree.targets.some(
-          (t) => t.pid === row.pid && t.start === row.start,
-        );
-        if (!known) tree.targets.push(row);
-      }
+      const { rows, root } = await snapshot(pid);
+      if (rows === null) return gap();
+      // Still owned after the snapshot yet not visible: unreadable, not gone.
+      if (root === undefined) return owned() ? gap() : undefined;
+      // Binding needs the unreaped child handle after the snapshot returns: only then is the pid not a reused one.
+      if (tree.root === null && owned()) tree.root = { pid, start: root.start };
+      if (tree.root?.start === root.start) absorb(tree, rows, root);
     } catch (error) {
       swallow(error, "the pass's tree is unreadable");
-      if (ownedAtStart) tree.complete = false;
+      gap();
     }
   };
   const capture = () => {
