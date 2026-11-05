@@ -114,7 +114,7 @@ dispatcher's [tick](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 scheduled jobs run (`runtime/launcher.ts`), and the drive's loop control
 (`skills/drive-pr/scripts/drive.ts`). They start sessions and read how they
 ended. The only reasoning is inside the sessions they start: a drive pass,
-a pickup's `do-item` session, a follow-up session. Those sessions read
+a pickup's `do-item` session, a follow-up pass. Those sessions read
 Jig's `SKILL.md` files and run Jig's scripts, but what they write is the
 repository's own code, replies and records. The plugin they run is an
 installed copy, and a change to it reaches a machine only as a released
@@ -275,9 +275,12 @@ development and shipped as a version.
   the session to the admitted account: for a drive it starts
   `skills/drive-pr/scripts/drive.ts`, whose passes run with no person at a
   terminal, and writes the account's wall on a usage-limit
-  stop (`QUOTA_PARKED`, exit 16); for a pickup or a follow-up it starts the account's agent
-  as an interactive session on `/jig:do-item <key>` or the follow-up
-  command. It records the exit either way. The claim is the wrapper's
+  stop (`QUOTA_PARKED`, exit 16); for a follow-up it starts the account's agent as a
+  headless pass on the follow-up command, with the host's `drive.pass_args`
+  and under the pass deadline; for a pickup it starts the account's agent
+  as an interactive session on `/jig:do-item <key>`. It records the exit
+  every way, with the last question of a follow-up pass that stopped short
+  of done. The claim is the wrapper's
   [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
   recorded and judged by `shared/liveness.ts`: a record claimed on this host
   before it last restarted has died, and its outcome row says so; one claimed
@@ -303,7 +306,10 @@ development and shipped as a version.
   and `hold` as a person's commands, and last sets each managed pull
   request's state label from its ledger (`dispatch/lib/labels.ts`,
   `dispatch/lib/actions/labels.ts`); it never reads a state label to
-  decide what to start.
+  decide what to start. Where a repository turns its
+  [adoption rule](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  on, the tick arms a pull request with no ledger that the rule's author
+  and window match as it arms a labelled one (`dispatch/lib/adopt.ts`).
 - **Reasoned.** None inside the tick. It starts reasoned parts: a drive's
   passes (through `drive.ts`), a pickup's `/jig:do-item` session, and the
   repository's `dispatch.followup_command`. Its one keystroke into a

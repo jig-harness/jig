@@ -48,7 +48,9 @@
  * Where the repository turns dispatch labels on, each drive carries its
  * pull request's labels, and a pull request with no ledger that carries the
  * `drive` command label is `unarmed`: a person asked for a drive, and the
- * plan arms one. No state label is read here.
+ * plan arms one. So is one the repository's adoption rule adopts
+ * (`dispatch.adopt`, `adopt.ts`), whatever the labels. No state label is
+ * read here.
  */
 import { stallThresholdMs } from "../../../skills/drive-pr/scripts/lib/doctor.ts";
 import { parkAnswers } from "../../../skills/drive-pr/scripts/lib/driver/rearm.ts";
@@ -58,6 +60,7 @@ import type {
 } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { readLedgerSnapshot } from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
+import { type Adoption, adopts, type Author } from "../adopt.ts";
 import { branchHead } from "../forge.ts";
 import { hasCommand, type LabelConfig } from "../labels.ts";
 import { failureText, minutesBetween } from "../text.ts";
@@ -343,6 +346,10 @@ export interface OpenPr {
   mergeable?: string;
   /** Its labels, where the read asked for them. */
   labels?: string[];
+  /** Its author, whether it is a draft and its last update, which the adoption rule reads. */
+  author?: Author;
+  isDraft?: boolean;
+  updatedAt?: string;
 }
 
 /** Why a snapshot holds no ledger this reader can classify; `null` when it holds one, `""` when it holds none. */
@@ -382,27 +389,50 @@ async function parkOf(
       };
 }
 
-/** A pull request with no ledger whose `drive` label asks for one: the plan arms it once per head commit. */
+/**
+ * A pull request with no ledger whose `drive` label asks for one, or which
+ * the repository's adoption rule adopts: the plan arms it once per head
+ * commit.
+ */
 function unarmed(
   pr: OpenPr,
   base: Omit<DrivenPr, "class" | "why" | "evidence">,
-  labels: LabelConfig | null,
+  r: Pick<Reading, "labels" | "adoption" | "nowMs">,
 ): DrivenPr | null {
-  if (labels === null || !hasCommand(labels, pr.labels, "drive")) return null;
+  const asked = askedToArm(pr, r);
+  if (asked === null) return null;
   // The once-per-head rule needs the commit it arms: without one nothing starts.
   if (typeof pr.headRefOid !== "string" || pr.headRefOid === "")
     return {
       ...base,
       class: "unplaced",
-      why: "a person's drive label asks for a drive, but the pull request's head commit does not read, so the once-per-head rule cannot be kept; nothing is armed",
+      why: `no drive ledger, and ${asked.asks}, but the pull request's head commit does not read, so the once-per-head rule cannot be kept; nothing is armed`,
       evidence: {},
     };
   return {
     ...base,
     class: "unarmed",
-    why: "no drive ledger, and a person's drive label asks for one: arm a drive on any account",
-    evidence: { ledger: "none", headSha: pr.headRefOid ?? null },
+    why: `no drive ledger, and ${asked.asks}: arm a drive on any account`,
+    evidence: { ledger: "none", headSha: pr.headRefOid, ...asked.evidence },
   };
+}
+
+/** What asks for a pull request with no ledger to be armed: a person's `drive` label, else the adoption rule; `null` when nothing does. */
+function askedToArm(
+  pr: OpenPr,
+  r: Pick<Reading, "labels" | "adoption" | "nowMs">,
+): { asks: string; evidence: { adopted?: string } } | null {
+  const { labels, adoption } = r;
+  if (labels !== null && hasCommand(labels, pr.labels, "drive"))
+    return { asks: "a person's drive label asks for one", evidence: {} };
+  const adopted =
+    adoption === null ? null : adopts(pr, adoption, labels, r.nowMs);
+  return adopted === null
+    ? null
+    : {
+        asks: "the repository's adoption rule (dispatch.adopt) adopts it",
+        evidence: { adopted },
+      };
 }
 
 /** What every drive of a pull request carries: the pull request, and its labels where they are read. */
@@ -426,6 +456,8 @@ interface Reading {
   nowMs: number;
   windowMs: number;
   labels: LabelConfig | null;
+  /** The repository's adoption rule, where on. */
+  adoption: Adoption | null;
   /** The head of a base branch, read at most once per reading. */
   baseHead: (branch: string | undefined) => Promise<BaseHead>;
 }
@@ -473,7 +505,7 @@ async function driveOf(pr: OpenPr, r: Reading): Promise<DrivenPr | null> {
   if (typeof snapshot === "string")
     return { ...base, class: "unplaced", why: snapshot, evidence: {} };
   const why = unreadable(snapshot);
-  if (why === "") return unarmed(pr, base, labels);
+  if (why === "") return unarmed(pr, base, r);
   if (why !== null || snapshot.canonical?.parsed.kind !== "ledger")
     return { ...base, class: "unplaced", why: why ?? "", evidence: {} };
   const ledger = snapshot.canonical.parsed.ledger;
@@ -505,7 +537,8 @@ function waitingOf(
 /**
  * The open pull requests that carry a ledger, each classified; a pull
  * request with no ledger the drive trusts is not a drive and is left out,
- * unless `labels` are on and it carries the `drive` label (`unarmed`).
+ * unless `labels` are on and it carries the `drive` label, or `adoption`
+ * adopts it (`unarmed`).
  */
 export async function readDrives(
   slug: string,
@@ -513,6 +546,7 @@ export async function readDrives(
   prs: readonly OpenPr[],
   nowMs: number,
   labels: LabelConfig | null = null,
+  adoption: Adoption | null = null,
 ): Promise<DrivenPr[]> {
   const reading: Reading = {
     slug,
@@ -520,6 +554,7 @@ export async function readDrives(
     nowMs,
     windowMs: stallThresholdMs(),
     labels,
+    adoption,
     baseHead: baseHeads(slug),
   };
   const out: DrivenPr[] = [];

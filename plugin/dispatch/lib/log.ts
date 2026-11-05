@@ -40,6 +40,7 @@ import {
   type ReadRecord,
   targetOf,
 } from "./launches.ts";
+import { questionOf } from "./session.ts";
 import { existingStateDb, stateDb } from "./state.ts";
 
 /**
@@ -287,12 +288,18 @@ function goneWithoutExit(s: ReadRecord["state"]): string {
     : "its wrapper is gone without an exit";
 }
 
-/** An interactive session's class: its recorded result, else how it ended. */
+/** A pickup's session's or a follow-up pass's class: its recorded result, a question it stopped on, else how it ended. */
 function sessionClass(
   r: ReadRecord,
   endedAt: string,
 ): { class: OutcomeClass; reason: string } {
   if (r.result === "done") return { class: "converged", reason: "result done" };
+  const question = questionOf(r.state);
+  if (question !== null)
+    return {
+      class: "parked for a person",
+      reason: `stopped on a question: ${question}`,
+    };
   if (r.result === "failed")
     return { class: "gates failed", reason: "result failed" };
   const s = r.state;

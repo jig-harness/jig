@@ -1941,6 +1941,11 @@ make, use the entry's term instead.
   commands: `drive` asks the dispatcher to drive a pull request that has
   no drive yet, and `hold` stands it down from a pull request until the
   person removes the label.
+- **Adoption rule** — a repository's opt-in (`dispatch.adopt`) under which
+  the *dispatcher* drives its own recent pull requests without anyone
+  labelling them: an open pull request with no drive ledger, opened by one
+  of the rule's authors and updated within its window, is armed as if a
+  person had put the `drive` label on it.
 - **Serialized area** — an area of a *change-area catalog* marked
   `serialize: true`: its pull requests conflict with each other whenever
   two of them move at once (a migrations folder, a schema), so the
@@ -1953,6 +1958,29 @@ make, use the entry's term instead.
   and, with *dispatch labels* on, labels it `held`. A drive a person arms
   on it still runs. Not the same as a person's `hold` label, which stands
   the dispatcher down from a pull request altogether.
+- **Dispatch board** — the *dispatcher*'s dashboard view of every pull
+  request and item it reads, in one column each (coming, picking up,
+  driven, needs you, ready to merge, merged), placed again from the records
+  at every *tick*, so work moves in any direction and is never moved by
+  hand. **Ready to merge** groups converged pull requests by the next known
+  act: the drive converged at the head it verified, the
+  forge itself witnesses a review of that head (a reviewer app's check run,
+  or a person's approval where none is configured; a pull request still
+  owed that approval waits in approve first), it does not conflict, is
+  not a draft, and has no unresolved review thread. Merge now confirms
+  branch protection permits merging; approve first identifies a known
+  approval need and requested reviewers, with other protection rules unread
+  and further requirements possible. Update next identifies the next branch
+  to update, with any known approval need shown.
+  Planned: [ROADMAP.md](ROADMAP.md) item 36.
+- **Ready episode** — one unbroken period a pull request spends in the
+  *dispatch board*'s Ready to merge column at one verified head. A pull
+  request that leaves (a check fails, a thread opens, a hold is added) and
+  re-enters at the same head starts a new episode, so each period's wait
+  is counted on its own and its event rows share one key: the pull
+  request, the head and the tick that saw it enter. Not the once-per-head
+  `ready` notification record, which keeps a person from being told twice
+  about the same head however many episodes it has.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
   it started ended, a table of its state database with a text copy of one
   file per month: one row per session with its stage, repository,

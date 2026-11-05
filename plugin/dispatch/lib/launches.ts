@@ -16,8 +16,9 @@
  *   so exactly one wrapper ever claims a record;
  * - `exit`, the wrapper's again: the stage's exit, once it ended; the first
  *   one written stands;
- * - `result`, an interactive session's own answer (`done` or `failed`),
- *   written once by `jig dispatch result` under the record's token.
+ * - `result`, a pickup's session's or a follow-up pass's own answer
+ *   (`done` or `failed`), written once by `jig dispatch result` under the
+ *   record's token.
  *
  * A record's state is read from those columns and the process table, the
  * claim judged by the shared rules (`shared/liveness.ts`):
@@ -59,7 +60,7 @@ import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
 import type { StaleCause } from "./types.ts";
 
-/** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up session. */
+/** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction = "rearm" | "takeover" | "pickup" | "followup";
 
 /** Whether a record starts a drive's headless pass, whose exit is its answer. */
@@ -67,12 +68,12 @@ export function isDrive(record: Pick<LaunchRecord, "action">): boolean {
   return record.action === "rearm" || record.action === "takeover";
 }
 
-/** Whether a record starts an interactive session (a pickup's, a follow-up's), whose agent ends it. */
+/** Whether a record starts an interactive session (a pickup's), whose agent ends it. A follow-up is a headless pass, which its exit ends. */
 export function isInteractive(record: Pick<LaunchRecord, "action">): boolean {
-  return !isDrive(record);
+  return record.action === "pickup";
 }
 
-/** An interactive session's own answer, recorded through `jig dispatch result`. */
+/** A pickup's session's or a follow-up pass's own answer, recorded through `jig dispatch result`. */
 export type SessionResult = "done" | "failed";
 
 /** The runtime's answer to one `launch` call for the record. */
@@ -101,9 +102,9 @@ export interface LaunchRecord {
   configDir: string;
   /** The machine file's `wall_backoff` when the record was written, for a wall with no known reset. */
   wallBackoffMs: number;
-  /** For a drive: the pass deadline, in seconds (`0` for none), it was admitted under and runs under (`drive.ts --pass-timeout`); absent on a record written before it was kept. */
+  /** For a drive or a follow-up pass: the pass deadline, in seconds (`0` for none), it was admitted under and runs under (`drive.ts --pass-timeout`, or the wrapper's own deadline on a follow-up pass); absent on a record written before it was kept. */
   passTimeoutSec?: number | null;
-  /** For a drive: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
+  /** For a drive or a follow-up pass: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
   codexBypass?: boolean;
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */
   replaces: string | null;
@@ -119,7 +120,7 @@ export interface LaunchRecord {
   effort: string | null;
   /** A pickup's ended record no longer holds its item: the item left the dispatch states since. */
   released: boolean;
-  /** The command a follow-up's session starts (the repository's `dispatch.followup_command`); `null` for any other record. */
+  /** The command a follow-up pass runs (the repository's `dispatch.followup_command`); `null` for any other record. */
   command: string | null;
   /** The id of the follow-up marker comment the tick posted for it; `null` until posted, and for any other record. */
   marker: number | null;
@@ -127,7 +128,7 @@ export interface LaunchRecord {
   round?: number | null;
   /** For a re-drive: why it was launched, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
   redrive?: StaleCause | null;
-  /** The vendor session id the tick minted for an interactive session and passed to its agent; `null` when none was. */
+  /** The vendor session id the tick minted for a Claude Code session or follow-up pass and passed to its agent; `null` when none was. */
   sessionId?: string | null;
   /**
    * The dispatched mark the launch's workspace was named and marked with
@@ -182,6 +183,8 @@ export interface LaunchExit {
   signal: string | null;
   /** Set when the stage ended on the account's wall and the wrapper could not record that wall. */
   wallUnrecorded?: true;
+  /** For a follow-up pass that ended without recording done: the last `Question:` line of its output, the question it stopped on. */
+  said?: string;
 }
 
 export type LaunchState =
@@ -206,7 +209,7 @@ export type LaunchState =
 export interface ReadRecord {
   record: LaunchRecord;
   state: LaunchState;
-  /** An interactive session's recorded answer; `null` when none. */
+  /** A pickup's session's or a follow-up pass's recorded answer; `null` when none. */
   result: SessionResult | null;
 }
 
@@ -532,7 +535,7 @@ export function readRecord(
 }
 
 /**
- * Record an interactive session's answer: true when this call wrote it,
+ * Record a session's or a follow-up pass's answer: true when this call wrote it,
  * false when the record already had one, which stands.
  */
 export function recordResult(

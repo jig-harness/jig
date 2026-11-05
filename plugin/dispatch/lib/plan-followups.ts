@@ -13,7 +13,7 @@
  * | a manual run's, not marked done | quiet: held by that run, reported with its author and age |
  * | the tick's, its outcome done | quiet: done |
  * | the tick's, its launch record still holding | running |
- * | the tick's, its outcome failed, its record died, or record and outcome both gone | a failed follow-up: notified once, never started again |
+ * | the tick's, its outcome failed, its record died, or record and outcome both gone | a failed follow-up: notified once, with the question its pass stopped on when it stated one, never started again |
  * | the tick's, naming a record for anything else | reports it, starts nothing |
  *
  * A marker is a claim, not a completion; a person settles a failed or
@@ -26,6 +26,7 @@ import { trustedMarkers } from "./followup-marker.ts";
 import { holds, type ReadRecord, targetOf } from "./launches.ts";
 import { followupFailedNotice } from "./notices.ts";
 import type { Workspace } from "./runtime/port.ts";
+import { questionOf } from "./session.ts";
 import type { Action, FollowupMarker, MarkedPr, RepoReport } from "./types.ts";
 
 export interface FollowupInput {
@@ -53,15 +54,21 @@ function failed(
   marker: FollowupMarker,
   why: string,
   launched: boolean,
+  question: string | null = null,
 ): Action {
   return {
     stage: "notify",
     target: `PR #${pr.number}`,
     record: "forge",
     reason: `failed follow-up: ${why}; never started again by the tick, a person settles it`,
-    evidence: { url: pr.url, marker: marker.id, by: marker.login },
+    evidence: {
+      url: pr.url,
+      marker: marker.id,
+      by: marker.login,
+      ...(question === null ? {} : { question }),
+    },
     cause: "followup-failed",
-    notice: followupFailedNotice(input.slug, pr, marker.id, why),
+    notice: followupFailedNotice(input.slug, pr, marker.id, why, question),
     // The ended row of a follow-up this machine ran holds the failure; one it has no record of has no row.
     ...(launched ? { launched: true as const } : {}),
   };
@@ -127,15 +134,17 @@ function planTickMarker(
     });
     return;
   }
+  const question = ended === "failed" ? questionOf(found?.state) : null;
   plan.actions.push(
     failed(
       input,
       pr,
       marker,
       ended === "failed"
-        ? `its session under launch record ${id} ended without recording done`
+        ? `its pass under launch record ${id} ended without recording done${question === null ? "" : `, on a question for a person: ${question}`}`
         : `marker comment ${marker.id} names launch record ${id}, and neither that record nor its outcome is on this machine`,
       ended === "failed",
+      question,
     ),
   );
 }

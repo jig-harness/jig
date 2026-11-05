@@ -8,7 +8,7 @@ import { isMapping, parseConfigText } from "../../shared/config-layers.ts";
 import { CANONICAL_STATES } from "../../skills/do-item/scripts/lib/tracker/port.ts";
 import { DEFAULT_LABELS, type LabelConfig } from "./labels.ts";
 import { duration } from "./machine-config.ts";
-import type { DispatchSection } from "./types.ts";
+import type { AdoptRule, DispatchSection } from "./types.ts";
 
 const DEFAULT_STATES = ["todo"];
 /** `stalled_after` and `blocked_after`'s default. */
@@ -27,8 +27,12 @@ const KEYS = [
   "pickup_within",
   "followup_within",
   "labels",
+  "adopt",
 ];
 const LABEL_KEYS = ["enabled", "prefix", "only_labeled"];
+const ADOPT_KEYS = ["enabled", "authors", "within"];
+/** `adopt.within`'s default: a week. */
+const DEFAULT_ADOPT_WITHIN_MS = 168 * 3_600_000;
 /** A GitHub label is at most 50 characters, and the longest name the prefix goes before is `followed-up`. */
 const MAX_PREFIX = 50 - "followed-up".length;
 
@@ -148,6 +152,45 @@ function labels(value: unknown): LabelConfig {
   return config;
 }
 
+/** `dispatch.adopt.authors`: a nonempty list of logins; `null` (the dispatcher's own login) when absent. */
+function authors(value: unknown): string[] | null {
+  if (value === undefined || value === null) return null;
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.some((a) => typeof a !== "string" || a.trim() === "" || /\s/.test(a))
+  )
+    throw new SectionError(
+      "dispatch.adopt.authors must be a nonempty list of forge logins, each without spaces",
+    );
+  return value as string[];
+}
+
+/** `dispatch.adopt`: off unless `enabled`. */
+function adoptRule(value: unknown): AdoptRule {
+  const off: AdoptRule = {
+    enabled: false,
+    authors: null,
+    withinMs: DEFAULT_ADOPT_WITHIN_MS,
+  };
+  if (value === undefined || value === null) return off;
+  if (!isMapping(value))
+    throw new SectionError("dispatch.adopt must be a mapping");
+  const raw = value as Record<string, unknown>;
+  const unknown = Object.keys(raw).filter((k) => !ADOPT_KEYS.includes(k));
+  if (unknown.length > 0)
+    throw new SectionError(
+      `dispatch.adopt has unknown key(s): ${unknown.join(", ")} (known: ${ADOPT_KEYS.join(", ")})`,
+    );
+  if (raw.enabled !== undefined && typeof raw.enabled !== "boolean")
+    throw new SectionError("dispatch.adopt.enabled must be true or false");
+  return {
+    enabled: raw.enabled === true,
+    authors: authors(raw.authors),
+    withinMs: wait(raw.within, "adopt.within", DEFAULT_ADOPT_WITHIN_MS),
+  };
+}
+
 /** The `dispatch` section of parsed configuration values, with defaults. */
 export function dispatchSection(
   values: Record<string, unknown>,
@@ -160,6 +203,16 @@ export function dispatchSection(
   if (unknown.length > 0)
     throw new SectionError(
       `dispatch has unknown key(s): ${unknown.join(", ")} (known: ${KEYS.join(", ")})`,
+    );
+  const labelConfig = labels(section.labels);
+  const adopt = adoptRule(section.adopt);
+  if (adopt.enabled && !labelConfig.enabled)
+    throw new SectionError(
+      "dispatch.adopt needs dispatch.labels.enabled: the rule never adopts a pull request carrying the hold label, which is read only with the labels on",
+    );
+  if (adopt.enabled && labelConfig.onlyLabeled)
+    throw new SectionError(
+      "dispatch.adopt needs dispatch.labels.only_labeled off: under only_labeled a pull request with no label of the set is never read, so none could be adopted",
     );
   return {
     identity: text(section.identity, "identity"),
@@ -178,7 +231,8 @@ export function dispatchSection(
       "followup_within",
       DEFAULT_FOLLOWUP_WITHIN_MS,
     ),
-    labels: labels(section.labels),
+    labels: labelConfig,
+    adopt,
   };
 }
 
