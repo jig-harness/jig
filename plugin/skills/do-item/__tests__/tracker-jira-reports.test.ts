@@ -660,6 +660,7 @@ describe("Jira adapter: assignments", () => {
       followupWithinMs: 3_600_000,
       noticesLingerMs: 3_600_000,
       labels: { enabled: false, prefix: "jig:", onlyLabeled: false },
+      adopt: { enabled: false, authors: null, withinMs: 604_800_000 },
     };
     const member = await readPickups(() => jira(assigned(MEMBER)).t, section);
     expect(member.read.ok).toBe(true);

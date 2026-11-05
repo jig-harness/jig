@@ -298,7 +298,13 @@ while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(5
 process.exit(0);
 `;
 
-/** The Claude Code a pickup's wrapper starts in tests: it records how it was started and runs until \`claude-exit\` appears. */
+/**
+ * The Claude Code a wrapper starts in tests: it records how it was started
+ * and runs until \`claude-exit\` appears, then prints \`claude-said\` when
+ * there is one and exits with the code \`claude-exit\` holds (0 when empty).
+ * With \`claude-stubborn\` present it ignores SIGTERM and leaves a tool
+ * command running, whose pid it writes to \`claude-tool-pid\`.
+ */
 const FAKE_CLAUDE = `#!/usr/bin/env bun
 const fs = require("node:fs");
 const F = process.env.DISPATCH_FAKE_DIR;
@@ -308,9 +314,24 @@ fs.appendFileSync(F + "/claude-runs.jsonl", JSON.stringify({
   configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
   token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
 }) + "\\n");
+if (fs.existsSync(F + "/claude-stubborn")) {
+  process.on("SIGTERM", () => {});
+  const tool = require("node:child_process").spawn("sleep", ["300"], { stdio: "ignore" });
+  fs.writeFileSync(F + "/claude-tool-pid", String(tool.pid));
+}
 const until = Date.now() + 60000;
 while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(50);
-process.exit(0);
+if (fs.existsSync(F + "/claude-said")) {
+  const said = fs.readFileSync(F + "/claude-said");
+  // With \`claude-split\` present, the first multi-byte character is cut between two writes.
+  const cut = fs.existsSync(F + "/claude-split") ? said.findIndex((b) => b >= 0xc0) + 1 : 0;
+  if (cut > 0) {
+    process.stdout.write(said.subarray(0, cut));
+    Bun.sleepSync(300);
+  }
+  process.stdout.write(said.subarray(cut));
+}
+process.exit(Number(fs.existsSync(F + "/claude-exit") ? fs.readFileSync(F + "/claude-exit", "utf8") : 0) || 0);
 `;
 
 export interface OrcaAgent {

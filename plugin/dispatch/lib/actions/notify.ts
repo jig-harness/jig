@@ -452,7 +452,10 @@ function classOf(cause: Cause): OutcomeClass | null {
     case "parked":
       return "parked for a person";
     case "followup-failed":
-      return "gates failed";
+      // A pass that stopped on a question waits on a person, as a parked drive does.
+      return typeof cause.evidence.question === "string"
+        ? "parked for a person"
+        : "gates failed";
     case "stopped-unknown":
       return "unknown";
     case "needs-person": {

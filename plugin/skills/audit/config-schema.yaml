@@ -196,6 +196,25 @@ fields:
     read_by: [dispatch]
     repository_only: true
     since: 0.122.0
+  dispatch.adopt.enabled:
+    type: boolean
+    default: false
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.138.0
+  dispatch.adopt.authors:
+    type: list
+    items: { type: string, pattern: "^\\S+$" }
+    nonempty: true
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.138.0
+  dispatch.adopt.within:
+    type: string
+    pattern: "^\\s*0*(?:(?:[1-9]\\d?|[1-4]\\d\\d|5[0-6]\\d|57[0-6])\\s*h|(?:[1-9]\\d{0,3}|[12]\\d{4}|3[0-3]\\d{3}|34[0-4]\\d{2}|345[0-5]\\d|34560)\\s*m|(?:[1-9]\\d{0,5}|1\\d{6}|20[0-6]\\d{4}|207[0-2]\\d{3}|2073[0-5]\\d{2}|2073600)\\s*s)\\s*$"
+    read_by: [dispatch]
+    repository_only: true
+    since: 0.138.0
 
   gates.command:
     type: command
@@ -417,7 +436,7 @@ fields:
       pattern: "^(?!(?:--|-p|--print|--model)$)(?!--model=)\\S+$"
     default: []
     since: 0.109.0
-    read_by: [drive-pr, do-item]
+    read_by: [drive-pr, do-item, dispatch]
     user_only: true
   drive.codex_bypass:
     type: boolean

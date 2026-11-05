@@ -36,6 +36,17 @@ export interface DispatchSection {
   noticesLingerMs: number;
   /** The dispatch labels (`dispatch.labels`): off by default. */
   labels: LabelConfig;
+  /** The adoption rule (`dispatch.adopt`): off by default. */
+  adopt: AdoptRule;
+}
+
+/** `dispatch.adopt`: which open pull requests with no drive ledger the tick drives as if labelled `drive`. */
+export interface AdoptRule {
+  enabled: boolean;
+  /** The authors it adopts; `null` for the login the dispatcher reads the forge as. */
+  authors: string[] | null;
+  /** How recently a pull request must have been updated. */
+  withinMs: number;
 }
 
 /** One repository as the tick dispatches for it. */

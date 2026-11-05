@@ -4,10 +4,11 @@
  * records for each repository and prints every stage it would start, with
  * the record that wants it and the evidence. With `--apply` it starts the
  * stages the machine file (`~/.jig/dispatch.yaml`) enables for each
- * repository: the drives' re-arms and takeovers, and the pickups where the
+ * repository: the drives' re-arms and takeovers, the follow-ups as headless
+ * passes, and the pickups where the
  * session runtime binds an interactive session to its account.
  * `jig dispatch install` writes the timer that runs `--apply` every
- * interval; `jig dispatch result` is how a dispatched interactive session
+ * interval; `jig dispatch result` is how a dispatched session or follow-up pass
  * records how it ended; `jig dispatch marker` is how a follow-up command
  * claims a merged pull request's follow-up, checks its claim and marks it
  * done; `jig dispatch dashboard` serves one page over the outcome log while
