@@ -179,18 +179,25 @@ describe("jig dispatch line --json", () => {
     expect({ ...answer.value, now: "" }).toEqual({ ...served.value, now: "" });
   });
 
-  it("refuses a version-1 line that lacks the snapshot's fields, as it does one that is not JSON", () => {
-    const root = stateRootOf(freshHome());
-    writeLine(LINE, "{}", root);
-    const bad = { ...LINE, timeZone: 42, startedAt: undefined };
-    stateDb(root)
-      .query("UPDATE tick_line SET line = ? WHERE id = 1")
-      .run(JSON.stringify(bad));
-    closeStateDb(root);
-    expect(() =>
-      lineMain({ root, nowMs: NOW, print: () => undefined }),
-    ).toThrow("line-unreadable");
-  });
+  it.each([
+    ["a time zone that is not a string", { timeZone: 42 }],
+    ["no start time", { startedAt: undefined }],
+    ["a duration that is not a number", { recentTicksMs: ["oops"] }],
+  ])(
+    "refuses a version-1 line with %s, as it does one that is not JSON",
+    (_name, change) => {
+      const root = stateRootOf(freshHome());
+      writeLine(LINE, "{}", root);
+      const bad = { ...LINE, ...change };
+      stateDb(root)
+        .query("UPDATE tick_line SET line = ? WHERE id = 1")
+        .run(JSON.stringify(bad));
+      closeStateDb(root);
+      expect(() =>
+        lineMain({ root, nowMs: NOW, print: () => undefined }),
+      ).toThrow("line-unreadable");
+    },
+  );
 
   it("reads a database at an older schema without migrating it", () => {
     const root = stateRootOf(freshHome());

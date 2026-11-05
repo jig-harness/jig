@@ -692,10 +692,12 @@ Its exit codes:
 - `0`: the answer is printed. Its `line` is `null` when no tick has written
   one yet, the database not existing included.
 - `1`: the stored line cannot be read (it is not JSON, is in a form this
-  plugin does not read, or the database is a newer plugin's). Nothing is
+  plugin does not read, or the database is a newer plugin's that requires a
+  newer reader). Nothing is
   printed on standard output, and one line on standard error names the code,
   `line-unreadable`, and the reason. The next tick writes a line this plugin
-  reads; a newer plugin's database needs this plugin updated first.
+  reads; a newer plugin's database that requires a newer reader needs this plugin
+  updated first; one a reader at this version can still read is read.
 - `2`: the command line was refused.
 
 **When a class recurs.** The tick tunes none of its own dials. A class that

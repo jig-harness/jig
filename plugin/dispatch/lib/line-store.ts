@@ -101,7 +101,8 @@ const LINE_FIELDS: Fields = {
   applyWithheld: nullOr(isString),
   intervalMs: isNumber,
   longestTickMs: isNumber,
-  recentTicksMs: (value) => value === undefined || Array.isArray(value),
+  recentTicksMs: (value) =>
+    value === undefined || (Array.isArray(value) && value.every(isNumber)),
   plugin: nullOr(isString),
   timeZone: (value) => value === undefined || isString(value),
   lastAccount: nullOr(isString),
