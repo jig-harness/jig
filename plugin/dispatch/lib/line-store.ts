@@ -64,6 +64,9 @@ const DECISION_FIELDS: Fields = {
   key: isString,
   kind: (value) => value === "thread" || value === "finding",
   lines: (value) => Array.isArray(value) && value.every(isString),
+  question: nullOr(isString),
+  recommendation: nullOr(isString),
+  decisionClass: nullOr(isString),
 };
 
 /** What the sessions view reads of each thread sample. */

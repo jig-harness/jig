@@ -212,6 +212,14 @@ describe("jig dispatch line --json", () => {
     decisions: [],
     workspaces: [],
   };
+  const DECISION = {
+    key: "k",
+    kind: "thread",
+    lines: ["## Question"],
+    question: null,
+    recommendation: null,
+    decisionClass: null,
+  };
   const SESSION = {
     record: "r",
     account: "a",
@@ -232,6 +240,28 @@ describe("jig dispatch line --json", () => {
             decisions: [
               { key: "k", kind: "thread", lines: [{ toString: null }] },
             ],
+          },
+        ],
+      },
+    ],
+    [
+      "a decision whose question is not text",
+      {
+        needs: [
+          {
+            ...NEED,
+            decisions: [{ ...DECISION, question: { text: "Choose" } }],
+          },
+        ],
+      },
+    ],
+    [
+      "a decision whose recommendation or class is not text",
+      {
+        needs: [
+          {
+            ...NEED,
+            decisions: [{ ...DECISION, recommendation: 3, decisionClass: [] }],
           },
         ],
       },
