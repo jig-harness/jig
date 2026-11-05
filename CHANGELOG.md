@@ -178,6 +178,9 @@ changes are marked **Breaking** and say what a consumer changes.
   reaches a person's phone, its outcome log and dashboard, the dispatch
   labels a person steers with, and the pull requests of a contended area
   driven one at a time.
+- [GLOSSARY.md](GLOSSARY.md) defines the test-to-code ratio: the lines of
+  tests divided by the lines of code in the code-stats skill's default area,
+  the figure its report states beside both counts.
 
 ### Changed
 
@@ -383,6 +386,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - A link to a section of the getting-started, plugin, features or
   principles page no longer stops well below the header: it lands just
   under it.
+
+## [0.142.1] - 2026-11-05
+
+### Changed
+
+- **Other hosts see a launch's end when it ends, not a tick later.** When a dispatched drive or follow-up pass exits, the wrapper that ran it writes the launch's end onto the shared claim its host made for it on the pull request (a drive's launch claim, a follow-up's marker with its answer), so a host dispatching the same repository reads the end at its next run instead of after the launching host's next run. A write the forge refuses is one line on the wrapper's output, and the launching host's next `--apply` run writes the end as before, as it does for a wrapper stopped before its write; the wrapper's exit code stays the stage's ([plugin/README.md](plugin/README.md#the-dispatcher), [plugin/RECORDS.md](plugin/RECORDS.md#on-the-forge-and-the-tracker)).
 
 ## [0.142.0] - 2026-11-05
 
@@ -5333,7 +5342,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.142.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.142.1...HEAD
+[0.142.1]: https://github.com/jig-harness/jig/compare/v0.142.0...v0.142.1
 [0.142.0]: https://github.com/jig-harness/jig/compare/v0.141.0...v0.142.0
 [0.141.0]: https://github.com/jig-harness/jig/compare/v0.140.2...v0.141.0
 [0.140.2]: https://github.com/jig-harness/jig/compare/v0.140.1...v0.140.2

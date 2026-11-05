@@ -33,7 +33,12 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
   levels and stations; FEATURES.md into a feature per section with its
   skills, modules and roadmap items; the plugin README's skill tables; the glossary; the
   changelog and roadmap; M8's flywheel. `website/src/lib/data/index.ts`
-  loads each once per build. The parsers are pure functions over text, and
+  loads each once per build. The one figure no document holds, Jig's own
+  code statistics, comes from running the code-stats skill's script with
+  `--json` on the checkout being built (`code-stats.ts`): nothing is
+  committed, so no snapshot goes stale or conflicts between pull requests,
+  and a failed run or a report shape other than `code-stats/v1` fails the
+  build. The parsers are pure functions over text, and
   `data.test.ts` runs them against the real files, so a document whose
   structure a page relies on cannot change shape unnoticed.
 - **Rendering**: whole documents go through Astro's content collection
@@ -75,6 +80,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 | `/principles/`, `/principles/<n>/` | principles/ | the index shows each principle's statement and the first paragraph of its why, with a link to where it is visible on the site; each principle's page has its statement, why and consequences; principle 4 draws the ladder |
 | `/glossary/` | GLOSSARY.md | every term in its group, an anchor per term, a find filter |
 | `/whats-new/` | CHANGELOG.md, ROADMAP.md | every release beside the roadmap, each item foldable and anchored (`#rm-item-<n>`) |
+| `/stats/` | the code-stats skill's `--json` report, run by the build on the commit it builds | what Jig's own repository is made of, for transparency and as an example of the skill: headline figures (files, lines of code, the test-to-code ratio, the unclassified share), then a table per dimension with a bar per row: the areas in their rule order, the kinds, the languages with the most lines of code, and every module (each skill, plugin component, practice module and tool), sortable and filtered by the folder that holds it, a skill or a practice module linked to its page; the commit and date it counted. Totals only: no file path and no HTML report |
 | `/glossary.json`, `/search.json` | the same data | term definitions for the popovers, and the search index |
 
 ### The design system
@@ -331,7 +337,7 @@ Markdown, and an index to find it by.
   is, from the README, and links to the file of each section:
   `/modules/llms.txt`, `/skills/llms.txt`, `/principles/llms.txt`,
   `/factory/llms.txt` and `/adopt/llms.txt`, plus the
-  pages that belong to no section (what you get, what's new). Its first
+  pages that belong to no section (what you get, what's new, the code statistics). Its first
   link, under "Start here", is getting started, where an agent asked to set
   Jig up in a repository finds the steps it follows. Each section
   file lists its pages, its overview and the skills' agent contracts

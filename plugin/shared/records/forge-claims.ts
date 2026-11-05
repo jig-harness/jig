@@ -47,7 +47,8 @@
  * dispatcher reports two markers, a duplicate announcement is withdrawn).
  *
  * Every forge call goes through `ghCall` (`shared/proc.ts`), under its
- * deadline, and every operation returns an `Outcome`
+ * deadline or a shorter one the caller names (`Deadline`), and every
+ * operation returns an `Outcome`
  * ([ADR-0012](../../../docs/adr/ADR-0012-failures-as-values.md)): a forge or
  * parse failure is a value, never a throw.
  */
@@ -189,8 +190,13 @@ export interface Standing {
   listing: ListedClaim[];
 }
 
-/** The settings a read takes: the caller's own login, the rule, and a clock for the read-back's waits. */
-export interface ReadOptions {
+/** A forge call's deadline: `GH_CALL_TIMEOUT`'s, or `timeoutSec` seconds where that is shorter. */
+export interface Deadline {
+  timeoutSec?: number;
+}
+
+/** The settings a read takes: the caller's own login, the rule, a clock for the read-back's waits, and each call's deadline. */
+export interface ReadOptions extends Deadline {
   self?: string | null;
   rule?: ClaimRule;
   clock?: Pick<Clock, "sleep">;
@@ -369,10 +375,14 @@ function claimsOn(
 async function gh(
   args: string[],
   stdin?: string,
+  deadline: Deadline = {},
 ): Promise<Outcome<string, "forge">> {
   const r = await ghCall(args, {
     stderr: "pipe",
     ...(stdin === undefined ? {} : { stdin }),
+    ...(deadline.timeoutSec === undefined
+      ? {}
+      : { timeoutSec: deadline.timeoutSec }),
   });
   if (r.code === 0) return ok(r.stdout);
   const last = r.stderr.trim().split("\n").at(-1) ?? "";
@@ -425,13 +435,18 @@ export async function list(
   target: ClaimTarget,
   kind: ClaimKind,
   self: string | null = null,
+  deadline: Deadline = {},
 ): Promise<Outcome<ListedClaim[], "unreadable">> {
-  const r = await gh([
-    "api",
-    "--paginate",
-    "--slurp",
-    `repos/${target.repo}/issues/${target.number}/comments?per_page=100`,
-  ]);
+  const r = await gh(
+    [
+      "api",
+      "--paginate",
+      "--slurp",
+      `repos/${target.repo}/issues/${target.number}/comments?per_page=100`,
+    ],
+    undefined,
+    deadline,
+  );
   if (!r.ok)
     return failed(
       "unreadable",
@@ -500,7 +515,7 @@ export async function readBack(
   const delayMs = boundedInt(rule.delayMs, DELAY_MS, MAX_DELAY_MS);
   const clock = opts.clock ?? systemClock;
   for (let attempt = 0; ; attempt++) {
-    const listing = await list(target, kind, opts.self ?? null);
+    const listing = await list(target, kind, opts.self ?? null, opts);
     if (!listing.ok) return listing;
     const now = standing(kind, listing.value, posted, rule);
     if (now.verdict !== "lost" || now.own !== null || attempt >= retries)
@@ -555,6 +570,7 @@ export async function publish(
   target: ClaimTarget,
   kind: ClaimKind,
   draft: ClaimDraft,
+  deadline: Deadline = {},
 ): Promise<Outcome<Published, PostCode>> {
   const claim = stamped(draft);
   const r = await gh(
@@ -565,6 +581,7 @@ export async function publish(
       "-",
     ],
     JSON.stringify({ body: claimBody(kind, claim) }),
+    deadline,
   );
   if (!r.ok) return failed("not-posted", r.failure.reason);
   const comment = postedComment(r.value);
@@ -593,7 +610,7 @@ export async function post(
   draft: ClaimDraft,
   opts: ReadOptions = {},
 ): Promise<Outcome<PostedClaim, PostCode>> {
-  const published = await publish(target, kind, draft);
+  const published = await publish(target, kind, draft, opts);
   if (!published.ok) return published;
   return ok({
     ...published.value,
@@ -613,7 +630,7 @@ export async function check(
   ownId: number,
   opts: ReadOptions & { generation?: number } = {},
 ): Promise<Outcome<Standing, "unreadable">> {
-  const listing = await list(target, kind, opts.self ?? null);
+  const listing = await list(target, kind, opts.self ?? null, opts);
   if (!listing.ok) return listing;
   const mine = claimsOn(kind, listing.value, key, opts.generation).find(
     (c) => c.id === ownId,
@@ -640,6 +657,7 @@ export async function amend(
   kind: ClaimKind,
   ownId: number,
   draft: ClaimDraft,
+  deadline: Deadline = {},
 ): Promise<Outcome<void, "not-amended">> {
   const r = await gh(
     [
@@ -651,6 +669,7 @@ export async function amend(
       "-",
     ],
     JSON.stringify({ body: claimBody(kind, draft) }),
+    deadline,
   );
   return r.ok ? ok(undefined) : failed("not-amended", r.failure.reason);
 }
@@ -659,12 +678,12 @@ export async function amend(
 export async function withdraw(
   target: Pick<ClaimTarget, "repo">,
   ownId: number,
+  deadline: Deadline = {},
 ): Promise<Outcome<void, "not-withdrawn">> {
-  const r = await gh([
-    "api",
-    "-X",
-    "DELETE",
-    `repos/${target.repo}/issues/comments/${ownId}`,
-  ]);
+  const r = await gh(
+    ["api", "-X", "DELETE", `repos/${target.repo}/issues/comments/${ownId}`],
+    undefined,
+    deadline,
+  );
   return r.ok ? ok(undefined) : failed("not-withdrawn", r.failure.reason);
 }

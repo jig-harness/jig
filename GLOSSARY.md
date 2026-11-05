@@ -2188,6 +2188,10 @@ make, use the entry's term instead.
   *LOC*, that the code-stats skill could not place: files no kind rule
   matched, or no area rule matched, so they fell to the default area. A large
   share means the repository's `code_stats` configuration needs work.
+- **Test-to-code ratio** — the *LOC* of a repository's tests divided by the
+  LOC of its code, both counted in the code-stats skill's default area, the
+  product the repository ships. A ratio of 1 means as many lines of tests as
+  lines of code.
 - **Code-stats dimensions** — the values the code-stats skill gives every
   tracked file: its *area* (what the file is for: product code, tests,
   tooling, agent scaffolding, docs, build, database, ops), its *kind* (what

@@ -111,6 +111,11 @@ const PAGES: [string, string, string][] = [
     "/whats-new/",
     "changelog roadmap release version",
   ],
+  [
+    "Code statistics: what Jig is made of",
+    "/stats/",
+    "code stats statistics lines of code loc size languages modules tests ratio areas kinds",
+  ],
   ["All skills", "/skills/", "skills agent index"],
   ["Principles", "/principles/", "principles"],
   ["Glossary", "/glossary/", "glossary terms"],

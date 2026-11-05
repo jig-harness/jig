@@ -32,14 +32,16 @@ import {
 
 const WRITE_ATTEMPTS = 3;
 
-/** One forge call's output, or why it failed: its exit and last error line. */
+/** One forge call's output, or why it failed: its exit and last error line. `timeoutSec` shortens the call's deadline. */
 export async function forge(
   args: string[],
   stdin?: string,
+  timeoutSec?: number,
 ): Promise<{ ok: true; stdout: string } | { ok: false; why: string }> {
   const r = await ghCall(args, {
     stderr: "pipe",
     ...(stdin === undefined ? {} : { stdin }),
+    ...(timeoutSec === undefined ? {} : { timeoutSec }),
   });
   if (r.code === 0) return { ok: true, stdout: r.stdout };
   const tail = r.stderr.trim().split("\n").at(-1) ?? "";
@@ -59,9 +61,15 @@ function json(text: string, what: string): unknown {
   }
 }
 
-/** The login the forge client is signed in as; `null` when it cannot say. */
-export async function resolveLogin(): Promise<string | null> {
-  const r = await forge(["api", "user", "--jq", ".login"]);
+/** The login the forge client is signed in as; `null` when it cannot say. `timeoutSec` shortens the call's deadline. */
+export async function resolveLogin(
+  timeoutSec?: number,
+): Promise<string | null> {
+  const r = await forge(
+    ["api", "user", "--jq", ".login"],
+    undefined,
+    timeoutSec,
+  );
   const login = r.ok ? r.stdout.trim() : "";
   return /^[A-Za-z0-9-]+(\[bot\])?$/.test(login) ? login : null;
 }
