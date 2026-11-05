@@ -1282,6 +1282,13 @@ make, use the entry's term instead.
   directive (hold the push, pause, stop) is enforced by the drive's own
   scripts, whatever a pass does
   ([drive-pr](plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)).
+- **Mirror run** — the run a continuous-integration workflow makes for an
+  event of a pull-request label other than the *CI hold*'s, where labels
+  change too often for each event to run real CI: it skips the expensive
+  jobs, cancels no other run, and its required check repeats the result of
+  the newest real run on the same commit, failing whenever it cannot show
+  that result passed
+  ([M13](modules/M13-pipeline-economy/README.md#7-hold)).
 - **Held-head check** — the step of a required check that fails, or cancels
   its own run, while a pull request carries the *CI hold* label, so a held
   head is visibly not mergeable from the moment the label lands until the

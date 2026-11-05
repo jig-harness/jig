@@ -14,7 +14,7 @@ import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LogRow } from "../../plugin/dispatch/lib/log.ts";
 import { CopyButton } from "./copy.tsx";
-import { Evidence } from "./fold.tsx";
+import { Evidence, StageHint } from "./fold.tsx";
 import {
   type Forges,
   type RowClock,
@@ -22,6 +22,7 @@ import {
   type RowView,
 } from "./log-view.ts";
 import { Mark, StageChip } from "./marks.tsx";
+import { stageMeaning } from "./status.ts";
 
 const PAGE = 25;
 
@@ -52,7 +53,11 @@ const columns = helper.columns([
       <span className="cell-tgt">
         <span className="m">{row.original.target}</span>
         <span className="m mut">{row.original.repo}</span>
-        <StageChip mark={row.original.mark} stage={row.original.stage} />
+        <StageChip
+          mark={row.original.mark}
+          stage={row.original.stage}
+          title={stageMeaning(row.original.stage)}
+        />
       </span>
     ),
   }),
@@ -77,6 +82,7 @@ const columns = helper.columns([
 function RowBody({ view }: { view: RowView }) {
   return (
     <div className="rowBody">
+      <StageHint mark={view.mark} stage={view.stage} />
       <div className="quote">{view.reason}</div>
       <div className="copyRow">
         <CopyButton

@@ -105,6 +105,10 @@ While a pull request carries it:
   `opened`, `synchronize` and `reopened`, so applying the label fails the
   head at once and removing it runs everything again on the same head.
 
+An event for any other label `<runs real CI | runs a mirror: the jobs above
+skip, the run takes a concurrency group of its own, and <the aggregator job>
+repeats the newest real run's result on the head, failing closed>`.
+
 Only results that started after the label's removal count. A driver that
 died leaves the label on: remove it by hand
 (`<gh pr edit <PR> --remove-label ci:hold>`); never rerun the held run, which
@@ -200,7 +204,8 @@ in by its due date fails the check.
 - [ ] If a job of it is one the hold skips, or it reports a required check:
       it runs on both label events, the skip tests the pull request's labels
       for the hold label, and the held-head check's failure reaches the
-      required check.
+      required check; where other labels' events run a mirror, it skips on
+      them too, and the required job repeats the real result.
 - [ ] If it uses a cache: the cache is in the table above with its key
       scheme and bound, its credentials are checked non-empty before the
       first task, its hit rate goes to the job summary, and its jobs are in
