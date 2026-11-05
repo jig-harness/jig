@@ -820,7 +820,7 @@ POSIX the wrapper leads the pass's own process group and signals the group.
 Windows has no process group to signal, so the wrapper samples the pass's
 descendants while their parent links exist, keeps what it recorded after the
 pass exits, and ends them by identity. That cleanup is best-effort, and
-two limits stand: a descendant started and parented between two samples can
+limits stand: a descendant started and parented between two samples can
 survive a pass, and when the tree cannot be shown to have ended the wrapper
 still exits, so the record's slot is released while a survivor may run on in the
 workspace. Closing them takes a persisted "cleanup uncertain" launch state that
