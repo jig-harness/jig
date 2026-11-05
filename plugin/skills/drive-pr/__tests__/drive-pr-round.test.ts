@@ -120,6 +120,8 @@ describe("announce-merge-ready.ts", () => {
        * several this script makes.
        */
       dirtyAfterSweeps?: number;
+      /** Comment sweeps past this many fail (the claim read-back). */
+      failSweepsAfter?: number;
       /** A scratch edit lands in `cwd` DURING a comment DELETE call. */
       dirtyOnDelete?: boolean;
       /**
@@ -156,6 +158,12 @@ describe("announce-merge-ready.ts", () => {
       writeFileSync(
         join(dir, "dirty-after-sweeps"),
         String(opts.dirtyAfterSweeps),
+      );
+    }
+    if (opts.failSweepsAfter !== undefined) {
+      writeFileSync(
+        join(dir, "fail-sweeps-after"),
+        String(opts.failSweepsAfter),
       );
     }
     if (opts.dirtyOnDelete) writeFileSync(join(dir, "dirty-on-delete"), "");
@@ -817,6 +825,12 @@ describe("announce-merge-ready.ts", () => {
     expect(r.deleted).toEqual(["9001"]);
     expect(r.stderr).toContain("uncommitted state");
     expect(r.stderr).toContain("withdrawing this announcement");
+  });
+
+  it("WITHDRAWS its own announcement when the claim read-back cannot list comments", async () => {
+    const r = await announce(CONVERGED, false, { failSweepsAfter: 2 });
+    expect(r).toMatchObject({ exitCode: 1, posted: true, deleted: ["9001"] });
+    expect(r.stderr).toContain("could not re-read comments");
   });
 
   it("re-checks cleanliness after withdrawing a duplicate in the race path too", async () => {

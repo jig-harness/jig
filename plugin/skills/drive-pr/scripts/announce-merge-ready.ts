@@ -1163,11 +1163,10 @@ ${marker}`;
   }
   if (!back.ok) {
     console.error(
-      "announce-merge-ready: posted, but could not re-read comments to check for a",
+      `announce-merge-ready: posted, but could not re-read comments to check for an earlier announcement of ${head} — withdrawing this one; re-run.`,
     );
-    console.error(
-      "concurrent duplicate — verify by eye if two drivers may have been running.",
-    );
+    await withdrawPosted();
+    return 1;
   }
 
   // The LAST possible point before the last possible success return: the

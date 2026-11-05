@@ -1380,6 +1380,18 @@ if [ "$announce_sweep" -eq 1 ] && [ -f "$F/dirty-after-sweeps" ]; then
   fi
 fi
 
+# $F/fail-sweeps-after: how many sweeps answer before the rest fail.
+if [ "$announce_sweep" -eq 1 ] && [ -f "$F/fail-sweeps-after" ]; then
+  m=0
+  [ -f "$F/fail-sweep-reads" ] && m=$(< "$F/fail-sweep-reads")
+  m=$(( m + 1 ))
+  printf '%s' "$m" > "$F/fail-sweep-reads"
+  if [ "$m" -gt "$(< "$F/fail-sweeps-after")" ]; then
+    echo "gh-stub: simulated read-back failure" >&2
+    exit 1
+  fi
+fi
+
 if [ -f "$F/paginate-fails" ] && [ "$announce_sweep" -eq 1 ]; then
   echo "gh-stub: simulated comment-sweep failure" >&2
   exit 1
