@@ -504,6 +504,8 @@ describe("the gate", () => {
   });
 
   test("cannot check without a plugin directory", () => {
-    expectSpawnExit(gate(root, scratch({ "README.md": "" })), 2);
+    const r = gate(root, scratch({ "README.md": "" }));
+    expectSpawnExit(r, 2);
+    expect(r.stdout.toString()).not.toContain("records-registry: OK");
   });
 });
