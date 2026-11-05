@@ -200,7 +200,7 @@ never the dispatcher.
 On the roadmap:
 [pickups started on Orca](ROADMAP.md#33-the-dispatcher-a-tick-that-starts-the-execution-lines-stages),
 and
-[a tick the moment an agent stops or waits](ROADMAP.md#34-jig-in-the-orca-ecosystem).
+[a guard on launches and a view of what waits on a person, inside Orca](ROADMAP.md#34-jig-in-the-orca-ecosystem).
 
 ## Deciding what to build
 
