@@ -500,7 +500,8 @@ export function settledRecords(
       const read = claims.get(Number(r.record.pr));
       if (read === undefined || !read.ok) return false;
       const own = readable(read.value).filter(
-        (c) => c.says.value.host === host && c.says.value.record === r.record.id,
+        (c) =>
+          c.says.value.host === host && c.says.value.record === r.record.id,
       );
       return own.length > 0 && own.every((c) => written.has(c.id) || !open(c));
     })
