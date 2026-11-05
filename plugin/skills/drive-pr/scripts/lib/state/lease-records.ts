@@ -7,8 +7,12 @@
  * see one state of the table. A row always has every field: each column is
  * `NOT NULL`, and `holder` is `session` or `worktree`.
  */
+import { Database } from "bun:sqlite";
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
+import { basename } from "node:path";
 import { hostname } from "node:os";
+import { swallow } from "../../../../../shared/errors.ts";
 import {
   fence,
   isAliveSync,
@@ -19,7 +23,7 @@ import {
   thisHost,
 } from "../../../../../shared/liveness.ts";
 import { pidCheckCommand } from "../proc.ts";
-import { driveDb, nextCount } from "./db.ts";
+import { dbPathFor, driveDb, nextCount, peekImport } from "./db.ts";
 import {
   type Lease,
   type LeaseRef,
@@ -232,6 +236,39 @@ export function liveLeasesFor(stateDir: string, pr: string): Lease[] {
     const l = readLease(ref);
     return l !== null && leaseAlive(l) ? [l] : [];
   });
+}
+
+/**
+ * Every LIVE lease on `pr`, read without creating, migrating or importing
+ * anything: `null` when that cannot be known without writing (no database,
+ * the clone never imported, or the database cannot be read). For a dry run,
+ * which must leave the disk as it is.
+ */
+export function peekLiveLeasesFor(
+  stateDir: string,
+  pr: string,
+): Lease[] | null {
+  if (!existsSync(dbPathFor(stateDir)) || peekImport(stateDir) === null)
+    return null;
+  let db: Database;
+  try {
+    db = new Database(dbPathFor(stateDir), { readonly: true });
+  } catch (err) {
+    swallow(err, "the drive's database could not be opened read-only");
+    return null;
+  }
+  try {
+    const canonical = leaseRef(stateDir, pr, "").pr;
+    const rows = db
+      .query("SELECT * FROM leases WHERE clone = ? AND pr = ?")
+      .all(basename(stateDir), canonical) as LeaseRow[];
+    return rows.map(fromRow).filter(leaseAlive);
+  } catch (err) {
+    swallow(err, "the drive's leases could not be read");
+    return null;
+  } finally {
+    db.close();
+  }
 }
 
 /** Whether a live session is still behind this tree's lease. */

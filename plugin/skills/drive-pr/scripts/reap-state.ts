@@ -56,7 +56,7 @@ import { ghCall } from "./lib/proc.ts";
 import { cloneFile, REPORT_MEMORY } from "./lib/state/artifacts.ts";
 import { driveDb, peekImport } from "./lib/state/db.ts";
 import { isFormerFile } from "./lib/state/import.ts";
-import { liveLeasesFor } from "./lib/state/lease.ts";
+import { peekLiveLeasesFor } from "./lib/state/lease.ts";
 import { createLock, LockAcquireTimeoutError } from "./lib/state/lock.ts";
 import { peekResolvedStateDir, resolveStateDir } from "./lib/state/store.ts";
 
@@ -222,7 +222,14 @@ function judgePr(
             ? "the PR is open"
             : "the PR's state could not be read",
     };
-  if (liveLeasesFor(stateDir, pr).length > 0)
+  const leases = peekLiveLeasesFor(stateDir, pr);
+  if (leases === null)
+    return {
+      family,
+      action: "keep",
+      reason: "its leases cannot be read without writing the database",
+    };
+  if (leases.length > 0)
     return { family, action: "keep", reason: "a live session lease is on it" };
   const newest = newestMtimeMs(stateDir, family.names);
   if (newest === null)

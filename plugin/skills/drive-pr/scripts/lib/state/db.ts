@@ -216,8 +216,8 @@ export interface ImportRecord {
 
 /**
  * The clone's import record, read without creating, migrating or importing
- * anything: `null` when there is no database, no `imports` row, or the
- * database cannot be read. For a dry run, which must leave the disk as it is.
+ * anything: `null` when there is no database, no `imports` row, a `skipped`
+ * list that is not all strings, or the database cannot be read. For a dry run, which must leave the disk as it is.
  */
 export function peekImport(stateDir: string): ImportRecord | null {
   const path = dbPathFor(stateDir);
@@ -235,12 +235,13 @@ export function peekImport(stateDir: string): ImportRecord | null {
       .get(basename(stateDir)) as { at: string; skipped: string } | null;
     if (row === null) return null;
     const skipped: unknown = JSON.parse(row.skipped);
-    return {
-      at: row.at,
-      skipped: Array.isArray(skipped)
-        ? skipped.filter((s): s is string => typeof s === "string")
-        : [],
-    };
+    // A damaged list is no record: the caller then keeps what it cannot vouch for.
+    if (
+      !Array.isArray(skipped) ||
+      !skipped.every((s): s is string => typeof s === "string")
+    )
+      return null;
+    return { at: row.at, skipped };
   } catch (err) {
     swallow(err, "the drive's import record could not be read");
     return null;

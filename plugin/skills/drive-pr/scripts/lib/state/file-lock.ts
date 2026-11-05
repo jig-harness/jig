@@ -26,7 +26,14 @@
  * unlink can leave behind.
  */
 import { randomBytes } from "node:crypto";
-import { readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  linkSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { errnoCode, swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import {
@@ -90,17 +97,59 @@ function pause(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+/** The guard's text, when it is there to read. */
+function readGuard(guard: string): string | null {
+  try {
+    return readFileSync(guard, "utf8");
+  } catch (err) {
+    if (errnoCode(err) !== "ENOENT") throw err;
+    return null;
+  }
+}
+
+/**
+ * Remove a guard judged stale: move it aside first, so no one else's unlink
+ * can reach it, and put it back when what was moved is not the guard that was
+ * judged (a fresh one took its place between the judgement and the move).
+ */
+function breakGuard(guard: string, judged: string): void {
+  const aside = `${guard}.${randomBytes(6).toString("hex")}`;
+  try {
+    renameSync(guard, aside);
+  } catch (err) {
+    swallow(err, "a removal guard is gone before it could be moved aside");
+    return;
+  }
+  try {
+    if (readGuard(aside) !== judged) linkSync(aside, guard);
+  } catch (err) {
+    swallow(err, "a fresh removal guard could not be put back");
+  } finally {
+    try {
+      unlinkSync(aside);
+    } catch (err) {
+      swallow(err, "a moved-aside removal guard was already removed");
+    }
+  }
+}
+
 /**
  * Run `fn` while holding the removal file `guard`; `false` when it could not
- * be taken. A guard older than `staleMs` is removed so a later call takes it.
+ * be taken. The guard carries a token minted for this call, and only a guard
+ * still carrying it is removed afterwards, so a holder whose guard was broken
+ * cannot remove its successor's. A guard older than `staleMs` is broken so a
+ * later call takes it.
  */
 function underGuard(guard: string, staleMs: number, fn: () => void): boolean {
+  const mine = randomBytes(12).toString("hex");
   try {
-    writeFileSync(guard, "", { flag: "wx" });
+    writeFileSync(guard, mine, { flag: "wx" });
   } catch (err) {
     if (errnoCode(err) !== "EEXIST") throw err;
     try {
-      if (Date.now() - statSync(guard).mtimeMs > staleMs) unlinkSync(guard);
+      const judged = readGuard(guard);
+      if (judged !== null && Date.now() - statSync(guard).mtimeMs > staleMs)
+        breakGuard(guard, judged);
     } catch (inner) {
       swallow(inner, "a removal guard is gone before its age was read");
     }
@@ -110,7 +159,7 @@ function underGuard(guard: string, staleMs: number, fn: () => void): boolean {
     fn();
   } finally {
     try {
-      unlinkSync(guard);
+      if (readGuard(guard) === mine) unlinkSync(guard);
     } catch (err) {
       swallow(err, "a removal guard was already removed");
     }

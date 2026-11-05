@@ -27,6 +27,7 @@ export {
   leaseRefsFor,
   leaseRefsForActor,
   liveLeasesFor,
+  peekLiveLeasesFor,
   liveTreeLeaseFor,
   leaseAlive,
   leaseLivenessHint,

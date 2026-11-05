@@ -115,12 +115,19 @@ describe("reap-state.ts — a PR's files", () => {
     const gh = ghShim("merged", "MERGED");
     const dry = reap(dir, gh);
     expectSpawnExit(dry.result, 0);
-    expect(dry.report().retire.map((r) => r.id)).toEqual(["pr:999"]);
+    expect(dry.report().keep.map((r) => r.id)).toEqual(["pr:999"]);
     for (const f of files) expect(existsSync(join(dir, f))).toBe(true);
     const wet = reap(dir, gh, ["--delete"]);
     expectSpawnExit(wet.result, 0);
     expect(wet.report().entriesRemoved).toBe(2);
     for (const f of files) expect(existsSync(join(dir, f))).toBe(false);
+  });
+
+  it("creates no database in a dry run over a merged PR's files", () => {
+    const dir = stateDir();
+    prFiles(dir, "999", 30);
+    expectSpawnExit(reap(dir, ghShim("merged", "MERGED")).result, 0);
+    expect(existsSync(join(dirname(dir), DB_FILE))).toBe(false);
   });
 
   it("keeps an open PR's, a closed-but-unmerged PR's and an unreadable PR's files", () => {
@@ -213,6 +220,27 @@ describe("reap-state.ts — the files an earlier release kept", () => {
     const [state, lease] = names as [string, string];
     expect(existsSync(join(dir, state))).toBe(false);
     expect(existsSync(join(dir, lease))).toBe(true);
+  });
+
+  it("keeps them when the import's list of unread files is damaged", () => {
+    const dir = stateDir();
+    const names = earlier(dir);
+    const gh = ghShim("open", "OPEN");
+    expectSpawnExit(reap(dir, gh, ["--delete"]).result, 0);
+    importedDaysAgo(dir, IMPORTED_RETENTION_DAYS + 1);
+    const db = new Database(join(dirname(dir), DB_FILE));
+    try {
+      db.run("UPDATE imports SET skipped = ? WHERE clone = ?", [
+        JSON.stringify([names[0], 7]),
+        basename(dir),
+      ]);
+    } finally {
+      db.close();
+    }
+    const run = reap(dir, gh, ["--delete"]);
+    expectSpawnExit(run.result, 0);
+    expect(run.report().retire).toEqual([]);
+    for (const name of names) expect(existsSync(join(dir, name))).toBe(true);
   });
 
   it("creates nothing in a dry run", () => {
