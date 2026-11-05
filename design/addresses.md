@@ -77,7 +77,7 @@ record, starts no session and makes no change on the forge or the tracker.
 | --- | --- | --- |
 | `holder` | the launch that holds the station now: its stage, its host, its driver generation, and whether its process is alive, dead or unknown; the account and the session where this machine's records name them; `none` when nobody holds it | the ledger and launch claims; the launch record; `plugin/shared/liveness.ts` |
 | `state` | the station's state in its own words: for a drive, running or the class of its last stop from the drive's terminal-state registry; for a pick-up, claimed, stalled or doubly claimed; for a follow-up, claimed, done or failed | the ledger; the tracker claim; the follow-up marker |
-| `waitsOn` | `waiting`, with what it waits for, or `person`, with the act that settles it | the stop's own class: a park waits on an answer, a stop only a person settles waits on a re-arm. The acts of a converged pull request (merge, approve, update the branch) join with item 36's predicate, which the board and `ask` then share |
+| `waitsOn` | `waiting`, with what it waits for, or `person`, with the act that settles it, or `none` when nothing is outstanding (a station never recorded, a running one, a finished follow-up) | the stop's own class: a park waits on an answer, a stop only a person settles waits on a re-arm. The acts of a converged pull request (merge, approve, update the branch) join with item 36's predicate, which the board and `ask` then share |
 | `last` | the last ended launch: its class from the outcome log's closed list, and when | the launch claims' ends; the launch records; the outcome log |
 | `sources` | every record kind the answer consulted, whether it was read, the reason when it was not, and how many forge and tracker calls the answer made | the reads themselves |
 
@@ -112,8 +112,9 @@ recovery command as the doctor gives it. It never runs that command.
 waits on a person, with the act each waits for, across the repositories the
 machine dispatches. It reads the newest tick's line, which the dispatcher
 already keeps for its dashboard, so it costs no forge or tracker call and
-is as fresh as the last tick; it says when that tick ran. With `--person
-<login>` it keeps the entries that name that person. On a machine that
+is as fresh as the last tick; it says when that tick ran. Once step 5
+records whom a park waits on, `--person <login>` keeps the entries that
+name that person; until then it is refused, naming that step. On a machine that
 dispatches nothing it says there is no line to read.
 
 The answer prints for a person by default and as one JSON object with
@@ -134,15 +135,21 @@ is one record that already exists, shown in one shape.
 
 | Entry | What it is | The record it comes from | Whose record counts |
 | --- | --- | --- | --- |
-| `request` | something a person asked of the station | a tracker assignment to the factory identity, a `drive` or `hold` label, a mailbox directive | an assignment by a person with write access; a label, which only a person with write access can set; a directive in this machine's mailbox |
+| `request` | something a person asked of the station | a tracker assignment to the factory identity, a `drive` or `hold` label, a mailbox directive | an assignment the tick accepts; a label, shown with the login and time of the label event that set it, since the forge lets a user with triage access set labels and the entry claims no more than that event; a directive in this machine's mailbox |
 | `question` | a decision the station parked for a person | a parked item's [framed decision](../GLOSSARY.md) in the ledger | the ledger, read under the forge-claims rule |
-| `answer` | a person's answer to a question | an `answer <key>:` line in a comment, or a reply on the parked thread | a trusted author (`plugin/shared/trusted-authors.ts`) |
+| `answer` | a person's answer to a question | an `answer <key>:` line in a comment, or a reply on the parked thread | a trusted author: the shared predicate in `plugin/shared/trusted-authors.ts`, which accepts an owner, member or collaborator, and the login the reading machine is signed in as |
 | `launch` | a session started for the station | a launch claim on the pull request; the launch record on the machine | the forge-claims rule: the earliest claim from a trusted author |
 | `outcome` | how a launch or the station ended | the launch claim's end, the outcome log, the ledger's stop, the merge-ready announcement, the follow-up marker's answer | as for a launch |
 
 The thread holds only records that counted for the reader that acts on
-them. A comment from an author the forge does not vouch for is no answer to
-the drive, so it is no entry here.
+them, by the same shared predicate. A comment from an author it does not
+accept is no answer to the drive, so it is no entry here.
+
+A `request` made by a label is an entry while the label is on the pull
+request or item, read with its label event: one timeline read, counted in
+`sources`. A label the tick has consumed (the `drive` command once a ledger
+exists) or a person has removed leaves no record of who set it, so it is no
+entry; the launch it started is.
 
 Every entry carries `at` (when), `from` and `to` (an address, or a person
 as the forge or tracker login), `kind`, `text` (the record's own words,
@@ -251,8 +258,8 @@ just read, so any session on any machine can be the operator, and a session
 that ends loses nothing. A person who wants one address's status without a
 session runs `jig ask` and reads its plain answer.
 
-- **"What is waiting on me"** is `jig ask --waiting --person <login>`, one
-  read. The operator opens an address only to say more about one entry.
+- **"What is waiting on me"** is `jig ask --waiting --person <login>` once
+  step 5 has built, one read; before it, `jig ask --waiting`. The operator opens an address only to say more about one entry.
 - **The status of a pull request** is `jig ask drive@<repository>#<PR>`,
   with whether it is ready to merge once item 36's predicate exists.
 - **It sends a person's command only on that person's instruction in the
@@ -268,8 +275,9 @@ step.
 
 - **A launch's result names what follows.** `jig dispatch result` gains
   the next owner: an address, a person, or `none` with a reason. Where the
-  line fixes it, it is derived: a converged drive hands to `merge`, a
-  finished follow-up to nobody. Where it does not, the session states it:
+  line fixes it, it is derived: a converged drive hands to `merge`
+  once that station exists and to a person, with the act named, until then;
+  a finished follow-up to nobody. Where it does not, the session states it:
   a pick-up names the pull request it opened, or `none` and why (the item
   was a duplicate, the change was already made). The outcome row keeps it,
   and `ask` shows it as `last.next`.
@@ -356,6 +364,7 @@ whichever comes later.
 
 Critiqued by four reviewers with fresh context (subagents that did not
 write it, as a critical chief technology officer, a security auditor, a
-performance engineer and a cost optimizer) on 2026-11-05, against the draft
-before its first commit. The report is in the pull request that added this
-design.
+performance engineer and a cost optimizer) on 2026-11-05, against the
+draft written before the first commit, which no commit holds. The pull
+request's reviewer then read commit 20805261 on 2026-11-05. The reports are
+in the pull request that added this design.
