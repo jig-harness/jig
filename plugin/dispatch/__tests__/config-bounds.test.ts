@@ -47,6 +47,36 @@ describe("the machine file's bounds", () => {
   });
 });
 
+describe("the machine file's shared records and owner", () => {
+  const repo = (extra = "") =>
+    `repositories:\n  - {path: /tmp/web, stages: [rearm]${extra}}\n`;
+  const read = (body: string) =>
+    config(body)() as {
+      repositories: Array<{ owner: boolean }>;
+      sharedRecords: string;
+    };
+
+  it("owns a repository and shares on the forge unless the file says otherwise", () => {
+    const machine = read(repo());
+    expect(machine.repositories[0]?.owner).toBe(true);
+    expect(machine.sharedRecords).toBe("forge");
+    expect(read(repo(", owner: false")).repositories[0]?.owner).toBe(false);
+    expect(read(`records:\n  shared: forge\n`).sharedRecords).toBe("forge");
+  });
+
+  it("refuses an owner that is not true or false, and a medium or key it does not know", () => {
+    expect(config(repo(", owner: maybe"))).toThrow(
+      "repositories[0].owner must be true or false",
+    );
+    expect(config("records:\n  shared: control-plane\n")).toThrow(
+      "records.shared must be one of forge",
+    );
+    expect(config("records:\n  board: forge\n")).toThrow(
+      "records has unknown key(s): board",
+    );
+  });
+});
+
 describe("the machine file's account directories", () => {
   it("refuses two accounts for one vendor and configuration directory", () => {
     const read = config(

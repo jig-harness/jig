@@ -203,6 +203,7 @@ describe("the registry", () => {
     const enveloped = RECORD_KINDS.filter((k) => k.key !== undefined);
     expect(enveloped.map((k) => k.name).sort()).toEqual([
       "dispatch-followup",
+      "dispatch-launch-claim",
       "drive-ledger",
       "drive-merge-ready",
       "drive-takeover-claim",

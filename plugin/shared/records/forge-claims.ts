@@ -34,8 +34,9 @@
  * listing does not show the caller's own comment, the read is repeated a
  * bounded number of times with a delay, and the claim is then reported
  * `lost` rather than counted unseen. A caller re-checks its claim before each
- * act outside the pull request (`check`), and withdraws its own comment when
- * it lost (`withdraw`).
+ * act outside the pull request (`check`), withdraws its own comment when it
+ * lost (`withdraw`), and rewrites its own comment to write a record's end
+ * onto it (`amend`).
  *
  * What this cannot close: two posts whose read-backs each lag past the
  * other's comment both read themselves the winner, and a check that lags the
@@ -446,19 +447,6 @@ export async function list(
   );
 }
 
-/** The trusted claims on `key` (and `generation`, where given), earliest first; or why they could not be read. */
-export async function read(
-  target: ClaimTarget,
-  kind: ClaimKind,
-  key: string,
-  opts: ReadOptions & { generation?: number } = {},
-): Promise<Outcome<Claim[], "unreadable">> {
-  const listing = await list(target, kind, opts.self ?? null);
-  return listing.ok
-    ? ok(claimsOn(kind, listing.value, key, opts.generation))
-    : listing;
-}
-
 /**
  * How the claim `posted` stands in `listing`. The rule weighs the caller's
  * claim as it was posted whether or not the listing shows it, so a claim
@@ -639,6 +627,32 @@ export async function check(
     ...(opts.generation === undefined ? {} : { generation: opts.generation }),
   };
   return ok(standing(kind, listing.value, posted, opts.rule));
+}
+
+/**
+ * Rewrite the caller's own claim, comment `ownId` on `target`'s repository,
+ * as `draft`: for a record whose end is written onto the claim itself, so the
+ * record and its end are one comment. Its key, generation and time stay what
+ * the draft carries, which the caller takes from the claim as it reads.
+ */
+export async function amend(
+  target: Pick<ClaimTarget, "repo">,
+  kind: ClaimKind,
+  ownId: number,
+  draft: ClaimDraft,
+): Promise<Outcome<void, "not-amended">> {
+  const r = await gh(
+    [
+      "api",
+      "-X",
+      "PATCH",
+      `repos/${target.repo}/issues/comments/${ownId}`,
+      "--input",
+      "-",
+    ],
+    JSON.stringify({ body: claimBody(kind, draft) }),
+  );
+  return r.ok ? ok(undefined) : failed("not-amended", r.failure.reason);
 }
 
 /** Delete the caller's own claim, comment `ownId` on `target`'s repository; or why it could not be. */

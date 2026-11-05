@@ -25,6 +25,7 @@ import {
   type LaunchRecord,
   type ReadRecord,
   removeRecord,
+  removeRecordIf,
   writeRecord,
 } from "../launches.ts";
 import {
@@ -308,13 +309,18 @@ function release(state: ApplyState, record: LaunchRecord): void {
   if (slots !== undefined && !sharesSlot(state, record)) slots.held -= 1;
 }
 
+/** What a record acts on, as a launch's outcome names it. */
+function targetOfRecord(record: LaunchRecord): string {
+  return record.item ?? `PR #${record.pr}`;
+}
+
 function outcome(
   record: LaunchRecord,
   attempt: LaunchAttempt,
   retried: boolean,
 ): LaunchOutcome {
   return {
-    target: record.item ?? `PR #${record.pr}`,
+    target: targetOfRecord(record),
     action: record.action,
     outcome:
       attempt.outcome === "sent"
@@ -332,7 +338,12 @@ function outcome(
 function kindOf(action: Action): LaunchOutcome["action"] {
   if (action.stage === "pickup" || action.stage === "followup")
     return action.stage;
-  return action.takeover === undefined ? "rearm" : "takeover";
+  return isTakeover(action) ? "takeover" : "rearm";
+}
+
+/** Whether a drive's action takes over a wedged driver: one this host's record started, or one another host's claim did. */
+export function isTakeover(action: Action): boolean {
+  return action.takeover !== undefined || action.takeoverClaim !== undefined;
 }
 
 export function waits(
@@ -595,6 +606,23 @@ export function dropRecord(state: ApplyState, record: LaunchRecord): void {
   release(state, record);
 }
 
+/**
+ * Give a pending record back only while its row still reads as pending: a
+ * wrapper that claimed it, or an exit written, since leaves it in place.
+ * Returns whether it was given back.
+ */
+export function dropPendingRecord(
+  state: ApplyState,
+  record: LaunchRecord,
+): boolean {
+  if (!removeRecordIf(record.id, { claim: null, exit: null }, state.root))
+    return false;
+  state.records = state.records.filter((r) => r.record.id !== record.id);
+  const slots = slotsOf(state.table, record);
+  if (slots !== undefined && !sharesSlot(state, record)) slots.held -= 1;
+  return true;
+}
+
 /** Call `launch` under a held record's token; a launch the runtime answered it did not start gives the slot back. */
 export async function launchHeld(
   state: ApplyState,
@@ -607,14 +635,46 @@ export async function launchHeld(
 }
 
 /**
- * Write the record, hold its slot, then call `launch` under its token; a
- * launch the runtime answered it did not start gives the slot back.
+ * How a launch claims its stage where another host reads it
+ * (`shared-launches.ts`): the claim, or why it was refused; and its release
+ * when the launch starts nothing.
+ */
+export interface LaunchClaimer {
+  /** `replay` claims a record already made once; `uncertain` marks a refusal that is no other claim's standing (a read that failed), which gives nothing back. */
+  claim(
+    record: LaunchRecord,
+    replay?: boolean,
+  ): Promise<{ claim: number } | { refused: string; uncertain?: boolean }>;
+  release(record: LaunchRecord, claim: number): Promise<void>;
+}
+
+/**
+ * Write the record, hold its slot, claim the launch through `claimer` where
+ * one is given, then call `launch` under its token. A claim refused, or a
+ * launch the runtime answered it did not start, gives the slot back, and
+ * the claim with it.
  */
 export async function startRecord(
   state: ApplyState,
   record: LaunchRecord,
   slots: Slots,
+  claimer?: LaunchClaimer,
 ): Promise<LaunchOutcome> {
   holdRecord(state, record, slots);
-  return launchHeld(state, record);
+  const taken = claimer === undefined ? null : await claimer.claim(record);
+  if (taken !== null && "refused" in taken) {
+    dropRecord(state, record);
+    return {
+      target: targetOfRecord(record),
+      action: record.action,
+      outcome: "refused",
+      account: record.account,
+      record: null,
+      detail: taken.refused,
+    };
+  }
+  const launched = await launchHeld(state, record);
+  const gone = !state.records.some((r) => r.record.id === record.id);
+  if (taken !== null && gone) await claimer?.release(record, taken.claim);
+  return launched;
 }

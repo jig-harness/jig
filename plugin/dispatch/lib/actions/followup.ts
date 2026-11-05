@@ -16,28 +16,27 @@
  *    workspace named for the follow-up and the pull request (`dispatched`
  *    in `runtime/port.ts`), under the launch record's id minted here;
  * 4. write the launch record, which holds the slot from here on;
- * 5. post the marker naming the record, a claim of the forge-claims
- *    module (`shared/records/forge-claims.ts`), which reads it back: an
+ * 5. post the marker naming the record and this host, the follow-up's
+ *    shared record (`shared/records/shared.ts`), which reads it back: an
  *    earlier trusted marker wins, and this one is deleted and the record
  *    removed without starting anything; a read-back that fails, or that
  *    never lists the marker, starts nothing either;
  * 6. `launch` the pass under the record's token.
  *
- * The marker is the one thing the dispatcher writes to the forge.
+ * Once the launch record ends, this host's next tick writes the follow-up's
+ * answer onto the marker (`shared-launches.ts`), where another host reads
+ * it.
  */
-import { post, read, withdraw } from "../../../shared/records/forge-claims.ts";
+import type {
+  ClaimAnswer,
+  SharedTarget,
+} from "../../../shared/records/shared.ts";
 import { localWriter } from "../../../shared/records/writer.ts";
 import { admittedVendor, type Slots } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
-import {
-  FOLLOWUP_CLAIM,
-  FOLLOWUP_KEY,
-  followupTarget,
-  markerStanding,
-  readMarkers,
-  tickClaim,
-} from "../followup-marker.ts";
+import { readMarkers } from "../followup-marker.ts";
+import type { SharedContext } from "../shared-launches.ts";
 import {
   type LaunchRecord,
   newRecordId,
@@ -83,7 +82,14 @@ export interface FollowupContext {
   sessions: () => Promise<SessionsReport>;
   /** Why a person's label stands the dispatcher down from the pull request now, read afresh; `null` when none does. */
   holdReason?: (pr: number) => Promise<string | null>;
+  /** The shared records the marker is posted and read through. */
+  shared: SharedContext;
 }
+
+const targetOf = (repo: RepoTarget, pr: number): SharedTarget => ({
+  repo: repo.slug,
+  pr,
+});
 
 function refused(
   action: Action,
@@ -114,14 +120,9 @@ async function changed(
 ): Promise<string | null> {
   const hold = await heldNow(ctx, pr);
   if (hold !== null) return hold;
-  const claims = await read(
-    followupTarget(repo.slug, pr),
-    FOLLOWUP_CLAIM,
-    FOLLOWUP_KEY,
-    { self: ctx.login },
-  );
+  const claims = await ctx.shared.records.list(targetOf(repo, pr), "followup");
   if (!claims.ok) return claims.failure.reason;
-  const [first] = claims.value;
+  const [first] = claims.value.filter((c) => c.trusted);
   if (first !== undefined)
     return `a follow-up marker appeared since the plan read it (comment ${first.id} by ${first.login})`;
   let sessions: SessionsReport;
@@ -171,36 +172,45 @@ async function claim(
   ctx: FollowupContext,
   record: LaunchRecord & { pr: number },
 ): Promise<string | null> {
-  const claimed = await post(
-    followupTarget(repo.slug, record.pr),
-    FOLLOWUP_CLAIM,
-    tickClaim(record.id, {
+  const claimed = await ctx.shared.records.claim(
+    targetOf(repo, record.pr),
+    {
+      stage: "followup",
       pr: record.pr,
+      run: "tick",
+      action: "followup",
+      record: record.id,
+      host: ctx.shared.host,
+      owner: ctx.shared.owner,
       writer: localWriter("forge", ctx.login),
-    }),
-    { self: ctx.login },
+    },
+    ctx.shared.rule,
   );
   if (!claimed.ok) {
     dropRecord(state, record);
     return `the follow-up marker could not be posted: ${claimed.failure.reason}`;
   }
-  const posted = claimed.value.id;
+  const seen = claimed.value;
+  if (seen.kind === "held") {
+    dropRecord(state, record);
+    return `marker comment ${seen.by.id} holds the follow-up`;
+  }
+  const posted = seen.id;
   record.marker = posted;
   writeRecord(record, state.root);
-  const seen = markerStanding(claimed.value.standing, {
-    kind: "tick",
-    record: record.id,
-  });
-  if (seen.kind === "stands") return null;
-  const why =
-    seen.kind === "unreadable"
-      ? `the markers could not be read back after posting: ${seen.reason}`
-      : seen.kind === "missing"
-        ? `the read-back does not list the posted marker (comment ${posted})`
-        : seen.kind === "altered" || seen.kind === "done"
-          ? `the posted marker (comment ${posted}) no longer names this record`
-          : `an earlier marker (comment ${seen.marker.id} by ${seen.marker.login}) claimed it first; this one stands down`;
-  return relinquish(state, repo, record, posted, why);
+  if (seen.kind === "holds") return null;
+  return relinquish(state, repo, ctx, record, posted, lostWhy(seen, posted));
+}
+
+/** Why a posted marker that does not hold the follow-up stands down. */
+function lostWhy(seen: ClaimAnswer, posted: number): string {
+  if (seen.kind === "unreadable")
+    return `the markers could not be read back after posting: ${seen.reason}`;
+  if (seen.kind === "missing")
+    return `the read-back does not list the posted marker (comment ${posted})`;
+  if (seen.kind === "earlier")
+    return `an earlier marker (comment ${seen.by.id} by ${seen.by.login}) claimed it first; this one stands down`;
+  return `the posted marker (comment ${posted}) no longer names this record`;
 }
 
 /**
@@ -212,11 +222,15 @@ async function claim(
 async function relinquish(
   state: ApplyState,
   repo: RepoTarget,
+  ctx: FollowupContext,
   record: LaunchRecord,
   posted: number,
   why: string,
 ): Promise<string> {
-  const deleted = await withdraw({ repo: repo.slug }, posted);
+  const deleted = await ctx.shared.records.release(
+    targetOf(repo, Number(record.pr)),
+    posted,
+  );
   if (deleted.ok) {
     dropRecord(state, record);
     return why;
@@ -341,6 +355,7 @@ async function claimAndLaunch(
   const gone = await relinquish(
     state,
     repo,
+    ctx,
     record,
     record.marker as number,
     after,
@@ -376,7 +391,7 @@ async function dropUnmarked(
       dropRecord(state, r.record);
       continue;
     }
-    const markers = await readMarkers(repo.slug, pr, ctx.login);
+    const markers = await readMarkers(ctx.shared.records, repo.slug, pr);
     if ("unreadable" in markers) {
       unsettled.add(pr);
       continue;
@@ -389,6 +404,7 @@ async function dropUnmarked(
       await relinquish(
         state,
         repo,
+        ctx,
         r.record,
         own.id,
         "a marker posted before the record was written down",

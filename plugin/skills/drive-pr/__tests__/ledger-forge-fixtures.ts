@@ -7,8 +7,8 @@
  * races and failures:
  *
  * - `race-on-post` / `race-on-claim`: a rival comment (JSON) inserted, with
- *   the id it names, just before a ledger / claim (a takeover claim or a
- *   follow-up marker) post lands.
+ *   the id it names, just before a ledger / claim (a takeover claim, a
+ *   follow-up marker or a dispatcher's launch claim) post lands.
  * - `hide-ids`: `{ "ids": [...], "until": n }` hides those comments from
  *   every listing before the n-th, as a lagging read would.
  * - `bump-on-list` + `bump-body.json`: a concurrent writer rewrites the
@@ -99,7 +99,7 @@ if (list) {
   const pr = list[1];
   if (method === "POST") {
     const all = read(pr);
-    const race = input.body.startsWith("<!-- drive-pr-ledger -->") ? "race-on-post" : /^<!-- (drive-pr-takeover-claim|jig-dispatch-followup) -->/.test(input.body) ? "race-on-claim" : "";
+    const race = input.body.startsWith("<!-- drive-pr-ledger -->") ? "race-on-post" : /^<!-- (drive-pr-takeover-claim|jig-dispatch-followup|jig-dispatch-launch-claim) -->/.test(input.body) ? "race-on-claim" : "";
     if (race !== "" && has(race)) {
       all.push(JSON.parse(text(race)));
       fs.rmSync(F + "/" + race);

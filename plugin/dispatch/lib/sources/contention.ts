@@ -52,12 +52,16 @@ function repositoryPath(value: string): string {
   return value.replace(/^(\.\/)+/, "");
 }
 
-/** Decide serialization for one repository, report it, and keep its holds. */
+/**
+ * Decide serialization for one repository, report it, and keep its holds.
+ * Only the host that owns the repository writes the holds and their rows in
+ * the outcome log; another host reads the same order and writes neither.
+ */
 export async function observeContention(
   repo: RepoTarget,
   values: Record<string, unknown>,
   report: RepoReport,
-  forge: ForgeView,
+  forge: ForgeView & { heldElsewhere?: ReadonlySet<number>; owner?: boolean },
   launches: readonly ReadRecord[],
   nowMs: number,
   threads: (pr: number) => Promise<number>,
@@ -74,6 +78,9 @@ export async function observeContention(
       drives,
       created: forge.created,
       launches: launches.filter((r) => r.record.repo === repo.slug),
+      ...(forge.heldElsewhere === undefined
+        ? {}
+        : { heldElsewhere: forge.heldElsewhere }),
     },
     {
       catalog: async (p) => defaultBranchFile(repo, repositoryPath(p)),
@@ -92,6 +99,7 @@ export async function observeContention(
           : `the change-area catalog cannot be read, so no re-arm starts on a pull request whose serialized areas cannot be told: ${contention.failure}`,
     });
   if (contention.report !== null) report.serialized = contention.report;
+  if (forge.owner === false) return contention;
   for (const reason of settleHolds(
     repo.slug,
     contention,

@@ -244,7 +244,7 @@ function runningClass(
       }
     : {
         class: "silent",
-        why: `heartbeat ${age} min old, past the ${window}-min lease window; no launch record of this machine started its driver, so it is reported, not taken over`,
+        why: `heartbeat ${age} min old, past the ${window}-min lease window; neither a launch record of this machine nor another host's launch claim started its driver, so it is reported, not taken over`,
       };
 }
 

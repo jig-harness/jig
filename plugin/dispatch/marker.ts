@@ -1,8 +1,8 @@
 /**
  * `jig dispatch marker claim|check|done <PR>`: how a follow-up command
- * honours the follow-up marker (`lib/followup-marker.ts`), a claim of the
- * shared forge-claims module (`shared/records/forge-claims.ts`), whether a
- * person ran it or the tick started it.
+ * honours the follow-up marker, the follow-up stage's shared record
+ * (`shared/records/shared.ts`, on the forge through `shared-forge.ts`),
+ * whether a person ran it or the tick started it.
  *
  * - `claim` posts a manual run's marker and reads the markers back, again a
  *   few times while the listing does not show it yet: when an earlier
@@ -13,7 +13,8 @@
  *   earlier than `<id>` has appeared, and the run stops.
  * - `done --comment <id>` marks a manual run's marker done once its last
  *   act succeeded. A marker the tick posted is not marked: its session
- *   records its result through `jig dispatch result`.
+ *   records its result through `jig dispatch result`, and the tick writes
+ *   it onto the marker.
  *
  * `--repo owner/name` names the repository; without it, the current
  * checkout's.
@@ -22,18 +23,14 @@
  * a comment that is not a trusted marker of this pull request; 3 an earlier
  * marker holds the follow-up.
  */
-import { check, post, withdraw } from "../shared/records/forge-claims.ts";
+import type {
+  CheckAnswer,
+  SharedRecords,
+  SharedTarget,
+} from "../shared/records/shared.ts";
+import { forgeShared } from "../shared/records/shared-forge.ts";
 import { localWriter } from "../shared/records/writer.ts";
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
-import {
-  editMarker,
-  FOLLOWUP_CLAIM,
-  FOLLOWUP_KEY,
-  followupTarget,
-  manualClaim,
-  manualMarker,
-  markerStanding,
-} from "./lib/followup-marker.ts";
 import { repoTarget } from "./lib/forge.ts";
 import { failureText } from "./lib/text.ts";
 
@@ -55,29 +52,43 @@ function stop(code: number, message: string): number {
   return code;
 }
 
-async function claim(slug: string, pr: number): Promise<number> {
-  const login = await resolveLogin();
-  const target = followupTarget(slug, pr);
-  const posted = await post(
-    target,
-    FOLLOWUP_CLAIM,
-    manualClaim(false, { pr, writer: localWriter("forge", login) }),
-    { self: login },
+const earlier = (by: { id: number; login: string }, kept = "") =>
+  stop(
+    EARLIER,
+    `an earlier marker (comment ${by.id} by ${by.login}) holds the follow-up; stop before acting${kept}`,
   );
-  if (!posted.ok)
-    return stop(1, `the marker could not be posted: ${posted.failure.reason}`);
-  const { id } = posted.value;
-  const seen = markerStanding(posted.value.standing, { kind: "manual" });
-  if (seen.kind === "stands") {
-    console.log(JSON.stringify({ pr, comment: id }));
+
+async function claim(
+  shared: SharedRecords,
+  target: SharedTarget,
+  login: string | null,
+): Promise<number> {
+  const { pr } = target;
+  const answer = await shared.claim(target, {
+    stage: "followup",
+    pr,
+    run: "manual",
+    action: "followup",
+    record: null,
+    host: null,
+    owner: null,
+    writer: localWriter("forge", login),
+  });
+  if (!answer.ok)
+    return stop(1, `the marker could not be posted: ${answer.failure.reason}`);
+  const seen = answer.value;
+  if (seen.kind === "holds") {
+    console.log(JSON.stringify({ pr, comment: seen.id }));
     return 0;
   }
+  if (seen.kind === "held") return earlier(seen.by);
+  const { id } = seen;
   if (seen.kind === "done")
     return stop(
       1,
       `the posted marker (comment ${id}) was marked done before the read-back finished; it is kept as the completion record, so do not act`,
     );
-  const deleted = await withdraw(target, id);
+  const deleted = await shared.release(target, id);
   const kept = deleted.ok
     ? ""
     : `; its own marker (comment ${id}) could not be deleted (${deleted.failure.reason}): delete it by hand`;
@@ -93,22 +104,17 @@ async function claim(slug: string, pr: number): Promise<number> {
       1,
       `the posted marker (comment ${id}) no longer reads as a manual run's marker${kept}`,
     );
-  return stop(
-    EARLIER,
-    `an earlier marker (comment ${seen.marker.id} by ${seen.marker.login}) holds the follow-up; stop before acting${kept}`,
-  );
+  return earlier(seen.by, kept);
 }
-
-type Seen = Extract<Awaited<ReturnType<typeof check>>, { ok: true }>["value"];
 
 /**
  * Whether the marker `check` and `done` were given may be acted on: its run,
  * or the exit code and message that stop the command.
  */
 function ownStanding(
-  { own, verdict, winner }: Seen,
+  { own, verdict, winner }: CheckAnswer,
   args: MarkerArguments & { comment: number },
-): { refused: { code: number; message: string } } | { run: unknown } {
+): { refused: { code: number; message: string } } | { run: "tick" | "manual" } {
   if (own === null || !own.trusted)
     return {
       refused: {
@@ -116,11 +122,11 @@ function ownStanding(
         message: `comment ${args.comment} is not a trusted follow-up marker of PR #${args.pr}`,
       },
     };
-  if (!own.record.ok)
+  if (!own.says.ok)
     return {
       refused: {
         code: 2,
-        message: `comment ${args.comment} no longer reads as a follow-up marker: ${own.record.failure.reason}`,
+        message: `comment ${args.comment} no longer reads as a follow-up marker: ${own.says.failure.reason}`,
       },
     };
   if (verdict === "lost-to" && winner !== null)
@@ -130,21 +136,15 @@ function ownStanding(
         message: `an earlier marker (comment ${winner.id} by ${winner.login}) holds the follow-up; stop before acting`,
       },
     };
-  return { run: own.record.value.payload.run };
+  return { run: own.says.value.run };
 }
 
 async function checkOrDone(
-  slug: string,
+  shared: SharedRecords,
+  target: SharedTarget,
   args: MarkerArguments & { comment: number },
 ): Promise<number> {
-  const login = await resolveLogin();
-  const seen = await check(
-    followupTarget(slug, args.pr),
-    FOLLOWUP_CLAIM,
-    FOLLOWUP_KEY,
-    args.comment,
-    { self: login },
-  );
+  const seen = await shared.check(target, "followup", args.comment);
   if (!seen.ok)
     return stop(1, `the markers could not be read: ${seen.failure.reason}`);
   const standing = ownStanding(seen.value, args);
@@ -156,14 +156,15 @@ async function checkOrDone(
       2,
       `comment ${args.comment} is the tick's marker: its session records its result through jig dispatch result`,
     );
-  const edited = await editMarker(
-    slug,
-    args.comment,
-    manualMarker(true, { pr: args.pr, writer: localWriter("forge", login) }),
-  );
-  return edited === ""
+  const ended = await shared.end(target, "followup", args.comment, {
+    state: "ended",
+    at: new Date().toISOString(),
+    exit: null,
+    outcome: "done",
+  });
+  return ended.ok
     ? 0
-    : stop(1, `the marker could not be marked done: ${edited}`);
+    : stop(1, `the marker could not be marked done: ${ended.failure.reason}`);
 }
 
 export async function markerMain(args: MarkerArguments): Promise<number> {
@@ -173,8 +174,11 @@ export async function markerMain(args: MarkerArguments): Promise<number> {
   } catch (error) {
     return stop(1, `the repository cannot be named: ${failureText(error)}`);
   }
-  if (args.verb === "claim") return claim(slug, args.pr);
+  const login = await resolveLogin();
+  const shared = forgeShared({ login });
+  const target = { repo: slug, pr: args.pr };
+  if (args.verb === "claim") return claim(shared, target, login);
   if (args.comment === null)
     return stop(2, `${args.verb} needs --comment <id>, the id claim printed`);
-  return checkOrDone(slug, { ...args, comment: args.comment });
+  return checkOrDone(shared, target, { ...args, comment: args.comment });
 }
