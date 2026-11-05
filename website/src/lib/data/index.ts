@@ -8,6 +8,7 @@ import { type GlossaryEntry, parseGlossary } from "../glossary.ts";
 import { read, repoRoot } from "../site.ts";
 import { firstParagraph } from "../source.ts";
 import { parseBrownfield, parseGreenfield } from "./adoption.ts";
+import { reportOf, runCodeStats } from "./code-stats.ts";
 import { type Criterion, parseCriteria } from "./criteria.ts";
 import { parseLayers, parseTrackerInterface } from "./config.ts";
 import { type Actor, parseFactory } from "./factory.ts";
@@ -207,3 +208,10 @@ export const walkthrough = once(() =>
     ),
   ),
 );
+
+/**
+ * Jig's own code statistics, counted by the code-stats skill from the
+ * commit being built. A failed run or an unknown report shape fails the
+ * build (code-stats.ts).
+ */
+export const codeStats = once(() => reportOf(runCodeStats(repoRoot)));
