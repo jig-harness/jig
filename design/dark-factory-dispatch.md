@@ -1051,18 +1051,23 @@ expectation.
 
 **The dashboard.** `jig dispatch dashboard` serves one page that answers, in
 order, what needs a person, what is running on which account, what is coming
-and how it went ([the designed page](prototypes/dispatch-dashboard/README.md)).
-It reads two records and writes nothing.
+and how it went ([the designed page](prototypes/dispatch-dashboard/README.md)),
+in views: Now for the first three, History for the log, and Help for the
+words the page uses. A view is a parameter of the address, like the log's
+filter. It reads two records and writes nothing to the host: what a person
+chooses on the page (the theme, reply drafts beside a decision) stays in that
+browser's own storage.
 
 The first is the **line**, one row of the state database (`tick_line`): the
 needs, the accounts with their slots and walls, the sessions, the queue and the
 repositories as a tick found them, with that tick's receipt. A tick that read
 every repository the machine file lists replaces it at its end; a tick for one
 repository leaves it. Every read behind it stays in the tick: process liveness,
-walls, the machine file, titles, framed decisions. So each panel says which tick
-it is as of, never "live"; a timer that stopped shows as a tick older than the
-interval plus the longest recent tick; and a host may serve the page from a copy
-of the database and nothing else, which is how an isolated service runs it. The
+walls, the machine file, titles, framed decisions. So the page says once, in
+its strip, how old the tick it shows is, never "live"; a timer that stopped
+shows as a tick older than the interval plus the longest recent tick; and a host
+may serve the page from a copy of the database and nothing else, which is how an
+isolated service runs it. The
 line is a view: a tick that cannot write it says so on its receipt and exits
 `1`, and what it launched stands. What no record holds stays off the page rather
 than being guessed.

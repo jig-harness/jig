@@ -5,9 +5,10 @@ import {
   pageQuery,
   readFilter,
   rowsQuery,
-  schemeOf,
   tokenOf,
+  viewOf,
   viewQuery,
+  withParam,
 } from "./search.ts";
 
 const NONE: LogFilter = readFilter("");
@@ -126,10 +127,41 @@ describe("what the page was opened with", () => {
     expect(tokenOf("")).toBe("");
   });
 
-  it("forces a theme it knows and follows the device otherwise", () => {
-    expect(schemeOf("?theme=dark")).toBe("dark");
-    expect(schemeOf("?theme=light")).toBe("light");
-    expect(schemeOf("?theme=blue")).toBe("light dark");
-    expect(schemeOf("")).toBe("light dark");
+  it("reads its view, Now when it names none it knows", () => {
+    expect(viewOf("?token=t&view=history")).toBe("history");
+    expect(viewOf("?view=help")).toBe("help");
+    expect(viewOf("?view=other")).toBe("now");
+    expect(viewOf("")).toBe("now");
+  });
+});
+
+describe("one parameter changed in place", () => {
+  it("replaces decoded names and keeps unrelated bytes intact", () => {
+    expect(
+      withParam("?%76iew=help&token=a%2Fb&view=now", "view", "history"),
+    ).toBe("?token=a%2Fb&view=history");
+    expect(withParam("?%74heme=dark", "theme", "light")).toBe("?theme=light");
+  });
+  it("sets it and keeps every other pair as written", () => {
+    expect(withParam("?token=t&repo=example-org/web", "view", "history")).toBe(
+      "?token=t&repo=example-org/web&view=history",
+    );
+  });
+
+  it("replaces a value it already has", () => {
+    expect(withParam("?view=help&token=t", "view", "history")).toBe(
+      "?token=t&view=history",
+    );
+  });
+
+  it("leaves it out for null, and the whole query when nothing is left", () => {
+    expect(withParam("?token=t&view=help", "view", null)).toBe("?token=t");
+    expect(withParam("?view=help", "view", null)).toBe("");
+  });
+
+  it("keeps the view when the filter changes", () => {
+    expect(
+      pageQuery(applyPatch(NONE, { window: "7d" }), "?token=t&view=history"),
+    ).toBe("?token=t&view=history&window=7d");
   });
 });

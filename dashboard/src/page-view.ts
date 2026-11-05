@@ -11,7 +11,7 @@ import type {
 import type { ReadFailure } from "./api.ts";
 import { clock, serverNow } from "./format.ts";
 import type { Read, StateRead } from "./reads.ts";
-import { type Clock, isOverdue, type StripView, stripOf } from "./view.ts";
+import { type Clock, type FreshView, freshOf, isOverdue } from "./view.ts";
 
 type CodedFailure = Extract<ReadFailure, { kind: "failed" }>;
 
@@ -85,11 +85,20 @@ export function pageView(
   };
 }
 
-/** The strip: nothing to say of a tick before the first answer, unless the server is gone. */
-export function pageStrip(view: PageView): StripView {
-  return view.answer === null && !view.gone
-    ? { main: "Newest tick not known", sub: "", alarm: false }
-    : stripOf(view.line, view.clock, view.gone);
+/** How fresh the page is: nothing to say of a tick before the first answer, unless the server is gone. */
+export function pageFresh(view: PageView): FreshView {
+  if (view.answer === null && !view.gone)
+    return {
+      short: "Not read yet",
+      detail: ["The page has not read the host yet."],
+      alarm: false,
+    };
+  const fresh = freshOf(view.line, view.clock, view.gone);
+  if (view.lastRead === null) return fresh;
+  const read = view.gone
+    ? `The page last read the host at ${view.lastRead}.`
+    : `The page read the host at ${view.lastRead} and reads again every 60 s and on focus.`;
+  return { ...fresh, detail: [...fresh.detail, read] };
 }
 
 /** The footer's sentence on when the page last read. */
