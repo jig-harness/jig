@@ -27,8 +27,11 @@
  *
  * Usage:
  *   drive-state.ts get          [PR]                 # whole state as JSON
- *   drive-state.ts rounds       [PR]                 # round count
- *   drive-state.ts bump-round   [PR] --head SHA      # count a NEW head as a round
+ *   drive-state.ts rounds       [PR]                 # the PR's review round (lib/state/review-rounds.ts)
+ *   drive-state.ts bump-round   [PR] --head SHA      # count a NEW head as the drive's round
+ *   drive-state.ts count-round  [PR] --head SHA      # count a head for a hand-driven loop; unleased
+ *   drive-state.ts open-rounds  [PR]                 # rounds since that loop last converged
+ *   drive-state.ts settle-rounds [PR]                # settle them at its convergence
  *   drive-state.ts attempts     [PR]                 # passes made on the current head
  *   drive-state.ts bump-attempt [PR] --head SHA      # count a pass on this head
  *   drive-state.ts verified     [PR]                 # last green-verified SHA ('' if none)
@@ -282,6 +285,12 @@ import {
 } from "./lib/state/schema.ts";
 import { openStore, type StateStore } from "./lib/state/store.ts";
 import {
+  bumpDriveRound,
+  clearReviewRounds,
+  ROUND_VERBS,
+  reviewRound,
+} from "./lib/state/review-rounds.ts";
+import {
   attributeStatuses,
   checkRunsFor,
   ciVerdictOf,
@@ -298,8 +307,11 @@ function usage(): void {
   console.error(`usage: drive-state.ts <command> [PR] [flags]
 
   get          [PR]                 whole state as JSON
-  rounds       [PR]                 round count
-  bump-round   [PR] --head SHA      count a NEW head as a round
+  rounds       [PR]                 the PR's review round
+  bump-round   [PR] --head SHA      count a NEW head as the drive's round
+  count-round  [PR] --head SHA      count a head for a hand-driven loop
+  open-rounds  [PR]                 rounds since that loop last converged
+  settle-rounds [PR]                settle them at its convergence
   attempts     [PR]                 passes made on the current head
   bump-attempt [PR] --head SHA      count a pass on this head
   verified     [PR]                 last green-verified SHA ('' if none)
@@ -1100,27 +1112,16 @@ async function main(): Promise<number> {
     }
 
     case "rounds": {
-      process.stdout.write(`${store.read().state.rounds}\n`);
+      process.stdout.write(`${reviewRound(store, pr)}\n`);
       return 0;
     }
 
     case "bump-round": {
       if (a.sha === "") fail(2, "bump-round requires --head SHA");
-      // Count HEADS, not calls. A retried pass against an unchanged push is
-      // the same round; counting it would make a round budget measure driver
-      // retries. Progress is stamped ONLY on the genuine advance
-      // — the no-op branch below is exactly the re-read `withProgress`'s own
-      // header warns must not look like forward motion.
-      await store.update((s) =>
-        s.lastCountedHead === a.sha
-          ? s
-          : withProgress(
-              { ...s, rounds: s.rounds + 1, lastCountedHead: a.sha },
-              "round-advanced",
-              new Date(),
-            ),
-      );
-      process.stdout.write(`${store.read().state.rounds}\n`);
+      // Count HEADS, not calls: a retried pass against an unchanged push is
+      // the same round. The count is the review round record's
+      // (`review-rounds.ts`), shared with a hand-driven loop.
+      process.stdout.write(`${await bumpDriveRound(store, pr, a.sha)}\n`);
       return 0;
     }
 
@@ -3414,6 +3415,7 @@ async function main(): Promise<number> {
         }
 
         removeStateKeepingLedgerGeneration(store, Number(pr));
+        clearReviewRounds(store.stateDir, pr);
         clearPendingVerdicts(store.stateDir, pr);
         await removeHandoff(pr);
         // Every claim on this PR too, held items' and the Ready mark's.
@@ -3432,7 +3434,7 @@ async function main(): Promise<number> {
     }
 
     default:
-      return stdinOrUnknown(a.cmd, store);
+      return otherCommand(a, store, pr);
   }
 }
 
@@ -3447,6 +3449,19 @@ async function handoff(pr: string, store: StateStore): Promise<number> {
   return (await mirrorLedger(pr, store)) === "failed"
     ? LEDGER_NOT_WRITTEN_EXIT
     : 0;
+}
+
+/** A review round verb (`review-rounds.ts`), a command whose record arrives on standard input, or the usage refusal. */
+async function otherCommand(
+  a: Args,
+  store: StateStore,
+  pr: string,
+): Promise<number> {
+  const roundVerb = Object.hasOwn(ROUND_VERBS, a.cmd)
+    ? ROUND_VERBS[a.cmd]
+    : undefined;
+  if (roundVerb !== undefined) return roundVerb(store, pr, a.sha);
+  return stdinOrUnknown(a.cmd, store);
 }
 
 /** A command whose record arrives on standard input, or the usage refusal. */

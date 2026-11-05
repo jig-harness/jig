@@ -132,13 +132,7 @@ import {
  * only ever checked BETWEEN calls, never during one.
  */
 
-import {
-  existsSync,
-  lstatSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { lstatSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -149,13 +143,12 @@ import {
   runMain,
   sleep,
 } from "../../../shared/cli.ts";
-import { errnoCode, swallow } from "../../../shared/errors.ts";
 import {
   checkSignalsUnchanged,
   readPrLiveness,
 } from "../../../shared/gh-conditional.ts";
-import { log } from "../../../shared/log.ts";
-import { ghCall, git, resolvePr, run, tsArgv } from "../../../shared/proc.ts";
+import { ghCall, resolvePr, run, tsArgv } from "../../../shared/proc.ts";
+import { countRound, settleRounds } from "./lib/review-rounds.ts";
 import { skillsParentIsIntact } from "./reply-to-thread.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -163,21 +156,6 @@ const listUnresolved = join(here, "list-unresolved-threads.ts");
 /** `/drive-pr` — an optional sibling install. */
 const DRIVE_PR_ROOT = siblingSkill("drive-pr", import.meta.dirname);
 const SUMMARY_FINDINGS = join(DRIVE_PR_ROOT, "scripts", "summary-findings.ts");
-/**
- * `/jig:reflect`'s capture helper, beside this skill in the plugin: absent
- * when this skill is installed on its own. Not looked up in the repository,
- * whose own `.claude/skills/reflect` may be an unrelated skill of that name.
- */
-const REFLECT_CAPTURE = join(
-  import.meta.dirname,
-  "..",
-  "..",
-  "reflect",
-  "scripts",
-  "lib",
-  "capture.ts",
-);
-
 // Floor for --interval. A zero interval busy-loops against the forge API.
 const MIN_INTERVAL = 5;
 // Consecutive query failures tolerated before giving up. Never "settled".
@@ -664,17 +642,9 @@ async function main(): Promise<number> {
 
   // Round counting lives HERE, not in converge.ts, because this is the one
   // script both harness paths call: Claude wraps a single pass in /loop and
-  // never invokes converge.ts at all. A counter held by one driver would
-  // silently never fire for the other. Keeping it in the git dir also means
-  // it survives across separate invocations — rounds worked hours apart in
-  // one session still add up, which a per-process variable could not do.
-  let roundsFile = "";
-  let roundsHeadFile = "";
-  const gitDir = await git(["rev-parse", "--git-dir"], { stderr: "ignore" });
-  if (gitDir.code === 0 && gitDir.stdout.trim() !== "") {
-    roundsFile = join(gitDir.stdout.trim(), `resolve-review-rounds-${pr}`);
-    roundsHeadFile = `${roundsFile}.head`;
-  }
+  // never invokes converge.ts at all. The count is the review round record
+  // `/drive-pr` keeps for the pull request (`lib/review-rounds.ts`), so rounds
+  // worked hours apart, or by a drive, add up.
 
   // The PR's current head SHA. A round is a distinct push, not a distinct
   // invocation — retrying the same pass after an agent failure must not count
@@ -685,133 +655,27 @@ async function main(): Promise<number> {
     return l.ok ? l.head : "";
   };
 
-  const readCount = (file: string): number => {
-    let n = "";
-    try {
-      n = readFileSync(file, "utf8").trim();
-    } catch (err) {
-      // No counter yet is the first round's normal state; any other failure
-      // to read one is worth a warning, and still counts from 0.
-      if (errnoCode(err) === "ENOENT")
-        swallow(err, `no round count at ${file} yet; counting from 0`);
-      else
-        log.warn(`cannot read the round count at ${file}; counting from 0`, {
-          error: err,
-        });
-      return 0;
-    }
-    return isDigits(n) && n !== "" ? Number.parseInt(n, 10) : 0;
-  };
-
   const bumpRounds = async (): Promise<void> => {
     // --no-count exists for callers that are only INSPECTING state (a dry
     // run). Counting those would inflate the session total and fire the
     // reflect prompt for rounds nobody worked.
-    if (noCount || roundsFile === "") return;
-    const head = await currentHead();
-    // No head, no bump. An unresolved head (a transient `gh` failure or a
-    // timeout) used to increment anyway AND leave `.head` unwritten, so the
-    // dedup below could not fire and every retry against one unchanged push
-    // counted again — a retried round 3 arriving as round 4. That was
-    // tolerable while this ordinal only drove the advisory reflect nudge; it
-    // is not, now that `current-round.ts` publishes it and the round-indexed
-    // cutoff DECLINES trivial findings past round 4. Skipping the bump errs
-    // toward a lower ordinal, which delays the cutoff and accepts more — the
-    // opposite direction from declining valid findings on a round that never
+    if (noCount) return;
+    // No head, no bump: an unresolved head (a transient `gh` failure or a
+    // timeout) would count a retry against an unchanged push as a new round.
+    // Skipping errs toward a lower ordinal, which delays the decline-only
+    // cutoff rather than declining valid findings on a round that never
     // happened.
-    if (head === "") return;
-    if (existsSync(roundsHeadFile)) {
-      const lastHead = readFileSync(roundsHeadFile, "utf8").trim();
-      // Same head as the last counted round means this call is a retry
-      // against an unchanged push (e.g. the prior agent pass failed before it
-      // could fix+push) — not a new round to count.
-      if (head === lastHead) return;
-    }
-    // HEAD FIRST, then the count. These are two writes and nothing here makes
-    // them one, so the ordering is what decides which way a kill between them
-    // falls. Head-then-count loses a round (the next call sees its own head
-    // already recorded and returns early) — the fail-open direction, which
-    // only ever DELAYS the decline-only cutoff. Count-then-head, the previous
-    // order, left a valid counter paired with a stale head, so the next call
-    // re-incremented the SAME round and could arm the cutoff a round early
-    //. Making it genuinely atomic would
-    // take a single-file format that `current-round.ts` also reads; the
-    // ordering buys the safety property without that.
-    const n = readCount(roundsFile) + 1;
-    writeFileSync(roundsHeadFile, `${head}\n`);
-    writeFileSync(roundsFile, `${n}\n`);
-    // Mid-loop structural-escalation nudge (distinct from the wind-down
-    // reflect prompt below, which deliberately waits for convergence). Past
-    // the threshold, the recorded failure mode is rounds spent patching one
-    // variant of the same root cause at a time — measured chains ran
-    // five-plus rounds before the structural fix landed anyway. Round count
-    // is the only robust signal this script has (theme detection belongs to
-    // the agent), so this prints every counted round past the threshold and
-    // stays advisory.
-    if (n > reflectThreshold) {
-      console.error(
-        `round ${n} on #${pr}: if this round's accepted fixes target the same root cause as the last round's (another race vector, another scanner depth, another heuristic), stop patching variants — propose the structural fix or defer it (SKILL.md step 3)`,
-      );
-    }
+    const head = await currentHead();
+    if (head !== "") await countRound(pr, head, reflectThreshold);
   };
 
   // Emitted only at wind-down — when the rounds have actually stopped.
   // Mid-loop the detail is still arriving and the session has nothing settled
-  // to reflect on; at convergence it is complete and about to decay.
+  // to reflect on; at convergence it is complete and about to decay. A dry
+  // run (--no-count) only inspects: a converged preview must not settle a
+  // real session's rounds or fire the reflect prompt in its place.
   const reportRoundsAndReset = async (): Promise<void> => {
-    if (roundsFile === "") return;
-    // A dry run (--no-count) only inspects; a converged preview must not
-    // erase a real session's accumulated count or fire the reflect prompt in
-    // its place.
-    if (noCount) return;
-    const n = readCount(roundsFile);
-    const reset = (): void => {
-      rmSync(roundsFile, { force: true });
-      rmSync(roundsHeadFile, { force: true });
-    };
-    if (n <= reflectThreshold) return reset();
-    // Asked for only when reflection is on; with it off, or without the
-    // reflect skill installed, there is nowhere for the lesson to go and the
-    // prompt would only be noise.
-    if (!existsSync(REFLECT_CAPTURE)) return reset();
-    const capture = (await import(
-      REFLECT_CAPTURE
-    )) as typeof import("../../reflect/scripts/lib/capture.ts");
-    const reflection = capture.reflectionSwitch();
-    if (reflection instanceof Error)
-      console.error(
-        `reflection settings unreadable, not asking for /jig:reflect: ${reflection.message}`,
-      );
-    if (reflection !== true) return reset();
-    // The count is reset only once the journal holds it: after a failed
-    // write, the next convergence reads the same count and tries again.
-    let where =
-      "The round count is in the reflection journal; now that the rounds have\n  wound down,";
-    try {
-      capture.noteReviewRounds({
-        pullRequest: Number(pr),
-        rounds: n,
-        threshold: reflectThreshold,
-        skill: "resolve-review-comments",
-      });
-      reset();
-    } catch (error) {
-      console.error(
-        `could not note the round count in the reflection journal (kept for the next convergence): ${error instanceof Error ? error.message : String(error)}`,
-      );
-      where =
-        "The round count could not be written to the reflection journal;\n  note it yourself, and now that the rounds have wound down,";
-    }
-    console.error(`
-──────────────────────────────────────────────────────────────
-  #${pr} converged after ${n} rounds (> ${reflectThreshold}).
-
-  That many rounds usually means the scaffolding under-served
-  this change, not that the reviewer was noisy. ${where}
-  run /jig:reflect while the detail is still recoverable,
-  and consider whether the fix belongs in an instruction file,
-  a skill, a rule, or the reviewer config.
-──────────────────────────────────────────────────────────────`);
+    if (!noCount) await settleRounds(pr, reflectThreshold);
   };
 
   const unresolvedCount = async (): Promise<number> => {

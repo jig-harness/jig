@@ -151,21 +151,6 @@ export function prSubject(pr: number | string): string {
   return `pr:${pr}`;
 }
 
-/**
- * Whether a drive that exited `code` leaves nothing for a person, so its tab
- * closes: converged, merged or closed, taken over, re-armable (quota-parked,
- * not judgeable yet), stopped or paused by a person, or refused because
- * another driver holds the pull request. A park, any other exit and a
- * signal keep the tab.
- */
-export function driveExitClosesTab(code: number | null): boolean {
-  return code !== null && DRIVE_EXITS_CLOSING.has(code);
-}
-
-const DRIVE_EXITS_CLOSING: ReadonlySet<number> = new Set([
-  0, 4, 5, 11, 13, 16, 18, 19, 20,
-]);
-
 /** The handle, tab and shell PID in `orca terminal create`'s result; null when it names no handle or PID. */
 export function openedTab(
   result: Record<string, unknown>,
@@ -451,7 +436,8 @@ function startCloser(
 
 /**
  * Called by a run tab's own command as it ends: when `closes` (the run left
- * nothing for a person), closes the tab once this process has exited, else
+ * nothing for a person, as the caller judges it: a drive's exit through
+ * drive-pr's `driveExitClosesTab`), closes the tab once this process has exited, else
  * leaves it open. Returns a line for the run's log; null when this process
  * is not a recorded tab's own command (a person's tab, a run under another
  * wrapper, a test).

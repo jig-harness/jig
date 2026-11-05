@@ -159,6 +159,10 @@
  */
 
 import { driverSourceFiles } from "./terminal-state-source-files.ts";
+import {
+  checkDispatchFiles,
+  dispatchFileCount,
+} from "./terminal-states-dispatch.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, delimiter, relative, resolve } from "node:path";
 import * as ts from "typescript/unstable/ast";
@@ -926,7 +930,7 @@ interface ResolvedSymbol {
  * question about a node outside that set throws rather than answering "no
  * symbol": a scan that silently resolved nothing would pass vacuously.
  */
-interface FileChecker {
+export interface FileChecker {
   getSymbolAtLocation(node: ts.Node): ResolvedSymbol | undefined;
   getShorthandAssignmentValueSymbol(
     node: ts.ShorthandPropertyAssignment,
@@ -1005,7 +1009,7 @@ export async function closeTypeScriptService(): Promise<void> {
  * node objects a walk of that tree visits, so a declaration found through a
  * symbol and the same node reached by walking compare equal with `===`.
  */
-function createSingleFileProgram(
+export function createSingleFileProgram(
   fileName: string,
   source: string,
 ): Promise<{ checker: FileChecker; sourceFile: ts.SourceFile }> {
@@ -1466,13 +1470,14 @@ function describeBareLiteralExit({ value, kind }: BareLiteralExit): string {
  * unwrapping it would misreport an unrelated negative-value return as a literal
  * `6`.
  */
-function unwrapLiteral(expr: ts.Expression): ts.NumericLiteral | undefined {
+function unwrapNumericWrappers(expr: ts.Expression): ts.Expression {
   let current: ts.Expression = expr;
   for (;;) {
     if (
       ts.isParenthesizedExpression(current) ||
       ts.isAsExpression(current) ||
       ts.isSatisfiesExpression(current) ||
+      ts.isTypeAssertion(current) ||
       ts.isNonNullExpression(current)
     ) {
       current = current.expression;
@@ -1487,6 +1492,12 @@ function unwrapLiteral(expr: ts.Expression): ts.NumericLiteral | undefined {
     }
     break;
   }
+  return current;
+}
+
+/** The numeric literal `expr` is once `unwrapNumericWrappers` has stripped it, if it is one. */
+function unwrapLiteral(expr: ts.Expression): ts.NumericLiteral | undefined {
+  const current = unwrapNumericWrappers(expr);
   return ts.isNumericLiteral(current) ? current : undefined;
 }
 
@@ -1577,12 +1588,12 @@ function resolveIdentifierLiteral(
   ) {
     return undefined;
   }
-  return (
-    unwrapLiteral(declaration.initializer) ??
-    (ts.isIdentifier(declaration.initializer)
-      ? resolveIdentifierLiteral(declaration.initializer, checker, seen)
-      : undefined)
-  );
+  const initializer = unwrapNumericWrappers(declaration.initializer);
+  return ts.isNumericLiteral(initializer)
+    ? initializer
+    : ts.isIdentifier(initializer)
+      ? resolveIdentifierLiteral(initializer, checker, seen)
+      : undefined;
 }
 
 /**
@@ -1823,7 +1834,7 @@ function resolvesToLocalReporter(
  * (`return <expr>`, `<expr> === code`, `emit(<expr>)`) — each one asks the
  * identical question of a different expression position.
  */
-function resolveLiteral(
+export function resolveLiteral(
   expr: ts.Expression,
   checker: FileChecker,
 ): ts.NumericLiteral | undefined {
@@ -4476,6 +4487,11 @@ export async function runCheck(): Promise<number> {
   if (typeof leaseBindings === "number") return leaseBindings;
   const statusProblem = await checkDriveStatusBindings();
   if (statusProblem !== 0) return statusProblem;
+  const dispatchProblem = await checkDispatchFiles({
+    program: createSingleFileProgram,
+    resolveLiteral,
+  });
+  if (dispatchProblem !== 0) return dispatchProblem;
   const { checked, scanned } = corpus;
   console.log(
     `✅ drive-pr terminal states: ${checked} documented (exit, state) pair(s) across ${scanned} file(s) all match TERMINAL_STATES,`,
@@ -4487,7 +4503,10 @@ export async function runCheck(): Promise<number> {
     `   and lease.ts's own ${leaseBindings.length} out-of-band exit constant(s) — plus drive-status.ts's`,
   );
   console.log(
-    "   own call sites and outOfBand() name pairings — still read from it too.",
+    "   own call sites and outOfBand() name pairings — still read from it too,",
+  );
+  console.log(
+    `   as do the ${dispatchFileCount()} dispatcher file(s) that classify a drive's exit.`,
   );
   console.log(
     "   This derives PAIRING CONSISTENCY, not prose accuracy: it proves every",

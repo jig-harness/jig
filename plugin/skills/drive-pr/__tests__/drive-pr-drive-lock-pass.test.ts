@@ -45,7 +45,7 @@ import {
   identityTargetsGone,
   signalIdentityTargets,
 } from "../../../shared/process-tree.ts";
-import { requestDriverStop } from "../scripts/lib/stop-request.ts";
+import { parseDiagText } from "../scripts/lib/claim.ts";
 import { lockRow, readState } from "./state-rows.ts";
 
 useDrivePrSuite();
@@ -1328,11 +1328,19 @@ describe("drive.ts loop control", () => {
       return [process.execPath, "-e", code, "999"];
     }
 
-    function requestHeldDriverStop(prLock: LockSlot): void {
+    /** `drives.ts --stop`'s cooperative stop: a `now` stop addressed to the holder's generation. */
+    async function requestHeldDriverStop(
+      prLock: LockSlot,
+      mailbox: string,
+    ): Promise<void> {
       const held = lockRow(prLock.stateDir, prLock.name);
-      expect(held).not.toBeNull();
-      if (held !== null)
-        requestDriverStop(prLock.stateDir, prLock.name, held.token);
+      const generation =
+        parseDiagText(String(held?.detail ?? ""))?.generation ?? 0;
+      expect(generation).toBeGreaterThan(0);
+      await appendDirective(mailbox, "999", "test", "stop", {
+        generation,
+        now: true,
+      });
     }
 
     it.each(["SIGTERM", "SIGHUP"] as const)(
@@ -1363,6 +1371,7 @@ describe("drive.ts loop control", () => {
               DRIVE_PR_FIXTURES: dir,
               DRIVE_PR_STATE_DIR: stateDir,
               DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+              DRIVE_PR_MAILBOX_DIR: join(dir, "mailbox"),
             },
             stdout: "pipe",
             stderr: "pipe",
@@ -1380,7 +1389,8 @@ describe("drive.ts loop control", () => {
         // The DRIVER only. The pass runs in its own process group precisely so
         // this signal cannot reach it by accident, which is what leaves the
         // handler as the only thing that can end it.
-        if (mode === "request") requestHeldDriverStop(pr);
+        if (mode === "request")
+          await requestHeldDriverStop(pr, join(dir, "mailbox"));
         else proc.kill(signal);
         const [stderr, exitCode] = await Promise.all([
           new Response(proc.stderr).text(),

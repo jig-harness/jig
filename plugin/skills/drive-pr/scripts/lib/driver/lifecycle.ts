@@ -5,17 +5,15 @@ import {
   registerSignalHandler,
   beginShutdown,
   requestShutdown,
-  registerCleanup,
 } from "./../../../../../shared/cleanup.ts";
 
 import { driverRuntime } from "./runtime.ts";
 
 import { cancelTrackedProcesses } from "./../../../../../shared/proc.ts";
 
-import {
-  driverStopRequested,
-  publishDriverStopCompletion,
-} from "./../stop-request.ts";
+import { ackDirective, watchImmediateStop } from "./../state/mailbox-stop.ts";
+
+import type { MailboxWatch } from "./mailbox.ts";
 
 import {
   reapRegisteredProcessTrees,
@@ -39,12 +37,22 @@ export function driverStopExitCode(sig: string): number {
         : 129;
 }
 
+/**
+ * Cancel the active pass and stop on a signal, or on the mailbox `stop` that
+ * `drives.ts --stop` addresses to this driver's generation with `now`, read
+ * every quarter second from `watch`'s mailbox: the cooperative channel a
+ * platform without signals between processes needs. Once the pass tree is
+ * witnessed gone, the driver acknowledges that stop in the outbox before its
+ * locks are released; an acknowledgement it cannot append keeps the locks, so
+ * `drives.ts` does not take a stop it cannot see for a finished one.
+ */
 export function installStopControls(
   held: DriveLock[],
   registry?: string,
+  watch?: MailboxWatch,
 ): Disposable {
   let shuttingDown = false;
-  let requested = false;
+  let requested: string | null = null;
   const cancellation = registerSignalHandler(async (sig) => {
     beginShutdown();
     if (shuttingDown) held.length = 0;
@@ -54,7 +62,7 @@ export function installStopControls(
     try {
       const helpersGone = await cancelTrackedProcesses();
       const gone = await stopActivePass(
-        `received ${requested ? "stop request" : sig}`,
+        `received ${requested !== null ? "stop request" : sig}`,
         registry ?? driverRegistry,
       );
       confirmed = helpersGone && gone;
@@ -62,19 +70,19 @@ export function installStopControls(
       driverRuntime.driverStopConfirmed = confirmed;
       if (!confirmed) held.length = 0;
     }
+    if (confirmed && requested !== null && watch !== undefined)
+      await acknowledgeStop(held, watch, requested);
   });
+  const pollStop =
+    watch === undefined
+      ? null
+      : watchImmediateStop(watch.dir, watch.pr, watch.generation);
   const stopTimer = setInterval(() => {
-    if (
-      !shuttingDown &&
-      held.some(
-        (lock) =>
-          lock.nonce !== undefined &&
-          driverStopRequested(lock.stateDir, lock.name, lock.nonce),
-      )
-    ) {
-      requested = true;
-      requestShutdown("SIGTERM", driverStopExitCode("stop request"));
-    }
+    if (shuttingDown || pollStop === null) return;
+    const stop = pollStop();
+    if (stop === null) return;
+    requested = stop;
+    requestShutdown("SIGTERM", driverStopExitCode("stop request"));
   }, 250);
   stopTimer.unref?.();
   return {
@@ -83,6 +91,22 @@ export function installStopControls(
       cancellation[Symbol.dispose]();
     },
   };
+}
+
+/** Acknowledge the stop the driver acted on; a failure keeps the locks (see `installStopControls`). */
+async function acknowledgeStop(
+  held: DriveLock[],
+  watch: MailboxWatch,
+  id: string,
+): Promise<void> {
+  try {
+    await ackDirective(watch.dir, watch.pr, id, watch.generation);
+  } catch (error) {
+    held.length = 0;
+    console.error(
+      `drive.ts: could not acknowledge stop ${id} (${error instanceof Error ? error.message : String(error)}) — NOT releasing the locks.`,
+    );
+  }
 }
 
 /** Drain acquisition-owned runner registrations before another pass or lock release. */
@@ -163,8 +187,9 @@ function driverRegistryDrain(
 export function installDriverLifecycle(
   held: DriveLock[],
   registry?: string,
+  watch?: MailboxWatch,
 ): AsyncDisposable {
-  const controls = installStopControls(held, registry);
+  const controls = installStopControls(held, registry, watch);
   const drain = driverRegistryDrain(held, registry);
   return {
     async [Symbol.asyncDispose]() {
@@ -185,29 +210,6 @@ const registrationDrains = new Map<
   string,
   Promise<{ survived: boolean; confirmed: boolean }>
 >();
-
-/** Publish success only behind the cancellation barrier, before claims are released. */
-export function driverStopCompletionCleanup(held: DriveLock[]): Disposable {
-  return registerCleanup(() => {
-    if (!driverRuntime.driverStopConfirmed) return;
-    try {
-      for (const lock of held)
-        if (
-          lock.nonce !== undefined &&
-          driverStopRequested(lock.stateDir, lock.name, lock.nonce)
-        )
-          publishDriverStopCompletion(
-            lock.stateDir,
-            lock.name,
-            lock.nonce,
-            process.pid,
-          );
-    } catch (error) {
-      held.length = 0;
-      throw error;
-    }
-  });
-}
 
 export function createDriverRegistry(held: DriveLock[]): void {
   // The registry belongs to this acquisition. Detached foreground runners

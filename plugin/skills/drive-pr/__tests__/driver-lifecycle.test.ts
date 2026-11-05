@@ -7,7 +7,8 @@ import { join } from "node:path";
 const drive = new URL("../scripts/drive.ts", import.meta.url).href;
 const tree = new URL("../../../shared/process-tree.ts", import.meta.url).href;
 const cleanup = new URL("../../../shared/cleanup.ts", import.meta.url).href;
-const request = new URL("../scripts/lib/stop-request.ts", import.meta.url).href;
+const mailbox = new URL("../scripts/lib/state/mailbox.ts", import.meta.url)
+  .href;
 
 for (const mode of ["signal", "cooperative"]) {
   for (const confirmed of [false, true]) {
@@ -32,7 +33,7 @@ for (const mode of ["signal", "cooperative"]) {
             return {survived:true,confirmed:options.confirmed};
           }}));
           const {registerCleanup}=await import(${JSON.stringify(cleanup)});
-          const {requestDriverStop}=await import(${JSON.stringify(request)});
+          const {appendDirective}=await import(${JSON.stringify(mailbox)});
           const {installDriverLifecycle}=await import(${JSON.stringify(drive)});
           const claim=options.dir+'/claim';writeFileSync(claim,'held');
           const stateDir=options.dir+'/clone';mkdirSync(stateDir);
@@ -42,8 +43,9 @@ for (const mode of ["signal", "cooperative"]) {
             if(held.includes(lock))rmSync(claim);
             console.log(JSON.stringify({completed,claimed:existsSync(claim)}));
           });
-          if(options.mode==='cooperative')requestDriverStop(stateDir,lock.name,lock.nonce);
-          await (async()=>{await using lifecycle=installDriverLifecycle(held,options.dir);})();
+          const watch={dir:options.dir+'/mailbox',pr:'1',generation:1};
+          if(options.mode==='cooperative')await appendDirective(watch.dir,'1','test','stop',{generation:1,now:true});
+          await (async()=>{await using lifecycle=installDriverLifecycle(held,options.dir,watch);})();
         `,
           JSON.stringify({ mode, confirmed, dir }),
         ]);

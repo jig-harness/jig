@@ -55,6 +55,7 @@ import {
   thisHost,
 } from "../../shared/liveness.ts";
 import { type ProcessRow, processTable } from "../../shared/process-table.ts";
+import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
 import type { StaleCause } from "./types.ts";
@@ -704,9 +705,6 @@ export async function readLaunches(
   return { records, unreadable };
 }
 
-/** `drive.ts`'s refusals of a second driver, which end a record without a wall. */
-export const DRIVER_REFUSALS: ReadonlySet<number> = new Set([11, 13, 20]);
-
 /** The states that hold their stage and their account's slot. */
 export function holds(state: LaunchState): boolean {
   return (
@@ -749,7 +747,7 @@ function latestRefusals(records: ReadRecord[]): Set<string> {
     if (
       state.kind === "ended" &&
       state.exit.code !== null &&
-      DRIVER_REFUSALS.has(state.exit.code)
+      DRIVER_REFUSAL_EXITS.has(state.exit.code)
     )
       ids.add(record.id);
   return ids;

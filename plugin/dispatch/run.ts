@@ -15,9 +15,10 @@
  * admitted it under, with the account's configuration directory set (`CLAUDE_CONFIG_DIR`
  * or `CODEX_HOME`) and the credential variables and the other directory
  * variable removed, so the pass bills the account the tick admitted. When
- * the drive ends it records the exit, and an
- * exit `16` (a usage-limit wall) writes the account's wall: the reset the
- * drive recorded, else `wall_backoff` from now.
+ * the drive ends it records the exit, and an exit of `QUOTA_PARKED` (`16`,
+ * a usage-limit wall) writes the account's wall: the reset the drive
+ * recorded, else `wall_backoff` from now. The drive's exits are read by
+ * name from drive-pr's terminal-state registry (`DRIVE_EXIT`).
  *
  *   bun … run.ts identity claude|codex
  *
@@ -51,10 +52,10 @@
  *
  * The exit of a follow-up's pass or a pickup's session is recorded, and no
  * wall is written for it. Once the exit is recorded, a run that left
- * nothing for a person (a drive whose exit `driveExitClosesTab` closes on, a
- * session or a follow-up pass that recorded `done`) closes its terminal
- * tab, when the tick recorded it as a run tab (`shared/orca-tabs.ts`); a
- * park or a failure keeps the tab.
+ * nothing for a person (a drive whose exit the registry's
+ * `driveExitClosesTab` closes on, a session or a follow-up pass that
+ * recorded `done`) closes its terminal tab, when the tick recorded it as a
+ * run tab (`shared/orca-tabs.ts`); a park or a failure keeps the tab.
  *
  * Exit codes: the drive's own; 2 usage, a token that is not the record's,
  * a state database a newer plugin wrote, or a follow-up whose permission
@@ -67,13 +68,13 @@ import { swallow } from "../shared/errors.ts";
 import { QuestionTail } from "./lib/question-tail.ts";
 import { NO_WATCH, watchWindowsTree } from "./lib/windows-tree.ts";
 import { captureIdentity } from "../shared/liveness.ts";
-import {
-  driveExitClosesTab,
-  endOwnTab,
-  withoutRunTabMarker,
-} from "../shared/orca-tabs.ts";
+import { endOwnTab, withoutRunTabMarker } from "../shared/orca-tabs.ts";
 import { resolveAccountIdentity } from "../skills/drive-pr/scripts/lib/identity.ts";
 import { passCommand } from "../skills/drive-pr/scripts/lib/pass-command.ts";
+import {
+  DRIVE_EXIT,
+  driveExitClosesTab,
+} from "../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { run } from "../shared/proc.ts";
 import {
   driveState,
@@ -99,8 +100,6 @@ import { configuredPassArgs } from "../skills/drive-pr/scripts/lib/pass-args.ts"
 import { StateVersionError } from "./lib/state.ts";
 import { writeWall } from "./lib/walls.ts";
 
-/** `drive.ts`'s exit for a usage-limit wall it cannot wait out. */
-const QUOTA_PARKED = 16;
 const CLAIMED = 3;
 const FORWARDED = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
@@ -404,7 +403,11 @@ async function wallRecorded(
   record: LaunchRecord,
   code: number | null,
 ): Promise<boolean> {
-  if (!isDrive(record) || record.pr === null || code !== QUOTA_PARKED)
+  if (
+    !isDrive(record) ||
+    record.pr === null ||
+    code !== DRIVE_EXIT.QUOTA_PARKED
+  )
     return true;
   return tryWriteWall({ ...record, pr: record.pr });
 }

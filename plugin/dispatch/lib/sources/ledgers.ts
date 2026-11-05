@@ -3,22 +3,23 @@
  * follow-up. Each open pull request's comments are read for its drive
  * ledger with drive-pr's own reader, trusting only a ledger the drive
  * trusts, and the ledger is classified from its driver's state and the exit
- * `drive.ts` wrote into it, first match wins:
+ * `drive.ts` wrote into it, named from drive-pr's terminal-state registry
+ * (`DRIVE_EXIT`), first match wins:
  *
  * | Ledger says | Class |
  * | --- | --- |
  * | running, heartbeat inside the lease window | driven |
  * | running, heartbeat past the lease window | silent |
- * | stopped `0`, the pull request conflicting or its head past the verified head | stale |
- * | stopped `9` | stale |
- * | stopped `0` (at the verified head, mergeable), `5`, `20` | done |
- * | stopped `18`, `19` | stopped-by-person |
+ * | stopped `CONVERGED` (`0`), the pull request conflicting or its head past the verified head | stale |
+ * | stopped `PR_CONFLICTING` (`9`) | stale |
+ * | stopped `CONVERGED` at the verified head and mergeable, `PR_NOT_OPEN` (`5`), `TAKEN_OVER` (`20`) | done |
+ * | stopped `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`) | stopped-by-person |
  * | stopped with no exit | stopped-unknown |
- * | stopped `16` | re-armable |
- * | stopped `8`, every parked item answered | re-armable |
- * | stopped `4` | re-armable |
- * | stopped `8`, an item unanswered | parked |
- * | stopped `11`, `13` | refused |
+ * | stopped `QUOTA_PARKED` (`16`) | re-armable |
+ * | stopped `HITL_PARKED` (`8`), every parked item answered | re-armable |
+ * | stopped `NOT_SETTLED` (`4`) | re-armable |
+ * | stopped `HITL_PARKED`, an item unanswered | parked |
+ * | stopped `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`) | refused |
  * | stopped on any other exit | needs-person |
  *
  * A converged ledger is read beside what its stop does not fix: the pull
@@ -27,21 +28,22 @@
  * verified (`verifiedSha`). A base that merely moved past a pull request
  * that still merges cleanly does not make it stale.
  *
- * A ledger that stopped `9` is read beside its pull request's mergeability,
- * its head and its base branch's head, which is read for no other ledger. Its
- * change is the pair of heads, whatever the forge reports of its mergeability:
- * still conflicting, the drive's conflict-resolve round tries again; mergeable,
- * the stop no longer describes the pull request and the drive's rounds take it
- * from there. Once this machine re-drove that change and the ledger still
- * stopped `9`, it is a person's (`settleConflictStops`).
+ * A ledger that stopped `PR_CONFLICTING` is read beside its pull request's
+ * mergeability, its head and its base branch's head, which is read for no
+ * other ledger. Its change is the pair of heads, whatever the forge reports of
+ * its mergeability: still conflicting, the drive's conflict-resolve round
+ * tries again; mergeable, the stop no longer describes the pull request and
+ * the drive's rounds take it from there. Once this machine re-drove that
+ * change and the ledger still stopped `PR_CONFLICTING`, it is a person's
+ * (`settleConflictStops`).
  *
  * A ledger that cannot be read (its comments, a version this reader does
  * not know, a damaged body, an unreadable heartbeat or park answer) is
  * `unplaced`: reported, never planned. So is a converged one whose
  * mergeability the forge is still computing, or whose head or verified head
  * is not known, since whether it is stale cannot be told this tick, and one
- * that stopped `9` whose mergeability, head or base branch's head is not known,
- * since the change a re-drive would act on cannot be told.
+ * that stopped `PR_CONFLICTING` whose mergeability, head or base branch's head
+ * is not known, since the change a re-drive would act on cannot be told.
  *
  * Where the repository turns dispatch labels on, each drive carries its
  * pull request's labels, and a pull request with no ledger that carries the
@@ -57,6 +59,7 @@ import type {
   LedgerSnapshot,
 } from "../../../skills/drive-pr/scripts/lib/state/ledger.ts";
 import { readLedgerSnapshot } from "../../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
+import { DRIVE_EXIT } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { type Adoption, adopts, type Author } from "../adopt.ts";
 import { branchHead } from "../forge.ts";
 import { hasCommand, type LabelConfig } from "../labels.ts";
@@ -70,7 +73,7 @@ import type {
   WaitingPark,
 } from "../types.ts";
 
-/** What answers a park's items, when the ledger stopped `8`. */
+/** What answers a park's items, when the ledger stopped `HITL_PARKED`. */
 export type ParkReading =
   | { answered: number; waiting: string[]; parks?: WaitingPark[] }
   | { unreadable: string };
@@ -84,7 +87,7 @@ export interface PrFacts {
   head: string | null;
   /** `MERGEABLE`, `CONFLICTING`, or `UNKNOWN` while the forge computes it. */
   mergeable: string | null;
-  /** The head of its base branch, read only for a ledger that stopped `9`. */
+  /** The head of its base branch, read only for a ledger that stopped `PR_CONFLICTING`. */
   base?: BaseHead;
 }
 
@@ -128,7 +131,7 @@ function convergedClass(ledger: Ledger, forge: PrFacts): Classified {
   const verified = ledger.verifiedSha;
   const unplaced = (why: string): Classified => ({
     class: "unplaced",
-    why: `stopped 0 (converged), and ${why}, so whether it is stale cannot be told`,
+    why: `stopped ${DRIVE_EXIT.CONVERGED} (converged), and ${why}, so whether it is stale cannot be told`,
   });
   const facts = readFacts(forge);
   if ("unread" in facts) return unplaced(facts.unread);
@@ -144,12 +147,12 @@ function convergedClass(ledger: Ledger, forge: PrFacts): Classified {
   if (causes.length === 0)
     return {
       class: "done",
-      why: `stopped 0 (converged), still at the verified head ${short(verified)} and mergeable`,
+      why: `stopped ${DRIVE_EXIT.CONVERGED} (converged), still at the verified head ${short(verified)} and mergeable`,
     };
   const cause = causes.join(", and ");
   return {
     class: "stale",
-    why: `stopped 0 (converged), and now ${cause}: re-drive on any account`,
+    why: `stopped ${DRIVE_EXIT.CONVERGED} (converged), and now ${cause}: re-drive on any account`,
     stale: {
       cause,
       change: `head ${head}, ${conflicting ? "conflicting" : "mergeable"}`,
@@ -158,14 +161,14 @@ function convergedClass(ledger: Ledger, forge: PrFacts): Classified {
 }
 
 /**
- * A ledger that stopped `9`, read beside its pull request: `stale`, conflicting
+ * A ledger that stopped `PR_CONFLICTING`, read beside its pull request: `stale`, conflicting
  * or not, keyed on the pair of its head and its base branch's head, and
  * `unplaced` while either or its mergeability cannot be told.
  */
 function conflictStopClass(forge: PrFacts): Classified {
   const unplaced = (why: string): Classified => ({
     class: "unplaced",
-    why: `stopped 9 (conflicting with its base), and ${why}, so the change a re-drive would act on cannot be told`,
+    why: `stopped ${DRIVE_EXIT.PR_CONFLICTING} (conflicting with its base), and ${why}, so the change a re-drive would act on cannot be told`,
   });
   const facts = readFacts(forge);
   if ("unread" in facts) return unplaced(facts.unread);
@@ -188,31 +191,40 @@ function conflictStopClass(forge: PrFacts): Classified {
   };
 }
 
-/** The class of each exit the table names but `0` and `8`, which read the pull request and its parks. */
+/** The class of each exit the table names but `CONVERGED`, `HITL_PARKED` and `PR_CONFLICTING`, which read the pull request and its parks. */
 const EXITS: Record<number, (ledger: Ledger) => Classified> = {
-  5: () => ({ class: "done", why: "stopped 5 (merged or closed)" }),
-  20: () => ({
+  [DRIVE_EXIT.PR_NOT_OPEN]: () => ({
     class: "done",
-    why: "stopped 20 (taken over by another clone)",
+    why: `stopped ${DRIVE_EXIT.PR_NOT_OPEN} (merged or closed)`,
   }),
-  18: () => ({
+  [DRIVE_EXIT.TAKEN_OVER]: () => ({
+    class: "done",
+    why: `stopped ${DRIVE_EXIT.TAKEN_OVER} (taken over by another clone)`,
+  }),
+  [DRIVE_EXIT.MAILBOX_STOPPED]: () => ({
     class: "stopped-by-person",
-    why: "stopped 18 (a mailbox stop): a person's stop is never re-armed",
+    why: `stopped ${DRIVE_EXIT.MAILBOX_STOPPED} (a mailbox stop): a person's stop is never re-armed`,
   }),
-  19: () => ({
+  [DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT]: () => ({
     class: "stopped-by-person",
-    why: "stopped 19 (a mailbox pause): a person's stop is never re-armed",
+    why: `stopped ${DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT} (a mailbox pause): a person's stop is never re-armed`,
   }),
-  16: (ledger) => ({
+  [DRIVE_EXIT.QUOTA_PARKED]: (ledger) => ({
     class: "re-armable",
-    why: `stopped 16 (quota-parked; wall resets ${ledger.quotaPark?.resetAt ?? "at an unknown time"}): re-arm on an account other than the wall's, or after the reset`,
+    why: `stopped ${DRIVE_EXIT.QUOTA_PARKED} (quota-parked; wall resets ${ledger.quotaPark?.resetAt ?? "at an unknown time"}): re-arm on an account other than the wall's, or after the reset`,
   }),
-  4: () => ({
+  [DRIVE_EXIT.NOT_SETTLED]: () => ({
     class: "re-armable",
-    why: "stopped 4 (not judgeable yet): re-arm on any account",
+    why: `stopped ${DRIVE_EXIT.NOT_SETTLED} (not judgeable yet): re-arm on any account`,
   }),
-  11: () => ({ class: "refused", why: "stopped 11: another driver holds it" }),
-  13: () => ({ class: "refused", why: "stopped 13: another driver holds it" }),
+  [DRIVE_EXIT.SINGLE_INSTANCE_LOCK]: () => ({
+    class: "refused",
+    why: `stopped ${DRIVE_EXIT.SINGLE_INSTANCE_LOCK}: another driver holds it`,
+  }),
+  [DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE]: () => ({
+    class: "refused",
+    why: `stopped ${DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE}: another driver holds it`,
+  }),
 };
 
 function runningClass(
@@ -240,29 +252,29 @@ function parkClass(park: ParkReading | undefined): Classified {
   if (park === undefined || "unreadable" in park)
     return {
       class: "unplaced",
-      why: `stopped 8 (parked), and the answers to ${park === undefined ? "its parks" : park.unreadable} could not be read`,
+      why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), and the answers to ${park === undefined ? "its parks" : park.unreadable} could not be read`,
     };
   return park.waiting.length === 0
     ? {
         class: "re-armable",
-        why: `stopped 8 (parked), every parked item answered (${park.answered}): re-arm on any account`,
+        why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), every parked item answered (${park.answered}): re-arm on any account`,
       }
     : {
         class: "parked",
-        why: `stopped 8 (parked), waiting on ${park.waiting.join(", ")}: a person answers`,
+        why: `stopped ${DRIVE_EXIT.HITL_PARKED} (parked), waiting on ${park.waiting.join(", ")}: a person answers`,
       };
 }
 
-/** What a stop's evidence adds: the heads and the mergeability a ledger that stopped `0` or `9` was read beside. */
+/** What a stop's evidence adds: the heads and the mergeability a ledger that stopped `CONVERGED` or `PR_CONFLICTING` was read beside. */
 function stopEvidence(ledger: Ledger, forge: PrFacts): Evidence {
   if (ledger.driver.state !== "stopped") return {};
   const read = { headSha: forge.head, mergeable: forge.mergeable };
-  if (ledger.driver.exit === 0)
+  if (ledger.driver.exit === DRIVE_EXIT.CONVERGED)
     return {
       verifiedSha: ledger.verifiedSha === "" ? null : ledger.verifiedSha,
       ...read,
     };
-  if (ledger.driver.exit !== 9) return {};
+  if (ledger.driver.exit !== DRIVE_EXIT.PR_CONFLICTING) return {};
   const { base } = forge;
   return {
     baseSha: base !== undefined && "oid" in base ? base.oid : null,
@@ -294,7 +306,7 @@ function ledgerEvidence(
   };
 }
 
-/** A ledger's class, first match wins; `park` is read only for exit `8`, `forge` only for exits `0` and `9`. */
+/** A ledger's class, first match wins; `park` is read only for `HITL_PARKED`, `forge` only for `CONVERGED` and `PR_CONFLICTING`. */
 export function classifyLedger(
   ledger: Ledger,
   nowMs: number,
@@ -310,9 +322,9 @@ export function classifyLedger(
       class: "stopped-unknown",
       why: "stopped with no exit, which may be a person's stop: never re-armed",
     };
-  if (exit === 8) return parkClass(park);
-  if (exit === 0) return convergedClass(ledger, forge);
-  if (exit === 9) return conflictStopClass(forge);
+  if (exit === DRIVE_EXIT.HITL_PARKED) return parkClass(park);
+  if (exit === DRIVE_EXIT.CONVERGED) return convergedClass(ledger, forge);
+  if (exit === DRIVE_EXIT.PR_CONFLICTING) return conflictStopClass(forge);
   return (
     EXITS[exit]?.(ledger) ?? {
       class: "needs-person",
@@ -358,7 +370,10 @@ async function parkOf(
   ledger: Ledger,
   slug: string,
 ): Promise<ParkReading | undefined> {
-  if (ledger.driver.state !== "stopped" || ledger.driver.exit !== 8)
+  if (
+    ledger.driver.state !== "stopped" ||
+    ledger.driver.exit !== DRIVE_EXIT.HITL_PARKED
+  )
     return undefined;
   const found = await parkAnswers(pr, ledger.parked, slug);
   return "unreadable" in found
@@ -466,7 +481,7 @@ function baseHeads(slug: string): Reading["baseHead"] {
   };
 }
 
-/** What the forge reports of a pull request beside its ledger, its base branch's head for a ledger that stopped `9`. */
+/** What the forge reports of a pull request beside its ledger, its base branch's head for a ledger that stopped `PR_CONFLICTING`. */
 async function factsOf(
   pr: OpenPr,
   ledger: Ledger,
@@ -476,7 +491,8 @@ async function factsOf(
     head: pr.headRefOid ?? null,
     mergeable: pr.mergeable ?? null,
   };
-  return ledger.driver.state === "stopped" && ledger.driver.exit === 9
+  return ledger.driver.state === "stopped" &&
+    ledger.driver.exit === DRIVE_EXIT.PR_CONFLICTING
     ? { ...facts, base: await r.baseHead(pr.baseRefName) }
     : facts;
 }

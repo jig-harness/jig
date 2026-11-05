@@ -256,6 +256,7 @@ describe("foldGateState", () => {
         "hold-push": { active: false, since: null, by: null },
         pause: { active: false, since: null, by: null },
         stop: { active: false, since: null, by: null },
+        addressed: [],
       },
       warnings: [],
     });
