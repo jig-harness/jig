@@ -1477,6 +1477,7 @@ function unwrapLiteral(expr: ts.Expression): ts.NumericLiteral | undefined {
       ts.isParenthesizedExpression(current) ||
       ts.isAsExpression(current) ||
       ts.isSatisfiesExpression(current) ||
+      ts.isTypeAssertion(current) ||
       ts.isNonNullExpression(current)
     ) {
       current = current.expression;

@@ -140,6 +140,23 @@ function f(l: { exit: number }) { return (l as { exit: number }).exit === 8; }
     ).toEqual([11, 13, 16, 18, 20, 9, 8]);
   });
 
+  test("is found through a type-only wrapper on a value, a comparison side, a case or a local alias", async () => {
+    expect(
+      await valuesIn(`
+const K = 13;
+const L = <number>16;
+const A = new Set([<number>11, K as number]);
+const B = new Map([[L as number, "x"], [(<number>18), "y"]]);
+function f(l: { exit: number }) {
+  if (l.exit === (<number>8)) return 1;
+  if (l.exit === (K as number)) return 2;
+  switch (l.exit) { case 9 as number: return 3; case (K satisfies number): return 4; }
+  return 0;
+}
+`),
+    ).toEqual([11, 13, 16, 18, 8, 13, 9, 13]);
+  });
+
   test("is not found through a bracket access whose key is not a literal", async () => {
     expect(
       await valuesIn(

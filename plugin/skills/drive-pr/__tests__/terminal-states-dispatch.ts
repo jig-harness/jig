@@ -134,14 +134,14 @@ const EQUALITY = new Set([
   ts.SyntaxKind.ExclamationEqualsToken,
 ]);
 
-/** The drive exit `expr` restates, when it resolves to one of `codes`. */
+/** The drive exit `expr` restates, once unwrapped, when it resolves to one of `codes`. */
 function restated(
   expr: ts.Expression,
   checker: FileChecker,
   codes: ReadonlySet<number>,
   tools: AstTools,
 ): number | null {
-  const literal = tools.resolveLiteral(expr, checker);
+  const literal = tools.resolveLiteral(unwrapped(expr), checker);
   if (literal === undefined) return null;
   const value = Number(literal.text);
   return codes.has(value) ? value : null;
