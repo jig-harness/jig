@@ -8,6 +8,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -165,6 +166,14 @@ describe("the heartbeat", () => {
     expect(guardState(root, now).guarded).toBe(false);
   });
 
+  it("is unguarded for a pid that is not a positive safe integer", () => {
+    const root = scratch();
+    for (const pid of [0, -4, 2 ** 53, 1.5]) {
+      heartbeat(root, new Date(now), { pid });
+      expect(guardState(root, now).guarded).toBe(false);
+    }
+  });
+
   it("compares the raw age to the window, not the rounded one", () => {
     const root = scratch();
     heartbeat(root, new Date(now - HEARTBEAT_FRESH_MS - 499));
@@ -248,6 +257,25 @@ describe("the admission", () => {
         code: "unreadable",
         reason: expect.stringContaining("remove it after inspection"),
       });
+      expect(readFileSync(file, "utf8")).toBe(text);
+    }
+  });
+
+  it("leaves a dead holder's admission whose path or key does not bind to its slot", () => {
+    const root = scratch();
+    const file = join(root, "admissions", `${guardKey(PATH)}.json`);
+    const dead = admit(PATH, root, new Date(), deadHolder());
+    if (!dead.ok) throw new Error(dead.failure.reason);
+    const good = JSON.parse(readFileSync(file, "utf8"));
+    for (const damaged of [
+      { ...good, path: undefined },
+      { ...good, path: `${PATH}-other` },
+      { ...good, key: guardKey(`${PATH}-other`) },
+    ]) {
+      const text = JSON.stringify(damaged);
+      writeFileSync(file, text);
+      const refused = admit(PATH, root);
+      expect(refused.ok ? null : refused.failure.code).toBe("unreadable");
       expect(readFileSync(file, "utf8")).toBe(text);
     }
   });
@@ -340,6 +368,20 @@ describe("launch markers", () => {
 
   const admitted = Date.parse(admittedAt);
   const admission = { key: guardKey(PATH), at: admittedAt };
+
+  it("keep the worktree when the markers cannot be listed", () => {
+    const root = scratch();
+    mkdirSync(join(root, "launches"));
+    chmodSync(join(root, "launches"), 0o100);
+    try {
+      if (process.getuid?.() !== 0)
+        expect(launchVeto(admission, root, admitted)).toContain(
+          "cannot be listed",
+        );
+    } finally {
+      chmodSync(join(root, "launches"), 0o700);
+    }
+  });
 
   it("keep nothing when the plugin wrote none", () => {
     expect(launchVeto(admission, scratch(), admitted)).toBeNull();

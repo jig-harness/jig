@@ -56,7 +56,7 @@ import type { Writer } from "./records/writer.ts";
 export const ADMISSION_KIND = "orca-guard-admission";
 export const LAUNCH_KIND = "orca-guard-launch";
 export const HEARTBEAT_KIND = "orca-guard-heartbeat";
-/** The schema version of all three kinds. */
+/** The schema version of every guard record kind. */
 export const GUARD_VERSION = 1;
 /** A heartbeat is fresh while its `at` is within this of now. */
 export const HEARTBEAT_FRESH_MS = 180_000;
@@ -95,14 +95,18 @@ function stagedBeside(dir: string, name: string): string {
 /** What is wrong with `payload`'s kind-specific fields, or `null` when each is present with its type. */
 function missingFields(
   payload: Record<string, unknown>,
-  fields: Record<string, "string" | "number">,
+  fields: Record<string, "string" | "number" | "pid">,
 ): string | null {
   for (const [name, type] of Object.entries(fields)) {
     const value = payload[name];
     const good =
       type === "string"
         ? typeof value === "string" && value !== ""
-        : typeof value === "number" && Number.isInteger(value);
+        : type === "pid"
+          ? typeof value === "number" &&
+            Number.isSafeInteger(value) &&
+            value > 0
+          : typeof value === "number" && Number.isInteger(value);
     if (!good) return `its ${name} is missing or not a ${type}`;
   }
   return null;
@@ -143,7 +147,7 @@ export function guardState(root = guardRoot(), now = Date.now()): GuardState {
       `the Orca plugin's heartbeat does not read (${read.ok ? `version ${read.value.envelope.v}` : read.failure.reason})`,
     );
   const shape = missingFields(read.value.payload, {
-    pid: "number",
+    pid: "pid",
     pluginVersion: "string",
   });
   if (shape !== null)
@@ -186,6 +190,7 @@ function writerOf(identity: ProcessIdentity): Writer {
 /** The holder an admission's text names, or why it does not read. */
 function admissionHolder(
   text: string,
+  key: string,
 ): Outcome<{ holder: ProcessIdentity; at: string }, "unreadable"> {
   const read = decode(text, ADMISSION_KIND);
   if (!read.ok) return failed("unreadable", read.failure.reason);
@@ -194,6 +199,14 @@ function admissionHolder(
       "unreadable",
       `version ${read.value.envelope.v} is not one this version of Jig reads`,
     );
+  const { path } = read.value.payload;
+  if (
+    typeof path !== "string" ||
+    path === "" ||
+    read.value.envelope.key !== key ||
+    guardKey(path) !== key
+  )
+    return failed("unreadable", "it does not name the worktree of its key");
   const holder = decodeIdentity(read.value.payload.holder);
   return holder === null
     ? failed("unreadable", "it names no holder")
@@ -203,11 +216,12 @@ function admissionHolder(
 /** Whether the admission at `file` is still the one `mine` wrote. */
 function stillMine(
   file: string,
+  key: string,
   mine: { holder: ProcessIdentity; at: string },
 ) {
   const text = readText(file);
   if (!text.ok || text.value === null) return false;
-  const read = admissionHolder(text.value);
+  const read = admissionHolder(text.value, key);
   return (
     read.ok &&
     read.value.at === mine.at &&
@@ -258,7 +272,7 @@ export function admit(
     const placed = publish(staged, file);
     if (!placed.ok) return placed;
     const mine = { holder, at };
-    if (!stillMine(file, mine))
+    if (!stillMine(file, key, mine))
       return failed("held", `another collection took ${file} first`);
     return ok({
       file,
@@ -266,7 +280,7 @@ export function admit(
       at,
       holder,
       release: () => {
-        if (stillMine(file, mine)) rmSync(file, { force: true });
+        if (stillMine(file, key, mine)) rmSync(file, { force: true });
       },
     });
   } finally {
@@ -314,7 +328,7 @@ function replaceDead(
   file: string,
   text: string,
 ): Outcome<true, AdmissionCode> {
-  const standing = admissionHolder(text);
+  const standing = admissionHolder(text, basename(file, ".json"));
   if (!standing.ok)
     return failed(
       "unreadable",
@@ -375,7 +389,8 @@ function replaceDead(
  * let through while gc held it). A marker that cannot be read, does not parse,
  * lacks a field of its kind or names a version this one does not know keeps it
  * too. A sweep interrupted while it held the marker aside leaves it under
- * another name; that copy counts when the canonical file is absent.
+ * another name; that copy counts when the canonical file is absent, and a
+ * directory that cannot be listed (other than by not existing) keeps it too.
  */
 export function launchVeto(
   admission: Pick<Admission, "key" | "at">,
@@ -392,7 +407,8 @@ export function launchVeto(
       entry.startsWith(`.${name}.sweep.`),
     );
   } catch (error) {
-    swallow(error, "no launch markers are listed; none is set aside");
+    if (errnoCode(error) !== "ENOENT")
+      return `the launch markers in ${dir} cannot be listed`;
   }
   for (const entry of names) {
     const aside = vetoOf(join(dir, entry), admission, now);

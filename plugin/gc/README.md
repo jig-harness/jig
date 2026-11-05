@@ -175,7 +175,7 @@ In Node, `crypto.createHash("sha256").update(path).digest("hex")`.
 
 **Format.** Each file is one JSON object carrying the
 [record envelope](../RECORDS.md#the-registry-and-the-envelope): `kind`, `v`
-(the schema version, `1` for all three), `key`, `writer` (an object with at
+(the schema version, `1` for every kind), `key`, `writer` (an object with at
 least `host`, a non-empty string, and optionally `pid`, `bootId`, `start` and
 `login`) and `at` (a UTC time as `Date.prototype.toISOString` writes
 it), then the kind's own fields. A writer may add no other envelope field
