@@ -171,6 +171,15 @@ const MIGRATIONS: readonly Migration[] = [
   );
   `,
   },
+  {
+    additive: true,
+    sql: `
+  CREATE TABLE settled_ends (
+    record TEXT PRIMARY KEY,
+    at TEXT NOT NULL
+  );
+  `,
+  },
 ];
 
 /** The schema version this plugin writes. */

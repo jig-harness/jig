@@ -9,7 +9,7 @@ import type { SharedRecords, SharedOp } from "../../shared/records/shared.ts";
 import { forgeShared } from "../../shared/records/shared-forge.ts";
 import { settleConflictStops } from "./actions/drive-hold.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
-import type { ReadRecord } from "./launches.ts";
+import { type ReadRecord, settledEnds } from "./launches.ts";
 import {
   type DriveClaims,
   hostOf,
@@ -52,9 +52,10 @@ export function openShared(slug: string, owner: boolean): TickShared {
  * A drive that ended and whose pull request has since merged or closed is no
  * longer in the open population, yet its claim still owes its end: read the
  * claims of each pull request this host's own launch records name that the
- * open drives do not cover. A record is the obligation, and it is pruned with
- * the receipts' retention, so the reads end when it does and never before the
- * end is written.
+ * open drives do not cover. A record is the obligation until `settleOwnClaims`
+ * notes that every end it owed is written (or it is pruned), so a settled
+ * record's pull request is never read again and an unwritten end is read
+ * until it is written.
  */
 async function addEndedLaunches(
   ctx: SharedContext,
@@ -64,8 +65,10 @@ async function addEndedLaunches(
 ): Promise<void> {
   const open = new Set(forge.drives.map((d) => d.number));
   const extra = new Set<number>();
+  const settled = settledEnds();
   for (const r of records) {
     if (r.record.repo !== ctx.slug || r.record.action === "followup") continue;
+    if (settled.has(r.record.id)) continue;
     const pr = Number(r.record.pr);
     if (!Number.isInteger(pr) || open.has(pr)) continue;
     // Under `only_labeled` nothing is written on a pull request out of scope, so its claims are not read to be ended.

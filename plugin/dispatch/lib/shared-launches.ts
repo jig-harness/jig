@@ -54,6 +54,7 @@ import {
   holds,
   type LaunchRecord,
   type ReadRecord,
+  settleEnds,
 } from "./launches.ts";
 import { stateDb } from "./state.ts";
 import type { DrivenPr, FollowupMarker, MarkedPr } from "./types.ts";
@@ -454,6 +455,7 @@ export async function settleOwnClaims(
     ),
   ];
   const failures: string[] = [];
+  const unwritten = new Set<number>();
   for (const o of ends) {
     const r = await ctx.records.end(
       { repo: ctx.slug, pr: o.pr },
@@ -462,12 +464,44 @@ export async function settleOwnClaims(
       o.end,
       o.host,
     );
-    if (!r.ok)
+    if (!r.ok) {
+      if (o.stage === "drive") unwritten.add(o.id);
       failures.push(
         `PR #${o.pr}: the end of claim comment ${o.id} could not be written: ${r.failure.reason}`,
       );
+    }
   }
+  settleEnds(
+    settledRecords(claims, ctx.host, records, unwritten, nowIso),
+    nowIso,
+  );
   return failures;
+}
+
+/**
+ * The finished drive records whose pull request's claims read and hold no
+ * open claim of this host's for them with an end still unwritten: nothing is
+ * owed on them, so their pull requests are not read to be ended again.
+ */
+function settledRecords(
+  claims: DriveClaims,
+  host: string,
+  records: readonly ReadRecord[],
+  unwritten: ReadonlySet<number>,
+  nowIso: string,
+): string[] {
+  return records
+    .filter((r) => {
+      if (r.record.action === "followup" || r.record.pr === null) return false;
+      if (endOfRecord(r, nowIso) === null || r.state.kind === "unknown")
+        return false;
+      const read = claims.get(Number(r.record.pr));
+      if (read === undefined || !read.ok) return false;
+      return !ownOpen(read, host).some(
+        (c) => c.says.value.record === r.record.id && unwritten.has(c.id),
+      );
+    })
+    .map((r) => r.record.id);
 }
 
 /** One end this host owes: its own claim's, on a pull request. */

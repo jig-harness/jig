@@ -13,6 +13,8 @@ import {
   pruneLaunches,
   readLaunches,
   recordExit,
+  settledEnds,
+  settleEnds,
   type ReadRecord,
   writeRecord,
 } from "../lib/launches.ts";
@@ -117,6 +119,22 @@ describe("a takeover behind a refusal", () => {
 });
 
 describe("retention", () => {
+  it("remembers a settled claim end until its record is pruned", () => {
+    const dir = root();
+    const a = ended(
+      record("20260101T000000Z-aaaaaaaa"),
+      0,
+      "2026-01-01T00:00:00.000Z",
+    );
+    writeRecord(a.record, dir);
+    expect([...settledEnds(dir)]).toEqual([]);
+    settleEnds([a.record.id], "2026-01-02T00:00:00.000Z", dir);
+    settleEnds([a.record.id], "2026-01-03T00:00:00.000Z", dir);
+    expect([...settledEnds(dir)]).toEqual([a.record.id]);
+    pruneLaunches([a], Date.parse("2027-01-01"), 7, dir);
+    expect([...settledEnds(dir)]).toEqual([]);
+  });
+
   it("keys the standing refusal by repository as well as number", () => {
     const dir = root();
     const a = ended(
