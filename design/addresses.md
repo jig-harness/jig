@@ -147,9 +147,13 @@ accept is no answer to the drive, so it is no entry here.
 
 A `request` made by a label is an entry while the label is on the pull
 request or item, read with its label event: one timeline read, counted in
-`sources`. A label the tick has consumed (the `drive` command once a ledger
-exists) or a person has removed leaves no record of who set it, so it is no
-entry; the launch it started is.
+`sources`. Removing a label does not erase who set it: the forge keeps the
+labeled and unlabeled events with their actor and time. So a label the tick
+has consumed (the `drive` command once a ledger exists) or a person has
+removed stays an entry, from the same timeline read and within the thread's
+bounded window, shown as no longer active and with the time it came off. The
+launch it started is its own entry beside it; the launch names the launcher,
+not necessarily the person who asked.
 
 Every entry carries `at` (when), `from` and `to` (an address, or a person
 as the forge or tracker login), `kind`, `text` (the record's own words,
