@@ -381,6 +381,8 @@ export interface OpenBranchOptions extends CreateOptions {
   /** The repository: as `orca repo list` gives it, or its name in Orca, which `orca repo show` resolves. */
   repo: OrcaRepo | string;
   branch: string;
+  /** Whether the repository's create hook runs in the worktree; `true` when absent. A worktree no agent works in needs none. */
+  createHook?: boolean;
 }
 
 export interface OpenedBranch {
@@ -394,7 +396,8 @@ export interface OpenedBranch {
 
 /**
  * Open the branch's worktree and run the repository's create hook in it
- * once, waiting for another open that is running it. An existing pull
+ * once, waiting for another open that is running it (unless `createHook`
+ * is `false`). An existing pull
  * request's head branch is reattached where a checkout holds it, or checked
  * out from origin in a new worktree.
  */
@@ -413,10 +416,8 @@ export function openBranch(
     options.branch,
     options,
   );
-  const hookRan = ensureCreateHook(
-    port,
-    worktree.path,
-    gitDirOf(port, worktree.path),
-  );
+  const hookRan =
+    options.createHook !== false &&
+    ensureCreateHook(port, worktree.path, gitDirOf(port, worktree.path));
   return { repo, worktree, reattached, hookRan };
 }

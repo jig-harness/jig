@@ -13,7 +13,7 @@
  */
 import { isRecord } from "../../../shared/guards.ts";
 import { type CardLock, withCardLock } from "../../../shared/orca-card-lock.ts";
-import { call } from "./orca-comment.ts";
+import { call, withCardDeadline } from "./orca-comment.ts";
 import {
   keepMarks,
   MAX_COMMENT,
@@ -90,18 +90,16 @@ export async function orcaNotify(
   timeoutMs: number,
   lock: CardLock = withCardLock,
 ): Promise<RuntimeReceipt> {
-  // One deadline covers the lock's wait and every call after it.
-  const start = performance.now();
-  const remaining = (): number => timeoutMs - (performance.now() - start);
   // The read, the write and the read-back hold the card's lock, the one
   // every comment writer takes (`shared/orca-card-lock.ts`), so no writer's
   // read-then-write falls between them.
   let locked: { value: RuntimeReceipt } | null;
   try {
-    locked = await lock(
+    locked = await withCardDeadline(
       target.path,
-      () => notifyUnlocked(target, message, remaining),
-      { waitMs: Math.max(0, Math.min(timeoutMs, 5000)) },
+      timeoutMs,
+      (remaining) => notifyUnlocked(target, message, remaining),
+      lock,
     );
   } catch (error) {
     return {

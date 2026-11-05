@@ -11,6 +11,7 @@
  *   - path: /home/me/dev/web
  *     stages: [rearm]
  *     followup_since: 2026-10-30T00:00:00Z
+ *     owner: true
  * accounts:
  *   - name: work
  *     vendor: claude
@@ -24,6 +25,8 @@
  * receipts_days: 30
  * dashboard:
  *   listen: 100.64.0.7:8765
+ * records:
+ *   shared: forge
  * ```
  *
  * An unknown key anywhere is refused, so a misspelt dial never reads as its
@@ -68,7 +71,19 @@ export interface MachineRepository {
   path: string;
   stages: MachineStage[];
   followupSince: string | null;
+  /**
+   * Whether this host owns the repository's board, notifications, history
+   * rows and labels; `true` by default, so a single machine keeps them. A host
+   * that does not own a repository another host also dispatches launches,
+   * re-arms, re-drives and takes over through the shared records, and writes
+   * none of those.
+   */
+  owner: boolean;
 }
+
+/** Where the records another host reads are shared (`records.shared`): the forge, the only medium today. */
+const SHARED_MEDIA = ["forge"] as const;
+export type SharedMedium = (typeof SHARED_MEDIA)[number];
 
 export interface MachineConfig {
   path: string;
@@ -81,6 +96,8 @@ export interface MachineConfig {
   receiptsDays: number;
   /** The address `jig dispatch dashboard` listens on (`dashboard.listen`); `null` when the file names none. */
   dashboardListen: Listen | null;
+  /** Where the records another host reads are shared (`records.shared`). */
+  sharedRecords: SharedMedium;
 }
 
 const DEFAULTS = {
@@ -101,9 +118,11 @@ const TOP_KEYS = [
   "workspace_timeout",
   "receipts_days",
   "dashboard",
+  "records",
 ];
 const DASHBOARD_KEYS = ["listen"];
-const REPOSITORY_KEYS = ["path", "stages", "followup_since"];
+const RECORDS_KEYS = ["shared"];
+const REPOSITORY_KEYS = ["path", "stages", "followup_since", "owner"];
 const ACCOUNT_KEYS = [
   "name",
   "vendor",
@@ -218,7 +237,15 @@ function repository(value: unknown, i: number): MachineRepository {
     path: path(value.path, `${where}.path`),
     stages: stages(value.stages, `${where}.stages`),
     followupSince: since(value.followup_since, `${where}.followup_since`),
+    owner: flag(value.owner, `${where}.owner`, true),
   };
+}
+
+function flag(value: unknown, where: string, fallback: boolean): boolean {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== "boolean")
+    throw new MachineConfigError(`${where} must be true or false`);
+  return value;
 }
 
 function account(value: unknown, i: number): MachineAccount {
@@ -346,7 +373,23 @@ function parseValues(values: unknown, where: string): MachineConfig {
       DEFAULTS.receiptsDays,
     ),
     dashboardListen: dashboard(top.dashboard),
+    sharedRecords: records(top.records),
   };
+}
+
+/** Where the shared records live: `forge` when the file names none; a medium this version does not know is refused. */
+function records(value: unknown): SharedMedium {
+  if (value === undefined || value === null) return "forge";
+  if (!isMapping(value))
+    throw new MachineConfigError("records must be a mapping");
+  only(value, RECORDS_KEYS, "records");
+  const shared = value.shared;
+  if (shared === undefined || shared === null) return "forge";
+  if (!(SHARED_MEDIA as readonly unknown[]).includes(shared))
+    throw new MachineConfigError(
+      `records.shared must be one of ${SHARED_MEDIA.join(", ")}: ${String(shared)}`,
+    );
+  return shared as SharedMedium;
 }
 
 /** The dashboard's address; `null` when the file names none. */

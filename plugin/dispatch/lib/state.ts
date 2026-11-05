@@ -9,6 +9,8 @@
  * | `thread_samples` | drive and ledger round | the count recorded the first tick that sees the round |
  * | `waiting_episodes` | interactive session and wall | a later wall is a new episode, the same one is read again |
  * | `notices` | repository and notification cause | once per cause, until the cause goes |
+ * | `notices_content` | workspace | the exact dispatcher-only comment last written and read back |
+ * | `notices_read` | repository | when the tick first found its notices workspace read, until it is unread again or removed |
  * | `nudges` | session and waiting episode | one nudge per episode, its delivery marked once |
  * | `followup_outcomes` | repository and merged pull request | the latest attempt's outcome |
  * | `idle` | repository and claimed item | the stall clock starts once |
@@ -170,6 +172,36 @@ const MIGRATIONS: readonly Migration[] = [
     receipt TEXT NOT NULL
   );
   `,
+  },
+  {
+    additive: true,
+    sql: `
+  CREATE TABLE settled_ends (
+    record TEXT PRIMARY KEY,
+    at TEXT NOT NULL
+  );
+  `,
+  },
+  {
+    additive: true,
+    sql: `
+  CREATE TABLE notices_read (
+    repo TEXT PRIMARY KEY,
+    workspace TEXT NOT NULL,
+    since INTEGER NOT NULL
+  );
+  `,
+  },
+  {
+    additive: true,
+    sql: `CREATE TABLE notices_content (
+      workspace TEXT PRIMARY KEY,
+      comment TEXT NOT NULL
+    );`,
+  },
+  {
+    additive: true,
+    sql: "ALTER TABLE notices_content ADD COLUMN repo TEXT;",
   },
 ];
 

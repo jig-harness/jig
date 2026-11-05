@@ -17,6 +17,8 @@ const DEFAULT_WAIT_MS = 30 * 60_000;
 const DEFAULT_ROUNDS_FLAT = 3;
 const DEFAULT_PICKUP_WITHIN_MS = 2 * 3_600_000;
 const DEFAULT_FOLLOWUP_WITHIN_MS = 3_600_000;
+/** `notices_linger`'s default. */
+const DEFAULT_NOTICES_LINGER_MS = 3_600_000;
 const KEYS = [
   "identity",
   "states",
@@ -26,6 +28,7 @@ const KEYS = [
   "drive_rounds_flat",
   "pickup_within",
   "followup_within",
+  "notices_linger",
   "labels",
   "adopt",
 ];
@@ -100,6 +103,12 @@ function wait(
   } catch (error) {
     throw new SectionError((error as Error).message);
   }
+}
+
+/** `notices_linger`: a duration, or zero (`0s`, `0m`, `0h`). */
+function linger(value: unknown): number {
+  if (typeof value === "string" && /^0+\s*[smh]$/.test(value.trim())) return 0;
+  return wait(value, "notices_linger", DEFAULT_NOTICES_LINGER_MS);
 }
 
 function flag(value: unknown, field: string, fallback: boolean): boolean {
@@ -231,6 +240,7 @@ export function dispatchSection(
       "followup_within",
       DEFAULT_FOLLOWUP_WITHIN_MS,
     ),
+    noticesLingerMs: linger(section.notices_linger),
     labels: labelConfig,
     adopt,
   };

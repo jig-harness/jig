@@ -46,7 +46,8 @@ export interface Workspace {
    */
   unverifiableTerminals: number;
   comment: string;
-  unread: boolean;
+  /** Null when the runtime did not report a boolean unread mark. */
+  unread: boolean | null;
   /** The name the runtime shows for the workspace now; `""` when it reports none. */
   name: string;
 }
@@ -85,12 +86,16 @@ export const WAITING_STATES: ReadonlySet<string> = new Set([
 export interface RuntimeReceipt {
   ok: boolean;
   detail: string;
+  /** The workspace opened, but closing its initial terminal needs a manual retry. */
+  cleanupFailure?: string;
   /** The agent's id, for a launch that started one. */
   agentId?: string;
   /** For `openWorkspace`: the workspace opened or reused. */
   workspace?: { id: string; path: string };
   /** The call ran past its deadline: its answer is lost, not a refusal. */
   lost?: boolean;
+  /** For `retire`: a safety check found work or identity it cannot authorize removing. */
+  refused?: boolean;
   /** For `notify`: the target's comment as the runtime reads it back after the write. */
   comment?: string;
 }
@@ -213,6 +218,20 @@ export interface SessionRuntime {
    * so nothing was sent.
    */
   steer(session: string, nudge: Nudge): Promise<RuntimeReceipt>;
+  /**
+   * Remove the repository's notices workspace, its terminals and its branch,
+   * once the runtime reads it again just before, under the comment lock
+   * `notify` holds, with the comment and the unread mark the tick decided
+   * on: a message written or read since stops it. Its receipt: `ok` when it
+   * is gone; `ok: false` with `lost` when the removal's answer is lost;
+   * `ok: false` without `lost` when the re-read differs or a call refused,
+   * so nothing was removed.
+   */
+  retire(
+    workspace: { id: string; path: string },
+    expected: { comment: string; unread: boolean; branch?: string },
+    timeoutMs?: number,
+  ): Promise<RuntimeReceipt>;
 }
 
 /**
