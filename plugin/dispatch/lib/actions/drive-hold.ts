@@ -4,11 +4,12 @@
  *
  * - a record that holds its stage (pending, alive, unknown) holds the
  *   pull request: nothing else is launched for it;
- * - a record that ended on a refusal `drive.ts` gives a second driver (`11`,
- *   `13`, `20`), on the same ledger facts as now, is the stage's answer and
- *   is never fought: the pull request is reported, not launched again. A
- *   refusal `16` is the account's wall instead (see walls.ts), which keeps
- *   that account out of admission until its reset;
+ * - a record that ended on a refusal `drive.ts` gives a second driver
+ *   (`DRIVER_REFUSAL_EXITS` in drive-pr's terminal-state registry), on the
+ *   same ledger facts as now, is the stage's answer and is never fought: the
+ *   pull request is reported, not launched again. A `QUOTA_PARKED` stop is
+ *   the account's wall instead (see walls.ts), which keeps that account out
+ *   of admission until its reset;
  * - a `stale` ledger this machine already re-drove for the same change, however
  *   that launch ended, is not launched again: a re-drive is launched once per
  *   change, so a drive that stops the same way again does not start a loop. A
@@ -28,8 +29,8 @@
  *   first, so a lost launch stays visible and a takeover in flight is not
  *   stacked on.
  */
+import { DRIVER_REFUSAL_EXITS } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
-  DRIVER_REFUSALS,
   holds,
   isDrive,
   type ReadRecord,
@@ -76,7 +77,7 @@ function endOf(r: ReadRecord): string {
 function refusalOf(r: ReadRecord): number | null {
   if (r.state.kind !== "ended") return null;
   const code = r.state.exit.code;
-  return code !== null && DRIVER_REFUSALS.has(code) ? code : null;
+  return code !== null && DRIVER_REFUSAL_EXITS.has(code) ? code : null;
 }
 
 /**
@@ -189,8 +190,9 @@ function redriven(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
 
 /**
  * Each drive as the plan and the labels read it once this machine's launch
- * records are read beside it: a ledger that stopped `9`, this machine already
- * having re-driven the change it shows now, is a person's to settle, however
+ * records are read beside it: a ledger that stopped `PR_CONFLICTING`, this
+ * machine already having re-driven the change it shows now, is a person's to
+ * settle, however
  * that re-drive ended (a stop of its own, or a refusal or a crash that left the
  * older stop standing), since nothing else will drive it until its head or its
  * base moves. While a record still holds it, or another driver's refusal
