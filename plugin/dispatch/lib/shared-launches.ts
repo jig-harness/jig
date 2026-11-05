@@ -455,7 +455,7 @@ export async function settleOwnClaims(
     ),
   ];
   const failures: string[] = [];
-  const unwritten = new Set<number>();
+  const written = new Set<number>();
   for (const o of ends) {
     const r = await ctx.records.end(
       { repo: ctx.slug, pr: o.pr },
@@ -464,30 +464,32 @@ export async function settleOwnClaims(
       o.end,
       o.host,
     );
-    if (!r.ok) {
-      if (o.stage === "drive") unwritten.add(o.id);
+    if (r.ok) {
+      if (o.stage === "drive") written.add(o.id);
+    } else {
       failures.push(
         `PR #${o.pr}: the end of claim comment ${o.id} could not be written: ${r.failure.reason}`,
       );
     }
   }
   settleEnds(
-    settledRecords(claims, ctx.host, records, unwritten, nowIso),
+    settledRecords(claims, ctx.host, records, written, nowIso),
     nowIso,
   );
   return failures;
 }
 
 /**
- * The finished drive records whose pull request's claims read and hold no
- * open claim of this host's for them with an end still unwritten: nothing is
- * owed on them, so their pull requests are not read to be ended again.
+ * The finished drive records whose end is positively confirmed: this host's
+ * own claims for the record all read with their end, or their end was written
+ * this tick. A listing that omits the claim (it lags) or one the claim is
+ * unreadable in confirms nothing, so that record's pull request is read again.
  */
-function settledRecords(
+export function settledRecords(
   claims: DriveClaims,
   host: string,
   records: readonly ReadRecord[],
-  unwritten: ReadonlySet<number>,
+  written: ReadonlySet<number>,
   nowIso: string,
 ): string[] {
   return records
@@ -497,9 +499,10 @@ function settledRecords(
         return false;
       const read = claims.get(Number(r.record.pr));
       if (read === undefined || !read.ok) return false;
-      return !ownOpen(read, host).some(
-        (c) => c.says.value.record === r.record.id && unwritten.has(c.id),
+      const own = readable(read.value).filter(
+        (c) => c.says.value.host === host && c.says.value.record === r.record.id,
       );
+      return own.length > 0 && own.every((c) => written.has(c.id) || !open(c));
     })
     .map((r) => r.record.id);
 }

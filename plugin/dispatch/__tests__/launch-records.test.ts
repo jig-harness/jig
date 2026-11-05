@@ -23,6 +23,7 @@ import { stateDb, closeStateDb } from "../lib/state.ts";
 import type { DrivenPr } from "../lib/types.ts";
 import { dispatchJobSpec } from "../install.ts";
 import { duration } from "../lib/machine-config.ts";
+import { settledRecords } from "../lib/shared-launches.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -115,6 +116,50 @@ describe("a takeover behind a refusal", () => {
       refusal,
     ]);
     expect(hold.kind).toBe("refused");
+  });
+});
+
+describe("settled claim ends", () => {
+  const HOST = "sha256:aaaa";
+  const rec = ended(
+    record("20260101T000000Z-aaaaaaaa"),
+    0,
+    "2026-01-01T00:00:00.000Z",
+  );
+  const claim = (id: number, end: unknown, host = HOST, trusted = true) =>
+    ({
+      id,
+      stage: "drive",
+      login: "l",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      trusted,
+      says: {
+        ok: true,
+        value: { host, record: rec.record.id, end, attempt: id },
+      },
+    }) as Record<string, unknown>;
+  const settled = (claims: unknown[], written: number[] = []) =>
+    settledRecords(
+      new Map([[7, { ok: true, value: claims }]]) as never,
+      HOST,
+      [rec],
+      new Set(written),
+      "2026-01-02T00:00:00.000Z",
+    );
+
+  it("settles a record whose claim reads with its end, or whose end was just written", () => {
+    expect(settled([claim(1, { at: "x" })])).toEqual([rec.record.id]);
+    expect(settled([claim(1, null)], [1])).toEqual([rec.record.id]);
+  });
+
+  it("settles nothing on a listing that omits the claim, or on a claim that does not read", () => {
+    expect(settled([])).toEqual([]);
+    expect(settled([claim(1, { at: "x" }, "sha256:bbbb")])).toEqual([]);
+    expect(settled([{ ...claim(1, null), says: { ok: false } }])).toEqual([]);
+  });
+
+  it("keeps a record unsettled while any of its claims still has no confirmed end", () => {
+    expect(settled([claim(1, { at: "x" }), claim(2, null)])).toEqual([]);
   });
 });
 
