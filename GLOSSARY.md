@@ -1952,7 +1952,7 @@ make, use the entry's term instead.
   pull request or item has no workspace that can take one. It never
   launches an agent into it; it only writes its comment and marks it
   unread for a person to read. Once it has been read for
-  `dispatch.notices_linger`, or every cause it carries is gone, the
+  `dispatch.notices_linger`, or it is unread and every cause it carries is gone, the
   dispatcher removes it with its branch, unless it holds anything a person
   made.
 - **Dispatched mark** — the line that says the *dispatcher* started a
