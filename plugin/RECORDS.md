@@ -29,28 +29,39 @@ Contents: [the registry and the envelope](#the-registry-and-the-envelope) ·
 Every record below is registered in the
 [records registry](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 (`shared/records/registry.ts`) under the name in its first column, with its
-medium, its owner, where it lives and its schema version. Jig's own gates
-fail a hidden marker, a drive state family or a SQLite table that the
-plugin's code names and the registry does not hold, and a registry entry the
-code no longer names. This text check does not discover arbitrary file-backed
-records or names assembled at runtime. Adding or changing those records
-requires updating this inventory and the registry during review.
+medium (`machine`, `tree`, `forge` or `tracker`), its owner, where it lives
+and its schema version. A kind another tool or a person writes and Jig only
+reads is registered as foreign, with the plugin file that reads it as its
+owner. Jig's own gates fail a hidden marker, a drive state family or a
+SQLite table that the plugin's code names and the registry does not hold,
+and a registry entry the code no longer names. This text check does not
+discover arbitrary file-backed records or names assembled at runtime.
+Adding or changing those records requires updating this inventory and the
+registry during review.
 
 A record that carries the
 [record envelope](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 (`shared/records/envelope.ts`) says what it is in the same fields
-everywhere: its `kind`, its schema version `v`, its `key`, its `writer` (the
-login where known, the host, the boot, the process) and the time `at`, with a
-`generation` when it is rewritten in place. One codec writes it as a file's
-JSON and places the same bytes in a hidden comment on the forge. On the
-forge and the tracker the writer's host and boot are digests, so a public
-comment names no machine. A reader checks the envelope against a strict
-form and returns a failure as a value; the rest of the record is data,
-never a command. The drive ledger and the
+everywhere: its `kind`, its schema version `v` (an integer), its `key` (what
+it is about, unique within its kind), its `writer` (the login where known,
+the host, the boot, the process and its start time) and the time `at`, with
+a `generation` when it is rewritten in place. The envelope's fields sit
+beside the record's own at the top level of one JSON object, so a reader
+written before the record carried the envelope still finds the fields it
+reads. One codec writes it as a file's JSON and places the same bytes in a
+hidden comment on the forge, with every `<` and `>` escaped so nothing in it
+can close the comment early. On the forge and the tracker the writer's host
+and boot are digests, so a public comment names no machine. A reader returns
+a failure as a value and never throws on what it reads. It checks the
+envelope against a strict form: the kind is registered, the version is a
+positive integer no newer than the one the reader knows for the kind, the
+key has the kind's shape, the writer names a host, and the time reads as a
+date and time. The rest of the record is data, never a command, so no record
+makes its reader run, fetch or follow what it names. The drive ledger and the
 [forge claims](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (the
 takeover claim, the follow-up marker, the launch claim and the merge-ready
-announcement) carry it; the other records adopt it one family at a time
-([design/records.md](https://github.com/jig-harness/jig/blob/main/design/records.md)).
+announcement) carry it. The other records adopt it one family at a time,
+each still reading its form from before the envelope for one release.
 
 **How paths are written.** A path in the plugin is written from the plugin
 directory (`dispatch/lib/walls.ts`), as in [MECHANISMS.md](MECHANISMS.md).
@@ -63,13 +74,22 @@ moves their root). `<dispatch>` is the dispatcher's,
 working tree's own Git directory. `~/.jig/` is `$JIG_HOME` when it is set.
 
 **A component's database.** The drive's and the dispatcher's databases are
-SQLite, opened through `shared/records/db.ts`: a write-ahead log so a reader
-never waits on a writer, migrations that only move forward, the schema
-version in `PRAGMA user_version`, and a `db_meta` row (`db-meta`) holding the
-database's instance id and its minimum reader, the lowest schema version a
-plugin must know to use it. A plugin one release behind reads a database a
-newer one changed only additively, and refuses one that needs a newer
-reader, naming both versions.
+SQLite, one per component and never one shared by all, so a component's
+migration never waits on another's. Each is opened through
+`shared/records/db.ts`: a write-ahead log so a reader never waits on a
+writer, a wait of up to ten seconds for another connection's transaction to
+end, foreign keys enforced, and a directory and file only their owner can
+read. Its schema moves forward through migrations, never edited once
+released, and its version is in `PRAGMA user_version`. A `db_meta` row
+(`db-meta`) holds the database's instance id and its minimum reader, the
+lowest schema version a plugin must know to use it. Each migration says
+whether it is additive (it only adds a table, an index or a column with a
+default); the minimum reader is the version the last migration that was not
+additive moved the schema to. So a plugin one release behind reads a
+database a newer one changed only additively, and refuses one that needs a
+newer reader, naming both versions. The instance id is random, so a
+database deleted and created again at the same path is told apart from the
+one before it.
 
 ## On the machine
 
@@ -159,26 +179,50 @@ adds a lapse window, the lease window, past which a later claim replaces a
 winner whose owner never acted. The forge has no conditional create for a
 comment and its listing can lag, so a claim is read back after it is
 posted, read again a few times while the listing does not show it, and
-reported lost when it never does; each act it guards re-checks it first. A
-claim in a form written before the envelope still reads.
+reported lost when it never does; each act it guards re-checks it first, and
+a claim that lost is withdrawn by deleting its comment. A claim in a form
+written before the envelope still reads. What this cannot close: two claims
+whose read-backs each lag past the other's comment both read themselves the
+winner, and a re-check that lags the same way passes. The earlier comment
+still wins at the first read that lists both, and each kind's callers act on
+it then: a driver stands down at its next round boundary, a follow-up stops
+before its next act and the dispatcher reports the two markers, and a second
+announcement of one head is withdrawn.
 
 The launch claim and the follow-up marker are the dispatcher's
 [shared records](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
 what a host dispatching a repository publishes for another host dispatching
 it to read, through one interface (`shared/records/shared.ts`, on the forge
-through `shared/records/shared-forge.ts`). A host's launch records stay on
+through `shared/records/shared-forge.ts`, as the machine file's
+`records.shared: forge` names it). Through it a host claims a launch,
+re-checks its claim before an act, writes the launch's end onto its own
+claim, lists the claims and their ends for a pull request, and releases a
+claim; each returns a failure as a value. A host's launch records stay on
 its machine as the cache and the log; its claims say on the forge which
-host holds a launch and how it ended, the end written onto the claim's own
-comment by the host that made it. They coordinate launches and never
-authorize an act a person takes. A pickup has no claim here: the tracker
-claim `do-item` makes is its shared record.
+host holds a launch and how it ended. The host a claim names is a digest of
+its dispatcher database's instance id, so a public comment names no machine.
+The end is written onto the claim's own comment by the host that made it:
+by the wrapper that ran the launch (`dispatch/run.ts`) as soon as it records
+the stage's exit, and otherwise by that host's next tick with `--apply`,
+which writes the end of every claim whose launch ended and still has none
+(a wrapper that died before its write, a forge that refused it;
+`dispatch/lib/shared-launches.ts`).
+One host owns each repository (`owner` in the machine file, true by
+default): only it notifies a person about the repository, writes its
+dispatch labels and writes outcome-log rows for what it did not launch, so
+none of them is written twice. The claims coordinate launches and never
+authorize an act a person takes. Since the forge has no conditional create,
+two hosts can each read themselves the holder of one launch; the stage's
+own refusal (the drive's lock and ledger claim, `do-item`'s claim, a
+follow-up's re-check before each act) is the backstop. A pickup has no
+claim here: the tracker claim `do-item` makes is its shared record.
 
 | Record | Where it lives | Format | Written by | What guards it |
 |--------|----------------|--------|------------|----------------|
 | `drive-ledger` | one comment on the pull request opening `<!-- drive-pr-ledger -->`, its data in `<!-- drive-pr-ledger-data … -->` | a summary a person reads, then JSON carrying the record envelope (`v: 1`) beside `ledgerVersion: 1`; a ledger written before the envelope still reads | the driver: `skills/drive-pr/scripts/lib/state/ledger-mirror.ts`, through `ledger-forge.ts` | trusted authors only; the lowest trusted comment id is canonical; each write rereads the comments just before it patches and reads the ledger back after |
 | `drive-takeover-claim` | a claim comment per claim, `<!-- drive-pr-takeover-claim -->` with `<!-- drive-pr-takeover-claim-data … -->` | JSON carrying the record envelope (`v: 1`, key `takeover:<generation>`, the ledger generation it read as its `generation`) beside the actor and clone, then a line a person reads; a claim written before the envelope still reads | the driver: `skills/drive-pr/scripts/lib/state/ledger.ts` writes it, `ledger-forge.ts` (`postClaim`) posts it, `lib/driver/ledger.ts` reads it back through `shared/records/forge-claims.ts` | a forge claim: trusted authors only; per ledger generation the earliest trusted claim wins, and one made past the lease window replaces a winner whose owner never wrote the ledger; read back after posting, and read again at each round boundary |
-| `dispatch-followup` | a claim comment on the merged pull request opening `<!-- jig-dispatch-followup -->`, its record in `<!-- jig-dispatch-followup-data … -->` from the second line | JSON carrying the record envelope (`v: 2`, key `followup`) beside the pull request and the run: a tick's names its launch record, its host and whether that host owns the repository, and once the launch ended its answer (`outcome: done` or `failed`); a manual run's carries its own outcome. Then a line a person reads. A marker of version 1, or in the line form written before the envelope, still reads | the tick (`dispatch/lib/actions/followup.ts`, its answer `dispatch/lib/shared-launches.ts`) or `jig dispatch marker` (`dispatch/marker.ts`), through `shared/records/shared-forge.ts`; the kind is `shared/records/launch-claims.ts`'s | a forge claim: trusted authors only; the earlier comment wins, and a trusted marker that does not read still holds; read back after posting, and checked again before each act outside the pull request; only the host that posted a tick's marker writes its answer |
-| `dispatch-launch-claim` | a claim comment per drive launch on the pull request, opening `<!-- jig-dispatch-launch-claim -->`, its record in `<!-- jig-dispatch-launch-claim-data … -->` | JSON carrying the record envelope (`v: 1`, key `drive`, the attempt as its `generation`) beside the pull request, the action (`rearm` or `takeover`), the launch record, the host and whether it owns the repository, the ledger facts the launch acts on and, for a re-drive, its change; once the launch ended, its `end` (the exit, or why it died). Then a line a person reads | the tick (`dispatch/lib/actions/drive.ts` through `dispatch/lib/shared-launches.ts`), through `shared/records/shared-forge.ts` | a forge claim: trusted authors only; a launch claims the attempt after the latest, and of the claims on one attempt the earliest wins; the latest attempt's winner with no end holds the pull request's launches for every host, past which only a takeover claims; read back after posting; only the host that made it writes its end, onto the same comment |
+| `dispatch-followup` | a claim comment on the merged pull request opening `<!-- jig-dispatch-followup -->`, its record in `<!-- jig-dispatch-followup-data … -->` from the second line | JSON carrying the record envelope (`v: 2`, key `followup`) beside the pull request and the run: a tick's names its launch record, its host and whether that host owns the repository, and once the launch ended its answer (`outcome: done` or `failed`); a manual run's carries its own outcome. Then a line a person reads. A marker of version 1, or in the line form written before the envelope, still reads | the tick (`dispatch/lib/actions/followup.ts`; its answer the wrapper `dispatch/run.ts` at the pass's exit, else the next tick, both through `dispatch/lib/shared-launches.ts`) or `jig dispatch marker` (`dispatch/marker.ts`), through `shared/records/shared-forge.ts`; the kind is `shared/records/launch-claims.ts`'s | a forge claim: trusted authors only; the earlier comment wins, and a trusted marker that does not read still holds; read back after posting, and checked again before each act outside the pull request; only the host that posted a tick's marker writes its answer |
+| `dispatch-launch-claim` | a claim comment per drive launch on the pull request, opening `<!-- jig-dispatch-launch-claim -->`, its record in `<!-- jig-dispatch-launch-claim-data … -->` | JSON carrying the record envelope (`v: 1`, key `drive`, the attempt as its `generation`) beside the pull request, the action (`rearm` or `takeover`), the launch record, the host and whether it owns the repository, the ledger facts the launch acts on and, for a re-drive, its change; once the launch ended, its `end` (the exit, or why it died). Then a line a person reads | the tick (`dispatch/lib/actions/drive.ts`; its end the wrapper `dispatch/run.ts` at the drive's exit, else the next tick; all through `dispatch/lib/shared-launches.ts`), through `shared/records/shared-forge.ts` | a forge claim: trusted authors only; a launch claims the attempt after the latest, and of the claims on one attempt the earliest wins; the latest attempt's winner with no end holds the pull request's launches for every host, past which only a takeover claims; read back after posting; only the host that made it writes its end, onto the same comment |
 | `drive-merge-ready` | a claim comment per verified head opening with the announcement's first line, its record in `<!-- drive-pr-merge-ready-data … -->`, ending `<!-- drive-pr-merge-ready: <sha> -->` | Markdown, with JSON carrying the record envelope (`v: 1`, key `merge-ready:<head>`); an announcement that only ends with the head marker still reads | `skills/drive-pr/scripts/announce-merge-ready.ts`, through `skills/drive-pr/scripts/lib/announce.ts` and `shared/records/forge-claims.ts` | a forge claim: trusted associations only; of the announcements of one head the earliest wins, and the others are withdrawn; posted only while the head is converged, green, mergeable and clean, and withdrawn when that stops holding; announcements of heads the PR moved past are swept first |
 | `summary-answer` | a comment answering a summary finding, one `<!-- drive-pr-addressed: <fingerprint> -->` per finding | Markdown | `skills/drive-pr/scripts/answer-summary-finding.ts` | the lease fence and the held claim; a finding already answered is not answered again; read from trusted authors only |
 | `thread-reply` | a reply on a review thread opening with its outcome; its last line may be `<!-- triage-thread:leave-open -->`, `<!-- reply-to-thread:no-outcome -->`, `<!-- reply-to-thread:provisional -->` or the repository's `reply.marker` | Markdown | `skills/resolve-review-comments/scripts/reply-to-thread.ts` | a marker counts only as the last line; the leave-open and provisional markers only from the scripts allowed to write them; a marker does not prove its author (`shared/reply-markers.ts`) |
