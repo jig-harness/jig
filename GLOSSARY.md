@@ -1282,6 +1282,13 @@ make, use the entry's term instead.
   directive (hold the push, pause, stop) is enforced by the drive's own
   scripts, whatever a pass does
   ([drive-pr](plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)).
+- **Mirror run** — the run a continuous-integration workflow makes for an
+  event of a pull-request label other than the *CI hold*'s, where labels
+  change too often for each event to run real CI: it skips the expensive
+  jobs, cancels no other run, and its required check repeats the result of
+  the newest real run on the same commit, failing whenever it cannot show
+  that result passed
+  ([M13](modules/M13-pipeline-economy/README.md#7-hold)).
 - **Held-head check** — the step of a required check that fails, or cancels
   its own run, while a pull request carries the *CI hold* label, so a held
   head is visibly not mergeable from the moment the label lands until the
@@ -1295,6 +1302,19 @@ make, use the entry's term instead.
   session currently owns a piece of work, such as a pull request's review
   threads. Other sessions read it and stand back; a lease whose holder died
   expires instead of blocking forever.
+- **Process identity** — what a component records so another process can
+  later tell whether the recorded one still runs: the machine's **host id**
+  (an id that survives a rename and a restart), its host name, the boot it
+  ran in, the process id and the process's start time. Judged from the same
+  machine, a process recorded before the machine last restarted has ended,
+  and so has one whose process id now belongs to a process started at another
+  time; one recorded on another machine cannot be checked from here. One
+  shared module records and judges it for the *dispatcher*'s *launch
+  records*, resource collection's admission tokens and the machine-wide
+  locks (the one heavy test runs wait on, and the one over an Orca workspace
+  card's comment). The drive's locks share only its host comparison: their
+  claims record the process id and host, not the boot or start time.
+  *Avoid*: a bare process id as proof that a holder still runs.
 - **Directory fence** — a nonempty directory retained at the path reserved
   for one lock acquisition after its release or recovery. A delayed process
   trying to move that same acquisition there cannot replace the nonempty
@@ -1563,6 +1583,21 @@ make, use the entry's term instead.
 - **Command-line boundary** — the one wrapper around a script's entry point
   that turns its result or failure into an exit code and a message, so every
   script reports failures the same way.
+- **Record envelope** — the fields a record Jig keeps carries to say what
+  it is, whatever its medium (a file on the machine, a file in the working
+  tree, a hidden comment on the forge or the tracker): its kind, its kind's
+  schema version, its key (what it is about), who wrote it, when, and for a
+  record rewritten in place its generation. A reader checks the envelope
+  against a strict form before it reads the rest, which is data and never a
+  command
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Records registry** — the one list of every kind of record the plugin
+  keeps, with where each lives, who writes it and its schema version
+  (`plugin/shared/records/registry.ts`). A gate fails a hidden marker, a
+  tagged drive state family or a SQLite table declaration the code names
+  that the registry does not hold. Review keeps arbitrary file-backed
+  records and dynamically assembled names in the inventory
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
 - **Component (of the `jig` command)** — one of the machine-level tools the
   plugin's `jig` command joins into one command line: resource collection
   (`jig gc`) and the *dispatcher* (`jig dispatch`). Each defines its command
@@ -1826,8 +1861,8 @@ make, use the entry's term instead.
 - **Launch record** — the *dispatcher*'s record of one session it started,
   written before the launch: what it starts, on which pull request or item,
   on which subscription account, and a random token. The wrapper that runs
-  the session adds the process it runs as and, when it ends, the stage's
-  exit. A launch whose answer is lost still has its record, so it holds its
+  the session adds the *process identity* it runs as and, when it ends, the
+  stage's exit. A launch whose answer is lost still has its record, so it holds its
   stage and its account's *slot*, and is never followed by a second launch.
 - **Slot** — one session the *dispatcher* may hold on a subscription
   account at once. Each account has a cap of slots (two by default); a

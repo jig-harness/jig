@@ -3,10 +3,11 @@
 // tick reads, starts and tells a person, and the line whose stations it
 // starts, with its two rails. Then each part of the section in the
 // document's order, what the dispatcher never does among them, and what is
-// on the roadmap.
+// on the roadmap. The outcome log's part shows its dashboard.
 import "../../styles/factory.css";
 import ActorLine from "../ActorLine.astro";
 import Arrow from "../Arrow.astro";
+import DashboardShot from "../DashboardShot.astro";
 import SectionHead from "../SectionHead.astro";
 import StationBox from "../StationBox.astro";
 import StatusMark from "../StatusMark.astro";
@@ -32,7 +33,8 @@ const parts = await Promise.all(
     if (p.title.startsWith("What it starts"))
       return { ...p, kind: "starts" as const, intro: await inline(paras[0] ?? ""), rest: await Promise.all(paras.slice(1).map(inline)) };
     if (p.title.startsWith("What it never does")) return { ...p, kind: "never" as const, intro: "", rest: [] };
-    return { ...p, kind: "prose" as const, intro: await block(p.body), rest: [] };
+    const shot = p.title.startsWith("The outcome log");
+    return { ...p, kind: "prose" as const, intro: await block(p.body), rest: [], shot };
   }),
 );
 ---
@@ -109,6 +111,11 @@ const parts = await Promise.all(
           </div>
         )}
         {p.kind === "prose" && <div class="prose unattended-part" set:html={p.intro} />}
+        {p.kind === "prose" && p.shot && (
+          <div class="unattended-shot">
+            <DashboardShot caption="Figure: the dashboard as the plugin serves it, over its own sample data. A person's decisions come first, each with its question and the recommended answer. Beside them, each account's sessions and what starts next." />
+          </div>
+        )}
       </>
     ))
   }
@@ -179,6 +186,10 @@ const parts = await Promise.all(
   }
   .unattended-part.prose {
     font-size: 15.5px;
+  }
+  .unattended-shot {
+    max-width: 980px;
+    margin: 20px 0 8px;
   }
   .starts {
     list-style: none;

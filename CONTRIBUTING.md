@@ -86,7 +86,10 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    resolved. Between rounds the drive holds CI with the `ci:hold` label
    (`ci.hold_label`, [M13's hold](modules/M13-pipeline-economy/README.md#7-hold)):
    while it is on, the `gates` check fails without running the jobs, and
-   removing it runs them in full. A drive that stopped can leave the label
+   removing it runs them in full. Any other label's event starts a mirror
+   run: it skips the heavy jobs, cancels no run, and its `gates` waits for the
+   newest real run on the head and repeats its result, holding a runner while
+   it waits. A drive that stopped can leave the label
    behind; remove it by hand (`gh pr edit <PR> --remove-label ci:hold`),
    never by rerunning the held run.
 4. The pull request may merge once a round after Ready has settled: every
@@ -250,7 +253,10 @@ design. Run all with one command: `bun run gates`. The set, cheapest first:
    no origin references; plugin code reaching Linear only through the
    tracker interface (`scripts/check-tracker-boundary.ts`, with the files
    that still bypass it, each under its reason, in
-   `scripts/tracker-boundary-allow.txt`); the licence files and NOTICE complete
+   `scripts/tracker-boundary-allow.txt`); every hidden marker, drive state
+   family and table the plugin's code names held by the
+   [records registry](GLOSSARY.md), and every registry entry still named
+   (`scripts/check-records-registry.ts`); the licence files and NOTICE complete
    (`scripts/check-licences.ts`); no workflow that runs a fork's code with
    secrets (M7's PR-target safety lint); the workflows meeting M13's pipeline
    conventions (the workflow-convention lint, with its heavy suites in

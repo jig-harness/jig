@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { thisHost } from "../liveness.ts";
 import { cardLockPath, withCardLock } from "../orca-card-lock.ts";
 
 const WORKSPACE = "/ws/app/feat-x";
@@ -287,6 +288,59 @@ describe("the card's comment lock", () => {
     await withCardLock(WORKSPACE, async () => "taken", { root, waitMs: 1000 });
     expect(readdirSync(root)).toEqual([]);
   });
+
+  test("holds its owner's identity while held", async () => {
+    const root = scratchRoot();
+    const content = await withCardLock(
+      WORKSPACE,
+      async () => readFileSync(cardLockPath(WORKSPACE, root), "utf8"),
+      { root },
+    );
+    const [pid, token, identity] = (content?.value ?? "").split("\n");
+    expect(pid).toBe(String(process.pid));
+    expect(token).not.toBe("");
+    expect(JSON.parse(identity ?? "")).toMatchObject({
+      pid: process.pid,
+      hostId: thisHost().hostId,
+    });
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "reclaims a lock whose owner's pid now belongs to a newer process, and says whose it was",
+    async () => {
+      // Windows keeps a lock on a pid that answers, as it always has.
+      const root = scratchRoot();
+      const before = {
+        ...thisHost(),
+        pid: process.pid,
+        start: "Thu Jan  1 00:00:00 1970",
+      };
+      writeFileSync(
+        cardLockPath(WORKSPACE, root),
+        `${process.pid}\nleft\n${JSON.stringify(before)}\n`,
+      );
+      const warned: string[] = [];
+      const stderr = spyOn(process.stderr, "write").mockImplementation(
+        (chunk: string | Uint8Array) => {
+          warned.push(String(chunk));
+          return true;
+        },
+      );
+      try {
+        expect(
+          await withCardLock(WORKSPACE, async () => "taken", {
+            root,
+            waitMs: 1000,
+          }),
+        ).toEqual({ value: "taken" });
+      } finally {
+        stderr.mockRestore();
+      }
+      expect(warned.join("")).toContain(
+        `pid ${process.pid} on ${before.host}, started Thu Jan  1 00:00:00 1970: pid ${process.pid} now belongs to a process started `,
+      );
+    },
+  );
 
   test("keys a card by its resolved path", () => {
     expect(cardLockPath("/ws/app/feat-x/", "/r")).toBe(

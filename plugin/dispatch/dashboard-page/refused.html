@@ -49,20 +49,34 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .mut { color: var(--muted); }
 .sm { font-size: var(--small); }
 .nowrap { white-space: nowrap; }
-#line, #queue, #history, #legend { scroll-margin-top: 60px; }
+#line, #queue, #history, #legend, .panel { scroll-margin-top: 104px; }
 
 /* status strip: sticky on every viewport, carries the newest tick */
 .strip { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
 .strip.alarm { background: var(--sunk); border-bottom: 2px solid var(--line-strong); }
-.stripIn { display: flex; align-items: center; gap: 8px 12px; max-width: 1200px; margin: 0 auto; padding: 6px 16px; min-height: 48px; }
+.stripIn { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; max-width: 1200px; margin: 0 auto; padding: 2px 16px 0; min-height: 48px; }
 .brand { display: flex; align-items: center; gap: 6px; flex: none; font: 600 18px/1 var(--serif); }
 .brand svg { width: 28px; height: 28px; display: block; }
 .brand span { display: none; }
-.tick { flex: 1 1 auto; min-width: 0; font-size: 14px; line-height: 1.25; }
-.tick b { font-weight: 600; }
-.stripLinks { display: flex; gap: 12px; flex: none; align-items: center; font-size: 14px; }
-.stripLinks a { display: inline-flex; align-items: center; min-height: 44px; }
-.ver { display: none; }
+.tick { flex: 1 1 auto; min-width: 0; display: flex; justify-content: flex-end; font-size: 14px; line-height: 1.25; }
+.stripTools { flex: none; display: flex; align-items: center; }
+
+/* how fresh the page is: a dot and a few words, the facts one hover or tap away */
+.fresh { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 0; padding: 0; background: none; border: 0; color: var(--muted); font: 400 14px/1.25 var(--sans); text-align: left; cursor: help; }
+.fresh .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.fresh.late { color: var(--ink); font-weight: 600; }
+.fresh.late .dot { background: var(--bad); }
+
+/* the views: Now, History, Help */
+.views { order: 9; flex-basis: 100%; display: flex; gap: 4px; margin: 0 -10px; }
+.viewTab { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 10px; border-bottom: 2px solid transparent; color: var(--muted); text-decoration: none; font: 400 15px/1 var(--sans); }
+.dd .viewTab { color: var(--muted); text-decoration: none; }
+.dd .viewTab:hover { color: var(--ink); }
+.dd .viewTab[aria-current="page"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+.badge { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px; border: 1px solid var(--hl-line); border-radius: 10px; background: var(--hl); color: var(--ink); font: 600 12px/1 var(--mono); }
+.themeBtn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; justify-content: center; padding: 0 8px; background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-tag); font: 400 14px/1 var(--sans); cursor: pointer; }
+.themeBtn:hover { border-color: var(--line-strong); }
+.themeWord { display: none; }
 
 /* the status mark: one role, one key cap */
 .mk { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1px solid currentColor; border-radius: 3px; font: 700 14px/1 var(--mono); vertical-align: -3px; }
@@ -82,10 +96,18 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 /* term popover: tap, click or focus; never hover alone */
 .terms { display: flex; flex-wrap: wrap; gap: 0 10px; margin: -4px 0 6px; align-items: center; }
 .termBtn { min-height: 44px; display: inline-flex; align-items: center; padding: 0; background: none; border: 0; color: inherit; font: inherit; cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
+/* a hint's chip: a 44 px target on a phone that adds nothing to its row's height */
+.chipBtn { display: inline-flex; align-items: center; min-height: 44px; margin-block: -11px; padding: 0; background: none; border: 0; font: inherit; color: inherit; cursor: help; }
+.chipBtn:hover .chip, .chipBtn[data-popup-open] .chip { border-color: var(--line-strong); color: var(--ink); }
+.helpBtn { align-self: center; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin: -12px -10px; padding: 0; background: none; border: 0; color: var(--muted); cursor: help; }
+.helpBtn span { width: 20px; height: 20px; border: 1px solid var(--line-strong); border-radius: 50%; font: 600 12px/18px var(--sans); text-align: center; }
+.helpBtn:hover span, .helpBtn[data-popup-open] span { color: var(--ink); border-color: var(--ink); }
+.pipsBtn { min-height: 44px; margin-block: -13px; align-items: center; padding: 0; background: none; border: 0; cursor: help; }
 .br { flex-basis: 100%; height: 0; }
 .slotLow { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 10px; }
 .slotLow .fold[data-open] { flex-basis: 100%; }
 .popPos { z-index: 8; }
+.pop p + p { margin-top: 6px; }
 .pop { max-width: min(360px, calc(100cqw - 24px)); padding: 8px 12px; background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 14px/1.4 var(--sans); color: var(--ink); box-shadow: 0 2px 10px light-dark(rgba(37,30,24,.12), rgba(0,0,0,.45)); }
 .dd .pop:focus-visible { outline: none; }
 
@@ -103,8 +125,6 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .grid { display: flex; flex-direction: column; gap: 16px; }
 .panel { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-panel); padding: 12px 12px 14px; min-width: 0; }
 .panelHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-bottom: 8px; }
-.panelHead .asof { margin-left: auto; }
-.asof { font-size: var(--small); color: var(--muted); }
 .lede { font-size: var(--small); color: var(--muted); margin-bottom: 8px; }
 .defect { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: var(--small); }
 
@@ -123,6 +143,7 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .needList.all .groupHead.rest { display: block; }
 .moreBtn { min-height: 44px; margin-top: 6px; width: 100%; background: transparent; color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 15px var(--sans); cursor: pointer; }
 .moreRow { display: flex; gap: 8px; margin-top: 6px; }
+.panelHead .headMore { width: auto; margin: 0 0 0 auto; min-height: 44px; padding: 0 12px; font-size: var(--small); }
 .moreRow .moreBtn { margin-top: 0; }
 .goto { display: flex; flex-wrap: wrap; gap: 0 14px; align-items: center; font-size: var(--small); }
 .goto a { display: inline-flex; align-items: center; min-height: 44px; }
@@ -147,12 +168,18 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .copy { flex: none; display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 56px; padding: 2px 8px; background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-tag); font: 400 14px/1.2 var(--sans); cursor: pointer; white-space: nowrap; }
 .copy:hover { border-color: var(--line-strong); }
 .copyRow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 6px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .clip, .say { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; overflow: hidden; pointer-events: none; }
 .goto .fold { order: 9; }
 .goto .fold[data-open] { flex-basis: 100%; }
 .kv dd { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .kv dd span { min-width: 0; overflow-wrap: anywhere; user-select: text; }
 .qTools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+
+/* reply drafts: kept in this browser, joined to their keys by Copy */
+.replies { order: 10; flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; margin: 2px 0 6px; }
+.reply { display: flex; flex-direction: column; gap: 2px; }
+.reply textarea { width: 100%; min-height: 44px; padding: 6px 8px; background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--r); font: 400 15px/1.4 var(--sans); resize: vertical; }
 
 /* an account row: the row is the cap, each cell one slot */
 .acct { padding: 8px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
@@ -227,6 +254,9 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 .dd .lgMeta { margin-top: 4px; }
 .colophon { font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 2px 16px; }
 .colophon a { display: inline-flex; align-items: center; min-height: 44px; }
+.helpText { max-width: 72ch; margin-top: 6px; font-size: 15px; }
+.helpText p + p { margin-top: 8px; }
+.dd .helpHead { margin: 12px 0 4px; }
 .emptyLine { color: var(--muted); font-size: var(--small); }
 .dd .refusalBody { margin-top: 6px; }
 
@@ -240,22 +270,30 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
   .grid.loud .qList:not(.all) .qItem .rowTop { flex: none; }
   .grid.loud .qList:not(.all) .qItem div.sm { min-width: 0; flex: 1 1 0; }
   .grid.loud .ghost p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .stripIn { padding: 4px 24px; min-height: 44px; }
+  .stripIn { flex-wrap: nowrap; padding: 0 24px; min-height: 48px; }
   .brand span { display: inline; }
-  .ver { display: inline; color: var(--muted); font-size: 13px; }
-  .tick { font-size: 14px; }
+  .views { order: 0; flex-basis: auto; margin: 0 0 0 12px; align-self: stretch; }
+  .viewTab { min-height: 48px; font-size: 14px; }
+  .fresh { min-height: 32px; font-size: 13px; }
+  .themeBtn { min-height: 30px; min-width: 0; font-size: 13px; }
+  .themeWord { display: inline; }
+  .helpBtn { min-width: 24px; min-height: 24px; margin: -2px 0; }
+  .pipsBtn { min-height: 22px; margin-block: 0; }
+  .chipBtn { min-height: 0; margin-block: 0; }
+  .panelHead .headMore { min-height: 26px; padding: 0 8px; font-size: 13px; }
+  .reply textarea { min-height: 32px; font-size: 14px; }
   .main { padding: 14px 24px; gap: 12px; }
   .foot { padding-inline: 24px; }
   .answer { flex-direction: row; align-items: baseline; gap: 16px; flex-wrap: wrap; }
   .answer.loud { padding: 8px 14px; }
   .answer h1 { font-size: 22px; }
   .grid { display: grid; gap: 12px; grid-template-columns: minmax(0, 6.4fr) minmax(0, 5.6fr); }
-  .grid.loud { grid-template-rows: auto auto auto 1fr; }
-  .grid.loud .pNeeds { grid-column: 1; grid-row: 1 / span 4; }
-  .grid.loud .pLine, .grid.loud .pQueue, .grid.loud .pWindow { grid-column: 2; }
+  .grid.loud { grid-template-rows: auto auto 1fr; }
+  .grid.loud .pNeeds { grid-column: 1; grid-row: 1 / span 3; }
+  .grid.loud .pLine, .grid.loud .pQueue { grid-column: 2; }
   .grid.quiet { grid-template-rows: auto auto 1fr; }
   .grid.quiet .pLine { grid-column: 1; grid-row: 1 / span 3; }
-  .grid.quiet .pQueue, .grid.quiet .pWindow { grid-column: 2; }
+  .grid.quiet .pQueue { grid-column: 2; }
   .need { padding: 5px 0; gap: 1px; }
   .br { display: none; }
   .need .rowTop .end { order: 9; }
@@ -276,10 +314,11 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
   .moreBtn { display: none; }
   .moreBtn.deskToo { display: block; }
   .grid.loud .pQueue .moreBtn { display: block; min-height: 28px; margin-top: 4px; font-size: 13px; }
+  .grid.loud .pQueue .panelHead .headMore { display: inline-flex; align-items: center; margin-top: 0; }
   .grid.loud .qList:not(.all) .qItem.rest { display: none; }
   .grid.loud .qList:not(.all) .qWhy, .grid.loud .qList:not(.all) .gnote:not(.keep) { display: none; }
   .grid.loud .qList:not(.all) .qGroup:not(:has(.qItem:not(.rest))) { display: none; }
-  .goto a, .fold summary, .foldBtn, .stripLinks a, .colophon a { min-height: 24px; }
+  .goto a, .fold summary, .foldBtn, .colophon a { min-height: 24px; }
   .copy { min-height: 22px; min-width: 0; padding: 0 6px; font-size: 13px; }
   .kv dd { justify-content: flex-start; }
   .grid.loud .qList:not(.all) .qTools { display: none; }
@@ -301,5 +340,5 @@ a.tgt { display: inline-flex; align-items: center; min-height: 44px; }
 }
 </style>
 </head>
-<body><div class="dd" style="color-scheme:light dark"><header class="strip alarm"><div class="stripIn"><div class="brand"><svg viewBox="-3.15 16.8 46 46" role="img" aria-label="Jig"><path fill="var(--ink)" d="m18.67 26.33v4.99c0 0.23-0.19 0.41-0.42 0.41h-5.2c-0.6 0-1.07 0.42-1.07 0.99v5.21c0 0.29-0.22 0.51-0.51 0.51h-5.57c-0.25 0-0.43-0.18-0.43-0.43v-8.99c0-0.5 0.18-0.95 0.53-1.28l1.25-1.22c0.36-0.35 0.86-0.57 1.38-0.57h9.62c0.23 0 0.42 0.16 0.42 0.38z"></path><path fill="var(--ink)" d="m21.03 26.33v4.99c0 0.23 0.19 0.41 0.42 0.41h5.16c0.6 0 1.09 0.42 1.09 0.99v5.15c0 0.32 0.23 0.57 0.55 0.57h5.55c0.24 0 0.41-0.15 0.41-0.39v-9.03c0-0.5-0.18-0.95-0.53-1.28l-1.25-1.22c-0.36-0.35-0.86-0.57-1.38-0.57h-9.6c-0.23 0-0.42 0.16-0.42 0.38z"></path><path fill="var(--ink)" d="m18.67 53.29v-4.92c0-0.24-0.19-0.42-0.42-0.42h-5.17c-0.61 0-1.1-0.49-1.1-1.1v-5.07c0-0.26-0.2-0.44-0.45-0.44h-5.61c-0.25 0-0.45 0.18-0.45 0.44v8.76c0 0.52 0.21 1.02 0.58 1.39l1.2 1.18c0.38 0.37 0.93 0.6 1.48 0.6h9.52c0.23 0 0.42-0.19 0.42-0.42z"></path><path fill="var(--ink)" d="m21.03 53.29v-4.92c0-0.24 0.19-0.42 0.42-0.42h5.16c0.62 0 1.11-0.46 1.11-1.07v-5.07c0-0.26 0.19-0.47 0.45-0.47h5.62c0.24 0 0.42 0.15 0.42 0.4v8.8c0 0.52-0.21 1.02-0.58 1.39l-1.2 1.21c-0.36 0.37-0.88 0.57-1.4 0.57h-9.58c-0.23 0-0.42-0.19-0.42-0.42z"></path><rect fill="var(--accent)" x="14.16" y="34.07" width="11.42" height="11.52" rx=".6523"></rect></svg><span>Dispatch</span></div><div class="tick" aria-live="polite"><b class="m">Newest tick not known</b> <span class="mut">the server refused this request</span></div><div class="stripLinks"><span class="ver m">this host</span><a href="#legend">Legend</a></div></div></header><main class="main"><section class="panel" aria-labelledby="h-ref"><h2 id="h-ref">The server refused this request: the token does not match.</h2><p class="refusalBody">Every request needs the token minted when the server started. A restart mints a new one, so an older link stops working. Open the URL the command printed, or start it on the host:</p><div class="quote path">jig dispatch dashboard</div><p class="sm mut">Nothing was read, so nothing is shown.</p></section></main><footer class="foot"><section class="panel" id="legend" aria-labelledby="h-legend"><h2 id="h-legend">Legend</h2><p class="lede lgMeta">These words group what the records say. Each outcome class keeps its own name everywhere; the word beside it only says what kind of fact it is.</p><div class="legend"><div class="lgRole"><div><span class="mk r-needs" aria-hidden="true"></span> <b>needs a person</b></div><div>The line waits on a human and nothing else will move it.</div><div class="set"><span>outcome class: </span><span class="m">parked for a person</span></div><div class="set"><span>ledger class: </span><span class="m">parked, needs-person, stopped-unknown</span></div><div class="set"><span>notify cause: </span><span class="m">parked, needs-person, stalled, double-claim, followup-failed, nudge-unanswered, stopped-unknown</span></div><div class="set"><span>label: </span><span class="m">parked</span></div></div><div class="lgRole"><div><span class="mk r-working" aria-hidden="true">~</span> <b>working</b></div><div>A session holds its slot and progresses as expected.</div><div class="set"><span>ledger class: </span><span class="m">driven</span></div><div class="set"><span>launch record: </span><span class="m">alive</span></div><div class="set"><span>agent state: </span><span class="m">working</span></div><div class="set"><span>label: </span><span class="m">driving</span></div></div><div class="lgRole"><div><span class="mk r-waiting" aria-hidden="true">…</span> <b>waiting</b></div><div>A session is alive but not progressing, or past an expectation.</div><div class="set"><span>ledger class: </span><span class="m">silent</span></div><div class="set"><span>notify cause: </span><span class="m">waiting, drifting</span></div><div class="set"><span>launch record: </span><span class="m">pending</span></div><div class="set"><span>agent state: </span><span class="m">waiting, blocked</span></div></div><div class="lgRole"><div><span class="mk r-held" aria-hidden="true">=</span> <b>held back</b></div><div>The dispatcher chose, by rule, not to start it.</div><div class="set"><span>ledger class: </span><span class="m">held, re-armable, stopped-by-person, unarmed, unplaced</span></div><div class="set"><span>launch outcome: </span><span class="m">waits, refused, reported</span></div><div class="set"><span>label: </span><span class="m">hold, held</span></div></div><div class="lgRole"><div><span class="mk r-well" aria-hidden="true">✓</span> <b>finished well</b></div><div>The stage achieved what it was started for.</div><div class="set"><span>outcome class: </span><span class="m">converged, merged</span></div><div class="set"><span>ledger class: </span><span class="m">done</span></div><div class="set"><span>agent state: </span><span class="m">done</span></div><div class="set"><span>label: </span><span class="m">converged, followed-up</span></div></div><div class="lgRole"><div><span class="mk r-badly" aria-hidden="true">×</span> <b>finished badly</b></div><div>The stage ended without achieving it.</div><div class="set"><span>outcome class: </span><span class="m">gates failed, died, stalled, refused, quota wall, double claim, unknown</span></div><div class="set"><span>ledger class: </span><span class="m">refused</span></div><div class="set"><span>launch record: </span><span class="m">died</span></div><div class="set"><span>launch outcome: </span><span class="m">failed, lost</span></div></div><div class="lgRole"><div><span class="mk r-stale" aria-hidden="true">≠</span> <b>stale</b></div><div>Finished well once, and the world moved.</div><div class="set"><span>ledger class: </span><span class="m">stale</span></div><div class="set"><span>label: </span><span class="m">stale</span></div></div><div class="lgRole"><div><span class="mk r-unknown" aria-hidden="true">?</span> <b>unknown</b></div><div>The dispatcher cannot tell.</div><div class="set"><span>launch record: </span><span class="m">unknown</span></div><div class="set"><span>label: </span><span class="m">unknown</span></div></div></div><details class="fold"><summary>Stages and their marks</summary><div class="seg"><span class="chip"><b>+</b>pickup</span><span class="chip"><b>↻</b>rearm</span><span class="chip"><b>⇄</b>takeover</span><span class="chip"><b>»</b>followup</span><span class="chip"><b>*</b>notify</span><span class="chip"><b>^</b>steer</span></div></details><details class="fold"><summary>How the numbers are counted</summary><dl class="kv"><div style="display:contents"><dt>class counts</dt><dd class="prose">Rows the filter keeps, per class, ignoring the class filter itself so another class can be chosen.</dd></div><div style="display:contents"><dt>slots held</dt><dd class="prose">Launch records pending, alive or unknown on the account, over its cap. A takeover and its replaced record count once.</dd></div><div style="display:contents"><dt>waited</dt><dd class="prose">From the hold’s beginning event to now, or to its ending event in the log.</dd></div><div style="display:contents"><dt>duration</dt><dd class="prose">Launch to end of the record.</dd></div><div style="display:contents"><dt>rounds</dt><dd class="prose">The ledger’s round at the end less its round at launch.</dd></div><div style="display:contents"><dt>threads</dt><dd class="prose">Unresolved review threads, the first time a tick saw each round. Unseen rounds are gaps.</dd></div></dl></details></section><div class="colophon m"><span>this host</span><span>not read</span><span>read-only: this page sends GET requests and writes nothing; Copy touches only your clipboard</span></div></footer></div></body>
+<body><div class="dd" style="color-scheme:light dark"><header class="strip alarm"><div class="stripIn"><div class="brand"><svg viewBox="-3.15 16.8 46 46" role="img" aria-label="Jig"><path fill="var(--ink)" d="m18.67 26.33v4.99c0 0.23-0.19 0.41-0.42 0.41h-5.2c-0.6 0-1.07 0.42-1.07 0.99v5.21c0 0.29-0.22 0.51-0.51 0.51h-5.57c-0.25 0-0.43-0.18-0.43-0.43v-8.99c0-0.5 0.18-0.95 0.53-1.28l1.25-1.22c0.36-0.35 0.86-0.57 1.38-0.57h9.62c0.23 0 0.42 0.16 0.42 0.38z"></path><path fill="var(--ink)" d="m21.03 26.33v4.99c0 0.23 0.19 0.41 0.42 0.41h5.16c0.6 0 1.09 0.42 1.09 0.99v5.15c0 0.32 0.23 0.57 0.55 0.57h5.55c0.24 0 0.41-0.15 0.41-0.39v-9.03c0-0.5-0.18-0.95-0.53-1.28l-1.25-1.22c-0.36-0.35-0.86-0.57-1.38-0.57h-9.6c-0.23 0-0.42 0.16-0.42 0.38z"></path><path fill="var(--ink)" d="m18.67 53.29v-4.92c0-0.24-0.19-0.42-0.42-0.42h-5.17c-0.61 0-1.1-0.49-1.1-1.1v-5.07c0-0.26-0.2-0.44-0.45-0.44h-5.61c-0.25 0-0.45 0.18-0.45 0.44v8.76c0 0.52 0.21 1.02 0.58 1.39l1.2 1.18c0.38 0.37 0.93 0.6 1.48 0.6h9.52c0.23 0 0.42-0.19 0.42-0.42z"></path><path fill="var(--ink)" d="m21.03 53.29v-4.92c0-0.24 0.19-0.42 0.42-0.42h5.16c0.62 0 1.11-0.46 1.11-1.07v-5.07c0-0.26 0.19-0.47 0.45-0.47h5.62c0.24 0 0.42 0.15 0.42 0.4v8.8c0 0.52-0.21 1.02-0.58 1.39l-1.2 1.21c-0.36 0.37-0.88 0.57-1.4 0.57h-9.58c-0.23 0-0.42-0.19-0.42-0.42z"></path><rect fill="var(--accent)" x="14.16" y="34.07" width="11.42" height="11.52" rx=".6523"></rect></svg><span>Dispatch</span></div><div class="tick" aria-live="polite"><span class="fresh late"><span class="dot" aria-hidden="true"></span>Not read: the server refused</span></div></div></header><main class="main"><section class="panel" aria-labelledby="h-ref"><h2 id="h-ref">The server refused this request: the token does not match.</h2><p class="refusalBody">Every request needs the token minted when the server started. A restart mints a new one, so an older link stops working. Open the URL the command printed, or start it on the host:</p><div class="quote path">jig dispatch dashboard</div><p class="sm mut">Nothing was read, so nothing is shown.</p></section></main><footer class="foot"><section class="panel" id="legend" aria-labelledby="h-legend"><h2 id="h-legend">Legend</h2><p class="lede lgMeta">These words group what the records say. Each outcome class keeps its own name everywhere; the word beside it only says what kind of fact it is.</p><div class="legend"><div class="lgRole"><div><span class="mk r-needs" aria-hidden="true"></span> <b>needs a person</b></div><div>The work waits on a person and nothing else will move it.</div><div class="set"><span>outcome class: </span><span class="m">parked for a person</span></div><div class="set"><span>ledger class: </span><span class="m">parked, needs-person, stopped-unknown</span></div><div class="set"><span>notify cause: </span><span class="m">parked, needs-person, stalled, double-claim, followup-failed, nudge-unanswered, stopped-unknown</span></div><div class="set"><span>label: </span><span class="m">parked</span></div></div><div class="lgRole"><div><span class="mk r-working" aria-hidden="true">~</span> <b>working</b></div><div>A session holds its slot and progresses as expected.</div><div class="set"><span>ledger class: </span><span class="m">driven</span></div><div class="set"><span>launch record: </span><span class="m">alive</span></div><div class="set"><span>agent state: </span><span class="m">working</span></div><div class="set"><span>label: </span><span class="m">driving</span></div></div><div class="lgRole"><div><span class="mk r-waiting" aria-hidden="true">…</span> <b>waiting</b></div><div>A session is alive but not progressing, or past an expectation.</div><div class="set"><span>ledger class: </span><span class="m">silent</span></div><div class="set"><span>notify cause: </span><span class="m">waiting, drifting</span></div><div class="set"><span>launch record: </span><span class="m">pending</span></div><div class="set"><span>agent state: </span><span class="m">waiting, blocked</span></div></div><div class="lgRole"><div><span class="mk r-held" aria-hidden="true">=</span> <b>held back</b></div><div>The dispatcher chose, by rule, not to start it.</div><div class="set"><span>ledger class: </span><span class="m">held, re-armable, stopped-by-person, unarmed, unplaced</span></div><div class="set"><span>launch outcome: </span><span class="m">waits, refused, reported</span></div><div class="set"><span>label: </span><span class="m">hold, held</span></div></div><div class="lgRole"><div><span class="mk r-well" aria-hidden="true">✓</span> <b>finished well</b></div><div>The stage achieved what it was started for.</div><div class="set"><span>outcome class: </span><span class="m">converged, merged</span></div><div class="set"><span>ledger class: </span><span class="m">done</span></div><div class="set"><span>agent state: </span><span class="m">done</span></div><div class="set"><span>label: </span><span class="m">converged, followed-up</span></div></div><div class="lgRole"><div><span class="mk r-badly" aria-hidden="true">×</span> <b>finished badly</b></div><div>The stage ended without achieving it.</div><div class="set"><span>outcome class: </span><span class="m">gates failed, died, stalled, refused, quota wall, double claim, unknown</span></div><div class="set"><span>ledger class: </span><span class="m">refused</span></div><div class="set"><span>launch record: </span><span class="m">died</span></div><div class="set"><span>launch outcome: </span><span class="m">failed, lost</span></div></div><div class="lgRole"><div><span class="mk r-stale" aria-hidden="true">≠</span> <b>stale</b></div><div>Finished well once, and the world moved.</div><div class="set"><span>ledger class: </span><span class="m">stale</span></div><div class="set"><span>label: </span><span class="m">stale</span></div></div><div class="lgRole"><div><span class="mk r-unknown" aria-hidden="true">?</span> <b>unknown</b></div><div>The dispatcher cannot tell.</div><div class="set"><span>launch record: </span><span class="m">unknown</span></div><div class="set"><span>label: </span><span class="m">unknown</span></div></div></div><details class="fold"><summary>Stages and their marks</summary><div class="seg"><span class="chip"><b>+</b>pickup</span><span class="chip"><b>↻</b>rearm</span><span class="chip"><b>⇄</b>takeover</span><span class="chip"><b>»</b>followup</span><span class="chip"><b>*</b>notify</span><span class="chip"><b>^</b>steer</span></div></details><details class="fold"><summary>How the numbers are counted</summary><dl class="kv"><div style="display:contents"><dt>class counts</dt><dd class="prose">Rows the filter keeps, per class, ignoring the class filter itself so another class can be chosen.</dd></div><div style="display:contents"><dt>slots held</dt><dd class="prose">Launch records pending, alive or unknown on the account, over its cap. A takeover and its replaced record count once.</dd></div><div style="display:contents"><dt>waited</dt><dd class="prose">From the hold’s beginning event to now, or to its ending event in the log.</dd></div><div style="display:contents"><dt>duration</dt><dd class="prose">Launch to end of the record.</dd></div><div style="display:contents"><dt>rounds</dt><dd class="prose">The ledger’s round at the end less its round at launch.</dd></div><div style="display:contents"><dt>threads</dt><dd class="prose">Unresolved review threads, the first time a tick saw each round. Unseen rounds are gaps.</dd></div></dl></details></section><div class="colophon m"><span>this host</span><span>not read</span><span>read-only: this page sends GET requests and writes nothing to the host</span></div></footer></div></body>
 </html>

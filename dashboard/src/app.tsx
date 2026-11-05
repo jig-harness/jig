@@ -1,7 +1,9 @@
 /**
- * The page: one question order, whose top half reshapes by state. With nothing to
- * do the answer is a plain line and the log takes the wide column; with something
- * to do a filled band appears and the wide column belongs to the person.
+ * The page's views. Now keeps the question order, its top half reshaped
+ * by state: with nothing to do the answer is a plain line and what is running
+ * takes the wide column; with something to do a filled band appears and the wide
+ * column belongs to the person. History is the outcome log; Help says how to
+ * read the rest.
  */
 import { useEffect, useMemo, useState } from "react";
 import type {
@@ -11,19 +13,19 @@ import type {
 import { receiptUrl } from "./api.ts";
 import { PanelBoundary } from "./boundary.tsx";
 import { ClipParts, CopyButton } from "./copy.tsx";
-import { Fold, PopupRoot } from "./fold.tsx";
+import { Fold, Hint, PopupRoot } from "./fold.tsx";
 import { hostDay } from "./format.ts";
-import { Legend } from "./legend.tsx";
+import { HelpView } from "./help.tsx";
 import { LinePanel } from "./line.tsx";
 import { LogPanel } from "./log-panel.tsx";
 import { type Forges, forgesOf, type RowClock } from "./log-view.ts";
 import { Strip } from "./marks.tsx";
 import { NeedsPanel } from "./needs.tsx";
-import { answerBand, hasNeedRows } from "./needs-view.ts";
+import { answerBand, hasNeedRows, needCount } from "./needs-view.ts";
 import {
   lastReadLead,
   type PageView,
-  pageStrip,
+  pageFresh,
   pageView,
   readLine,
 } from "./page-view.ts";
@@ -35,7 +37,24 @@ import {
   useStateRead,
 } from "./reads.ts";
 import { Refused } from "./refused.tsx";
-import { type LogFilter, schemeOf, tokenOf, useFilter } from "./search.ts";
+import { forgetOldReplies } from "./replies.ts";
+import {
+  type LogFilter,
+  tokenOf,
+  useFilter,
+  useView,
+  VIEWS,
+  type ViewId,
+  pageQuery,
+  withParam,
+} from "./search.ts";
+import {
+  nextTheme,
+  schemeOf,
+  type Theme,
+  themeSearch,
+  useTheme,
+} from "./theme.ts";
 import { type Clock, timerBanner } from "./view.ts";
 import { WindowPanel } from "./window-panel.tsx";
 
@@ -89,8 +108,14 @@ function Banner({
 export function App() {
   const [search] = useState(() => location.search);
   const token = useMemo(() => tokenOf(search), [search]);
-  const scheme = useMemo(() => schemeOf(search), [search]);
+  const [theme, setTheme] = useTheme();
+  const scheme = schemeOf(theme);
   const [filter, setFilter] = useFilter();
+  useEffect(() => {
+    forgetOldReplies(Date.now());
+    const timer = setInterval(() => forgetOldReplies(Date.now()), AGES_MOVE_MS);
+    return () => clearInterval(timer);
+  }, []);
   const state = useStateRead(token);
   const rows = useRowsRead(filter, token, state.data?.answer.timeZone ?? null);
   if (state.failure?.kind === "refused" || rows.failure?.kind === "refused")
@@ -106,7 +131,8 @@ export function App() {
   return (
     <Page
       token={token}
-      scheme={scheme}
+      theme={theme}
+      setTheme={setTheme}
       filter={filter}
       setFilter={setFilter}
       state={state}
@@ -115,24 +141,137 @@ export function App() {
   );
 }
 
+/** How fresh the page is, in a few words that open the facts behind them. */
+function Freshness({ view }: { view: PageView }) {
+  const fresh = pageFresh(view);
+  return (
+    <Hint
+      className={fresh.alarm ? "fresh late" : "fresh"}
+      label={`How fresh this page is: ${fresh.short}`}
+      trigger={
+        <>
+          <span className="dot" aria-hidden="true" />
+          {fresh.short}
+        </>
+      }
+    >
+      {fresh.detail.map((sentence) => (
+        <p key={sentence}>{sentence}</p>
+      ))}
+    </Hint>
+  );
+}
+
+const THEME_WORD: Record<Theme, string> = {
+  auto: "Auto",
+  light: "Light",
+  dark: "Dark",
+};
+
+const THEME_GLYPH: Record<Theme, string> = { auto: "◐", light: "☀", dark: "☾" };
+
+/** One button that moves the theme from the device's to light, dark and back. */
+function ThemeSwitch({
+  theme,
+  setTheme,
+}: {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+}) {
+  const next = nextTheme(theme);
+  const says = `Theme: ${THEME_WORD[theme]}${theme === "auto" ? ", as the device" : ""}. Switch to ${THEME_WORD[next]}.`;
+  return (
+    <button
+      className="themeBtn"
+      type="button"
+      aria-label={says}
+      title={says}
+      onClick={() => setTheme(next)}
+    >
+      <span aria-hidden="true">{THEME_GLYPH[theme]}</span>
+      <span className="themeWord">{THEME_WORD[theme]}</span>
+    </button>
+  );
+}
+
+/** The views, as links that keep the address, so one opens in a new tab too. */
+function ViewNav({
+  view,
+  setView,
+  needs,
+  filter,
+  theme,
+}: {
+  view: ViewId;
+  setView: (view: ViewId) => void;
+  /** How many rows need a person, which the Now tab carries. */
+  needs: number;
+  filter: LogFilter;
+  theme: Theme;
+}) {
+  return (
+    <nav className="views" aria-label="Views">
+      {VIEWS.map((v) => (
+        <a
+          className="viewTab"
+          key={v.id}
+          href={hrefOf(v.id, filter, theme)}
+          aria-current={v.id === view ? "page" : undefined}
+          onClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+            event.preventDefault();
+            setView(v.id);
+          }}
+        >
+          {v.label}
+          {v.id === "now" && needs > 0 ? (
+            <>
+              <span className="badge" aria-hidden="true">
+                {needs}
+              </span>
+              <span className="vh">, {needs} need you</span>
+            </>
+          ) : null}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+/** A view's address: the one the page has, with the view changed. */
+function hrefOf(view: ViewId, filter: LogFilter, theme: Theme): string {
+  return pageQuery(
+    filter,
+    withParam(
+      themeSearch(location.search, theme),
+      "view",
+      view === "now" ? null : view,
+    ),
+  );
+}
+
 function Page({
   token,
-  scheme,
+  theme,
+  setTheme,
   filter,
   setFilter,
   state,
   rows,
 }: {
   token: string;
-  scheme: string;
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
   filter: LogFilter;
   setFilter: (patch: Partial<LogFilter>) => void;
   state: Read<StateRead>;
   rows: Read<RowsAnswer>;
 }) {
   const [popupRoot, setPopupRoot] = useState<HTMLElement | null>(null);
+  const [tab, setTab] = useView();
   const view = pageView(state, rows, useMonoNow());
   const { line, clock } = view;
+  const needs = needCount(line, clock.nowMs);
   const today = hostDay(clock.nowMs, clock.timeZone);
   const rowClock: RowClock = useMemo(
     () => ({ today, timeZone: clock.timeZone }),
@@ -140,13 +279,33 @@ function Page({
   );
   const forges = useMemo(() => forgesOf(line), [line]);
   return (
-    <div className="dd" style={{ colorScheme: scheme }} ref={setPopupRoot}>
+    <div
+      className="dd"
+      style={{ colorScheme: schemeOf(theme) }}
+      ref={setPopupRoot}
+    >
       <PopupRoot.Provider value={popupRoot}>
-        <Strip {...pageStrip(view)} version={view.version} />
+        <Strip
+          fresh={<Freshness view={view} />}
+          alarm={pageFresh(view).alarm}
+          nav={
+            <ViewNav
+              view={tab}
+              setView={setTab}
+              needs={needs}
+              filter={filter}
+              theme={theme}
+            />
+          }
+          tools={<ThemeSwitch theme={theme} setTheme={setTheme} />}
+        />
         <main className="main">
           <Banners view={view} />
-          {view.answer === null ? null : (
-            <Panels
+          {tab === "help" ? (
+            <HelpView Fold={Fold} />
+          ) : view.answer === null ? null : tab === "history" ? (
+            <HistoryPanels
+              theme={theme}
               view={view}
               log={rows.data}
               filter={filter}
@@ -154,10 +313,11 @@ function Page({
               rowClock={rowClock}
               forges={forges}
             />
+          ) : (
+            <NowPanels view={view} log={rows.data} />
           )}
         </main>
         <footer className="foot">
-          <Legend Fold={Fold} />
           <Colophon view={view} token={token} />
         </footer>
         <ClipParts />
@@ -192,23 +352,9 @@ function Banners({ view }: { view: PageView }) {
   );
 }
 
-/** The answer, the panels in the grid, and the log, each behind its own defect boundary. */
-function Panels({
-  view,
-  log,
-  filter,
-  setFilter,
-  rowClock,
-  forges,
-}: {
-  view: PageView;
-  log: RowsAnswer | null;
-  filter: LogFilter;
-  setFilter: (patch: Partial<LogFilter>) => void;
-  rowClock: RowClock;
-  forges: Forges;
-}) {
-  const { line, clock, gone } = view;
+/** Now: the answer and the panels in the grid, each behind its own defect boundary. */
+function NowPanels({ view, log }: { view: PageView; log: RowsAnswer | null }) {
+  const { line, clock } = view;
   const loud = hasNeedRows(line, clock.nowMs);
   return (
     <>
@@ -226,26 +372,52 @@ function Panels({
             <NeedsPanel line={line} clock={clock} />
           </PanelBoundary>
         ) : null}
-        <PanelBoundary name="The line" className="pLine" reads={line}>
+        <PanelBoundary name="What is running" className="pLine" reads={line}>
           <LinePanel line={line} clock={clock} />
         </PanelBoundary>
         <PanelBoundary name="What is coming" className="pQueue" reads={line}>
           <QueuePanel line={line} clock={clock} />
         </PanelBoundary>
-        {log?.logHasRows === true ? (
-          <PanelBoundary name="Window" className="pWindow" reads={log}>
-            <WindowPanel
-              answer={log}
-              filter={filter}
-              setFilter={setFilter}
-              offline={gone}
-              rowClock={rowClock}
-            />
-          </PanelBoundary>
-        ) : null}
       </div>
+    </>
+  );
+}
+
+/** History: the window over the outcome log and the log itself. */
+function HistoryPanels({
+  theme,
+  view,
+  log,
+  filter,
+  setFilter,
+  rowClock,
+  forges,
+}: {
+  theme: Theme;
+  view: PageView;
+  log: RowsAnswer | null;
+  filter: LogFilter;
+  setFilter: (patch: Partial<LogFilter>) => void;
+  rowClock: RowClock;
+  forges: Forges;
+}) {
+  const { gone } = view;
+  return (
+    <>
+      {log?.logHasRows === true ? (
+        <PanelBoundary name="Window" className="pWindow" reads={log}>
+          <WindowPanel
+            answer={log}
+            filter={filter}
+            setFilter={setFilter}
+            offline={gone}
+            rowClock={rowClock}
+          />
+        </PanelBoundary>
+      ) : null}
       <PanelBoundary name="How it went" reads={log}>
         <LogPanel
+          theme={theme}
           answer={log}
           filter={filter}
           setFilter={setFilter}
@@ -282,8 +454,8 @@ function Colophon({ view, token }: { view: PageView; token: string }) {
       )}
       <span>{readLine(view)}</span>
       <span>
-        read-only: this page sends GET requests and writes nothing; Copy touches
-        only your clipboard
+        read-only: this page sends GET requests and writes nothing to the host;
+        your theme and reply drafts stay in this browser
       </span>
     </div>
   );

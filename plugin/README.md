@@ -87,7 +87,10 @@ that a skill hands a narrow job to):
 Which of these parts are scripts with no model in them, which are a model
 deciding, who owns each record the skills share and who notices when one
 fails is mapped in [MECHANISMS.md](MECHANISMS.md), by mechanism rather than
-by stage.
+by stage. Every record the plugin keeps, on the machine, in the working
+tree, on the forge and on the tracker, with where it lives, who writes it
+and what keeps two writers apart, is listed in [RECORDS.md](RECORDS.md), by
+record.
 
 Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
 [the `jig` command](#the-jig-command) ·
@@ -276,9 +279,13 @@ converged drive's change is its pull request's head, conflicting or not. A
 drive that stopped on a conflict (exit `9`) is re-driven once per pair of its
 pull request's head and its base branch's head, whatever the forge reports of
 it by then, and a person is told only when that re-drive leaves it stopped `9`
-at the same pair; a head or a base that moves is a new attempt. A record whose
-process cannot be checked (another host or boot) holds its slot until a
-person clears it:
+at the same pair; a head or a base that moves is a new attempt. A record
+claimed on this host before it last restarted has died, since a restart ends
+every process, and its outcome row says so; hosts are told apart by the
+[process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s
+host id, so a renamed host is still this one. A record whose process cannot
+be checked (claimed on another host, or the process table cannot be read)
+holds its slot until a person clears it:
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch clear <record>
@@ -556,25 +563,35 @@ running: start it from a terminal on the host (Orca's phone app reaches one),
 open the URL on the phone, and stop it with Ctrl-C.
 
 The page reads two things, every minute and when it comes back into focus, and
-writes nothing:
+writes nothing to the host:
 
-- **The line**, as the newest tick found it: the parks, stops and stalled
+- **What the newest tick found**, on the Now view: the parks, stops and stalled
   pickups waiting on a person, with the question and the recommendation in
   place and the whole decision one tap away; each account's slots and the
   sessions in them, with their evidence; what comes next and why. Each tick that
   reads every repository the machine file lists writes it to the state database
-  beside its receipt. So every panel says which tick it is as of, a stopped timer
-  shows as one, and a host may serve the page from a copy of that database, with
-  no other read. A tick for one repository leaves it as it was.
-- **The outcome log**, filtered by time (today, yesterday, seven or thirty days,
-  or a range), repository, stage, account, class and reason, counting each class
-  over the window and naming each bad class that recurs on a repository. A
-  question about yesterday is the Yesterday filter, and the filter is the page's
-  address, so a view on a phone is a link a laptop opens.
+  beside its receipt (the `tick_line` record). So the strip says how old that
+  tick is, a stopped timer shows as one, and a host may serve the page from a
+  copy of that database, with no other read. A tick for one repository leaves
+  it as it was.
+- **The outcome log**, on the History view, filtered by time (today, yesterday,
+  seven or thirty days, or a range), repository, stage, account, class and
+  reason, counting each class over the window and naming each bad class that
+  recurs on a repository. A question about yesterday is the Yesterday filter,
+  and the view and the filter are the page's address, so a view on a phone is a
+  link a laptop opens.
+
+The Help view says what the page's words, stages and marks mean; a chip, a
+dotted word or the `?` beside a heading says it in place, on hover, tap or
+focus. The theme follows the device until the switch in the strip picks light
+or dark.
 
 The page acts on nothing: it links to the pull request a decision is answered on
-and copies what cannot open, such as a workspace path or an answer line. When
-the server stops answering, it keeps what it last read and says when that was.
+and copies what cannot open, such as a workspace path or an answer line. Beside
+a parked decision a person can draft the reply, which stays in that browser
+only; Copy answer then takes `answer <key>: <reply>`, ready to paste as a
+comment on the pull request. When the server stops answering, it keeps what it
+last read and says when that was.
 
 **When a class recurs.** The tick tunes none of its own dials. A class that
 keeps showing on the dashboard (quota walls at the same hour, pickups that

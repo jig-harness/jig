@@ -8,7 +8,7 @@ import {
   type LaunchAttempt,
   type LaunchExit,
   type LaunchRecord,
-  type ProcessIdentity,
+  type LaunchClaim,
   claimRecord,
   pruneLaunches,
   readLaunches,
@@ -36,7 +36,8 @@ function root(): string {
   return dir;
 }
 
-const WHO: ProcessIdentity = {
+const WHO: LaunchClaim = {
+  hostId: "",
   host: "h",
   bootId: "b",
   pid: 1,

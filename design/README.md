@@ -69,6 +69,7 @@ with the review.
 | [The dispatcher, a tick that starts the execution line's stages](dark-factory-dispatch.md) | 33 |
 | [Jig in the Orca ecosystem](orca-integration.md) | 34 |
 | [One look for Jig's pages, and a theme a repository can set](ui-theming.md) | 36; Later: a repository's theme |
+| [Records: one envelope, one registry, records shared across hosts](records.md) | 37 |
 
 ## Starting a design
 

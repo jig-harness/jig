@@ -6,7 +6,7 @@
  */
 import type { ReactNode } from "react";
 import { type FoldComponent, Legend } from "./legend.tsx";
-import { Strip } from "./marks.tsx";
+import { FreshWords, Strip } from "./marks.tsx";
 
 const NativeFold: FoldComponent = ({ label, children }) => (
   <details className="fold">
@@ -31,10 +31,8 @@ export function Refused({
   return (
     <div className="dd" style={{ colorScheme: scheme }}>
       <Strip
-        main="Newest tick not known"
-        sub="the server refused this request"
+        fresh={<FreshWords short="Not read: the server refused" alarm />}
         alarm
-        version={null}
       />
       <main className="main">
         <section className="panel" aria-labelledby="h-ref">
@@ -59,8 +57,8 @@ export function Refused({
           <span>this host</span>
           <span>not read</span>
           <span>
-            read-only: this page sends GET requests and writes nothing; Copy
-            touches only your clipboard
+            read-only: this page sends GET requests and writes nothing to the
+            host
           </span>
         </div>
       </footer>
