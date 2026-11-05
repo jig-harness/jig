@@ -848,6 +848,43 @@ Done when every page Jig's tooling draws takes its colours from
 `theme.ts`, follows the reader's light or dark setting, carries Jig's mark,
 and each genre's contrast test holds its light and dark pairs.
 
+### 39. Addresses: asking and telling the stations of the line
+
+Where a piece of work stands is read from many places (the dispatcher's
+report, receipts and log, the dashboard, the ledger comment, the drive's
+doctor), and a person steers the line with a different gesture for each
+case: an assignment, a label, an `answer` comment, a mailbox directive.
+Every session and interface that shows or steers the line reads those
+records its own way. [design/addresses.md](addresses.md) has how it works.
+What it will build: an address for every station on a piece of work,
+`station@repository#key` (`drive@jig#456`), resolved from the records the
+line already keeps and declared nowhere; `jig ask <address>`, which answers
+who holds the station, its state, what it waits on and its last outcome,
+names every record it could not read, with `--thread` adds the address's
+correspondence (requests, questions, answers, launches and outcomes, each
+linked to its record) in one shape the command line and a panel both
+read, and with `--waiting` lists every address that waits on a person,
+from the newest tick's line; `jig send <address> <verb>`, which writes the one record
+the line already acts on, from a closed list of verbs, and refuses a
+person's commands inside a session the line started; an operator skill
+that turns a person's sentence into those commands and holds no state;
+a launch's result naming what follows it; and a park naming the person it
+waits on. No agent stays resident to hold an address, and no daemon or
+queue holds a request
+([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). One pull
+request per step, in the design's order; `ask` comes first.
+
+Done when `jig ask` answers the address of a pick-up, a drive and a
+follow-up on the machine that dispatched them and, from the forge and the
+tracker alone, on a machine that did not, saying what it could not read;
+an address nobody holds answers with its last outcome; the thread a panel
+shows for an address is the one `jig ask --thread` prints; each verb of
+`jig send` writes a record its reader acts on at its next run, and a
+session the line started is refused the verbs that are a person's; the
+operator answers "where does this stand" and "what waits on me" from those
+commands alone; every ended launch names what follows it; and every parked
+question names the person it waits on.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the

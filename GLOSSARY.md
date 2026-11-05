@@ -1936,6 +1936,17 @@ make, use the entry's term instead.
   succeeds. Of two, the earlier comment wins, and the later run stands
   down. Only a marker from the dispatcher's own account or from an owner,
   member or collaborator of the repository counts.
+- **Address (of a station)** — the name of one *station* on one piece of
+  work, written `station@repository#key`: `drive@jig#456` is the drive of
+  pull request 456. Nobody declares one. It is resolved from the records
+  the line keeps (the tracker claim, the *drive ledger*, the *launch
+  record*), so it stays the same across every session that holds the
+  station and still answers when none does. `jig ask` reads an address and
+  `jig send` writes a request to one.
+- **Operator** — the skill a person talks to about the line. It turns a
+  sentence ("what is waiting on me") into `jig ask` and `jig send` and
+  holds no state of its own, so any session on any machine can be the
+  operator. *Avoid:* orchestrator, lead agent.
 - **Notices workspace** — the workspace the *dispatcher* keeps per
   repository, on a branch of the default branch, for the notifications whose
   pull request or item has no workspace that can take one. It never
