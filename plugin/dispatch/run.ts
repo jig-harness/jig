@@ -61,11 +61,11 @@
  * settings do not read; 3 the record was already claimed, so nothing
  * started.
  */
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { resolve } from "node:path";
-import { StringDecoder } from "node:string_decoder";
 import { swallow } from "../shared/errors.ts";
-import { stopWindowsTree } from "../shared/process-tree.ts";
+import { QuestionTail } from "./lib/question-tail.ts";
+import { NO_WATCH, watchWindowsTree } from "./lib/windows-tree.ts";
 import { captureIdentity } from "../shared/liveness.ts";
 import {
   driveExitClosesTab,
@@ -147,6 +147,8 @@ interface Ran {
   signal: string | null;
   /** The stage's last `Question:` line, where the wrapper kept it. */
   said?: string;
+  /** Windows only: the pass's tree could not be shown to have ended, so its slot stays held. */
+  unconfirmed?: true;
 }
 
 /** How the wrapper runs a stage: whether it keeps its last question, and the deadline it enforces itself (seconds, `0` for none). */
@@ -163,6 +165,58 @@ function groupAlive(pid: number): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "EPERM";
   }
+}
+
+/** Kill what is left of a pass's group and wait, briefly, for it to end. */
+async function endGroup(
+  pid: number | undefined,
+  signalTree: (name: NodeJS.Signals) => void,
+): Promise<void> {
+  if (pid === undefined || !groupAlive(pid)) return;
+  signalTree("SIGKILL");
+  const gone = Date.now() + DRAIN_MS;
+  while (groupAlive(pid) && Date.now() < gone) await Bun.sleep(20);
+}
+
+/** The timers that stop a pass at its deadline: a signal, then a kill after the grace. */
+function armDeadline(
+  deadlineSec: number,
+  signalTree: (name: NodeJS.Signals) => void,
+  endTree: () => Promise<void>,
+): ReturnType<typeof setTimeout>[] {
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  if (deadlineSec <= 0) return timers;
+  timers.push(
+    setTimeout(() => {
+      console.error(
+        `jig dispatch run: the pass ran past its ${deadlineSec}s deadline; stopping it`,
+      );
+      signalTree("SIGTERM");
+      timers.push(
+        setTimeout(() => {
+          signalTree("SIGKILL");
+          void endTree();
+        }, STOP_GRACE_MS),
+      );
+    }, deadlineSec * 1000),
+  );
+  return timers;
+}
+
+/** Wait, briefly, for the last of a pass's output; a pipe a surviving descendant holds open is let go. */
+async function drainOutput(
+  child: ChildProcess,
+  drained: () => boolean,
+): Promise<void> {
+  const until = Date.now() + DRAIN_MS;
+  while (!drained() && Date.now() < until) await Bun.sleep(20);
+  if (!drained()) releasePipe(child);
+}
+
+/** Let go of a pass's output pipe that a surviving descendant holds open. */
+function releasePipe(child: ChildProcess): void {
+  child.stdout?.removeAllListeners("data");
+  child.stdout?.destroy();
 }
 
 function runStage(
@@ -182,13 +236,10 @@ function runStage(
       detached: grouped,
       stdio: options.keepOutput ? ["inherit", "pipe", "inherit"] : "inherit",
     });
+    const watch = treed ? watchWindowsTree(child.pid) : NO_WATCH;
+    let treeEnded = true;
     const endWindowsTree = async () => {
-      if (!treed || child.pid === undefined) return;
-      try {
-        await stopWindowsTree(child.pid, 0);
-      } catch (error) {
-        swallow(error, "the pass's tree is gone or unreadable");
-      }
+      treeEnded = await watch.end();
     };
     const signalTree = (name: NodeJS.Signals) => {
       if (grouped && child.pid !== undefined) {
@@ -201,80 +252,42 @@ function runStage(
       }
       child.kill(name);
     };
-    // A multi-byte character can be split across chunks; the decoder holds its first bytes until the rest arrive.
-    const decoder = new StringDecoder("utf8");
-    let line = "";
-    let question = "";
-    const endLine = () => {
-      const text = line.trim();
-      if (text.startsWith(QUESTION_PREFIX) && text !== QUESTION_PREFIX)
-        question = text;
-      line = "";
-    };
+    const tail = new QuestionTail(QUESTION_PREFIX, QUESTION_CHARS);
     let drained = !options.keepOutput;
     child.stdout?.on("data", (chunk: Buffer) => {
-      const text = decoder.write(chunk);
       if (!process.stdout.write(chunk)) {
         child.stdout?.pause();
         process.stdout.once("drain", () => child.stdout?.resume());
       }
-      const parts = text.split("\n");
-      parts.forEach((part, i) => {
-        if (i > 0) endLine();
-        const room = QUESTION_PREFIX.length + QUESTION_CHARS - line.length;
-        if (room > 0) line += part.slice(0, room);
-      });
+      tail.write(chunk);
     });
     child.stdout?.on("end", () => {
       drained = true;
     });
     const forward = (name: NodeJS.Signals) => signalTree(name);
     for (const name of FORWARDED) process.on(name, forward);
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    if (options.deadlineSec > 0)
-      timers.push(
-        setTimeout(() => {
-          console.error(
-            `jig dispatch run: the pass ran past its ${options.deadlineSec}s deadline; stopping it`,
-          );
-          signalTree("SIGTERM");
-          timers.push(
-            setTimeout(() => {
-              signalTree("SIGKILL");
-              void endWindowsTree();
-            }, STOP_GRACE_MS),
-          );
-        }, options.deadlineSec * 1000),
-      );
+    const timers = armDeadline(options.deadlineSec, signalTree, () =>
+      endWindowsTree(),
+    );
     let ended = false;
     const done = async (code: number | null, signal: string | null) => {
       if (ended) return;
       ended = true;
       for (const timer of timers) clearTimeout(timer);
+      watch.stopSampling();
       // What the agent started can outlive it; the exit is published once the group has ended.
-      if (grouped && child.pid !== undefined && groupAlive(child.pid)) {
-        signalTree("SIGKILL");
-        const gone = Date.now() + DRAIN_MS;
-        while (groupAlive(child.pid) && Date.now() < gone) await Bun.sleep(20);
-      }
+      if (grouped) await endGroup(child.pid, signalTree);
       await endWindowsTree();
       for (const name of FORWARDED) process.off(name, forward);
-      // The output's last bytes can follow the exit; a grandchild that keeps the pipe open is not waited for, and its pipe is let go.
-      const until = Date.now() + DRAIN_MS;
-      while (!drained && Date.now() < until) await Bun.sleep(20);
-      if (!drained) {
-        child.stdout?.removeAllListeners("data");
-        child.stdout?.destroy();
-      }
-      for (const part of decoder.end().split("\n")) {
-        const room = QUESTION_PREFIX.length + QUESTION_CHARS - line.length;
-        if (room > 0) line += part.slice(0, room);
-      }
-      endLine();
+      await drainOutput(child, () => drained);
+      tail.end();
       settle({
         code,
         signal,
-        ...(options.keepOutput && question !== "" ? { said: question } : {}),
+        ...(!treeEnded ? { unconfirmed: true as const } : {}),
+        ...(options.keepOutput && tail.question !== ""
+          ? { said: tail.question }
+          : {}),
       });
     };
     child.on("error", (error) => {
@@ -442,7 +455,23 @@ async function wrap(id: string, token: string): Promise<number> {
     withoutRunTabMarker(passEnvironment(process.env, record)),
     runOptions(record),
   );
+  return finishRun(id, record, ran);
+}
+
+/** Publish a finished stage's exit, unless its processes may still run. */
+async function finishRun(
+  id: string,
+  record: LaunchRecord,
+  ran: Ran,
+): Promise<number> {
   const { code, signal } = ran;
+  if (ran.unconfirmed) {
+    // The pass's processes may still run: the record keeps its slot rather than admit a second run beside them.
+    console.error(
+      "jig dispatch run: the pass's process tree could not be shown to have ended; its slot stays held",
+    );
+    return code ?? 1;
+  }
   // The wall first: once the exit is published the record no longer holds its
   // slot, and a tick in between would admit the walled account.
   const wallUnrecorded = !(await wallRecorded(record, code));
