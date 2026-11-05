@@ -78,6 +78,7 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "dispatch.drive_rounds_flat",
   "dispatch.pickup_within",
   "dispatch.followup_within",
+  "dispatch.notices_linger",
   "dispatch.labels.enabled",
   "dispatch.labels.prefix",
   "dispatch.labels.only_labeled",

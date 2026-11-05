@@ -175,7 +175,7 @@ export function rotated<T>(
 const MAX_ATTEMPTS = 2;
 
 export type Opened =
-  | { workspace: { id: string; path: string } }
+  | { workspace: { id: string; path: string }; cleanupFailure?: string }
   | { waits: string }
   | { refused: string };
 
@@ -212,7 +212,12 @@ export async function openWithinBudget(
     };
   }
   if (opened.ok && opened.workspace !== undefined)
-    return { workspace: opened.workspace };
+    return {
+      workspace: opened.workspace,
+      ...(opened.cleanupFailure === undefined
+        ? {}
+        : { cleanupFailure: opened.cleanupFailure }),
+    };
   return {
     refused: `the workspace could not be opened${opened.lost ? " in time" : ""}: ${opened.detail}`,
   };

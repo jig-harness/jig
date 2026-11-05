@@ -136,6 +136,29 @@ describe("openBranch", () => {
     expect(ctx.lines).toContain(`↺ reattaching: ${B} is at ${WT}`);
   });
 
+  test("runs no create hook with createHook false, nor asks whether one exists", () => {
+    const { port, ctx } = portOf({
+      ...common,
+      [gitList]: porcelain([
+        [R, "main"],
+        [WT, B],
+      ]),
+      [`orca worktree list --repo id:${RID}`]: answer({
+        worktrees: [row(B)],
+      }),
+      [`test -x ${HOOK}`]: ok(),
+      [HOOK]: ok("installed\n"),
+    });
+    const opened = openBranch(port, {
+      repo: { id: RID, path: R },
+      branch: B,
+      createHook: false,
+    });
+    expect(opened.hookRan).toBe(false);
+    expect(ctx.calls).not.toContain(`test -x ${HOOK}`);
+    expect(ctx.calls).not.toContain(HOOK);
+  });
+
   test("names where Orca runs when it has no repository by the name", () => {
     const { port } = portOf(
       {

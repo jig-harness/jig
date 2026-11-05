@@ -170,8 +170,10 @@ if (args[0] === "terminal" && args[1] === "create") {
   }
   answer({ terminal: { handle: "term-1" } });
 }
-if (args[0] === "terminal" && args[1] === "close")
+if (args[0] === "terminal" && args[1] === "close") {
+  if (fs.existsSync(F + "/orca-close-fail")) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "refused" } })); process.exit(1); }
   answer({ close: { handle: args[args.indexOf("--terminal") + 1] } });
+}
 if (args[0] === "terminal" && args[1] === "show")
   answer({ terminal: { handle: args[args.indexOf("--terminal") + 1], tabId: "tab-1", leafId: "leaf-1" } });
 if (args[0] === "terminal" && args[1] === "list") {
@@ -211,6 +213,18 @@ if (args[0] === "worktree" && (args[1] === "set" || args[1] === "show")) {
   const ps = JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8"));
   const row = ps.worktrees.find((w) => w.path === path);
   if (!row) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "not_found" } })); process.exit(1); }
+  if (args[1] === "show" && fs.existsSync(F + "/orca-show-switch")) {
+    const switched = Bun.spawnSync(["git", "-C", path, "checkout", "-b", "personal-work"], { stderr: "pipe" });
+    if (switched.exitCode !== 0) process.exit(1);
+    fs.unlinkSync(F + "/orca-show-switch");
+  }
+  if (args[1] === "show" && fs.existsSync(F + "/orca-on-show.json")) {
+    Object.assign(row, JSON.parse(fs.readFileSync(F + "/orca-on-show.json", "utf8")));
+    fs.writeFileSync(F + "/orca-ps.json", JSON.stringify(ps));
+    fs.unlinkSync(F + "/orca-on-show.json");
+  }
+  if (args[1] === "show" && fs.existsSync(F + "/orca-show-card.json"))
+    answer({ worktree: JSON.parse(fs.readFileSync(F + "/orca-show-card.json", "utf8")) });
   // A write Orca refuses while orca-set-fail exists.
   if (args[1] === "set" && fs.existsSync(F + "/orca-set-fail")) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "refused" } })); process.exit(1); }
   if (args[1] === "set" && !fs.existsSync(F + "/orca-set-noop")) {
@@ -228,6 +242,25 @@ if (args[0] === "worktree" && args[1] === "ps") {
     row.branch = "refs/heads/" + head.stdout.toString().trim();
   }
   answer(ps);
+}
+if (args[0] === "worktree" && args[1] === "rm") {
+  // The worktree removed from git and from worktree ps, its branch deleted with --delete-branch.
+  const path = args[args.indexOf("--worktree") + 1].replace(/^path:/, "");
+  const ps = JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8"));
+  const row = ps.worktrees.find((w) => w.path === path);
+  if (!row) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "not_found" } })); process.exit(1); }
+  const clone = JSON.parse(fs.readFileSync(F + "/orca-repos.json", "utf8")).repos[0].path;
+  const branch = Bun.spawnSync(["git", "-C", path, "symbolic-ref", "--short", "HEAD"], { stderr: "pipe" }).stdout.toString().trim();
+  const removed = Bun.spawnSync(["git", "-C", clone, "worktree", "remove", path], { stderr: "pipe" });
+  if (removed.exitCode !== 0) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "git", message: removed.stderr.toString() } })); process.exit(1); }
+  if (args.includes("--delete-branch")) {
+    const deleted = Bun.spawnSync(["git", "-C", clone, "branch", "-d", branch], { stderr: "pipe" });
+    if (deleted.exitCode !== 0) { process.stdout.write(JSON.stringify({ ok: false, error: { code: "git", message: deleted.stderr.toString() } })); process.exit(1); }
+  }
+  ps.worktrees = ps.worktrees.filter((w) => w !== row);
+  ps.totalCount = ps.worktrees.length;
+  fs.writeFileSync(F + "/orca-ps.json", JSON.stringify(ps));
+  answer({ removed: { path } });
 }
 if (args[0] === "worktree" && args[1] === "list")
   answer({ worktrees: JSON.parse(fs.readFileSync(F + "/orca-ps.json", "utf8")).worktrees.map((w) => ({ id: w.worktreeId, path: w.path, branch: w.branch })) });
