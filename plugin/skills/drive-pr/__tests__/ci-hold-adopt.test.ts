@@ -6,6 +6,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import assert from "node:assert/strict";
+import { readState, writeState } from "./state-rows.ts";
 
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -43,10 +45,7 @@ const unlabeled = (id: string, actor: string, createdAt: string) => ({
 const readJson = <T>(path: string): T =>
   JSON.parse(readFileSync(path, "utf8")) as T;
 
-const ciHoldOf = (stateDir: string) =>
-  readJson<{ ciHold: Record<string, unknown> | null }>(
-    join(stateDir, "drive-pr-999.json"),
-  ).ciHold;
+const ciHoldOf = (stateDir: string) => readState(stateDir, "999")?.ciHold;
 
 const headOf = (cwd: string) =>
   Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd, env: gitCleanEnv() })
@@ -134,8 +133,8 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
       fixture: { threads: [], ciHeld: true },
       seedState: async ({ stateDir, fixtureDir, cwd }) => {
         await seedHeld(stateDir, fixtureDir, cwd, "LE_1");
-        const statePath = join(stateDir, "drive-pr-999.json");
-        const state = readJson<Record<string, unknown>>(statePath);
+        const state = readState(stateDir, "999");
+        assert(state, "the fixture must have seeded the drive state");
         state.ciHold = {
           phase: "releasing",
           heldEventId: "LE_1",
@@ -147,7 +146,7 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
           createdAt: "2026-09-10T09:59:00Z",
           checkRunWatermark: 10_000,
         };
-        writeFileSync(statePath, JSON.stringify(state));
+        writeState(stateDir, "999", state);
         writeFileSync(
           join(fixtureDir, "timeline.json"),
           JSON.stringify([
@@ -202,8 +201,8 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
       fixtureDir: r.fixtureDir,
       stateDir: r.stateDir,
       seedState: async ({ stateDir }) => {
-        const statePath = join(stateDir, "drive-pr-999.json");
-        const state = readJson<Record<string, unknown>>(statePath);
+        const state = readState(stateDir, "999");
+        assert(state, "the fixture must have seeded the drive state");
         const held = state.ciHold as Record<string, unknown>;
         state.ciHold = {
           phase: "releasing",
@@ -217,7 +216,7 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
           createdAt: "2026-09-10T10:00:00Z",
           checkRunWatermark: 10_000,
         };
-        writeFileSync(statePath, JSON.stringify(state));
+        writeState(stateDir, "999", state);
       },
     });
     expectSpawnExit(recovery, 1);
