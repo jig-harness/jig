@@ -115,16 +115,24 @@ lists it, and keeps that worktree. gc releases an admission it never submitted o
 exit: when a proof, a teardown step or the call itself fails or throws before
 `orca worktree rm` is called. The admission names its owner by the
 machine-wide holder record, and gc marks it submitted just before it calls
-`orca worktree rm`. From that mark on, only a settled outcome releases it:
-a removal that returned success, or one the registry shows finished or
-refused. A call that times out (the removal command's deadline), throws, exits
-nonzero or returns output gc cannot read is ambiguous, as is a gc that
-crashed: Orca may still be carrying out the removal, and neither owner
-liveness nor the client's lost answer says whether it has finished. In each
-case the claim stays, the hook keeps refusing launches into that worktree
-while its path exists, and the next gc reconciles it against the registry
-before it releases the claim, clearing it once the worktree is gone and
-releasing it once Orca lists the worktree intact with the removal settled.
+`orca worktree rm`. Orca documents no query that says whether a removal
+finished, and the registry and the worktree list show only what exists, so
+gc relies on no settlement evidence it cannot observe. Only two things
+release a submitted admission: the removal call's own reply, success or an
+explicit refusal, and the worktree's absence from Orca's list and from the
+disk. Every other outcome is ambiguous (a timeout at the removal command's
+deadline, a throw, a nonzero exit, output gc cannot read, a crashed gc), and
+so is a crash between the mark and the call, which looks the same afterwards:
+the claim stays and the hook keeps refusing launches into that worktree. The
+next gc settles it by asking again rather than by inferring: it takes over the
+claim from the dead or finished owner, repeats its idle proof and calls
+`orca worktree rm` once more, and that call's reply or the worktree's absence
+releases the claim. Repeating the call is safe because the claim still
+excludes every launch the hook mediates and the proof is read afresh. A removal
+that keeps failing holds its worktree closed to launches and appears in each
+run's receipt as refused, until the cause is fixed; that cost is
+accepted over reopening the deletion race by treating an intact worktree as
+proof the removal failed.
 A gc that crashed before the mark leaves an admission the hook and the next
 gc see is abandoned and ignore, while a live gc's admission still excludes.
 The hook decides before any awaited host call
