@@ -106,8 +106,9 @@ so a launch whose answer is lost is never followed by a second one.
 The dispatcher opens workspaces and starts agents through a
 [session runtime](GLOSSARY.md). Orca is the first one. Another runtime, Herdr
 among them, joins as a second implementation of the same interface once it
-can list a host's accounts. On Orca, the dispatcher starts a follow-up as a headless pass on the account
-it chose. It reports a pickup for a person to start. Orca opens a new session
+can list a host's accounts. On Orca, the dispatcher starts a follow-up as a
+non-interactive agent run, a [headless pass](GLOSSARY.md), on the account it
+chose. It reports a pickup for a person to start. Orca opens a new session
 on whichever account its host has selected, and a pickup needs the account the
 dispatcher chose. The dispatcher ships in the plugin, and
 [the `jig` command](plugin/README.md#the-jig-command) installs its timer and

@@ -1876,6 +1876,11 @@ make, use the entry's term instead.
   Orca is its first implementation
   ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)); a
   *workspace runtime* becomes another by implementing the same methods.
+- **Headless pass** — a non-interactive agent run: it receives a task,
+  works without a person replying in a chat session, and exits with a result.
+  The *dispatcher* can start a follow-up this way on its chosen account
+  even when the *session runtime* cannot bind a new interactive session to
+  that account.
 - **Factory identity** — the tracker user a repository assigns an item to
   when the *dispatcher* should pick it up. An item assigned to it and in
   one of the repository's dispatch states is started, when a person with
