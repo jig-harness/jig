@@ -47,6 +47,7 @@ const MODULES = {
   m: join(PLUGIN, "shared", "records", "forge-claims.ts"),
   l: join(PLUGIN, "skills", "drive-pr", "scripts", "lib", "state", "ledger.ts"),
   f: join(PLUGIN, "dispatch", "lib", "followup-marker.ts"),
+  a: join(PLUGIN, "skills", "drive-pr", "scripts", "lib", "announce.ts"),
 };
 
 /** What a probe prints: its body's return value, as JSON. */
@@ -498,6 +499,31 @@ describe("the forms each kind was written in before", () => {
     expect(readClaim(MERGE_READY, other)?.ok).toBe(false);
     const none = body.replace(`<!-- drive-pr-merge-ready: ${h1} -->`, "");
     expect(readClaim(MERGE_READY, none)?.ok).toBe(false);
+  });
+
+  it("keeps a trusted announcement whose record and head marker disagree visible, naming no head", async () => {
+    const h1 = "0123456789abcdef0123456789abcdef01234567";
+    const h2 = "fedcba9876543210fedcba9876543210fedcba98";
+    const body = claimBody(MERGE_READY, {
+      key: `merge-ready:${h1}`,
+      writer: { host: "sha256:0123456789abcdef" },
+      payload: {},
+      text: `done\n\n<!-- drive-pr-merge-ready: ${h1} -->`,
+    }).replace(
+      `<!-- drive-pr-merge-ready: ${h1} -->`,
+      `<!-- drive-pr-merge-ready: ${h2} -->`,
+    );
+    const forge = fakeForge([forgeComment(7, body)], { login: "drive-bot" });
+    const out = await probe(
+      forge,
+      `const all = await a.announcements("999");
+return { all, ids: a.announcedIds(all, ${JSON.stringify(h1)}), note: a.unreadableNote(all) };`,
+    );
+    expect(out.ids).toEqual([]);
+    expect(
+      (out.all as { id: number; head: string }[]).map((x) => [x.id, x.head]),
+    ).toEqual([[7, ""]]);
+    expect(out.note).toContain("comment 7");
   });
 
   it("reads a merge-ready announcement that only ends with its head marker, and writes one that still does", () => {

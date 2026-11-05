@@ -28,6 +28,9 @@ release: minor
   script exits `1`. Its record now sits in a hidden block after the first
   line; it still ends with the head marker, so an earlier version still
   reads it, and an announcement written by an earlier version still reads.
+  A trusted announcement whose record and head marker name different heads
+  stays visible: the script refuses to announce over it and to withdraw
+  around it, and asks for it to be removed by hand.
 - The takeover claim carries the record envelope. An earlier version still
   reads the new claim, and a claim written by an earlier version still
   reads.

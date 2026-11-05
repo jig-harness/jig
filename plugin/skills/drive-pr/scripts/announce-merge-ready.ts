@@ -31,12 +31,14 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  type Announcement,
   announcedIds,
   announcements,
   headMarker,
   OPENER,
   postAnnouncement,
   readAnnouncement,
+  unreadableNote,
   withdrawAnnouncement,
 } from "./lib/announce.ts";
 import { parsePrSnapshot } from "./lib/ci-hold.ts";
@@ -243,6 +245,17 @@ async function checkWorktreeClean(reviewedHead: string): Promise<number> {
   return 0;
 }
 
+/** Stop over trusted announcements that name no head: none can be told from a standing one, so none is guessed at. */
+function refuseUnreadable(all: Announcement[], when: string): void {
+  const note = unreadableNote(all);
+  if (note !== null) {
+    fail(
+      1,
+      `announce-merge-ready: announcements naming no head, ${when}: ${note} — remove or repair them by hand.`,
+    );
+  }
+}
+
 async function main(): Promise<number> {
   let pr = "";
   let dryRun = false;
@@ -310,7 +323,10 @@ async function main(): Promise<number> {
     if (liveHead === "") return;
     const all = await announcements(pr);
     if (all === null) return;
-    for (const { id, head: sha } of all) {
+    for (const { id, head: sha, unreadable } of all) {
+      // An announcement that names no head is not guessed at: the final
+      // sweep refuses over it.
+      if (unreadable !== undefined) continue;
       if (sha === liveHead) continue;
       // "Not the head I read" is NOT the same as "stale", and treating it as
       // such is what makes this cleanup dangerous. The live head was read
@@ -410,6 +426,7 @@ async function main(): Promise<number> {
           `announce-merge-ready: cannot read PR #${pr}'s comments while ${holdName()} is present — remove any standing merge-ready announcement by hand.`,
         );
       }
+      refuseUnreadable(standing, `while ${holdName()} is present`);
       for (const id of announcedIds(standing, live.head)) {
         if (!(await withdrawAnnouncement(pr, id))) {
           fail(
@@ -544,6 +561,7 @@ async function main(): Promise<number> {
           `announce-merge-ready: final CI proof is stale and same-head announcements could not be enumerated; inspect PR #${pr} manually.`,
         );
       }
+      refuseUnreadable(standing, "as the final CI proof is stale");
       for (const id of announcedIds(standing, head)) {
         if (!(await withdrawAnnouncement(pr, id))) {
           fail(
@@ -605,6 +623,7 @@ async function main(): Promise<number> {
       "on an unknown state, since a duplicate announcement cannot be unposted.",
     );
   }
+  refuseUnreadable(sweep, "before announcing");
   const existingIds = announcedIds(sweep, head);
 
   async function confirmFinalCi(staleIds: number[] = []): Promise<number> {

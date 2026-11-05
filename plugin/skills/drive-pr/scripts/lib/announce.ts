@@ -54,7 +54,15 @@ export const OPENER = "**Safe to merge from the driver's perspective.**";
 
 export interface Announcement {
   id: number;
+  /** The head it vouches for; `""` when `unreadable` is set. */
   head: string;
+  /**
+   * Set on a trusted announcement whose record does not read or does not name
+   * the head its text ends with: why. It is visible but names no head, so
+   * cleanup never guesses which head is authoritative and a caller that
+   * would announce refuses instead.
+   */
+  unreadable?: string;
 }
 
 /** What an announcement claims: the head it vouches for. */
@@ -127,11 +135,24 @@ export async function announcements(
 ): Promise<Announcement[] | null> {
   const listing = await list(onPr(pr), MERGE_READY);
   if (!listing.ok) return null;
-  return listing.value.flatMap((c) =>
-    c.trusted && c.record.ok && c.record.value.key.startsWith("merge-ready:")
-      ? [{ id: c.id, head: c.record.value.key.slice("merge-ready:".length) }]
-      : [],
-  );
+  return listing.value.flatMap((c): Announcement[] => {
+    if (!c.trusted) return [];
+    if (!c.record.ok) {
+      return [{ id: c.id, head: "", unreadable: c.record.failure.reason }];
+    }
+    const key = c.record.value.key;
+    return key.startsWith("merge-ready:")
+      ? [{ id: c.id, head: key.slice("merge-ready:".length) }]
+      : [];
+  });
+}
+
+/** The trusted announcements that name no head, as one sentence; `null` when there are none. */
+export function unreadableNote(all: Announcement[]): string | null {
+  const bad = all.filter((a) => a.unreadable !== undefined);
+  return bad.length === 0
+    ? null
+    : bad.map((a) => `comment ${a.id} (${a.unreadable})`).join("; ");
 }
 
 /** Just the ids announcing THIS head — the idempotence question. */
