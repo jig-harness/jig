@@ -116,6 +116,54 @@ consumer repository three pull requests that touch one serialized area
 over a night are re-driven one at a time, the held ones carrying the
 `held` label until each leads.
 
+### 36. The dispatch board: what is driven and what is ready to merge
+
+The merge is the one stage of the execution line that stays a person's, and
+it sets the pace of the rest: each merge lets the dispatcher re-drive the
+pull requests that now conflict and start the next one in a serialized
+area. Yet the dispatch dashboard shows no merge queue: a converged,
+mergeable pull request is a class the tick reports and leaves alone, a
+drive a person or another machine runs is not on the page either, and
+nothing tells work that settles by itself from work that waits on a
+person. [design/dispatch-board.md](dispatch-board.md) has how it works:
+one predicate, `plugin/skills/drive-pr/scripts/lib/merge-ready.ts`, which
+the tick and `announce-merge-ready.ts` both call, places a converged pull
+request in a lane of Ready to merge (merge now, with a merge command pinned
+to the verified head and built only from values of a strict form; approve
+first, naming requested reviewers or that nobody was asked and saying other
+protection rules remain unread; update next, one
+per repository) or says why not, and merge now never rests on the ledger
+alone: the forge must witness a review of the head (the reviewer app's
+check, or a person's approval), and an outside author's pull request needs
+a person's approval. A board read per repository, made after planning and
+isolated from it, under a deadline and a floor on the forge budget it
+shares with the drives, reads the facts the predicate and each pull
+request's status row need (conflicts, checks with the failing ones named,
+unresolved threads, the derived merge state); every card says whether it
+settles by waiting or waits on a person, and which act; a pull request that
+becomes ready is notified once per head; and the outcome log records when
+work became ready and why it left. Later, a board view places every piece
+of work in one column (coming, picking up, driven, needs you, ready to
+merge, merged), each card moving in any direction and saying where it came
+from when it moved back. Built in the design's order: the waiting loss
+measured from the existing log first, then Ready to merge in the tick and
+on the page, then the board's placement, a design round and the board view.
+
+Done when, on a host running Orca, a converged pull request whose review the
+forge witnesses and that the forge lets merge is in merge now with its
+pinned command within one interval and reaches a person's phone once, one
+blocked on a required review is in approve first naming requested reviewers
+or saying nobody was asked, with unread protection rules explicit and no
+claim that approval alone permits merging,
+one whose ledger claims a head its reviewer never checked is in Needs you,
+one whose base then conflicts leaves Ready to merge with its cause, a
+failing board read leaves the tick's launches as they were, a drive a
+person armed by hand shows on the board as claimed, every pull request
+card shows its conflicts, checks, threads and merge state with the failing
+checks named, and the history view filtered to yesterday shows how many
+pull requests became ready, were merged, are still waiting, and were lost
+to waiting.
+
 ### 35. One jig command line
 
 The plugin's machine-level tools are separate commands with no shared
