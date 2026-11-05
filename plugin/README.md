@@ -507,14 +507,14 @@ the recorded result, or the last state):
 
 | Class | What ended there |
 | --- | --- |
-| converged | a drive's convergence (exit `0`); a pickup's or follow-up's result `done` |
-| merged | a drive whose pull request merged while it ran (exit `5`) |
-| quota wall | a usage limit: exit `16`, or a session that ended with no result while its wall stood |
-| parked for a person | a park (exit `8`); a follow-up pass that stopped on a question |
-| stalled | the drive's stall (exit `14`) or its round limit (`6`); a driver replaced by a takeover |
+| converged | a drive's convergence, `CONVERGED` (`0`); a pickup's or follow-up's result `done` |
+| merged | a drive whose pull request merged while it ran, `PR_NOT_OPEN` (`5`) |
+| quota wall | a usage limit, `QUOTA_PARKED` (`16`), or a session that ended with no result while its wall stood |
+| parked for a person | a park, `HITL_PARKED` (`8`); a follow-up pass that stopped on a question |
+| stalled | the drive's stall, `STALLED` (`14`), or its round limit, `MAX_ROUNDS` (`6`); a driver replaced by a takeover |
 | died | a process gone without an exit; a session that ended with no result |
-| refused | a stage's own refusal or a stop it was given (exits `2`, `4`, `11`, `13`, `18`, `19`, `20`; `5` on a closed pull request) |
-| gates failed | a stage that ran to its end without achieving it (exits `1`, `7`, `9`, `12`, `15`; a result `failed`) |
+| refused | a stage's own refusal or a stop it was given: `UNSUPPORTED_CLI` (`2`), `NOT_SETTLED` (`4`), `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`), `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`), `TAKEN_OVER` (`20`), and `PR_NOT_OPEN` on a closed pull request |
+| gates failed | a stage that ran to its end without achieving it: `INDETERMINATE` (`1`), `REVIEWER_FAILED` (`7`), `PR_CONFLICTING` (`9`), `WORKTREE_UNCLEAN` (`12`), `PASS_DEADLINE` (`15`); a result `failed` |
 | double claim | an item more than one session joins to (an event row) |
 | unknown | anything else, with its last state |
 

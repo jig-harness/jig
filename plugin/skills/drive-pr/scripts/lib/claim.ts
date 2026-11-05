@@ -17,6 +17,7 @@
  * and nothing that decides liveness or recovery reads them.
  */
 
+import { definedFields } from "../../../../shared/defined-fields.ts";
 import {
   SESSION_LEASE_MIN,
   sameHost,
@@ -52,6 +53,13 @@ export interface ClaimDiag {
   /** The permission mode each pass runs in (`pass-args.ts`); `null` when
    * the pass command chooses its own, absent from a claim that predates it. */
   permissionMode?: string | null;
+  /** The driver generation (`state/mailbox-stop.ts`) a mailbox `stop`
+   * addresses; absent from a claim that predates it. */
+  generation?: number;
+  /** The mailbox directory the driver reads, resolved in its own environment,
+   * so a stop is delivered where the driver looks; absent from a claim that
+   * predates it. */
+  mailbox?: string;
 }
 
 /**
@@ -149,17 +157,29 @@ export function parseDiagText(rest: string): ClaimDiag | null {
   const account =
     "account" in o ? parseAccount(o.account) : PRE_STAMPING_ACCOUNT;
   if (account === null) return null;
-  const model = claimLabel(o.model);
-  const permissionMode = claimLabel(o.permissionMode);
   return {
     pr,
     worktree,
     log,
     started,
     account,
-    ...(model === undefined ? {} : { model }),
-    ...(permissionMode === undefined ? {} : { permissionMode }),
+    ...definedFields({
+      model: claimLabel(o.model),
+      permissionMode: claimLabel(o.permissionMode),
+      generation: claimGeneration(o.generation),
+      mailbox:
+        typeof o.mailbox === "string" && o.mailbox !== ""
+          ? o.mailbox
+          : undefined,
+    }),
   };
+}
+
+/** A claim's driver generation: absent when the claim has none, or one that is not a positive whole number. */
+function claimGeneration(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? value
+    : undefined;
 }
 
 /**
@@ -188,6 +208,7 @@ export function diagLines(diag: ClaimDiag): string[] {
     `    account:  ${formatAccountIdentity(diag.account)}`,
     `    model:    ${formatLabel(diag.model, "model")}`,
     `    permissions: ${formatLabel(diag.permissionMode, "permission mode")}`,
+    `    generation: ${diag.generation ?? "unknown (claim predates driver generations)"}`,
   ];
 }
 
@@ -214,6 +235,78 @@ export function samePidNamespace(
   return record.platform == null
     ? process.platform !== "win32"
     : record.platform === process.platform;
+}
+
+/**
+ * Is this claim's owner the driver that spawned ME? `drive.ts` exports
+ * $DRIVE_PR_SESSION as its own pid before spawning each round's agent, so a
+ * pass finding a live holder with that exact pid is looking at its own parent,
+ * never a competing driver — and the second-driver rule (SKILL.md § 6) does not
+ * apply to it. `drives.ts` reads it to tell a pass its listing's driver is its
+ * own, and `attach.ts` to let a pass attach under the locks its driver holds.
+ *
+ * Pid equality is only meaningful on the host that wrote the claim, compared
+ * by host id first, so a differing or absent host answers false — failing
+ * toward the safe reading (a foreign driver), never toward "proceed". An
+ * unset $DRIVE_PR_SESSION means the reader is not a pass at all, which
+ * answers false for the same reason.
+ *
+ * A pid is REUSED, though, and that is the gap this function closes second: a
+ * dead driver's still-fresh claim whose pid the OS handed to this pass's own
+ * parent reads live to `claimLive` and matches $DRIVE_PR_SESSION, so pid+host
+ * alone would grant `self` over a lock the parent never took. `drive.ts`
+ * therefore exports its claim's own acquisition token as
+ * $DRIVE_PR_SESSION_STARTED, and when the claim carries a `started` of its own
+ * the two must be EQUAL — the same instance-token correlation `drives.ts`
+ * uses to tie a worktree lock to a PR lock.
+ *
+ * The token is required whenever THIS process's environment supplies one — not
+ * only when the on-disk claim also happens to carry one. `drive.ts` always
+ * exports both together, so a pass holding $DRIVE_PR_SESSION_STARTED is
+ * necessarily a pass whose own parent writes diagnostics into every claim it
+ * takes; a live claim matching pid+host but carrying no `started` at all is
+ * therefore proven to be a DIFFERENT process's claim — the exact pid-recycling
+ * case this token exists to catch — and must answer false, not fall back to the
+ * legacy heuristic (the prior `token !== '' && diag !== null` guard let a
+ * diagnostics-free claim ride pid+host to `self` even with a token present).
+ * Only a harness opting in by hand (`DRIVE_PR_SESSION=<agent pid>`, SKILL.md §
+ * 6), which exports no token at all, still falls back to pid+host — demanding a
+ * token there would answer false for every pass under that configuration, which
+ * is the stand-down bug this whole mechanism exists to prevent, in the one
+ * direction that is silent.
+ *
+ * That fallback is narrower than "no token on our side", though: it is
+ * sanctioned ONLY for the genuine older legacy case, which by construction
+ * writes a diagnostics-free claim of its own — so the fallback must
+ * additionally require `diag === null`. A claim that DOES carry diagnostics can
+ * never be that harness's own write (only `drive.ts`'s `acquire` stamps
+ * diagnostics, and it always exports the token alongside them), so a
+ * diagnostics-bearing claim matching pid+host while OUR OWN env carries no
+ * token is proof of an unrelated process — most plausibly a modern,
+ * still-diagnosed claim from a dead driver whose pid got recycled — and must
+ * answer false rather than silently trusting pid+host over evidence that
+ * contradicts it.
+ */
+export function ownParentDriver(record: {
+  pid: number;
+  host: string;
+  hostId?: string | undefined;
+  platform?: string | null;
+  diag: ClaimDiag | null;
+}): boolean {
+  const { pid, host, diag } = record;
+  const session = process.env.DRIVE_PR_SESSION ?? "";
+  if (
+    session === "" ||
+    String(pid) !== session ||
+    host === "" ||
+    !samePidNamespace(record)
+  ) {
+    return false;
+  }
+  const token = process.env.DRIVE_PR_SESSION_STARTED ?? "";
+  if (token !== "") return diag !== null && diag.started === token;
+  return diag === null;
 }
 
 /**

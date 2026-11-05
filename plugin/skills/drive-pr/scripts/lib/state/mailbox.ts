@@ -1,20 +1,24 @@
 /**
  * The drive mailbox: a one-way-per-file channel between a live session (a
- * human, or the orchestrating session that spawned this drive) and a
- * headless `drive.ts` run in the same working tree.
+ * human, the orchestrating session that spawned this drive, or `drives.ts
+ * --stop`) and a headless `drive.ts` run in the same working tree. It is the
+ * one way to steer or stop a running drive: append-only JSONL logs under
+ * `.context/drive-mailbox/` (gitignored, workspace-scoped — the same
+ * granularity as the worktree lock in `store.ts`'s `worktreeLockName`, and NOT
+ * the clone-wide state dir: a mailbox is a conversation with THIS tree's
+ * driver).
  *
- * Nothing in this skill previously let a live session get a message INTO a
- * running headless drive at all, short of `drives.ts --stop` (a hard kill).
- * This is deliberately the smallest thing that closes that gap:
- * append-only JSONL logs under `.context/drive-mailbox/` (gitignored,
- * workspace-scoped — the same granularity as the worktree lock in
- * `store.ts`'s `worktreeLockName`, and NOT the clone-wide state dir: a
- * mailbox is a conversation with THIS tree's driver, not with whichever
- * driver a shared clone-wide file happens to belong to).
+ *   inbox.jsonl   one line per message, APPENDED BY ANY SENDER. Never
+ *                 mutated, never truncated.
+ *   outbox.jsonl  one line per acknowledgement or response, appended on the
+ *                 drive's side: a pass's `ack`/`respond`, and the driver's own
+ *                 `ack` of a directive it acted on (`mailbox-stop.ts`).
  *
- *   inbox.jsonl   one line per message, APPENDED BY ANY SENDER (a human, an
- *                 orchestrating session). Never mutated, never truncated.
- *   outbox.jsonl  one line per ack/response, APPENDED BY THE DRIVER ONLY.
+ * A `stop` directive may name the driver generation it addresses (the number
+ * a driver draws at its start, prints, and carries in its lock's claim): it
+ * ends that driver alone, and a later driver ignores it. A `stop` naming no
+ * generation stays in force for every later driver in the tree until
+ * `resume --target stop`, which also withdraws every addressed stop.
  *
  * Separate files rather than one, so a sender never has to coordinate a write
  * with the driver's own — `fsutil.ts`'s `atomicWrite` (temp-then-rename) is
@@ -167,6 +171,10 @@ export interface DirectiveMessage {
   /** Required (and only meaningful) when `command === 'resume'`. */
   target?: GateName;
   body?: string;
+  /** For `stop` only: the driver generation it addresses. */
+  generation?: number;
+  /** With `generation`: cancel that driver's active pass now (`drives.ts --stop`). */
+  now?: true;
 }
 
 export type InboxMessage = NoteMessage | DirectiveMessage;
@@ -182,8 +190,10 @@ export interface OutboxRecord {
    * outbox record silently acknowledge another PR's still-unseen message.
    */
   pr: string;
-  status: "received" | "done";
+  /** `ack`: the driver acted on the directive, as driver `generation`. */
+  status: "received" | "done" | "ack";
   response?: string;
+  generation?: number;
 }
 
 export function mailboxDir(worktreeRootPath: string): string {
@@ -313,29 +323,59 @@ export function parseInboxMessage(v: unknown): InboxMessage | null {
     if (!DIRECTIVE_COMMANDS.includes(r.command as DirectiveCommand))
       return null;
     const command = r.command as DirectiveCommand;
-    if (command === "resume") {
-      if (!GATE_NAMES.includes(r.target as GateName)) return null;
-    } else if (r.target !== undefined) {
-      // A non-resume directive carrying a target is not a shape this
-      // module's own writer produces — refuse rather than silently ignore
-      // the extra field, the same "partial/malformed record is debris"
-      // ruling `schema.ts` applies to `DriveState`.
-      return null;
-    }
-    if (r.body !== undefined && typeof r.body !== "string") return null;
-    const msg: DirectiveMessage = {
-      id: r.id,
-      ts: r.ts,
-      kind: "directive",
-      from: r.from,
-      pr: r.pr,
-      command,
-    };
-    if (command === "resume") msg.target = r.target as GateName;
-    if (typeof r.body === "string") msg.body = r.body;
-    return msg;
+    const fields = directiveFields(r, command);
+    if (fields === null) return null;
+    const { id, ts, from, pr } = r;
+    return { id, ts, kind: "directive", from, pr, command, ...fields };
   }
   return null;
+}
+
+/**
+ * A directive's fields past its command, `null` for a shape this module's
+ * writer never produces: a `resume` without a target, or a target on any
+ * other command (refused rather than silently ignored, the same
+ * "partial/malformed record is debris" ruling `schema.ts` applies to
+ * `DriveState`), a body that is not text, or an address `stopAddress`
+ * refuses.
+ */
+function directiveFields(
+  r: Record<string, unknown>,
+  command: DirectiveCommand,
+): Pick<DirectiveMessage, "target" | "body" | "generation" | "now"> | null {
+  const targeted =
+    command === "resume"
+      ? GATE_NAMES.includes(r.target as GateName)
+      : r.target === undefined;
+  if (!targeted) return null;
+  if (r.body !== undefined && typeof r.body !== "string") return null;
+  const address = stopAddress(r, command);
+  if (address === null) return null;
+  return {
+    ...address,
+    ...(command === "resume" ? { target: r.target as GateName } : {}),
+    ...(typeof r.body === "string" ? { body: r.body } : {}),
+  };
+}
+
+/** A driver generation: a positive whole number. */
+export function isGeneration(v: unknown): v is number {
+  return typeof v === "number" && Number.isSafeInteger(v) && v > 0;
+}
+
+/**
+ * A directive's address: a `generation` only on `stop`, `now` only beside a
+ * generation; `null` for any other shape, which poisons the fold like every
+ * malformed directive.
+ */
+function stopAddress(
+  r: Record<string, unknown>,
+  command: DirectiveCommand,
+): { generation?: number; now?: true } | null {
+  if (r.generation === undefined) return r.now === undefined ? {} : null;
+  if (command !== "stop" || !isGeneration(r.generation)) return null;
+  if (r.now === undefined) return { generation: r.generation };
+  return r.now === true ? { generation: r.generation, now: true } : null;
 }
 
 export function parseOutboxRecord(v: unknown): OutboxRecord | null {
@@ -345,6 +385,19 @@ export function parseOutboxRecord(v: unknown): OutboxRecord | null {
   if (!isNonEmptyString(r.ts) || !Number.isFinite(Date.parse(r.ts)))
     return null;
   if (!isNonEmptyString(r.pr)) return null;
+  const base = { id: r.id, ts: r.ts, pr: r.pr };
+  if (r.status === "ack")
+    return isGeneration(r.generation) && r.response === undefined
+      ? { ...base, status: "ack", generation: r.generation }
+      : null;
+  return parseReply(r, base);
+}
+
+/** A pass's acknowledgement (`received`) or answer (`done`), on `base`'s id, time and pull request. */
+function parseReply(
+  r: Record<string, unknown>,
+  base: Pick<OutboxRecord, "id" | "ts" | "pr">,
+): OutboxRecord | null {
   if (r.status !== "received" && r.status !== "done") return null;
   // A discriminated shape, not "response, if present, must be a string": a
   // malformed writer or a hand-edited recovery line could otherwise produce
@@ -359,7 +412,7 @@ export function parseOutboxRecord(v: unknown): OutboxRecord | null {
   } else if (r.response !== undefined) {
     return null;
   }
-  const rec: OutboxRecord = { id: r.id, ts: r.ts, pr: r.pr, status: r.status };
+  const rec: OutboxRecord = { ...base, status: r.status };
   if (r.status === "done") rec.response = r.response as string;
   return rec;
 }
@@ -594,13 +647,25 @@ export async function appendDirective(
   pr: string,
   from: string,
   command: DirectiveCommand,
-  opts: { target?: GateName; body?: string } = {},
+  opts: {
+    target?: GateName;
+    body?: string;
+    generation?: number;
+    now?: true;
+  } = {},
 ): Promise<DirectiveMessage> {
   if (command === "resume" && opts.target === undefined) {
     fail(2, "mailbox: 'resume' requires --target hold-push|pause|stop");
   }
   if (command !== "resume" && opts.target !== undefined) {
     fail(2, `mailbox: --target is only valid with 'resume', not '${command}'`);
+  }
+  const address = stopAddress(opts, command);
+  if (address === null) {
+    fail(
+      2,
+      "mailbox: --generation is a positive whole number, and only a 'stop' takes one",
+    );
   }
   const msg: DirectiveMessage = {
     id: newId(),
@@ -609,6 +674,7 @@ export async function appendDirective(
     from,
     pr,
     command,
+    ...address,
   };
   if (opts.target !== undefined) msg.target = opts.target;
   if (opts.body !== undefined) msg.body = opts.body;
@@ -784,10 +850,20 @@ interface DirectiveState {
   by: string | null;
 }
 
+/** A `stop` addressed to one driver generation, in force until a `resume --target stop`. */
+export interface AddressedStop {
+  generation: number;
+  now: boolean;
+  since: string;
+  by: string;
+}
+
 export interface GateState {
   "hold-push": DirectiveState;
   pause: DirectiveState;
+  /** A `stop` naming no generation: every later driver stops on it. */
   stop: DirectiveState;
+  addressed: AddressedStop[];
 }
 
 function freshGateState(): GateState {
@@ -796,7 +872,12 @@ function freshGateState(): GateState {
     since: null,
     by: null,
   });
-  return { "hold-push": inactive(), pause: inactive(), stop: inactive() };
+  return {
+    "hold-push": inactive(),
+    pause: inactive(),
+    stop: inactive(),
+    addressed: [],
+  };
 }
 
 export type GateStateResult =
@@ -919,7 +1000,7 @@ export function foldGateState(dir: string, pr: string): GateStateResult {
     // note produces no warning — nothing was actually dropped.
     if (asRecord.kind === "note") {
       // A record with `kind: 'note'` that ALSO carries a directive-only
-      // field (`command`/`target`) is not "unambiguously a note attempt" —
+      // field (`command`/`target`/`generation`) is not "unambiguously a note attempt" —
       // `parseInboxMessage`'s note branch only reads `body` and silently
       // ignores the rest, so a well-formed note with `command: 'hold-push'`
       // riding along would pass this carve-out as clear even though it
@@ -929,7 +1010,7 @@ export function foldGateState(dir: string, pr: string): GateStateResult {
       // BEFORE the note carve-out decides to skip gating, so this poisons
       // the fold the same way any other ambiguous shape does, rather than
       // being waved through as a merely-malformed note.
-      if (asRecord.command !== undefined || asRecord.target !== undefined) {
+      if (DIRECTIVE_ONLY_FIELDS.some((f) => asRecord[f] !== undefined)) {
         return {
           ok: false,
           why: `note carries a directive-only field: ${line.slice(0, 120)}`,
@@ -972,15 +1053,31 @@ export function foldGateState(dir: string, pr: string): GateStateResult {
       };
     }
     if (msg.pr !== pr) continue;
-    if (msg.command === "resume") {
-      // Validated at parse time: `target` is present for every 'resume'.
-      const target = msg.target as GateName;
-      state[target] = { active: false, since: msg.ts, by: msg.id };
-    } else {
-      state[msg.command] = { active: true, since: msg.ts, by: msg.id };
-    }
+    applyDirective(state, msg);
   }
   return { ok: true, state, warnings };
+}
+
+/** The fields only a directive carries: one on a note poisons the fold. */
+const DIRECTIVE_ONLY_FIELDS = ["command", "target", "generation"] as const;
+
+/** Fold one directive into `state`: latest per class wins, a `resume --target stop` withdrawing addressed stops too. */
+function applyDirective(state: GateState, msg: DirectiveMessage): void {
+  if (msg.command === "resume") {
+    // Validated at parse time: `target` is present for every 'resume'.
+    const target = msg.target as GateName;
+    state[target] = { active: false, since: msg.ts, by: msg.id };
+    if (target === "stop") state.addressed = [];
+  } else if (msg.generation !== undefined) {
+    state.addressed.push({
+      generation: msg.generation,
+      now: msg.now === true,
+      since: msg.ts,
+      by: msg.id,
+    });
+  } else {
+    state[msg.command] = { active: true, since: msg.ts, by: msg.id };
+  }
 }
 
 /**

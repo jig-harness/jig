@@ -175,7 +175,8 @@ import { runMain } from "./lib/cli.ts";
 import { span } from "../../../shared/trace.ts";
 import { main } from "./lib/driver/main.ts";
 import { driverRuntime } from "./lib/driver/runtime.ts";
-import { driveExitClosesTab, endOwnTab } from "../../../shared/orca-tabs.ts";
+import { endOwnTab } from "../../../shared/orca-tabs.ts";
+import { driveExitClosesTab } from "./lib/status/terminal-states.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { ExitError } from "../../../shared/cli.ts";
 export {
@@ -204,7 +205,6 @@ export {
   drainDriverRegistrations,
   finishDriverPassRegistrations,
   installDriverLifecycle,
-  driverStopCompletionCleanup,
 } from "./lib/driver/lifecycle.ts";
 
 /**

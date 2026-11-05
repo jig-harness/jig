@@ -35,11 +35,9 @@ import type { ClaimDiag } from "./../claim.ts";
 import { type DriveLock, acquire, prLockName, release } from "./locks.ts";
 import { markDriverRecordReleased } from "./../ledger-stop.ts";
 
-import {
-  installDriverLifecycle,
-  createDriverRegistry,
-  driverStopCompletionCleanup,
-} from "./lifecycle.ts";
+import { installDriverLifecycle, createDriverRegistry } from "./lifecycle.ts";
+
+import { nextDriverGeneration } from "./../state/mailbox-stop.ts";
 
 import { registerCleanup } from "./../../../../../shared/cleanup.ts";
 
@@ -48,7 +46,7 @@ import { driverRuntime } from "./runtime.ts";
 import { startHeartbeat } from "./identity.ts";
 
 import { stateDirIdentityToken } from "./../state/lease.ts";
-import { dbPathFor } from "./../state/db.ts";
+import { dbPathFor, driveDb } from "./../state/db.ts";
 
 import { driveState, captureIntentChain, driveTs } from "./paths.ts";
 
@@ -280,6 +278,10 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   // only here would keep reporting the old one for the rest of the drive's
   // life).
   const account = resolveAccountIdentity(agent);
+  // This driver's generation: what a mailbox `stop` addresses to end this
+  // driver alone (`state/mailbox-stop.ts`). Drawn before the locks, so a
+  // refused start spends a number, never reuses one.
+  const generation = nextDriverGeneration(driveDb(stateDir), pr);
   const diag: ClaimDiag = {
     pr,
     worktree: rootRes.code === 0 ? rootRes.stdout.trim() : "",
@@ -288,6 +290,8 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
     account,
     model: pass.model,
     permissionMode: pass.args.permission.mode,
+    generation,
+    mailbox: mailboxDir,
   };
   const treeLock: DriveLock = {
     stateDir,
@@ -308,7 +312,11 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   const plan = takeOver ? await decideTakeover(pr, ledger) : null;
   const held: DriveLock[] = [];
   using lockResources = new DisposableStack();
-  await using lifecycle = installDriverLifecycle(held);
+  await using lifecycle = installDriverLifecycle(held, undefined, {
+    dir: mailboxDir,
+    pr,
+    generation,
+  });
   void lifecycle;
   const hold = async (lock: DriveLock): Promise<void> => {
     // A refusal names the holder's doctor verdict, and the takeover command
@@ -338,6 +346,9 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   // PR's lock joins it once taken.
   startHeartbeat(held, agent);
   await hold(prLock);
+  console.error(
+    `drive.ts: PR #${pr} driver generation ${generation}; 'mailbox.ts send ${pr} --kind directive --command stop --generation ${generation}' stops this driver alone.`,
+  );
 
   // The SESSION every drive-state mutation of this drive belongs to, exported
   // once the locks are actually held and before the first such mutation (the
@@ -378,7 +389,6 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
       );
   });
   createDriverRegistry(held);
-  lockResources.use(driverStopCompletionCleanup(held));
   driverRuntime.driverLogRotates = true;
 
   // The TREE this drive drives, so a pass measures local HEAD there rather
@@ -500,6 +510,7 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
   const roundsExit = await runDriverRounds({
     pr,
     mailboxDir,
+    generation,
     keepDraft,
     dryRun,
     agent,

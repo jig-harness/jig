@@ -32,6 +32,7 @@ import type { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stateRoot } from "../receipts.ts";
 import {
   isDrive,
@@ -213,47 +214,54 @@ export function rowsOf(selected: Array<{ row: string }>): LogRow[] {
     .filter((r): r is LogRow => r !== null);
 }
 
-/** `drive.ts`'s exits, by the class the closed list places them in (all but `5`, which reads the pull request). */
+/**
+ * `drive.ts`'s exits, by the class the closed list places them in (all but
+ * `PR_NOT_OPEN`, which reads the pull request), named from drive-pr's
+ * terminal-state registry.
+ */
 const DRIVE_EXITS: ReadonlyMap<number, [OutcomeClass, string]> = new Map([
-  [0, ["converged", "converged"]],
-  [16, ["quota wall", "quota-parked"]],
-  [8, ["parked for a person", "parked"]],
-  [14, ["stalled", "stalled"]],
-  [6, ["stalled", "round limit"]],
-  [2, ["refused", "usage"]],
-  [4, ["refused", "not judgeable yet"]],
-  [11, ["refused", "another driver holds it"]],
-  [13, ["refused", "another driver holds it"]],
-  [18, ["refused", "a mailbox stop"]],
-  [19, ["refused", "a mailbox pause"]],
-  [20, ["refused", "taken over by another clone"]],
-  [1, ["gates failed", "failed"]],
-  [7, ["gates failed", "exit 7"]],
-  [9, ["gates failed", "conflicting with its base"]],
-  [12, ["gates failed", "exit 12"]],
-  [15, ["gates failed", "exit 15"]],
+  [DRIVE_EXIT.CONVERGED, ["converged", "converged"]],
+  [DRIVE_EXIT.QUOTA_PARKED, ["quota wall", "quota-parked"]],
+  [DRIVE_EXIT.HITL_PARKED, ["parked for a person", "parked"]],
+  [DRIVE_EXIT.STALLED, ["stalled", "stalled"]],
+  [DRIVE_EXIT.MAX_ROUNDS, ["stalled", "round limit"]],
+  [DRIVE_EXIT.UNSUPPORTED_CLI, ["refused", "usage"]],
+  [DRIVE_EXIT.NOT_SETTLED, ["refused", "not judgeable yet"]],
+  [DRIVE_EXIT.SINGLE_INSTANCE_LOCK, ["refused", "another driver holds it"]],
+  [
+    DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE,
+    ["refused", "another driver holds it"],
+  ],
+  [DRIVE_EXIT.MAILBOX_STOPPED, ["refused", "a mailbox stop"]],
+  [DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT, ["refused", "a mailbox pause"]],
+  [DRIVE_EXIT.TAKEN_OVER, ["refused", "taken over by another clone"]],
+  [DRIVE_EXIT.INDETERMINATE, ["gates failed", "failed"]],
+  [DRIVE_EXIT.REVIEWER_FAILED, ["gates failed", "reviewer failed"]],
+  [DRIVE_EXIT.PR_CONFLICTING, ["gates failed", "conflicting with its base"]],
+  [DRIVE_EXIT.WORKTREE_UNCLEAN, ["gates failed", "worktree unclean"]],
+  [DRIVE_EXIT.PASS_DEADLINE, ["gates failed", "pass deadline"]],
 ]);
 
 /** What the classifier needs beyond the record: whether a takeover replaced it, and a merged-or-closed drive's pull request state. */
 export interface EndFacts {
   takenOver: boolean;
-  /** For a drive that stopped `5`: true when its pull request merged, false when it was closed, `null` when that could not be read. */
+  /** For a drive that stopped `PR_NOT_OPEN`: true when its pull request merged, false when it was closed, `null` when that could not be read. */
   merged: boolean | null;
 }
 
-/** The class of a drive's exit, as the closed list places it (`5` reads as closed when `merged` is false). */
+/** The class of a drive's exit, as the closed list places it (`PR_NOT_OPEN` reads as closed when `merged` is false). */
 export function driveClass(
   code: number,
   merged: boolean | null,
 ): { class: OutcomeClass; reason: string } {
-  if (code === 5) {
-    if (merged === true) return { class: "merged", reason: "exit 5 (merged)" };
+  if (code === DRIVE_EXIT.PR_NOT_OPEN) {
+    if (merged === true)
+      return { class: "merged", reason: `exit ${code} (merged)` };
     if (merged === false)
-      return { class: "refused", reason: "exit 5 (closed)" };
+      return { class: "refused", reason: `exit ${code} (closed)` };
     return {
       class: "unknown",
-      reason:
-        "exit 5, and whether the pull request merged or closed could not be read",
+      reason: `exit ${code}, and whether the pull request merged or closed could not be read`,
     };
   }
   const placed = DRIVE_EXITS.get(code);
