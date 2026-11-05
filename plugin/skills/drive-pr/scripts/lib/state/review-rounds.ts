@@ -41,9 +41,19 @@ function highest(drive: DriveDb, pr: string): number {
   return row.round ?? 0;
 }
 
+function hasRow(drive: DriveDb, pr: string, head: string): boolean {
+  return (
+    drive.db
+      .query(
+        "SELECT 1 FROM review_rounds WHERE clone = ? AND pr = ? AND head = ?",
+      )
+      .get(drive.clone, canonicalPr(pr), head) !== null
+  );
+}
+
 /**
  * Count `head` as a review round of `pr`, past `floor` (the drive state's
- * `rounds`): the pull request's round after it, and whether `head` was new.
+ * `rounds`, `knownHead` the head it counted last): the pull request's round after it, and whether `head` was new.
  * A head already counted adds nothing. One transaction, so two loops
  * counting at once never give two heads one ordinal.
  */
@@ -52,9 +62,20 @@ function countHead(
   pr: string,
   head: string,
   floor: number,
+  knownHead = "",
 ): { round: number; counted: boolean } {
   return inTransaction(drive.db, () => {
     const top = Math.max(highest(drive, pr), floor);
+    // The state's own counted head carries rounds no row records (a state
+    // kept from before the table, or seeded from a ledger): record it at the
+    // ordinal the state holds instead of counting it again.
+    if (head === knownHead && floor > 0 && !hasRow(drive, pr, head)) {
+      drive.db.run(
+        "INSERT OR IGNORE INTO review_rounds (clone, pr, head, round, settled, at) VALUES (?, ?, ?, ?, 0, ?)",
+        [drive.clone, canonicalPr(pr), head, floor, new Date().toISOString()],
+      );
+      return { round: top, counted: false };
+    }
     const inserted = drive.db.run(
       "INSERT OR IGNORE INTO review_rounds (clone, pr, head, round, settled, at) VALUES (?, ?, ?, ?, 0, ?)",
       [drive.clone, canonicalPr(pr), head, top + 1, new Date().toISOString()],
@@ -64,14 +85,31 @@ function countHead(
   });
 }
 
-/** The rounds counted for `pr` since a hand-driven loop last converged. */
-function openRounds(drive: DriveDb, pr: string): number {
+/** The rounds counted for `pr` since a hand-driven loop last converged, through ordinal `through`. */
+function openRounds(drive: DriveDb, pr: string, through = Infinity): number {
   const row = drive.db
     .query(
-      "SELECT COUNT(*) AS n FROM review_rounds WHERE clone = ? AND pr = ? AND settled = 0",
+      "SELECT COUNT(*) AS n FROM review_rounds WHERE clone = ? AND pr = ? AND settled = 0 AND round <= ?",
     )
-    .get(drive.clone, canonicalPr(pr)) as { n: number };
+    .get(drive.clone, canonicalPr(pr), through) as { n: number };
   return row.n;
+}
+
+/** The highest ordinal still open for `pr`, 0 when none: the snapshot a settle is limited to. */
+function lastOpenRound(drive: DriveDb, pr: string): number {
+  const row = drive.db
+    .query(
+      "SELECT MAX(round) AS round FROM review_rounds WHERE clone = ? AND pr = ? AND settled = 0",
+    )
+    .get(drive.clone, canonicalPr(pr)) as { round: number | null };
+  return row.round ?? 0;
+}
+
+/** The ordinal a verb's `--head` names, `Infinity` when none was given. */
+function throughOrdinal(head: string, verb: string): number {
+  if (head === "") return Infinity;
+  if (!/^\d+$/.test(head)) fail(2, `${verb} --head takes a round ordinal`);
+  return Number(head);
 }
 
 /** `pr`'s review round: the one number the ledger, the drive and `current-round.ts` report. */
@@ -95,8 +133,19 @@ export async function bumpDriveRound(
 ): Promise<number> {
   return store.locked(async () => {
     const { state } = store.read();
-    if (state.lastCountedHead === head) return state.rounds;
     const drive = driveDb(store.stateDir);
+    if (state.lastCountedHead === head) {
+      // Other loops may have counted past this head since: take their count.
+      const shared = Math.max(highest(drive, pr), state.rounds);
+      if (shared === state.rounds) return state.rounds;
+      const synced = inTransaction(drive.db, (): DriveState => {
+        const moved = { ...state, rounds: shared };
+        store.write(moved);
+        return moved;
+      });
+      await store.renderHandoff(synced);
+      return synced.rounds;
+    }
     const next = inTransaction(drive.db, (): DriveState => {
       const { round } = countHead(drive, pr, head, state.rounds);
       const base = { ...state, rounds: round, lastCountedHead: head };
@@ -116,9 +165,11 @@ export async function bumpDriveRound(
 
 /**
  * The verbs a hand-driven loop calls, keyed by command: `count-round --head
- * SHA` prints `{"round": N, "open": M, "counted": true|false}`; `open-rounds` prints the rounds since
- * the loop last converged; `settle-rounds` marks them settled and prints how
- * many it settled.
+ * SHA` prints `{"round": N, "open": M, "counted": true|false}`; `open-rounds`
+ * prints the rounds since the loop last converged; `last-open-round` prints
+ * the highest of them; `settle-rounds` marks them settled and prints how many
+ * it settled. Both of those take `--head N` to stop at ordinal N, so a
+ * settle covers the rounds a caller counted and not those counted since.
  */
 export const ROUND_VERBS: Readonly<
   Record<string, (store: StateStore, pr: string, head: string) => number>
@@ -126,23 +177,35 @@ export const ROUND_VERBS: Readonly<
   "count-round": (store, pr, head) => {
     if (head === "") fail(2, "count-round requires --head SHA");
     const drive = driveDb(store.stateDir);
+    const { rounds, lastCountedHead } = store.read().state;
     const { round, counted } = countHead(
       drive,
       pr,
       head,
-      store.read().state.rounds,
+      rounds,
+      lastCountedHead ?? "",
     );
     return print(
       JSON.stringify({ round, open: openRounds(drive, pr), counted }),
     );
   },
-  "open-rounds": (store, pr) =>
-    print(String(openRounds(driveDb(store.stateDir), pr))),
-  "settle-rounds": (store, pr) => {
+  "open-rounds": (store, pr, head) =>
+    print(
+      String(
+        openRounds(
+          driveDb(store.stateDir),
+          pr,
+          throughOrdinal(head, "open-rounds"),
+        ),
+      ),
+    ),
+  "last-open-round": (store, pr) =>
+    print(String(lastOpenRound(driveDb(store.stateDir), pr))),
+  "settle-rounds": (store, pr, head) => {
     const drive = driveDb(store.stateDir);
     const settled = drive.db.run(
-      "UPDATE review_rounds SET settled = 1 WHERE clone = ? AND pr = ? AND settled = 0",
-      [drive.clone, canonicalPr(pr)],
+      "UPDATE review_rounds SET settled = 1 WHERE clone = ? AND pr = ? AND settled = 0 AND round <= ?",
+      [drive.clone, canonicalPr(pr), throughOrdinal(head, "settle-rounds")],
     );
     return print(String(settled.changes));
   },

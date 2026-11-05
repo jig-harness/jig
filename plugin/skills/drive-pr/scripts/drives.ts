@@ -1156,7 +1156,7 @@ async function stopVerifiedDriver(
       : null;
   const registryState: WindowsTreeState = { root: owner, targets };
   const sent: SentStop = {
-    dir: driverMailboxDir(row.diag?.worktree ?? ""),
+    dir: driverMailboxDir(row.diag?.worktree ?? "", row.diag?.mailbox ?? ""),
     pr: row.diag?.pr ?? "",
     id: null,
   };

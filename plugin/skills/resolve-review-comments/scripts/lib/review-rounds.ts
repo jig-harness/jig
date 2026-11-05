@@ -103,11 +103,15 @@ export async function settleRounds(
   pr: string,
   threshold: number,
 ): Promise<void> {
-  const raw = await roundVerb(["open-rounds", pr]);
+  // The rounds counted so far: a loop that counts a head meanwhile keeps it
+  // open for its own convergence.
+  const mark = await roundVerb(["last-open-round", pr]);
+  if (mark === null || !isDigits(mark)) return;
+  const raw = await roundVerb(["open-rounds", pr, "--head", mark]);
   if (raw === null) return;
   const n = isDigits(raw) ? Number.parseInt(raw, 10) : 0;
   const settle = async (): Promise<void> => {
-    await roundVerb(["settle-rounds", pr]);
+    await roundVerb(["settle-rounds", pr, "--head", mark]);
   };
   if (n <= threshold || !existsSync(REFLECT_CAPTURE)) return settle();
   const capture = (await import(

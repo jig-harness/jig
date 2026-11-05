@@ -128,7 +128,7 @@ function parseSendArgs(argv: string[]): SendArgs {
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i] as string;
-    const flag = SEND_FLAGS[arg];
+    const flag = Object.hasOwn(SEND_FLAGS, arg) ? SEND_FLAGS[arg] : undefined;
     if (flag !== undefined) flag(takeFlag(argv, i++, arg), a);
     else if (arg.startsWith("--")) fail(2, `unknown flag: ${arg}`);
     else if (a.pr === "") a.pr = arg;

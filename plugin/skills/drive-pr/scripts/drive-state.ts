@@ -3457,7 +3457,9 @@ async function otherCommand(
   store: StateStore,
   pr: string,
 ): Promise<number> {
-  const roundVerb = ROUND_VERBS[a.cmd];
+  const roundVerb = Object.hasOwn(ROUND_VERBS, a.cmd)
+    ? ROUND_VERBS[a.cmd]
+    : undefined;
   if (roundVerb !== undefined) return roundVerb(store, pr, a.sha);
   return stdinOrUnknown(a.cmd, store);
 }

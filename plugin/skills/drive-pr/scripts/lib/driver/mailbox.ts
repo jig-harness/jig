@@ -80,19 +80,28 @@ async function whilePaused(
 /** The directives each driver generation already acknowledged, so a pause polled again is acknowledged once. */
 const acknowledged = new Set<string>();
 
-/** Acknowledge `id` once; a failed append is said and does not stop the drive. */
-async function acknowledge(watch: MailboxWatch, id: string): Promise<void> {
+/**
+ * Acknowledge `id` once the append is durable; a failed append is said, not
+ * remembered, so the next poll tries again, and does not stop the drive.
+ * Whether `id` is acknowledged by now.
+ */
+async function acknowledge(watch: MailboxWatch, id: string): Promise<boolean> {
   const key = `${watch.generation}:${id}`;
-  if (acknowledged.has(key)) return;
-  acknowledged.add(key);
+  if (acknowledged.has(key)) return true;
   try {
     await ackDirective(watch.dir, watch.pr, id, watch.generation);
+    acknowledged.add(key);
+    return true;
   } catch (error) {
     console.error(
       `drive.ts: could not acknowledge mailbox directive ${id}: ${error instanceof Error ? error.message : String(error)}`,
     );
+    return false;
   }
 }
+
+/** Tries a stop's acknowledgement gets before the drive ends without it. */
+const STOP_ACK_ATTEMPTS = 3;
 
 async function readMailboxDirective(
   watch: MailboxWatch,
@@ -107,7 +116,14 @@ async function readMailboxDirective(
     console.error(
       `drive.ts: stop requested for PR #${watch.pr} (${stop}); ending at a safe round boundary.`,
     );
-    await acknowledge(watch, stop);
+    for (let attempt = 1; attempt <= STOP_ACK_ATTEMPTS; attempt++) {
+      if (await acknowledge(watch, stop)) break;
+      if (attempt === STOP_ACK_ATTEMPTS)
+        console.error(
+          `drive.ts: ending for stop ${stop} WITHOUT its acknowledgement in the outbox after ${STOP_ACK_ATTEMPTS} attempts.`,
+        );
+      else await sleep(1);
+    }
     return "stopped";
   }
   const pause = gate.state.pause;

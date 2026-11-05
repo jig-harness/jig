@@ -91,8 +91,16 @@ function lineOf(sourceFile: ts.SourceFile, node: ts.Node): number {
   );
 }
 
+/** `expr` without the parentheses around it. */
+function unparenthesized(expr: ts.Expression): ts.Expression {
+  let current = expr;
+  while (ts.isParenthesizedExpression(current)) current = current.expression;
+  return current;
+}
+
 /** `exit` or `code` when `expr` is a property or a variable of that name, else `null`. */
-function exitOperand(expr: ts.Expression): "exit" | "code" | null {
+function exitOperand(operand: ts.Expression): "exit" | "code" | null {
+  const expr = unparenthesized(operand);
   const name = ts.isPropertyAccessExpression(expr)
     ? expr.name.text
     : ts.isIdentifier(expr)
@@ -196,11 +204,14 @@ function noteCase(node: ts.Node, note: Note): void {
 
 /** A numeric property name of an object literal that is a drive exit. */
 function objectKey(node: ts.Node): NodeFinding | null {
-  if (!ts.isPropertyAssignment(node) || !ts.isNumericLiteral(node.name))
-    return null;
-  const value = Number(node.name.text);
+  if (!ts.isPropertyAssignment(node)) return null;
+  const key = ts.isComputedPropertyName(node.name)
+    ? unparenthesized(node.name.expression)
+    : node.name;
+  if (!ts.isNumericLiteral(key)) return null;
+  const value = Number(key.text);
   return DRIVE_EXIT_CODES.has(value)
-    ? { at: node.name, value, where: "as an object key" }
+    ? { at: key, value, where: "as an object key" }
     : null;
 }
 
@@ -243,11 +254,21 @@ export async function findDispatchExitLiterals(
   return findings;
 }
 
-const IMPORT = /\bfrom\s+["'][^"']*\/terminal-states\.ts["']/;
+const REGISTRY_SPECIFIER = /(^|\/)terminal-states\.ts$/;
 
-/** Whether `source` imports from drive-pr's terminal-state registry. */
-export function importsRegistry(source: string): boolean {
-  return IMPORT.test(source);
+/** Whether `source` has an import declaration from drive-pr's terminal-state registry; a comment or a string naming one does not count. */
+export async function importsRegistry(
+  source: string,
+  fileName: string,
+  tools: AstTools,
+): Promise<boolean> {
+  const { sourceFile } = await tools.program(fileName, source);
+  return sourceFile.statements.some(
+    (statement) =>
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      REGISTRY_SPECIFIER.test(statement.moduleSpecifier.text),
+  );
 }
 
 const INLINE_PAIR = /`([A-Z][A-Z0-9_]*)` \(`(\d{1,2})`/g;
@@ -317,7 +338,7 @@ async function fileProblems(
     ];
   const source = readFileSync(file.path, "utf8");
   const unread =
-    file.importsRegistry && !importsRegistry(source)
+    file.importsRegistry && !(await importsRegistry(source, file.path, tools))
       ? [`${shown}: imports nothing from drive-pr's terminal-states.ts`]
       : [];
   const restatements = [

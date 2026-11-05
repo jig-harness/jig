@@ -11,7 +11,7 @@ import { driverRuntime } from "./runtime.ts";
 
 import { cancelTrackedProcesses } from "./../../../../../shared/proc.ts";
 
-import { ackDirective, immediateStop } from "./../state/mailbox-stop.ts";
+import { ackDirective, watchImmediateStop } from "./../state/mailbox-stop.ts";
 
 import type { MailboxWatch } from "./mailbox.ts";
 
@@ -73,9 +73,13 @@ export function installStopControls(
     if (confirmed && requested !== null && watch !== undefined)
       await acknowledgeStop(held, watch, requested);
   });
+  const pollStop =
+    watch === undefined
+      ? null
+      : watchImmediateStop(watch.dir, watch.pr, watch.generation);
   const stopTimer = setInterval(() => {
-    if (shuttingDown || watch === undefined) return;
-    const stop = immediateStop(watch.dir, watch.pr, watch.generation);
+    if (shuttingDown || pollStop === null) return;
+    const stop = pollStop();
     if (stop === null) return;
     requested = stop;
     requestShutdown("SIGTERM", driverStopExitCode("stop request"));

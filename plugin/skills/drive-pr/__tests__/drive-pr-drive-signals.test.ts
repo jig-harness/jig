@@ -82,6 +82,39 @@ describe("the review round record", () => {
   }, 120_000);
 });
 
+describe("the review round record counted from several loops", () => {
+  const out = (r: Awaited<ReturnType<typeof state>>) =>
+    r.stdout.toString().trim();
+
+  it("settles only the rounds counted when the settle began", async () => {
+    const tree = makeScratchRepo("signals-settle").dir;
+    const { stateDir } = writeFixture(WORK, tree);
+    for (const head of ["1".repeat(40), "2".repeat(40)])
+      await state(stateDir, ["count-round", "999", "--head", head], tree);
+    const mark = out(await state(stateDir, ["last-open-round", "999"], tree));
+    expect(mark).toBe("2");
+    await state(
+      stateDir,
+      ["count-round", "999", "--head", "3".repeat(40)],
+      tree,
+    );
+    const settled = await state(
+      stateDir,
+      ["settle-rounds", "999", "--head", mark],
+      tree,
+    );
+    expect(out(settled)).toBe("2");
+    expect(out(await state(stateDir, ["open-rounds", "999"], tree))).toBe("1");
+  }, 60_000);
+
+  it("does not take an unknown command for an inherited member", async () => {
+    const tree = makeScratchRepo("signals-proto").dir;
+    const { stateDir } = writeFixture(WORK, tree);
+    const r = await state(stateDir, ["__proto__", "999"], tree);
+    expectSpawnExit(r, 2);
+  }, 60_000);
+});
+
 describe("a mailbox stop and the driver generation it names", () => {
   /** The driver acknowledgements in the outbox, as [directive id, generation]. */
   const acks = (mailbox: string) => {

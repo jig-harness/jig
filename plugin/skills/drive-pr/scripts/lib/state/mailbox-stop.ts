@@ -17,12 +17,14 @@
  * reads every quarter second and answers by cancelling the active pass and
  * stopping at once.
  */
+import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { canonicalPr } from "./store.ts";
 import { type DriveDb, nextCount } from "./db.ts";
 import {
   appendOutboxRecord,
   foldGateState,
+  inboxPath,
   type GateState,
   mailboxDir,
   outboxRecordsForPr,
@@ -64,6 +66,38 @@ export function immediateStop(
   return gate.ok ? stopFor(gate.state, generation, true) : null;
 }
 
+/**
+ * `immediateStop` for a poll that repeats: an inbox whose file is unchanged
+ * since a poll that found no stop is not read and folded again. Any change to
+ * the file, or a stop found, is read afresh.
+ */
+export function watchImmediateStop(
+  dir: string,
+  pr: string,
+  generation: number,
+): () => string | null {
+  let quiet: string | null = null;
+  return () => {
+    const seen = inboxSignature(dir);
+    if (seen !== null && seen === quiet) return null;
+    const stop = immediateStop(dir, pr, generation);
+    quiet = stop === null ? seen : null;
+    return stop;
+  };
+}
+
+/** The inbox file's identity, size and modification time; `'absent'` when it does not exist, `null` when it cannot be stat-ed. */
+function inboxSignature(dir: string): string | null {
+  try {
+    const s = statSync(inboxPath(dir), { bigint: true });
+    return `${s.ino}:${s.size}:${s.mtimeNs}`;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException)?.code === "ENOENT"
+      ? "absent"
+      : null;
+  }
+}
+
 /** Append the driver's acknowledgement that it acted on directive `id`, as driver `generation`. */
 export async function ackDirective(
   dir: string,
@@ -88,10 +122,13 @@ export function directiveAcked(dir: string, pr: string, id: string): boolean {
 
 /**
  * The mailbox of the driver working `worktree`: where `drives.ts --stop`
- * writes, `$DRIVE_PR_MAILBOX_DIR` when set, as the driver resolves its own;
- * `''` when the claim names no working tree to find it in.
+ * writes. The driver's own resolved directory when its claim records one
+ * (`mailbox`); otherwise, for a claim that predates it, `$DRIVE_PR_MAILBOX_DIR`
+ * when set, else the working tree's; `''` when the claim names no working tree
+ * to find it in.
  */
-export function driverMailboxDir(worktree: string): string {
+export function driverMailboxDir(worktree: string, mailbox = ""): string {
+  if (mailbox !== "") return mailbox;
   const override = process.env.DRIVE_PR_MAILBOX_DIR ?? "";
   if (override !== "") return resolve(override);
   return worktree === "" ? "" : mailboxDir(worktree);

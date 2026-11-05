@@ -291,6 +291,7 @@ async function drive(ctx: { pr: string; dryRun: boolean }): Promise<number> {
     model: pass.model,
     permissionMode: pass.args.permission.mode,
     generation,
+    mailbox: mailboxDir,
   };
   const treeLock: DriveLock = {
     stateDir,

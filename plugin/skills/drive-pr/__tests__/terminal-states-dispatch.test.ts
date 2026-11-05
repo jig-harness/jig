@@ -36,16 +36,25 @@ describe("the dispatcher files as they are", () => {
   test("read every drive exit from the registry", async () => {
     for (const file of DISPATCH_FILES) {
       const source = await Bun.file(join(PLUGIN, file.path)).text();
-      expect([file.path, importsRegistry(source)]).toEqual([
+      expect([
         file.path,
-        file.importsRegistry,
-      ]);
+        await importsRegistry(source, file.path, TOOLS),
+      ]).toEqual([file.path, file.importsRegistry]);
       expect([
         file.path,
         await findDispatchExitLiterals(source, file.path, TOOLS),
         findInlinePairMismatches(source),
       ]).toEqual([file.path, [], []]);
     }
+  });
+});
+
+describe("the registry import", () => {
+  test("is an import declaration, not a comment or a string", async () => {
+    const real = `import { DRIVE_EXIT } from "./terminal-states.ts";\n`;
+    const commented = `// import { DRIVE_EXIT } from "./terminal-states.ts";\nconst s = 'from "./terminal-states.ts"';\n`;
+    expect(await importsRegistry(real, "a.ts", TOOLS)).toBe(true);
+    expect(await importsRegistry(commented, "b.ts", TOOLS)).toBe(false);
   });
 });
 
@@ -65,6 +74,14 @@ function f(exit: number, code: number) {
 }
 `),
     ).toEqual([11, 13, 20, 16, 0, 5, 18, 8, 16, 9]);
+  });
+
+  test("is found through parentheses and a computed key", async () => {
+    expect(
+      await valuesIn(
+        'function f(exit: number) { return (exit) === 8; }\nconst t = { [5]: "done" };\n',
+      ),
+    ).toEqual([8, 5]);
   });
 
   test("against a `code` does not count the codes every process exits with; against an `exit` it does", async () => {

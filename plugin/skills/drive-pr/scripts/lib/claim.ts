@@ -56,6 +56,10 @@ export interface ClaimDiag {
   /** The driver generation (`state/mailbox-stop.ts`) a mailbox `stop`
    * addresses; absent from a claim that predates it. */
   generation?: number;
+  /** The mailbox directory the driver reads, resolved in its own environment,
+   * so a stop is delivered where the driver looks; absent from a claim that
+   * predates it. */
+  mailbox?: string;
 }
 
 /**
@@ -163,6 +167,10 @@ export function parseDiagText(rest: string): ClaimDiag | null {
       model: claimLabel(o.model),
       permissionMode: claimLabel(o.permissionMode),
       generation: claimGeneration(o.generation),
+      mailbox:
+        typeof o.mailbox === "string" && o.mailbox !== ""
+          ? o.mailbox
+          : undefined,
     }),
   };
 }
