@@ -85,6 +85,8 @@ export const WAITING_STATES: ReadonlySet<string> = new Set([
 export interface RuntimeReceipt {
   ok: boolean;
   detail: string;
+  /** The workspace opened, but closing its initial terminal needs a manual retry. */
+  cleanupFailure?: string;
   /** The agent's id, for a launch that started one. */
   agentId?: string;
   /** For `openWorkspace`: the workspace opened or reused. */
@@ -224,7 +226,8 @@ export interface SessionRuntime {
    */
   retire(
     workspace: { id: string; path: string },
-    expected: { comment: string; unread: boolean },
+    expected: { comment: string; unread: boolean; branch?: string },
+    timeoutMs?: number,
   ): Promise<RuntimeReceipt>;
 }
 

@@ -23,12 +23,13 @@
  * sends a cause again.
  */
 import type { Database } from "bun:sqlite";
-import { run } from "../../../shared/proc.ts";
+import { gitIdentityEnv, run } from "../../../shared/proc.ts";
 import { carries } from "../notices.ts";
+import { probeFailure } from "../text.ts";
 import type { Workspace } from "../runtime/port.ts";
 import { stateDb } from "../state.ts";
 import type { RepoReport, RetireOutcome } from "../types.ts";
-import { type ApplyState, outOfTime } from "./launch.ts";
+import { type ApplyState, enforcedDeadlineMs, outOfTime } from "./launch.ts";
 
 /** Seconds each git call that proves the checkout holds nothing of a person's may take. */
 const GIT_TIMEOUT_SEC = 30;
@@ -39,7 +40,7 @@ export interface RetireInput {
   repo: string;
   /** The repository's notices workspace as the tick listed it; `null` when none is open. */
   workspace: Workspace | null;
-  /** Whether the dispatcher may write its comment (`takesComment`). */
+  /** Whether its complete comment is known dispatcher-only content. */
   takesComment: boolean;
   /** The workspaces this tick wrote or opened. */
   written: ReadonlySet<string>;
@@ -94,17 +95,24 @@ function standing(report: RepoReport, input: RetireInput): string | null {
 }
 
 /** Why git shows something of a person's in the checkout; `null` when it shows none. */
-async function gitHolds(path: string): Promise<string | null> {
+async function gitHolds(
+  path: string,
+  remaining: () => number,
+): Promise<string | null> {
   const git = (args: string[]) =>
     run(["git", "-C", path, "-c", "core.fsmonitor=false", ...args], {
-      timeoutSec: GIT_TIMEOUT_SEC,
+      timeoutSec: Math.max(
+        0.001,
+        Math.min(GIT_TIMEOUT_SEC, remaining() / 1000),
+      ),
+      env: gitIdentityEnv(),
     });
   const status = await git(["status", "--porcelain"]);
-  if (status.code !== 0) return `git status failed there (exit ${status.code})`;
+  if (status.code !== 0) return probeFailure("git status", status);
   if (status.stdout.trim() !== "") return "git reports changes in it";
   const held = await git(["branch", "-r", "--contains", "HEAD"]);
   if (held.code !== 0)
-    return `git could not tell whether a remote branch holds its commit (exit ${held.code})`;
+    return probeFailure("git branch --remotes --contains HEAD", held);
   return held.stdout.trim() === "" ? "its commit is on no remote branch" : null;
 }
 
@@ -144,6 +152,7 @@ export async function retireNotices(
     clearRead(db, repo);
     return;
   }
+  if (w.unread) clearRead(db, repo);
   const outcome = (
     o: RetireOutcome["outcome"],
     detail: string,
@@ -168,22 +177,37 @@ export async function retireNotices(
     report.noticesWorkspace = outcome("kept", late);
     return;
   }
-  const held = await gitHolds(w.path);
+  const remaining = () =>
+    state.startedAt === undefined
+      ? state.machine.runtimeTimeoutMs
+      : enforcedDeadlineMs(state.machine) -
+        (Date.now() - state.startedAt) -
+        state.machine.runtimeTimeoutMs;
+  const held = await gitHolds(w.path, remaining);
   if (held !== null) {
     report.noticesWorkspace = outcome("refused", `${held}; left for a person`);
+    return;
+  }
+  const afterProbes = outOfTime(state);
+  if (afterProbes !== null) {
+    report.noticesWorkspace = outcome("kept", afterProbes);
     return;
   }
   const receipt = await state.runtime
     .retire(
       { id: w.id, path: w.path },
-      { comment: w.comment, unread: w.unread },
+      { comment: w.comment, unread: w.unread, branch: w.branch },
+      Math.min(state.machine.runtimeTimeoutMs, remaining()),
     )
     .catch((error: unknown) => ({
       ok: false,
       lost: true,
       detail: error instanceof Error ? error.message : String(error),
     }));
-  if (receipt.ok) clearRead(db, repo);
+  if (receipt.ok) {
+    clearRead(db, repo);
+    db.query("DELETE FROM notices_content WHERE workspace = ?").run(w.path);
+  }
   report.noticesWorkspace = receipt.ok
     ? outcome("retired", `${decided.remove}: ${receipt.detail}`)
     : outcome(receipt.lost === true ? "lost" : "kept", receipt.detail);

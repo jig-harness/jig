@@ -119,6 +119,11 @@ export async function openNoticesWorkspace(
   );
   return withoutReattached({
     ...opened,
+    ...(closed.ok
+      ? {}
+      : {
+          cleanupFailure: `${closed.why}; inspect the workspace's terminals, then retry closing the idle initial shell with Orca; automatic retries could close personal work`,
+        }),
     detail: closed.ok
       ? `${opened.detail}, its terminals closed`
       : `${opened.detail}; its terminals were not closed: ${closed.why}`,

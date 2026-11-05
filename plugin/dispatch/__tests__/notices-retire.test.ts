@@ -89,6 +89,11 @@ async function opened(w: World): Promise<string> {
   const first = await tick(w);
   const path = first.repos[0]?.notifications[0]?.workspace ?? "";
   expect(path).not.toBe("");
+  expect(outcome(first)).toEqual({
+    workspace: path,
+    outcome: "kept",
+    detail: "written this tick",
+  });
   return path;
 }
 
@@ -132,6 +137,16 @@ describe("jig dispatch --apply retires the notices workspace", () => {
       ],
     ]);
     expect(psRows(w).map((r) => r.path)).not.toContain(path);
+    const branch = Bun.spawnSync([
+      "git",
+      "-C",
+      w.repo,
+      "show-ref",
+      "--quiet",
+      "--verify",
+      "refs/heads/jig-dispatch-notices",
+    ]);
+    expectSpawnExit(branch, 1);
 
     const after = await tick(w);
     expect(after.repos[0]?.notifications).toEqual([
@@ -193,5 +208,100 @@ describe("jig dispatch --apply retires the notices workspace", () => {
       expect.objectContaining({ outcome: "refused" }),
     );
     expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
+  });
+  it("keeps personal notes appended to a dispatcher notice", async () => {
+    const w = fixture(`${CONFIG}dispatch:\n  notices_linger: 0s\n`);
+    const path = await opened(w);
+    const ps = JSON.parse(
+      readFileSync(join(w.dir, "orca-ps.json"), "utf8"),
+    ) as { worktrees: PsRow[] };
+    for (const row of ps.worktrees)
+      if (row.path === path) {
+        row.comment += "\nMy personal notes";
+        row.unread = false;
+      }
+    writeFileSync(join(w.dir, "orca-ps.json"), JSON.stringify(ps));
+    expect(outcome(await tick(w))?.outcome).toBe("refused");
+    expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
+  });
+
+  it("restarts the linger after an unread tick that holds personal content", async () => {
+    const w = fixture();
+    const path = await opened(w);
+    read(w, path);
+    await tick(w);
+    backdate(w, 61 * 60_000);
+    const ps = JSON.parse(
+      readFileSync(join(w.dir, "orca-ps.json"), "utf8"),
+    ) as { worktrees: Array<PsRow & { agents: unknown[] }> };
+    const row = ps.worktrees.find((r) => r.path === path);
+    if (row === undefined) throw new Error("notices workspace missing");
+    row.unread = true;
+    row.agents = [{ paneKey: "tab:pane", state: "running" }];
+    writeFileSync(join(w.dir, "orca-ps.json"), JSON.stringify(ps));
+    expect(outcome(await tick(w))?.outcome).toBe("refused");
+    row.agents = [];
+    row.unread = false;
+    writeFileSync(join(w.dir, "orca-ps.json"), JSON.stringify(ps));
+    expect(outcome(await tick(w))?.outcome).toBe("kept");
+    expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
+  });
+
+  for (const change of [
+    { agents: [{ paneKey: "tab:pane", state: "running" }] },
+    { unverifiableTerminalCount: 1 },
+    { worktreeId: "replacement-workspace" },
+  ])
+    it(`refuses removal when the final read reveals ${JSON.stringify(change)}`, async () => {
+      const w = fixture(`${CONFIG}dispatch:\n  notices_linger: 0s\n`);
+      const path = await opened(w);
+      read(w, path);
+      writeFileSync(join(w.dir, "orca-on-show.json"), JSON.stringify(change));
+      expect(outcome(await tick(w))?.outcome).toBe("kept");
+      expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
+    });
+
+  for (const unread of [undefined, null, "false"])
+    it(`refuses an unread mark of ${String(unread)}`, async () => {
+      const w = fixture(`${CONFIG}dispatch:\n  notices_linger: 0s\n`);
+      const path = await opened(w);
+      read(w, path);
+      const row = psRows(w).find((r) => r.path === path);
+      if (row === undefined) throw new Error("notices workspace missing");
+      writeFileSync(
+        join(w.dir, "orca-show-card.json"),
+        JSON.stringify({
+          id: `repo-1::${path}`,
+          path,
+          comment: row.comment,
+          isUnread: unread,
+        }),
+      );
+      expect(outcome(await tick(w))?.outcome).toBe("kept");
+      expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
+    });
+
+  it("keeps a checkout switched to a different clean branch during retirement", async () => {
+    const w = fixture(`${CONFIG}dispatch:\n  notices_linger: 0s\n`);
+    const path = await opened(w);
+    read(w, path);
+    writeFileSync(join(w.dir, "orca-show-switch"), "");
+    expect(outcome(await tick(w))?.outcome).toBe("kept");
+    expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
+  });
+
+  it("reports an initial terminal close failure with its safe manual retry", async () => {
+    const w = fixture();
+    writeFileSync(join(w.dir, "orca-close-fail"), "");
+    const result = await w.dispatch(["--apply", "--json"]);
+    expectSpawnExit(result, 0);
+    const receipt = JSON.parse(result.stdout) as TickReceipt;
+    expect(receipt.repos[0]?.unplaced).toContainEqual(
+      expect.objectContaining({
+        target: "the notices workspace",
+        reason: expect.stringContaining("inspect the workspace's terminals"),
+      }),
+    );
+    expect(receipt.repos[0]?.notifications[0]?.outcome).toBe("sent");
   });
 });

@@ -382,7 +382,14 @@ export function orcaRuntime(
       orcaNotify(target, message, deadlines.runtimeTimeoutMs),
     steer: (session, nudge) =>
       orcaSteer(session, NUDGES[nudge], deadlines.runtimeTimeoutMs),
-    retire: (workspace, expected) =>
-      orcaRetire(workspace, expected, deadlines.runtimeTimeoutMs),
+    retire: (workspace, expected, timeoutMs) =>
+      orcaRetire(
+        workspace,
+        expected,
+        Math.min(
+          timeoutMs ?? deadlines.runtimeTimeoutMs,
+          deadlines.runtimeTimeoutMs,
+        ),
+      ),
   };
 }

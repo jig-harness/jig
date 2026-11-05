@@ -402,12 +402,21 @@ which Orca's phone app shows; a target with no workspace that can take a
 comment (none, or one whose comment may still be its agent's kickoff
 prompt) goes to the repository's notices workspace, a branch of the default
 branch (`jig-dispatch-notices`), named `⚙ dispatched · notices`, into which
-no agent is launched and whose first terminal is closed. The notices
+no agent is launched and whose first terminal is closed. If that close fails,
+the tick reports the failure in its receipt while still delivering the
+notification. Inspect the workspace's terminals, then close the idle initial
+shell through Orca. Later ticks never retry closing all terminals, since a
+person may have started work there. The notices
 workspace stays only while it has a job: once it has been read for
 `dispatch.notices_linger` (an hour by default), or every cause it carries
 is gone while it is still unread, the next tick removes it with its branch,
 unless it holds something of a person's (a comment of their own, an agent,
-changes or a commit of their own); the next message that needs it opens it
+changes or a commit of their own). Retirement compares the complete comment
+with the dispatcher-only text it last wrote and read back; appending personal
+notes preserves the workspace even when the notification key remains. A
+workspace whose comment predates that record is left for a person. The runtime
+refreshes the workspace identity, branch, agents, terminals and Git checks
+under the removal deadline; the next message that needs it opens it
 again. A message
 counts as sent only once the workspace's comment, read back, carries its key
 line (`[jig dispatch: …]`), and is never sent again while its cause stands;

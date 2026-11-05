@@ -65,6 +65,7 @@ import type {
   RepoTarget,
 } from "../types.ts";
 import { type ApplyState, openWithinBudget, outOfTime } from "./launch.ts";
+import { ownsComment, recordComment } from "./notices-content.ts";
 import { retireNotices } from "./retire-notices.ts";
 
 /** The branch of a repository's notices workspace. */
@@ -198,6 +199,7 @@ async function noticesWorkspace(
   state: ApplyState,
   repo: RepoTarget,
   workspaces: Workspace[],
+  report: RepoReport,
 ): Promise<Workspace | string> {
   const found = workspaces.find((w) => w.branch === NOTICES_BRANCH);
   if (found !== undefined) return noticesBlocked(found) ?? found;
@@ -208,6 +210,12 @@ async function noticesWorkspace(
   if ("waits" in opened) return opened.waits;
   if ("refused" in opened)
     return `the notices workspace could not be opened: ${opened.refused}`;
+  if (opened.cleanupFailure !== undefined)
+    report.unplaced.push({
+      target: "the notices workspace",
+      record: "runtime",
+      reason: opened.cleanupFailure,
+    });
   // Opening reattaches a workspace that already holds the branch: its comment is read again, not assumed empty.
   let again: SessionsReport;
   try {
@@ -220,6 +228,7 @@ async function noticesWorkspace(
   const read = again.workspaces.find((w) => w.path === opened.workspace.path);
   if (read === undefined)
     return "the notices workspace opened and is not in the runtime's answer yet";
+  workspaces.push(read);
   return noticesBlocked(read) ?? read;
 }
 
@@ -282,6 +291,7 @@ async function sendTo(
   workspace: Workspace,
   causes: Cause[],
   suppress: (cause: Cause, workspace: string) => void,
+  root: string,
 ): Promise<NotifyOutcome[]> {
   const already = causes.filter((c) =>
     carries(workspace.comment, c.notice.key),
@@ -312,7 +322,15 @@ async function sendTo(
     ),
   );
   if (send.length === 0) return out;
-  const receipt = await deliver(state, workspace, messageFor(send));
+  const message = messageFor(send);
+  const expected =
+    workspace.unread && withoutMarks(workspace.comment) !== ""
+      ? `${workspace.comment}\n\n${message}`
+      : keepMarks(workspace.comment, message);
+  const known = !workspace.unread || ownsComment(workspace, root);
+  const receipt = await deliver(state, workspace, message);
+  if (known && receipt.ok && receipt.comment === expected)
+    recordComment(workspace.path, expected, root);
   for (const c of send) {
     const why = notArrived(receipt, c);
     if (why === null) suppress(c, workspace.path);
@@ -396,7 +414,7 @@ async function groupByTarget(
   for (const cause of due) {
     let target = joinedTarget(cause, workspaces);
     if (target === null) {
-      notices ??= await noticesWorkspace(state, repo, workspaces);
+      notices ??= await noticesWorkspace(state, repo, workspaces, report);
       if (typeof notices === "string") {
         report.notifications.push(outcomeFor(cause, "waits", null, notices));
         continue;
@@ -482,7 +500,7 @@ export async function applyNotices(
   await retireNotices(state, report, {
     repo: repo.slug,
     workspace: notices,
-    takesComment: notices !== null && takesComment(notices),
+    takesComment: notices !== null && ownsComment(notices, root),
     written,
     causes: causes.map((c) => c.notice.key),
     records: [...readSuppressions(repo.slug, root).values()],
@@ -549,7 +567,7 @@ async function sendNotices(
   );
   for (const { workspace, causes: mine } of groups.values())
     report.notifications.push(
-      ...(await sendTo(state, workspace, mine, suppressed)),
+      ...(await sendTo(state, workspace, mine, suppressed, root)),
     );
   return new Set(groups.keys());
 }
