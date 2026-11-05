@@ -101,14 +101,22 @@ function unparenthesized(expr: ts.Expression): ts.Expression {
   return current;
 }
 
+/** The name a property access or a literal bracket access reads, else `null`. */
+function accessedName(expr: ts.Expression): string | null {
+  if (ts.isPropertyAccessExpression(expr)) return expr.name.text;
+  if (ts.isElementAccessExpression(expr)) {
+    const key = unparenthesized(expr.argumentExpression);
+    return ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)
+      ? key.text
+      : null;
+  }
+  return ts.isIdentifier(expr) ? expr.text : null;
+}
+
 /** `exit` or `code` when `expr` is a property or a variable of that name, else `null`. */
 function exitOperand(operand: ts.Expression): "exit" | "code" | null {
   const expr = unparenthesized(operand);
-  const name = ts.isPropertyAccessExpression(expr)
-    ? expr.name.text
-    : ts.isIdentifier(expr)
-      ? expr.text
-      : null;
+  const name = accessedName(expr);
   return name === "exit" || name === "code" ? name : null;
 }
 
@@ -146,8 +154,9 @@ function collectionSource(
   if (!ts.isNewExpression(node) || !ts.isIdentifier(node.expression))
     return null;
   const kind = node.expression.text;
-  const first = node.arguments?.[0];
-  if ((kind !== "Set" && kind !== "Map") || first === undefined) return null;
+  const argument = node.arguments?.[0];
+  if ((kind !== "Set" && kind !== "Map") || argument === undefined) return null;
+  const first = unparenthesized(argument);
   return ts.isArrayLiteralExpression(first)
     ? { kind, elements: first.elements }
     : null;
@@ -188,8 +197,8 @@ function noteCollection(node: ts.Node, note: Note): void {
     const key =
       collection.kind === "Set"
         ? element
-        : ts.isArrayLiteralExpression(element)
-          ? element.elements[0]
+        : ts.isArrayLiteralExpression(unparenthesized(element))
+          ? (unparenthesized(element) as ts.ArrayLiteralExpression).elements[0]
           : undefined;
     if (key !== undefined)
       note(key, DRIVE_EXIT_CODES, `in a new ${collection.kind}`);

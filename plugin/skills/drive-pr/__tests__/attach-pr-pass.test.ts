@@ -71,4 +71,26 @@ describe("attach-pr.ts in a pass of the drive that holds the tree", () => {
     expect(r.stderr).toContain("§ Driver pass");
     expect(c.git(tree, "rev-parse", "HEAD")).toBe(before);
   });
+
+  test("--place refuses a qualified reference to the drive's own PR", () => {
+    const { c, tree } = driven();
+    asPass(c);
+    c.env.FAKE_GH_REPOS = JSON.stringify({ [c.root]: "example/app" });
+    for (const ref of [
+      "example/app#42",
+      "https://github.com/example/app/pull/42",
+    ]) {
+      const r = c.attach(tree, ref, "--place");
+      expectSpawnExit(r, 4, `attach --place ${ref}`);
+      expect(r.stderr).toContain("a pass of the running drive of PR #42");
+    }
+  });
+
+  test("--place does not treat another repository's PR of that number as its own", () => {
+    const { c, tree } = driven();
+    asPass(c);
+    c.env.FAKE_GH_REPOS = JSON.stringify({ [c.root]: "example/app" });
+    const r = c.attach(tree, "example/other#42", "--place");
+    expectSpawnExit(r, 3, "attach --place example/other#42");
+  });
 });

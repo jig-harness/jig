@@ -53,6 +53,7 @@ import {
   type PrRef,
   parsePrRef,
   placePr,
+  refersToCheckout,
 } from "./lib/attach-place.ts";
 
 const USAGE = "usage: attach-pr.ts <PR> [--place | --created]";
@@ -86,16 +87,21 @@ async function attachHere(args: Args): Promise<number> {
   return 11;
 }
 
-/** Whether this process is a pass of the running drive of PR `ref`. */
-function passOfDrive(ref: PrRef): boolean {
+/**
+ * Whether this process is a pass of the running drive of PR `ref`: the number
+ * is the drive's, and a qualified reference names this checkout's repository.
+ */
+async function passOfDrive(ref: PrRef): Promise<boolean> {
   const target = process.env.DRIVE_PR_TARGET ?? "";
   return (
-    ref.slug === null && target !== "" && Number(target) === Number(ref.pr)
+    target !== "" &&
+    Number(target) === Number(ref.pr) &&
+    (await refersToCheckout(ref, process.cwd()))
   );
 }
 
 async function place(args: Args): Promise<number> {
-  if (passOfDrive(args.ref)) {
+  if (await passOfDrive(args.ref)) {
     console.error(
       `attach-pr: this process is a pass of the running drive of PR #${Number(args.ref.pr)} ($DRIVE_PR_TARGET names it), and a pass never arms or places its own drive: its driver attached this tree at its start. Work the round (drive-pr SKILL.md § Driver pass).`,
     );

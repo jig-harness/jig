@@ -112,6 +112,29 @@ function f(exit: number, code: number) {
     ).toEqual([8, 5]);
   });
 
+  test("is found through a literal bracket access and a wrapped collection", async () => {
+    expect(
+      await valuesIn(`
+function f(ledger: { exit: number }) {
+  if (ledger["exit"] === 8) return 1;
+  switch (ledger[\`exit\`]) { case 9: return 2; }
+  return 0;
+}
+const A = new Set(([11, 13]));
+const B = new Map(([[16, "quota wall"]]));
+const C = new Map([([18, "stopped"])]);
+`),
+    ).toEqual([8, 9, 11, 13, 16, 18]);
+  });
+
+  test("is not found through a bracket access whose key is not a literal", async () => {
+    expect(
+      await valuesIn(
+        "function f(l: { exit: number }, k: string) { return l[k] === 8; }\n",
+      ),
+    ).toEqual([]);
+  });
+
   test("against a `code` does not count the codes every process exits with; against an `exit` it does", async () => {
     expect(
       await valuesIn(`

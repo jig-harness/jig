@@ -732,9 +732,10 @@ outbox, naming its generation. It is appended before the locks are released;
 a failure to append it retains the locks. When a temporary cancellation
 marker made the operator's registry snapshot incomplete, only this matching
 `ack` plus disappearance of its captured process identities can confirm the
-stop. A missing `ack`, one for another directive, or a pass's `received`
-record cannot turn an unreadable or missing registry into proof of
-completion.
+stop. An `ack` of another operator's immediate stop of the same driver
+generation counts the same; a missing `ack`, one of a pause or a boundary
+stop, one naming another generation, or a pass's `received` record cannot
+turn an unreadable or missing registry into proof of completion.
 
 The outbox is append-only, so the `ack` stays as the record that the stop took
 effect. The directive stays in the inbox too, addressed to a generation no
