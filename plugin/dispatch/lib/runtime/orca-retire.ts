@@ -71,6 +71,7 @@ async function retireUnlocked(
   )
     return {
       ok: false,
+      refused: true,
       detail: `${target.path}: no readable matching workspace, comment and unread mark; nothing removed`,
     };
   const comment = worktree.comment;
@@ -78,6 +79,7 @@ async function retireUnlocked(
   if (comment !== expected.comment || unread !== expected.unread)
     return {
       ok: false,
+      refused: comment !== expected.comment,
       detail: `${target.path}: its comment or unread mark changed since the tick read it; nothing removed`,
     };
   if (remaining() <= 0)
@@ -92,7 +94,11 @@ async function retireUnlocked(
     remaining,
   );
   if (safe !== null)
-    return { ok: false, detail: `${target.path}: ${safe}; nothing removed` };
+    return {
+      ok: false,
+      refused: true,
+      detail: `${target.path}: ${safe}; nothing removed`,
+    };
   if (remaining() <= 0)
     return {
       ok: false,

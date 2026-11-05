@@ -267,6 +267,52 @@ describe("jig dispatch --apply retires the notices workspace", () => {
     expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
   });
 
+  for (const uncertainty of ["withheld", "unplaced", "out-of-scope"])
+    it(`keeps a lasting cause whose target is ${uncertainty}`, async () => {
+      const w = fixture();
+      const path = await opened(w);
+      const row = psRows(w).find((r) => r.path === path);
+      if (!row) throw new Error("missing workspace");
+      const child = join(w.root, "uncertain-retirement.ts");
+      writeFileSync(
+        child,
+        `
+        import { retireNotices } from ${JSON.stringify(new URL("../lib/actions/retire-notices.ts", import.meta.url).pathname)};
+        const report = { records: [], unplaced: ${JSON.stringify(uncertainty === "unplaced" ? [{ target: "PR #8" }] : [])}, withheld: ${JSON.stringify(uncertainty === "withheld" ? ["PR #8"] : [])}, inScope: ${JSON.stringify(uncertainty === "out-of-scope" ? [] : [8])} };
+        await retireNotices({ machine: { runtimeTimeoutMs: 5000 }, runtime: { retire: async () => ({ ok: true, detail: "removed" }) } }, report, { repo: "${SLUG}", workspace: ${JSON.stringify({ ...row, id: `repo-1::${path}`, agents: [], unverifiableTerminals: 0 })}, takesComment: true, written: new Set(), causes: [], records: [{ key: "drifting:8", target: "PR #8", workspace: ${JSON.stringify(path)}, lasting: true }], lingerMs: 0, nowMs: Date.now(), root: ${JSON.stringify(dispatchState(w))} });
+        console.log(JSON.stringify(report.noticesWorkspace));
+      `,
+      );
+      const result = await w.dispatch([], child);
+      expectSpawnExit(result, 0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        outcome: "kept",
+        detail: expect.stringContaining("still has its record"),
+      });
+    });
+
+  for (const unread of [undefined, null, "false"])
+    it(`restarts linger after an unknown listed unread mark ${String(unread)}`, async () => {
+      const w = fixture();
+      const path = await opened(w);
+      read(w, path);
+      await tick(w);
+      const ps = JSON.parse(
+        readFileSync(join(w.dir, "orca-ps.json"), "utf8"),
+      ) as { worktrees: Array<{ path: string; unread?: unknown }> };
+      const row = ps.worktrees.find((r) => r.path === path);
+      if (!row) throw new Error("missing workspace");
+      row.unread = unread;
+      writeFileSync(join(w.dir, "orca-ps.json"), JSON.stringify(ps));
+      await tick(w);
+      backdate(w, 61 * 60_000);
+      read(w, path);
+      expect(outcome(await tick(w))?.detail).toContain(
+        "dispatch.notices_linger",
+      );
+      expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
+    });
+
   for (const change of [
     { agents: [{ paneKey: "tab:pane", state: "running" }] },
     { unverifiableTerminalCount: 1 },
@@ -277,7 +323,7 @@ describe("jig dispatch --apply retires the notices workspace", () => {
       const path = await opened(w);
       read(w, path);
       writeFileSync(join(w.dir, "orca-on-show.json"), JSON.stringify(change));
-      expect(outcome(await tick(w))?.outcome).toBe("kept");
+      expect(outcome(await tick(w))?.outcome).toBe("refused");
       expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
     });
 
@@ -297,7 +343,7 @@ describe("jig dispatch --apply retires the notices workspace", () => {
           isUnread: unread,
         }),
       );
-      expect(outcome(await tick(w))?.outcome).toBe("kept");
+      expect(outcome(await tick(w))?.outcome).toBe("refused");
       expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
     });
 
@@ -306,7 +352,7 @@ describe("jig dispatch --apply retires the notices workspace", () => {
     const path = await opened(w);
     read(w, path);
     writeFileSync(join(w.dir, "orca-show-switch"), "");
-    expect(outcome(await tick(w))?.outcome).toBe("kept");
+    expect(outcome(await tick(w))?.outcome).toBe("refused");
     expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
   });
 
@@ -327,7 +373,7 @@ describe("jig dispatch --apply retires the notices workspace", () => {
         }),
       );
       writeFileSync(join(w.dir, "orca-on-show.json"), JSON.stringify(change));
-      expect(outcome(await tick(w))?.outcome).toBe("kept");
+      expect(outcome(await tick(w))?.outcome).toBe("refused");
       expect(orcaCalls(w, "worktree", "rm")).toEqual([]);
     });
 

@@ -46,7 +46,8 @@ export interface Workspace {
    */
   unverifiableTerminals: number;
   comment: string;
-  unread: boolean;
+  /** Null when the runtime did not report a boolean unread mark. */
+  unread: boolean | null;
   /** The name the runtime shows for the workspace now; `""` when it reports none. */
   name: string;
 }
@@ -93,6 +94,8 @@ export interface RuntimeReceipt {
   workspace?: { id: string; path: string };
   /** The call ran past its deadline: its answer is lost, not a refusal. */
   lost?: boolean;
+  /** For `retire`: a safety check found work or identity it cannot authorize removing. */
+  refused?: boolean;
   /** For `notify`: the target's comment as the runtime reads it back after the write. */
   comment?: string;
 }

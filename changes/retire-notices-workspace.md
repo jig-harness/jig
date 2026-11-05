@@ -12,4 +12,6 @@ release: minor
   commit of a person's is left in place and reported. A new notices
   workspace opens with its terminal closed, so the card holds only its
   message. The next message that needs one opens it again; nothing already
-  sent is sent twice.
+  sent is sent twice. Unknown unread marks reset the read linger, and causes
+  whose targets could not be observed keep their unread notice. Safety
+  refusals found during the final runtime read are reported as refused.

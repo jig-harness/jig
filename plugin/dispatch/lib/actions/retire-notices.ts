@@ -23,9 +23,9 @@
  * sends a cause again.
  */
 import type { Database } from "bun:sqlite";
-import { carries } from "../notices.ts";
+import { carries, unobservedTarget } from "../notices.ts";
 import { retirementCheckoutVeto } from "../retire-checkout.ts";
-import type { Workspace } from "../runtime/port.ts";
+import type { RuntimeReceipt, Workspace } from "../runtime/port.ts";
 import { stateDb } from "../state.ts";
 import type { RepoReport, RetireOutcome } from "../types.ts";
 import { type ApplyState, enforcedDeadlineMs, outOfTime } from "./launch.ts";
@@ -43,7 +43,12 @@ export interface RetireInput {
   /** The keys of every cause this tick names. */
   causes: readonly string[];
   /** The suppression records left after `prune`, by the workspace each went to. */
-  records: ReadonlyArray<{ key: string; workspace: string; lasting: boolean }>;
+  records: ReadonlyArray<{
+    key: string;
+    target: string;
+    workspace: string;
+    lasting: boolean;
+  }>;
   lingerMs: number;
   nowMs: number;
   root: string;
@@ -86,7 +91,11 @@ function standing(report: RepoReport, input: RetireInput): string | null {
     return "the tick did not read every record whole";
   const named = input.causes.find((k) => carries(w.comment, k));
   if (named !== undefined) return `${named} still stands`;
-  const kept = input.records.find((r) => r.workspace === w.path && !r.lasting);
+  const kept = input.records.find(
+    (r) =>
+      r.workspace === w.path &&
+      (!r.lasting || unobservedTarget(report, r.target)),
+  );
   return kept === undefined ? null : `${kept.key} still has its record`;
 }
 
@@ -113,6 +122,13 @@ function decide(
       };
 }
 
+/** Preserve the runtime's safety verdict separately from a normal keep or lost call. */
+function receiptOutcome(receipt: RuntimeReceipt): RetireOutcome["outcome"] {
+  if (receipt.ok) return "retired";
+  if (receipt.lost === true) return "lost";
+  return receipt.refused === true ? "refused" : "kept";
+}
+
 /** `--apply` for the repository's notices workspace; nothing when it has none. */
 export async function retireNotices(
   state: ApplyState,
@@ -126,7 +142,15 @@ export async function retireNotices(
     clearRead(db, repo);
     return;
   }
-  if (w.unread) clearRead(db, repo);
+  if (w.unread !== false) clearRead(db, repo);
+  if (w.unread === null) {
+    report.noticesWorkspace = {
+      workspace: w.path,
+      outcome: "refused",
+      detail: "its unread mark is unknown; left for a person",
+    };
+    return;
+  }
   const outcome = (
     o: RetireOutcome["outcome"],
     detail: string,
@@ -173,18 +197,21 @@ export async function retireNotices(
       { comment: w.comment, unread: w.unread, branch: w.branch },
       Math.min(state.machine.runtimeTimeoutMs, remaining()),
     )
-    .catch((error: unknown) => ({
-      ok: false,
-      lost: true,
-      detail: error instanceof Error ? error.message : String(error),
-    }));
+    .catch(
+      (error: unknown): RuntimeReceipt => ({
+        ok: false,
+        lost: true,
+        detail: error instanceof Error ? error.message : String(error),
+      }),
+    );
   // A refused or lost removal may have observed an unread card after the tick.
   // Start a fresh linger rather than reusing a time no longer vouched for.
   clearRead(db, repo);
   if (receipt.ok) {
     db.query("DELETE FROM notices_content WHERE workspace = ?").run(w.path);
   }
-  report.noticesWorkspace = receipt.ok
-    ? outcome("retired", `${decided.remove}: ${receipt.detail}`)
-    : outcome(receipt.lost === true ? "lost" : "kept", receipt.detail);
+  report.noticesWorkspace = outcome(
+    receiptOutcome(receipt),
+    receipt.ok ? `${decided.remove}: ${receipt.detail}` : receipt.detail,
+  );
 }

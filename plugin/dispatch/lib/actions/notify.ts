@@ -44,7 +44,7 @@ import {
   type LogRow,
   type OutcomeClass,
 } from "../log.ts";
-import { carries, holdsNotice } from "../notices.ts";
+import { carries, holdsNotice, unobservedTarget } from "../notices.ts";
 import {
   keepMarks,
   MAX_COMMENT,
@@ -241,7 +241,7 @@ export function fitting(
   workspace: Workspace,
   causes: Cause[],
 ): { send: Cause[]; later: Cause[] } {
-  const unread = workspace.unread && workspace.comment.trim() !== "";
+  const unread = workspace.unread !== false && workspace.comment.trim() !== "";
   // A read comment is replaced, behind the dispatched marks it keeps.
   let used = unread
     ? workspace.comment.length
@@ -329,10 +329,10 @@ async function sendTo(
   if (send.length === 0) return out;
   const message = messageFor(send);
   const expected =
-    workspace.unread && withoutMarks(workspace.comment) !== ""
+    workspace.unread !== false && withoutMarks(workspace.comment) !== ""
       ? `${workspace.comment}\n\n${message}`
       : keepMarks(workspace.comment, message);
-  const known = !workspace.unread || ownsComment(workspace, root);
+  const known = workspace.unread === false || ownsComment(workspace, root);
   const receipt = await deliver(state, workspace, message);
   if (known && receipt.ok && receipt.comment === expected)
     recordComment(workspace, expected, root, repo);
@@ -379,24 +379,9 @@ function prune(
   root: string,
 ): void {
   if (!report.records.every((r) => r.ok)) return;
-  const unplaced = new Set([
-    ...report.unplaced.map((u) => u.target),
-    ...(report.withheld ?? []),
-  ]);
-  // Under `only_labeled` a pull request not observed in scope was never
-  // read for a ledger, so the cause's absence says nothing: its record stands.
-  const inScope =
-    report.inScope === undefined
-      ? null
-      : new Set(report.inScope.map((n) => `PR #${n}`));
-  const outside = (target: string): boolean =>
-    inScope !== null && /^PR #\d+$/.test(target) && !inScope.has(target);
   const gone = [...sent.values()].filter(
     (s) =>
-      !keys.has(s.key) &&
-      !unplaced.has(s.target) &&
-      !outside(s.target) &&
-      !s.lasting,
+      !keys.has(s.key) && !unobservedTarget(report, s.target) && !s.lasting,
   );
   if (gone.length === 0) return;
   const db = stateDb(root);

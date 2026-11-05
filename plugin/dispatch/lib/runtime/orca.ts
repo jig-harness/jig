@@ -275,7 +275,7 @@ function workspaceOf(
     agents: listed ?? [],
     unverifiableTerminals: unverifiable(row, listed),
     comment: text(row.comment),
-    unread: row.unread === true,
+    unread: typeof row.unread === "boolean" ? row.unread : null,
     name: text(row.displayName),
   };
 }
