@@ -147,7 +147,7 @@ interface Ran {
   signal: string | null;
   /** The stage's last `Question:` line, where the wrapper kept it. */
   said?: string;
-  /** Windows only: the pass's tree could not be shown to have ended, so its slot stays held. */
+  /** Windows only: the pass's tree could not be shown to have ended, so no exit is published. */
   unconfirmed?: true;
 }
 
@@ -471,9 +471,9 @@ async function finishRun(
 ): Promise<number> {
   const { code, signal } = ran;
   if (ran.unconfirmed) {
-    // The pass's processes may still run: the record keeps its slot rather than admit a second run beside them.
+    // The pass's processes may still run, so no exit is published. The wrapper then exits, and a record whose wrapper is gone no longer holds its slot: the limit design/dark-factory-dispatch.md records for a Windows tree.
     console.error(
-      "jig dispatch run: the pass's process tree could not be shown to have ended; its slot stays held",
+      "jig dispatch run: the pass's process tree could not be shown to have ended; no exit is recorded",
     );
     return code ?? 1;
   }

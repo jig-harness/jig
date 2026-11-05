@@ -815,6 +815,19 @@ account; binding the pass through the account's own configuration
 directory is what lets the adapter attribute the wall to that account,
 which a directory shared between accounts could not.
 
+A pass that outruns its deadline is ended with everything it started. On
+POSIX the wrapper leads the pass's own process group and signals the group.
+Windows has no process group to signal, so the wrapper samples the pass's
+descendants while their parent links exist, keeps what it recorded after the
+pass exits, and ends them by identity. That cleanup is best-effort, and
+two limits stand: a descendant started and parented between two samples can
+survive a pass, and when the tree cannot be shown to have ended the wrapper
+still exits, so the record's slot is released while a survivor may run on in the
+workspace. Closing them takes a persisted "cleanup uncertain" launch state that
+admission holds until reconciliation or a person's clearance, or ownership at
+creation through a Windows job object; both are separate work, and the first
+waits on the authenticated Windows smoke.
+
 ### What it never does
 
 - **Merge**, or arm a merge: a person merges
