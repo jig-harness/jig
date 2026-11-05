@@ -1609,6 +1609,13 @@ make, use the entry's term instead.
   that the registry does not hold. Review keeps arbitrary file-backed
   records and dynamically assembled names in the inventory
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Launch guard record** — the files `jig gc` and Jig's plugin for Orca
+  leave each other under `~/.local/state/jig/orca-guard/`: gc's admission
+  for a worktree it is removing, the plugin's marker for each agent launch
+  it lets through, and the plugin's heartbeat. The plugin refuses a launch
+  into an admitted worktree; gc keeps a worktree with a recent marker, and
+  trusts the guard only while the heartbeat is fresh
+  ([plugin/gc/README.md](plugin/gc/README.md#the-launch-guard-record)).
 - **Forge claim** — a comment a script posts on a pull request to say "this
   is mine to do" (a driver taking over a drive, a run following up a merge,
   a driver announcing a head safe to merge), carrying a *record envelope*

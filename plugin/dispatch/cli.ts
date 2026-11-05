@@ -13,7 +13,8 @@
  * claims a merged pull request's follow-up, checks its claim and marks it
  * done; `jig dispatch dashboard` serves one page over the outcome log while
  * it runs; `jig dispatch log` prints the outcome log as text; `jig dispatch
- * clear` removes a launch record only a person can settle.
+ * line --json` prints the newest tick's line as the dashboard serves it;
+ * `jig dispatch clear` removes a launch record only a person can settle.
  */
 import { basename, dirname } from "node:path";
 import { consumerRoot } from "../shared/consumer.ts";
@@ -24,6 +25,7 @@ import {
   choice,
   command,
   constant,
+  flag,
   type InferValue,
   map,
   message,
@@ -41,6 +43,7 @@ import { DEFAULT_PORT, dashboardMain } from "./dashboard.ts";
 import { clearMain } from "./clear.ts";
 import { installDispatch } from "./install.ts";
 import { StateVersionError } from "./lib/state.ts";
+import { lineMain } from "./line-command.ts";
 import { logMain } from "./log-command.ts";
 import {
   duration,
@@ -230,6 +233,20 @@ const log = command(
   },
 );
 
+const line = command(
+  "line",
+  object({
+    action: constant("line"),
+    json: flag("--json", {
+      description: message`Print the line as JSON, the one form it has.`,
+    }),
+  }),
+  {
+    brief: message`Print the newest tick's line as JSON, as the dashboard's GET /state answers.`,
+    description: message`Reads the state database and prints one JSON document, the answer the dashboard's GET /state gives: {"ok":true,"value":{now, timeZone, plugin, schema, line}}, its line versioned by the line's own version field. It takes no lock and never creates the database; with no database or no line yet, line is null and it exits 0. A line that cannot be read exits 1 with one line on standard error.`,
+  },
+);
+
 const clear = command(
   "clear",
   object({
@@ -277,7 +294,7 @@ const dashboard = command(
 
 /**
  * `jig dispatch`: one tick by default, with `result`, `marker`, `dashboard`,
- * `log` and `clear` as its subcommands. Its `install` and `receipts`
+ * `log`, `line` and `clear` as its subcommands. Its `install` and `receipts`
  * subcommands do what the lifecycle verbs `jig install dispatch` and
  * `jig receipts dispatch` do, and stay for the command lines that use them,
  * hidden from help.
@@ -293,6 +310,7 @@ const dispatch = (wholeMinutes: boolean) =>
         marker,
         dashboard,
         log,
+        line,
         clear,
         tick,
       ),
@@ -401,6 +419,7 @@ function subcommandMain(
       jsonl: args.jsonl,
       ...(args.since === undefined ? {} : { since: args.since }),
     });
+  if (args.action === "line") return lineMain();
   if (args.action === "clear") return clearMain(args.record);
   if (args.action === "dashboard")
     return dashboardMain(

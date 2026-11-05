@@ -237,11 +237,12 @@ jig dispatch [--apply] [--repo <path>]... [--followup-since <date>] [--json]
 ```
 
 `jig dispatch --help` lists its options, and `jig dispatch dashboard --help`,
-`jig dispatch log --help` and `jig dispatch clear --help` list those of each
-subcommand. For each repository (`--repo`, else the
-machine file's, else the current one) it prints every action it would take,
-each with the record that wants it and the evidence: a pickup for an item
-assigned to the repository's factory identity, a re-arm for a drive its
+`jig dispatch log --help`, `jig dispatch line --help` and
+`jig dispatch clear --help` list those of each subcommand. For each
+repository (`--repo`, else the machine file's, else the current one) it
+prints every action it would take, each with the record that wants it and
+the evidence: a pickup for an item assigned to the repository's factory
+identity, a re-arm for a drive its
 ledger shows stopped on a mechanical state (a usage limit, an answered
 park), a re-drive for a converged drive gone stale (its pull request now
 conflicts with its base, or its head moved past the head the drive
@@ -677,6 +678,34 @@ a parked decision a person can draft the reply, which stays in that browser
 only; Copy answer then takes `answer <key>: <reply>`, ready to paste as a
 comment on the pull request. When the server stops answering, it keeps what it
 last read and says when that was.
+
+**The line as JSON.** A program beside the dispatcher (an editor's plugin, a
+status bar) reads what the newest tick found without opening the state
+database:
+
+```sh
+bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch line --json
+```
+
+It prints one JSON document, the answer the dashboard's `GET /state` gives
+for the same database, from the same read:
+`{"ok":true,"value":{"now":…,"timeZone":…,"plugin":…,"schema":…,"line":…}}`.
+That answer is the contract: `line` is the tick's snapshot
+(`LineSnapshot` in `dispatch/lib/dashboard-contract.ts`), versioned by its own
+`version` field, which a reader checks before it trusts the rest. The command
+takes no lock, so it runs while a tick does, and never creates the database.
+Its exit codes:
+
+- `0`: the answer is printed. Its `line` is `null` when no tick has written
+  one yet, the database not existing included.
+- `1`: the stored line cannot be read (it is not JSON, is in a form this
+  plugin does not read, or the database is a newer plugin's that requires a
+  newer reader). Nothing is
+  printed on standard output, and one line on standard error names the code,
+  `line-unreadable`, and the reason. The next tick writes a line this plugin
+  reads; a newer plugin's database that requires a newer reader needs this plugin
+  updated first; one a reader at this version can still read is read.
+- `2`: the command line was refused.
 
 **When a class recurs.** The tick tunes none of its own dials. A class that
 keeps showing on the dashboard (quota walls at the same hour, pickups that
