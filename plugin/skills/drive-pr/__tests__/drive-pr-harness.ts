@@ -1441,11 +1441,19 @@ fi
 # EXACTLY — both strings are public — from an author GitHub does not vouch for.
 if [ -f "$F/race-after-post" ] && [ -f "$F/posted-seq" ] \\
    && [ "$announce_sweep" -eq 1 ]; then
+  # $DRIVE_PR_MALFORMED_LATE models a listing that lags: the malformed
+  # announcement is absent from the first post-write sweep and listed from the
+  # second on, which is the read-back's.
+  late_n=0
+  if [ -n "\${DRIVE_PR_MALFORMED_LATE:-}" ]; then
+    late_n=$(( $(cat "$F/late-n" 2>/dev/null || echo 0) + 1 ))
+    echo "$late_n" > "$F/late-n"
+  fi
   jq -nc --arg m "\${DRIVE_PR_MERGE_MARKER_FIXTURE:-}" \\
          --arg o "\${DRIVE_PR_ANNOUNCE_OPENER_FIXTURE:-}" \\
          --arg quoter "\${DRIVE_PR_QUOTER:-}" \\
          --arg forger "\${DRIVE_PR_FORGER:-}" \\
-         --arg bad "\${DRIVE_PR_MALFORMED:-}" \\
+         --arg bad "$([ -n "\${DRIVE_PR_MALFORMED:-}" ] && echo 1; [ "$late_n" -ge 2 ] && echo 1)" \\
          --argjson rid "\${DRIVE_PR_RIVAL_ID:-1}" \\
          --argjson ours "$(( \${DRIVE_PR_POSTED_ID_BASE:-9000} + $(< "$F/posted-seq") ))" \\
     '[{id: $rid, body: ($o + "\\n\\nthe rival driver got there first\\n\\n" + $m),

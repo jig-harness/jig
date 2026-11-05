@@ -377,6 +377,17 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("naming no head");
   });
 
+  it("withdraws its own post and refuses when a malformed announcement is listed only by the read-back", async () => {
+    const r = await announce(CONVERGED, false, {
+      raceAfterPost: true,
+      postedIdBase: "100",
+      env: { DRIVE_PR_MALFORMED_LATE: "1" },
+    });
+    expect(r).toMatchObject({ exitCode: 1, posted: true });
+    expect(r.deleted).toContain("101");
+    expect(r.stderr).toContain("read-back");
+  });
+
   it("refuses to announce a converged PR that is still a draft", async () => {
     // CONVERGED is a claim about the posting reviewer,
     // which reviews drafts — it says nothing about CodeRabbit, which refuses

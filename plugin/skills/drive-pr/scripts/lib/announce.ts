@@ -38,6 +38,7 @@ import {
   type ClaimKind,
   type ClaimRecord,
   type ClaimTarget,
+  type ListedClaim,
   list,
   type Posted,
   publish,
@@ -134,8 +135,14 @@ export async function announcements(
   pr: string,
 ): Promise<Announcement[] | null> {
   const listing = await list(onPr(pr), MERGE_READY);
-  if (!listing.ok) return null;
-  return listing.value.flatMap((c): Announcement[] => {
+  return listing.ok ? announcementsOf(listing.value) : null;
+}
+
+/** The trusted announcements of a listing, as `announcements` reads them. */
+export function announcementsOf(
+  listing: readonly ListedClaim[],
+): Announcement[] {
+  return listing.flatMap((c): Announcement[] => {
     if (!c.trusted) return [];
     if (!c.record.ok) {
       return [{ id: c.id, head: "", unreadable: c.record.failure.reason }];

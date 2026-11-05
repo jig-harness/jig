@@ -34,6 +34,7 @@ import {
   type Announcement,
   announcedIds,
   announcements,
+  announcementsOf,
   headMarker,
   OPENER,
   postAnnouncement,
@@ -1112,6 +1113,19 @@ ${marker}`;
   if (back.ok && back.value.verdict === "lost") {
     console.error(
       `announce-merge-ready: posted, but ${back.value.reason}, so whether an earlier announcement of ${head} stands is unknown — withdrawing this one; re-run.`,
+    );
+    await withdrawPosted();
+    return 1;
+  }
+  // The listing the weighing below used can differ from the sweep above (a
+  // lagging page, a comment that landed between the two), so unreadable
+  // trusted announcements are looked for in it too.
+  const backNote = back.ok
+    ? unreadableNote(announcementsOf(back.value.listing))
+    : null;
+  if (backNote !== null) {
+    console.error(
+      `announce-merge-ready: posted, but announcements naming no head stand in the read-back: ${backNote} — withdrawing this announcement of ${head}; remove or repair them by hand.`,
     );
     await withdrawPosted();
     return 1;
