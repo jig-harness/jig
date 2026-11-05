@@ -142,7 +142,8 @@ development and shipped as a version.
 | [Resource collection](#resource-collection-jig-gc) | `gc/` | none | its receipts (`jig receipts gc`) | a person; a Jig change |
 | [Dispatcher's tick](#the-dispatchers-tick) | `dispatch/tick.ts`, `dispatch/run.ts` | the sessions it starts | its receipt; the morning report | a person; a Jig change |
 | [Dispatcher's records](#the-dispatchers-records-receipts-outcome-log-dashboard-notifications) | `dispatch/receipts.ts`, `dispatch/lib/log.ts`, `dispatch/dashboard.ts`, `dispatch/lib/notices.ts` | a dispatched session records its result | the dashboard; the morning report | a person, through `/jig:reflect` |
-| [Follow-up marker](#the-follow-up-marker) | `dispatch/marker.ts`, `dispatch/lib/followup-marker.ts` | the follow-up session | the follow-up session (exit 1, 2 or 3) | a person deletes or marks the marker |
+| [Follow-up marker](#the-follow-up-marker) | `dispatch/marker.ts`, `dispatch/lib/followup-marker.ts`, `shared/records/shared-forge.ts` | the follow-up session | the follow-up session (exit 1, 2 or 3) | a person deletes or marks the marker |
+| [Shared records](#shared-records-several-hosts-on-one-repository) | `shared/records/shared.ts`, `shared/records/shared-forge.ts`, `dispatch/lib/shared-launches.ts` | none | the tick's report and receipt | a person (a claim to delete, an `owner` to set); a Jig change |
 | [The drive](#the-drive-driver-locks-leases-ledger) | `skills/drive-pr/scripts/drive.ts` and its libraries | drive passes; the session that arms it | its exit state; the dispatcher; the morning report | the dispatcher re-arms mechanical stops; a person the rest |
 | [Steering a drive](#steering-a-running-drive-the-mailbox-and-the-ci-hold) | `skills/drive-pr/scripts/mailbox.ts`, `skills/drive-pr/scripts/ci-hold.ts` | the session that armed the drive; a person | `guarded-push.ts`'s exit 17; the drive's exit 18, 19 or 1 | the sender resumes the directive; a person removes a leftover label |
 | [Review threads](#review-threads-and-the-arbiter) | `skills/resolve-review-comments/scripts/` | drive pass; the arbiter | the pass (non-zero exit), then `drive.ts` | the next pass, or a person on a park |
@@ -275,7 +276,7 @@ development and shipped as a version.
   the session to the admitted account: for a drive it starts
   `skills/drive-pr/scripts/drive.ts`, whose passes run with no person at a
   terminal, and writes the account's wall on a usage-limit
-  stop (exit 16); for a follow-up it starts the account's agent as a
+  stop (`QUOTA_PARKED`, exit 16); for a follow-up it starts the account's agent as a
   headless pass on the follow-up command, with the host's `drive.pass_args`
   and under the pass deadline; for a pickup it starts the account's agent
   as an interactive session on `/jig:do-item <key>`. It records the exit
@@ -295,7 +296,12 @@ development and shipped as a version.
   and each tab it opens as the dispatcher's, and keeps the
   [dispatched mark](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   in the workspace's comment and on the launch record, by one convention
-  every runtime takes (`dispatch/lib/runtime/port.ts`). Where a repository turns
+  every runtime takes (`dispatch/lib/runtime/port.ts`). The wrapper, the
+  launch records, the outcome log and the ledger classifier read every exit
+  of a drive by its name in drive-pr's terminal-state registry
+  (`skills/drive-pr/scripts/lib/status/terminal-states.ts`'s `DRIVE_EXIT` and
+  the sets beside it), never as a number of their own, and the registry's
+  consistency test fails a dispatcher file that restates one. Where a repository turns
   [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   on, the tick reads the pull requests' labels with them, reads `drive`
   and `hold` as a person's commands, and last sets each managed pull
@@ -356,12 +362,15 @@ development and shipped as a version.
 - **Deterministic.** The
   [follow-up marker](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), a
   hidden-marker comment on a merged pull request, claims its follow-up
-  (`dispatch/lib/followup-marker.ts`). It is a
+  (`dispatch/lib/followup-marker.ts`). It is the follow-up stage's
+  [shared record](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+  written and read through `shared/records/shared-forge.ts`, and a
   [forge claim](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) of
   the shared module `shared/records/forge-claims.ts`, which posts it, reads
   it back (again a few times while the listing does not show it yet) and
   decides it by the claims' one rule. The tick posts one naming its launch
-  record before it starts the session. A run by hand uses
+  record and its host before it starts the session, and writes the
+  follow-up's answer onto it once that record ends. A run by hand uses
   `jig dispatch marker claim`, `check` before each act outside the pull
   request, and `done` at the end (`dispatch/marker.ts`). A marker counts only
   when the dispatcher's own login or an owner, member or collaborator wrote
@@ -378,6 +387,37 @@ development and shipped as a version.
   failed follow-up is notified once and never started again; a person
   deletes its marker to have it run again.
 
+### Shared records: several hosts on one repository
+
+- **Deterministic.** A repository may be dispatched by several hosts, each
+  listing it in its own machine file. Before a drive's launch the tick posts
+  a launch claim on the pull request beside its launch record, through the
+  `SharedRecords` interface (`shared/records/shared.ts`), whose forge
+  implementation (`shared/records/shared-forge.ts`) posts it as a
+  [forge claim](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on
+  the attempt after the latest and reads it back; the follow-up marker is the
+  follow-up's. The host that made a claim writes its launch's end onto it at
+  its next `--apply` run (`dispatch/lib/shared-launches.ts`). Every run reads
+  every host's claims beside its own launch records, and the receipt records
+  each read and write and the forge budget left. Refuses: a launch another
+  host's current claim with no end holds (reported as held by that host), a
+  launch whose claim loses its attempt (withdrawn, the launch record given
+  back), and a pull request whose claims do not read (unplaced). A takeover
+  of a driver another host started needs its ledger's heartbeat past the
+  lease window, never a claim alone. One host owns each repository
+  (`owner` in the machine file): only it notifies, writes the dispatch labels
+  and writes outcome-log rows for what it did not launch.
+- **Reasoned.** None. The claims coordinate launches and never authorize an
+  act a person takes.
+- **Boundary.** The forge offers no conditional create for a comment, so two
+  hosts whose read-backs both lag can each read themselves the holder of one
+  launch; the stage's own refusal (the drive's lock and ledger claim,
+  `do-item`'s claim, a follow-up's re-check before each act) is the
+  backstop.
+- **If it fails.** A claim whose host never writes its end holds its pull
+  request until a person deletes the comment; a forge that cannot be read
+  leaves the pull request unplaced for the tick. A defect is a Jig change.
+
 ### The drive: driver, locks, leases, ledger
 
 - **Deterministic.** `skills/drive-pr/scripts/drive.ts` is the loop
@@ -386,9 +426,12 @@ development and shipped as a version.
   with its exit code. Its machine state lives in one SQLite database per
   machine, `~/.local/state/jig/drive-pr/state.sqlite`
   (`skills/drive-pr/scripts/lib/state/db.ts`, opened through
-  `shared/records/db.ts`), every row keyed by the clone: rounds, the
-  verified head, parked and held items as one JSON document per pull
-  request, and the locks, [leases](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  `shared/records/db.ts`), every row keyed by the clone: the verified head,
+  parked and held items as one JSON document per pull request, the review
+  round record (`review_rounds`, `skills/drive-pr/scripts/lib/state/review-rounds.ts`),
+  one row per head counted, which a hand-driven review loop counts into too,
+  so the drive's rounds, its ledger and `current-round.ts` read one number, and
+  the locks, [leases](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   and claims as rows. A lock or lease names its holder by the shared
   [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   (`shared/liveness.ts`), whose host id is compared before the host name, so
@@ -458,7 +501,16 @@ development and shipped as a version.
   where the repository runs it last in its pre-push hook, catches a hold
   sent while that hook runs; `pause` holds the driver at its next check,
   and ends it with exit 19 after `DRIVE_PR_PAUSE_MAX_SEC` (30 minutes by
-  default); `stop` ends it at the next round boundary with exit 18. An
+  default); `stop` ends it at the next round boundary with exit 18. A `stop`
+  may name a driver generation, the number each driver draws at its start,
+  prints and carries in its lock's claim (`skills/drive-pr/scripts/lib/state/mailbox-stop.ts`):
+  it ends that driver alone, and a later driver ignores it; a `stop` naming
+  none ends every later driver in the tree until `resume --target stop`.
+  `skills/drive-pr/scripts/drives.ts --stop` is a send of the same directive,
+  addressed to the live driver's generation and marked `now`: the driver
+  reads its mailbox for it every quarter second and cancels its active pass
+  at once. The driver appends an `ack` of each directive it acted on to the
+  outbox, so a sender sees it took effect. An
   unreadable mailbox stops the drive with exit 1. The
   [CI hold](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a label
   (`ci.hold_label`) the drive puts on the pull request between rounds so
@@ -470,8 +522,10 @@ development and shipped as a version.
   directive or a note; a pass may read the notes (`mailbox.ts check`), and
   they never change what a round does. No reasoned part touches the CI hold
   label.
-- **If it fails.** The drive's exit names the directive. Whoever sent it
-  resumes it (`resume --target <directive>`) before the drive is re-armed. A
+- **If it fails.** The drive's exit names the directive, and the outbox its
+  `ack`. A `pause`, or a `stop` naming no generation, is resumed by whoever
+  sent it (`resume --target <directive>`) before the drive is re-armed; a
+  `stop` addressed to one generation needs nothing. A
   drive that stopped can leave the CI hold label behind; a person removes
   it by hand.
 

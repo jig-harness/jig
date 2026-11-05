@@ -14,8 +14,10 @@
  *    the `impliedBy` closure) match one of them;
  * 3. each group of two or more is ordered by closeness to merge, read from
  *    the ledger and the forge, never judged: converged and mergeable first,
- *    then a drive in progress (a running driver, or this machine's launch
- *    record still holding it), then the fewest unresolved review threads,
+ *    then a drive in progress (a running driver, this machine's launch
+ *    record still holding it, or another host's launch claim with no end),
+ *    so every host dispatching the repository orders it alike, then the
+ *    fewest unresolved review threads,
  *    then the most rounds, then the oldest (by its creation, then its
  *    number), so the order is the same at every tick until a fact changes;
  * 4. the first of each group leads it; a pull request in two groups is held
@@ -30,6 +32,7 @@
  * on it, and it is read again at the next tick. The tick never adds an
  * area: what is serialized is the catalog's to say, through a person.
  */
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   loadCatalogText,
   matchesGlob,
@@ -108,6 +111,8 @@ export interface ContentionInput {
   created: ReadonlyMap<number, string>;
   /** This machine's launch records for the repository. */
   launches: readonly ReadRecord[];
+  /** The pull requests another host's launch claim holds: a drive in progress there. */
+  heldElsewhere?: ReadonlySet<number>;
 }
 
 const target = (n: number) => `PR #${n}`;
@@ -131,7 +136,7 @@ interface Member {
   pr: DrivenPr;
   /** Its ledger stopped converged at the head the drive verified, and the forge reports it mergeable. */
   mergeable: boolean;
-  /** A driver runs on it, or this machine's launch record still holds it. */
+  /** A driver runs on it, or this machine's launch record or another host's launch claim still holds it. */
   driving: boolean;
   rounds: number;
   createdAt: string | null;
@@ -143,13 +148,14 @@ function memberOf(
   pr: DrivenPr,
   input: ContentionInput,
 ): Omit<Member, "threads"> {
-  const recordHolds = input.launches.some(
-    (r) => isDrive(r.record) && r.record.pr === pr.number && holds(r.state),
-  );
+  const recordHolds =
+    input.launches.some(
+      (r) => isDrive(r.record) && r.record.pr === pr.number && holds(r.state),
+    ) || input.heldElsewhere?.has(pr.number) === true;
   const round = pr.evidence.round;
   return {
     pr,
-    mergeable: pr.class === "done" && pr.evidence.exit === 0,
+    mergeable: pr.class === "done" && pr.evidence.exit === DRIVE_EXIT.CONVERGED,
     driving: pr.class === "driven" || pr.class === "silent" || recordHolds,
     rounds: typeof round === "number" ? round : 0,
     createdAt: input.created.get(pr.number) ?? null,

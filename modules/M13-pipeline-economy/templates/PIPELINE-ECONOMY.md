@@ -109,8 +109,10 @@ An event for any other label `<runs real CI | runs a mirror: the jobs above
 skip, the run takes a concurrency group of its own, and <the aggregator job>
 repeats the newest real run's result on the head, failing closed>`.
 
-Only results that started after the label's removal count. A driver that
-died leaves the label on: remove it by hand
+Only results that started after the label's removal count. The label saves
+CI and steers nothing: the driver adopts a label it did not add and removes
+it at convergence. A driver that died leaves the label on, and when no
+driver will run again, remove it by hand
 (`<gh pr edit <PR> --remove-label ci:hold>`); never rerun the held run, which
 replays the event that carried the label. Merge queue:
 `<how a queued pull request is released, or "no merge queue">`.

@@ -9,6 +9,7 @@ import type {
   NotifyOutcome,
   RepoReport,
   RetireOutcome,
+  SharedReport,
   SteerOutcome,
 } from "./types.ts";
 
@@ -72,8 +73,31 @@ function repoLines(r: RepoReport, apply: boolean): string[] {
     lines.push(`  unplaced ${u.target} (${u.record}): ${u.reason}`);
   for (const q of r.quiet)
     lines.push(`  ${q.class.padEnd(17)} ${q.target}: ${q.why}`);
-  lines.push(...labelLines(r.labels), ...serialLines(r.serialized));
+  lines.push(
+    ...labelLines(r.labels),
+    ...serialLines(r.serialized),
+    ...sharedLines(r.shared),
+  );
   return lines;
+}
+
+/** The shared records' part: which host owns the repository, and what sharing cost this tick. */
+function sharedLines(s: SharedReport | undefined): string[] {
+  if (s === undefined) return [];
+  const others = s.owners.length === 0 ? "" : s.owners.join(", ");
+  const owner = s.owner
+    ? `this host (${s.host}) owns it: its board, notifications, labels and history rows${others === "" ? "" : `; the claims of ${others} say they own it too, so set owner: false on every host but one`}`
+    : `another host owns it (${others === "" ? "none seen in a claim yet" : others}); this host (${s.host}, owner: false) launches through the shared records and writes none of the owner's records`;
+  const budget =
+    s.budget === null
+      ? ""
+      : "unreadable" in s.budget
+        ? `; the budget left does not read: ${s.budget.unreadable}`
+        : `; ${s.budget.remaining} of ${s.budget.limit} left until ${s.budget.resetAt}`;
+  return [
+    `  owner    ${owner}`,
+    `  shared   ${s.medium}: ${s.reads} read(s), ${s.writes} write(s)${budget}`,
+  ];
 }
 
 /** Serialization's part: each group in order with its leader, why an order cannot be told, and each hold. */

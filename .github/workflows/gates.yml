@@ -80,11 +80,11 @@ jobs:
     outputs:
       areas: ${{ steps.resolve.outputs.areas }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The resolver diffs against the merge base with the base branch.
           fetch-depth: 0
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
       - name: Resolve the changed files to areas
         id: resolve
         env:
@@ -105,12 +105,12 @@ jobs:
     # The gate set's 20 minutes and the website steps' 10.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The ratchet and fallow's audit compare against the merge base
           # with main, which a shallow checkout does not have.
           fetch-depth: 0
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
       # Built-ins only, so it runs before the install: an over-budget
       # instruction chain or skill listing fails in seconds, and a broken
       # install cannot keep the check from running.
@@ -131,7 +131,7 @@ jobs:
       - name: Fetch Claude Code for the plugin check
         env:
           # renovate: datasource=npm depName=@anthropic-ai/claude-code-linux-x64
-          CLAUDE_CODE_VERSION: 2.1.303
+          CLAUDE_CODE_VERSION: 2.1.316
         run: |
           set -euo pipefail
           dir="$RUNNER_TEMP/claude-code"
@@ -221,12 +221,12 @@ jobs:
     # A shard takes about a minute and a half.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The summary-findings tests position a reviewer against real commits
           # of this repository, which a shallow checkout does not have.
           fetch-depth: 0
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
       - name: Install locked dependencies, scripts off
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Check terminal states against their documentation

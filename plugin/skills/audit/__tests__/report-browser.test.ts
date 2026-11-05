@@ -958,7 +958,7 @@ describe("the guide", () => {
       }
     })()`);
     await page.evaluate("history.go(-30)");
-    await page.waitForFunction("location.hash === ''");
+    await page.waitForFunction("!location.hash && window.scrollY === 2400");
     await scrollSettled(page);
     expect(await page.evaluate(() => window.scrollY)).toBe(2400);
     await page.context().close();

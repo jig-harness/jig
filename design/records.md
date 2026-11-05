@@ -27,10 +27,16 @@ those forms (`scripts/check-records-registry.ts`), the drive ledger and the
 follow-up marker carrying the envelope, and the view by record,
 [plugin/RECORDS.md](../plugin/RECORDS.md); one identity and lease module,
 `plugin/shared/liveness.ts`; the machine's records in SQLite through
-`plugin/shared/records/db.ts`, the dispatcher's database and the drive's; and
-the forge-claims module (`plugin/shared/records/forge-claims.ts`).
-Why there is no daemon or bus is
+`plugin/shared/records/db.ts`, the dispatcher's database and the drive's; the forge-claims module
+(`plugin/shared/records/forge-claims.ts`); and the shared records a second
+host reads (`plugin/shared/records/shared.ts`, on the forge through
+`plugin/shared/records/shared-forge.ts`), with one owner host per
+repository. Why there is no daemon or bus is
 [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md).
+
+Built too is the dispatcher reading the drive's own records: its exit codes
+from the drive's terminal-state registry, one review round record, and one
+mailbox stop addressed to a driver generation.
 
 ## How it works
 
@@ -98,7 +104,8 @@ Git common directory): the drive state as a JSON column with its version,
 the locks (the store's per-PR lock, the driver locks, the remote-mutation
 lock, the tree-lease guard), the session and tree leases with the shared
 process identity and lease shape and a generation that only grows, the
-held-item and Ready-mark claims, the stop requests, and the driver record.
+held-item and Ready-mark claims, the review round record, and the driver
+record.
 A lock's release deletes its row, so nothing is left behind. The clone's
 state directory beside the database keeps what nothing queries: the driver
 log, the kept answers, the long pass notice and the arm output. The ledger
@@ -147,25 +154,82 @@ pull request's body keep their reread-and-retry write.
 
 ### Records a second host reads
 
-A `SharedRecords` interface says what a host publishes for another to read,
-forge-backed first: who holds a launch (its record, its claim and its
-host's digest), and whether a follow-up ended and how. A second host then
-sees who holds a pull request's launch before it starts its own, and does
-not start a follow-up another host finished. One host owns each
-repository's board, notifications and history rows, so two hosts never
-notify a person twice or write the same outcome twice. A second
-implementation, a small control-plane service, joins behind the same
-interface when [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)'s
-conditions for reopening hold.
+The `SharedRecords` interface (`plugin/shared/records/shared.ts`) is what a
+dispatcher reads and writes through so that any host dispatching the same
+repository sees it: claim a launch for a key (a stage and its pull
+request, with the launch record's id and the claiming host), re-check the
+claim before an act, write the launch's end onto its own claim (ended with
+the stage's answer, or died), list the claims and their ends for a pull
+request or a repository, and release a claim. Every method returns an
+`Outcome`. Its first implementation is the forge
+(`plugin/shared/records/shared-forge.ts`), which the dispatcher's machine
+file names (`records.shared: forge`):
+
+- a drive's launch is a launch claim (`dispatch-launch-claim`, registered
+  with its envelope version), a forge claim posted on the pull request the
+  launch concerns, key `drive`, its generation the attempt: a launch claims
+  the attempt after the latest, the earliest trusted claim on an attempt
+  wins, and the latest attempt's winner with no end holds the launch for
+  every host, past which only a takeover claims;
+- a follow-up's launch is the follow-up marker, the follow-up stage's
+  shared record: it names its host, and `jig dispatch marker
+  claim|check|done`, with their exit codes, write and read it through the
+  interface;
+- a pickup's claim is the item's own tracker claim, which `do-item` already
+  makes; nothing is published for it here;
+- a launch's end is written by the host that made the claim, by editing the
+  claim's own comment, so a record and its end are one comment.
+
+The host a claim names is a digest of its dispatcher database's instance
+id, so a public comment names no machine. The tick writes a claim beside
+each drive's launch record before it calls the runtime, writes its end once
+the wrapper's exit or the session's result ends the record, and reads every
+host's claims for each pull request it classifies
+([design/dark-factory-dispatch.md](dark-factory-dispatch.md#several-hosts)):
+a launch another host holds is reported as held by that host and never
+started twice, a follow-up another host ended reads as done or failed, and a
+driver another host started whose ledger is silent past the lease window is
+taken over under the ledger's own rule, never by a claim alone. The local
+database stays the cache and the log: planning reads the shared records,
+the dashboard the local log. One host owns each repository's board,
+notifications and history rows (`owner` in the machine file, true by
+default), so two hosts never notify a person twice or write the same row
+twice.
+
+The records coordinate launches and never authorize an act a person takes.
+The forge offers no conditional create, so two hosts can each read
+themselves the holder of one launch within the read-back window; the
+stage's own refusal (the drive's lock and ledger claim, `do-item`'s claim)
+is the backstop. A second implementation, a small control-plane service,
+joins behind the same interface, under its own `records.shared` value, when
+[ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)'s conditions for
+reopening hold.
 
 ### The dispatcher reads the drive's own records
 
 The dispatcher reads a drive's exit codes from drive-pr's terminal-state
-registry (`plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts`) instead
-of naming them itself. A drive, its ledger and the dispatcher's thread
-samples count rounds from one definition. A mailbox directive is addressed
-to a driver generation, so a directive sent to one driver is never obeyed
-by its successor.
+registry (`plugin/skills/drive-pr/scripts/lib/status/terminal-states.ts`'s
+`DRIVE_EXIT` and the sets beside it) instead of naming them itself, and the
+registry's consistency check fails a dispatcher file that restates one. A
+run tab's close decision is the registry's too, so `plugin/shared/` imports
+no skill for it.
+
+A pull request's review rounds are one record in the drive's database,
+`review_rounds`, one row per clone, pull request and head counted. The drive
+counts into it, and so does a hand-driven review loop (`await-round.ts`)
+whether or not a driver runs; the drive state's `rounds` is set from it, so
+the ledger, the dispatcher's thread samples (which key on the ledger's
+round) and `current-round.ts` read one number. A hand-driven loop's
+convergence settles its rounds for its reflection prompt without lowering
+the count.
+
+A mailbox `stop` may name a driver generation: a number the drive's
+database draws for each driver of a pull request in a clone, printed at the
+driver's start and carried in its lock's claim. It ends that driver alone,
+and a successor ignores it; a stop naming none ends every later driver until
+it is resumed. `drives.ts --stop` sends that directive, addressed to the
+live driver and marked to act at once, and the driver appends an `ack` of
+each directive it acted on to the mailbox's outbox.
 
 ## Build order
 
@@ -184,16 +248,22 @@ One pull request each, in this order; each is usable on its own.
    and the drive's machine state in its own database, a clone's earlier
    state directory imported once at the first open rather than read for a
    release, and left in place.
-4. **One forge-claims module** (built): `plugin/shared/records/forge-claims.ts`,
-   with the takeover claim, the follow-up marker and the merge-ready
-   announcement as its claims, decided by its one rule and each kind's
-   earlier form still readable.
-5. **Records a second host reads**: `SharedRecords` on the forge, the
-   launch and the follow-up's end published, and one owner host per
-   repository for the board, notifications and history rows.
-6. **The dispatcher reads the drive's own records**: exit codes from the
-   terminal-state registry, one round counter, mailbox directives
-   addressed to a driver generation.
+4. **One forge-claims module** (built; released in 0.139.0):
+   `plugin/shared/records/forge-claims.ts`, with the takeover claim, the
+   follow-up marker and the merge-ready announcement as its claims, decided
+   by its one rule and each kind's earlier form still readable.
+5. **Records a second host reads** (built): `SharedRecords` and its forge
+   implementation, a launch claim posted beside each drive's launch record
+   and ended by the host that made it, the follow-up marker as the
+   follow-up's shared record carrying its answer, every host's claims read
+   by the plan, and one owner host per repository (`owner` in the machine
+   file) for the board, notifications and history rows.
+6. **The dispatcher reads the drive's own records** (built): the
+   dispatcher's exit codes read from the terminal-state registry and held to
+   it by its consistency check, one head-keyed review round record shared by
+   the drive and a hand-driven review loop, and one mailbox stop addressed to
+   a driver generation and acknowledged in the outbox, which `drives.ts
+   --stop` sends.
 
 ## Left out
 

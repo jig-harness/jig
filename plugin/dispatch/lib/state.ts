@@ -176,6 +176,15 @@ const MIGRATIONS: readonly Migration[] = [
   {
     additive: true,
     sql: `
+  CREATE TABLE settled_ends (
+    record TEXT PRIMARY KEY,
+    at TEXT NOT NULL
+  );
+  `,
+  },
+  {
+    additive: true,
+    sql: `
   CREATE TABLE notices_read (
     repo TEXT PRIMARY KEY,
     workspace TEXT NOT NULL,

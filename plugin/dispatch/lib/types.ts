@@ -2,6 +2,7 @@
  * What one tick reads, plans and reports. Every record is read fresh each
  * tick; nothing here is kept between ticks except what the receipt says.
  */
+import type { SharedBudget, SharedOp } from "../../shared/records/shared.ts";
 import type { SerialReport } from "./contention.ts";
 import type { LabelConfig } from "./labels.ts";
 
@@ -159,12 +160,21 @@ export interface FollowupMarker {
   /** Written by the dispatcher's own login or by an owner, member or collaborator. */
   trusted: boolean;
   /**
-   * `tick`: posted by a tick, naming its launch record; `manual`: posted by
-   * a follow-up a person ran, carrying its own outcome; `unreadable`: a
-   * marker whose body this reader cannot read.
+   * `tick`: posted by a tick, naming its launch record, the host that made
+   * it where it says (the dispatcher's digest), and the follow-up's answer
+   * once that host wrote it; `manual`: posted by a follow-up a person ran,
+   * carrying its own outcome; `unreadable`: a marker whose body this reader
+   * cannot read.
    */
   run:
-    | { kind: "tick"; record: string }
+    | {
+        kind: "tick";
+        record: string;
+        host?: string;
+        /** Whether that host says it owns the repository. */
+        owner?: boolean;
+        outcome?: "done" | "failed";
+      }
     | { kind: "manual"; done: boolean }
     | { kind: "unreadable"; reason: string };
 }
@@ -218,6 +228,8 @@ export interface Action {
   facts?: string;
   /** For a takeover: the launch record whose driver it replaces. */
   takeover?: string;
+  /** For a takeover of a driver another host started: that host's launch claim, which names the launch. */
+  takeoverClaim?: { id: number; host: string; record: string };
   /** For a re-drive: why the drive's stop no longer settles its pull request. */
   redrive?: StaleCause;
   /** For a notification: its cause. */
@@ -352,6 +364,8 @@ export interface RepoReport {
   labels?: LabelReport;
   /** Serialization's part, where the change-area catalog serializes an area. */
   serialized?: SerialReport;
+  /** The shared records' part: which host owns the repository, and each read and write this tick made. */
+  shared?: SharedReport;
   /** Targets that need nothing from the tick, by class: a pull request's ledger class, a pickup's, or a follow-up's. */
   quiet: Array<{
     target: string;
@@ -375,8 +389,9 @@ export interface LabelWrite {
   /**
    * `written`: the forge took the change; `failed`: it refused it (a label
    * that does not exist, no permission), reported and tried again at the
-   * next tick; `would`: a run without `--apply`, or for a repository the
-   * machine file does not list, writes nothing; `waits`: the tick's time
+   * next tick; `would`: a run without `--apply`, for a repository the
+   * machine file does not list, or on a host that does not own it, writes
+   * nothing; `waits`: the tick's time
    * was spent.
    */
   outcome: "written" | "failed" | "would" | "waits";
@@ -395,4 +410,22 @@ export interface LabelReport {
   /** The stages a `hold` label kept off. */
   held: Array<{ target: string; stage: Stage; reason: string }>;
   writes: LabelWrite[];
+}
+
+/** One repository's shared records in a tick (`shared-launches.ts`). */
+export interface SharedReport {
+  /** The medium, as the machine file's `records.shared` names it. */
+  medium: "forge";
+  /** This host, as its claims name it: a digest of its dispatcher's database. */
+  host: string;
+  /** Whether this host owns the repository's board, notifications and history rows (`owner` in the machine file). */
+  owner: boolean;
+  /** The other hosts whose claims this tick read say they own the repository. */
+  owners: string[];
+  /** Each read and write this tick made through the shared records. */
+  ops: SharedOp[];
+  reads: number;
+  writes: number;
+  /** What was left of the forge's budget after them, or why it did not read. */
+  budget: SharedBudget | { unreadable: string } | null;
 }

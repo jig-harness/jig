@@ -15,7 +15,8 @@ recurring defect. When touching this skill, check:
   `scripts/lib/state/lease-model.ts`, and the terminal-state set in
   `scripts/lib/status/terminal-states.ts`, restated by hand in `SKILL.md`,
   `README.md`, `references/terminal-states.md` and `scripts/drive-status.ts`'s
-  header. If a change
+  header, and read by name (`DRIVE_EXIT`) by the dispatcher under
+  `dispatch/` and the plugin README's outcome classes. If a change
   touches a state or timeout, verify every actual consumer and the
   documentation of that constant, not every file in this list.
   The `__tests__/terminal-states*.test.ts` suites check the terminal states

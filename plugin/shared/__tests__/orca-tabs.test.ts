@@ -19,7 +19,6 @@ import type { OrcaRunner } from "../orca.ts";
 import {
   closePreviousTabs,
   closeRunTab,
-  driveExitClosesTab,
   endOwnTab,
   openedTab,
   prSubject,
@@ -94,17 +93,6 @@ function write(t: RunTab): void {
   mkdirSync(root, { recursive: true });
   writeFileSync(join(root, `${t.handle}.json`), JSON.stringify(t));
 }
-
-describe("which drive exits close the tab", () => {
-  test("an ending with nothing for a person closes it", () => {
-    for (const code of [0, 4, 5, 11, 13, 16, 18, 19, 20])
-      expect(driveExitClosesTab(code)).toBe(true);
-  });
-  test("a park, a failure or a signal keeps it", () => {
-    for (const code of [1, 2, 6, 7, 8, 9, 12, 14, 15, 99, null])
-      expect(driveExitClosesTab(code)).toBe(false);
-  });
-});
 
 describe("recording a tab", () => {
   test("reads the handle, tab and shell PID from Orca's answer", () => {

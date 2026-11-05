@@ -384,6 +384,120 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.141.0] - 2026-11-05
+
+Several hosts can now dispatch one repository: each host's launches and their ends travel on the pull request, where every other host reads them.
+
+### Added
+
+- **Several hosts can dispatch one repository.** A repository may be listed in the machine files of several hosts. Before a drive's launch the dispatcher posts a launch claim on the pull request beside its launch record, naming the record and the host, and writes the launch's end onto that claim at its next `--apply` run; the follow-up marker names its host too and carries the follow-up's answer (`outcome: done` or `failed`) once its launch ended. Every run reads every host's claims: a launch another host holds is reported as held by that host and never started twice, a follow-up another host ran reads as done or failed, and a driver another host started that fell silent past the lease window is taken over, as the drive ledger's own rule allows, never on a claim alone. A pickup's shared record is the tracker claim `do-item` already makes. The claims coordinate launches and never authorize an act a person takes; the forge cannot create a comment only if none exists, so the stage's own refusal (the drive's lock and ledger claim, `do-item`'s claim) stays the backstop ([plugin/README.md](plugin/README.md#the-dispatcher), [plugin/RECORDS.md](plugin/RECORDS.md)).
+- **One owner host per repository.** A repository entry of the machine file takes `owner: true|false`, `true` by default. Only the owner notifies for the repository, writes its dispatch labels and writes outcome-log rows for what it did not launch, so each is written once. Every run's report names the host that owns the repository and says so when another host's claims say they own it too ([CONFIGURATION.md](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
+- **`records.shared` in the machine file**, `forge`, the only value today: where a host publishes what another host reads. A value this version does not know is refused. Each run's receipt records every shared read and write and the forge budget left after them.
+
+### Changed
+
+- **A second host needs the same release and the `owner` field.** Install this release on every host that dispatches a repository, and set `owner: false` on every one of them but the owner. A single machine launches, notifies and records as before; what it shows on the forge besides is one claim comment per drive launch and the answer written onto each follow-up's marker.
+
+### Fixed
+
+- Explain headless passes in the factory guide and glossary.
+- Wait for scroll restoration in the audit report's browser-history test
+  before checking its exact position.
+
+## [0.140.2] - 2026-11-05
+
+### Fixed
+
+- `drive-pr` no longer stops when the CI hold label (`ci.hold_label`) is on a
+  pull request but the drive did not add it. That happened when an earlier
+  run of the drive lost track of its own label, when a drive died and left
+  the label behind, or when someone else added it. `ci-hold.ts ensure` used to
+  refuse the push (`CI_HOLD_WAIT`) on every round until the drive stalled or
+  parked, and `release` left the label on at convergence. The drive now
+  adopts the label: it pushes under it and removes it at convergence, then
+  waits for fresh full CI as before. A failed push does not remove an
+  adopted label. The label only saves CI. To stop a drive, use
+  `drives.ts`'s `--stop`. Put the dispatcher's `jig:hold` label on the
+  pull request to prevent new launches and re-arms.
+
+## [0.140.1] - 2026-11-05
+
+### Changed
+
+- Refresh the dashboard's dependencies and bundled YAML parser, and update the
+  changelog workflow template to use checkout v7.
+
+### Fixed
+
+- Keep the structured-artifact comparison gate's rejection of numeric overflow
+  when the YAML parser would otherwise retain the literal as a string.
+- Exercise scheduler upgrade checks with the host's supported schedulers, and
+  limit the separate service-and-timer check to systemd hosts.
+
+## [0.140.0] - 2026-11-05
+
+A signal the drive and the dispatcher share is kept in one place: the
+dispatcher reads a drive's exit codes from drive-pr's own registry, a pull
+request's review rounds are one record every review loop counts into, and a
+mailbox stop can address one driver.
+
+### Added
+
+- A drive mailbox `stop` can name the driver it is for:
+  `mailbox.ts send <PR> --kind directive --command stop --generation <n>`
+  ends only the driver of that generation, at its next round boundary, and a
+  later driver ignores it. Each driver prints its generation as it starts
+  (`driver generation <n>`), and `drives.ts` lists it. A `stop` without
+  `--generation` keeps its meaning: it stops every later driver in the
+  working tree until `resume --target stop`, which now also withdraws every
+  addressed stop.
+- The driver appends an `ack` record to the mailbox outbox for each `stop`
+  or `pause` it acted on, naming its generation, so a sender sees the
+  directive took effect (`mailbox.ts outbox <PR>`).
+
+### Changed
+
+- `/jig:resolve-review-comments`'s `await-round.ts` counts review rounds in
+  the drive's database (`~/.local/state/jig/drive-pr/state.sqlite`), one
+  record per pull request and head that a drive counts into too, whether or
+  not a drive runs, instead of the `resolve-review-rounds-<PR>` file and its
+  `.head` file in the working tree's Git directory. On the first run after
+  the upgrade the count starts again at the current head: rounds counted in
+  the Git directory are not carried over, and those two files can be
+  deleted. `current-round.ts` prints this one record, the round a drive's
+  ledger carries; convergence settles a loop's rounds for its reflection
+  prompt without lowering it. A drive's `--max-rounds` budget now counts the
+  rounds a hand-driven loop counted on the same pull request in that clone.
+  The skill installed without `/jig:drive-pr` beside it keeps no count.
+- `drives.ts --stop <PR>` sends the live driver a mailbox `stop` addressed to
+  its generation and marked to act at once; the driver cancels its active
+  pass, acknowledges the stop and releases its locks, as before. A driver an
+  earlier release started records no generation: `--stop` sends it nothing
+  and forces its process tree after the 30-second grace.
+- The dispatcher reads every exit of a drive by its name in drive-pr's
+  terminal-state registry, so the two cannot disagree on a code. The outcome
+  log's reasons for exits `7`, `12` and `15` name what happened (reviewer
+  failed, worktree unclean, pass deadline) instead of repeating the code.
+
+### Fixed
+
+- A drive's pass that takes the arm step by mistake and runs
+  `attach-pr.ts <PR> --place` for its own pull request is told it is a pass
+  of that running drive (exit `4`) and to work the round, instead of
+  meeting its own driver as a rival (exit `11`) and standing down until the
+  drive stalls. `attach-pr.ts <PR>` run by a pass, under the environment its
+  driver hands it, attaches under that driver's locks as the driver's own
+  attach does.
+
+## [0.139.1] - 2026-11-05
+
+### Fixed
+
+- The `jig dispatch dashboard` tab shows Jig's mark as its icon, in the
+  colours of the reader's light or dark theme, instead of a blank one. The
+  page holds the icon itself, so the browser still never asks the server
+  for a file without the page's token.
+
 ## [0.139.0] - 2026-11-05
 
 ### Added
@@ -5202,7 +5316,12 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.139.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.141.0...HEAD
+[0.141.0]: https://github.com/jig-harness/jig/compare/v0.140.2...v0.141.0
+[0.140.2]: https://github.com/jig-harness/jig/compare/v0.140.1...v0.140.2
+[0.140.1]: https://github.com/jig-harness/jig/compare/v0.140.0...v0.140.1
+[0.140.0]: https://github.com/jig-harness/jig/compare/v0.139.1...v0.140.0
+[0.139.1]: https://github.com/jig-harness/jig/compare/v0.139.0...v0.139.1
 [0.139.0]: https://github.com/jig-harness/jig/compare/v0.138.0...v0.139.0
 [0.138.0]: https://github.com/jig-harness/jig/compare/v0.137.0...v0.138.0
 [0.137.0]: https://github.com/jig-harness/jig/compare/v0.136.0...v0.137.0

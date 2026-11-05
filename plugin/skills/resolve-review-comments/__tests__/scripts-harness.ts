@@ -127,10 +127,9 @@ function setUpStubForge(): void {
   binDir = join(tmpRoot, "bin");
   mkdirSync(binDir);
 
-  // The probes run from a THROWAWAY git repo, never the real one:
-  // await-round.ts keeps its round counter in `git rev-parse --git-dir`, and a
-  // probe that ran from the repo root would write counters into — and delete
-  // them from — the actual .git of whoever runs the suite.
+  // The probes run from a THROWAWAY git repo, never the real one: the
+  // scripts read and write through `git rev-parse`, and a probe that ran from
+  // the repo root would act on the actual .git of whoever runs the suite.
   repoDir = join(tmpRoot, "repo");
   mkdirSync(repoDir);
   checkedSpawn("git", ["init", "-q", repoDir], {
@@ -505,6 +504,11 @@ export function runScript(
     PATH: `${binDir}${delimiter}${process.env.PATH}`,
     RRC_FIX: fix.dir,
     GH_CALL_TIMEOUT: "20",
+    // The review loops count rounds into /drive-pr's database: a throwaway
+    // one, never the machine's.
+    ...(COUNTING_SCRIPTS.has(script)
+      ? { DRIVE_PR_STATE_DIR: driveStateDir() }
+      : {}),
     ...opts.env,
   };
   // The state-dir OVERRIDE requires its database's identity beside it:
@@ -556,5 +560,50 @@ export function runScript(
   };
 }
 
-export const roundsFile = (pr: string) =>
-  join(repoDir, ".git", `resolve-review-rounds-${pr}`);
+/** The scripts that count review rounds, which a probe points at the suite's throwaway drive database. */
+const COUNTING_SCRIPTS = new Set(["await-round.ts", "converge.ts"]);
+
+/** The suite's throwaway drive database root, where the counting scripts' rounds go. */
+function driveStateDir(): string {
+  return join(tmpRoot, "drive-state");
+}
+
+const DRIVE_STATE = join(
+  import.meta.dir,
+  "..",
+  "..",
+  "drive-pr",
+  "scripts",
+  "drive-state.ts",
+);
+
+/** `drive-state.ts <args>` against the suite's throwaway drive database, from the probes' repo. */
+function driveState(args: string[]): string {
+  const r = spawnSync(process.execPath, [DRIVE_STATE, ...args], {
+    encoding: "utf8",
+    cwd: repoDir,
+    env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: driveStateDir() },
+  });
+  if (r.status !== 0)
+    throw new Error(
+      `drive-state.ts ${args[0]} exited ${r.status}: ${r.stderr}`,
+    );
+  return (r.stdout ?? "").trim();
+}
+
+/** The PR's review round and the rounds since its loop last converged. */
+export function rounds(pr: string): { round: number; open: number } {
+  return {
+    round: Number(driveState(["rounds", pr])),
+    open: Number(driveState(["open-rounds", pr])),
+  };
+}
+
+/**
+ * Count `n` review rounds of `pr` at distinct heads, as a loop that worked
+ * them would have; `tag` keeps one call's heads apart from another's.
+ */
+export function countRounds(pr: string, n: number, tag = "c"): void {
+  for (let i = 1; i <= n; i++)
+    driveState(["count-round", pr, "--head", String(i).padStart(40, tag)]);
+}

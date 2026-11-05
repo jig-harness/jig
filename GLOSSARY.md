@@ -1278,10 +1278,22 @@ make, use the entry's term instead.
 - **Drive mailbox** — the one way to reach a running *PR drive loop* from
   outside it: append-only files in the working tree into which a person, or
   the session that started the drive, writes a note or a directive, and
-  which only the driver answers. A note is context a pass may read; a
+  which only the drive answers. A note is context a pass may read; a
   directive (hold the push, pause, stop) is enforced by the drive's own
-  scripts, whatever a pass does
+  scripts, whatever a pass does, and the driver acknowledges each directive
+  it acted on. A stop may name a *driver generation*, and then ends that
+  driver alone
   ([drive-pr](plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)).
+- **Driver generation** — the number a *PR drive loop*'s driver draws when it
+  starts, one more than the last driver of the same pull request in that
+  clone, which it prints and records in its lock. A *drive mailbox* stop that
+  names it ends that driver and no later one
+  ([drive-pr](plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)).
+- **Review round record** — the one count of a pull request's review rounds,
+  one round per distinct head reviewed, kept in the drive's database and
+  counted into by a *PR drive loop* and by a review loop run by hand alike, so
+  the drive's round budget, its *drive ledger* and the decline ladder's round
+  read one number ([records](plugin/RECORDS.md#on-the-machine)).
 - **Mirror run** — the run a continuous-integration workflow makes for an
   event of a pull-request label other than the *CI hold*'s, where labels
   change too often for each event to run real CI: it skips the expensive
@@ -1608,6 +1620,15 @@ make, use the entry's term instead.
   a comment only if none exists, so the claim is read back after posting and
   checked again before each act it guards
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Shared records** — what a host dispatching a repository publishes so
+  that another host dispatching the same repository can read it: which host
+  holds a launch, and how the launch ended. On the forge, each is a *forge
+  claim* on the pull request the launch concerns, its end written onto the
+  same comment by the host that made it; a pickup's is the tracker claim
+  `do-item` makes. One host owns each repository's notifications, labels,
+  history rows and board, so each is written once. They coordinate launches
+  and never authorize an act a person takes
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
 - **Component (of the `jig` command)** — one of the machine-level tools the
   plugin's `jig` command joins into one command line: resource collection
   (`jig gc`) and the *dispatcher* (`jig dispatch`). Each defines its command
@@ -1887,6 +1908,11 @@ make, use the entry's term instead.
   Orca is its first implementation
   ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)); a
   *workspace runtime* becomes another by implementing the same methods.
+- **Headless pass** — a non-interactive agent run: it receives a task,
+  works without a person replying in a chat session, and exits with a result.
+  The *dispatcher* can start a follow-up this way on its chosen account
+  even when the *session runtime* cannot bind a new interactive session to
+  that account.
 - **Factory identity** — the tracker user a repository assigns an item to
   when the *dispatcher* should pick it up. An item assigned to it and in
   one of the repository's dispatch states is started, when a person with

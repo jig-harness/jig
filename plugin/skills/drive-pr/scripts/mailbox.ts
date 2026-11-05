@@ -1,4 +1,20 @@
 #!/usr/bin/env bun
+/**
+ * The drive mailbox's command line (`lib/state/mailbox.ts`):
+ *
+ *   mailbox.ts send <PR> --kind note --body TEXT [--from WHO]
+ *   mailbox.ts send <PR> --kind directive --command hold-push|pause|stop|resume
+ *                   [--target hold-push|pause|stop] [--generation N] [--body TEXT]
+ *   mailbox.ts check|outbox|gate-state|repair <PR>
+ *   mailbox.ts ack <PR> --id ID [--id ID …]
+ *   mailbox.ts respond <PR> --id ID --response TEXT
+ *
+ * `--generation N` addresses a `stop` to the driver of that generation (the
+ * number a driver prints at its start and `drives.ts` lists): it ends that
+ * driver at its next round boundary and no later one. A `stop` without it
+ * ends every later driver in this working tree until `resume --target stop`.
+ * `outbox` shows the driver's `ack` of each directive it acted on.
+ */
 import { definedFields } from "../../../shared/defined-fields.ts";
 import { fail, isDigits, runMain } from "./lib/cli.ts";
 import { resolvePr } from "./lib/proc.ts";
@@ -11,6 +27,7 @@ import {
   foldGateState,
   GATE_NAMES,
   type GateName,
+  isGeneration,
   outboxRecordsForPr,
   readInboxMessages,
   repairInbox,
@@ -56,77 +73,108 @@ async function resolvePrArg(pr: string): Promise<string> {
   return BigInt(resolved).toString();
 }
 
-async function cmdSend(argv: string[]): Promise<number> {
-  let pr = "";
-  let kind: "note" | "directive" | "" = "";
-  let from = process.env.USER ?? "";
-  let body: string | undefined;
-  let command: DirectiveCommand | "" = "";
-  let target: GateName | undefined;
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === undefined) continue;
-    if (a === "--kind") {
-      const v = takeFlag(argv, i++, a);
-      if (v !== "note" && v !== "directive")
-        fail(2, `--kind must be 'note' or 'directive' (got '${v}')`);
-      kind = v;
-    } else if (a === "--from") {
-      from = takeFlag(argv, i++, a);
-    } else if (a === "--body") {
-      body = takeFlag(argv, i++, a);
-    } else if (a === "--command") {
-      const v = takeFlag(argv, i++, a);
-      if (!DIRECTIVE_COMMANDS.includes(v as DirectiveCommand))
-        fail(
-          2,
-          `--command must be one of ${DIRECTIVE_COMMANDS.join(", ")} (got '${v}')`,
-        );
-      command = v as DirectiveCommand;
-    } else if (a === "--target") {
-      const v = takeFlag(argv, i++, a);
-      if (!GATE_NAMES.includes(v as GateName))
-        fail(
-          2,
-          `--target must be one of ${GATE_NAMES.join(", ")} (got '${v}')`,
-        );
-      target = v as GateName;
-    } else if (a.startsWith("--")) {
-      fail(2, `unknown flag: ${a}`);
-    } else if (pr === "") {
-      pr = a;
-    } else {
-      fail(2, `unexpected argument: ${a}`);
-    }
-  }
-  if (kind === "") fail(2, "send: --kind 'note' or 'directive' is required");
-  if (from === "")
-    fail(2, "send: --from is required (no $USER in this environment)");
-  pr = await resolvePrArg(pr);
-  const dir = await resolveMailboxDir();
+interface SendArgs {
+  pr: string;
+  kind: "note" | "directive" | "";
+  from: string;
+  body?: string;
+  command: DirectiveCommand | "";
+  target?: GateName;
+  generation?: number;
+}
 
-  if (kind === "note") {
-    // `--command`/`--target` only apply to a directive. Silently ignoring
-    // them on a note send let a contradictory invocation
-    // (`--kind note --command hold-push`) write a plain note and exit 0 —
-    // an operator could believe a hold was installed while
-    // `guarded-push.ts` stays clear and proceeds to push.
-    if (command !== "")
-      fail(
-        2,
-        "send --kind note: --command is only valid with --kind directive",
-      );
-    if (target !== undefined)
-      fail(2, "send --kind note: --target is only valid with --kind directive");
-    if (body === undefined) fail(2, "send --kind note: --body is required");
-    const msg = await appendNote(dir, pr, from, body);
-    process.stdout.write(`${JSON.stringify(msg)}\n`);
-    return 0;
+/** `v` when it is one of `allowed`, else the usage refusal naming `flag`. */
+function oneOf<T extends string>(
+  flag: string,
+  v: string,
+  allowed: readonly T[],
+  expected = `one of ${allowed.join(", ")}`,
+): T {
+  if (!allowed.includes(v as T))
+    fail(2, `${flag} must be ${expected} (got '${v}')`);
+  return v as T;
+}
+
+/** What each `send` flag sets from its value, refusing a value it does not take. */
+const SEND_FLAGS: Readonly<Record<string, (v: string, a: SendArgs) => void>> = {
+  "--kind": (v, a) => {
+    a.kind = oneOf("--kind", v, ["note", "directive"], "'note' or 'directive'");
+  },
+  "--from": (v, a) => {
+    a.from = v;
+  },
+  "--body": (v, a) => {
+    a.body = v;
+  },
+  "--command": (v, a) => {
+    a.command = oneOf("--command", v, DIRECTIVE_COMMANDS);
+  },
+  "--target": (v, a) => {
+    a.target = oneOf("--target", v, GATE_NAMES);
+  },
+  "--generation": (v, a) => {
+    a.generation = isDigits(v) ? Number(v) : Number.NaN;
+    if (!isGeneration(a.generation))
+      fail(2, `--generation must be a positive whole number (got '${v}')`);
+  },
+};
+
+function parseSendArgs(argv: string[]): SendArgs {
+  const a: SendArgs = {
+    pr: "",
+    kind: "",
+    from: process.env.USER ?? "",
+    command: "",
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i] as string;
+    const flag = Object.hasOwn(SEND_FLAGS, arg) ? SEND_FLAGS[arg] : undefined;
+    if (flag !== undefined) flag(takeFlag(argv, i++, arg), a);
+    else if (arg.startsWith("--")) fail(2, `unknown flag: ${arg}`);
+    else if (a.pr === "") a.pr = arg;
+    else fail(2, `unexpected argument: ${arg}`);
   }
-  if (command === "") fail(2, "send --kind directive: --command is required");
-  const msg = await appendDirective(dir, pr, from, command, {
-    ...definedFields({ target, body }),
+  if (a.kind === "") fail(2, "send: --kind 'note' or 'directive' is required");
+  if (a.from === "")
+    fail(2, "send: --from is required (no $USER in this environment)");
+  return a;
+}
+
+/**
+ * A note. `--command`, `--target` and `--generation` only apply to a
+ * directive: silently ignoring them on a note send let a contradictory
+ * invocation (`--kind note --command hold-push`) write a plain note and exit
+ * 0, and an operator could believe a hold was installed while
+ * `guarded-push.ts` stays clear and proceeds to push.
+ */
+async function sendNote(dir: string, pr: string, a: SendArgs) {
+  for (const [flag, given] of [
+    ["--command", a.command !== ""],
+    ["--target", a.target !== undefined],
+    ["--generation", a.generation !== undefined],
+  ] as const)
+    if (given)
+      fail(2, `send --kind note: ${flag} is only valid with --kind directive`);
+  if (a.body === undefined) fail(2, "send --kind note: --body is required");
+  return appendNote(dir, pr, a.from, a.body);
+}
+
+async function sendDirective(dir: string, pr: string, a: SendArgs) {
+  if (a.command === "") fail(2, "send --kind directive: --command is required");
+  const { target, body, generation } = a;
+  return appendDirective(dir, pr, a.from, a.command, {
+    ...definedFields({ target, body, generation }),
   });
+}
+
+async function cmdSend(argv: string[]): Promise<number> {
+  const a = parseSendArgs(argv);
+  const pr = await resolvePrArg(a.pr);
+  const dir = await resolveMailboxDir();
+  const msg =
+    a.kind === "note"
+      ? await sendNote(dir, pr, a)
+      : await sendDirective(dir, pr, a);
   process.stdout.write(`${JSON.stringify(msg)}\n`);
   return 0;
 }
