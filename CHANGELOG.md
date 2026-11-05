@@ -387,6 +387,27 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.146.0] - 2026-11-05
+
+### Added
+
+- `jig ask <address>` says where one station of the execution line stands on
+  one piece of work, from the records alone: who holds it, its state, what it
+  waits on, its last outcome, and every record it consulted or could not
+  read. An address is `station@owner/name#key` for the stations `pickup`,
+  `drive` and `followup` (`drive@owner/name#456`); the repository may be its
+  short name where the machine's dispatch file lists one of that name, or
+  left out inside its checkout. `--json` prints the answer as one versioned
+  object, `--thread` adds the address's requests, questions, answers,
+  launches and outcomes (`--since`, `--all`), and `--waiting` lists every
+  address that waits on a person from the dispatcher's newest tick, with no
+  forge or tracker call. It writes nothing; it exits `1` when the key names
+  nothing and `2` on a malformed address or an unknown station. See
+  [plugin/README.md § Asking a station where it stands](plugin/README.md#asking-a-station-where-it-stands).
+- The dispatcher's outcome log keeps the piece of work each row is about in
+  an indexed column, added to an existing database by an additive
+  migration, so one pull request's or item's rows are one lookup.
+
 ## [0.145.0] - 2026-11-05
 
 ### Added
@@ -5372,7 +5393,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.145.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.146.0...HEAD
+[0.146.0]: https://github.com/jig-harness/jig/compare/v0.145.0...v0.146.0
 [0.145.0]: https://github.com/jig-harness/jig/compare/v0.144.0...v0.145.0
 [0.144.0]: https://github.com/jig-harness/jig/compare/v0.143.0...v0.144.0
 [0.143.0]: https://github.com/jig-harness/jig/compare/v0.142.1...v0.143.0
