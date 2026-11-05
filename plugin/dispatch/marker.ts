@@ -20,6 +20,7 @@
  * a comment that is not a trusted marker of this pull request; 3 an earlier
  * marker holds the follow-up.
  */
+import { localWriter } from "../shared/records/writer.ts";
 import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import {
   deleteMarker,
@@ -53,7 +54,11 @@ function stop(code: number, message: string): number {
 
 async function claim(slug: string, pr: number): Promise<number> {
   const login = await resolveLogin();
-  const posted = await postMarker(slug, pr, manualMarker(false));
+  const posted = await postMarker(
+    slug,
+    pr,
+    manualMarker(false, { pr, writer: localWriter("forge", login) }),
+  );
   if (typeof posted === "string")
     return stop(1, `the marker could not be posted: ${posted}`);
   const seen = readBack(await readMarkers(slug, pr, login), posted, {
@@ -95,7 +100,8 @@ async function checkOrDone(
   slug: string,
   args: MarkerArguments & { comment: number },
 ): Promise<number> {
-  const markers = await readMarkers(slug, args.pr, await resolveLogin());
+  const login = await resolveLogin();
+  const markers = await readMarkers(slug, args.pr, login);
   if ("unreadable" in markers)
     return stop(1, `the markers could not be read: ${markers.unreadable}`);
   const own = markers.find((m) => m.id === args.comment && m.trusted);
@@ -121,7 +127,11 @@ async function checkOrDone(
       2,
       `comment ${args.comment} is the tick's marker: its session records its result through jig dispatch result`,
     );
-  const edited = await editMarker(slug, args.comment, manualMarker(true));
+  const edited = await editMarker(
+    slug,
+    args.comment,
+    manualMarker(true, { pr: args.pr, writer: localWriter("forge", login) }),
+  );
   return edited === ""
     ? 0
     : stop(1, `the marker could not be marked done: ${edited}`);

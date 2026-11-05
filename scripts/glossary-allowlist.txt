@@ -95,6 +95,7 @@ FastAPI
 MongoDB
 CircleCI
 SWC
+NATS
 # the .NET platform
 NET
 # remote procedure call, the industry's name for the interface style

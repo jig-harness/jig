@@ -16,8 +16,10 @@
  */
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
+import { localWriter } from "../../../../../shared/records/writer.ts";
 import { ghCall } from "../proc.ts";
 import {
+  FORGE_BODY_LIMIT,
   type ForgeComment,
   type Ledger,
   type LedgerSnapshot,
@@ -218,6 +220,7 @@ async function deleteOwnDuplicates(
 function bodyFor(
   snapshot: LedgerSnapshot,
   build: (snapshot: LedgerSnapshot) => Ledger | string,
+  selfLogin: string | null,
 ): { body: string; ledger: Ledger } | LedgerWrite {
   const parsed = snapshot.canonical?.parsed;
   if (parsed?.kind === "unknown-version")
@@ -227,7 +230,11 @@ function bodyFor(
     };
   const ledger = build(snapshot);
   if (typeof ledger === "string") return { kind: "skipped", reason: ledger };
-  const rendered = renderLedger(ledger);
+  const rendered = renderLedger(
+    ledger,
+    FORGE_BODY_LIMIT,
+    localWriter("forge", selfLogin),
+  );
   return "error" in rendered
     ? { kind: "failed", reason: rendered.error }
     : rendered;
@@ -311,7 +318,7 @@ async function writeOnce(
   snapshot: LedgerSnapshot,
   build: (snapshot: LedgerSnapshot) => Ledger | string,
 ): Promise<LedgerWrite | { moved: LedgerSnapshot | string }> {
-  const next = bodyFor(snapshot, build);
+  const next = bodyFor(snapshot, build, selfLogin);
   if ("kind" in next) return next;
   const canonical = snapshot.canonical?.comment ?? null;
   if (canonical === null) {
@@ -325,7 +332,7 @@ async function writeOnce(
     return { moved: reread };
   // The ledger stood still, but a claim may have arrived beside it: the body
   // written is the one the newest read allows.
-  const final = bodyFor(reread, build);
+  const final = bodyFor(reread, build, selfLogin);
   if ("kind" in final) return final;
   return patchAndVerify(pr, selfLogin, reread, canonical, final);
 }
