@@ -79,7 +79,8 @@ migration never waits on another's. Each is opened through
 `shared/records/db.ts`: a write-ahead log so a reader never waits on a
 writer, a wait of up to ten seconds for another connection's transaction to
 end, foreign keys enforced, and a directory and file only their owner can
-read. Its schema moves forward through migrations, never edited once
+read when it creates them (an existing directory or database keeps the
+permissions it had). Its schema moves forward through migrations, never edited once
 released, and its version is in `PRAGMA user_version`. A `db_meta` row
 (`db-meta`) holds the database's instance id and its minimum reader, the
 lowest schema version a plugin must know to use it. Each migration says
@@ -180,7 +181,10 @@ winner whose owner never acted. The forge has no conditional create for a
 comment and its listing can lag, so a claim is read back after it is
 posted, read again a few times while the listing does not show it, and
 reported lost when it never does; each act it guards re-checks it first, and
-a claim that lost is withdrawn by deleting its comment. A claim in a form
+a claim that lost may be withdrawn by deleting its comment, which each
+kind's caller decides: the launch claim and the merge-ready announcement are
+withdrawn, while a takeover that stands down leaves its comment, the record
+of the claim it lost. A claim in a form
 written before the envelope still reads. What this cannot close: two claims
 whose read-backs each lag past the other's comment both read themselves the
 winner, and a re-check that lags the same way passes. The earlier comment
