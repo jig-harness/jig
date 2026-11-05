@@ -176,7 +176,7 @@ SOFTWARE.
 
 ----------------------------------------
 
-@tanstack/markdown 1.0.0
+@tanstack/markdown 1.0.1
 
 Licensed MIT, as its package manifest declares; the package publishes no licence file.
 
@@ -208,7 +208,7 @@ SOFTWARE.
 
 ----------------------------------------
 
-@tanstack/query-core 5.105.0
+@tanstack/query-core 5.105.1
 
 MIT License
 
@@ -260,7 +260,7 @@ SOFTWARE.
 
 ----------------------------------------
 
-@tanstack/react-query 5.105.0
+@tanstack/react-query 5.105.1
 
 MIT License
 
@@ -338,7 +338,7 @@ SOFTWARE.
 
 ----------------------------------------
 
-@tanstack/react-virtual 3.14.24
+@tanstack/react-virtual 3.14.25
 
 MIT License
 
@@ -416,7 +416,7 @@ SOFTWARE.
 
 ----------------------------------------
 
-@tanstack/virtual-core 3.19.9
+@tanstack/virtual-core 3.19.10
 
 MIT License
 

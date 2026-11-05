@@ -16,6 +16,7 @@ import {
 import { join } from "node:path";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../lib/test-helpers/windows-skip.ts";
+import { load } from "../shared/yaml.ts";
 import { SCHEDULERS, machine } from "./lifecycle-fixtures.ts";
 
 const onWindows = skipsOnWindows(
@@ -39,9 +40,11 @@ test.skipIf(onWindows).each(SCHEDULERS)(
     expect(out).toContain(join(m.home, ".jig", "dispatch.yaml"));
     expect(m.hasJob("jig-gc")).toBe(true);
     expect(m.hasJob("jig-dispatch")).toBe(false);
-    expect(readFileSync(join(m.home, ".jig", "jig.yaml"), "utf8")).toContain(
-      `path: ${m.repo}`,
-    );
+    expect(
+      load(readFileSync(join(m.home, ".jig", "jig.yaml"), "utf8")),
+    ).toMatchObject({
+      gc: { repositories: [{ path: m.repo }] },
+    });
     const command = join(m.home, ".local", "bin", "jig");
     expect(statSync(command).mode & 0o111).not.toBe(0);
 

@@ -24,12 +24,12 @@ jobs:
     timeout-minutes: 10
     environment: website
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # No later step pushes, and the job holds the deploy token, so the
           # checkout token is not kept for the build's scripts to read.
           persist-credentials: false
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
       - name: Install locked dependencies, scripts off
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Install the website's locked dependencies, scripts off
