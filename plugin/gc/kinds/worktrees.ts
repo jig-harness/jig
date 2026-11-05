@@ -24,6 +24,11 @@ import { gcGit as git, gitEnvironment } from "../git.ts";
 import { localSteps, removeThroughOrca } from "../worktree-removal.ts";
 import { processHolder } from "./worktree-git.ts";
 import {
+  type Collected,
+  GuardKeep,
+  guardedCollection,
+} from "./worktree-guard.ts";
+import {
   canonicalWorktree,
   orcaLiveness,
   runtimeWorktreeProof,
@@ -47,16 +52,21 @@ function within(path: string, root: string): boolean {
     !isAbsolute(rel)
   );
 }
+/** A worktree Orca manages: its id, and its path exactly as Orca reports it. */
+interface OrcaWorktree {
+  id: string;
+  path: string;
+}
 /**
  * The worktrees Orca manages in `repository`, by path as git spells it, with
- * Orca's id of each; empty when Orca has no such repository. A list Orca
- * cannot give in full fails the inventory: a checkout it manages must not
- * pass for a plain one.
+ * Orca's id and path of each; empty when Orca has no such repository. A list
+ * Orca cannot give in full fails the inventory: a checkout it manages must
+ * not pass for a plain one.
  */
 async function orcaWorktrees(
   command: string,
   repository: string,
-): Promise<Map<string, string>> {
+): Promise<Map<string, OrcaWorktree>> {
   const done = await runOrca(command, [
     "worktree",
     "list",
@@ -74,7 +84,7 @@ async function orcaWorktrees(
     );
   if (result.truncated !== false || !Array.isArray(result.worktrees))
     throw new GcError("Orca's worktree list was incomplete or malformed");
-  const managed = new Map<string, string>();
+  const managed = new Map<string, OrcaWorktree>();
   for (const row of result.worktrees) {
     if (
       !isMapping(row) ||
@@ -82,7 +92,7 @@ async function orcaWorktrees(
       typeof row.path !== "string"
     )
       throw new GcError("Malformed Orca worktree record");
-    managed.set(canonicalWorktree(row.path), row.id);
+    managed.set(canonicalWorktree(row.path), { id: row.id, path: row.path });
   }
   return managed;
 }
@@ -91,6 +101,13 @@ function orcaId(resource: Resource): string | null {
     resource.details.runtime === "orca" &&
     typeof resource.details.orca === "string"
     ? resource.details.orca
+    : null;
+}
+/** The worktree's path exactly as Orca reports it: what its guard key is taken of. */
+function orcaPath(resource: Resource): string | null {
+  return isMapping(resource.details) &&
+    typeof resource.details.orcaPath === "string"
+    ? resource.details.orcaPath
     : null;
 }
 /**
@@ -228,10 +245,11 @@ async function extractBaseHooks(
 async function collectThroughOrca(
   command: string,
   resource: Resource,
-  id: string,
+  orcaWorktree: { id: string; launched: () => string | null },
   repository: string,
   declaration: string,
-): Promise<Awaited<ReturnType<CollectionKind["collect"]>>> {
+): Promise<Collected> {
+  const { id, launched } = orcaWorktree;
   const log = (line: string): void => {
     process.stderr.write(`${line}\n`);
   };
@@ -259,6 +277,11 @@ async function collectThroughOrca(
           const live = await orcaLiveness(command, worktree);
           if (live !== null)
             throw new GcError(`kept after the hook: ${live.reason}`);
+          // Read after the registry and after gc's admission: a launch the
+          // plugin let through meanwhile left its marker first.
+          const launch = launched();
+          if (launch !== null)
+            throw new GuardKeep(`kept after the hook: ${launch}`);
           if ((await processHolder(worktree)) !== false)
             throw new GcError(
               "kept after the hook: a process holds the worktree, or holders could not be read",
@@ -277,7 +300,7 @@ async function collectThroughOrca(
     };
   } catch (error) {
     return {
-      outcome: "failed",
+      outcome: error instanceof GuardKeep ? "refused" : "failed",
       reason: error instanceof Error ? error.message : String(error),
     };
   } finally {
@@ -339,9 +362,12 @@ export function worktreesKind(
       if (orca === undefined || selected.length === 0) return selected;
       const managed = await orcaWorktrees(orca, repository);
       for (const entry of selected) {
-        const id = managed.get(canonicalWorktree(entry.id));
-        entry.details.runtime = id === undefined ? "none" : "orca";
-        if (id !== undefined) entry.details.orca = id;
+        const row = managed.get(canonicalWorktree(entry.id));
+        entry.details.runtime = row === undefined ? "none" : "orca";
+        if (row !== undefined) {
+          entry.details.orca = row.id;
+          entry.details.orcaPath = row.path;
+        }
       }
       return selected;
     },
@@ -356,7 +382,15 @@ export function worktreesKind(
     collect: async (resource) => {
       const id = orcaId(resource);
       if (orca !== undefined && id !== null)
-        return collectThroughOrca(orca, resource, id, repository, declaration);
+        return guardedCollection(resource, orcaPath(resource), (launched) =>
+          collectThroughOrca(
+            orca,
+            resource,
+            { id, launched },
+            repository,
+            declaration,
+          ),
+        );
       return {
         outcome: "refused",
         reason: "uncoordinated worktrees are report-only",

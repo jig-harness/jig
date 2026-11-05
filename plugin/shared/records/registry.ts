@@ -69,6 +69,12 @@ const FOLLOWUP_KEY = /^(?:followup|[1-9]\d*)$/;
 const LAUNCH_KEY = /^drive$/;
 const MERGE_READY_KEY = /^merge-ready:[0-9a-f]{7,64}$/;
 
+/** A worktree's key in the Orca guard record: the SHA-256 of its path as Orca reports it. */
+const ORCA_GUARD_KEY = /^[0-9a-f]{64}$/;
+const ORCA_GUARD_HEARTBEAT_KEY = /^heartbeat$/;
+const ORCA_GUARD_DIR = "~/.local/state/jig/orca-guard/";
+const ORCA_PLUGIN = "Jig's plugin for Orca";
+
 const DRIVE = "skills/drive-pr/scripts/";
 const STATE = `${DRIVE}lib/state/`;
 const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
@@ -363,6 +369,32 @@ const MACHINE: RecordKind[] = [
     "~/.local/state/jig/orca-tabs/<handle>.json",
     1,
   ),
+  {
+    name: "orca-guard-admission",
+    medium: "machine",
+    owner: "shared/orca-guard.ts",
+    at: `${ORCA_GUARD_DIR}admissions/<key>.json`,
+    version: 1,
+    key: ORCA_GUARD_KEY,
+  },
+  {
+    name: "orca-guard-launch",
+    medium: "machine",
+    owner: "shared/orca-guard.ts",
+    foreign: ORCA_PLUGIN,
+    at: `${ORCA_GUARD_DIR}launches/<key>.json`,
+    version: 1,
+    key: ORCA_GUARD_KEY,
+  },
+  {
+    name: "orca-guard-heartbeat",
+    medium: "machine",
+    owner: "shared/orca-guard.ts",
+    foreign: ORCA_PLUGIN,
+    at: `${ORCA_GUARD_DIR}heartbeat.json`,
+    version: 1,
+    key: ORCA_GUARD_HEARTBEAT_KEY,
+  },
   plain(
     "machine",
     "orca-board-card",
