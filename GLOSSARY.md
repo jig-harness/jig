@@ -2203,11 +2203,12 @@ make, use the entry's term instead.
   skill (`code_stats.classify_command`) when globs cannot describe its
   layout: it reads the tracked paths and prints, per file, the area, kind,
   language or module that overrides the skill's own classification.
-- **Address** — the name that identifies one conversation partner of the
-  tooling, such as a drive or a follow-up, and keys its thread: the request,
-  the question, the answer and the outcome, each linked to the record it came
-  from. `jig ask` reads a thread by address and `jig send` writes a record
-  to one.
+- **Address** — the name of one *station* of the line on one piece of work,
+  `station@owner/name#key` (`drive@jig-harness/jig#456`), derived from the
+  records that station leaves and declared nowhere. It keys the station's
+  thread: the request, the question, the answer and the outcome, each linked
+  to the record it came from. `jig ask` reads an address and its thread, and
+  `jig send` writes a record to one.
 - **Guard record** — the small file Jig's Orca plugin and `jig gc` share
   without an awaited call: gc's *admission* for each worktree it is
   collecting, the launches the plugin let through, and the plugin's

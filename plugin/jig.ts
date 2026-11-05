@@ -7,7 +7,8 @@
  * the dispatcher (`dispatch/component.ts`): each defines its own command
  * beside its code, and the lifecycle verbs (`runtime/verbs.ts`: install,
  * uninstall, upgrade, doctor, status, receipts, run) act on them through one
- * interface. All of
+ * interface. Beside them it registers the commands that run and exit with
+ * nothing to install, `jig ask` (`ask/component.ts`). All of
  * it is one Optique parser, so `jig --help`, `jig help <command>`,
  * `<command> --help` and `jig completion <shell>` come from the same
  * definitions that parse.
@@ -16,8 +17,9 @@ import { fileURLToPath } from "node:url";
 import { GcConfigurationError } from "./shared/gc-error.ts";
 import { gcComponent } from "./gc/component.ts";
 import { dispatchComponent } from "./dispatch/component.ts";
+import { askComponent } from "./ask/component.ts";
 import { runMain as dispatchRun } from "./dispatch/run.ts";
-import type { Component } from "./runtime/component.ts";
+import type { CommandComponent, Component } from "./runtime/component.ts";
 import { runVerb, verbCommands } from "./runtime/verbs.ts";
 import { runMain, ExitError } from "./shared/cli.ts";
 import { USAGE_EXIT } from "./shared/command-line.ts";
@@ -26,19 +28,26 @@ import { map, message, or, runParser } from "./shared/vendor/optique.mjs";
 /** The components, in the order the lifecycle verbs act on them. */
 const COMPONENTS: readonly Component[] = [gcComponent, dispatchComponent];
 
+/** Every command beside the verbs: the components', then the ones the verbs never act on. */
+const COMMANDS: readonly CommandComponent[] = [...COMPONENTS, askComponent];
+
 const verbs = verbCommands(COMPONENTS.map((component) => component.name));
 
-/** Each component's own command beside the verbs; `strict` takes a component's stricter parser. */
+/** A component's stricter parser, where it has one. */
+function strictOf(command: CommandComponent) {
+  const component = COMPONENTS.find((c) => c.name === command.name);
+  return component?.strictCommand ?? command.command;
+}
+
+/** Each command beside the verbs; `strict` takes a component's stricter parser. */
 const programOf = (strict: boolean) =>
   or(
     verbs,
-    ...COMPONENTS.map((component) =>
-      map(
-        strict
-          ? (component.strictCommand ?? component.command)
-          : component.command,
-        (args) => ({ component: component.name, args }),
-      ),
+    ...COMMANDS.map((command) =>
+      map(strict ? strictOf(command) : command.command, (args) => ({
+        component: command.name,
+        args,
+      })),
     ),
   );
 const program = programOf(false);
@@ -65,7 +74,7 @@ export function parseCommandLine(
   parser: typeof program = program,
 ) {
   return runParser(parser, "jig", argv, {
-    brief: message`Jig's machine-level tools: resource collection and the dispatcher, and the commands that install, upgrade, check, remove, report on and run them.`,
+    brief: message`Jig's machine-level tools: resource collection and the dispatcher, the commands that install, upgrade, check, remove, report on and run them, and asking a station of the line where it stands.`,
     showChoices: true,
     help: {
       command: true,
@@ -92,13 +101,14 @@ type Parsed = ReturnType<typeof parseCommandLine>;
 function strictArgv(parsed: Parsed, argv: readonly string[]) {
   if ("verb" in parsed) return null;
   return (
-    componentNamed(parsed.component).strictArguments?.(parsed.args, argv) ??
-    null
+    COMPONENTS.find(
+      (component) => component.name === parsed.component,
+    )?.strictArguments?.(parsed.args, argv) ?? null
   );
 }
 
-function componentNamed(name: string): Component {
-  return COMPONENTS.find((component) => component.name === name) as Component;
+function commandNamed(name: string): CommandComponent {
+  return COMMANDS.find((command) => command.name === name) as CommandComponent;
 }
 
 /** Runs a parsed command line: a lifecycle verb, or a component's own command. */
@@ -109,7 +119,7 @@ function execute(parsed: Parsed, script: string): Promise<number> {
       script,
       run: (argv) => execute(parseCommandLine(argv), script),
     });
-  return componentNamed(parsed.component).main(parsed.args, script);
+  return commandNamed(parsed.component).main(parsed.args, script);
 }
 
 export async function main(argv: string[]): Promise<number> {

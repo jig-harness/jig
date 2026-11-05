@@ -42,6 +42,7 @@ import {
   type Deadline,
   type ListedClaim,
   list as listClaims,
+  listedFrom,
   post as postClaim,
   type Standing,
   withdraw,
@@ -101,6 +102,22 @@ function sharedOf(stage: SharedStage, c: ListedClaim, pr: number): SharedClaim {
     trusted: c.trusted,
     says: c.record.ok ? ok(saysOf(stage, c.record.value, pr)) : c.record,
   };
+}
+
+/**
+ * The claims of `stage` among a pull request's comments already read, as
+ * `list` reads them, for a reader that shares one read of the comments
+ * between the ledger, the claims and the answers (`jig ask`).
+ */
+export function sharedClaimsFrom(
+  stage: SharedStage,
+  comments: readonly unknown[],
+  target: SharedTarget,
+  self: string | null,
+): SharedClaim[] {
+  return listedFrom(kindOf(stage), comments, targetOf(target), self).map((c) =>
+    sharedOf(stage, c, target.pr),
+  );
 }
 
 /** Whether a claim that reads is the draft's own launch: the same host and launch record. */

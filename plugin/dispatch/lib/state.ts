@@ -15,7 +15,7 @@
  * | `followup_outcomes` | repository and merged pull request | the latest attempt's outcome |
  * | `idle` | repository and claimed item | the stall clock starts once |
  * | `holds` | repository and pull request held behind another in a serialized area | the hold's start, written with its event row |
- * | `log` | outcome row | each row once: it is written in the same transaction as what it records |
+ * | `log` | outcome row | each row once: it is written in the same transaction as what it records; its `target` column, the piece of work, is indexed with the repository |
  * | `tick_line` | the newest tick from the machine file | one row, replaced by each such tick: the line as it found it and its receipt, which `jig dispatch dashboard` reads |
  *
  * The receipts, the account walls (which the drive's quota adapters write
@@ -202,6 +202,17 @@ const MIGRATIONS: readonly Migration[] = [
   {
     additive: true,
     sql: "ALTER TABLE notices_content ADD COLUMN repo TEXT;",
+  },
+  {
+    // The piece of work a row is about, so one key's rows are one lookup.
+    // A copy one release behind writes rows without it; a reader of one key
+    // also reads those (`log.ts`, `rowsFor`).
+    additive: true,
+    sql: `
+  ALTER TABLE log ADD COLUMN target TEXT;
+  UPDATE log SET target = json_extract(row, '$.target');
+  CREATE INDEX log_target ON log (repo, target, at_ms);
+  `,
   },
 ];
 

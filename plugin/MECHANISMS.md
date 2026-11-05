@@ -220,7 +220,10 @@ development and shipped as a version.
   agent tools, the plugin in each tool, each launcher copy, the programs
   each job names, each component's own needs (`Component.doctor`), the
   last receipts and the repository's configuration fit, and names a fix for
-  each failure; it changes nothing.
+  each failure; it changes nothing. `jig ask` (`ask/cli.ts`), registered
+  beside the components with no job of its own (`CommandComponent`), reads
+  a station's records through their owners' exports and prints one answer;
+  it writes no record.
 - **Reasoned.** None. A person installs, upgrades and checks; no session is
   involved.
 - **If it fails.** A job that cannot find the installed copy stops with a
