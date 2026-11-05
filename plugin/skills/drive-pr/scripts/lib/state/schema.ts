@@ -611,6 +611,12 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
       )
         return false;
     }
+    if (
+      (hold.phase === "held" || hold.phase === "releasing") &&
+      hold.adopted !== undefined &&
+      typeof hold.adopted !== "boolean"
+    )
+      return false;
     if (hold.phase === "held") {
       if (typeof hold.addedAtHead !== "string" || !isGitSha(hold.addedAtHead))
         return false;

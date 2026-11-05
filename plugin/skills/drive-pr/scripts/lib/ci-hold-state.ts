@@ -12,7 +12,7 @@ import {
   parseCheckRuns,
   ownsHeldTransition,
 } from "./ci-hold.ts";
-import { fail } from "./cli.ts";
+import { fail, isGitSha } from "./cli.ts";
 import { ghCall } from "./proc.ts";
 import type { CiHoldState } from "./state/schema.ts";
 import { openStore } from "./state/store.ts";
@@ -47,16 +47,19 @@ export async function checkRuns(head: string): Promise<CheckRunLite[] | null> {
   }
 }
 
-/** The highest check-run id on `head`; exits 1 when it cannot be read. */
+/**
+ * The highest check-run id on `head`; exits 1 when the runs cannot be read,
+ * and answers `null` when they were read and none is registered yet (the
+ * caller waits: a zero watermark is never recorded for a drive release).
+ */
 export async function headWatermark(
   head: string,
   why: string,
-): Promise<number> {
+): Promise<number | null> {
   const runs = await checkRuns(head);
-  const watermark = runs === null ? null : checkRunWatermark(runs, head);
-  if (watermark === null)
+  if (runs === null || !isGitSha(head))
     fail(1, `ci-hold: cannot establish the check-run watermark ${why}`);
-  return watermark;
+  return checkRunWatermark(runs, head);
 }
 
 /**

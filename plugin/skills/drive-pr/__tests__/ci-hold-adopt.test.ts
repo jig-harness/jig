@@ -319,4 +319,51 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
       source: "drive",
     });
   });
+
+  it("release waits, leaving the adopted label, while no check run is registered yet", async () => {
+    const repo = scratchWithOrigin();
+    const { dir, stateDir } = writeFixture(
+      { threads: [], ciHeld: true, head: repo.head },
+      repo.dir,
+    );
+    writeFileSync(
+      join(dir, "timeline.json"),
+      JSON.stringify([labeled("LE_1", "human-user", "2026-09-10T09:59:00Z")]),
+    );
+    writeFileSync(
+      join(dir, "check-runs.json"),
+      JSON.stringify({ check_runs: [] }),
+    );
+    const proc = Bun.spawn(
+      scriptArgv(
+        join(SCRIPTS, "ci-hold.ts"),
+        "release",
+        "999",
+        "--expect-head",
+        repo.head,
+      ),
+      {
+        cwd: repo.dir,
+        env: {
+          ...stateEnv(stateDir, dir),
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
+          DRIVE_PR_FIXTURES: dir,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    expectSpawnExit({ exitCode, stdout, stderr }, 4);
+    expect(stderr).toContain("no check run is registered");
+    const view = readJson<{ labels: { name: string }[] }>(
+      join(dir, "pr-view.json"),
+    );
+    expect(view.labels.map((label) => label.name)).toContain("ci:hold");
+    expect(ciHoldOf(stateDir)).toMatchObject({ phase: "held", adopted: true });
+  });
 });

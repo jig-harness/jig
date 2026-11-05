@@ -622,6 +622,12 @@ async function release(pr: string, head: string): Promise<number> {
   )
     return 4;
   const watermark = await headWatermark(head, "before the unlabel");
+  if (watermark === null) {
+    console.error(
+      "ci-hold: no check run is registered on this head yet; retrying later",
+    );
+    return 4;
+  }
   await writeCiState(pr, {
     phase: "releasing",
     adopted: persisted.adopted === true,
