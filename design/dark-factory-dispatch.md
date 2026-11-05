@@ -991,8 +991,9 @@ which the machine file names (`records.shared: forge`, the only value; a
 value it does not know is refused). It claims a launch, re-checks a claim
 before an act, writes a launch's end onto its own claim, lists the claims
 and their ends for a pull request or a repository, and releases a claim;
-each returns an `Outcome`. This is
-[records.md](records.md#records-a-second-host-reads)'s step 5.
+each returns an `Outcome`. How the records are kept, and what their read-back
+cannot close, is in
+[plugin/RECORDS.md](../plugin/RECORDS.md#on-the-forge-and-the-tracker).
 
 - **A drive's launch** posts a launch claim (`dispatch-launch-claim`), a
   [forge claim](../GLOSSARY.md) on the pull request with key `drive` and the
@@ -1008,15 +1009,17 @@ each returns an `Outcome`. This is
   replaces is wedged by definition.
 - **A follow-up's claim** is its marker, which names the host that posted
   it; that host writes the follow-up's answer onto it once its launch record
-  ends.
+  ends, as it writes a launch's end.
 - **A pickup's claim** is the tracker claim `do-item` makes, which every
   host already reads; nothing is published for it here.
 - **A launch's end** is written by the host that made the claim, onto the
-  claim's own comment, at that host's next tick with `--apply`, once the
-  wrapper's exit or the session's result ends the launch record: its exit,
-  or why it died. A claim whose launch record is gone from its host ends as
-  died. A claim whose host never writes its end holds the pull request until
-  a person deletes the comment.
+  claim's own comment: its exit, or why it died. The wrapper writes it right
+  after it records the stage's exit, so other hosts read it when the launch
+  ends; that host's next tick with `--apply` writes the end of every claim
+  whose launch record ended and still has none, the backstop for a wrapper
+  killed before its write and a forge that refused it. A claim whose launch
+  record is gone from its host ends as died. A claim whose host never writes
+  its end holds the pull request until a person deletes the comment.
 
 The tick reads every host's claims for each pull request it classifies and
 places them beside its own launch records. A launch another host's current

@@ -27,9 +27,10 @@
  * These records coordinate launches between hosts; nothing reads one as
  * leave for an act a person takes.
  *
- * Every forge call goes through `ghCall` (`../proc.ts`), under its deadline;
- * every method returns an `Outcome`, and each read and write is reported to
- * the caller's `record` for its receipt.
+ * Every forge call goes through `ghCall` (`../proc.ts`), under its deadline,
+ * or under the caller's `timeoutSec` where that is shorter; every method
+ * returns an `Outcome`, and each read and write is reported to the caller's
+ * `record` for its receipt.
  */
 import { isRecord } from "../guards.ts";
 import { failed, ok, type Outcome } from "../outcome.ts";
@@ -38,6 +39,7 @@ import {
   amend,
   type ClaimTarget,
   check as checkClaim,
+  type Deadline,
   type ListedClaim,
   list as listClaims,
   post as postClaim,
@@ -79,6 +81,8 @@ export interface ForgeSharedOptions {
   login: string | null;
   /** Told of each read and write, for the caller's receipt. */
   record?: (op: SharedOp) => void;
+  /** Each forge call's deadline in seconds, where it is to be shorter than `GH_CALL_TIMEOUT`'s. */
+  timeoutSec?: number;
 }
 
 const targetOf = (t: SharedTarget): ClaimTarget => ({
@@ -263,8 +267,13 @@ function stillCurrent(
 }
 
 /** What is left of the forge's core budget, as `gh api rate_limit` reports it, or why it does not read. */
-async function readBudget(): Promise<Outcome<SharedBudget, "unreadable">> {
-  const r = await ghCall(["api", "rate_limit"], { stderr: "pipe" });
+async function readBudget(
+  deadline: Deadline,
+): Promise<Outcome<SharedBudget, "unreadable">> {
+  const r = await ghCall(["api", "rate_limit"], {
+    stderr: "pipe",
+    ...deadline,
+  });
   return r.code === 0
     ? budgetOf(r.stdout)
     : failed("unreadable", `the rate limit does not read: gh exited ${r.code}`);
@@ -299,6 +308,8 @@ function budgetOf(stdout: string): Outcome<SharedBudget, "unreadable"> {
 /** The shared records on the forge, read and written as `opts.login`. */
 export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
   const self = opts.login;
+  const deadline: Deadline =
+    opts.timeoutSec === undefined ? {} : { timeoutSec: opts.timeoutSec };
   const note = (op: SharedOp["op"], target: string, done: boolean) =>
     opts.record?.({ op, target, ok: done });
 
@@ -306,7 +317,12 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
     target: SharedTarget,
     stage: SharedStage,
   ): Promise<Outcome<SharedClaim[], "unreadable">> {
-    const listing = await listClaims(targetOf(target), kindOf(stage), self);
+    const listing = await listClaims(
+      targetOf(target),
+      kindOf(stage),
+      self,
+      deadline,
+    );
     note("list", named(target), listing.ok);
     return listing.ok
       ? ok(listing.value.map((c) => sharedOf(stage, c, target.pr)))
@@ -352,6 +368,7 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
       kindOf("drive"),
       held.id,
       launchClaim(draft, held.attempt, says.at === "" ? undefined : says.at),
+      deadline,
     );
     note("claim", named(target), r.ok);
     return r.ok
@@ -372,7 +389,7 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
       targetOf(target),
       kindOf(draft.stage),
       draftClaim(draft, attempt),
-      { self, rule },
+      { self, rule, ...deadline },
     );
     note("claim", named(target), posted.ok);
     if (!posted.ok)
@@ -396,7 +413,7 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
       kindOf(stage),
       stage === "drive" ? DRIVE_KEY : FOLLOWUP_KEY,
       own,
-      { self, ...(attempt.value.attempt ?? {}) },
+      { self, ...(attempt.value.attempt ?? {}), ...deadline },
     );
     note("check", named(target), seen.ok);
     if (!seen.ok) return seen;
@@ -434,7 +451,12 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
     ended: LaunchEnd,
     host?: string,
   ): Promise<Outcome<void, "unreadable" | "not-own" | "not-written">> {
-    const listing = await listClaims(targetOf(target), kindOf(stage), self);
+    const listing = await listClaims(
+      targetOf(target),
+      kindOf(stage),
+      self,
+      deadline,
+    );
     note("list", named(target), listing.ok);
     if (!listing.ok) return listing;
     const mine = listing.value.find((c) => c.id === own);
@@ -455,6 +477,7 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
         localWriter("forge", self),
         host,
       ),
+      deadline,
     );
     note("end", named(target), r.ok);
     return r.ok ? ok(undefined) : failed("not-written", r.failure.reason);
@@ -475,12 +498,12 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
     check,
     end,
     async release(target, own) {
-      const r = await withdraw({ repo: target.repo }, own);
+      const r = await withdraw({ repo: target.repo }, own, deadline);
       note("release", named(target), r.ok);
       return r.ok ? ok(undefined) : failed("not-released", r.failure.reason);
     },
     async budget() {
-      const read = await readBudget();
+      const read = await readBudget(deadline);
       note("budget", "the forge", read.ok);
       return read;
     },
