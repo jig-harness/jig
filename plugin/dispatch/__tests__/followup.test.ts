@@ -128,7 +128,15 @@ describe("jig dispatch --apply follows up a merge", () => {
       marker: marker.id,
     });
     expect(typeof record.passTimeoutSec).toBe("number");
-    expect(runs(w)).toEqual([{ kind: "tick", record: id }]);
+    // The marker names this host, as its dispatcher database's digest, and that it owns the repository.
+    expect(runs(w)).toEqual([
+      {
+        kind: "tick",
+        record: id,
+        host: expect.stringMatching(/^sha256:[0-9a-f]{16}$/),
+        owner: true,
+      },
+    ]);
     expect(marker.body.split("\n").at(-1)).toBe(
       `jig dispatch follow-up · record: ${id}`,
     );

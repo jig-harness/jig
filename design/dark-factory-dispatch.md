@@ -154,10 +154,19 @@ guards keep one stage from starting twice:
   a read that lags past every one of those checks; the tick reports two
   trusted markers on one pull request whenever it finds them, so a double
   run is seen and a person settles it. The marker
-  settles who starts the follow-up, but the outcome record stays on the
-  machine that launched it, and another machine cannot tell its done from
-  its failed; so one machine dispatches a repository: at most one machine
-  file lists it (see Left out, several Orca hosts).
+  settles who starts the follow-up, and it names the host that posted it:
+  once that host's launch record ends, its next tick writes the follow-up's
+  answer onto the marker (`outcome: done` or `failed`), so another host
+  dispatching the repository reads its done from its failed (see Several
+  hosts).
+- **A claim on the forge for every drive launch.** Beside each drive's
+  launch record, after the record holds its slot and before the runtime's
+  `launch`, the tick posts a launch claim on the pull request, one of the
+  [shared records](../GLOSSARY.md) every host dispatching the repository
+  reads. A current claim another host made and has not ended holds the pull
+  request's launches, so a second host never starts the same launch; a
+  claim that loses its attempt to an earlier one is withdrawn and the launch
+  record given back (see Several hosts).
 
 ### The records it reads
 
@@ -166,6 +175,7 @@ guards keep one stage from starting twice:
 | The tracker | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
 | The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels | the drives to re-arm, take over or report, and those to arm (a person's `drive` label, or the adoption rule); the follow-ups wanted, running or failed |
 | The session runtime | in Orca, `orca worktree ps --json` | which workspace holds which item or pull request, and whether an agent in it is working or waiting |
+| The shared records | the `SharedRecords` interface (`plugin/shared/records/shared.ts`), on the forge through `plugin/shared/records/shared-forge.ts` | for each pull request it classifies, every host's launch claims and their ends, and the follow-up markers' answers: which host holds a launch, and how it ended (see Several hosts) |
 
 **The tracker.** The interface gains one read, `assignedIssues(identity,
 states)`: the issues assigned to that user in those states, in the pool
@@ -275,10 +285,10 @@ refusal or a signal, so the tick cannot read a person's decision into it.
 | Ledger says | Class | The tick |
 | --- | --- | --- |
 | running, heartbeat inside the lease window | driven | nothing |
-| running, heartbeat past the lease window | silent | takes it over only when this machine's launch record started that driver; otherwise reports it |
+| running, heartbeat past the lease window | silent | takes it over only when this machine's launch record, or another host's launch claim, started that driver; otherwise reports it |
 | stopped `0` (converged), the pull request open and now conflicting with its base, or its head past the head the drive verified | stale | re-arms on any admitted account: the drive's conflict-resolve round merges the base in, or its rounds review the new head |
-| stopped `9` (conflicting with its base, its conflict-repair budget spent), this machine's records holding no re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
-| stopped `9`, this machine already having re-driven that change, however that launch ended | needs a person | notifies once per stop, with the exit and the drive's handoff |
+| stopped `9` (conflicting with its base, its conflict-repair budget spent), neither this machine's records nor another host's launch claims holding a re-drive of the pull request's head and its base branch's head | stale | re-arms on any admitted account: the drive's conflict-resolve round tries again, or, where the forge now reports it mergeable, its rounds take it from there |
+| stopped `9`, this machine or another host already having re-driven that change, however that launch ended | needs a person | notifies once per stop, with the exit and the drive's handoff |
 | stopped `0` (converged, the pull request still at the verified head and not conflicting), `5` (merged or closed), `20` (taken over) | done | nothing; a merge is the follow-up's |
 | stopped `18` or `19` (a mailbox stop or pause) | stopped by a person | nothing: a person's stop is never re-armed |
 | stopped with no exit | stopped, origin unknown | never re-armed, since it may be a person's stop; notifies once per stop, with the drive's handoff |
@@ -694,7 +704,9 @@ replaces, and the two count as one slot until the old one ends:
 `drive.ts --take-over` stops the wedged holder through `drives.ts --stop`
 before it drives, so the account never runs more than its cap of drivers
 that work. A takeover `drive.ts` refuses ends its own record, and the old
-record keeps its slot.
+record keeps its slot. A takeover of a driver another host started has no
+record on this host to replace, and is admitted on a free slot, as a re-arm
+is (see Several hosts).
 
 A follow-up runs as a headless pass (see Binding a session to its
 account) and is admitted as a drive's pass is: under the pass deadline it
@@ -896,6 +908,9 @@ The answer to a park stays where the drive reads it, a
 comment on the pull request, so the next tick re-arms the drive with
 nothing from the phone but that comment.
 
+Where several hosts dispatch a repository, only the host that owns it
+notifies for it (see Several hosts), so a person is told once.
+
 ### Receipts
 
 Every tick writes one receipt under `~/.local/state/jig/dispatch/receipts/`, as
@@ -957,6 +972,107 @@ so the dashboard and `jig dispatch log` read while a tick writes. Its
 schema carries a version: a database at an older one is migrated forward
 in one transaction, and one a newer plugin wrote is refused, with its
 version named, by every command that opens it.
+
+What another host must know of this host's launches is not kept here: it
+is published as shared records on the forge (see Several hosts). The local
+database stays the cache and the log: planning reads this host's own
+launches from its launch records and every other host's from their claims,
+and the dashboard reads the local log.
+
+### Several hosts
+
+A repository may be listed in the machine files of several hosts, each
+dispatching it with its own accounts and its own session runtime. They
+share no process and no database; they coordinate through
+[shared records](../GLOSSARY.md), written and read through one interface,
+`SharedRecords` (`plugin/shared/records/shared.ts`), whose first
+implementation is the forge (`plugin/shared/records/shared-forge.ts`) and
+which the machine file names (`records.shared: forge`, the only value; a
+value it does not know is refused). It claims a launch, re-checks a claim
+before an act, writes a launch's end onto its own claim, lists the claims
+and their ends for a pull request or a repository, and releases a claim;
+each returns an `Outcome`. This is
+[records.md](records.md#records-a-second-host-reads)'s step 5.
+
+- **A drive's launch** posts a launch claim (`dispatch-launch-claim`), a
+  [forge claim](../GLOSSARY.md) on the pull request with key `drive` and the
+  attempt as its generation, naming the action, the claiming host's launch
+  record, the host (a digest of its dispatcher database's instance id, so a
+  public comment names no machine, and a database created again is a new
+  host), whether that host owns the repository, the ledger facts the launch
+  acts on and, for a re-drive, its change. A launch claims the attempt after
+  the latest; of the claims on one attempt the earliest trusted comment
+  wins; the latest attempt's winner is the current claim, and while it has
+  no end it holds the pull request's launches for every host. Only a
+  takeover claims past a current claim with no end, since the driver it
+  replaces is wedged by definition.
+- **A follow-up's claim** is its marker, which names the host that posted
+  it; that host writes the follow-up's answer onto it once its launch record
+  ends.
+- **A pickup's claim** is the tracker claim `do-item` makes, which every
+  host already reads; nothing is published for it here.
+- **A launch's end** is written by the host that made the claim, onto the
+  claim's own comment, at that host's next tick with `--apply`, once the
+  wrapper's exit or the session's result ends the launch record: its exit,
+  or why it died. A claim whose launch record is gone from its host ends as
+  died. A claim whose host never writes its end holds the pull request until
+  a person deletes the comment.
+
+The tick reads every host's claims for each pull request it classifies and
+places them beside its own launch records. A launch another host's current
+claim holds is reported as held by that host and never started twice. A
+refusal `drive.ts` gave another host's launch on the same ledger facts, a
+re-drive of the same change and an arm at the same head count as if this
+host had launched them, so a re-drive is launched once per change across
+hosts and a stop on a conflict another host re-drove is a person's. A
+follow-up another host ran reads as done or failed once that host wrote its
+answer, and as held by that host until then. A driver another host started
+(its claim made before the driver's run began, and its launch not ended
+before it) whose ledger heartbeat is past the lease window is taken over by
+this host under the ledger's own rule; a claim alone, however old, never
+starts a takeover. Such a takeover is admitted on a free slot, as a re-arm
+is, since this host has no launch record to take the slot of. A pull
+request whose claims cannot be read, or that carries a trusted claim that
+does not read, is unplaced for the tick. A serialized area orders a pull
+request another host's current claim holds as a drive in progress, so every
+host orders the area alike.
+
+**One owner host per repository.** The machine file's repository entry
+says `owner: true|false`, `true` by default, so a single machine keeps
+today's behaviour. The owner alone notifies for the repository, writes its
+dispatch labels, writes the outcome log's event rows for what it did not
+launch (a stop it notifies on, a serialized hold beginning and ending) and,
+once it is built, reads the [dispatch board](dispatch-board.md); every other
+host launches, re-arms, re-drives and takes over through the shared records
+and writes none of those, so each is written once. Each host still writes
+the ended rows of its own launches. Every report names this host and the
+host that owns the repository, and says so when another host's claims say
+it owns the repository too. The receipt records each shared read and write
+per tick and the forge's budget left after them, as the board's read
+records its cost, so what sharing costs is measured.
+
+What these records are, and are not:
+
+- **They coordinate launches; they never authorize an act a person takes**,
+  as the board's merge never rests on the ledger alone. Nothing reads a
+  claim as leave to merge, close an item or skip a review.
+- **The forge offers no conditional create.** A claim is read back after it
+  is posted, again a bounded number of times while the listing does not show
+  it, and re-checked before each act it guards; two hosts whose read-backs
+  each lag past the other's claim can still both read themselves the holder
+  of one launch. The stage's own refusal is the backstop: the drive's lock
+  and its ledger's claim refuse a second driver, `do-item`'s claim refuses
+  an item already taken, and a follow-up stops before its next act on an
+  earlier marker.
+- **A host sees another only as fast as the forge carries it**: a claim's
+  end lands at its host's next tick
+  ([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)).
+- **A takeover from another host does not stop the wedged driver there.**
+  `drive.ts --take-over` stops a holder only on its own host; a wedged
+  driver on another keeps that host's account slot until its process ends.
+- **A host that does not own the repository notifies for nothing**, its own
+  sessions included: one that waits or drifts is reported on that host and
+  notified by nobody, and its dashboard shows its own launches only.
 
 ### Control: observe, record, report, steer
 
@@ -1394,13 +1510,6 @@ One pull request each, in this order; each is usable on its own.
 - **Pre-emptive quota pacing.** Admission reacts to walls already met;
   spreading load before a wall is reached needs usage telemetry Jig does
   not read yet.
-- **Several Orca hosts.** One tick dispatches on the host it runs on, and
-  takes over only drivers that host started. A repository is listed in one
-  machine's file only: the follow-up marker settles which one starts a
-  follow-up, but nothing else arbitrates two dispatchers on one repository,
-  and a follow-up's outcome is read only on the machine that launched it,
-  until forge-side claims and outcomes are designed. The dashboard reads
-  one machine's outcome log until then too.
 - **Interactive pickups**, until an Orca agent launch that binds its agent
   to an account is shown to work; drives and follow-ups run as headless
   passes meanwhile.

@@ -40,7 +40,12 @@ function report(fields: Partial<RepoReport> = {}): RepoReport {
 const MACHINE: MachineConfig = {
   path: "/home/person/.jig/dispatch.yaml",
   repositories: [
-    { path: PATH, stages: ["rearm", "notify"], followupSince: null },
+    {
+      path: PATH,
+      stages: ["rearm", "notify"],
+      followupSince: null,
+      owner: true,
+    },
   ],
   accounts: [],
   intervalMs: 300_000,
@@ -49,6 +54,7 @@ const MACHINE: MachineConfig = {
   workspaceTimeoutMs: 60_000,
   receiptsDays: 30,
   dashboardListen: null,
+  sharedRecords: "forge",
 };
 
 const NOTHING_STORED: RepoStored = {

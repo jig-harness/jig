@@ -46,8 +46,9 @@ const PLUGIN = join(import.meta.dir, "..", "..");
 const MODULES = {
   m: join(PLUGIN, "shared", "records", "forge-claims.ts"),
   l: join(PLUGIN, "skills", "drive-pr", "scripts", "lib", "state", "ledger.ts"),
-  f: join(PLUGIN, "dispatch", "lib", "followup-marker.ts"),
+  f: join(PLUGIN, "shared", "records", "launch-claims.ts"),
   a: join(PLUGIN, "skills", "drive-pr", "scripts", "lib", "announce.ts"),
+  s: join(PLUGIN, "shared", "records", "shared-forge.ts"),
 };
 
 /** What a probe prints: its body's return value, as JSON. */
@@ -55,8 +56,9 @@ type Probed = Record<string, unknown>;
 
 /**
  * Run `body` (an async function body with the module as `m`, the takeover
- * claim's ledger as `l` and the follow-up marker as `f` in scope, beside the
- * helpers below) in a subprocess on the fake forge, and read what it returns.
+ * claim's ledger as `l`, the follow-up marker's kind as `f` and the shared
+ * records on the forge as `s` in scope, beside the helpers below) in a
+ * subprocess on the fake forge, and read what it returns.
  */
 async function probe(forge: FakeForge, body: string): Promise<Probed> {
   const imports = Object.entries(MODULES)
@@ -234,7 +236,9 @@ return { mine: brief(r.value.standing.value), twin: brief(later.value) };`,
       forge,
       `const draft = f.manualClaim(false, { pr: 999, writer });
 const r = await m.post(pr, f.FOLLOWUP_CLAIM, draft, { self: "drive-bot", rule: fast });
-const edited = await f.editMarker("example-org/example-repo", r.value.id, f.manualMarker(true, { pr: 999, writer }));
+const shared = s.forgeShared({ login: "drive-bot" });
+const ended = await shared.end({ repo: pr.repo, pr: 999 }, "followup", r.value.id, { state: "ended", at: at(), exit: null, outcome: "done" });
+const edited = ended.ok ? "" : ended.failure.reason;
 const after = await m.check(pr, f.FOLLOWUP_CLAIM, f.FOLLOWUP_KEY, r.value.id, { self: "drive-bot" });
 return { posted: brief(r.value.standing.value), edited, after: brief(after.value) };`,
     );
@@ -272,9 +276,10 @@ return { ...brief(s), untrusted: s.listing.filter((c) => !c.trusted).map((c) => 
     );
     const out = await probe(
       forge,
-      `const r = await m.read(pr, l.TAKEOVER_CLAIM, l.takeoverKey(3), { self: "drive-bot" });
-const anon = await m.read(pr, l.TAKEOVER_CLAIM, l.takeoverKey(3));
-return { self: r.value.map((c) => c.id), anonymous: anon.value.map((c) => c.id) };`,
+      `const trusted = (r) => r.value.filter((c) => c.trusted).map((c) => c.id);
+const r = await m.list(pr, l.TAKEOVER_CLAIM, "drive-bot");
+const anon = await m.list(pr, l.TAKEOVER_CLAIM);
+return { self: trusted(r), anonymous: trusted(anon) };`,
     );
     expect(out).toEqual({ self: [50], anonymous: [] });
   });
@@ -324,7 +329,7 @@ describe("re-checking a claim before an act, and withdrawing it", () => {
       `const draft = f.manualClaim(false, { pr: 999, writer });
 const r = await m.post(pr, f.FOLLOWUP_CLAIM, draft, { self: "drive-bot", rule: fast });
 const before = await m.check(pr, f.FOLLOWUP_CLAIM, f.FOLLOWUP_KEY, r.value.id, { self: "drive-bot" });
-add({ id: 50, body: f.manualMarker(false, { pr: 999, writer }), user: { login: "maintainer" }, author_association: "MEMBER" });
+add({ id: 50, body: m.claimBody(f.FOLLOWUP_CLAIM, f.manualClaim(false, { pr: 999, writer })), user: { login: "maintainer" }, author_association: "MEMBER" });
 const after = await m.check(pr, f.FOLLOWUP_CLAIM, f.FOLLOWUP_KEY, r.value.id, { self: "drive-bot" });
 return { before: brief(before.value), after: brief(after.value) };`,
     );
