@@ -7,7 +7,7 @@ import { scopedStateDir } from "./scoped-state-dir.ts";
  * WHY A SEPARATE FILE rather than folding this into `drive-pr.test.ts`
  * (already 17k+ lines and the repo's own highest-churn file — see
  * `references/consistency.md`). This is a self-contained new
- * concern with its own fixture needs (a `freshState`-based state file, not
+ * concern with its own fixture needs (a `freshState`-based state row, not
  * the giant file's shared reviewer/PR-snapshot fixtures), and keeping it
  * separate means a future change to progress semantics touches one small
  * file instead of adding another chapter to the largest one in the skill.
@@ -15,7 +15,7 @@ import { scopedStateDir } from "./scoped-state-dir.ts";
  * SCHEMA-LEVEL TESTS build state objects directly (no subprocess) and drive
  * `isUsableState`/`withProgress` as pure functions. CLI-LEVEL tests spawn
  * `drive-state.ts` for real, the same pattern `drive-pr.test.ts`'s own
- * `state` helper uses, with a `freshState`-seeded fixture file so every
+ * `state` helper uses, with a `freshState`-seeded fixture row so every
  * required field is present by construction rather than hand-enumerated
  * (the hand-enumeration risk this avoids: a fixture missing a field this
  * suite doesn't yet know about silently fails `isUsableState` for a reason
@@ -23,9 +23,9 @@ import { scopedStateDir } from "./scoped-state-dir.ts";
  */
 
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   type DriveState,
   freshState,
@@ -33,6 +33,9 @@ import {
   withProgress,
 } from "../scripts/lib/state/schema.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { closeDatabase } from "../../../shared/records/db.ts";
+import { dbPathFor } from "../scripts/lib/state/db.ts";
+import { readState as readStateRow, writeState } from "./state-rows.ts";
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
 const DRIVE_STATE = join(SCRIPTS, "drive-state.ts");
@@ -60,13 +63,22 @@ function freshStateDir(): string {
 
 function seedState(dir: string, overrides: Partial<DriveState> = {}): void {
   const state: DriveState = { ...freshState(999), ...overrides };
-  writeFileSync(join(dir, "drive-pr-999.json"), JSON.stringify(state));
+  writeState(dir, "999", state);
 }
 
 function readState(dir: string): DriveState {
-  return JSON.parse(
-    readFileSync(join(dir, "drive-pr-999.json"), "utf8"),
-  ) as DriveState;
+  const state = readStateRow(dir, "999");
+  if (state === null) throw new Error("PR #999 has no stored state");
+  return state as unknown as DriveState;
+}
+
+/**
+ * Remove a test's state root: the clone directory and the database beside
+ * it, closed first, since this process opened it to seed and read rows.
+ */
+function removeStateRoot(dir: string): void {
+  closeDatabase(dbPathFor(dir));
+  rmSync(dirname(dir), { recursive: true, force: true });
 }
 
 async function driveState(
@@ -105,7 +117,7 @@ describe("lib/state/schema.ts — lastProgressAt / quotaPark shape", () => {
     expect(isUsableState({ ...s, lastProgressAt: 123 }, 999)).toBe(false);
   });
 
-  it("a state file missing lastProgressAt/quotaPark entirely is REFUSED, not defaulted", () => {
+  it("a state missing lastProgressAt/quotaPark entirely is REFUSED, not defaulted", () => {
     const s = freshState(999) as Record<string, unknown>;
     delete s.lastProgressAt;
     delete s.quotaPark;
@@ -180,7 +192,7 @@ describe("drive-state.ts progress", () => {
       expect(Number.isFinite(Date.parse(s.lastProgressAt))).toBe(true);
       expect(s.phase).toBe("pass-spawned");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 
@@ -191,7 +203,7 @@ describe("drive-state.ts progress", () => {
       const r = await driveState(dir, ["progress", "999"]);
       expect(r.exitCode).toBe(2);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 
@@ -207,7 +219,7 @@ describe("drive-state.ts progress", () => {
       // meant to name.
       expect(readState(dir).lastProgressAt).toBe(before);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 
@@ -225,7 +237,7 @@ describe("drive-state.ts progress", () => {
       await driveState(dir, ["progress", "999", "--phase", "round-advanced"]);
       expect(readState(dir).quotaPark).toBeNull();
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 });
@@ -260,7 +272,7 @@ describe("drive-state.ts quota-park", () => {
       // stamp must stay untouched.
       expect(s.lastProgressAt).toBe("");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 
@@ -278,7 +290,7 @@ describe("drive-state.ts quota-park", () => {
       ]);
       expect(readState(dir).quotaPark?.resetAt).toBeNull();
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 
@@ -295,7 +307,7 @@ describe("drive-state.ts quota-park", () => {
           .exitCode,
       ).toBe(2);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 
@@ -315,7 +327,7 @@ describe("drive-state.ts quota-park", () => {
       ]);
       expect(r.exitCode).toBe(2);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 });
@@ -336,7 +348,7 @@ describe("lastProgressAt is written ONLY by genuine progress events", () => {
       await driveState(dir, ["bump-round", "999", "--head", SHA_A]);
       expect(readState(dir).lastProgressAt).toBe(first);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 
@@ -352,7 +364,7 @@ describe("lastProgressAt is written ONLY by genuine progress events", () => {
       expect(second).not.toBe(first);
       expect(Date.parse(second)).toBeGreaterThan(Date.parse(first));
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 
@@ -383,7 +395,7 @@ describe("lastProgressAt is written ONLY by genuine progress events", () => {
       // acceptance criterion this test exists to pin.
       expect(readState(dir).lastProgressAt).toBe(afterRound);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 
@@ -409,7 +421,7 @@ describe("lastProgressAt is written ONLY by genuine progress events", () => {
       expect(s.lastProgressAt).not.toBe("");
       expect(s.phase).toBe("held-drained");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 
@@ -440,7 +452,7 @@ describe("lastProgressAt is written ONLY by genuine progress events", () => {
       expect(s.lastProgressAt).not.toBe("");
       expect(s.phase).toBe("held-drained");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 
@@ -456,7 +468,7 @@ describe("lastProgressAt is written ONLY by genuine progress events", () => {
       // not manufacture progress that conceals a real stall from `--doctor`.
       expect(readState(dir).lastProgressAt).toBe(before);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 
@@ -475,7 +487,7 @@ describe("lastProgressAt is written ONLY by genuine progress events", () => {
       expect(r.exitCode).toBe(0);
       expect(readState(dir).lastProgressAt).toBe(before);
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      removeStateRoot(dir);
     }
   });
 });
@@ -496,6 +508,7 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
     DRIVE,
     join(SCRIPTS, "lib", "driver", "lifecycle.ts"),
     join(SCRIPTS, "lib", "driver", "identity.ts"),
+    join(SCRIPTS, "lib", "driver", "locks.ts"),
   ]
     .map((file) => readFileSync(file, "utf8"))
     .join("\n");
@@ -548,6 +561,10 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
     assertNoProgressStampInfrastructure(extractFunctionBody("noteTakeover"));
   });
 
+  it("renewLock, which touchLock calls, never references openStore, a state store call, or a progress-stamping subprocess", () => {
+    assertNoProgressStampInfrastructure(extractFunctionBody("renewLock"));
+  });
+
   it("startHeartbeat never references openStore, a state store call, or a progress-stamping subprocess", () => {
     assertNoProgressStampInfrastructure(extractFunctionBody("startHeartbeat"));
   });
@@ -562,27 +579,32 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
   // to protect is broken. An AST/call-graph-aware assertion would have to
   // resolve an unbounded chain of intermediate helper calls to close this for
   // good, so the tractable alternative the same rule sanctions is a VERBATIM
-  // pin: these two bodies, captured byte-for-byte below, so ANY new statement —
-  // under any name — shows up as a diff against a known-good snapshot rather
-  // than a silent pass. A change to either function (even an unrelated comment
-  // edit) now requires deliberately updating the pin, which is the point: it
-  // forces a human to look.
+  // pin: the timer's bodies and touchLock's callees, captured byte-for-byte
+  // below, so ANY new statement — under any name — shows up as a diff
+  // against a known-good snapshot rather than a silent pass. A change to any
+  // of these functions (even an unrelated comment edit) requires
+  // deliberately updating the pin, which is the point: it forces a human to
+  // look.
   const TOUCH_LOCK_GOLDEN = `{
   if (lock.nonce === undefined) return; // never taken
-  const claim = join(lock.dir, claimName(lock.nonce));
-  const now = Date.now() / 1000;
+  let renewed: boolean;
   try {
-    utimesSync(claim, now, now);
-    return;
+    renewed = renewLock(lock);
   } catch {
-    if (existsSync(claim)) return; // transient: the claim is still ours
+    return;
   }
-  // Our GENERATION is gone, so another driver recovered this path while we
-  // believed we held it. A drive that keeps going from here is the second
-  // driver the lock exists to prevent, so record it and let the loop stop;
-  // \`release\` will not touch the successor's lock, because the only name it
-  // removes is ours.
-  noteTakeover(lock);
+  if (!renewed) noteTakeover(lock);
+}`;
+
+  // The heartbeat's renewal: one update of the lock's own row, nothing else.
+  const RENEW_LOCK_GOLDEN = `{
+  if (lock.nonce === undefined) return true;
+  return renewLockRow(
+    driveDb(lock.stateDir),
+    lock.name,
+    lock.nonce,
+    diag === undefined ? undefined : JSON.stringify(diag),
+  );
 }`;
 
   const NOTE_TAKEOVER_GOLDEN = `{
@@ -606,8 +628,12 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
     expect(extractFunctionBody("touchLock")).toBe(TOUCH_LOCK_GOLDEN);
   });
 
-  it("noteTakeover body is byte-for-byte the reviewed snapshot — touchLock's one callee is pinned like touchLock itself", () => {
+  it("noteTakeover body is byte-for-byte the reviewed snapshot — touchLock's callees are pinned like touchLock itself", () => {
     expect(extractFunctionBody("noteTakeover")).toBe(NOTE_TAKEOVER_GOLDEN);
+  });
+
+  it("renewLock body is byte-for-byte the reviewed snapshot — touchLock's callees are pinned like touchLock itself", () => {
+    expect(extractFunctionBody("renewLock")).toBe(RENEW_LOCK_GOLDEN);
   });
 
   it("startHeartbeat body is byte-for-byte the reviewed snapshot — closes the differently-named-helper gap the denylist above cannot", () => {

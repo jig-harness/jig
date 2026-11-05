@@ -18,30 +18,25 @@ describe("drive-state.ts durability", () => {
   const { stateDirFor, state } = stateDurabilityFixtures;
   describe("per-hold push provenance across drivers", () => {
     it("hold's claim-check and held-record replacement happen under ONE lock hold — a REAL concurrent claim-held racing in never sees a torn state", async () => {
-      // An earlier fix made `hold --kind finding` break a stale claim before
-      // replacing the record, but did so as tryBreakStaleClaim() (its OWN
-      // lock acquire/release) followed by a SEPARATE store.update() (a
-      // second acquire/release) — leaving a real window between them for a
-      // concurrent claim-held to slip its own validate-and-succeed in
-      // against the OLD record moments before hold silently replaced it out
-      // from under the dispatch that had just been told to proceed. The
-      // fix folds both into ONE `store.locked` hold (this file's `hold`
-      // case). Proven here with a FORCED concurrent overlap, not a
-      // sequential simulation — a claim file created by a genuinely
-      // concurrent process, while `hold`'s lock is provably still held, per
-      // the same idiom the "atomic claim over the held batch" block above
-      // uses for claim-held's own mutex.
+      // `hold --kind finding` breaks a stale claim and replaces the record
+      // in ONE `store.locked` hold. As two lock holds (break, then a
+      // separate update) they would leave a window for a concurrent
+      // claim-held to slip its own validate-and-succeed in against the OLD
+      // record moments before hold silently replaced it out from under the
+      // dispatch that had just been told to proceed. Proven here with a
+      // FORCED concurrent overlap, not a sequential simulation — a claim
+      // created by a genuinely concurrent process while `hold`'s lock is
+      // provably still held, the same idiom the "atomic claim over the held
+      // batch" block uses for claim-held's own mutex.
       //
-      // Under the fix, a claimant's raw (unlocked) `claimCreate` landing
-      // ANY TIME while `hold` holds the state lock is observed by `hold`'s
-      // OWN existsSync check (since that check and the write are now one
-      // atomic section) as a LIVE claim — so `hold` correctly REFUSES
-      // rather than racing past it, and the claimant's own blocked
-      // lock.acquire() only unblocks once `hold` has released without
-      // having touched the record at all. The old record must therefore
-      // survive completely untouched, and the claimant's own claim must
-      // still validate against it successfully — the self-consistent
-      // outcome the old two-lock version could not guarantee.
+      // A claimant's raw (unlocked) `claimCreate` landing ANY TIME while
+      // `hold` holds the state lock is observed by `hold`'s OWN claim check
+      // (that check and the write being one atomic section) as a LIVE claim
+      // — so `hold` REFUSES rather than racing past it, and the claimant's
+      // own blocked lock.acquire() only unblocks once `hold` has released
+      // without having touched the record at all. The old record must
+      // therefore survive completely untouched, and the claimant's own claim
+      // must still validate against it successfully.
       const SHA_OLD = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
       const d = stateDirFor("hold-claim-check-and-replace-one-lock");
       await state(
@@ -88,7 +83,7 @@ describe("drive-state.ts durability", () => {
         await new Promise((r) => setTimeout(r, 10));
       }
       // `hold` is now DEFINITELY holding the state lock, for another ~0.5s.
-      // The claimant's own `claimCreate` is unlocked, so it wins the file
+      // The claimant's own `claimCreate` is unlocked, so it wins the claim
       // immediately; its `store.lock.acquire()` is what is forced to
       // genuinely contend with `hold`'s still-open hold.
       const claimPromise = state(d, [

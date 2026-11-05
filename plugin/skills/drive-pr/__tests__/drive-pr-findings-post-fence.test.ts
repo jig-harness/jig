@@ -5,36 +5,32 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  expectSpawnExit,
+  expectSpawnExited,
+} from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 import {
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  statSync,
   symlinkSync,
-  writeFileSync,
 } from "node:fs";
 
 import { hostname, tmpdir } from "node:os";
 
 import { join } from "node:path";
 
-import { ExitError } from "../scripts/lib/cli";
+import { dbPathFor } from "../scripts/lib/state/db";
 
-import {
-  assertRemoteMutationAllowed,
-  leasePathFor,
-} from "../scripts/lib/state/lease";
+import { leaseRef, leaseRefsFor } from "../scripts/lib/state/lease";
 
 import { SCRIPTS, gitCleanEnv, useDrivePrSuite } from "./drive-pr-harness.ts";
 
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
-import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
+
+import { putLease, removeLease } from "./state-rows.ts";
 
 import { createFindingsPostFenceFixtures } from "./drive-pr-findings-post-fence-fixtures.ts";
 
@@ -70,8 +66,8 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
 
   it("canonicalizes --pr before matching, so a leading zero still finds the live lease", async () => {
     // `isDigits` accepts "0999" — GitHub's numeric issue route treats it
-    // identically to "999" — but a strict `===` against the lease filename's
-    // own canonical PR segment would not match, silently narrowing this
+    // identically to "999" — but a strict `===` against the lease row's own
+    // canonical PR would not match, silently narrowing this
     // caller to zero candidates and authorizing the POST past a live lease
     // that should have refused it.
     const holder = Bun.spawn(["sleep", "600"], {
@@ -94,7 +90,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     // (this tree's died, a successor started fresh elsewhere), and a pass
     // left running in the OLD tree — which holds no lease of its own here —
     // must still see that successor's live lease to refuse correctly.
-    // Without the PR-wide search, `leaseFilesForActor` finds zero candidates
+    // Without the PR-wide search, `leaseRefsForActor` finds zero candidates
     // under THIS tree's own (nonexistent) lease and wrongly allows the post.
     const holder = Bun.spawn(["sleep", "600"], {
       stdout: "ignore",
@@ -105,26 +101,12 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       // A raw lease under a FOREIGN actor — never this test's own tree — is
       // the only way to exercise the cross-tree case without spawning a
       // second real worktree.
-      const foreignPath = leasePathFor(d, "999", "wt-0000000000000face");
-      writeFileSync(
-        foreignPath,
-        JSON.stringify({
-          holder: "session",
-          pid: holder.pid,
-          host: hostname(),
-          platform: process.platform,
-          actor: "wt-0000000000000face",
-          worktree: "/tmp/some-other-worktree",
-          startedAt: new Date().toISOString(),
-          lastSeen: new Date().toISOString(),
-          command: "hold",
-          generation: "f".repeat(32),
-          // Required — this fixture is about the CROSS-TREE
-          // search, so it must parse cleanly and reach the holder-naming
-          // refusal (11) rather than stopping at the unreadable one (1).
-          sessionStarted: "",
-        }),
-      );
+      putLease(leaseRef(d, "999", "wt-0000000000000face"), {
+        pid: holder.pid,
+        host: hostname(),
+        worktree: "/tmp/some-other-worktree",
+        command: "hold",
+      });
       const r = await fence(d, ["--pr", "999"]);
       expect(r.exitCode).toBe(11);
       expect(r.stderr).toContain("DIFFERENT working tree");
@@ -140,7 +122,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
   it("canonicalizes --pr with BigInt, not Number — no precision loss above 2^53", async () => {
     // `String(Number(pr))` is LOSSY past `Number.MAX_SAFE_INTEGER`
     // (9007199254740992): the next integer up, "9007199254740993", silently
-    // rounds DOWN to "9007199254740992" under a float round-trip. The old
+    // rounds DOWN to "9007199254740992" under a float round-trip. A lossy
     // canonicalization would then search for the WRONG (rounded) PR, find no
     // lease under it, and allow the post past the real, live one.
     const holder = Bun.spawn(["sleep", "600"], {
@@ -198,123 +180,40 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     expect((await fence(stateDirFor("empty"), [])).exitCode).toBe(0);
   });
 
-  it("fails CLOSED when the inherited $DRIVE_PR_STATE_DIR has vanished", async () => {
-    // Distinct from the "no lease at all" case above: there the fence
-    // resolved a directory that legitimately may never have been created (no
-    // drive has ever run here). An INHERITED override is a different claim —
-    // `drive.ts` exports it only after establishing its own state, so the
-    // directory necessarily existed a moment ago. If it is gone now (a
-    // renamed git common dir, a moved worktree), that is an anomaly this
-    // fence must not read as "no lease", or a pass whose inherited path went
-    // stale mid-drive posts unfenced.
-    const gone = join(mkdtempSync(join(tmpdir(), "fence-vanished-")), "state");
-    // Deliberately never created — `mkdtempSync` made the PARENT, `state`
-    // itself does not exist, which is the "existed, then moved away" shape an
-    // override implies without this test paying for an actual rename.
-    const r = await fence(gone, []);
-    expect(r.exitCode).toBe(1);
-    expect(r.stderr).toContain("could not be read");
-  });
-
-  it("fails CLOSED when the inherited $DRIVE_PR_STATE_DIR is a dangling symlink", async () => {
-    // A path-based `stat` alone would pass this — it follows the link and
-    // fails only when actually asked to enumerate — but this fence now
-    // enumerates the override directory as its OWN existence check
-    // (`readdirSync` directly, no separate `stat` first): a dangling symlink
-    // makes that same call fail with `ENOENT` on the real target, exactly
-    // like the wholly-vanished case above.
-    const parent = mkdtempSync(join(tmpdir(), "fence-symlink-"));
-    const link = join(parent, "state-link");
-    symlinkSync(join(parent, "state-target-does-not-exist"), link);
-    const r = await fence(link, []);
-    expect(r.exitCode).toBe(1);
-    expect(r.stderr).toContain(
-      byPlatform(
-        "native Windows reports ENOTDIR for enumeration through a dangling directory link",
+  it("fails CLOSED when the drive's database cannot be opened", async () => {
+    // A gate that cannot read its input fails closed. A database path that
+    // is a DIRECTORY cannot be opened at all — neither "no leases" nor "a
+    // lease" — and the only safe reading of an unreadable answer, in front
+    // of a mutation with no undo, is "do not post". Spawned here rather than
+    // through `fence()`, which reads the identity from the database itself:
+    // none can be read from a database that will not open, so the one a
+    // driver would have exported is passed as it is.
+    const d = stateDirFor("db-unopenable");
+    mkdirSync(dbPathFor(d));
+    for (const args of [["--pr", "999"], []]) {
+      const r = Bun.spawnSync(
+        scriptArgv(join(SCRIPTS, "assert-post-allowed.ts"), ...args),
         {
-          windows: "ENOTDIR",
-          posix: "could not be read",
-        },
-      ),
-    );
-  });
-
-  it("fails CLOSED when the lease set cannot be enumerated", async () => {
-    // A gate that cannot read its input fails closed. A state dir that is
-    // a FILE makes `readdirSync` fail with ENOTDIR — neither "no leases" nor
-    // "a lease" — and the only safe reading of an unreadable answer, in front
-    // of a mutation with no undo, is "do not post".
-    //
-    // Asserted for the --pr path SPECIFICALLY, because that is the one a
-    // direct `leasePathFor` read would have failed open on: `existsSync` of a
-    // path under a file answers false, which is indistinguishable from a tree
-    // that has never been driven.
-    const notADir = join(mkdtempSync(join(tmpdir(), "fence-notadir-")), "f");
-    writeFileSync(notADir, "not a directory\n");
-    expect((await fence(notADir, ["--pr", "999"])).exitCode).not.toBe(0);
-    expect((await fence(notADir, [])).exitCode).not.toBe(0);
-  });
-
-  it("fails CLOSED on a lease file it can enumerate but cannot READ", async () => {
-    // The class one level below the probe above, and the half that was still
-    // open: fencing the DIRECTORY while an unreadable FILE inside it read as
-    // "no lease" and permitted the post.
-    // `readLease` collapses absent and unreadable to the same `null`, which is
-    // the right ruling for CLAIMING and the wrong one here.
-    //
-    // Both corruptions are exercised, because they take different paths in:
-    // unparseable bytes fail the shape check, an unreadable mode fails the
-    // open. Each is asserted separately so one regressing names itself.
-    const holder = Bun.spawn(["sleep", "600"], {
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    try {
-      for (const [label, corrupt] of [
-        ["malformed JSON", (f: string) => writeFileSync(f, "{ not json")],
-        ["a partial record", (f: string) => writeFileSync(f, '{"pid":123}')],
-        // A DIRECTORY at the lease path, not `chmod 000`: mode bits are
-        // ignored by root, so that fixture asserted the wrong branch (exit
-        // 11, a valid live lease) on a root runner. `EISDIR` on the open is
-        // uid-independent.
-        [
-          "a directory in its place",
-          (f: string) => {
-            rmSync(f);
-            mkdirSync(f);
+          env: {
+            ...gitCleanEnv(),
+            DRIVE_PR_STATE_DIR: d,
+            DRIVE_PR_STATE_DIR_IDENTITY: "an-instance-this-drive-opened",
+            DRIVE_PR_SESSION: String(process.pid),
+            DRIVE_PR_SESSION_STARTED: "",
           },
-        ],
-      ] as const) {
-        const d = stateDirFor(`unreadable-${label.replace(/\s+/g, "-")}`);
-        seedLease(d, "999", holder.pid);
-        const file = join(
-          d,
-          readdirSync(d).filter((f) =>
-            /^pr-drive-lease-999-wt-[0-9a-f]{16}\.json$/.test(f),
-          )[0] ?? "",
-        );
-        // The probe is only meaningful if the UNCORRUPTED lease refuses —
-        // otherwise a fence that had stopped reading leases entirely would
-        // pass the corrupted case for the wrong reason.
-        expect({
-          label,
-          code: (await fence(d, ["--pr", "999"])).exitCode,
-        }).toEqual({ label, code: 11 });
-        corrupt(file);
-        const r = await fence(d, ["--pr", "999"]);
-        expect({ label, code: r.exitCode }).toEqual({ label, code: 1 });
-        expect(r.stderr).toContain("could not be read");
-      }
-    } finally {
-      holder.kill();
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      expectSpawnExit(r, 1, args.join(" ") || "(no PR)");
+      expect(r.stderr.toString()).toContain("cannot be opened");
     }
   });
 
-  it("still allows when the enumerated lease file is genuinely GONE", async () => {
-    // The other side of the same read, and the reason it is not simply "any
-    // null refuses": a `clear-lease` or `reset` landing between the
-    // enumeration and the read means nobody is driving, which is the
-    // documented revoked-without-successor residual, not an unreadable file.
+  it("still allows when the enumerated lease is genuinely GONE", async () => {
+    // A `clear-lease` or `reset` that removed the lease means nobody is
+    // driving, which is the documented revoked-without-successor residual:
+    // a lease that is not there is not a refusal.
     const holder = Bun.spawn(["sleep", "600"], {
       stdout: "ignore",
       stderr: "ignore",
@@ -322,22 +221,15 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     try {
       const d = stateDirFor("vanished");
       seedLease(d, "999", holder.pid);
-      const file = join(
-        d,
-        readdirSync(d).filter((f) =>
-          /^pr-drive-lease-999-wt-[0-9a-f]{16}\.json$/.test(f),
-        )[0] ?? "",
-      );
       expect((await fence(d, ["--pr", "999"])).exitCode).toBe(11);
-      rmSync(file);
-      // "Genuinely gone" now has to mean gone on BOTH axes: `seedLease` claims
-      // a TREE lease too, which the removed per-PR file alone does
-      // not touch, and the tree fence does not narrow by `--pr` — so without
-      // this, a still-alive `holder` would leave the tree lease live and this
-      // assertion would refuse for a reason unrelated to what it tests
-      //. Awaited, not just signalled: a
-      // `pidAlive` check on a killed-but-not-yet-reaped process can still see
-      // it as running.
+      for (const ref of leaseRefsFor(d, "999")) removeLease(ref);
+      // "Genuinely gone" has to mean gone on BOTH axes: `seedLease` claims a
+      // TREE lease too, which the removed per-PR lease alone does not touch,
+      // and the tree fence does not narrow by `--pr` — so without this, a
+      // still-alive `holder` would leave the tree lease live and this
+      // assertion would refuse for a reason unrelated to what it tests.
+      // Awaited, not just signalled: a `pidAlive` check on a
+      // killed-but-not-yet-reaped process can still see it as running.
       holder.kill();
       await holder.exited;
       expect((await fence(d, ["--pr", "999"])).exitCode).toBe(0);
@@ -347,9 +239,8 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
   });
 
   it("fails CLOSED when the git probe fails for an OPERATIONAL reason", async () => {
-    // Reproduced: with `git` off $PATH the probe failed, the failure was read
-    // as "no drive state", and the fence exited 0 having checked no lease at
-    // all.
+    // With `git` off $PATH the probe fails, and reading that failure as "no
+    // drive state" would exit 0 having checked no lease at all.
     //
     // No $DRIVE_PR_STATE_DIR: the override short-circuits the probe, so
     // setting it would test nothing. cwd is this repo, which IS a repository —
@@ -405,11 +296,11 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
   });
 
   it("refuses when the `.git` marker EXISTS but the filesystem cannot resolve it", async () => {
-    // The filesystem census that replaced the exit-128 check retained the same
-    // temporal hole one step further in: `existsSync`
-    // reports `false` for confirmed absence and for indeterminate failure
-    // alike. A drive writes a live lease and the marker THEN becomes a broken
-    // symlink (or an ancestor becomes unsearchable); the walk runs to the root,
+    // The filesystem census that decides whether a repository is in play
+    // must not trust `existsSync`, which reports `false` for confirmed
+    // absence and for indeterminate failure alike. A drive writes a live
+    // lease and the marker THEN becomes a broken symlink (or an ancestor
+    // becomes unsearchable); a walk on `existsSync` runs to the root,
     // concludes no repository is in play, and the POST is authorised without
     // the still-live lease ever being read.
     //
@@ -427,7 +318,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     symlinkSync("/nonexistent/gitdir-target", join(lost, ".git"));
 
     // The entry exists, and `existsSync` still says it does not: the exact
-    // discrepancy the fence used to resolve in favour of posting.
+    // discrepancy a fence on `existsSync` would resolve in favour of posting.
     expect(existsSync(join(lost, ".git"))).toBe(false);
     expect(() => lstatSync(join(lost, ".git"))).not.toThrow();
 
@@ -490,207 +381,5 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     // other reason cannot pass this.
     expect(stderr).toContain("exited 128");
     expect(stderr).toContain("IS a repository");
-  });
-
-  describe("state-directory identity", () => {
-    // `resolveFenceContext`'s override path freezes the NAME LIST from one
-    // `readdirSync`, but `assertRemoteMutationAllowed` still has to OPEN each
-    // candidate afterwards to learn who holds it — a genuine second
-    // filesystem touch. Renaming the state directory away and creating an
-    // EMPTY one at the same pathname raises no `ENOENT` anywhere that second
-    // read could see: the enumerated name simply is not there anymore, and
-    // `readLeaseForFence` reports `absent` for a lease that is still live in
-    // the directory that moved.
-    //
-    // These probes call `assertRemoteMutationAllowed` directly, in-process,
-    // with a hand-built `ctx` — the same shape `resolveFenceContext`'s
-    // override branch returns — rather than spawning `assert-post-allowed.ts`
-    // and racing it: the enumeration and the per-candidate read happen inside
-    // ONE function call with no `await` between them, so a subprocess-level
-    // race would depend on scheduling this suite cannot control. Calling the
-    // real, exported function directly and performing the rename-and-recreate
-    // between building `ctx` and invoking it reproduces the exact race
-    // deterministically, on the real production code — matching lock.test.ts's
-    // own convention of planting the directory state a race would have left
-    // rather than trying to win one live.
-    function foreignLeaseJson(actor: string): string {
-      return JSON.stringify({
-        holder: "session",
-        pid: process.pid,
-        host: hostname(),
-        platform: process.platform,
-        actor,
-        worktree: "/some/other/tree",
-        startedAt: new Date().toISOString(),
-        lastSeen: new Date().toISOString(),
-        command: "hold",
-        generation: "a".repeat(32),
-        sessionStarted: "",
-      });
-    }
-
-    it("fails CLOSED when the state directory is renamed away and replaced empty before a candidate lease is read", async () => {
-      const parent = mkdtempSync(join(tmpdir(), "fence-rename-race-"));
-      const stateDir = join(parent, "state");
-      mkdirSync(stateDir);
-      const foreignActor = "wt-0000000000000dea1";
-      // This lease is genuinely LIVE: pid is this test's own process, which
-      // is alive throughout, and `lastSeen` is fresh. If the fix silently
-      // read the swap as "absent", this lease would still be live in the
-      // directory that moved.
-      writeFileSync(
-        leasePathFor(stateDir, "999", foreignActor),
-        foreignLeaseJson(foreignActor),
-      );
-
-      // What `resolveFenceContext`'s override branch would have captured:
-      // the enumeration, and this directory's identity in the same breath.
-      const overrideEntries = readdirSync(stateDir);
-      // `statSync(..., { bigint: true })`, matching production: the identity
-      // FOLLOWS symlinks and is BigInt-valued (since 64-bit dev/ino round
-      // when read as numbers). Hand-building it from
-      // `lstatSync`'s numeric fields would compare a rounded, link-scoped
-      // identity against a followed BigInt one and never agree.
-      const before = statSync(stateDir, { bigint: true });
-
-      // The race: move the directory away — the live lease is still inside
-      // it — and recreate an empty one at the exact same pathname. Neither
-      // step raises ENOENT anywhere.
-      const moved = `${stateDir}.moved-away`;
-      renameSync(stateDir, moved);
-      mkdirSync(stateDir);
-      expect(
-        existsSync(join(moved, `pr-drive-lease-999-${foreignActor}.json`)),
-      ).toBe(true);
-      expect(
-        existsSync(join(stateDir, `pr-drive-lease-999-${foreignActor}.json`)),
-      ).toBe(false);
-
-      let threw: unknown;
-      try {
-        await assertRemoteMutationAllowed(
-          {
-            stateDir,
-            actor: "wt-0000000000000m1ne",
-            session: {
-              pid: process.pid,
-              host: hostname(),
-              source: "CLAUDE_PID",
-              sessionStarted: "",
-            },
-            fromOverride: true,
-            overrideEntries,
-            stateDirIdentity: { dev: before.dev, ino: before.ino },
-          },
-          "999",
-          "test-fence",
-        );
-      } catch (e) {
-        threw = e;
-      }
-      expect(threw).toBeInstanceOf(ExitError);
-      expect((threw as ExitError).code).toBe(1);
-      expect((threw as Error).message).toBe("exit 1");
-    });
-
-    it("fails CLOSED on the same swap even when NO candidate lease file matched (the final re-check)", async () => {
-      // Zero matching candidates means the per-candidate `absent` re-check
-      // above never runs at all — the loop body never executes — so the ONLY
-      // thing standing between a swapped directory and a silent "allowed" is
-      // the identity re-check `assertRemoteMutationAllowed` performs
-      // immediately before it returns.
-      const parent = mkdtempSync(join(tmpdir(), "fence-rename-race-empty-"));
-      const stateDir = join(parent, "state");
-      mkdirSync(stateDir);
-      // Present, but matches no PR/actor prefix at all.
-      writeFileSync(join(stateDir, "unrelated-file.json"), "{}");
-
-      const overrideEntries = readdirSync(stateDir);
-      // `statSync(..., { bigint: true })`, matching production: the identity
-      // FOLLOWS symlinks and is BigInt-valued (since 64-bit dev/ino round
-      // when read as numbers). Hand-building it from
-      // `lstatSync`'s numeric fields would compare a rounded, link-scoped
-      // identity against a followed BigInt one and never agree.
-      const before = statSync(stateDir, { bigint: true });
-
-      const moved = `${stateDir}.moved-away`;
-      renameSync(stateDir, moved);
-      mkdirSync(stateDir);
-
-      let threw: unknown;
-      try {
-        await assertRemoteMutationAllowed(
-          {
-            stateDir,
-            actor: "wt-0000000000000m1ne",
-            session: {
-              pid: process.pid,
-              host: hostname(),
-              source: "CLAUDE_PID",
-              sessionStarted: "",
-            },
-            fromOverride: true,
-            overrideEntries,
-            stateDirIdentity: { dev: before.dev, ino: before.ino },
-          },
-          "999",
-          "test-fence",
-        );
-      } catch (e) {
-        threw = e;
-      }
-      expect(threw).toBeInstanceOf(ExitError);
-      expect((threw as ExitError).code).toBe(1);
-    });
-
-    it("does NOT refuse when the directory is untouched (no false positive from the identity check)", async () => {
-      // The regression guard: an ordinary, race-free call — same shape as
-      // above but with no rename in between — must still allow, matching
-      // every OTHER passing test in this describe block that exercises the
-      // override path via the real `assert-post-allowed.ts` binary.
-      const parent = mkdtempSync(join(tmpdir(), "fence-no-race-"));
-      const stateDir = join(parent, "state");
-      mkdirSync(stateDir);
-      const overrideEntries = readdirSync(stateDir);
-      // `statSync(..., { bigint: true })`, matching production: the identity
-      // FOLLOWS symlinks and is BigInt-valued (since 64-bit dev/ino round
-      // when read as numbers). Hand-building it from
-      // `lstatSync`'s numeric fields would compare a rounded, link-scoped
-      // identity against a followed BigInt one and never agree.
-      const before = statSync(stateDir, { bigint: true });
-
-      // Awaited directly, not wrapped in `expect(() => ...).not.toThrow()` —
-      // that matcher only ever tests a SYNCHRONOUS call and would pass
-      // vacuously against a rejected promise now that this function is
-      // async: a thrown `ExitError` inside the promise never
-      // reaches the synchronous try/catch `toThrow()` builds internally, so
-      // it would report "did not throw" regardless of the outcome. Letting
-      // the rejection propagate out of this `it(..., async () => { ... })`
-      // is what actually fails the test if this call refuses.
-      //
-      // The returned lock is captured and released — a formerly-void call
-      // now resolves to a still-HELD `PathLock`, and discarding
-      // it here would leave both the lock directory and `createLock`'s
-      // process/signal listeners live for the rest of this test run.
-      const lock = await assertRemoteMutationAllowed(
-        {
-          stateDir,
-          actor: "wt-0000000000000m1ne",
-          session: {
-            pid: process.pid,
-            host: hostname(),
-            source: "CLAUDE_PID",
-            sessionStarted: "",
-          },
-          fromOverride: true,
-          overrideEntries,
-          stateDirIdentity: { dev: before.dev, ino: before.ino },
-        },
-        "999",
-        "test-fence",
-      );
-      lock?.release();
-      lock?.dispose();
-    });
   });
 });

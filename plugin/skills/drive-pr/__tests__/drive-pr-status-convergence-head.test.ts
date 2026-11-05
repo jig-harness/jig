@@ -26,6 +26,8 @@ import {
 
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
+import { writeState } from "./state-rows.ts";
+
 useDrivePrSuite();
 describe("drive-status.ts refuses to converge — the measured false-convergence modes", () => {
   it("mode 12b: EVERY terminal return re-checks the head, not just CONVERGED", async () => {
@@ -78,7 +80,7 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
     const { dir, stateDir } = writeFixture({
       threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
     });
-    writeFileSync(join(stateDir, "drive-pr-999.json"), "not json at all");
+    writeState(stateDir, "999", "not json at all");
     const proc = Bun.spawn(
       scriptArgv(
         join(SCRIPTS, "drive-status.ts"),

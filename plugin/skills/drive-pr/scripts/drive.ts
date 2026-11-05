@@ -198,7 +198,6 @@ export {
   conflictRepairRounds,
   type RepairTask,
 } from "./lib/driver/settings.ts";
-export { inspect, claimWasTakenOver } from "./lib/driver/locks.ts";
 export {
   driverStopExitCode,
   installStopControls,

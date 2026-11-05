@@ -317,7 +317,12 @@ const QUIET_HOLDS: ReadonlyMap<DriveHold["kind"], LedgerClass> = new Map([
 function wantReason(pr: DrivenPr, takeover: string | null): string {
   if (takeover !== null)
     return `drive ledger silent, and this machine's launch record ${takeover} started its driver: take it over (drive.ts --take-over decides)`;
-  const source = pr.class === "unarmed" ? "drive label" : "drive ledger";
+  const source =
+    pr.class !== "unarmed"
+      ? "drive ledger"
+      : typeof pr.evidence.adopted === "string"
+        ? "adoption rule"
+        : "drive label";
   return `${source} ${pr.class}: ${pr.why}`;
 }
 

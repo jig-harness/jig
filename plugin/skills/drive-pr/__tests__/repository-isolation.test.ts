@@ -11,8 +11,16 @@ import {
 } from "./drive-pr-harness.ts";
 import { PASS_NOOP, runDriveIn } from "./drive-loop-harness.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { putLock, readState, stateText, writeState } from "./state-rows.ts";
 
 useDrivePrSuite();
+
+/** A pid that is definitively gone. */
+async function deadPid(): Promise<number> {
+  const p = Bun.spawn(["true"], { stdout: "ignore", stderr: "ignore" });
+  await p.exited;
+  return p.pid;
+}
 
 describe("repository-scoped drive history", () => {
   it("starts the same PR fresh in another repository and labels both listings", async () => {
@@ -32,14 +40,12 @@ describe("repository-scoped drive history", () => {
     const args = ["--no-head-sync", "--max-rounds", "1", "--", ...PASS_NOOP];
     const a = await runDriveIn(fixtureA.dir, root, args, first.dir);
     expectSpawnExit({ ...a, stdout: null }, 6);
-    const saved = JSON.parse(
-      readFileSync(join(dirA, "drive-pr-999.json"), "utf8"),
-    );
+    const saved = readState(dirA, "999") ?? {};
     saved.parked = [
       { key: "only-first", kind: "thread", reason: "Human decision", round: 1 },
     ];
     const savedA = JSON.stringify(saved);
-    writeFileSync(join(dirA, "drive-pr-999.json"), savedA);
+    writeState(dirA, "999", savedA);
     const handoffA = readFileSync(
       join(fixtureA.dir, "handoff", "pr-drive-999.md"),
       "utf8",
@@ -47,19 +53,15 @@ describe("repository-scoped drive history", () => {
     const b = await runDriveIn(fixtureB.dir, root, args, second.dir);
     expectSpawnExit({ ...b, stdout: null }, 6);
     expect(b.stderr).toContain("round 1");
-    expect(
-      JSON.parse(readFileSync(join(dirB, "drive-pr-999.json"), "utf8")).rounds,
-    ).toBe(1);
-    expect(readFileSync(join(dirA, "drive-pr-999.json"), "utf8")).toBe(savedA);
+    expect(readState(dirB, "999")?.rounds).toBe(1);
+    expect(stateText(dirA, "999")).toBe(savedA);
     expect(readFileSync(join(dirA, "drive-pr-999.log"), "utf8")).toContain(
       dirA,
     );
     expect(readFileSync(join(dirB, "drive-pr-999.log"), "utf8")).toContain(
       dirB,
     );
-    expect(
-      JSON.parse(readFileSync(join(dirB, "drive-pr-999.json"), "utf8")).parked,
-    ).toEqual([]);
+    expect(readState(dirB, "999")?.parked).toEqual([]);
     expect(
       readFileSync(join(fixtureB.dir, "handoff", "pr-drive-999.md"), "utf8"),
     ).not.toContain("only-first");
@@ -71,9 +73,9 @@ describe("repository-scoped drive history", () => {
       [first, dirA],
       [second, dirB],
     ] as const) {
-      // A released driver leaves no lock; retain an empty operator slot for
-      // both the plain lock census and doctor's census.
-      mkdirSync(join(leaf, "pr-drive-999.lock"), { recursive: true });
+      // A released driver leaves no lock; plant one its gone driver left
+      // behind, so both the plain lock census and doctor's have a row.
+      putLock(leaf, "pr-drive-999", { pid: await deadPid(), token: "gone" });
       const env = {
         ...gitCleanEnv(),
         DRIVE_PR_STATE_DIR: root,

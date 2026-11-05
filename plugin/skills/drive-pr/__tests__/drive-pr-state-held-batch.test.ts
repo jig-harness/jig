@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 
 import { join } from "node:path";
 
@@ -15,6 +15,7 @@ import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
 import { exceptOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import { createStateDurabilityFixtures } from "./drive-pr-state-durability-fixtures.ts";
+import { claimRow, putClaim, writeState } from "./state-rows.ts";
 
 useDrivePrSuite();
 describe("drive-state.ts durability", () => {
@@ -343,9 +344,9 @@ describe("drive-state.ts durability", () => {
       expect((await state(d, ["held-keys", "999"])).stdout).toBe("PRRT_a");
     });
 
-    it("a malformed state file blocks a hold, so nothing is built on it", async () => {
+    it("a malformed state blocks a hold, so nothing is built on it", async () => {
       const d = stateDirFor("held-malformed");
-      writeFileSync(join(d, "drive-pr-999.json"), "not json at all");
+      writeState(d, "999", "not json at all");
       const r = await state(d, [
         "hold",
         "999",
@@ -362,37 +363,34 @@ describe("drive-state.ts durability", () => {
     });
 
     it("rejects a well-formed array of ILL-SHAPED held entries, not just non-arrays", async () => {
-      // `.held` being an array was not enough: an empty key, a `kind` outside
-      // thread|finding, or a missing `round` all satisfied "array" while
+      // `.held` being an array is not enough: an empty key, a `kind` outside
+      // thread|finding, or a missing `round` all satisfy "array" while
       // being unusable by `held-keys`/`release-held`/step 6. Only a
-      // hand-edited or externally-corrupted file can reach this shape — every
-      // writer here (`hold`) already enforces it — but a state file that
+      // hand-edited or externally-corrupted state can reach this shape —
+      // every writer here (`hold`) already enforces it — but a state that
       // parses and passes the shape check is treated as trustworthy, so the
       // check has to actually cover the shape.
       const d = stateDirFor("held-ill-shaped");
-      writeFileSync(
-        join(d, "drive-pr-999.json"),
-        JSON.stringify({
-          pr: 999,
-          lastEscalatedRound: 0,
-          lastEscalatedInvariant: "",
-          roundPaths: [],
-          lastProgressAt: "",
-          quotaPark: null,
-          rounds: 0,
-          lastCountedHead: "",
-          attempts: 0,
-          attemptsHead: "",
-          lastReflectedRound: 0,
-          lastReflectedAttempts: 0,
-          readyMarkedRound: 0,
-          ciHold: null,
-          verifiedSha: "",
-          phase: "",
-          parked: [],
-          held: [{ key: "", kind: "bogus", outcome: "rejected" }],
-        }),
-      );
+      writeState(d, "999", {
+        pr: 999,
+        lastEscalatedRound: 0,
+        lastEscalatedInvariant: "",
+        roundPaths: [],
+        lastProgressAt: "",
+        quotaPark: null,
+        rounds: 0,
+        lastCountedHead: "",
+        attempts: 0,
+        attemptsHead: "",
+        lastReflectedRound: 0,
+        lastReflectedAttempts: 0,
+        readyMarkedRound: 0,
+        ciHold: null,
+        verifiedSha: "",
+        phase: "",
+        parked: [],
+        held: [{ key: "", kind: "bogus", outcome: "rejected" }],
+      });
       const r = await state(d, ["held-keys", "999"]);
       expect(r.exitCode).not.toBe(0);
       expect(r.stderr).toContain("not usable drive state");
@@ -443,10 +441,7 @@ describe("drive-state.ts durability", () => {
       // ACCEPTED is what turns that into a red: a new required field fails
       // here first, and names itself in the refusal it triggers.
       const baseDir = stateDirFor("msg-names-baseline");
-      writeFileSync(
-        join(baseDir, "drive-pr-999.json"),
-        JSON.stringify(complete),
-      );
+      writeState(baseDir, "999", complete);
       expect((await state(baseDir, ["held-keys", "999"])).exitCode).toBe(0);
 
       const unnamed: string[] = [];
@@ -457,7 +452,7 @@ describe("drive-state.ts durability", () => {
         const d = stateDirFor(`msg-names-${field}`);
         const partial = { ...complete };
         delete partial[field];
-        writeFileSync(join(d, "drive-pr-999.json"), JSON.stringify(partial));
+        writeState(d, "999", partial);
         const res = await state(d, ["held-keys", "999"]);
         // Guard against a vacuous pass: if dropping the field is ACCEPTED,
         // there is no refusal message to inspect and this field proves
@@ -474,7 +469,7 @@ describe("drive-state.ts durability", () => {
       // containers, so removing `commentUrl` or `outcome` from the message
       // left that test green while a file missing exactly those fields got a
       // diagnostic that named neither. Nested
-      // entries are where the message earns its keep — a state file whose
+      // entries are where the message earns its keep — a stored state whose
       // top-level keys all look fine is precisely the one a reader cannot
       // diagnose unaided.
       //
@@ -550,7 +545,7 @@ describe("drive-state.ts durability", () => {
       // is not itself accepted proves nothing about which deletion caused a
       // refusal.
       const baseDir = stateDirFor("msg-nested-baseline");
-      writeFileSync(join(baseDir, "drive-pr-999.json"), JSON.stringify(base));
+      writeState(baseDir, "999", base);
       expect((await state(baseDir, ["held-keys", "999"])).exitCode).toBe(0);
 
       const unnamed: string[] = [];
@@ -564,7 +559,7 @@ describe("drive-state.ts durability", () => {
         >;
         const entries = partial[container] as Array<Record<string, unknown>>;
         delete entries[index]?.[field];
-        writeFileSync(join(d, "drive-pr-999.json"), JSON.stringify(partial));
+        writeState(d, "999", partial);
         const res = await state(d, ["held-keys", "999"]);
         // Not the vacuous-pass SKIP the top-level sweep uses: every field here
         // is one `isUsableState` demands, so an accepted deletion is a
@@ -585,11 +580,11 @@ describe("drive-state.ts durability", () => {
       // read `readyMarkedRound === 0`, be pre-empted for arbitrarily long, and
       // resume only after some OTHER caller has committed the mark AND released
       // its lease — at which point this caller's create succeeds against a
-      // now-vacant path and its driver fires a second `gh pr ready`, which is
+      // now-vacant claim and its driver fires a second `gh pr ready`, which is
       // the duplicate paid review the lease exists to prevent.
       //
       // The commit landing during the gap is what makes this deterministic:
-      // it strictly happens-before the release that frees the path, which
+      // it strictly happens-before the release that frees the claim, which
       // strictly happens-before this create can succeed, so a plain re-read is
       // guaranteed to observe it — no lock needed on this half.
       const d = stateDirFor("ready-claim-recheck");
@@ -614,43 +609,40 @@ describe("drive-state.ts durability", () => {
         await Bun.sleep(10);
       }
       // The other driver commits and releases while this one is pre-empted.
-      writeFileSync(
-        join(d, "drive-pr-999.json"),
-        JSON.stringify({
-          pr: 999,
-          rounds: 0,
-          lastCountedHead: "",
-          attempts: 0,
-          attemptsHead: "",
-          lastReflectedRound: 0,
-          lastReflectedAttempts: 0,
-          readyMarkedRound: 3,
-          ciHold: null,
-          verifiedSha: "",
-          phase: "",
-          parked: [],
-          held: [],
-          lastEscalatedRound: 0,
-          lastEscalatedInvariant: "",
-          roundPaths: [],
-          lastProgressAt: "",
-          quotaPark: null,
-        }),
-      );
+      writeState(d, "999", {
+        pr: 999,
+        rounds: 0,
+        lastCountedHead: "",
+        attempts: 0,
+        attemptsHead: "",
+        lastReflectedRound: 0,
+        lastReflectedAttempts: 0,
+        readyMarkedRound: 3,
+        ciHold: null,
+        verifiedSha: "",
+        phase: "",
+        parked: [],
+        held: [],
+        lastEscalatedRound: 0,
+        lastEscalatedInvariant: "",
+        roundPaths: [],
+        lastProgressAt: "",
+        quotaPark: null,
+      });
       const [stdout] = await Promise.all([
         new Response(proc.stdout).text(),
         proc.exited,
       ]);
       expect(stdout.trim()).toBe("already");
       // And it left no lease behind for a later caller to trip over.
-      expect(existsSync(join(d, "drive-pr-999.ready-claim"))).toBe(false);
+      expect(claimRow(d, "999", "ready")).toBeNull();
     });
 
     it("never destroys a ready-mark lease generation it does not own", async () => {
       // The cross-generation delete: an owner returning at the edge of the
       // staleness window passes its own token check, and a DIFFERENT driver
       // legitimately breaks that stale claim and writes a fresh one in the gap
-      // before the removal runs — so the removal deletes the successor's file,
+      // before the removal runs — so the removal deletes the successor's claim,
       // not the one this caller ever owned, and that successor (which has
       // already read `readyMarkedRound === 0`) can proceed as a second winner.
       //
@@ -660,8 +652,7 @@ describe("drive-state.ts durability", () => {
       // the successor's reclaim, minus the timing.
       for (const cmd of ["commit-ready-mark", "release-ready-mark"]) {
         const d = stateDirFor(`ready-lease-generation-${cmd}`);
-        const lease = join(d, "drive-pr-999.ready-claim");
-        writeFileSync(lease, "successor-token");
+        putClaim(d, "999", "ready", "", "successor-token");
         const r = await state(d, [
           cmd,
           "999",
@@ -671,7 +662,7 @@ describe("drive-state.ts durability", () => {
         expect(r.exitCode).toBe(1);
         expect(r.stderr).toContain("not yours");
         // The successor's lease survives, and nothing was recorded on its behalf.
-        expect(readFileSync(lease, "utf8")).toBe("successor-token");
+        expect(claimRow(d, "999", "ready")?.token).toBe("successor-token");
         expect((await state(d, ["ready-marked", "999"])).stdout.trim()).toBe(
           "0",
         );

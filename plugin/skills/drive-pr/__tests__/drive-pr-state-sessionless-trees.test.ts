@@ -7,26 +7,29 @@ import { describe, expect, it } from "bun:test";
 
 import { execFileSync } from "node:child_process";
 
-import {
-  readdirSync,
-  readFileSync,
-  rmSync,
-  utimesSync,
-  writeFileSync,
-} from "node:fs";
-
 import { hostname } from "node:os";
 
 import { join, resolve } from "node:path";
 
 import { cloneKey } from "../scripts/lib/state/clone-key";
 
+import { driveDb, nextCount } from "../scripts/lib/state/db";
+
 import {
   assertLeaseUnchanged,
-  leasePathFor,
+  leaseRef,
+  leaseRefsFor,
   readLease,
-  treeLeasePathFor,
+  readTreeLease,
+  treeLeaseRef,
 } from "../scripts/lib/state/lease";
+
+import {
+  editLease,
+  putLease,
+  putTreeLease,
+  removeLease,
+} from "./state-rows.ts";
 
 import {
   SCRIPTS,
@@ -58,15 +61,40 @@ describe("drive-state.ts durability", () => {
     );
     const { A_URL } = stateSessionLeaseFixtures;
 
+    /**
+     * The state directory both worktrees of `a`'s clone share: the default
+     * root under the suite's home, keyed by the clone (the
+     * `--git-common-dir`), not by either tree. `twoDrivers` leaves
+     * $DRIVE_PR_STATE_DIR unset so both trees resolve it themselves.
+     */
+    function sharedStateDir(a: string, env: Record<string, string>): string {
+      const commonDir = resolve(
+        a,
+        execFileSync("git", ["rev-parse", "--git-common-dir"], {
+          cwd: a,
+          env,
+        })
+          .toString()
+          .trim(),
+      );
+      return join(
+        suiteHome,
+        ".local",
+        "state",
+        "jig",
+        "drive-pr",
+        cloneKey(commonDir),
+      );
+    }
+
     it("refuses the SECOND of two SESSIONLESS trees — neither has a pid, both have a tree", async () => {
-      // The residual lease-derived refusal cannot close: the refusal is
-      // derived from lease files, so it needed ONE SIDE to have left one, and
-      // two sessionless resolvers left none between them. Both passed the gate
-      // and could then put two outcome replies on every thread they both
-      // reached — the exact damage the gate exists to prevent, surviving on
-      // the one path.
+      // The PR-wide refusal is derived from lease records, so it needs ONE
+      // SIDE to have left one; two sessionless resolvers that left none
+      // between them would both pass the gate and could then put two outcome
+      // replies on every thread they both reached — the exact damage the gate
+      // exists to prevent, surviving on the one path.
       //
-      // Closed by giving tier 3 a record whose holder is the TREE. No pid is
+      // So tier 3 leaves a record whose holder is the TREE. No pid is
       // invented for it; `actor.ts` already identifies a working tree without
       // one, and a working tree is the only thing the PR-wide gate asks about.
       const { a, b, env } = twoDrivers("lease-cross-tree-both-sessionless");
@@ -127,42 +155,18 @@ describe("drive-state.ts durability", () => {
       // than the race it prevents. Aged past the window by hand, because the
       // window is hours and its floor (`leaseStaleFloorMs`) puts even the
       // smallest configurable one well past a test's patience.
-      //
-      // Both worktrees land on the SAME state dir because they share one
-      // clone (`twoDrivers` leaves $DRIVE_PR_STATE_DIR unset so they resolve
-      // it themselves) — the default, `~/.local/state/jig/drive-pr/
-      // <cloneKey>/`, keyed off `--git-common-dir` rather than the common
-      // dir itself.
-      const commonDir = resolve(
-        a,
-        execFileSync("git", ["rev-parse", "--git-common-dir"], {
-          cwd: a,
-          env: sessionless,
-        })
-          .toString()
-          .trim(),
-      );
-      const stateDir = join(
-        suiteHome,
-        ".local",
-        "state",
-        "jig",
-        "drive-pr",
-        cloneKey(commonDir),
-      );
-      const own = readdirSync(stateDir).filter(
-        (n) => n.startsWith("pr-drive-lease-999-") && n.endsWith(".json"),
-      );
-      // Asserted, not assumed: an empty glob here would age NOTHING and the
+      const own = leaseRefsFor(sharedStateDir(a, sessionless), "999");
+      // Asserted, not assumed: no lease here would age NOTHING and the
       // admission below would then pass for the wrong reason entirely (a check
       // that inspected nothing must fail, not pass).
       expect(own).toHaveLength(1);
-      const path = join(stateDir, own[0] as string);
-      const rec = JSON.parse(readFileSync(path, "utf8"));
       // Past the window pinned above by orders of magnitude, so this step
       // cannot depend on which value the environment chose.
-      rec.lastSeen = new Date(Date.now() - 400 * 60_000).toISOString();
-      writeFileSync(path, JSON.stringify(rec));
+      for (const ref of own)
+        editLease(ref, (l) => ({
+          ...l,
+          lastSeen: new Date(Date.now() - 400 * 60_000).toISOString(),
+        }));
       expect(
         drive(b, sessionless, ["bump-round", "999", "--head", "aaa"]).exitCode,
       ).toBe(0);
@@ -225,7 +229,7 @@ describe("drive-state.ts durability", () => {
           DRIVE_PR_SESSION: String(s.pid),
         });
         expect(r.exitCode).toBe(0);
-        const now = readLease(leasePathFor(d, "999", ACTOR));
+        const now = readLease(leaseRef(d, "999", ACTOR));
         expect({ holder: now?.holder, pid: now?.pid }).toEqual({
           holder: "session",
           pid: s.pid,
@@ -256,7 +260,7 @@ describe("drive-state.ts durability", () => {
         (await state(d, ["phase", "999", "--set", "triage"], sessionless))
           .exitCode,
       ).toBe(0);
-      const admitted = readLease(leasePathFor(d, "999", ACTOR));
+      const admitted = readLease(leaseRef(d, "999", ACTOR));
       // The precondition, asserted rather than assumed: without a tree-held
       // record to be admitted on, everything below would pass vacuously.
       expect(admitted?.holder).toBe("worktree");
@@ -270,7 +274,7 @@ describe("drive-state.ts durability", () => {
             })
           ).exitCode,
         ).toBe(0);
-        const upgraded = readLease(leasePathFor(d, "999", ACTOR));
+        const upgraded = readLease(leaseRef(d, "999", ACTOR));
         // The upgrade really did preserve the generation — otherwise this
         // probe would be exercising an ordinary takeover, which is a different
         // (and already covered) path.
@@ -297,9 +301,9 @@ describe("drive-state.ts durability", () => {
       // without writing anything, so on its own it is a check that is not part
       // of the protocol it guards: an identified resolver can take the state
       // mutex and write its lease the instant after the preflight passes, and
-      // the sessionless command then takes the same mutex and mutates beside it
-      //. The fence is what makes admission and
-      // mutation one continuous decision.
+      // the sessionless command then takes the same mutex and mutates beside
+      // it. The fence is what makes admission and mutation one continuous
+      // decision.
       //
       // Probed where the race actually lives rather than by racing two
       // processes: a lease that appears AFTER admission but BEFORE the locked
@@ -318,29 +322,19 @@ describe("drive-state.ts durability", () => {
       // below.
       const d = stateDirFor("lease-sessionless-fence");
       const sessionless = { DRIVE_PR_SESSION: "", CLAUDE_PID: "" };
-      const foreign = leasePathFor(d, "999", "wt-00000000000000fe");
+      const foreign = leaseRef(d, "999", "wt-00000000000000fe");
       const holder = liveSession();
       const ownSession = liveSession();
       try {
         // This tree's own live SESSION lease — the precondition for the
         // claims-nothing path. Written directly because the point is the state,
         // not how it was reached.
-        writeFileSync(
-          leasePathFor(d, "999", ACTOR),
-          JSON.stringify({
-            holder: "session",
-            pid: ownSession.pid,
-            host: hostname(),
-            platform: process.platform,
-            actor: ACTOR,
-            worktree: "/this/tree",
-            startedAt: new Date().toISOString(),
-            lastSeen: new Date().toISOString(),
-            command: "hold",
-            generation: "d".repeat(32),
-            sessionStarted: "",
-          }),
-        );
+        putLease(leaseRef(d, "999", ACTOR), {
+          pid: ownSession.pid,
+          host: hostname(),
+          worktree: "/this/tree",
+          command: "hold",
+        });
         // `DRIVE_PR_UPDATE_TEST_SIGNAL`/`_DELAY` hold the locked section open,
         // which is the same hook the takeover probes use.
         const signal = join(d, "in-locked-section");
@@ -367,24 +361,14 @@ describe("drive-state.ts durability", () => {
         // Wait until it is INSIDE the locked section — past admission, so its
         // preflight has already passed and seen an empty PR.
         await awaitLockedSection(signal, proc);
-        // Now a foreign tree takes the PR. Under the old preflight-only code
-        // this landed unseen and both mutated.
-        writeFileSync(
-          foreign,
-          JSON.stringify({
-            holder: "session",
-            pid: holder.pid,
-            host: hostname(),
-            platform: process.platform,
-            actor: "wt-00000000000000fe",
-            worktree: "/somewhere/else",
-            startedAt: new Date().toISOString(),
-            lastSeen: new Date().toISOString(),
-            command: "hold",
-            generation: "e".repeat(32),
-            sessionStarted: "",
-          }),
-        );
+        // Now a foreign tree takes the PR. A preflight alone would let this
+        // land unseen, and both would mutate.
+        putLease(foreign, {
+          pid: holder.pid,
+          host: hostname(),
+          worktree: "/somewhere/else",
+          command: "hold",
+        });
         const code = await proc.exited;
         const stderr = await new Response(proc.stderr).text();
         expect({ code, saw: stderr.includes("ANOTHER working tree") }).toEqual({
@@ -441,10 +425,10 @@ describe("drive-state.ts durability", () => {
       // It IS holding a record by now — that is the whole difference from the
       // probe above, and asserting it here is what keeps this test from
       // passing vacuously if tier 3 ever stops claiming again.
-      const admitted = readLease(leasePathFor(d, "999", ACTOR));
+      const admitted = readLease(leaseRef(d, "999", ACTOR));
       expect(admitted?.holder).toBe("worktree");
       // Revoked mid-flight, exactly as `clear-lease` would.
-      rmSync(leasePathFor(d, "999", ACTOR), { force: true });
+      removeLease(leaseRef(d, "999", ACTOR));
       const code = await proc.exited;
       const stderr = await new Response(proc.stderr).text();
       expect({ code, saw: stderr.includes("taken over") }).toEqual({
@@ -457,13 +441,14 @@ describe("drive-state.ts durability", () => {
     });
 
     it("the TREE lease claim treats a recycled pid as a takeover, not a live rival", async () => {
-      // The per-PR claim (`claimPrLease`) already has `isRecycledPid` — the
-      // tree-lease claim (`claimTreeLease`) did not, so once the OS handed a
-      // dead predecessor's exact pid to THIS caller, `isMine` correctly said
-      // "not mine" but `leaseAlive` kept saying "and it's still out there"
-      // (it's asking whether this process is running, which is trivially
-      // true), blocking every PR in the checkout until the stale lease aged
-      // out instead of recognizing the takeover it actually was.
+      // Like the per-PR claim (`claimPrLease`), the tree-lease claim
+      // (`claimTreeLease`) asks `isRecycledPid`: once the OS hands a dead
+      // predecessor's exact pid to THIS caller, `isMine` correctly says "not
+      // mine" but `leaseAlive` keeps saying "and it's still out there" (it is
+      // asking whether this process is running, which is trivially true), and
+      // without the check every PR in the checkout would be blocked until the
+      // stale lease aged out instead of recognizing the takeover it actually
+      // is.
       //
       // A DIFFERENT pr than the seeded lease's own (777 vs 999) is what
       // proves this is a genuine TAKEOVER rather than the same-pr fast path:
@@ -471,77 +456,33 @@ describe("drive-state.ts durability", () => {
       // new pr/generation/token.
       const d = stateDirFor("lease-tree-recycled-pid");
       const old = new Date(Date.now() - 60_000).toISOString();
-      writeFileSync(
-        treeLeasePathFor(d, ACTOR),
-        `${JSON.stringify(
-          {
-            holder: "session",
-            pid: process.pid,
-            host: hostname(),
-            platform: process.platform,
-            actor: ACTOR,
-            worktree: "",
-            startedAt: old,
-            lastSeen: old,
-            command: "bump-round",
-            generation: "g-dead-predecessor",
-            sessionStarted: old,
-            pr: "777",
-            revision: "r-dead-predecessor",
-          },
-          null,
-          2,
-        )}\n`,
-      );
+      // The predecessor's generation drawn from the database's counter, as a
+      // real admission's is.
+      const predecessorGeneration = nextCount(driveDb(d), "lease-generation");
+      putTreeLease(treeLeaseRef(d, ACTOR), {
+        pid: process.pid,
+        host: hostname(),
+        worktree: "",
+        startedAt: old,
+        lastSeen: old,
+        command: "bump-round",
+        generation: predecessorGeneration,
+        sessionStarted: old,
+        pr: "777",
+        revision: "r-dead-predecessor",
+      });
       const r = await state(d, ["bump-round", "999", "--head", "aaa"], {
         DRIVE_PR_SESSION: String(process.pid),
         DRIVE_PR_SESSION_STARTED: new Date().toISOString(),
       });
       expect(r.exitCode).toBe(0);
-      const written = JSON.parse(
-        readFileSync(treeLeasePathFor(d, ACTOR), "utf8"),
-      );
+      const written = readTreeLease(treeLeaseRef(d, ACTOR));
       // Asserted independently, not as one `not.toEqual` — that would pass
       // on a one-line regression that writes the requested pr but leaves the
       // dead predecessor's OWN generation in place, which is not a genuine
       // takeover.
-      expect(written.pr).toBe("999");
-      expect(written.generation).not.toBe("g-dead-predecessor");
-    });
-
-    it("refuses on a foreign lease file it cannot READ, rather than counting it absent", async () => {
-      // `readLease` answers null for both "absent" and "unreadable", which is
-      // right where it was written and wrong for an admission decision: a lease
-      // file exists because some tree wrote one, so skipping the ones that fail
-      // to parse makes "no live foreign lease" a claim about the subset that
-      // happened to parse. The general form: a check that cannot read part of
-      // its input fails closed.
-      const d = stateDirFor("lease-unreadable-foreign");
-      // Window pinned for the same reason its sibling above pins it: the ageing
-      // step below is only meaningful against a KNOWN window, and a hardcoded
-      // age silently stops proving anything under a larger configured one. Same
-      // class as the finding raised on that probe, fixed here too rather than
-      // left as the next round's copy.
-      const me = {
-        DRIVE_PR_SESSION: String(process.pid),
-        DRIVE_PR_LEASE_STALE_MIN: "1",
-      };
-      const foreign = leasePathFor(d, "999", "wt-00000000000000cd");
-      writeFileSync(foreign, "{ this is not a lease");
-
-      const r = await state(d, ["phase", "999", "--set", "triage"], me);
-      expect(r.exitCode).toBe(13);
-      expect(r.stderr).toContain("cannot be read as a lease");
-      expect(r.stderr).toContain(foreign);
-
-      // Bounded by MTIME so failing closed cannot wedge the PR forever: an
-      // unreadable file has no lastSeen to age out and no pid to test, so its
-      // mtime is the only property that can speak for it.
-      const old = Date.now() - 400 * 60_000; // >> the pinned window
-      utimesSync(foreign, new Date(old), new Date(old));
-      expect(
-        (await state(d, ["phase", "999", "--set", "triage"], me)).exitCode,
-      ).toBe(0);
+      expect(written?.pr).toBe("999");
+      expect(written?.generation).toBeGreaterThan(predecessorGeneration);
     });
 
     it("a DEAD holder does not wedge the PR for the other worktree", async () => {
@@ -606,40 +547,11 @@ describe("drive-state.ts durability", () => {
         // A's pid still answers; only its RENEWAL has stopped. Backdated past
         // the window rather than waited out, which is the only way to probe a
         // six-hour default.
-        //
-        // Both trees land on the same state dir because they share one clone —
-        // these probes deliberately leave $DRIVE_PR_STATE_DIR unset so that
-        // both resolve it themselves. The default,
-        // `~/.local/state/jig/drive-pr/<cloneKey>/`, is keyed off
-        // `--git-common-dir` rather than the common dir itself.
-        const commonDir = resolve(
-          a,
-          execFileSync("git", ["rev-parse", "--git-common-dir"], {
-            cwd: a,
-            env: ea,
-          })
-            .toString()
-            .trim(),
-        );
         const held = JSON.parse(drive(a, ea, ["lease", "999"]).stdout);
-        writeFileSync(
-          leasePathFor(
-            join(
-              suiteHome,
-              ".local",
-              "state",
-              "jig",
-              "drive-pr",
-              cloneKey(commonDir),
-            ),
-            "999",
-            held.actor,
-          ),
-          JSON.stringify({
-            ...held,
-            lastSeen: new Date(Date.now() - 8 * 60 * 60_000).toISOString(),
-          }),
-        );
+        editLease(leaseRef(sharedStateDir(a, ea), "999", held.actor), (l) => ({
+          ...l,
+          lastSeen: new Date(Date.now() - 8 * 60 * 60_000).toISOString(),
+        }));
         expect(drive(b, eb, ["phase", "999", "--set", "triage"]).exitCode).toBe(
           0,
         );

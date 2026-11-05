@@ -641,12 +641,12 @@ put two outcome replies on every thread, which cannot be repaired once posted
 It names the holder's pid, a command to check whether that process is still
 alive, and the `clear-lease` operation of `drive-state.ts`; the right response is almost
 always to **stop**, not to clear the lease. With no `/drive-pr`
-installed, no lease file, or a lease whose owner is gone, the reply posts
+installed, no lease, or a lease whose owner is gone, the reply posts
 normally — absence of a lease is never itself a refusal.
 
 Absence does have to be *established*, though. Anything the check cannot read
-refuses (exit 1) rather than passing as an all-clear: a lease file it can see
-but cannot parse or open, a `git` probe that failed for any reason other than
+refuses (exit 1) rather than passing as an all-clear: a drive database it
+cannot read, or one that is not the database the drive opened, a `git` probe that failed for any reason other than
 reporting "not a repository", or a `/drive-pr` that is installed with its fence
 script missing. A half-installed sibling skill is a broken integration, not a
 licence to post unfenced.

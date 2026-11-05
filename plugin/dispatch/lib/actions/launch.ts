@@ -1,6 +1,6 @@
 /**
- * What every `--apply` launch shares, a drive's pass or an interactive
- * session (a pickup's, a follow-up's):
+ * What every `--apply` launch shares, a headless pass (a drive's, a
+ * follow-up's) or a pickup's interactive session:
  * the state carried across a tick's repositories, the account admitted
  * afresh against its walls and the identity check, the launch record
  * written before the runtime's `launch` and the slot it holds, and the
@@ -62,17 +62,17 @@ export interface ApplyState {
   /** The account of the most recent launch record, where the turn resumes. */
   last: string | null;
   /**
-   * The pass deadline every drive this tick launches runs under, in seconds
-   * (`0` for none): the one the tick reads (`DRIVE_PR_PASS_TIMEOUT`, else
-   * the drive's default), written on the launch record and handed to
-   * `drive.ts` as `--pass-timeout`, so the deadline admission judged is the
-   * one the pass gets.
+   * The pass deadline every headless pass this tick launches runs under, in
+   * seconds (`0` for none): the one the tick reads (`DRIVE_PR_PASS_TIMEOUT`,
+   * else the drive's default), written on the launch record and handed to
+   * `drive.ts` as `--pass-timeout` (a follow-up pass's wrapper enforces it
+   * itself), so the deadline admission judged is the one the pass gets.
    */
   passDeadlineSec: number;
   /**
    * This host's opt-in to Codex's bypass, read once for the tick: admission
-   * judges a Codex account by it, and a drive's launch record keeps it, so
-   * the pass command does what was judged.
+   * judges a Codex account by it, and a headless pass's launch record keeps
+   * it, so the pass command does what was judged.
    */
   codexOptIn: CodexOptIn;
   /** The workspaces this tick has opened so far, within `OPENS_PER_TICK`. */
@@ -237,7 +237,7 @@ function markOf(record: LaunchRecord): string {
   );
 }
 
-/** What the runtime starts for a record: a drive's headless pass, or a pickup's or a follow-up's interactive session. */
+/** What the runtime starts for a record: a pickup's interactive session, or a headless pass (a drive's, a follow-up's). */
 function stageOf(record: LaunchRecord): LaunchStage {
   const named = {
     title: tabTitle(record.action, nameKey(record)),
@@ -250,16 +250,6 @@ function stageOf(record: LaunchRecord): LaunchStage {
       record: record.id,
       skill: PICKUP_SKILL,
       target: record.item as string,
-      model: record.model,
-      effort: record.effort,
-    };
-  if (record.action === "followup")
-    return {
-      kind: "interactive",
-      ...named,
-      record: record.id,
-      skill: record.command ?? "",
-      target: String(record.pr),
       model: record.model,
       effort: record.effort,
     };
@@ -361,9 +351,9 @@ export function waits(
 }
 
 /**
- * Report every wanted interactive launch, and start none, when the runtime
- * cannot bind an interactive session to the account it bills; true when it
- * reported them.
+ * Report every wanted interactive launch (a pickup's), and start none, when
+ * the runtime cannot bind an interactive session to the account it bills;
+ * true when it reported them.
  */
 export function reportedUnbound(
   state: ApplyState,
@@ -507,13 +497,14 @@ function admission(
   excluded: ReadonlySet<string>,
 ) {
   const codex = state.codexOptIn;
-  if (action.stage === "pickup" || action.stage === "followup")
+  if (action.stage === "pickup")
     return admitRearm(
       state.table,
       state.last,
       { kind: "interactive", codex },
       excluded,
     );
+  // A follow-up is a headless pass, admitted as a drive's pass is: under the pass deadline it runs under.
   if (action.takeover === undefined)
     return admitRearm(
       state.table,

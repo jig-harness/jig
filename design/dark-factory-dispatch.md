@@ -87,7 +87,7 @@ guards keep one stage from starting twice:
 - **A marker on the pull request for the follow-up**, which has no claim of
   its own: the tick posts a hidden-marker comment
   (`<!-- jig-dispatch-followup -->`) on the merged pull request before it
-  starts the follow-up session, carrying the launch record's id. The marker
+  starts the follow-up's pass, carrying the launch record's id. The marker
   is trusted only as the drive trusts a ledger: written by the dispatcher's
   own login or by an owner, member or collaborator; a marker from anyone
   else is ignored and reported, and an unreadable marker leaves the pull
@@ -161,7 +161,7 @@ guards keep one stage from starting twice:
 | Record | Read through | What the tick takes from it |
 | --- | --- | --- |
 | The tracker | the [tracker interface](../GLOSSARY.md) (`plugin/skills/do-item/scripts/lib/tracker/port.ts`), Linear, GitHub Issues and Jira today | the items assigned to the repository's [factory identity](../GLOSSARY.md): in a dispatch state (`todo` by default), the pickups wanted; in the in-progress state, the claimed pickups to watch |
-| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels | the drives to re-arm, take over or report; the follow-ups wanted, running or failed |
+| The forge | the open pull requests and their drive ledgers; the pull requests merged since the follow-up stage was switched on, and their follow-up markers; with dispatch labels on, each one's labels | the drives to re-arm, take over or report, and those to arm (a person's `drive` label, or the adoption rule); the follow-ups wanted, running or failed |
 | The session runtime | in Orca, `orca worktree ps --json` | which workspace holds which item or pull request, and whether an agent in it is working or waiting |
 
 **The tracker.** The interface gains one read, `assignedIssues(identity,
@@ -345,6 +345,32 @@ with theirs; with them off, no label is read or written.
   is still read, so a drive a person armed by hand on an unlabelled pull
   request is found and gets its label.
 
+**Adoption** (optional). A pull request nobody armed is never driven
+otherwise: the drive label asks a person to notice each idle one, which is
+the polling the dispatcher exists to remove. A repository may therefore
+name an adoption rule (`dispatch.adopt`, off by default). Under it the
+tick reads an open pull request with no drive ledger as if it carried the
+`drive` command when its author is one of the rule's identities (by
+default the login the dispatcher reads the forge as, the identity the
+host's sessions open pull requests under) and the forge reports it
+updated within the rule's window (a week by default). The open listing
+carries each pull request's author, draft flag and last update for it. A
+draft is adopted like any other, since pull requests open as drafts and
+the drive marks them ready. A bot's pull request is adopted only where
+the rule names that bot: driving dependency updates stays a choice the
+repository makes by name. A pull request a person's `hold` label is on is
+never adopted, and one a person stopped carries a ledger that records the
+stop, so adoption, which reads only pull requests with no ledger, never
+reaches it. Everything after adoption is the `drive` command's: the plan
+arms it as a re-arm, once per head commit (its launch record's facts are
+a labelled arm's), on an admitted account, behind a serialized area's
+hold, and the fresh read before the launch applies the rule again. The
+report names each adopted pull request with the rule's reason (its
+author, its last update, the window), and the forge record counts them.
+The rule needs the labels on, since the hold label is read only then;
+beside `only_labeled` it is refused, since a pull request with no label of
+the set is never read.
+
 **Serialized areas** (optional). An area of the repository's change-area
 catalog (`drive.change_areas_catalog`, [M3](../modules/M3-change-area-catalog/README.md))
 marked `serialize: true` is one whose pull requests conflict with each
@@ -417,7 +443,7 @@ jig dispatch [--repo <path>]... [--json]          # report: what it would start,
 jig dispatch --apply [--repo <path>]...           # start what the machine file enables
 jig dispatch install [--interval 5m] --yes        # the timer
 jig dispatch receipts                             # past ticks
-jig dispatch result <record> <token> done|failed  # an interactive session's answer
+jig dispatch result <record> <token> done|failed  # a session's or a follow-up pass's answer
 ```
 
 A tick without `--apply` prints every action it would take, each with the
@@ -473,27 +499,35 @@ whose facts have not changed since the refusal is reported, not launched
 again. A record whose process is gone without an exit is a launch that
 died, reported with its last state.
 
-The wrapper is the command a headless pass runs. An interactive session
-(`do-item`, the follow-up) is started as the runtime's agent, which runs
-no wrapper, and an agent's state says that it finished, not whether its
-stage succeeded. Its launch record, written by the tick before the launch,
-gains the agent's id from the launch's receipt, and the prompt the tick composes ends by asking the
-session to record its result: `jig dispatch result <record> <token>
-done|failed`, which writes the stage's answer into that launch record. The
-command refuses a token that is not the record's own and a record that
-already has a result, so a session settles its own launch and no other,
-once; the token binds a session to its record, and does not guard the
-state directory against a process of the same user, which can write it
-directly. The result is the stage's answer, not proof that its session
-stopped: an agent can record its result and go on working or wait for
-another prompt. So the record's state is its agent's: the agent `sessions`
-reports under the record's agent id holds the stage and its account slot
-while working or waiting, whether or not a result is recorded, and the
-record ends only when the runtime reports that agent finished or gone. It
-ends with its result, or as failed when none was recorded, since a session
-that stopped on a question or a crash records none; a pickup's record is
-read beside the item's state, and a follow-up's result is what its outcome
-record keeps.
+The wrapper is the command a headless pass runs, a drive's or a
+follow-up's. A drive's exit is its answer. A follow-up pass's exit says
+only that it ended, so the prompt the tick composes ends by asking the
+pass to record its result: `jig dispatch result <record> <token>
+done|failed`, which writes the stage's answer into its launch record. Its
+record ends with the pass's exit, with that result, or as failed when none
+was recorded; the wrapper keeps the last `Question:` line of the output of a pass that
+ended short of `done` on its exit, which is where a pass that needs a person
+states its question (see Sessions that wait), and the follow-up's result
+is what its outcome record keeps.
+
+An interactive session (`do-item`) is started as the runtime's agent, and
+an agent's state says that it finished, not whether its stage succeeded.
+Its launch record, written by the tick before the launch, gains the
+agent's id from the launch's receipt, and its prompt ends by asking the
+session to record its result the same way. The command refuses a token
+that is not the record's own and a record that already has a result, so a
+session settles its own launch and no other, once; the token binds a
+session to its record, and does not guard the state directory against a
+process of the same user, which can write it directly. The result is the
+stage's answer, not proof that its session stopped: an agent can record
+its result and go on working or wait for another prompt. So the record's
+state is its agent's: the agent `sessions` reports under the record's
+agent id holds the stage and its account slot while working or waiting,
+whether or not a result is recorded, and the record ends only when the
+runtime reports that agent finished or gone. It ends with its result, or
+as failed when none was recorded, since a session that stopped on a
+question or a crash records none; a pickup's record is read beside the
+item's state.
 
 ### The session runtime interface
 
@@ -544,11 +578,12 @@ implementation:
   create` does not do) live in the plugin, in
   `plugin/shared/orca-workspace/open.ts`, and the tool calls that code, so
   the pickups in step 4 reuse it rather than a copy;
-- `launch` for a **headless pass** (a drive re-arm or takeover) as
+- `launch` for a **headless pass** (a drive re-arm or takeover, a
+  follow-up) as
   `orca terminal create --worktree <selector> --title <tab title> --command
   <wrapper>` (the title as Naming what it starts gives it), the account's configuration directory set in the command's
-  environment (below); for an **interactive session** (a pickup, a
-  follow-up) as `orca agent launch --agent <id> --worktree <selector>
+  environment (below); for an **interactive session** (a pickup) as
+  `orca agent launch --agent <id> --worktree <selector>
   --prompt "<skill> <key>"`, with the model and effort from the item's
   route where the repository declares `routing`, bound to the account as a
   headless pass is (below), and with `sessionId` passed to the agent where
@@ -658,7 +693,11 @@ before it drives, so the account never runs more than its cap of drivers
 that work. A takeover `drive.ts` refuses ends its own record, and the old
 record keeps its slot.
 
-An interactive session (a pickup, a follow-up) is admitted the same way, on
+A follow-up runs as a headless pass (see Binding a session to its
+account) and is admitted as a drive's pass is: under the pass deadline it
+runs under, which the wrapper enforces on it, on a Codex account only on a
+host that opted in to Codex's bypass, holding one slot until its pass
+ends. An interactive session (a pickup) is admitted the same way, on
 one account with a free slot and no wall in effect, and its launch binds
 it to that account (below), so its launch record names the account and
 holds one slot. A session whose launch cannot bind its account is never
@@ -680,7 +719,9 @@ stays where `drive-pr` keeps it and still decides whether `drive.ts` admits
 the re-arm. A wall an interactive session meets is not recorded before the
 control step (see Control): that session shows as waiting, holds its slot, and is
 reported once it has waited past `dispatch.blocked_after` (30 minutes by
-default).
+default). A wall a follow-up's pass meets ends the pass short of `done`,
+so it is notified as a failed follow-up; it is not written as the
+account's wall.
 
 **Binding a session to its account.** A headless pass is bound to its
 account through the configuration directory of that account's Orca
@@ -702,15 +743,36 @@ Switching Orca's active account before a launch is not used: it is
 host-wide and would move every other session's next pass too. Whether an
 Orca agent launch can bind its agent to an account is not verified (Orca's
 command line selects accounts only for some agents), so until it is shown
-to work the dispatcher launches headless passes only, and pickups and
-follow-ups are reported, not started.
+to work pickups are reported, not started.
 
-**Sessions that wait.** Pickups and follow-ups are interactive skills, and
-with nobody to answer a question they stop and state it, as every Jig skill
-does without a person. An agent the runtime reports waiting for longer than
+A follow-up does not wait for that: it runs as a headless pass, the
+account's vendor's non-interactive command (`claude -p`, `codex exec`) on
+the repository's follow-up command and the pull request, started by the
+same wrapper and bound the same way as a drive's pass. These reasons decide
+it. The work is mechanical: tags, tracker items, status pages and
+consumers, which a skill settles without a conversation. Headless binding
+is the binding the dispatcher already proves at every drive's launch, with
+the identity check before it starts. And an interactive session would add
+a workspace a person must visit, for the step of the loop that most
+needs no one. The pass runs with the host's own permission settings
+(`drive.pass_args`, and `drive.codex_bypass` for a Codex account), read as
+a drive's pass reads them; the launcher adds none, and a repository's file
+cannot set them.
+
+**Sessions that wait.** A pickup is an interactive skill, and with nobody
+to answer a question it stops and states it, as every Jig skill does
+without a person. An agent the runtime reports waiting for longer than
 `dispatch.blocked_after` is reported and notified once; it keeps its slot
 until it ends or a person ends it, so a cap full of waiting sessions is
-visible in every report rather than silent.
+visible in every report rather than silent. A follow-up's pass cannot
+wait: one that cannot finish without a person carries out what does not
+depend on the answer, stops, records `failed`, and ends its output with a
+line that starts `Question:`. The wrapper keeps that line, at most 1000 characters and
+nothing else of the output, on the pass's exit; it reaches the launch
+record, the outcome log and the notification, so the pass is told to put
+no secret or personal data in it. The tick notifies the failed follow-up with the
+question, classed as parked for a person; the marker stays, so nothing
+starts it again until a person settles it.
 
 ### The agent behind a session
 
@@ -722,8 +784,9 @@ to that account through its configuration directory (`CLAUDE_CONFIG_DIR`,
 runtime in `routing.models`, which the launch reads for the vendor it got,
 so one repository is picked up by whichever account has a free slot. The
 skills are the same text in both agents, and the prompts the tick composes
-and the `jig dispatch result` instruction name no agent. A headless pass
-runs the drive's documented pass command for the vendor; the dispatcher
+and the `jig dispatch result` instruction name no agent. A drive's pass
+runs the drive's documented pass command for the vendor, and a follow-up's
+pass the same non-interactive command on the follow-up command; the dispatcher
 admits an account only for a vendor whose pass command the drive
 documents, and reports an account of any other vendor as accepted and not
 admitted. An interactive session is launched as that vendor's Orca agent.
@@ -751,6 +814,19 @@ Claude one is, by the drive's quota adapter for the vendor, keyed by the
 account; binding the pass through the account's own configuration
 directory is what lets the adapter attribute the wall to that account,
 which a directory shared between accounts could not.
+
+A pass that outruns its deadline is ended with everything it started. On
+POSIX the wrapper leads the pass's own process group and signals the group.
+Windows has no process group to signal, so the wrapper samples the pass's
+descendants while their parent links exist, keeps what it recorded after the
+pass exits, and ends them by identity. That cleanup is best-effort, and
+limits stand: a descendant started and parented between two samples can
+survive a pass, and when the tree cannot be shown to have ended the wrapper
+still exits, so the record's slot is released while a survivor may run on in the
+workspace. Closing them takes a persisted "cleanup uncertain" launch state that
+admission holds until reconciliation or a person's clearance, or ownership at
+creation through a Windows job object; both are separate work, and the first
+waits on the authenticated Windows smoke.
 
 ### What it never does
 
@@ -796,7 +872,7 @@ naming what was sent: a drive parked with an item unanswered, carrying the
 parked questions (item 32's framed decision, built); a drive
 stopped on an exit only a person can settle, carrying the exit and the
 drive's handoff; a drive stopped with no exit, carrying its handoff; a
-stalled pickup or a double claim; a failed follow-up; a session waiting past
+stalled pickup or a double claim; a failed follow-up, carrying the question its pass stopped on when it stated one; a session waiting past
 `blocked_after`; a running stage drifting from its expectation, and a
 session still waiting on a wall after its one nudge (see Control).
 
@@ -926,7 +1002,7 @@ replaced by a takeover is stalled, not refused.
 | converged | a drive's convergence (`drive.ts` exit `0`); a pickup's or follow-up's recorded result `done` |
 | merged | a drive or pickup whose pull request merged while it ran (exit `5`, merged); never a follow-up, which starts after the merge |
 | quota wall | a usage limit: `drive.ts` exit `16`, or an interactive session that ended with no result while a wall recorded from it (below) stood |
-| parked for a person | a park (exit `8`) |
+| parked for a person | a park (exit `8`); a follow-up pass that stopped on a question for a person |
 | stalled | the drive's stall (exit `14`) or its round limit (exit `6`); a driver replaced by a takeover, logged with reason `taken over` |
 | died | a process gone without an exit; an interactive session that ended with no result |
 | refused | a stage's own refusal or a stop it was given: exits `2`, `4`, `11`, `13`, `18`, `19`, `20`; exit `5` on a closed pull request; an item already claimed; a person's `drives.ts --stop` |
@@ -1181,7 +1257,7 @@ One pull request each, in this order; each is usable on its own.
    pickups, double claims and waiting sessions reported. Usable alone:
    assigning an item is the start button.
 5. **Follow-ups and notifications.** The follow-up marker, the follow-up's
-   outcome record, and a follow-up session per merged pull request with the repository's follow-up
+   outcome record, and a follow-up pass per merged pull request with the repository's follow-up
    command, which claims the pull request with a manual marker when a
    person runs it by hand and marks that marker done when it succeeds
    (Jig's `/followup` first); the notifications above
@@ -1322,9 +1398,9 @@ One pull request each, in this order; each is usable on its own.
   and a follow-up's outcome is read only on the machine that launched it,
   until forge-side claims and outcomes are designed. The dashboard reads
   one machine's outcome log until then too.
-- **Interactive sessions**, pickups and follow-ups, until an Orca agent
-  launch that binds its agent to an account is shown to work; headless
-  passes run meanwhile.
+- **Interactive pickups**, until an Orca agent launch that binds its agent
+  to an account is shown to work; drives and follow-ups run as headless
+  passes meanwhile.
 - **Further nudges.** A nudge joins the closed set only when the outcome
   log's waiting-episode rows show a mechanical cause that recurs, with a
   target the tick can identify and a screen state it can check, as

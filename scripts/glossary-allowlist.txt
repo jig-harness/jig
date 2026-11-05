@@ -57,7 +57,6 @@ BASE
 # terms of art (which is what GLOSSARY.md is for)
 URL
 CLI
-IDE
 UI
 LLM
 SDK

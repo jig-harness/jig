@@ -4,11 +4,9 @@
  * claims, back-dated progress, billing-account hashes and scratch trees.
  */
 
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { hostname } from "node:os";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { formatClaim } from "../scripts/lib/claim.ts";
 import { accountHash } from "../scripts/lib/identity.ts";
 import {
   binDir,
@@ -17,6 +15,7 @@ import {
   tmpRoot,
 } from "./drive-pr-harness.ts";
 import { state } from "./drive-loop-harness.ts";
+import { editState, putLock } from "./state-rows.ts";
 
 /** The hashed account a Claude pass logged in as `email` bills. */
 export function loginAccount(email: string): string {
@@ -106,17 +105,22 @@ export async function deadPid(): Promise<number> {
   return child.pid;
 }
 
-/** Plant PR 999's lock, claimed by `pid` driving from `worktree`. */
+/**
+ * Plant PR 999's lock, held by `pid` driving from `worktree`; `renewedAt`
+ * backdates its heartbeat (now by default).
+ */
 export function plantPrLock(
   stateDir: string,
   pid: number,
   worktree: string,
+  renewedAt?: string,
 ): void {
-  const lock = join(stateDir, "pr-drive-999.lock");
-  mkdirSync(lock, { recursive: true });
-  writeFileSync(
-    join(lock, "claim.feedc0de"),
-    formatClaim(pid, hostname(), {
+  putLock(stateDir, "pr-drive-999", {
+    pid,
+    token: "feedc0de",
+    label: "drive.ts",
+    ...(renewedAt === undefined ? {} : { renewedAt }),
+    diag: {
       pr: "999",
       worktree,
       log: join(stateDir, "drive-pr-999.log"),
@@ -127,16 +131,14 @@ export function plantPrLock(
         provenance: "oauthAccount",
         reason: null,
       },
-    }),
-  );
+    },
+  });
 }
 
 /** Set the drive's last progress (`''` for never), as the doctor reads it. */
 export async function progressAt(stateDir: string, iso: string): Promise<void> {
   await state(stateDir, ["phase", "999", "--set", "probe"]);
-  const file = join(stateDir, "drive-pr-999.json");
-  const s = JSON.parse(readFileSync(file, "utf8"));
-  writeFileSync(file, JSON.stringify({ ...s, lastProgressAt: iso }));
+  editState(stateDir, "999", (s) => ({ ...s, lastProgressAt: iso }));
 }
 
 /** Five hours ago: progress past the doctor's stall threshold. */

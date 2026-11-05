@@ -114,7 +114,7 @@ dispatcher's [tick](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 scheduled jobs run (`runtime/launcher.ts`), and the drive's loop control
 (`skills/drive-pr/scripts/drive.ts`). They start sessions and read how they
 ended. The only reasoning is inside the sessions they start: a drive pass,
-a pickup's `do-item` session, a follow-up session. Those sessions read
+a pickup's `do-item` session, a follow-up pass. Those sessions read
 Jig's `SKILL.md` files and run Jig's scripts, but what they write is the
 repository's own code, replies and records. The plugin they run is an
 installed copy, and a change to it reaches a machine only as a released
@@ -275,9 +275,12 @@ development and shipped as a version.
   the session to the admitted account: for a drive it starts
   `skills/drive-pr/scripts/drive.ts`, whose passes run with no person at a
   terminal, and writes the account's wall on a usage-limit
-  stop (exit 16); for a pickup or a follow-up it starts the account's agent
-  as an interactive session on `/jig:do-item <key>` or the follow-up
-  command. It records the exit either way. The claim is the wrapper's
+  stop (exit 16); for a follow-up it starts the account's agent as a
+  headless pass on the follow-up command, with the host's `drive.pass_args`
+  and under the pass deadline; for a pickup it starts the account's agent
+  as an interactive session on `/jig:do-item <key>`. It records the exit
+  every way, with the last question of a follow-up pass that stopped short
+  of done. The claim is the wrapper's
   [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
   recorded and judged by `shared/liveness.ts`: a record claimed on this host
   before it last restarted has died, and its outcome row says so; one claimed
@@ -298,7 +301,10 @@ development and shipped as a version.
   and `hold` as a person's commands, and last sets each managed pull
   request's state label from its ledger (`dispatch/lib/labels.ts`,
   `dispatch/lib/actions/labels.ts`); it never reads a state label to
-  decide what to start.
+  decide what to start. Where a repository turns its
+  [adoption rule](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  on, the tick arms a pull request with no ledger that the rule's author
+  and window match as it arms a labelled one (`dispatch/lib/adopt.ts`).
 - **Reasoned.** None inside the tick. It starts reasoned parts: a drive's
   passes (through `drive.ts`), a pickup's `/jig:do-item` session, and the
   repository's `dispatch.followup_command`. Its one keystroke into a
@@ -371,16 +377,23 @@ development and shipped as a version.
 - **Deterministic.** `skills/drive-pr/scripts/drive.ts` is the loop
   control: it starts one pass per round, reads the result, and stops in
   exactly one [terminal state](skills/drive-pr/README.md#the-exit-states--what-you-do-now)
-  with its exit code. Its state lives in a per-clone folder,
-  `~/.local/state/jig/drive-pr/<clone>/`
-  (`skills/drive-pr/scripts/lib/state/store.ts`): rounds, the verified head,
-  parked and held items, locks and
-  [leases](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). A
-  driver lock's claim (`skills/drive-pr/scripts/lib/claim.ts`) names its
-  holder by the shared
+  with its exit code. Its machine state lives in one SQLite database per
+  machine, `~/.local/state/jig/drive-pr/state.sqlite`
+  (`skills/drive-pr/scripts/lib/state/db.ts`, opened through
+  `shared/records/db.ts`), every row keyed by the clone: rounds, the
+  verified head, parked and held items as one JSON document per pull
+  request, and the locks, [leases](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  and claims as rows. A lock or lease names its holder by the shared
   [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   (`shared/liveness.ts`), whose host id is compared before the host name, so
-  a renamed machine still knows its own driver. The
+  a renamed machine still knows its own driver, and a lock whose holder is
+  judged dead is recovered at once; a release deletes the row and leaves
+  nothing behind. A lease's generation only grows, so a command admitted on
+  one generation is refused at the moment it mutates once another session
+  took the lease. The clone's folder beside the database,
+  `~/.local/state/jig/drive-pr/<clone>/`, keeps the driver log and the
+  files a pass is handed; a folder an earlier release wrote is read into the
+  database once, at its first open, and left in place. The
   [drive ledger](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   mirrors its resumable part as one comment on the pull request, written by
   the driver at each round boundary, park,

@@ -5,11 +5,14 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { readdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 
 import { join, delimiter } from "node:path";
 
-import { stateDirIdentityToken } from "../scripts/lib/state/lease";
+import {
+  leaseRefsFor,
+  stateDirIdentityToken,
+} from "../scripts/lib/state/lease";
 
 import {
   SCRIPTS,
@@ -525,13 +528,11 @@ describe("answer-summary-finding.ts", () => {
               },
             );
             expect(seed.exitCode).toBe(0);
-            // The population the probe rests on: no lease file means nothing
+            // The population the probe rests on: no lease row means nothing
             // to refuse, and the assertions below would pass vacuously.
-            expect(
-              readdirSync(stateDir).filter((f) =>
-                /^pr-drive-lease-999-wt-[0-9a-f]{16}\.json$/.test(f),
-              ),
-            ).toHaveLength(1);
+            const actors = leaseRefsFor(stateDir, "999").map((l) => l.actor);
+            expect(actors).toHaveLength(1);
+            expect(actors[0]).toMatch(/^wt-[0-9a-f]{16}$/);
           },
           env: { DRIVE_PR_SESSION: String(process.pid) },
         },
