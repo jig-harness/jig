@@ -18,22 +18,17 @@
  * an unlink, and two of them interleaving could remove a lock just taken:
  * both read stale token A, the first unlinks A and a third process takes B,
  * the second unlinks B. So each removal happens under a second exclusive
- * file, `<file>.lock.unlink`, held for the read and the unlink only. Taking
- * the lock never removes anything, it only creates the file when it is
- * absent, so with removals serialized a removal always acts on the file it
- * just read. The removal file is itself broken when it is older than the
- * staleness window, which only a removal that died between its read and its
- * unlink can leave behind.
+ * file, held for the read and the unlink only, and named for the generation
+ * it removes: `<file>.lock.unlink.<token>`. Taking the lock never removes
+ * anything, it only creates the file when it is absent, so with removals
+ * serialized a removal always acts on the file it just read. Because the guard
+ * is keyed to one generation, a guard left behind by a removal that died can
+ * only ever block the removal of the lock it was taken for, never a
+ * successor's: it is broken when older than the staleness window, by an
+ * unlink and nothing else, since no live holder of a newer lock owns it.
  */
-import { randomBytes } from "node:crypto";
-import {
-  linkSync,
-  readFileSync,
-  renameSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { errnoCode, swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import {
@@ -108,37 +103,11 @@ function readGuard(guard: string): string | null {
 }
 
 /**
- * Remove a guard judged stale: move it aside first, so no one else's unlink
- * can reach it, and put it back when what was moved is not the guard that was
- * judged (a fresh one took its place between the judgement and the move).
- */
-function breakGuard(guard: string, judged: string): void {
-  const aside = `${guard}.${randomBytes(6).toString("hex")}`;
-  try {
-    renameSync(guard, aside);
-  } catch (err) {
-    swallow(err, "a removal guard is gone before it could be moved aside");
-    return;
-  }
-  try {
-    if (readGuard(aside) !== judged) linkSync(aside, guard);
-  } catch (err) {
-    swallow(err, "a fresh removal guard could not be put back");
-  } finally {
-    try {
-      unlinkSync(aside);
-    } catch (err) {
-      swallow(err, "a moved-aside removal guard was already removed");
-    }
-  }
-}
-
-/**
- * Run `fn` while holding the removal file `guard`; `false` when it could not
- * be taken. The guard carries a token minted for this call, and only a guard
- * still carrying it is removed afterwards, so a holder whose guard was broken
- * cannot remove its successor's. A guard older than `staleMs` is broken so a
- * later call takes it.
+ * Run `fn` while holding the removal file `guard`, which belongs to one lock
+ * generation; `false` when it could not be taken. The guard carries a token
+ * minted for this call, and only a guard still carrying it is removed
+ * afterwards. A guard older than `staleMs` is unlinked so a later call takes
+ * it.
  */
 function underGuard(guard: string, staleMs: number, fn: () => void): boolean {
   const mine = randomBytes(12).toString("hex");
@@ -147,11 +116,9 @@ function underGuard(guard: string, staleMs: number, fn: () => void): boolean {
   } catch (err) {
     if (errnoCode(err) !== "EEXIST") throw err;
     try {
-      const judged = readGuard(guard);
-      if (judged !== null && Date.now() - statSync(guard).mtimeMs > staleMs)
-        breakGuard(guard, judged);
+      if (Date.now() - statSync(guard).mtimeMs > staleMs) unlinkSync(guard);
     } catch (inner) {
-      swallow(inner, "a removal guard is gone before its age was read");
+      swallow(inner, "a removal guard is gone before it could be judged");
     }
     return false;
   }
@@ -170,7 +137,8 @@ function underGuard(guard: string, staleMs: number, fn: () => void): boolean {
 /** The lock on `file`. `label` names the owning script in a timeout's message. */
 export function fileLock(file: string, label: string): FileLock {
   const path = `${file}.lock`;
-  const guard = `${path}.unlink`;
+  /** The removal guard of the lock generation carrying `token`. */
+  const guardFor = (token: string): string => `${path}.unlink.${token}`;
   let token: string | null = null;
 
   function attempt(staleMs: number): boolean {
@@ -185,14 +153,21 @@ export function fileLock(file: string, label: string): FileLock {
     const held = readHeld(path);
     if (held === null || !stale(path, held.text, staleMs)) return false;
     // Remove the stale lock only while it is still the one just judged.
-    underGuard(guard, staleMs, () => {
-      if (readHeld(path)?.text !== held.text) return;
-      try {
-        unlinkSync(path);
-      } catch (err) {
-        if (errnoCode(err) !== "ENOENT") throw err;
-      }
-    });
+    underGuard(
+      guardFor(
+        held.token ||
+          createHash("sha256").update(held.text).digest("hex").slice(0, 24),
+      ),
+      staleMs,
+      () => {
+        if (readHeld(path)?.text !== held.text) return;
+        try {
+          unlinkSync(path);
+        } catch (err) {
+          if (errnoCode(err) !== "ENOENT") throw err;
+        }
+      },
+    );
     return false;
   }
 
@@ -214,7 +189,7 @@ export function fileLock(file: string, label: string): FileLock {
     // A guard held by another removal lasts milliseconds; if it outlasts the
     // wait, the lock file stays and is broken once it reads stale.
     for (let tries = 0; tries < 100; tries++) {
-      const done = underGuard(guard, staleMs, () => {
+      const done = underGuard(guardFor(mine), staleMs, () => {
         try {
           if (readHeld(path)?.token === mine) unlinkSync(path);
         } catch (err) {
