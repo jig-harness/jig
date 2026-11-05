@@ -4,12 +4,18 @@
  * a table rather than a file so a host that serves the dashboard from a copy
  * of the database has it with no other read: launch states, walls, accounts
  * and titles all come from records only the tick can reach.
+ *
+ * `stateAnswer` is the one read of it for everything outside the tick: the
+ * dashboard's `GET /state` and `jig dispatch line --json` both answer with it,
+ * so the two never say different things about one database.
  */
 import { isMapping } from "../../shared/config-layers.ts";
 import { attempt, failed, ok, type Outcome } from "../../shared/outcome.ts";
+import { pluginVersion } from "../../shared/plugin-version.ts";
 import { stateRoot } from "../receipts.ts";
-import type { LineSnapshot } from "./dashboard-contract.ts";
-import { existingStateDb, stateDb } from "./state.ts";
+import type { LineSnapshot, StateAnswer } from "./dashboard-contract.ts";
+import { hostTimeZone } from "./host-time.ts";
+import { existingStateDb, SCHEMA_VERSION, stateDb } from "./state.ts";
 
 /** Replace the stored line with this tick's. */
 export function writeLine(
@@ -73,6 +79,27 @@ export function readLine(
         "line-unreadable",
         "the newest tick's line is not in a form this plugin reads; the next tick writes it again",
       );
+}
+
+/**
+ * The newest tick's line with the reader's own facts (its clock, its plugin,
+ * the schema it reads): what `GET /state` answers and `jig dispatch line
+ * --json` prints. `line` is `null` before a tick wrote one, and when there is
+ * no state database yet, which this read never creates.
+ */
+export function stateAnswer(
+  nowMs: number,
+  root = stateRoot(),
+): Outcome<StateAnswer, "line-unreadable"> {
+  const line = readLine(root);
+  if (!line.ok) return line;
+  return ok({
+    now: new Date(nowMs).toISOString(),
+    timeZone: line.value?.timeZone ?? hostTimeZone(),
+    plugin: pluginVersion(),
+    schema: SCHEMA_VERSION,
+    line: line.value,
+  });
 }
 
 /** The receipt of the tick that wrote the stored line, with that tick's run; `null` before a tick wrote one. One row is read, so the two always belong together. */

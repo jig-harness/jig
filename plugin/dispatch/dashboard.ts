@@ -21,18 +21,13 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ExitError } from "../shared/cli.ts";
-import { attempt, failed, ok, type Outcome } from "../shared/outcome.ts";
-import { pluginVersion } from "../shared/plugin-version.ts";
-import type {
-  Answer,
-  RowsAnswer,
-  StateAnswer,
-} from "./lib/dashboard-contract.ts";
+import { attempt, failed, type Outcome } from "../shared/outcome.ts";
+import type { Answer, RowsAnswer } from "./lib/dashboard-contract.ts";
 import { queryLog } from "./lib/dashboard-log.ts";
 import { hostTimeZone } from "./lib/host-time.ts";
-import { readLine, readLineReceipt } from "./lib/line-store.ts";
+import { readLine, readLineReceipt, stateAnswer } from "./lib/line-store.ts";
 import type { Listen } from "./lib/listen.ts";
-import { existingStateDb, SCHEMA_VERSION } from "./lib/state.ts";
+import { existingStateDb } from "./lib/state.ts";
 import { stateRoot } from "./receipts.ts";
 
 /** The port the dashboard listens on when neither `--port` nor the address names one. */
@@ -59,22 +54,6 @@ export function dashboardData(
   return attempt("log-unreadable", "the outcome log cannot be read", () =>
     queryLog(params, nowMs, root, shownTimeZone(root)),
   );
-}
-
-/** The newest tick's line and the server's own facts: `GET /state`. */
-function stateData(
-  nowMs: number,
-  root: string,
-): Outcome<StateAnswer, "line-unreadable"> {
-  const line = readLine(root);
-  if (!line.ok) return line;
-  return ok({
-    now: new Date(nowMs).toISOString(),
-    timeZone: line.value?.timeZone ?? hostTimeZone(),
-    plugin: pluginVersion(),
-    schema: SCHEMA_VERSION,
-    line: line.value,
-  });
 }
 
 function sameToken(given: string | null, token: string): boolean {
@@ -249,7 +228,7 @@ export function serveDashboard(options: {
   function route(request: Request, url: URL): Response {
     if (url.pathname === "/") return pageResponse(page, request);
     if (url.pathname === "/state")
-      return readAnswer(stateData(now(), root), request);
+      return readAnswer(stateAnswer(now(), root), request);
     if (url.pathname === "/rows")
       return readAnswer(dashboardData(url.searchParams, now(), root), request);
     if (url.pathname === "/receipt") return receiptAnswer(url, request, root);
