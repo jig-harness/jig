@@ -1929,6 +1929,11 @@ make, use the entry's term instead.
   commands: `drive` asks the dispatcher to drive a pull request that has
   no drive yet, and `hold` stands it down from a pull request until the
   person removes the label.
+- **Adoption rule** — a repository's opt-in (`dispatch.adopt`) under which
+  the *dispatcher* drives its own recent pull requests without anyone
+  labelling them: an open pull request with no drive ledger, opened by one
+  of the rule's authors and updated within its window, is armed as if a
+  person had put the `drive` label on it.
 - **Serialized area** — an area of a *change-area catalog* marked
   `serialize: true`: its pull requests conflict with each other whenever
   two of them move at once (a migrations folder, a schema), so the
