@@ -324,26 +324,30 @@ function markerOwner(m: FollowupMarker, host: string): string | null {
 export function launchClaimer(ctx: SharedContext): LaunchClaimer {
   const targetOf = (r: LaunchRecord) => ({ repo: ctx.slug, pr: Number(r.pr) });
   return {
-    async claim(record) {
+    async claim(record, replay = false) {
       const target = targetOf(record);
       const answer = await ctx.records.claim(
         target,
-        launchDraft(ctx, record),
+        launchDraft(ctx, record, replay),
         ctx.rule,
       );
       if (!answer.ok)
         return {
           refused: `the launch claim could not be made: ${answer.failure.reason}`,
+          uncertain: true,
         };
       const a = answer.value;
       if (a.kind === "holds") return { claim: a.id };
       const why = lostWhy(a);
-      if (!("id" in a)) return { refused: why };
+      // Only another claim's standing is a loss; a read that does not settle is not.
+      const uncertain = !["held", "earlier", "done"].includes(a.kind);
+      if (!("id" in a)) return { refused: why, uncertain };
       const released = await ctx.records.release(target, a.id);
       return {
         refused: released.ok
           ? why
           : `${why}; its own claim (comment ${a.id}) could not be withdrawn (${released.failure.reason}), so this host's next tick ends it`,
+        uncertain,
       };
     },
     async release(record, claim) {
@@ -353,7 +357,11 @@ export function launchClaimer(ctx: SharedContext): LaunchClaimer {
 }
 
 /** The shared claim a drive's launch record makes. */
-function launchDraft(ctx: SharedContext, record: LaunchRecord): LaunchDraft {
+function launchDraft(
+  ctx: SharedContext,
+  record: LaunchRecord,
+  replay: boolean,
+): LaunchDraft {
   return {
     stage: "drive",
     pr: Number(record.pr),
@@ -366,6 +374,7 @@ function launchDraft(ctx: SharedContext, record: LaunchRecord): LaunchDraft {
     change: record.redrive?.change ?? null,
     earlier: record.redrive?.earlier ?? [],
     conflictStop: record.redrive?.conflictStop === true,
+    ...(replay ? { replay } : {}),
     writer: localWriter("forge", ctx.login),
   };
 }
@@ -426,7 +435,7 @@ export async function settleOwnClaims(
   const ends = [
     ...driveEnds(claims, ctx.host, byId, nowIso),
     ...merged.flatMap((pr) =>
-      ownOpenMarkers(pr, ctx.host, byId).flatMap((m) =>
+      ownOpenMarkers(pr, ctx.host, byId, outcomes.get(pr.number)).flatMap((m) =>
         owed(
           pr.number,
           "followup",
@@ -510,12 +519,14 @@ type TickMarker = FollowupMarker & {
 /**
  * This host's own markers on a merged pull request that carry no answer yet:
  * those naming this host, and those posted before markers named a host whose
- * launch record is on this machine.
+ * launch record is on this machine or whose outcome record, which outlives the
+ * launch record, names it.
  */
 function ownOpenMarkers(
   pr: MarkedPr,
   host: string,
   byId: ReadonlyMap<string, ReadRecord>,
+  written: FollowupOutcome | undefined,
 ): TickMarker[] {
   if ("unreadable" in pr.markers) return [];
   return pr.markers.filter(
@@ -523,7 +534,8 @@ function ownOpenMarkers(
       m.trusted &&
       m.run.kind === "tick" &&
       (m.run.host === host ||
-        (m.run.host === undefined && byId.has(m.run.record))) &&
+        (m.run.host === undefined &&
+          (byId.has(m.run.record) || written?.record === m.run.record))) &&
       m.run.outcome === undefined,
   );
 }

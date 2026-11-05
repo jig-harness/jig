@@ -55,7 +55,7 @@ import {
   accountBlocked,
   admitAccount,
   type ApplyState,
-  dropRecord,
+  dropPendingRecord,
   isTakeover,
   type LaunchClaimer,
   type Opened,
@@ -111,10 +111,13 @@ async function unclaimed(
   claimer: LaunchClaimer | undefined,
 ): Promise<string | null> {
   if (claimer === undefined) return null;
-  const taken = await claimer.claim(record);
+  const taken = await claimer.claim(record, true);
   if (!("refused" in taken)) return null;
-  dropRecord(state, record);
-  return `its launch is not claimed where another host reads it: ${taken.refused}; the record is given back`;
+  const why = `its launch is not claimed where another host reads it: ${taken.refused}`;
+  if (taken.uncertain === true) return `${why}; the record is kept`;
+  return dropPendingRecord(state, record)
+    ? `${why}; the record is given back`
+    : `${why}; the record is kept, since its launch started meanwhile`;
 }
 
 /** Why a pending record's launch must not be replayed now; `null` when it may. */

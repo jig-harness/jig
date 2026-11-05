@@ -299,6 +299,33 @@ describe("a held launch's claim after a replay or a takeover", () => {
   });
 });
 
+describe("a replayed takeover behind a later takeover", () => {
+  it("stands behind another host's open takeover claim instead of claiming past it", async () => {
+    const forge = fakeForge(
+      [launchComment(60, drive(HOST_B, RECORD_B, "takeover"), 2)],
+      { login: "drive-bot" },
+    );
+    const out = await probe(
+      forge,
+      `return brief(await shared.claim(pr, { ...drive(${JSON.stringify(HOST_A)}, ${JSON.stringify(RECORD_A)}, "takeover"), replay: true }, fast));`,
+    );
+    expect(out).toMatchObject({ kind: "held" });
+    expect(forge.comments()).toHaveLength(1);
+  });
+
+  it("still claims past it the first time", async () => {
+    const forge = fakeForge(
+      [launchComment(60, drive(HOST_B, RECORD_B, "takeover"), 2)],
+      { login: "drive-bot" },
+    );
+    await probe(
+      forge,
+      `return brief(await shared.claim(pr, drive(${JSON.stringify(HOST_A)}, ${JSON.stringify(RECORD_A)}, "takeover"), fast));`,
+    );
+    expect(forge.comments()).toHaveLength(2);
+  });
+});
+
 describe("the read-back while the forge's listing lags", () => {
   it("hide-ids: reads again while the listing does not show the claim, and then holds it", async () => {
     const forge = fakeForge([], { login: "drive-bot" });

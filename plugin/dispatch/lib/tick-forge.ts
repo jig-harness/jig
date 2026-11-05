@@ -30,6 +30,8 @@ export interface ForgeRead {
   open: Awaited<ReturnType<typeof openPullRequests>>;
   /** The open pull requests read for a ledger: under `only_labeled`, the labelled ones. */
   read: Set<number>;
+  /** Whether `only_labeled` limits what is done: a pull request outside `inScope`, or in `disputed`, then receives no write. */
+  scoped: boolean;
   /** Under `only_labeled`, the pull requests in scope this tick: the only ones anything is done on, whatever a launch record says. */
   inScope: Set<number>;
   /** Under `only_labeled`, the pull requests whose scope this tick's listings disagree on: unplaced, nothing done or written on them. */
@@ -59,6 +61,7 @@ export async function readForge(
     ok: false,
     open: [],
     read: new Set(),
+    scoped: labels?.onlyLabeled === true,
     inScope: new Set(),
     disputed: new Set(),
     created: new Map(),

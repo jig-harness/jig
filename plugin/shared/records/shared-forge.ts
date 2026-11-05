@@ -120,8 +120,10 @@ function damaged(claims: readonly SharedClaim[]): string | null {
 /**
  * The answer a current claim with no end gives a new launch before anything
  * is posted: the caller's own claim for the same launch already holds it, or
- * another holds it, which only a takeover claims past, since the driver it
- * replaces is wedged; `null` when nothing holds the launch.
+ * another holds it, which only a first-time takeover claims past, since the
+ * driver it replaces is wedged (a replay of a takeover already made does not:
+ * a later claim of another's superseded it); `null` when nothing holds the
+ * launch.
  */
 function holder(
   claims: readonly SharedClaim[],
@@ -131,7 +133,9 @@ function holder(
   if (held === null || !open(held)) return null;
   if (sameLaunch(held, draft))
     return { kind: "holds", id: held.id, attempt: held.says.value.attempt };
-  return draft.action === "takeover" ? null : { kind: "held", by: held };
+  return draft.action === "takeover" && draft.replay !== true
+    ? null
+    : { kind: "held", by: held };
 }
 
 /** Whether the caller's own claim reads as the draft posted it. */
@@ -375,29 +379,27 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
     const answer = checkAnswer(stage, target.pr, seen.value);
     return ok(
       stage === "drive"
-        ? stillCurrent(answer, own, attempt.value.claims)
+        ? stillCurrent(
+            answer,
+            own,
+            seen.value.listing.map((c) => sharedOf(stage, c, target.pr)),
+          )
         : answer,
     );
   }
 
-  /** The attempt the caller's own drive claim names, which its re-check weighs it on, and the claims read; none for a follow-up, which has one claim. */
+  /** The attempt the caller's own drive claim names, which its re-check weighs it on; none for a follow-up, which has one claim. */
   async function ownAttempt(
     target: SharedTarget,
     stage: SharedStage,
     own: number,
-  ): Promise<
-    Outcome<
-      { attempt?: { generation?: number }; claims: SharedClaim[] },
-      "unreadable"
-    >
-  > {
-    if (stage !== "drive") return ok({ claims: [] });
+  ): Promise<Outcome<{ attempt?: { generation?: number } }, "unreadable">> {
+    if (stage !== "drive") return ok({});
     const listing = await list(target, "drive");
     if (!listing.ok) return listing;
     const mine = listing.value.find((c) => c.id === own);
     return ok({
       attempt: mine?.says.ok ? { generation: mine.says.value.attempt } : {},
-      claims: listing.value,
     });
   }
 

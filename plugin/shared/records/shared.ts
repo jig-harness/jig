@@ -128,6 +128,8 @@ export interface LaunchDraft {
   change?: string | null;
   earlier?: string[];
   conflictStop?: boolean;
+  /** A replay of a launch record already made: a takeover then stands behind a later claim of another's instead of claiming past it. */
+  replay?: boolean;
   writer: Writer;
 }
 
