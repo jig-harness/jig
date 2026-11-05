@@ -12,8 +12,16 @@
  * 3. use the workspace that holds the pull request, or open one named for
  *    the stage and the pull request (`dispatched` in `runtime/port.ts`),
  *    under the launch record's id minted here;
- * 4. write the launch record, then call the runtime's `launch` under the
- *    record's token (launch.ts).
+ * 4. write the launch record, which holds the slot from here on;
+ * 5. claim the launch where another host dispatching the repository reads
+ *    it (`shared-launches.ts`): a current claim of another host's with no
+ *    end holds the launch, and a claim that loses its attempt is withdrawn;
+ *    either gives the record back and starts nothing;
+ * 6. call the runtime's `launch` under the record's token (launch.ts).
+ *
+ * A takeover of a driver another host started is admitted on a free slot,
+ * as a re-arm is, since this host has no record of that driver's to take
+ * the slot of.
  *
  * Before any of that, a pending record of the repository whose launch got
  * no answer is retried once, under its own record and token, never as a
@@ -47,6 +55,9 @@ import {
   accountBlocked,
   admitAccount,
   type ApplyState,
+  dropRecord,
+  isTakeover,
+  type LaunchClaimer,
   type Opened,
   openedFor,
   openWithinBudget,
@@ -60,10 +71,11 @@ import {
 
 export type { ApplyState } from "./launch.ts";
 
-/** A fresh read of one pull request's drive, and whether a person's `hold` label is on it. */
+/** A fresh read of one pull request's drive, whether a person's `hold` label is on it, and how a launch claims it where another host reads it. */
 export interface FreshDrive {
   read: (pr: number) => Promise<DrivenPr | null>;
   held: (pr: DrivenPr) => boolean;
+  claimer?: LaunchClaimer;
 }
 
 const HELD = "a person's hold label is on it now";
@@ -77,9 +89,30 @@ async function retryPending(
 ): Promise<void> {
   for (const record of replayable(state, repo.slug, ["rearm", "takeover"])) {
     const action = { target: `PR #${record.pr}`, stage: "rearm" } as Action;
-    const blocked = await retryBlocked(state, record, fresh);
+    const blocked =
+      (await retryBlocked(state, record, fresh)) ??
+      (await unclaimed(state, record, fresh.claimer));
     report.launches.push(await replay(state, record, action, blocked));
   }
+}
+
+/**
+ * A record never launched (a tick stopped between writing it and its
+ * launch) may never have been claimed where another host reads it either:
+ * it claims now, which is a no-op when its claim was posted, and a claim
+ * refused gives the record back. Why it must not be replayed; `null` when it
+ * may.
+ */
+async function unclaimed(
+  state: ApplyState,
+  record: LaunchRecord,
+  claimer: LaunchClaimer | undefined,
+): Promise<string | null> {
+  if (claimer === undefined || record.attempts.length > 0) return null;
+  const taken = await claimer.claim(record);
+  if (!("refused" in taken)) return null;
+  dropRecord(state, record);
+  return `its launch is not claimed where another host reads it: ${taken.refused}; the record is given back`;
 }
 
 /** Why a pending record's launch must not be replayed now; `null` when it may. */
@@ -177,11 +210,7 @@ function stillWanted(
   if (held(fresh)) return HELD;
   if (factsOf(fresh) !== action.facts)
     return `its ledger changed since the plan read it (now ${factsOf(fresh)})`;
-  const want = wantedClass(
-    action.takeover !== undefined,
-    action.redrive,
-    action.facts,
-  );
+  const want = wantedClass(isTakeover(action), action.redrive, action.facts);
   if (fresh.class !== want)
     return `its ledger now reads ${fresh.class}: ${fresh.why}`;
   return changedStale(action.redrive, fresh);
@@ -209,25 +238,25 @@ function roundOf(pr: DrivenPr): number | null {
   return typeof round === "number" ? round : null;
 }
 
-/** One planned re-arm or takeover, through its fresh read, admission, workspace and launch. */
+/** One planned re-arm or takeover, through its fresh read, admission, workspace, shared claim and launch. */
 async function launchOne(
   state: ApplyState,
   repo: RepoTarget,
   action: Action,
   fresh: DrivenPr | null,
   sessions: SessionsReport,
-  held: FreshDrive["held"],
+  drive: FreshDrive,
 ): Promise<LaunchOutcome> {
   const late = outOfTime(state);
   if (late !== null) return waits(action, late);
-  const changed = stillWanted(action, fresh, held);
+  const changed = stillWanted(action, fresh, drive.held);
   if (changed !== null) return waits(action, changed);
   const admitted = await admitAccount(state, action);
   if ("outcome" in admitted) return admitted.outcome;
   const slots = admitted.slots;
   const pr = fresh as DrivenPr;
   const id = newRecordId(new Date());
-  const kind = action.takeover === undefined ? "rearm" : "takeover";
+  const kind = isTakeover(action) ? "takeover" : "rearm";
   const named = dispatched(kind, `#${pr.number}`, id);
   const opened = await openedFor(
     state,
@@ -273,6 +302,7 @@ async function launchOne(
       mark: named.mark,
     },
     slots,
+    drive.claimer,
   );
 }
 
@@ -303,7 +333,7 @@ export async function applyDrives(
       continue;
     }
     report.launches.push(
-      await launchOne(state, repo, action, read, sessions, fresh.held),
+      await launchOne(state, repo, action, read, sessions, fresh),
     );
   }
 }

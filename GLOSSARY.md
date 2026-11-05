@@ -1608,6 +1608,15 @@ make, use the entry's term instead.
   a comment only if none exists, so the claim is read back after posting and
   checked again before each act it guards
   ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Shared records** — what a host dispatching a repository publishes so
+  that another host dispatching the same repository can read it: which host
+  holds a launch, and how the launch ended. On the forge, each is a *forge
+  claim* on the pull request the launch concerns, its end written onto the
+  same comment by the host that made it; a pickup's is the tracker claim
+  `do-item` makes. One host owns each repository's notifications, labels,
+  history rows and board, so each is written once. They coordinate launches
+  and never authorize an act a person takes
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
 - **Component (of the `jig` command)** — one of the machine-level tools the
   plugin's `jig` command joins into one command line: resource collection
   (`jig gc`) and the *dispatcher* (`jig dispatch`). Each defines its command

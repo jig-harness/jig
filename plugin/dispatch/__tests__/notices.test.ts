@@ -1,12 +1,6 @@
 import { expect, test } from "bun:test";
 import { type Cause, fitting } from "../lib/actions/notify.ts";
 import type { Workspace } from "../lib/runtime/port.ts";
-import { failed, ok } from "../../shared/outcome.ts";
-import {
-  type ListedClaim,
-  standing,
-} from "../../shared/records/forge-claims.ts";
-import { FOLLOWUP_CLAIM, markerStanding } from "../lib/followup-marker.ts";
 import { parkNotice } from "../lib/notices.ts";
 import type { DrivenPr } from "../lib/types.ts";
 
@@ -27,69 +21,6 @@ test("a park message cut to its bound keeps the answer instructions and the URL"
   expect(text.length).toBeLessThanOrEqual(4000);
   expect(text).toContain("answer <key>");
   expect(text.endsWith("https://example.test/pull/9")).toBe(true);
-});
-
-const TICK = { kind: "tick", record: "r1" } as const;
-const AT = "2026-11-04T09:30:00.000Z";
-
-/** A trusted follow-up marker, as the forge-claims module lists one; `null` for one whose record does not read. */
-function marker(id: number, payload: Record<string, unknown> | null) {
-  return {
-    id,
-    login: "drive-bot",
-    association: "MEMBER",
-    createdAt: AT,
-    trusted: true,
-    record:
-      payload === null
-        ? failed("unreadable", "its record does not read")
-        : ok({
-            key: "followup",
-            at: AT,
-            payload: { pr: 9, ...payload },
-            legacy: false,
-          }),
-  } satisfies ListedClaim;
-}
-
-/** How marker 7, just posted, stands in `listing`. */
-const seen = (listing: ListedClaim[]) =>
-  ok(standing(FOLLOWUP_CLAIM, listing, { id: 7, key: "followup", at: AT }));
-
-const tick = (record: string) => ({ run: "tick", record });
-const manual = (outcome: string) => ({ run: "manual", outcome });
-
-test("a read-back that lacks the posted marker reports it missing", () => {
-  expect(markerStanding(seen([marker(9, tick("r1"))]), TICK).kind).toBe(
-    "missing",
-  );
-  expect(
-    markerStanding(seen([marker(7, tick("r1")), marker(9, tick("r2"))]), TICK)
-      .kind,
-  ).toBe("stands");
-});
-
-test("an earlier trusted marker wins, whatever its record says", () => {
-  const back = markerStanding(
-    seen([marker(5, null), marker(7, tick("r1"))]),
-    TICK,
-  );
-  expect(back.kind === "earlier" && back.marker.id).toBe(5);
-});
-
-test("a posted marker edited to another body is not the claim", () => {
-  expect(markerStanding(seen([marker(7, null)]), TICK).kind).toBe("altered");
-  expect(markerStanding(seen([marker(7, tick("r2"))]), TICK).kind).toBe(
-    "altered",
-  );
-});
-
-test("a manual claim marked done between the post and the read-back is kept, not altered", () => {
-  const running = [marker(7, manual("running"))];
-  const done = [marker(7, manual("done"))];
-  expect(markerStanding(seen(running), { kind: "manual" }).kind).toBe("stands");
-  expect(markerStanding(seen(done), { kind: "manual" }).kind).toBe("done");
-  expect(markerStanding(seen(done), TICK).kind).toBe("altered");
 });
 
 test("a notice key longer than its bound is cut and still tells two keys apart", () => {

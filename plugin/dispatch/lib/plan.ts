@@ -21,6 +21,14 @@
  * cannot be told this tick gets none either, reported as unplaced. Its
  * notifications go on: a hold keeps the dispatcher's own launches off,
  * not a person's view of the pull request.
+ *
+ * Where another host dispatches the repository too, its launch claims are
+ * read beside this host's launch records (`shared-launches.ts`): a drive
+ * another host's claim holds is reported as held by that host and never
+ * started here; a refusal, a re-drive of the same change or an arm at the
+ * same head it made counts as this host's would; and a silent driver its
+ * launch started is taken over from here. Claims that cannot be read leave
+ * the pull request unplaced.
  */
 import { type DriveHold, driveHold, factsOf } from "./actions/drive-hold.ts";
 import { type Contention, heldReason } from "./contention.ts";
@@ -31,6 +39,12 @@ import { isDrive, type ReadRecord } from "./launches.ts";
 import { parkNotice, stopNotice } from "./notices.ts";
 import { planFollowups } from "./plan-followups.ts";
 import { planPickups } from "./plan-pickups.ts";
+import {
+  type DriveClaims,
+  type ForeignHold,
+  foreignHold,
+} from "./shared-launches.ts";
+import { failed } from "../../shared/outcome.ts";
 import type { SessionsReport, Workspace } from "./runtime/port.ts";
 import type {
   Action,
@@ -70,6 +84,8 @@ export interface PlanInput {
   inScope?: ReadonlySet<number>;
   /** The pull requests serialization holds, or cannot place, this tick. */
   serialized?: Pick<Contention, "held" | "unplaced">;
+  /** The shared records read this tick: this host, and each drive's launch claims (`shared-launches.ts`). */
+  shared?: { host: string; drives: DriveClaims };
   nowMs: number;
 }
 
@@ -148,7 +164,7 @@ export function planTick(input: PlanInput): Plan {
   // merged state wins, so it gets its follow-up and no re-arm.
   const mergedNumbers = new Set(input.merged.map((m) => m.number));
   for (const pr of input.drives.filter((d) => !mergedNumbers.has(d.number)))
-    planDrive(input.slug, pr, input.launches, plan, want);
+    planDrive(input, pr, plan, want);
 
   const command = input.section.followupCommand;
   if (command !== null)
@@ -159,6 +175,7 @@ export function planTick(input: PlanInput): Plan {
         merged: input.merged,
         launches: input.launches,
         outcomes: input.outcomes,
+        host: input.shared?.host ?? null,
         nowMs: input.nowMs,
       },
       plan,
@@ -306,6 +323,9 @@ function stoppedOurs(pr: DrivenPr, launches: ReadRecord[]): boolean {
   );
 }
 
+/** Another host's launch claim whose launch started the driver a takeover replaces. */
+type TakeoverClaim = NonNullable<Action["takeoverClaim"]>;
+
 /** The launch-record holds that leave a drive quiet, by the class the report gives it. */
 const QUIET_HOLDS: ReadonlyMap<DriveHold["kind"], LedgerClass> = new Map([
   ["refused", "refused"],
@@ -314,9 +334,15 @@ const QUIET_HOLDS: ReadonlyMap<DriveHold["kind"], LedgerClass> = new Map([
 ]);
 
 /** Why the plan wants a drive's action, in one sentence. */
-function wantReason(pr: DrivenPr, takeover: string | null): string {
+function wantReason(
+  pr: DrivenPr,
+  takeover: string | null,
+  claim: TakeoverClaim | null,
+): string {
   if (takeover !== null)
     return `drive ledger silent, and this machine's launch record ${takeover} started its driver: take it over (drive.ts --take-over decides)`;
+  if (claim !== null)
+    return `drive ledger silent, and host ${claim.host}'s launch claim (comment ${claim.id}, its launch record ${claim.record}) started its driver: take it over (drive.ts --take-over decides)`;
   const source =
     pr.class !== "unarmed"
       ? "drive ledger"
@@ -326,32 +352,82 @@ function wantReason(pr: DrivenPr, takeover: string | null): string {
   return `${source} ${pr.class}: ${pr.why}`;
 }
 
-/** One driven pull request: quiet, unplaced, held by a launch record, or wanted. */
-function planDrive(
-  slug: string,
+/** The ledger classes a launch can start from, which another host's claims are read beside. */
+const LAUNCHABLE: ReadonlySet<LedgerClass> = new Set([
+  "silent",
+  "stale",
+  "re-armable",
+  "unarmed",
+]);
+
+/** The holds of another host's claims that leave a drive quiet, by the class the report gives it. */
+const FOREIGN_QUIET: ReadonlyMap<ForeignHold["kind"], LedgerClass> = new Map([
+  ["refused", "refused"],
+  ["redriven", "stale"],
+  ["armed", "unarmed"],
+]);
+
+/**
+ * Another host's claims beside a drive this host's records leave open:
+ * `true` when they placed it (held, quiet or unplaced), else the takeover of
+ * a driver another host started, or `null`.
+ */
+function planForeign(
+  input: PlanInput,
   pr: DrivenPr,
-  launches: ReadRecord[],
   plan: Plan,
-  want: Want,
-): void {
+): true | TakeoverClaim | null {
+  const shared = input.shared;
+  if (shared === undefined || !LAUNCHABLE.has(pr.class)) return null;
   const target = `PR #${pr.number}`;
-  const hold = driveHold(pr, launches);
+  const claims =
+    shared.drives.get(pr.number) ??
+    failed("unreadable", "they were not read this tick");
+  const hold = foreignHold(pr, claims, shared.host);
+  if (hold.kind === "none") return null;
+  if (hold.kind === "unread") {
+    plan.unplaced.push({ target, record: "forge", reason: hold.why });
+    return true;
+  }
+  const says = hold.claim.says.value;
+  if (hold.kind === "takeover")
+    return {
+      id: hold.claim.id,
+      host: String(says.host),
+      record: String(says.record),
+    };
   if (hold.kind === "held") {
     plan.running.push({
       target,
       stage: "rearm",
-      reason: hold.why,
-      evidence: { record: hold.record.record.id },
+      reason: `held by host ${String(says.host)}: ${hold.why}`,
+      evidence: { claim: hold.claim.id, host: says.host, record: says.record },
     });
-    return;
+    return true;
   }
-  const quiet = QUIET_HOLDS.get(hold.kind);
-  if (quiet !== undefined && "why" in hold) {
-    plan.quiet.push({ target, class: quiet, why: hold.why });
-    return;
-  }
+  plan.quiet.push({
+    target,
+    class: FOREIGN_QUIET.get(hold.kind) ?? pr.class,
+    why: hold.why,
+  });
+  return true;
+}
+
+/** One driven pull request: quiet, unplaced, held by a launch record or another host's claim, or wanted. */
+function planDrive(
+  input: PlanInput,
+  pr: DrivenPr,
+  plan: Plan,
+  want: Want,
+): void {
+  const { slug, launches } = input;
+  const target = `PR #${pr.number}`;
+  const hold = driveHold(pr, launches);
+  if (placedByHold(target, hold, plan)) return;
   const takeover = hold.kind === "takeover" ? hold.record.record.id : null;
-  if (QUIET.has(pr.class) && takeover === null) {
+  const foreign = takeover === null ? planForeign(input, pr, plan) : null;
+  if (foreign === true) return;
+  if (QUIET.has(pr.class) && takeover === null && foreign === null) {
     plan.quiet.push({ target, class: pr.class, why: pr.why });
     return;
   }
@@ -360,17 +436,42 @@ function planDrive(
     return;
   }
   const cause = NOTIFY.get(pr.class);
-  const stage: Stage = cause === undefined ? "rearm" : "notify";
   want(
     {
-      stage,
+      stage: cause === undefined ? "rearm" : "notify",
       target,
       record: "forge",
-      reason: wantReason(pr, takeover),
+      reason: wantReason(pr, takeover, foreign),
       evidence: { url: pr.url, head: pr.head, ...pr.evidence },
       ...stageFields(slug, pr, cause, launches),
-      ...(takeover === null ? {} : { takeover }),
+      ...takeoverFields(takeover, foreign),
     },
     (w) => w.prs.includes(pr.number),
   );
+}
+
+/** Whether this machine's launch records placed a drive: held by a record, or quiet behind one. */
+function placedByHold(target: string, hold: DriveHold, plan: Plan): boolean {
+  if (hold.kind === "held") {
+    plan.running.push({
+      target,
+      stage: "rearm",
+      reason: hold.why,
+      evidence: { record: hold.record.record.id },
+    });
+    return true;
+  }
+  const quiet = QUIET_HOLDS.get(hold.kind);
+  if (quiet === undefined || !("why" in hold)) return false;
+  plan.quiet.push({ target, class: quiet, why: hold.why });
+  return true;
+}
+
+/** A takeover's fields: the launch record whose driver it replaces, or the claim of another host's that started it. */
+function takeoverFields(
+  takeover: string | null,
+  claim: TakeoverClaim | null,
+): Pick<Action, "takeover" | "takeoverClaim"> {
+  if (takeover !== null) return { takeover };
+  return claim === null ? {} : { takeoverClaim: claim };
 }

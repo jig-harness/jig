@@ -55,6 +55,7 @@ import {
   thisHost,
 } from "../../shared/liveness.ts";
 import { type ProcessRow, processTable } from "../../shared/process-table.ts";
+import { LAUNCH_RECORD_ID } from "../../shared/records/launch-claims.ts";
 import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
 import type { StaleCause } from "./types.ts";
@@ -212,7 +213,8 @@ export interface ReadRecord {
   result: SessionResult | null;
 }
 
-const ID = /^\d{8}T\d{6}Z-[a-f\d]{8}$/;
+/** A launch record id: the time it was made, and a random suffix. */
+const ID = LAUNCH_RECORD_ID;
 
 /** Whether `id` has a launch record id's shape. */
 export function isRecordId(id: string): boolean {

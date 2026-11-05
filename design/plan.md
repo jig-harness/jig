@@ -271,12 +271,16 @@ and the dispatcher reading the drive's exit codes from its terminal-state
 registry, one round counter, and mailbox directives addressed to a driver
 generation. No daemon or bus coordinates them
 ([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). Built in the
-design's order; built so far: the envelope, the registry
+design's order; steps 1 to 5 are built: the envelope, the registry
 and its gate, the ledger and the follow-up marker carrying the envelope
 ([plugin/RECORDS.md](../plugin/RECORDS.md)); the liveness module; the
-machine's records in SQLite, the drive's state among them; and the forge
+machine's records in SQLite, the drive's state among them; the forge
 claims (the takeover claim, the follow-up marker and the merge-ready
-announcement as claims of `plugin/shared/records/forge-claims.ts`).
+announcement as claims of `plugin/shared/records/forge-claims.ts`); and
+the records a second host reads (`SharedRecords` on the forge, a launch
+claim beside each drive's launch, the follow-up marker carrying its answer,
+and one owner host per repository). Step 6, the dispatcher reading the
+drive's own records, is in review.
 
 Done when every record kind the plugin keeps is registered and the gate
 fails an unregistered marker, state file or table; the identity read by a

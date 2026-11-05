@@ -1,7 +1,7 @@
 /**
  * The follow-ups in the plan: every pull request merged since the
- * follow-up stage's start, classified by its follow-up markers (claims of
- * the shared forge-claims module, read through `followup-marker.ts`), this
+ * follow-up stage's start, classified by its follow-up markers (the
+ * follow-up's shared records, read through `followup-marker.ts`), this
  * machine's launch records and the follow-ups' outcome records
  * (`followup-outcomes.ts`):
  *
@@ -12,10 +12,18 @@
  * | a trusted one that does not read | reports it, starts nothing |
  * | a manual run's, marked done | quiet: done |
  * | a manual run's, not marked done | quiet: held by that run, reported with its author and age |
- * | the tick's, its outcome done | quiet: done |
- * | the tick's, its launch record still holding | running |
- * | the tick's, its outcome failed, its record died, or record and outcome both gone | a failed follow-up: notified once, with the question its pass stopped on when it stated one, never started again |
- * | the tick's, naming a record for anything else | reports it, starts nothing |
+ * | another host's, its answer done | quiet: done |
+ * | another host's, its answer failed | a failed follow-up: notified once, never started again |
+ * | another host's, no answer yet | running, held by that host |
+ * | this host's, its outcome done | quiet: done |
+ * | this host's, its launch record still holding | running |
+ * | this host's, its outcome failed, its record died, or record and outcome both gone | a failed follow-up: notified once, with the question its pass stopped on when it stated one, never started again |
+ * | this host's, naming a record for anything else | reports it, starts nothing |
+ *
+ * A tick's marker names the host that posted it; one that names none was
+ * posted before markers named their host, and is read as this host's. This
+ * host's own marker is read through its launch record and outcome record,
+ * and through the answer written on the marker once both are gone.
  *
  * A marker is a claim, not a completion; a person settles a failed or
  * held follow-up by deleting its marker (wanted again) or, for a manual
@@ -36,6 +44,8 @@ export interface FollowupInput {
   merged: MarkedPr[];
   launches: ReadRecord[];
   outcomes: ReadonlyMap<number, FollowupOutcome>;
+  /** This host, as its markers name it; `null` when the shared records name none. */
+  host: string | null;
   nowMs: number;
 }
 
@@ -102,6 +112,44 @@ function foreignRecord(
   return `its follow-up marker (comment ${marker}) names launch record ${id}, which is a ${found.record.action} of ${targetOf(found.record)}: a person settles it`;
 }
 
+/** A pull request another host's marker claims, by the answer that host wrote on it. */
+function planForeignMarker(
+  input: FollowupInput,
+  pr: MarkedPr,
+  marker: FollowupMarker & { run: { kind: "tick"; host: string } },
+  plan: Plan,
+): void {
+  const target = `PR #${pr.number}`;
+  const { record, host, outcome } = marker.run;
+  const named = `host ${host}'s launch record ${record} (marker comment ${marker.id})`;
+  if (outcome === "done") {
+    plan.quiet.push({
+      target,
+      class: "followup-done",
+      why: `the follow-up under ${named} recorded done`,
+    });
+    return;
+  }
+  if (outcome === "failed") {
+    plan.actions.push(
+      failed(
+        input,
+        pr,
+        marker,
+        `its pass under ${named} ended without recording done; that host's report carries the question it stopped on, if any`,
+        false,
+      ),
+    );
+    return;
+  }
+  plan.running.push({
+    target,
+    stage: "followup",
+    reason: `held by host ${host}: ${named} claims its follow-up, and that host has not written its answer`,
+    evidence: { record, marker: marker.id, host },
+  });
+}
+
 /** A pull request the tick's own marker claims, by the record it names and the outcome. */
 function planTickMarker(
   input: FollowupInput,
@@ -112,7 +160,7 @@ function planTickMarker(
   const target = `PR #${pr.number}`;
   const id = marker.run.record;
   const found = input.launches.find((r) => r.record.id === id);
-  const ended = endedAs(input, pr.number, id, found);
+  const ended = endedHere(input, pr.number, marker, found);
   const unsettled = foreignRecord(found, pr, marker.id, id);
   if (unsettled !== null) {
     plan.unplaced.push({ target, record: "forge", reason: unsettled });
@@ -135,19 +183,70 @@ function planTickMarker(
     });
     return;
   }
-  const question = ended === "failed" ? questionOf(found?.state) : null;
-  plan.actions.push(
-    failed(
+  plan.actions.push(failedTick(input, pr, marker, found, ended === "failed"));
+}
+
+/** A failed follow-up this host's marker claims: its pass ended short of done, or its record and outcome are both gone. */
+function failedTick(
+  input: FollowupInput,
+  pr: MarkedPr,
+  marker: FollowupMarker & { run: { kind: "tick" } },
+  found: ReadRecord | undefined,
+  ended: boolean,
+): Action {
+  const id = marker.run.record;
+  const question = ended ? questionOf(found?.state) : null;
+  const asked =
+    question === null ? "" : `, on a question for a person: ${question}`;
+  const why = ended
+    ? `its pass under launch record ${id} ended without recording done${asked}`
+    : `marker comment ${marker.id} names launch record ${id}, and neither that record nor its outcome is on this machine`;
+  return failed(input, pr, marker, why, ended, question);
+}
+
+/**
+ * How the follow-up this host's marker names ended: by its outcome record or
+ * its launch record, and by the answer written on the marker once both are
+ * gone from this host; `null` while it has not.
+ */
+function endedHere(
+  input: FollowupInput,
+  pr: number,
+  marker: FollowupMarker & { run: { kind: "tick" } },
+  found: ReadRecord | undefined,
+): "done" | "failed" | null {
+  const ended = endedAs(input, pr, marker.run.record, found);
+  if (ended !== null || found !== undefined) return ended;
+  return marker.run.outcome ?? null;
+}
+
+/** The host another host's marker names, when it is not this one; `null` for this host's own, or one that names none. */
+function foreignHost(
+  input: FollowupInput,
+  marker: FollowupMarker & { run: { kind: "tick" } },
+): string | null {
+  const { host } = marker.run;
+  return host === undefined || input.host === null || host === input.host
+    ? null
+    : host;
+}
+
+/** A pull request a tick's marker claims: another host's by the answer it wrote, this host's by its records. */
+function planTick(
+  input: FollowupInput,
+  pr: MarkedPr,
+  marker: FollowupMarker & { run: { kind: "tick" } },
+  plan: Plan,
+): void {
+  const host = foreignHost(input, marker);
+  if (host === null) planTickMarker(input, pr, marker, plan);
+  else
+    planForeignMarker(
       input,
       pr,
-      marker,
-      ended === "failed"
-        ? `its pass under launch record ${id} ended without recording done${question === null ? "" : `, on a question for a person: ${question}`}`
-        : `marker comment ${marker.id} names launch record ${id}, and neither that record nor its outcome is on this machine`,
-      ended === "failed",
-      question,
-    ),
-  );
+      { ...marker, run: { ...marker.run, host } },
+      plan,
+    );
 }
 
 /** A merged pull request with no trusted follow-up marker: the tick wants one. */
@@ -229,7 +328,7 @@ function planMerged(
     });
     return;
   }
-  planTickMarker(
+  planTick(
     input,
     pr,
     marker as FollowupMarker & { run: { kind: "tick" } },

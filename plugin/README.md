@@ -261,7 +261,8 @@ until the plugin is updated.
 enables for each repository: the `rearm` stage, and the `pickup`,
 `followup`, `notify` and `steer` stages below. With `rearm`, each re-arm
 of a stopped drive, and each takeover of a wedged driver this machine
-started, runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
+started (or another host did: see several hosts, below),
+runs as `drive.ts <PR> [--take-over] -- <pass>` in a terminal tab
 of the pull request's workspace, opened from the pull request when none
 holds it, through a small wrapper (`dispatch/run.ts`). The wrapper bills
 the pass to an account the machine file lists, through that account's
@@ -394,10 +395,11 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 does when one has appeared since, so the run stops before it acts. Only a
 marker written by the dispatcher's own login or by an owner, member or
 collaborator counts. When a dispatched follow-up's pass ends, its result
-is kept in an outcome record per pull request that never expires; a
-follow-up that failed, or whose marker names a launch record this machine no
-longer has, is notified once and never started again: delete its marker to
-have it run again. A pass that cannot finish without a person stops and
+is kept in an outcome record per pull request that never expires, and the
+next run writes it onto the marker (`outcome: done` or `failed`), where
+another host reads it; a follow-up that failed, or whose marker names a
+launch record this machine no longer has and carries no answer, is notified
+once and never started again: delete its marker to have it run again. A pass that cannot finish without a person stops and
 ends its output with a line starting `Question:`; the notification carries
 that question, and the outcome log counts it as parked for a person.
 
@@ -418,6 +420,48 @@ while a workspace is still unread, a new message is appended to its comment
 rather than replacing it. The answer to a park is never sent back through
 the notification: it is a comment on the pull request with a line
 `answer <key>: …`, and the next tick re-arms the drive.
+
+**Several hosts** may dispatch one repository: it may be listed in the machine files of several hosts, each
+dispatching it with its own accounts. They coordinate through
+[shared records](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+on the forge (`records.shared: forge`, the only medium today): before a host
+launches a drive it posts a launch claim on the pull request, a hidden-marker
+comment naming its launch record and the host, beside the launch record, and
+a follow-up's claim is its marker, which now names its host too. The host
+that made a claim writes its launch's end onto it at its next `--apply` run.
+Every run reads every host's claims: a launch another host's claim holds is
+reported as held by that host and never started twice; a refusal, a re-drive
+of the same change or an arm at the same head another host made counts as
+this host's would; a follow-up another host ran reads as done or failed once
+that host wrote its answer; and a driver another host started whose ledger
+heartbeat is past the lease window is taken over from here, as the ledger's
+own rule allows. A claim alone never starts a takeover. A pickup needs no
+claim of its own here: `do-item`'s claim on the tracker item is the shared
+record every host reads. Each run's report names this host (a digest of its
+dispatcher's database, so a public comment names no machine), which host
+owns the repository, and how many shared reads and writes the run made, with
+the forge budget left after them.
+
+One host owns each repository: its entry in the machine file says
+`owner: true`, the default, so a single machine is unchanged apart from one
+claim comment per drive launch and the answer written onto each follow-up's
+marker. Every other host listing it sets `owner: false`, and then launches,
+re-arms, re-drives and takes over through the shared records as the owner
+does, but never notifies for the repository, never writes its dispatch
+labels and never writes outcome-log rows for what it did not launch, so each
+of those is written once; a run that finds another host's claims saying it
+owns the repository too says so. Two consequences of `owner: false`: a session
+it launched that waits or drifts is reported on that host and notified by
+nobody, and its dashboard shows only its own launches. Every host needs the
+same release.
+
+These claims coordinate launches and never authorize an act a person takes.
+The forge offers no conditional create for a comment, so two hosts whose
+read-backs both lag can each read themselves the holder of one launch; the
+stage's own refusal (the drive's lock and its ledger claim, `do-item`'s
+claim, a follow-up's check before each act) is the backstop. A driver taken
+over from another host is stopped there only when it notices the takeover,
+so a wedged one keeps that host's account slot until its process ends.
 
 **What it starts is named as the dispatcher's**, so a person tells it from
 their own work at a glance on the board. A workspace the dispatcher creates

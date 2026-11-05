@@ -43,6 +43,8 @@ fs.appendFileSync(F + "/gh-calls.log", args.join(" ") + "\\n");
 const out = (v) => { process.stdout.write(typeof v === "string" ? v : JSON.stringify(v)); process.exit(0); };
 if (args[0] === "repo" && args[1] === "view" && args.includes("nameWithOwner,defaultBranchRef"))
   out({ nameWithOwner: "${SLUG}", defaultBranchRef: { name: "main" } });
+if (args[0] === "api" && args[1] === "rate_limit")
+  out({ resources: { core: { limit: 5000, remaining: 4990, reset: 1793000000 } } });
 if (args[0] === "pr" && args[1] === "list") {
   const state = args[args.indexOf("--state") + 1];
   // A listing that fails while prs-<state>-fail exists.
@@ -149,7 +151,8 @@ process.exit(r.exitCode ?? 1);
 const FAKE_ORCA = `#!/usr/bin/env bun
 const fs = require("node:fs");
 const { spawn } = require("node:child_process");
-const F = process.env.DISPATCH_FAKE_DIR;
+// A second host's Orca keeps its own workspaces, in DISPATCH_ORCA_DIR.
+const F = process.env.DISPATCH_ORCA_DIR ?? process.env.DISPATCH_FAKE_DIR;
 const args = process.argv.slice(2);
 fs.appendFileSync(F + "/orca-calls.log", JSON.stringify(args) + "\\n");
 const answer = (result) => { process.stdout.write(JSON.stringify({ id: "x", ok: true, result })); process.exit(0); };
