@@ -13,10 +13,13 @@
  *   record holds its slot and before the runtime's `launch`
  *   (`launchClaimer`); a launch another host's current claim holds is not
  *   started, and a claim that loses its attempt gives the record back.
- * - **A launch's end** is written onto its claim by the host that made it,
- *   at that host's next tick with `--apply`, once the wrapper's exit or the
- *   session's result ends the launch record (`settleOwnClaims`); a claim
- *   whose record is gone from its host ends as died.
+ * - **A launch's end** is written onto its claim by the host that made it:
+ *   by the wrapper, as soon as it records the stage's exit (`settleAtExit`),
+ *   so another host reads the end when the launch ends; and by that host's
+ *   next tick with `--apply` for every claim whose launch record ended and
+ *   still has none (`settleOwnClaims`), the backstop for a wrapper that died
+ *   before its write and a forge that refused it. A claim whose record is
+ *   gone from its host ends as died.
  * - **Another host's claims** are read for every pull request the plan
  *   classifies (`readSharedDrives`, and the follow-up markers), and placed
  *   beside this host's records (`foreignHold`): a current claim with no end
@@ -28,6 +31,7 @@
  */
 import type { Outcome } from "../../shared/outcome.ts";
 import { databaseInstance } from "../../shared/records/db.ts";
+import { forgeShared } from "../../shared/records/shared-forge.ts";
 import {
   type ClaimAnswer,
   type ClaimSays,
@@ -40,6 +44,7 @@ import {
   readable,
   type SharedClaim,
   type SharedRecords,
+  type SharedStage,
   unreadable,
   winners,
 } from "../../shared/records/shared.ts";
@@ -49,9 +54,11 @@ import { factsOf } from "./actions/drive-hold.ts";
 import type { LaunchClaimer } from "./actions/launch.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
+import { resolveLogin } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   holds,
+  isDrive,
   type LaunchRecord,
   type ReadRecord,
   settleEnds,
@@ -481,6 +488,95 @@ export async function settleOwnClaims(
     nowIso,
   );
   return failures;
+}
+
+/** How long each forge call of the wrapper's settle may take: the wrapper's terminal stays open until they are done. */
+const AT_EXIT_CALL_SEC = 10;
+
+/** The stage whose claim a launch record makes: a drive's launch claim or a follow-up's marker; a pickup's is the tracker's. */
+function stageOf(record: LaunchRecord): SharedStage | null {
+  if (isDrive(record)) return "drive";
+  return record.action === "followup" ? "followup" : null;
+}
+
+/** The end a record's own claims owe once it ended, with their stage and pull request; `null` when they owe none. */
+function owedAtExit(
+  r: ReadRecord,
+  nowIso: string,
+): { stage: SharedStage; pr: number; end: LaunchEnd } | null {
+  const stage = stageOf(r.record);
+  const end = endOfRecord(r, nowIso);
+  if (stage === null || r.record.pr === null || end === null) return null;
+  return { stage, pr: r.record.pr, end };
+}
+
+/**
+ * Write the end of the claims this host made for one launch record that
+ * ended: each of this host's claims on the record's pull request that names
+ * the record and has no end yet. Returns why an end could not be written,
+ * which this host's next tick writes (`settleOwnClaims`).
+ */
+async function settleRecordClaims(
+  ctx: Pick<SharedContext, "records" | "host">,
+  r: ReadRecord,
+  nowIso: string,
+): Promise<string[]> {
+  const owed = owedAtExit(r, nowIso);
+  if (owed === null) return [];
+  const target = { repo: r.record.repo, pr: owed.pr };
+  const read = await ctx.records.list(target, owed.stage);
+  if (!read.ok)
+    return [
+      `PR #${owed.pr}: the claims could not be read: ${read.failure.reason}`,
+    ];
+  // A trusted malformed companion may hide another obligation of this launch.
+  // Report it independently of the readable claims whose ends can be written.
+  const unread = unreadClaims(read);
+  const failures: string[] =
+    unread === null ? [] : [`PR #${owed.pr}: ${unread}`];
+  const matches = readable(read.value).filter(
+    (c) =>
+      c.says.value.record === r.record.id &&
+      (c.says.value.host === ctx.host ||
+        (owed.stage === "followup" && c.says.value.host === null)),
+  );
+  if (matches.length === 0)
+    return [
+      `PR #${owed.pr}: no readable claim for launch record ${r.record.id} was observed`,
+    ];
+  for (const c of matches) {
+    if (!open(c)) continue;
+    const done = await ctx.records.end(
+      target,
+      owed.stage,
+      c.id,
+      owed.end,
+      c.says.value.host === null ? ctx.host : undefined,
+    );
+    if (!done.ok)
+      failures.push(
+        `PR #${owed.pr}: the end of claim comment ${c.id} could not be written: ${done.failure.reason}`,
+      );
+  }
+  return failures;
+}
+
+/**
+ * The wrapper's settle, right after it records the stage's exit: the end of
+ * its own launch's claims, written at once so another host reads it when the
+ * launch ends. Every forge call, the read of the login among them, goes
+ * through `ghCall` under `AT_EXIT_CALL_SEC`. Best effort: it returns why an
+ * end was not written, and the tick's settle writes it.
+ */
+export async function settleAtExit(
+  r: ReadRecord,
+  root = stateRoot(),
+): Promise<string[]> {
+  const nowIso = new Date().toISOString();
+  if (owedAtExit(r, nowIso) === null) return [];
+  const login = await resolveLogin(AT_EXIT_CALL_SEC);
+  const records = forgeShared({ login, timeoutSec: AT_EXIT_CALL_SEC });
+  return settleRecordClaims({ records, host: hostOf(root) }, r, nowIso);
 }
 
 /**
