@@ -89,10 +89,17 @@ async function retryPending(
 ): Promise<void> {
   for (const record of replayable(state, repo.slug, ["rearm", "takeover"])) {
     const action = { target: `PR #${record.pr}`, stage: "rearm" } as Action;
-    const blocked =
-      (await retryBlocked(state, record, fresh)) ??
-      (await unclaimed(state, record, fresh.claimer));
+    let blocked = await retryBlocked(state, record, fresh);
+    let claim: number | null = null;
+    if (blocked === null) {
+      const taken = await unclaimed(state, record, fresh.claimer);
+      blocked = taken.blocked;
+      claim = taken.claim;
+    }
     report.launches.push(await replay(state, record, action, blocked));
+    // A replay that gave the record back starts nothing: its claim goes with it, as a first launch's does.
+    if (claim !== null && !state.records.some((r) => r.record.id === record.id))
+      await fresh.claimer?.release(record, claim);
   }
 }
 
@@ -103,21 +110,24 @@ async function retryPending(
  * without an answer may have lost its claim since, to another host's or to a
  * person's deletion. It claims now, which is a no-op while its own claim
  * holds the launch, and a claim refused gives the record back. Why it must
- * not be replayed; `null` when it may.
+ * not be replayed (`null` when it may) and the claim that holds it, to give
+ * back should the replay start nothing.
  */
 async function unclaimed(
   state: ApplyState,
   record: LaunchRecord,
   claimer: LaunchClaimer | undefined,
-): Promise<string | null> {
-  if (claimer === undefined) return null;
+): Promise<{ blocked: string | null; claim: number | null }> {
+  if (claimer === undefined) return { blocked: null, claim: null };
   const taken = await claimer.claim(record, true);
-  if (!("refused" in taken)) return null;
+  if (!("refused" in taken)) return { blocked: null, claim: taken.claim };
   const why = `its launch is not claimed where another host reads it: ${taken.refused}`;
-  if (taken.uncertain === true) return `${why}; the record is kept`;
-  return dropPendingRecord(state, record)
+  if (taken.uncertain === true)
+    return { blocked: `${why}; the record is kept`, claim: null };
+  const blocked = dropPendingRecord(state, record)
     ? `${why}; the record is given back`
     : `${why}; the record is kept, since its launch started meanwhile`;
+  return { blocked, claim: null };
 }
 
 /** Why a pending record's launch must not be replayed now; `null` when it may. */

@@ -375,6 +375,7 @@ function launchDraft(
     earlier: record.redrive?.earlier ?? [],
     conflictStop: record.redrive?.conflictStop === true,
     ...(replay ? { replay } : {}),
+    refusals: [...DRIVER_REFUSALS],
     writer: localWriter("forge", ctx.login),
   };
 }
@@ -382,8 +383,14 @@ function launchDraft(
 /** Why a claim the caller does not hold starts nothing. */
 function lostWhy(a: Exclude<ClaimAnswer, { kind: "holds" }>): string {
   switch (a.kind) {
-    case "held":
-      return `${a.by.says.ok ? claimWords(a.by as ReadClaim) : `launch claim comment ${a.by.id}`} holds its launch: that host has not written its end`;
+    case "held": {
+      const who = a.by.says.ok
+        ? claimWords(a.by as ReadClaim)
+        : `launch claim comment ${a.by.id}`;
+      return a.by.says.ok && a.by.says.value.end !== null
+        ? `${who} ended on drive.ts's refusal on these same ledger facts; it is not launched again until they change`
+        : `${who} holds its launch: that host has not written its end`;
+    }
     case "earlier":
       return `an earlier launch claim (comment ${a.by.id}) won the attempt; this one stands down`;
     case "done":

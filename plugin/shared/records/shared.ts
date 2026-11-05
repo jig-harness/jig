@@ -130,6 +130,8 @@ export interface LaunchDraft {
   conflictStop?: boolean;
   /** A replay of a launch record already made: a takeover then stands behind a later claim of another's instead of claiming past it. */
   replay?: boolean;
+  /** The exits that mean a driver refused to run beside another: a current claim of another launch that ended on one, on the draft's own facts, answers it. */
+  refusals?: readonly number[];
   writer: Writer;
 }
 

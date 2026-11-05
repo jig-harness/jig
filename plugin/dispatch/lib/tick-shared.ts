@@ -48,25 +48,13 @@ export function openShared(slug: string, owner: boolean): TickShared {
   return { records: (login) => context(login).records, context, ops };
 }
 
-/** How long after a launch record ended its claim's end is still owed; an older end is left to the claim's reader. */
-const OWED_END_DAYS = 7;
-
-/** Whether a launch record finished before `cutoff` (ms); a record still holding its stage never has. */
-function finishedBefore(r: ReadRecord, cutoff: number): boolean {
-  const at =
-    r.state.kind === "ended"
-      ? Date.parse(r.state.exit.at)
-      : r.state.kind === "died"
-        ? Date.parse(r.record.createdAt)
-        : NaN;
-  return at <= cutoff;
-}
-
 /**
  * A drive that ended and whose pull request has since merged or closed is no
  * longer in the open population, yet its claim still owes its end: read the
  * claims of each pull request this host's own launch records name that the
- * open drives do not cover.
+ * open drives do not cover. A record is the obligation, and it is pruned with
+ * the receipts' retention, so the reads end when it does and never before the
+ * end is written.
  */
 async function addEndedLaunches(
   ctx: SharedContext,
@@ -76,10 +64,8 @@ async function addEndedLaunches(
 ): Promise<void> {
   const open = new Set(forge.drives.map((d) => d.number));
   const extra = new Set<number>();
-  const cutoff = Date.now() - OWED_END_DAYS * 86_400_000;
   for (const r of records) {
     if (r.record.repo !== ctx.slug || r.record.action === "followup") continue;
-    if (finishedBefore(r, cutoff)) continue;
     const pr = Number(r.record.pr);
     if (!Number.isInteger(pr) || open.has(pr)) continue;
     // Under `only_labeled` nothing is written on a pull request out of scope, so its claims are not read to be ended.

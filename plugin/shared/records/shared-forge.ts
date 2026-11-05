@@ -117,23 +117,47 @@ function damaged(claims: readonly SharedClaim[]): string | null {
   return `a trusted launch claim (comment ${bad.id} by ${bad.login}) does not read${why}; a person settles it`;
 }
 
+/** Whether a claim acts on the ledger facts the draft acts on. */
+function sameFacts(c: ReadClaim, draft: LaunchDraft): boolean {
+  return draft.facts != null && c.says.value.facts === draft.facts;
+}
+
+/** Whether a claim's launch ended on a driver's refusal of a second driver. */
+function refusedEnd(c: ReadClaim, draft: LaunchDraft): boolean {
+  const end = c.says.value.end;
+  return (
+    end?.state === "ended" &&
+    end.exit !== null &&
+    (draft.refusals ?? []).includes(end.exit)
+  );
+}
+
 /**
- * The answer a current claim with no end gives a new launch before anything
- * is posted: the caller's own claim for the same launch already holds it, or
- * another holds it, which only a first-time takeover claims past, since the
- * driver it replaces is wedged (a replay of a takeover already made does not:
- * a later claim of another's superseded it); `null` when nothing holds the
- * launch.
+ * The answer the current claim gives a new launch before anything is posted:
+ * the caller's own open claim for the same launch already holds it; another
+ * launch's claim holds it while it has no end, or after it ended on a
+ * driver's refusal on the draft's own ledger facts, which is the stage's
+ * answer until they change. A takeover claims past an open claim only the
+ * first time and only on other facts, since the driver it replaces is wedged
+ * (a replay of a takeover already made stands behind a later claim of
+ * another's, and a claim acting on the same facts is already in flight);
+ * `null` when nothing holds the launch.
  */
 function holder(
   claims: readonly SharedClaim[],
   draft: LaunchDraft,
 ): ClaimAnswer | null {
   const held = current(claims);
-  if (held === null || !open(held)) return null;
+  if (held === null) return null;
+  if (!open(held))
+    return refusedEnd(held, draft) && sameFacts(held, draft)
+      ? { kind: "held", by: held }
+      : null;
   if (sameLaunch(held, draft))
     return { kind: "holds", id: held.id, attempt: held.says.value.attempt };
-  return draft.action === "takeover" && draft.replay !== true
+  return draft.action === "takeover" &&
+    draft.replay !== true &&
+    !sameFacts(held, draft)
     ? null
     : { kind: "held", by: held };
 }

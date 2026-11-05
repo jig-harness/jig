@@ -218,9 +218,10 @@ return { answer: brief(a), released: released.ok };`,
     const forge = fakeForge([launchComment(50, drive(HOST_B, RECORD_B), 1)], {
       login: "drive-bot",
     });
+    // The wedged driver's ledger has moved on since its claim, so the takeover acts on other facts.
     const out = await probe(
       forge,
-      `return brief(await shared.claim(pr, drive(${JSON.stringify(HOST_A)}, ${JSON.stringify(RECORD_A)}, "takeover"), fast));`,
+      `return brief(await shared.claim(pr, { ...drive(${JSON.stringify(HOST_A)}, ${JSON.stringify(RECORD_A)}, "takeover"), facts: "generation 4, silent" }, fast));`,
     );
     expect(out).toEqual({ kind: "holds", id: 101, attempt: 2, by: null });
   });
@@ -313,14 +314,58 @@ describe("a replayed takeover behind a later takeover", () => {
     expect(forge.comments()).toHaveLength(1);
   });
 
-  it("still claims past it the first time", async () => {
+  it("stands behind an open takeover claim acting on the same ledger facts, even the first time", async () => {
     const forge = fakeForge(
       [launchComment(60, drive(HOST_B, RECORD_B, "takeover"), 2)],
       { login: "drive-bot" },
     );
-    await probe(
+    const out = await probe(
       forge,
       `return brief(await shared.claim(pr, drive(${JSON.stringify(HOST_A)}, ${JSON.stringify(RECORD_A)}, "takeover"), fast));`,
+    );
+    expect(out).toMatchObject({ kind: "held", by: 60 });
+    expect(forge.comments()).toHaveLength(1);
+  });
+
+  it("still claims past an open claim acting on other facts the first time", async () => {
+    const forge = fakeForge(
+      [launchComment(60, drive(HOST_B, RECORD_B, "rearm"), 2)],
+      { login: "drive-bot" },
+    );
+    await probe(
+      forge,
+      `return brief(await shared.claim(pr, { ...drive(${JSON.stringify(HOST_A)}, ${JSON.stringify(RECORD_A)}, "takeover"), facts: "generation 4, heartbeat later" }, fast));`,
+    );
+    expect(forge.comments()).toHaveLength(2);
+  });
+});
+
+describe("a launch behind a claim that ended on a driver's refusal", () => {
+  const refused: LaunchEnd = { ...ENDED, exit: 11 };
+
+  it("stands behind it on the same facts, for a replay or a first launch alike", async () => {
+    for (const replay of [true, false]) {
+      const forge = fakeForge(
+        [launchComment(60, drive(HOST_B, RECORD_B), 1, refused)],
+        { login: "drive-bot" },
+      );
+      const out = await probe(
+        forge,
+        `return brief(await shared.claim(pr, { ...drive(${JSON.stringify(HOST_A)}, ${JSON.stringify(RECORD_A)}), refusals: [11, 13, 20], replay: ${replay} }, fast));`,
+      );
+      expect(out).toMatchObject({ kind: "held", by: 60 });
+      expect(forge.comments()).toHaveLength(1);
+    }
+  });
+
+  it("claims again once the ledger facts have changed", async () => {
+    const forge = fakeForge(
+      [launchComment(60, drive(HOST_B, RECORD_B), 1, refused)],
+      { login: "drive-bot" },
+    );
+    await probe(
+      forge,
+      `return brief(await shared.claim(pr, { ...drive(${JSON.stringify(HOST_A)}, ${JSON.stringify(RECORD_A)}), refusals: [11, 13, 20], facts: "generation 4" }, fast));`,
     );
     expect(forge.comments()).toHaveLength(2);
   });
