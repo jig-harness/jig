@@ -63,7 +63,9 @@ else if(a[0]==='pr'&&a[1]==='view'){
  if(endpoint.includes('/pulls/999'))data={state:'open',head:{sha:f.head},base:{sha:f.head},draft:true};
  else if(endpoint.includes('/check-runs'))data={check_runs:[]};
  else if(endpoint.includes('/status'))data={statuses:[]};
- else if(endpoint.includes('/comments')&&a.includes('--input'))data={id:Date.now()};
+ else if(/\\/issues\\/comments\\/\\d+$/.test(endpoint)){const id=Number(endpoint.split('/').pop());const del=value('-X')==='DELETE';const body=del?'':JSON.parse(readFileSync(0,'utf8')).body;f.posted=(f.posted??[]).flatMap(c=>c.id!==id?[c]:del?[]:[{...c,body}]);writeFileSync(file,JSON.stringify(f));data={};}
+ else if(endpoint.includes('/comments')&&a.includes('--input')){const body=JSON.parse(readFileSync(0,'utf8')).body;const id=Math.max(Date.now(),...(f.posted??[]).map(c=>c.id+1));f.posted=[...(f.posted??[]),{id,body,user:{login:'smoke-bot'},author_association:'OWNER'}];writeFileSync(file,JSON.stringify(f));data={id};}
+ else if(/\\/issues\\/\\d+\\/comments/.test(endpoint))data=f.posted??[];
  else if(endpoint.includes('/comments')||endpoint.includes('/reviews')||endpoint.includes('/timeline'))data=[];
  else throw new Error('unhandled endpoint '+endpoint);
  if(a.includes('--slurp'))data=[data];

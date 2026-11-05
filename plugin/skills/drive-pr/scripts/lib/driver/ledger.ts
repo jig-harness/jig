@@ -15,12 +15,15 @@
  * clone's ledger (a takeover, a pull request with no ledger yet, another
  * clone's stopped one, or its own ledger with another clone's claim in force
  * past the position it records) posts a claim naming the ledger generation
- * it read;
- * of the claims on one generation the earliest comment id wins and every
- * later claimant stands down, at once when it sees the earlier claim and at
- * its next check when a lagging read hid it. A claim whose owner never wrote
- * the ledger past its generation lapses after the lease window, and a retry
- * from the same clone drives by that clone's earlier claim. Every driver
+ * it read, a claim of the shared forge-claims module
+ * (`shared/records/forge-claims.ts`), which reads it back and decides it by
+ * that module's one rule: of the claims on one generation the earliest
+ * comment id wins and every later claimant stands down, at once when it sees
+ * the earlier claim and at its next check when a lagging read hid it. A
+ * read-back that never lists the driver's own claim refuses the drive, as an
+ * unreadable one does. A claim whose owner never wrote the ledger past its
+ * generation lapses after the lease window, and a retry from the same clone
+ * drives by that clone's earlier claim. Every driver
  * reads the claims at each round boundary, before each pass and after each
  * heartbeat renewal through a wait, and exits
  * `TAKEN_OVER` when one in force from another clone is newer than its own
@@ -43,14 +46,19 @@ import { resolveStateDir } from "./../state/store.ts";
 import { STALL_THRESHOLD_MIN_DEFAULT, stallThresholdMs } from "./../doctor.ts";
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
 import { resolveActor } from "./../state/actor.ts";
+import { readBack } from "../../../../../shared/records/forge-claims.ts";
 import {
   type ClaimComment,
   type Ledger,
   type LedgerSnapshot,
+  TAKEOVER_CLAIM,
+  claimComment,
   claimFloor,
+  claimRule,
   effectiveClaims,
   heldFromLedger,
   newerClaim,
+  takeoverKey,
 } from "./../state/ledger.ts";
 import {
   postClaim,
@@ -169,9 +177,10 @@ export async function admitCrossCloneTakeover(
 }
 
 /**
- * Post this clone's claim and read the claims back: the claim when it is the
- * earliest on its generation, `null` when a rival's came first. A read-back
- * that fails refuses the takeover: it cannot tell a won claim from a lost one.
+ * Post this clone's claim and read the claims back through the forge-claims
+ * module: the claim when it is the earliest on its generation, `null` when a
+ * rival's came first. A read-back that fails, or that never lists the claim,
+ * refuses the takeover: it cannot tell a won claim from a lost one.
  */
 export async function claimDrive(
   pr: string,
@@ -190,20 +199,20 @@ export async function claimDrive(
       1,
       `drive.ts: could not post the drive claim on PR #${pr} (${own}); not starting the drive.`,
     );
-  const after = await readLedgerSnapshot(pr, id.login);
-  if (typeof after === "string")
+  const back = await readBack(
+    { repo: "{owner}/{repo}", number: Number(pr) },
+    TAKEOVER_CLAIM,
+    { id: own, key: takeoverKey(generation), generation, at: claim.at },
+    { self: id.login, rule: claimRule() },
+  );
+  const won = back.ok ? back.value.winner : null;
+  if (won === null)
     return fail(
       1,
-      `drive.ts: posted claim ${own} on PR #${pr}, but ${after}, so whether an earlier claim beat it is unknown; not starting the drive.`,
+      `drive.ts: posted claim ${own} on PR #${pr}, but ${back.ok ? back.value.reason : back.failure.reason}, so whether an earlier claim beat it is unknown; not starting the drive.`,
       "The claim stays on the pull request, and a re-arm from this clone drives by it once the comments read.",
     );
-  const mine: ClaimComment = { id: own, claim };
-  const claims = after.claims.some((c) => c.id === own)
-    ? after.claims
-    : [...after.claims, mine];
-  const winner =
-    effectiveClaims(claims).find((c) => c.claim.generation === generation) ??
-    mine;
+  const winner = claimComment(won);
   if (winner.claim.clone !== id.clone) {
     console.error(
       `drive.ts: standing down. Claim ${winner.id} from another clone (${winner.claim.actor}) was posted before this one (${own}) on the same ledger generation ${generation}, so that clone drives PR #${pr}.`,

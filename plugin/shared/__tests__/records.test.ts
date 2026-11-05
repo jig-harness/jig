@@ -94,12 +94,12 @@ describe("the envelope codec", () => {
   });
 
   it("refuses a version newer than the registry's, naming both", () => {
-    const text = encode(envelope(), { run: "tick" }).replace('"v":1', '"v":2');
+    const text = encode(envelope(), { run: "tick" }).replace('"v":1', '"v":3');
     const read = decode(text);
     expect(read.ok).toBe(false);
     if (read.ok) return;
     expect(read.failure.code).toBe("newer-version");
-    expect(read.failure.reason).toContain("version 2 is newer than 1");
+    expect(read.failure.reason).toContain("version 3 is newer than 2");
   });
 
   it("refuses an envelope outside the strict form, as a value", () => {
@@ -204,6 +204,8 @@ describe("the registry", () => {
     expect(enveloped.map((k) => k.name).sort()).toEqual([
       "dispatch-followup",
       "drive-ledger",
+      "drive-merge-ready",
+      "drive-takeover-claim",
     ]);
     for (const kind of enveloped) {
       expect(kind.key?.source.startsWith("^")).toBe(true);
