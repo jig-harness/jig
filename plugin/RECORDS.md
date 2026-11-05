@@ -49,7 +49,8 @@ form and returns a failure as a value; the rest of the record is data,
 never a command. The drive ledger and the
 [forge claims](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (the
 takeover claim, the follow-up marker, the launch claim and the merge-ready
-announcement) carry it; the other records adopt it one family at a time
+announcement) carry it, and so does the Orca guard record on the machine;
+the other records adopt it one family at a time
 ([design/records.md](https://github.com/jig-harness/jig/blob/main/design/records.md)).
 
 **How paths are written.** A path in the plugin is written from the plugin
@@ -111,6 +112,9 @@ directory.
 | `trace` | `~/.local/state/jig/traces/<date>/<trace id>.jsonl`, when tracing is on | JSONL | `shared/trace.ts` | appended |
 | `orca-card-lock` | `~/.local/state/jig/orca-card-locks/` | a lock file | `shared/orca-card-lock.ts` | published whole by a link; a dead holder is reclaimed in generations |
 | `orca-run-tab` | `~/.local/state/jig/orca-tabs/<handle>.json` | JSON, `version: 1` | `shared/orca-tabs.ts` | renamed into place |
+| `orca-guard-admission` | `~/.local/state/jig/orca-guard/admissions/<key>.json`, `<key>` the SHA-256 of the worktree's path as Orca reports it | JSON with the envelope, `v: 1`: the path and the holder's process identity | `shared/orca-guard.ts`, from `gc/kinds/worktree-guard.ts` while gc collects a worktree Orca manages | published whole by a link, which fails while one stands; a dead holder's is replaced, one that does not read is left for a person ([the contract](gc/README.md#the-launch-guard-record)) |
+| `orca-guard-launch` | `~/.local/state/jig/orca-guard/launches/<key>.json` | JSON with the envelope, `v: 1`: the path, Orca's workspace id and the agent | outside Jig: Jig's plugin for Orca, before each launch it lets through; read by `shared/orca-guard.ts` | renamed into place; a collecting gc run deletes those older than a day, setting each aside and reading it again first |
+| `orca-guard-heartbeat` | `~/.local/state/jig/orca-guard/heartbeat.json` | JSON with the envelope, `v: 1`: the worker's pid and the plugin's version | outside Jig: Jig's plugin for Orca, about every minute; read by `shared/orca-guard.ts` | renamed into place; one writer |
 | `orca-board-card` | the session runtime's card for a workspace: its column and comment | text | `shared/orca-board.ts` | the card lock |
 | `gh-cache` | `~/.cache/jig/gh-cache/<hash>.json` | JSON, `v: 1` | `shared/gh-cache-storage.ts` | renamed into place; best effort, pruned |
 | `db-meta` | every component's database, table `db_meta` | one row: the database's instance id, the schema version it was written for and its minimum reader | `shared/records/db.ts` | written in the migration's transaction |

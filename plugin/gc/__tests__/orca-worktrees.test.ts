@@ -24,7 +24,8 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
+import { hostname, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
@@ -47,6 +48,12 @@ interface OrcaState {
   worktrees: OrcaRow[];
   /** Subcommands (`list`, `ps`, `rm`) that fail. */
   fail: string[];
+  /**
+   * Where `ps` writes a launch marker for the first worktree once gc's
+   * admission for it stands: a launch the plugin let through while gc held
+   * the worktree.
+   */
+  launchAfterAdmission?: string;
 }
 
 /** A fake `orca` reading and writing its registry in `state.json`. */
@@ -54,7 +61,10 @@ function fakeOrca(bin: string, root: string): string {
   return writeFakeProgram(
     join(bin, "orca"),
     `#!/usr/bin/env bun
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
+import { join } from "node:path";
 const file = ${JSON.stringify(join(root, "orca-state.json"))};
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(join(root, "orca-calls"))}, args.join(" ") + "\\n");
@@ -67,6 +77,16 @@ const value = (flag) => args[args.indexOf(flag) + 1];
 if (sub === "list") {
   if (value("--repo") !== "path:" + state.repo) refuse("repo_not_found");
   answer({ worktrees: state.worktrees.map(({ id, path }) => ({ id, path })), totalCount: state.worktrees.length, truncated: false });
+}
+if (sub === "ps" && state.launchAfterAdmission) {
+  const guard = state.launchAfterAdmission;
+  const path = state.worktrees[0].path;
+  const key = createHash("sha256").update(path).digest("hex");
+  if (existsSync(join(guard, "admissions", key + ".json"))) {
+    mkdirSync(join(guard, "launches"), { recursive: true });
+    writeFileSync(join(guard, "launches", ".staged.tmp"), JSON.stringify({ kind: "orca-guard-launch", v: 1, key, writer: { host: hostname(), pid: process.pid }, at: new Date().toISOString(), path, workspaceId: "ws-1", agent: "claude" }));
+    renameSync(join(guard, "launches", ".staged.tmp"), join(guard, "launches", key + ".json"));
+  }
 }
 if (sub === "ps")
   answer({ worktrees: state.worktrees.map(({ path, agents }) => ({ path, agents })), totalCount: state.worktrees.length, truncated: false });
@@ -196,6 +216,7 @@ console.log(JSON.stringify([{ state: "MERGED", headRefOid: ${JSON.stringify(head
   writeState({});
   return {
     root,
+    guard: join(user, ".local", "state", "jig", "orca-guard"),
     repo,
     tree,
     id,
@@ -323,6 +344,23 @@ function commitAndPush(
   f.refreshGh();
 }
 
+/** The Orca plugin's heartbeat, written as the plugin writes it. */
+function heartbeat(f: ReturnType<typeof setup>, at: Date): void {
+  mkdirSync(f.guard, { recursive: true });
+  writeFileSync(
+    join(f.guard, "heartbeat.json"),
+    JSON.stringify({
+      kind: "orca-guard-heartbeat",
+      v: 1,
+      key: "heartbeat",
+      writer: { host: hostname(), pid: process.pid },
+      at: at.toISOString(),
+      pid: process.pid,
+      pluginVersion: "0.4.0",
+    }),
+  );
+}
+
 function calls(f: ReturnType<typeof setup>): string[] {
   const file = join(f.root, "orca-calls");
   return existsSync(file)
@@ -350,7 +388,7 @@ describe.skipIf(
     const human = gc(f, []);
     expectSpawnExit(human, 0);
     expect(human.stdout.toString()).toContain(
-      `${f.tree} (orca): would-collect`,
+      `${f.tree} (orca, unguarded): would-collect`,
     );
     expect(calls(f)).not.toContainEqual(expect.stringMatching(/ rm /));
   }, 60_000);
@@ -723,6 +761,102 @@ describe.skipIf(
       details: { runtime: "none" },
     });
     expect(existsSync(f.tree)).toBe(true);
+  }, 60_000);
+
+  test("with no heartbeat from the Orca plugin, collection runs as before and says it was unguarded", () => {
+    const f = setup();
+    idle(f);
+    const collected = line(gc(f, ["--collect", "--json"]));
+    expect(collected).toMatchObject({
+      outcome: "collected",
+      reason: expect.stringContaining(
+        "unguarded: the Orca plugin has written no heartbeat",
+      ),
+      details: { runtime: "orca", guard: "unguarded", orcaPath: f.tree },
+    });
+    expect(existsSync(f.tree)).toBe(false);
+    // The admission is deleted once the worktree is gone.
+    expect(readdirSync(join(f.guard, "admissions"))).toEqual([]);
+  }, 60_000);
+
+  test("a stale heartbeat leaves collection unguarded", () => {
+    const f = setup();
+    idle(f);
+    heartbeat(f, new Date(Date.now() - 10 * 60_000));
+    const collected = line(gc(f, ["--collect", "--json"]));
+    expect(collected).toMatchObject({
+      outcome: "collected",
+      reason: expect.stringMatching(
+        /unguarded: the Orca plugin's heartbeat is \d+ s old/,
+      ),
+      details: { guard: "unguarded" },
+    });
+    expect(existsSync(f.tree)).toBe(false);
+  }, 60_000);
+
+  test("a launch the plugin let through after gc's admission keeps the worktree", () => {
+    const f = setup();
+    idle(f);
+    heartbeat(f, new Date());
+    f.writeState({ launchAfterAdmission: f.guard });
+    const kept = line(gc(f, ["--collect", "--json"]));
+    expect(kept.reason).toContain("after gc's admission");
+    expect(kept.reason).toContain("guarded: the Orca plugin's heartbeat is");
+    expect(kept).toMatchObject({
+      outcome: "refused",
+      details: { guard: "guarded" },
+    });
+    expect(existsSync(f.tree)).toBe(true);
+    expect(calls(f)).not.toContainEqual(expect.stringMatching(/ rm /));
+    expect(readdirSync(join(f.guard, "admissions"))).toEqual([]);
+    const human = gc(f, []);
+    expectSpawnExit(human, 0);
+    expect(human.stdout.toString()).toContain(
+      `${f.tree} (orca, guarded): would-collect`,
+    );
+  }, 60_000);
+
+  test("a launch marker older than the settling window does not keep the worktree", () => {
+    const f = setup();
+    idle(f);
+    heartbeat(f, new Date());
+    const key = createHash("sha256").update(f.tree).digest("hex");
+    mkdirSync(join(f.guard, "launches"), { recursive: true });
+    writeFileSync(
+      join(f.guard, "launches", `${key}.json`),
+      JSON.stringify({
+        kind: "orca-guard-launch",
+        v: 1,
+        key,
+        writer: { host: hostname(), pid: process.pid },
+        at: new Date(Date.now() - 5 * 60_000).toISOString(),
+        path: f.tree,
+        workspaceId: "ws-1",
+        agent: "claude",
+      }),
+    );
+    expect(line(gc(f, ["--collect", "--json"]))).toMatchObject({
+      outcome: "collected",
+      reason: expect.stringContaining("guarded: the Orca plugin's heartbeat"),
+      details: { guard: "guarded" },
+    });
+    expect(existsSync(f.tree)).toBe(false);
+  }, 60_000);
+
+  test("an admission gc cannot read keeps the worktree and stays for a person", () => {
+    const f = setup();
+    idle(f);
+    const key = createHash("sha256").update(f.tree).digest("hex");
+    const admission = join(f.guard, "admissions", `${key}.json`);
+    mkdirSync(dirname(admission), { recursive: true });
+    writeFileSync(admission, '{"kind":"orca-guard-admiss');
+    expect(line(gc(f, ["--collect", "--json"]))).toMatchObject({
+      outcome: "refused",
+      reason: expect.stringContaining("an admission gc cannot read stands at"),
+    });
+    expect(existsSync(f.tree)).toBe(true);
+    expect(readFileSync(admission, "utf8")).toBe('{"kind":"orca-guard-admiss');
+    expect(existsSync(join(f.root, "hook-ran"))).toBe(false);
   }, 60_000);
 
   test("Orca's command must be an absolute path in the machine entry", () => {

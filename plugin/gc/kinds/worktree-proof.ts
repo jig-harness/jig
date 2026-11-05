@@ -9,6 +9,7 @@ import { detectPackageManager } from "../../shared/detect/package-manager.ts";
 import { orcaFailure, orcaResult, runOrca } from "../../shared/orca.ts";
 import { gcGit as git } from "../git.ts";
 import type { Proof } from "../types.ts";
+import { guardLabel } from "./worktree-guard.ts";
 import {
   classifyWorktree,
   localWorktreeVeto,
@@ -274,7 +275,9 @@ export interface WorktreeRuntime {
  * The proof of a worktree a runtime manages. The runtime's registry is read
  * first: an agent at work there is the most direct evidence the worktree is
  * in use, and it is read again on every proof, the final one before removal
- * included. Its showing no agent stands in for session admission.
+ * included. Its showing no agent stands in for session admission. The proof
+ * says whether Jig's plugin for Orca guards launches now (`details.guard`),
+ * so a report says whether its collection would be guarded.
  */
 export async function runtimeWorktreeProof(
   path: string,
@@ -285,7 +288,14 @@ export async function runtimeWorktreeProof(
   if (!lstatSync(path).isDirectory())
     return { state: "finding", reason: "worktree root is not a directory" };
   const registry = await orcaLiveness(runtime.orca, path);
-  return registry ?? worktreeProof(path, policy, idleDays, true);
+  const proof = registry ?? (await worktreeProof(path, policy, idleDays, true));
+  return {
+    ...proof,
+    details: {
+      ...(isMapping(proof.details) ? proof.details : {}),
+      guard: guardLabel().label,
+    },
+  };
 }
 export async function worktreeProof(
   path: string,

@@ -98,13 +98,136 @@ and so does one whose `bunfig.toml` differs from the base branch's, since that f
 code into the hook's Bun. A helper the hook starts from elsewhere in the
 checkout is the branch's own; keep helpers beside the hook. The registry is read once more after the
 hook and the park, right before `orca worktree rm`, because the hook may run
-for minutes; an agent Orca started meanwhile keeps the worktree. Orca offers
-no reservation that stops a start between that read and the removal, so that
-last gap stays open. A registry that lists the worktree twice refuses
-collection. The hook's supervisor starts without the session's `JIG__` and
+for minutes; an agent Orca started meanwhile keeps the worktree. A registry
+that lists the worktree twice refuses collection.
+
+Orca offers no reservation that stops a start between that last read and the
+removal. Jig's plugin for Orca closes that gap from inside Orca: its
+`agent.launch.before` hook refuses a launch into a worktree gc holds, and
+leaves a marker for every launch it lets through. gc and the plugin share
+that through the [launch guard record](#the-launch-guard-record). For each
+Orca checkout it collects, gc:
+
+1. writes its admission for the worktree;
+2. re-reads Orca's registry, after the hook and the park as above;
+3. keeps the worktree when a launch marker for it is within the settling
+   window or not older than the admission, or when the registry shows an
+   agent in any state but done;
+4. otherwise removes it through Orca;
+5. deletes its admission either way.
+
+The launch markers are read once right after the admission, before the hook
+runs, and again after the registry's last read. A worktree the guard keeps is
+`refused`, and the reason names the launch. gc trusts the guard only while
+the plugin's heartbeat is fresh. Without one (the plugin is not installed,
+Orca is closed, or its worker stopped) collection runs as it would without
+the plugin. Every Orca checkout's receipt line says which held when it was
+proved and collected: `details.guard` is `guarded` or `unguarded`, the
+reason ends with why, and the report prints it beside the runtime, as in
+`(orca, unguarded)`. A collecting run also deletes launch markers older than
+a day. The hook's supervisor starts without the session's `JIG__` and
 `JIG_OVERLAY` overrides, and its Bun ignores the checkout's environment files
 and `bunfig.toml`. Parking refuses while any of those overrides is set, since
 one may have moved the journal the findings were written to.
+
+#### The launch guard record
+
+The plugin's hook must answer within two seconds without awaiting a call to
+Orca, and the plugin is plain Node with no dependencies, so it reads and
+writes these files directly. This section is the contract between the two;
+`shared/orca-guard.ts` is gc's side of it.
+
+**Directory.** `<home>/.local/state/jig/orca-guard/`, the same Jig state root
+every other machine record uses. Orca's plugin worker receives `PATH`,
+`HOME`, the locale, `TZ` and the temporary-directory variables, and no
+`XDG_*` or `JIG_*` variable, so the default depends on the home directory
+alone:
+
+| Platform | Directory | How a plugin computes it |
+| -------- | --------- | ------------------------ |
+| Linux | `$HOME/.local/state/jig/orca-guard/` | `path.join(os.homedir(), ".local", "state", "jig", "orca-guard")`; `os.homedir()` is `$HOME` |
+| macOS | `$HOME/.local/state/jig/orca-guard/` (not under `~/Library`) | the same; `os.homedir()` is `$HOME` |
+| Windows | `%USERPROFILE%\.local\state\jig\orca-guard\` | the same; Node's `os.homedir()` reads `USERPROFILE` and, in a worker without it, asks Windows for the profile directory. Do not use `HOME`: Git for Windows and MSYS shells set it to another directory, and Jig does not read it on Windows |
+
+Jig honours no `XDG_STATE_HOME` here, so neither may the plugin. A plugin
+setting that overrides the directory must name the one Jig uses.
+
+**Files.** One file per entry. A writer writes the whole JSON to a temporary
+file in the same directory, named so it does not end in `.json` (Jig's start
+with `.` and end in `.tmp`), then renames it into place; nobody edits a file
+in place or reads, changes and rewrites a shared one. gc publishes an
+admission with a link instead of a rename, so a second collector's link fails
+rather than replacing it.
+
+| File | Written by | Kind |
+| ---- | ---------- | ---- |
+| `admissions/<key>.json` | gc, while it collects the worktree | `orca-guard-admission` |
+| `launches/<key>.json` | the plugin, for each launch it lets through, before the launch goes on | `orca-guard-launch` |
+| `heartbeat.json` | the plugin, about every 60 s while its worker runs | `orca-guard-heartbeat` |
+
+**Key.** `<key>` is the lowercase hexadecimal SHA-256 of the worktree's path,
+as UTF-8 bytes, exactly as Orca reports it (its `path` in
+`orca worktree list --json`): no resolved links, no changed separators, no
+trailing slash added or removed.
+In Node, `crypto.createHash("sha256").update(path).digest("hex")`.
+
+**Format.** Each file is one JSON object carrying the
+[record envelope](../RECORDS.md#the-registry-and-the-envelope): `kind`, `v`
+(the schema version, `1` for all three), `key`, `writer` (an object with at
+least `host`, a non-empty string, and optionally `pid`, `bootId`, `start` and
+`login`) and `at` (an ISO 8601 time, as `Date.prototype.toISOString` writes
+it), then the kind's own fields. A writer may add no other envelope field
+(`generation` is unused here). gc writes the JSON on one line followed by a
+newline, with every `<` and `>` inside a string escaped as `\u003c` and
+`\u003e`; a plugin may write any valid JSON, and `JSON.parse` reads both.
+
+An admission. Its `at` is when gc wrote it, and `holder` is the collecting
+process's identity (`shared/liveness.ts`):
+
+```json
+{"kind":"orca-guard-admission","v":1,"key":"481ad110b5d9b30b0c46972739bb0e3d2aeb2c05c5dd3804e8a124048162f2ca","writer":{"host":"laptop","bootId":"6c2e8f4a-1b3d-4f5e-9a7c-2d4b6e8f0a1c","pid":48213,"start":"Thu Nov  5 03:00:01 2026"},"at":"2026-11-05T03:00:12.345Z","path":"/home/ada/orca/workspaces/app/topic","holder":{"hostId":"3f1c9a0e5b7d4e2a8c6f1b0d9e7a5c3b","host":"laptop","bootId":"6c2e8f4a-1b3d-4f5e-9a7c-2d4b6e8f0a1c","pid":48213,"start":"Thu Nov  5 03:00:01 2026"}}
+```
+
+A launch marker. Its `at` is when the plugin let the launch through,
+`workspaceId` is Orca's id of the workspace, and `agent` the agent it
+launches:
+
+```json
+{"kind":"orca-guard-launch","v":1,"key":"481ad110b5d9b30b0c46972739bb0e3d2aeb2c05c5dd3804e8a124048162f2ca","writer":{"host":"laptop","pid":51022},"at":"2026-11-05T03:00:13.002Z","path":"/home/ada/orca/workspaces/app/topic","workspaceId":"repo-1::/home/ada/orca/workspaces/app/topic","agent":"claude"}
+```
+
+The heartbeat. Its `key` is always `heartbeat`, `pid` is the worker's
+process id and `pluginVersion` the plugin's version:
+
+```json
+{"kind":"orca-guard-heartbeat","v":1,"key":"heartbeat","writer":{"host":"laptop","pid":51022},"at":"2026-11-05T03:00:00.000Z","pid":51022,"pluginVersion":"0.4.0"}
+```
+
+**Order.** The hook writes its launch marker first, then reads the
+admission: when an admission stands, it refuses the launch. gc writes its
+admission first, then reads the launch marker. Each side writes before it
+reads, so a launch and a collection that overlap are seen by at least one of
+them. A refused launch's marker keeps the worktree for this collection,
+which costs a later run and loses nothing.
+
+**Reading.** A heartbeat that is missing, does not parse, or has a `kind`,
+`v` or envelope a reader does not know counts as absent. An admission or a
+launch marker in that state counts as present: the plugin refuses the launch,
+and gc keeps the worktree and leaves the file for a person to inspect.
+
+**Constants.**
+
+| Constant | Value | Meaning |
+| -------- | ----- | ------- |
+| Heartbeat freshness | 180 s | The heartbeat is fresh while its `at` is within 180 s of now; gc collects as guarded only then |
+| Settling window | 120 s | A launch marker keeps its worktree while its `at` is within 120 s of now, and always when its `at` is not before the admission's `at` |
+| Marker retention | 1 day | A collecting run deletes launch markers whose `at` (or, when one does not read, whose modification time) is more than a day old, and the plugin's temporary files that old |
+
+An admission is deleted by the collector that wrote it once the worktree is
+removed or kept. One left by a collector that died stays until the next
+collection of that worktree, which replaces it when its holder is judged dead
+by identity, never by age; until then the hook refuses launches into that
+worktree.
 
 Reports and collections use the same receipt schema and human formatter.
 `would-collect`, `collected`, `refused`, `finding`, `unverified` and `failed`

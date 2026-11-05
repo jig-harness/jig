@@ -30,6 +30,12 @@ import {
   encodeMarker,
   readEnvelope,
 } from "../records/envelope.ts";
+import {
+  ADMISSION_KIND,
+  GUARD_VERSION,
+  HEARTBEAT_KIND,
+  LAUNCH_KIND,
+} from "../orca-guard.ts";
 import { NOT_RECORDS, RECORD_KINDS, recordKind } from "../records/registry.ts";
 import { digest, localWriter, readWriter } from "../records/writer.ts";
 
@@ -207,6 +213,9 @@ describe("the registry", () => {
       "drive-ledger",
       "drive-merge-ready",
       "drive-takeover-claim",
+      "orca-guard-admission",
+      "orca-guard-heartbeat",
+      "orca-guard-launch",
     ]);
     for (const kind of enveloped) {
       expect(kind.key?.source.startsWith("^")).toBe(true);
@@ -232,6 +241,8 @@ describe("the registry", () => {
   it("states the versions the code writes", () => {
     expect(recordKind(LEDGER_KIND)?.version).toBe(LEDGER_VERSION);
     expect(recordKind(FOLLOWUP_KIND)?.version).toBe(FOLLOWUP_VERSION);
+    for (const kind of [ADMISSION_KIND, LAUNCH_KIND, HEARTBEAT_KIND])
+      expect(recordKind(kind)?.version).toBe(GUARD_VERSION);
     const tables = RECORD_KINDS.filter(
       (k) => k.table !== undefined && k.at.includes("/dispatch/"),
     );
