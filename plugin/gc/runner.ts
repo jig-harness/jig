@@ -170,13 +170,20 @@ function familyLines(line: ReceiptLine): string[] {
       );
   });
 }
-/** The workspace runtime a line's resource is managed by, when one is. */
+/**
+ * The workspace runtime a line's resource is managed by, when one is, and
+ * whether its launches were guarded (`orca, unguarded`).
+ */
 function runtimeOf(line: ReceiptLine): string {
-  return isMapping(line.details) &&
-    typeof line.details.runtime === "string" &&
-    line.details.runtime !== "none"
-    ? ` (${line.details.runtime})`
-    : "";
+  if (
+    !isMapping(line.details) ||
+    typeof line.details.runtime !== "string" ||
+    line.details.runtime === "none"
+  )
+    return "";
+  const guard =
+    typeof line.details.guard === "string" ? `, ${line.details.guard}` : "";
+  return ` (${line.details.runtime}${guard})`;
 }
 export function formatReceipt(receipt: Receipt): string {
   const declarations = receipt.kinds.map(
