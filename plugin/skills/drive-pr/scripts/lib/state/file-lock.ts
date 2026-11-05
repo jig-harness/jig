@@ -26,9 +26,25 @@
  * only ever block the removal of the lock it was taken for, never a
  * successor's: it is broken when older than the staleness window, by an
  * unlink and nothing else, since no live holder of a newer lock owns it.
+ *
+ * A guard whose lock generation never comes back (the removal died after the
+ * lock file was gone) is reclaimed by whoever next takes the lock: it sweeps
+ * the guards older than the staleness window, whatever generation they name.
+ *
+ * A remover that is suspended for longer than the staleness window while
+ * holding its guard can lose it to a breaker, so it checks that the guard is
+ * still its own immediately before it unlinks the lock file. That leaves only
+ * the instant between that check and the unlink, not the window.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  readdirSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { errnoCode, swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import {
@@ -109,7 +125,11 @@ function readGuard(guard: string): string | null {
  * afterwards. A guard older than `staleMs` is unlinked so a later call takes
  * it.
  */
-function underGuard(guard: string, staleMs: number, fn: () => void): boolean {
+function underGuard(
+  guard: string,
+  staleMs: number,
+  fn: (stillMine: () => boolean) => void,
+): boolean {
   const mine = randomBytes(12).toString("hex");
   try {
     writeFileSync(guard, mine, { flag: "wx" });
@@ -123,7 +143,7 @@ function underGuard(guard: string, staleMs: number, fn: () => void): boolean {
     return false;
   }
   try {
-    fn();
+    fn(() => readGuard(guard) === mine);
   } finally {
     try {
       if (readGuard(guard) === mine) unlinkSync(guard);
@@ -132,6 +152,24 @@ function underGuard(guard: string, staleMs: number, fn: () => void): boolean {
     }
   }
   return true;
+}
+
+/** Unlink the removal guards of `path` older than `staleMs`, of any generation. */
+function sweepObsoleteGuards(path: string, staleMs: number): void {
+  const prefix = `${basename(path)}.unlink.`;
+  try {
+    for (const name of readdirSync(dirname(path))) {
+      if (!name.startsWith(prefix)) continue;
+      const guard = join(dirname(path), name);
+      try {
+        if (Date.now() - statSync(guard).mtimeMs > staleMs) unlinkSync(guard);
+      } catch (err) {
+        swallow(err, "a removal guard is gone before it could be swept");
+      }
+    }
+  } catch (err) {
+    swallow(err, "the lock's directory could not be listed for guards");
+  }
 }
 
 /** The lock on `file`. `label` names the owning script in a timeout's message. */
@@ -146,6 +184,7 @@ export function fileLock(file: string, label: string): FileLock {
     try {
       writeFileSync(path, contents(mine), { flag: "wx" });
       token = mine;
+      sweepObsoleteGuards(path, staleMs);
       return true;
     } catch (err) {
       if (errnoCode(err) !== "EEXIST") throw err;
@@ -159,8 +198,8 @@ export function fileLock(file: string, label: string): FileLock {
           createHash("sha256").update(held.text).digest("hex").slice(0, 24),
       ),
       staleMs,
-      () => {
-        if (readHeld(path)?.text !== held.text) return;
+      (stillMine) => {
+        if (readHeld(path)?.text !== held.text || !stillMine()) return;
         try {
           unlinkSync(path);
         } catch (err) {
@@ -189,9 +228,9 @@ export function fileLock(file: string, label: string): FileLock {
     // A guard held by another removal lasts milliseconds; if it outlasts the
     // wait, the lock file stays and is broken once it reads stale.
     for (let tries = 0; tries < 100; tries++) {
-      const done = underGuard(guardFor(mine), staleMs, () => {
+      const done = underGuard(guardFor(mine), staleMs, (stillMine) => {
         try {
-          if (readHeld(path)?.token === mine) unlinkSync(path);
+          if (readHeld(path)?.token === mine && stillMine()) unlinkSync(path);
         } catch (err) {
           if (errnoCode(err) !== "ENOENT") throw err;
         }

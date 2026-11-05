@@ -42,13 +42,20 @@ describe("fileLock's removal guard", () => {
     expect(existsSync(guard)).toBe(false);
   });
 
-  it("is not blocked by a stale guard of another generation", async () => {
+  it("is not blocked by a stale guard of another generation, and sweeps it", async () => {
     const file = join(root, "other-generation");
-    writeFileSync(`${file}.lock.unlink.someone-elses`, "x");
+    const orphan = `${file}.lock.unlink.someone-elses`;
+    const fresh = `${file}.lock.unlink.in-progress`;
+    writeFileSync(orphan, "x");
+    writeFileSync(fresh, "x");
+    const old = (Date.now() - 3_600_000) / 1000;
+    utimesSync(orphan, old, old);
     const lock = fileLock(file, "test");
     await lock.acquire();
     lock.release();
     expect(existsSync(`${file}.lock`)).toBe(false);
+    expect(existsSync(orphan)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
   });
 
   it("does not remove a fresh guard it does not own", async () => {
