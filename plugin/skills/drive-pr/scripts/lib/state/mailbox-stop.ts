@@ -121,6 +121,24 @@ export function directiveAcked(dir: string, pr: string, id: string): boolean {
 }
 
 /**
+ * Whether driver `generation` acknowledged any stop: it acts on the first it
+ * finds and exits, so a second operator's concurrent stop is never
+ * acknowledged under its own id, and the driver having stopped is what both
+ * wait for.
+ */
+export function generationAcked(
+  dir: string,
+  pr: string,
+  generation: number,
+): boolean {
+  const out = outboxRecordsForPr(dir, pr);
+  return (
+    out.ok &&
+    out.records.some((r) => r.status === "ack" && r.generation === generation)
+  );
+}
+
+/**
  * The mailbox of the driver working `worktree`: where `drives.ts --stop`
  * writes. The driver's own resolved directory when its claim records one
  * (`mailbox`); otherwise, for a claim that predates it, `$DRIVE_PR_MAILBOX_DIR`

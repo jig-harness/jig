@@ -8,7 +8,7 @@
  *
  * A file in `DISPATCH_FILES` fails the check when:
  *
- * - it names `importsRegistry` and imports nothing from `terminal-states.ts`;
+ * - it names `importsRegistry` and binds no runtime value from `terminal-states.ts`;
  * - a numeric literal that is one of `drive.ts`'s exits stands where an exit
  *   is classified: an element of the array a `new Set(...)` is built from, the
  *   key of an entry of the array a `new Map(...)` is built from, a numeric
@@ -28,7 +28,7 @@
  * any other position. Those stay review's to catch.
  */
 import { existsSync, readFileSync } from "node:fs";
-import { delimiter, relative, resolve } from "node:path";
+import { delimiter, dirname, relative, resolve } from "node:path";
 import * as ts from "typescript/unstable/ast";
 import {
   DRIVE_EXIT,
@@ -254,9 +254,31 @@ export async function findDispatchExitLiterals(
   return findings;
 }
 
-const REGISTRY_SPECIFIER = /(^|\/)terminal-states\.ts$/;
+/** The registry this check reads, which a dispatcher file's import must resolve to. */
+const REGISTRY_PATH = resolve(
+  PLUGIN_ROOT,
+  "skills/drive-pr/scripts/lib/status/terminal-states.ts",
+);
 
-/** Whether `source` has an import declaration from drive-pr's terminal-state registry; a comment or a string naming one does not count. */
+/** Whether `clause` binds at least one runtime value: a default or namespace import, or a named one not marked `type`. */
+function bindsValue(clause: ts.ImportClause): boolean {
+  if (clause.phaseModifier === ts.SyntaxKind.TypeKeyword) return false;
+  const named = clause.namedBindings;
+  if (clause.name !== undefined || (named && ts.isNamespaceImport(named)))
+    return true;
+  return (
+    named !== undefined &&
+    ts.isNamedImports(named) &&
+    named.elements.some((element) => !element.isTypeOnly)
+  );
+}
+
+/**
+ * Whether `source`, at absolute path `fileName`, has an import declaration
+ * that binds a runtime value from drive-pr's terminal-state registry; a
+ * comment or a string naming it, a type-only import and an import of another
+ * `terminal-states.ts` do not count.
+ */
 export async function importsRegistry(
   source: string,
   fileName: string,
@@ -267,7 +289,10 @@ export async function importsRegistry(
     (statement) =>
       ts.isImportDeclaration(statement) &&
       ts.isStringLiteral(statement.moduleSpecifier) &&
-      REGISTRY_SPECIFIER.test(statement.moduleSpecifier.text),
+      statement.importClause !== undefined &&
+      bindsValue(statement.importClause) &&
+      resolve(dirname(fileName), statement.moduleSpecifier.text) ===
+        REGISTRY_PATH,
   );
 }
 

@@ -10,10 +10,13 @@ import { readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { MAILBOX_STOPPED_EXIT, MAX_ROUNDS_EXIT } from "../scripts/drive.ts";
+import { driveDb } from "../scripts/lib/state/db.ts";
 import {
   appendDirective,
+  appendOutboxRecord,
   outboxRecordsForPr,
 } from "../scripts/lib/state/mailbox.ts";
+import { generationAcked } from "../scripts/lib/state/mailbox-stop.ts";
 import { parseLedger } from "../scripts/lib/state/ledger.ts";
 import {
   binDir,
@@ -107,6 +110,29 @@ describe("the review round record counted from several loops", () => {
     expect(out(await state(stateDir, ["open-rounds", "999"], tree))).toBe("1");
   }, 60_000);
 
+  it("keeps the head the state counted before the table when another head is counted first", async () => {
+    const tree = makeScratchRepo("signals-known").dir;
+    const { stateDir } = writeFixture(WORK, tree);
+    const [a, b] = ["a".repeat(40), "b".repeat(40)];
+    expectSpawnExit(
+      await state(stateDir, ["bump-round", "999", "--head", a], tree),
+      0,
+    );
+    // A state kept from before the table: its counted head has no row.
+    const drive = driveDb(stateDir);
+    drive.db.run("DELETE FROM review_rounds WHERE clone = ?", [drive.clone]);
+    expectSpawnExit(
+      await state(stateDir, ["bump-round", "999", "--head", b], tree),
+      0,
+    );
+    const again = await state(
+      stateDir,
+      ["count-round", "999", "--head", a],
+      tree,
+    );
+    expect(JSON.parse(out(again))).toMatchObject({ round: 2, counted: false });
+  }, 60_000);
+
   it("does not take an unknown command for an inherited member", async () => {
     const tree = makeScratchRepo("signals-proto").dir;
     const { stateDir } = writeFixture(WORK, tree);
@@ -126,6 +152,23 @@ describe("a mailbox stop and the driver generation it names", () => {
   };
   const generationOf = (stderr: string) =>
     Number(/driver generation (\d+)/.exec(stderr)?.[1]);
+
+  it("reads any acknowledgement of the generation as its stop having taken effect", async () => {
+    const tree = makeScratchRepo("signals-ack").dir;
+    const { dir } = writeFixture(WORK, tree);
+    const mailbox = join(dir, "mailbox");
+    const ack = (id: string, generation: number) =>
+      appendOutboxRecord(mailbox, {
+        id,
+        ts: new Date().toISOString(),
+        pr: "999",
+        status: "ack",
+        generation,
+      });
+    await ack("m-first", 2);
+    expect(generationAcked(mailbox, "999", 2)).toBe(true);
+    expect(generationAcked(mailbox, "999", 3)).toBe(false);
+  });
 
   it("ends only the generation it names, while one naming none ends every later driver", async () => {
     const tree = makeScratchRepo("signals-stop").dir;

@@ -65,17 +65,23 @@ function countHead(
   knownHead = "",
 ): { round: number; counted: boolean } {
   return inTransaction(drive.db, () => {
-    const top = Math.max(highest(drive, pr), floor);
     // The state's own counted head carries rounds no row records (a state
     // kept from before the table, or seeded from a ledger): record it at the
-    // ordinal the state holds instead of counting it again.
-    if (head === knownHead && floor > 0 && !hasRow(drive, pr, head)) {
+    // ordinal the state holds, whichever head is being counted, so it is
+    // never counted again.
+    if (knownHead !== "" && floor > 0 && !hasRow(drive, pr, knownHead))
       drive.db.run(
         "INSERT OR IGNORE INTO review_rounds (clone, pr, head, round, settled, at) VALUES (?, ?, ?, ?, 0, ?)",
-        [drive.clone, canonicalPr(pr), head, floor, new Date().toISOString()],
+        [
+          drive.clone,
+          canonicalPr(pr),
+          knownHead,
+          floor,
+          new Date().toISOString(),
+        ],
       );
-      return { round: top, counted: false };
-    }
+    const top = Math.max(highest(drive, pr), floor);
+    if (head === knownHead && floor > 0) return { round: top, counted: false };
     const inserted = drive.db.run(
       "INSERT OR IGNORE INTO review_rounds (clone, pr, head, round, settled, at) VALUES (?, ?, ?, ?, 0, ?)",
       [drive.clone, canonicalPr(pr), head, top + 1, new Date().toISOString()],
@@ -147,7 +153,13 @@ export async function bumpDriveRound(
       return synced.rounds;
     }
     const next = inTransaction(drive.db, (): DriveState => {
-      const { round } = countHead(drive, pr, head, state.rounds);
+      const { round } = countHead(
+        drive,
+        pr,
+        head,
+        state.rounds,
+        state.lastCountedHead ?? "",
+      );
       const base = { ...state, rounds: round, lastCountedHead: head };
       // Progress only on a round that advanced: a head another loop already
       // counted moves the pointer, not the count.

@@ -100,7 +100,11 @@ import {
   identityTargetsGone,
 } from "../../../shared/process-tree.ts";
 import { appendDirective } from "./lib/state/mailbox.ts";
-import { directiveAcked, driverMailboxDir } from "./lib/state/mailbox-stop.ts";
+import {
+  directiveAcked,
+  driverMailboxDir,
+  generationAcked,
+} from "./lib/state/mailbox-stop.ts";
 import * as ledgerStop from "./lib/ledger-stop.ts";
 import { existsSync } from "node:fs";
 import { driveRepository } from "./lib/drive-repository.ts";
@@ -1160,8 +1164,12 @@ async function stopVerifiedDriver(
     pr: row.diag?.pr ?? "",
     id: null,
   };
+  const generation = row.diag?.generation;
   const completed = () =>
-    sent.id !== null && directiveAcked(sent.dir, sent.pr, sent.id);
+    sent.id !== null &&
+    (directiveAcked(sent.dir, sent.pr, sent.id) ||
+      (generation !== undefined &&
+        generationAcked(sent.dir, sent.pr, generation)));
   const refreshRegistered = registryCompletionTracker(
     registry,
     registryState,

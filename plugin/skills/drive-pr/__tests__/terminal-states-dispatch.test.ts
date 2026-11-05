@@ -6,7 +6,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, dirname, join, relative, resolve } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { DRIVE_EXIT } from "../scripts/lib/status/terminal-states.ts";
 import {
@@ -38,7 +38,7 @@ describe("the dispatcher files as they are", () => {
       const source = await Bun.file(join(PLUGIN, file.path)).text();
       expect([
         file.path,
-        await importsRegistry(source, file.path, TOOLS),
+        await importsRegistry(source, join(PLUGIN, file.path), TOOLS),
       ]).toEqual([file.path, file.importsRegistry]);
       expect([
         file.path,
@@ -50,11 +50,39 @@ describe("the dispatcher files as they are", () => {
 });
 
 describe("the registry import", () => {
+  const registry = join(
+    PLUGIN,
+    "skills/drive-pr/scripts/lib/status/terminal-states.ts",
+  );
+  const from = join(PLUGIN, "dispatch/fixture.ts");
+  const specifier = relative(dirname(from), registry);
+
   test("is an import declaration, not a comment or a string", async () => {
-    const real = `import { DRIVE_EXIT } from "./terminal-states.ts";\n`;
-    const commented = `// import { DRIVE_EXIT } from "./terminal-states.ts";\nconst s = 'from "./terminal-states.ts"';\n`;
-    expect(await importsRegistry(real, "a.ts", TOOLS)).toBe(true);
-    expect(await importsRegistry(commented, "b.ts", TOOLS)).toBe(false);
+    const real = `import { DRIVE_EXIT } from "${specifier}";\n`;
+    const commented = `// import { DRIVE_EXIT } from "${specifier}";\nconst s = 'from "${specifier}"';\n`;
+    expect(await importsRegistry(real, from, TOOLS)).toBe(true);
+    expect(await importsRegistry(commented, from, TOOLS)).toBe(false);
+  });
+
+  test("binds a runtime value from the registry itself", async () => {
+    const check = (text: string) => importsRegistry(text, from, TOOLS);
+    expect(
+      await check(`import type { DriveExitName } from "${specifier}";\n`),
+    ).toBe(false);
+    expect(
+      await check(`import { type DriveExitName } from "${specifier}";\n`),
+    ).toBe(false);
+    expect(
+      await check(
+        `import { DRIVE_EXIT, type DriveExitName } from "${specifier}";\n`,
+      ),
+    ).toBe(true);
+    expect(await check(`import * as registry from "${specifier}";\n`)).toBe(
+      true,
+    );
+    expect(
+      await check(`import { DRIVE_EXIT } from "./terminal-states.ts";\n`),
+    ).toBe(false);
   });
 });
 
@@ -127,6 +155,10 @@ function f(exit: number) { return exit === DRIVE_EXIT.HITL_PARKED; }
 describe("the consistency check over dispatcher files", () => {
   const dir = mkdtempSync(join(tmpdir(), "drive-pr-terminal-dispatch-"));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const registry = relative(
+    dir,
+    join(PLUGIN, "skills/drive-pr/scripts/lib/status/terminal-states.ts"),
+  );
   const fixture = (name: string, body: string): string => {
     const path = join(dir, name);
     writeFileSync(path, body);
@@ -145,7 +177,7 @@ describe("the consistency check over dispatcher files", () => {
   test("passes a file that reads the registry", () => {
     const clean = fixture(
       "clean.ts",
-      `import { DRIVE_EXIT } from "./terminal-states.ts";\nexport const q = (code: number) => code === DRIVE_EXIT.QUOTA_PARKED;\n`,
+      `import { DRIVE_EXIT } from "${registry}";\nexport const q = (code: number) => code === DRIVE_EXIT.QUOTA_PARKED;\n`,
     );
     expectSpawnExit(check([`${clean}=imports`]), 0);
   });
@@ -153,7 +185,7 @@ describe("the consistency check over dispatcher files", () => {
   test("fails a file that restates an exit, or reads nothing from the registry", () => {
     const restating = fixture(
       "restating.ts",
-      `import { DRIVE_EXIT } from "./terminal-states.ts";\nexport const refusals = new Set([11, DRIVE_EXIT.TAKEN_OVER]);\n`,
+      `import { DRIVE_EXIT } from "${registry}";\nexport const refusals = new Set([11, DRIVE_EXIT.TAKEN_OVER]);\n`,
     );
     const unread = fixture(
       "unread.ts",
