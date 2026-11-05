@@ -1470,7 +1470,7 @@ function describeBareLiteralExit({ value, kind }: BareLiteralExit): string {
  * unwrapping it would misreport an unrelated negative-value return as a literal
  * `6`.
  */
-function unwrapLiteral(expr: ts.Expression): ts.NumericLiteral | undefined {
+function unwrapNumericWrappers(expr: ts.Expression): ts.Expression {
   let current: ts.Expression = expr;
   for (;;) {
     if (
@@ -1492,6 +1492,12 @@ function unwrapLiteral(expr: ts.Expression): ts.NumericLiteral | undefined {
     }
     break;
   }
+  return current;
+}
+
+/** The numeric literal `expr` is once `unwrapNumericWrappers` has stripped it, if it is one. */
+function unwrapLiteral(expr: ts.Expression): ts.NumericLiteral | undefined {
+  const current = unwrapNumericWrappers(expr);
   return ts.isNumericLiteral(current) ? current : undefined;
 }
 
@@ -1582,12 +1588,12 @@ function resolveIdentifierLiteral(
   ) {
     return undefined;
   }
-  return (
-    unwrapLiteral(declaration.initializer) ??
-    (ts.isIdentifier(declaration.initializer)
-      ? resolveIdentifierLiteral(declaration.initializer, checker, seen)
-      : undefined)
-  );
+  const initializer = unwrapNumericWrappers(declaration.initializer);
+  return ts.isNumericLiteral(initializer)
+    ? initializer
+    : ts.isIdentifier(initializer)
+      ? resolveIdentifierLiteral(initializer, checker, seen)
+      : undefined;
 }
 
 /**

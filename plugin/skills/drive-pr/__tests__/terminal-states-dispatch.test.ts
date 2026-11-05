@@ -157,6 +157,24 @@ function f(l: { exit: number }) {
     ).toEqual([11, 13, 16, 18, 8, 13, 9, 13]);
   });
 
+  test("is found through a wrapper on an alias's initializer, at any depth of the chain", async () => {
+    expect(
+      await valuesIn(`
+const K = 13;
+const L = K as number;
+const M = (<number>L)!;
+const N = +(M satisfies number);
+const A = new Set([L]);
+const B = new Map([[M, "x"]]);
+function f(l: { exit: number }) {
+  if (l.exit === N) return 1;
+  switch (l.exit) { case L: return 2; }
+  return 0;
+}
+`),
+    ).toEqual([13, 13, 13, 13]);
+  });
+
   test("is not found through a bracket access whose key is not a literal", async () => {
     expect(
       await valuesIn(
