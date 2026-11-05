@@ -6,8 +6,14 @@
  */
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, it } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import type { TickReceipt } from "../receipts.ts";
 import { statePath } from "../lib/state.ts";
@@ -35,10 +41,11 @@ afterEach(() => {
 });
 
 /** PR #8 stopped on exit 7 with no workspace of its own, so its notice goes to the notices workspace. */
-function fixture(config = CONFIG): World {
+function fixture(config = CONFIG, before?: (w: World) => void): World {
   const w = world();
   current = w;
   w.setConfig(config);
+  before?.(w);
   withOrigin(w);
   w.setPrs("open", [openPr(8, "feature/8-failed")]);
   w.setComments(8, [ledgerComment(801, stoppedLedger(8, 7))]);
@@ -180,6 +187,47 @@ describe("jig dispatch --apply retires the notices workspace", () => {
   it("removes it at the first read tick when dispatch.notices_linger is 0s", async () => {
     const w = fixture(`${CONFIG}dispatch:\n  notices_linger: 0s\n`);
     const path = await opened(w);
+    read(w, path);
+    expect(outcome(await tick(w))).toEqual(
+      expect.objectContaining({ workspace: path, outcome: "retired" }),
+    );
+  });
+
+  it("does not run the repository's create hook in it, so what a hook installs never keeps it", async () => {
+    // A create hook that installs ignored content, as a dependency install does.
+    const w = fixture(`${CONFIG}dispatch:\n  notices_linger: 0s\n`, (w) => {
+      const hook = join(w.repo, ".config", "worktree-hooks", "create");
+      mkdirSync(dirname(hook), { recursive: true });
+      writeFileSync(
+        hook,
+        "#!/bin/sh\nmkdir -p node_modules && touch node_modules/.installed\n",
+      );
+      chmodSync(hook, 0o755);
+      writeFileSync(join(w.repo, ".gitignore"), "node_modules/\n");
+      for (const args of [
+        ["add", "-A"],
+        [
+          "-c",
+          "user.name=t",
+          "-c",
+          "user.email=t@example.com",
+          "commit",
+          "-q",
+          "-m",
+          "add a create hook",
+        ],
+      ])
+        expectSpawnExit(
+          Bun.spawnSync(["git", "-C", w.repo, ...args], {
+            env: w.env,
+            stdout: "pipe",
+            stderr: "pipe",
+          }),
+          0,
+        );
+    });
+    const path = await opened(w);
+    expect(existsSync(join(path, "node_modules"))).toBe(false);
     read(w, path);
     expect(outcome(await tick(w))).toEqual(
       expect.objectContaining({ workspace: path, outcome: "retired" }),

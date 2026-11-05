@@ -89,7 +89,9 @@ export function openPullRequestWorkspace(
 /**
  * The repository's notices workspace: its branch, cut from the
  * repository's base when new, with nothing linked. The dispatcher writes
- * only its comment and never launches an agent into it, so the first
+ * only its comment and never launches an agent into it, so the
+ * repository's create hook does not run there (what it installs would be
+ * ignored content that keeps the workspace from being retired), and the first
  * terminal Orca gives a new workspace is closed (`orca terminal close
  * --all`): the card is its comment, not an idle shell. A close that fails
  * leaves the workspace opened, the failure in the receipt's detail.
@@ -102,7 +104,12 @@ export async function openNoticesWorkspace(
   const started = Date.now();
   const opened = await open(
     repo,
-    { branch: target.notices, dispatched: target.dispatched, createFlags: [] },
+    {
+      branch: target.notices,
+      dispatched: target.dispatched,
+      createFlags: [],
+      createHook: false,
+    },
     timeoutMs,
   );
   if (!opened.ok || opened.workspace === undefined || opened.reattached)
@@ -156,7 +163,12 @@ export function openItemWorkspace(
 
 async function open(
   repo: { id: string; path: string },
-  options: { branch: string; dispatched: Dispatched; createFlags: string[] },
+  options: {
+    branch: string;
+    dispatched: Dispatched;
+    createFlags: string[];
+    createHook?: boolean;
+  },
   timeoutMs: number,
 ): Promise<RuntimeReceipt & { reattached?: boolean }> {
   const lines: string[] = [];
@@ -172,6 +184,9 @@ async function open(
       name: options.dispatched.name,
       comment: options.dispatched.mark,
       createFlags: options.createFlags,
+      ...(options.createHook === undefined
+        ? {}
+        : { createHook: options.createHook }),
     });
     return {
       ok: true,

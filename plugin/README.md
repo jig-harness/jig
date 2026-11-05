@@ -411,7 +411,7 @@ which Orca's phone app shows; a target with no workspace that can take a
 comment (none, or one whose comment may still be its agent's kickoff
 prompt) goes to the repository's notices workspace, a branch of the default
 branch (`jig-dispatch-notices`), named `⚙ dispatched · notices`, into which
-no agent is launched and whose first terminal is closed. If that close fails,
+no agent is launched, in which the repository's create hook does not run, and whose first terminal is closed. If that close fails,
 the tick reports the failure in its receipt while still delivering the
 notification. Inspect the workspace's terminals, then close the idle initial
 shell through Orca. Later ticks never retry closing all terminals, since a

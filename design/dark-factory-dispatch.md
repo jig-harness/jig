@@ -624,8 +624,9 @@ implementation:
   local workspace, a pickup whose agent never started) it is a
   notification workspace the dispatcher keeps per repository, on the
   default branch, into which it never launches an agent, its comment
-  naming the item or pull request the message is about. A new one has its
-  first terminal closed (`orca terminal close --all`). Once a tick's
+  naming the item or pull request the message is about. A new one runs no
+  create hook and has its first terminal closed (`orca terminal close
+  --all`). Once a tick's
   messages are sent, the tick removes it (`orca worktree rm
   --delete-branch`) when it has stayed read for `dispatch.notices_linger`
   (one hour by default; the first tick that finds it read records when),
