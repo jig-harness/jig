@@ -384,6 +384,23 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.142.0] - 2026-11-05
+
+### Added
+
+- `jig dispatch` removes a repository's notices workspace (`⚙ dispatched ·
+  notices`) once it has done its job: when it has been read for
+  `dispatch.notices_linger` (an hour by default; `0s` removes it at the first
+  tick that finds it read), or when every cause it carries is gone while it
+  is still unread. A workspace holding a comment, an agent, changes or a
+  commit of a person's is left in place and reported. A new notices
+  workspace opens without running the repository's create hook and with
+  its terminal closed, so the card holds only its message and nothing a
+  hook installs keeps it from being removed. The next message that needs one opens it again; nothing already
+  sent is sent twice. Unknown unread marks reset the read linger, and causes
+  whose targets could not be observed keep their unread notice. Safety
+  refusals found during the final runtime read are reported as refused.
+
 ## [0.141.0] - 2026-11-05
 
 Several hosts can now dispatch one repository: each host's launches and their ends travel on the pull request, where every other host reads them.
@@ -5316,7 +5333,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.141.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.142.0...HEAD
+[0.142.0]: https://github.com/jig-harness/jig/compare/v0.141.0...v0.142.0
 [0.141.0]: https://github.com/jig-harness/jig/compare/v0.140.2...v0.141.0
 [0.140.2]: https://github.com/jig-harness/jig/compare/v0.140.1...v0.140.2
 [0.140.1]: https://github.com/jig-harness/jig/compare/v0.140.0...v0.140.1
