@@ -426,7 +426,6 @@ async function main(): Promise<number> {
           `announce-merge-ready: cannot read PR #${pr}'s comments while ${holdName()} is present — remove any standing merge-ready announcement by hand.`,
         );
       }
-      refuseUnreadable(standing, `while ${holdName()} is present`);
       for (const id of announcedIds(standing, live.head)) {
         if (!(await withdrawAnnouncement(pr, id))) {
           fail(
@@ -435,6 +434,9 @@ async function main(): Promise<number> {
           );
         }
       }
+      // After the withdrawals: a malformed announcement is left for manual
+      // repair, but it must not keep a readable stale one standing.
+      refuseUnreadable(standing, `while ${holdName()} is present`);
     }
   }
 
@@ -561,7 +563,6 @@ async function main(): Promise<number> {
           `announce-merge-ready: final CI proof is stale and same-head announcements could not be enumerated; inspect PR #${pr} manually.`,
         );
       }
-      refuseUnreadable(standing, "as the final CI proof is stale");
       for (const id of announcedIds(standing, head)) {
         if (!(await withdrawAnnouncement(pr, id))) {
           fail(
@@ -570,6 +571,7 @@ async function main(): Promise<number> {
           );
         }
       }
+      refuseUnreadable(standing, "as the final CI proof is stale");
     }
     fail(
       finalCi === 5 ? 5 : finalCi === 4 ? 4 : 1,
@@ -1094,6 +1096,18 @@ ${marker}`;
   // Residual, stated rather than papered over: if the listing lags for BOTH
   // drivers past each one's read-back, each sees itself the earliest and
   // both survive. That cannot be closed without a conditional create.
+  // The weighing below discards unreadable records, so a trusted announcement
+  // naming no head that appeared during the POST is checked for here, and
+  // this process's own comment is withdrawn before refusing.
+  const after = await announcements(pr);
+  const afterNote = after === null ? null : unreadableNote(after);
+  if (afterNote !== null) {
+    console.error(
+      `announce-merge-ready: posted, but announcements naming no head now stand: ${afterNote} — withdrawing this announcement of ${head}; remove or repair them by hand.`,
+    );
+    await withdrawPosted();
+    return 1;
+  }
   const back = await readAnnouncement(pr, posted);
   if (back.ok && back.value.verdict === "lost") {
     console.error(

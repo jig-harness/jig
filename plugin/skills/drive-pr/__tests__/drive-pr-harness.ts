@@ -1422,8 +1422,12 @@ swept() {
 if [ -f "$F/stale-announcement" ] && [ "$announce_sweep" -eq 1 ]; then
   jq -nc --arg o "\${DRIVE_PR_ANNOUNCE_OPENER_FIXTURE:-}" \\
          --arg stale "$(< "$F/stale-announcement")" \\
+         --arg bad "\${DRIVE_PR_MALFORMED:-}" \\
     '[{id: 7, body: ($o + "\\n\\nan earlier run was killed before it could withdraw this\\n\\n<!-- drive-pr-merge-ready: " + $stale + " -->"),
-       user: {login: "other"}, author_association: "OWNER"}]' \\
+       user: {login: "other"}, author_association: "OWNER"}]
+     + (if $bad == "" then [] else
+         [{id: 8, body: ($o + "\\n\\nan announcement that ends with no head marker"),
+           user: {login: "other"}, author_association: "OWNER"}] end)' \\
     > "$F/stale-comments.json"
   swept "$F/stale-comments.json"
   exit 0
@@ -1450,6 +1454,7 @@ if [ -f "$F/race-after-post" ] && [ -f "$F/posted-seq" ] \\
          --arg o "\${DRIVE_PR_ANNOUNCE_OPENER_FIXTURE:-}" \\
          --arg quoter "\${DRIVE_PR_QUOTER:-}" \\
          --arg forger "\${DRIVE_PR_FORGER:-}" \\
+         --arg bad "\${DRIVE_PR_MALFORMED:-}" \\
          --argjson rid "\${DRIVE_PR_RIVAL_ID:-1}" \\
          --argjson ours "$(( \${DRIVE_PR_POSTED_ID_BASE:-9000} + $(< "$F/posted-seq") ))" \\
     '[{id: $rid, body: ($o + "\\n\\nthe rival driver got there first\\n\\n" + $m),
@@ -1461,7 +1466,10 @@ if [ -f "$F/race-after-post" ] && [ -f "$F/posted-seq" ] \\
            user: {login: "human"}, author_association: "COLLABORATOR"}] end)
      + (if $forger == "" then [] else
          [{id: 0, body: ($o + "\\n\\nthe review drive converged\\n\\n" + $m),
-           user: {login: "drive-by"}, author_association: "NONE"}] end)' \\
+           user: {login: "drive-by"}, author_association: "NONE"}] end)
+     + (if $bad == "" then [] else
+         [{id: 3, body: ($o + "\\n\\nan announcement that ends with no head marker"),
+           user: {login: "other"}, author_association: "OWNER"}] end)' \\
     > "$F/raced-comments.json"
   emit "$F/raced-comments.json"
   exit 0

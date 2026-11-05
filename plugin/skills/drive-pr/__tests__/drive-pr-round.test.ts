@@ -86,6 +86,8 @@ describe("announce-merge-ready.ts", () => {
       quoter?: boolean;
       /** Add a lower-id, perfectly-shaped announcement from an untrusted author. */
       forger?: boolean;
+      /** Add a trusted announcement that ends with no head marker. */
+      malformed?: boolean;
       /** An earlier run's announcement, left standing for this (now stale) head. */
       staleAnnouncementFor?: string;
       /** Id of the rival's announcement in the race fixture. Default 1. */
@@ -211,6 +213,7 @@ describe("announce-merge-ready.ts", () => {
           ...(opts.rivalId ? { DRIVE_PR_RIVAL_ID: opts.rivalId } : {}),
           ...(opts.quoter ? { DRIVE_PR_QUOTER: "1" } : {}),
           ...(opts.forger ? { DRIVE_PR_FORGER: "1" } : {}),
+          ...(opts.malformed ? { DRIVE_PR_MALFORMED: "1" } : {}),
           ...(opts.postedIdBase
             ? { DRIVE_PR_POSTED_ID_BASE: opts.postedIdBase }
             : {}),
@@ -348,6 +351,27 @@ describe("announce-merge-ready.ts", () => {
     expect(r.posted).toBe(false);
     expect(r.deleted).toContain("7");
     expect(r.stderr).toContain("'ci:hold' is still present");
+  });
+
+  it("withdraws a readable same-head announcement before refusing over a malformed one while 'ci:hold' is present", async () => {
+    const r = await announce({ ...CONVERGED, ciHeld: true }, false, {
+      staleAnnouncementFor: CONVERGED.head,
+      malformed: true,
+    });
+    expect(r).toMatchObject({ exitCode: 1, posted: false });
+    expect(r.deleted).toContain("7");
+    expect(r.deleted).not.toContain("8");
+    expect(r.stderr).toContain("naming no head");
+  });
+
+  it("withdraws its own post and refuses when a malformed announcement appears during the POST", async () => {
+    const r = await announce(CONVERGED, false, {
+      raceAfterPost: true,
+      malformed: true,
+      postedIdBase: "100",
+    });
+    expect(r).toMatchObject({ exitCode: 1, posted: true, deleted: ["101"] });
+    expect(r.stderr).toContain("naming no head");
   });
 
   it("refuses to announce a converged PR that is still a draft", async () => {
