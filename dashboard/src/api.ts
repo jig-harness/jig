@@ -5,6 +5,7 @@
  * coded failure, or the answer.
  */
 import { isRecord } from "../../plugin/shared/guards.ts";
+import { isSpan, isTime, isZone } from "../../plugin/shared/time-guards.ts";
 import type {
   RowsAnswer,
   StateAnswer,
@@ -75,33 +76,8 @@ function okValue(body: unknown): unknown {
     : undefined;
 }
 
-function isTime(value: unknown): value is string {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
-}
-
-/** A zone the browser can show times in: one its formatter accepts, which is wider than the names it lists. */
-function isZone(value: unknown): value is string {
-  if (typeof value !== "string") return false;
-  try {
-    new Intl.DateTimeFormat(undefined, { timeZone: value });
-    return true;
-  } catch (cause) {
-    // The formatter names a zone it does not know by a RangeError; any other
-    // failure is not an answer about the zone.
-    if (!(cause instanceof RangeError)) throw cause;
-    return false;
-  }
-}
-
 function areRecords(value: unknown): boolean {
   return Array.isArray(value) && value.every(isRecord);
-}
-
-/** A span the page adds to a tick's time and formats: non-negative, and the sum still a time `Intl` can show. */
-function isSpan(startedAt: string, span: unknown): span is number {
-  if (typeof span !== "number" || !Number.isFinite(span) || span < 0)
-    return false;
-  return Number.isFinite(new Date(Date.parse(startedAt) + span).getTime());
 }
 
 /** A line the page can lay out: the sections it walks are arrays of records, and the times it formats read. */
