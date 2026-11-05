@@ -46,6 +46,7 @@ import {
 } from "../../shared/records/shared.ts";
 import { settleConflictStops } from "../../dispatch/lib/actions/drive-hold.ts";
 import { isDrive } from "../../dispatch/lib/launches.ts";
+import { settleSharedConflictStops } from "../../dispatch/lib/shared-launches.ts";
 import { driveClass, lastEnded } from "../../dispatch/lib/log.ts";
 import {
   type Classified,
@@ -178,15 +179,16 @@ function stateOf(
   };
 }
 
-/** Why a stop on a conflict is a person's to settle, when this machine already re-drove it for the change it shows now; `null` otherwise. */
+/** Why a stop on a conflict is a person's to settle, when this machine or another host already re-drove it for the change it shows now; `null` otherwise. */
 function conflictSettled(
   placed: Classified,
   ledger: Ledger,
   r: DriveReads,
+  host: string | null,
 ): string | null {
   if (placed.class !== "stale" || placed.stale?.conflictStop !== true)
     return null;
-  const [settled] = settleConflictStops(
+  const own = settleConflictStops(
     [
       {
         number: r.pull.number,
@@ -204,6 +206,12 @@ function conflictSettled(
       },
     ],
     r.records,
+  );
+  // Another host's ended re-drive settles it as the dispatcher's tick does; a machine whose own name is unknown holds no claims of its own to tell apart.
+  const [settled] = settleSharedConflictStops(
+    own,
+    new Map([[r.pull.number, { ok: true, value: r.claims }]]),
+    host ?? "",
   );
   return settled?.class === "needs-person" ? settled.why : null;
 }
@@ -227,7 +235,7 @@ function waitsOnOf(
       ...(base === undefined ? {} : { base }),
     },
   );
-  const settled = conflictSettled(placed, ledger, r);
+  const settled = conflictSettled(placed, ledger, r, ctx.host);
   if (settled !== null) return { person: "re-arm", why: settled };
   // A dispatcher re-arms what settles by itself: this machine's, or one whose launch claims are on the pull request.
   const dispatched = ctx.dispatches || current(r.claims) !== null;

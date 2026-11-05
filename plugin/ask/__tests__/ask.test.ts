@@ -218,6 +218,55 @@ describe("jig ask", () => {
     });
   });
 
+  it("reads a stop on a conflict another host already re-drove and ended as a person's to settle", async () => {
+    const w = world();
+    const writer = localWriter("forge", "drive-bot");
+    const head = "a".repeat(40);
+    const base = "b".repeat(40);
+    const posted = launchClaim(
+      {
+        ...draft(7),
+        change: `head ${head}, base ${base}`,
+        conflictStop: true,
+      },
+      1,
+    );
+    const ended = endedClaim(
+      "drive",
+      {
+        key: posted.key,
+        generation: 1,
+        at: "2026-11-05T10:00:00.000Z",
+        writer,
+        payload: posted.payload,
+        legacy: false,
+      },
+      7,
+      {
+        state: "ended",
+        at: "2026-11-05T10:05:00.000Z",
+        exit: 9,
+        outcome: null,
+      },
+      writer,
+    );
+    w.api(
+      `repos/${REPO}/pulls/7`,
+      pullDoc(7, { mergeable: false, base: { ref: "main" } }),
+    );
+    w.api(`repos/${REPO}/git/ref/heads/main`, { object: { sha: base } });
+    w.api(`repos/${REPO}/issues/7/comments`, [
+      comment(701, ledgerBody(stoppedLedger(7, 9))),
+      comment(702, claimBody(LAUNCH_CLAIM, ended)),
+    ]);
+
+    const { answer } = await askJson(w, [`drive@${REPO}#7`], w.away);
+    expect(answer.waitsOn).toMatchObject({
+      person: "re-arm",
+      why: expect.stringContaining("already re-drove it"),
+    });
+  });
+
   it("answers from the forge on a machine with no dispatcher, and says the launch records were not read", async () => {
     const w = world();
     w.api(`repos/${REPO}/pulls/7`, pullDoc(7));
