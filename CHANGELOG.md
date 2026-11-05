@@ -384,6 +384,20 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.140.1] - 2026-11-05
+
+### Changed
+
+- Refresh the dashboard's dependencies and bundled YAML parser, and update the
+  changelog workflow template to use checkout v7.
+
+### Fixed
+
+- Keep the structured-artifact comparison gate's rejection of numeric overflow
+  when the YAML parser would otherwise retain the literal as a string.
+- Exercise scheduler upgrade checks with the host's supported schedulers, and
+  limit the separate service-and-timer check to systemd hosts.
+
 ## [0.140.0] - 2026-11-05
 
 A signal the drive and the dispatcher share is kept in one place: the
@@ -5266,7 +5280,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.140.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.140.1...HEAD
+[0.140.1]: https://github.com/jig-harness/jig/compare/v0.140.0...v0.140.1
 [0.140.0]: https://github.com/jig-harness/jig/compare/v0.139.1...v0.140.0
 [0.139.1]: https://github.com/jig-harness/jig/compare/v0.139.0...v0.139.1
 [0.139.0]: https://github.com/jig-harness/jig/compare/v0.138.0...v0.139.0
