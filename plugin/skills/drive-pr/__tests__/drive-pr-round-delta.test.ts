@@ -5,12 +5,15 @@
 import { describe, expect, it } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
-import {
-  changedFilesSince,
-  changedFilesSinceExcludingMerges,
-} from "../scripts/lib/round-delta.ts";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
-import { gitCleanEnv, tmpRoot, useDrivePrSuite } from "./drive-pr-harness.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  gitCleanEnv,
+  REPO_ROOT,
+  SCRIPTS,
+  tmpRoot,
+  useDrivePrSuite,
+} from "./drive-pr-harness.ts";
 import { addOrigin, prBaseGh } from "./round-plan-fixtures.ts";
 
 useDrivePrSuite();
@@ -21,27 +24,44 @@ const NO_QUOTE_NAMES = skipsOnWindows(
 );
 
 describe("round-delta.ts", () => {
-  // The helpers under test run git in this process. Inherited routing
-  // variables (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE from a hook or a parent
-  // git process) override `-C dir` and would point them at the real checkout,
-  // so each call runs with those variables dropped and the environment
-  // restored afterwards.
-  async function inScrubbedEnv<T>(
-    extra: Record<string, string>,
-    fn: () => Promise<T>,
-  ): Promise<T> {
-    const saved = { ...process.env };
-    try {
-      for (const k of Object.keys(process.env))
-        if (k.startsWith("GIT_") || k.startsWith("DRIVE_PR_"))
-          delete process.env[k];
-      Object.assign(process.env, extra);
-      return await fn();
-    } finally {
-      for (const k of Object.keys(process.env))
-        if (!(k in saved)) delete process.env[k];
-      Object.assign(process.env, saved);
-    }
+  // The helpers under test run git. Inherited routing variables (GIT_DIR,
+  // GIT_WORK_TREE, GIT_INDEX_FILE from a hook or a parent git process)
+  // override `-C dir` and would point them at the real checkout, so each call
+  // runs in a child process whose environment is scrubbed (`gitCleanEnv`)
+  // rather than in this one.
+  async function inChild(
+    fn: "changedFilesSince" | "changedFilesSinceExcludingMerges",
+    args: unknown[],
+    extraEnv: Record<string, string> = {},
+  ): Promise<string[] | null> {
+    const proc = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        `const m = await import(process.env.RD_MODULE);
+         const r = await m[process.env.RD_FN](...JSON.parse(process.env.RD_ARGS));
+         process.stdout.write(JSON.stringify(r));`,
+      ],
+      {
+        cwd: REPO_ROOT,
+        env: {
+          ...gitCleanEnv(),
+          ...extraEnv,
+          RD_MODULE: join(SCRIPTS, "lib", "round-delta.ts"),
+          RD_FN: fn,
+          RD_ARGS: JSON.stringify(args),
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    expectSpawnExit({ exitCode, stdout, stderr }, 0);
+    return JSON.parse(stdout) as string[] | null;
   }
 
   // Git quotes a pathname containing a literal `"` or `\` regardless of
@@ -86,9 +106,10 @@ describe("round-delta.ts", () => {
       git("commit", "-qm", "quoted path", "--no-verify");
 
       addOrigin(dir);
-      const result = await inScrubbedEnv(
+      const result = await inChild(
+        "changedFilesSinceExcludingMerges",
+        [dir, "999", since, 30],
         { PATH: `${prBaseGh()}${delimiter}${process.env.PATH}` },
-        () => changedFilesSinceExcludingMerges(dir, "999", since, 30),
       );
       expect(result).not.toBeNull();
       expect(result).toContain(quotedName);
@@ -122,9 +143,7 @@ describe("round-delta.ts", () => {
       git("add", "-A");
       git("commit", "-qm", "quoted path", "--no-verify");
 
-      const result = await inScrubbedEnv({}, () =>
-        changedFilesSince(dir, since, 30),
-      );
+      const result = await inChild("changedFilesSince", [dir, since, 30]);
       expect(result).not.toBeNull();
       expect(result).toContain(quotedName);
     },
