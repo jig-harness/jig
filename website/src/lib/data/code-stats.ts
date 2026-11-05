@@ -10,6 +10,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { isKind } from "../../../../plugin/skills/code-stats/scripts/lib/model.ts";
 
 /** The skill's script, by its path from the repository root. */
 export const CODE_STATS_SCRIPT =
@@ -222,6 +223,8 @@ function validateDimensions(report: CodeStats): void {
     comment: t.commentLines,
     blank: t.blankLines,
   };
+  validateLines(expected, "totals");
+  validateKinds(report.byKind);
   const sum = (values: Bucket[]): Bucket => {
     const result = empty();
     for (const b of values) for (const f of BUCKET_FIELDS) result[f] += b[f];
@@ -285,6 +288,15 @@ function record(v: unknown, what: string): Record<string, unknown> {
   return v as Record<string, unknown>;
 }
 
+/** Kind names follow the producer's vocabulary, even when counts agree. */
+function validateKinds(group: Record<string, Bucket>): void {
+  for (const kind of Object.keys(group))
+    if (!isKind(kind))
+      throw new CodeStatsReportError(
+        `code-stats: byKind.${kind} is an unknown kind`,
+      );
+}
+
 function text_(v: unknown, what: string): string {
   if (typeof v !== "string")
     throw new CodeStatsReportError(`code-stats: ${what} is not a string`);
@@ -315,14 +327,24 @@ const BUCKET_FIELDS = [
 ] as const;
 
 function buckets(v: unknown, what: string): Record<string, Bucket> {
-  const out: Record<string, Bucket> = {};
+  const out: Record<string, Bucket> = Object.create(null);
   for (const [name, b] of Object.entries(record(v, what))) {
     const bucket = record(b, `${what}.${name}`);
-    out[name] = Object.fromEntries(
+    const parsed = Object.fromEntries(
       BUCKET_FIELDS.map((f) => [f, count(bucket[f], `${what}.${name}.${f}`)]),
     ) as unknown as Bucket;
+    validateLines(parsed, `${what}.${name}`);
+    out[name] = parsed;
   }
   return out;
+}
+
+/** Every counted line belongs to exactly one of code, comment or blank. */
+function validateLines(b: Bucket, what: string): void {
+  if (b.raw !== b.code + b.comment + b.blank)
+    throw new CodeStatsReportError(
+      `code-stats: ${what}.raw disagrees with code + comment + blank`,
+    );
 }
 
 /** The commit without the `-dirty` mark, and whether the tree had changes. */

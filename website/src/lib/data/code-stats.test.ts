@@ -125,6 +125,100 @@ const text = (over: Record<string, unknown> = {}) =>
   JSON.stringify({ ...FIXTURE, ...over });
 
 describe("parseCodeStats", () => {
+  test("refuses an unknown kind even when every dimension agrees", () => {
+    const { test: tests, ...kinds } = FIXTURE.byKind;
+    const { "production/test": areaTests, ...areaKinds } = FIXTURE.byAreaKind;
+    expect(() =>
+      parseCodeStats(
+        text({
+          byKind: { ...kinds, tests },
+          byAreaKind: { ...areaKinds, "production/tests": areaTests },
+        }),
+      ),
+    ).toThrow("unknown kind");
+  });
+
+  test("prototype names are valid empty areas and own bucket names", () => {
+    for (const name of ["constructor", "toString", "__proto__"]) {
+      const empty = parseCodeStats(
+        text({
+          areas: [
+            ...FIXTURE.areas,
+            { name, description: "Empty", default: false },
+          ],
+        }),
+      );
+      expect(areaRows(empty).find((a) => a.name === name)).toMatchObject({
+        files: 0,
+        raw: 0,
+        code: 0,
+        comment: 0,
+        blank: 0,
+      });
+      const { docs, ...otherAreas } = FIXTURE.byArea;
+      const { "docs/docs": docsKind, ...otherKinds } = FIXTURE.byAreaKind;
+      const populated = parseCodeStats(
+        text({
+          areas: FIXTURE.areas.map((a) =>
+            a.name === "docs" ? { ...a, name } : a,
+          ),
+          byArea: { ...otherAreas, [name]: docs },
+          byAreaKind: { ...otherKinds, [`${name}/docs`]: docsKind },
+          byModule: { ...FIXTURE.byModule, [name]: bucket(0, 0) },
+          byLanguage: { ...FIXTURE.byLanguage, [name]: bucket(0, 0) },
+        }),
+      );
+      expect(areaRows(populated).find((a) => a.name === name)?.code).toBe(20);
+      expect(Object.hasOwn(populated.byModule, name)).toBe(true);
+      expect(Object.hasOwn(populated.byLanguage, name)).toBe(true);
+    }
+  });
+
+  test("refuses internally inconsistent line counts despite dimension agreement", () => {
+    const invalid = structuredClone(FIXTURE);
+    invalid.totals.rawLines *= 2;
+    for (const [name, group] of Object.entries(invalid)) {
+      if (!name.startsWith("by")) continue;
+      for (const b of Object.values(
+        group as Record<string, ReturnType<typeof bucket>>,
+      ))
+        b.raw *= 2;
+    }
+    expect(() => parseCodeStats(JSON.stringify(invalid))).toThrow("raw");
+    const valid = structuredClone(invalid);
+    valid.totals.codeLines *= 2;
+    valid.totals.commentLines *= 2;
+    valid.totals.blankLines *= 2;
+    for (const [name, group] of Object.entries(valid)) {
+      if (!name.startsWith("by")) continue;
+      for (const b of Object.values(
+        group as Record<string, ReturnType<typeof bucket>>,
+      )) {
+        b.code *= 2;
+        b.comment *= 2;
+        b.blank *= 2;
+      }
+    }
+    expect(parseCodeStats(JSON.stringify(valid)).totals.rawLines).toBe(324);
+  });
+
+  test("checks individual buckets even when their errors cancel within a dimension", () => {
+    for (const [name, group] of Object.entries(FIXTURE)) {
+      if (!name.startsWith("by")) continue;
+      const changed = structuredClone(group) as Record<
+        string,
+        ReturnType<typeof bucket>
+      >;
+      const [first, second] = Object.values(changed);
+      if (!first || !second) throw new Error(`${name} needs two buckets`);
+      first.raw++;
+      second.raw--;
+      expect(() => parseCodeStats(text({ [name]: changed }))).toThrow(
+        `${name}.`,
+      );
+    }
+  });
+
   test("refuses missing dimensions and inconsistent area-kind relationships", () => {
     for (const dimension of [
       "byArea",
