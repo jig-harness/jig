@@ -460,6 +460,12 @@ separate state roots, each served by its own dashboard instance; a shared
 root with per-repository scoping on every dashboard read is not offered
 until that scoping is specified and enforced.
 
+The [Jig panel in Orca](orca-integration.md#the-jig-plugin-for-orca) is a
+second reader. It reads the same line through the plugin's worker, which
+runs `jig` as the person on their own machine, so it has no listen address
+and no token, and nothing outside Orca's window reaches it. Its Board view
+shows the columns this page shows, to the person running Orca there.
+
 The person the dispatcher reaches is the board's first reader, but not the
 only person who merges or approves. A merge-now card names no merger: the
 forge decides who may merge, and the command works for anyone with that
@@ -614,10 +620,14 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
 
 ## Left out
 
-- **A merge button.** It would give the page a write route to the host and
-  have the dispatcher's server act for a person on the forge; the pinned
-  command and the forge's own button already let a person merge from the
-  page in one step.
+- **A merge button on the dashboard.** It would give the page a write
+  route to the host and have the dispatcher's server act for a person on
+  the forge; the pinned command and the forge's own button already let a
+  person merge from the page in one step, so the dashboard keeps link and
+  copy only. The Jig panel in Orca carries one: a panel has no network
+  route, so a person's click runs the drive's pinned merge command as that
+  person, in their own app
+  ([orca-integration.md](orca-integration.md#the-jig-plugin-for-orca)).
 - **Moving a card by hand.** A column is derived from the records, so a
   dragged card would be overruled at the next tick. A person moves work by
   acting on its record: answering, labelling `hold` or `drive`, merging.
@@ -642,9 +652,10 @@ bytes, so a board grown slow or costly is seen from one tick to the next.
   the host, which the dispatcher opens for nothing; the ready list is at
   most one interval and one tick old, and says how old.
 - **Reporting a stopped host to someone not looking.** The page already
-  says when its newest tick is overdue. A host that has stopped cannot send
-  that itself; telling a person needs a watcher elsewhere, which is
-  outside the dispatcher.
+  says when its newest tick is overdue, and the Jig plugin's status bar
+  item flags an overdue tick while Orca runs. A host that is off cannot
+  send that itself, and flags nothing in either place; telling a person
+  needs a watcher elsewhere, which is outside the dispatcher.
 - **Who wrote each thread.** Splitting the unresolved threads into a
   reviewer bot's and a person's needs each thread's comments, the most
   expensive read the board could make; the thread mark links to the

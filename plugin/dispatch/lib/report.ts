@@ -8,6 +8,7 @@ import type {
   LaunchOutcome,
   NotifyOutcome,
   RepoReport,
+  RetireOutcome,
   SharedReport,
   SteerOutcome,
 } from "./types.ts";
@@ -30,6 +31,10 @@ function noticeLine(n: NotifyOutcome): string {
   return `  ${n.outcome.padEnd(10)} notify ${n.target} (${n.cause})${to}: ${n.detail}`;
 }
 
+function retireLine(n: RetireOutcome): string {
+  return `  ${n.outcome.padEnd(10)} notices ${n.workspace}: ${n.detail}`;
+}
+
 function steerLine(s: SteerOutcome): string {
   return `  ${s.outcome.padEnd(10)} steer  ${s.target} (record ${s.record}, wall ${s.episode}): ${s.detail}`;
 }
@@ -42,6 +47,9 @@ function outcomeLines(r: RepoReport): string[] {
     ...r.launches.map(launchLine),
     ...(r.steers ?? []).map(steerLine),
     ...notified.map(noticeLine),
+    ...(r.noticesWorkspace === undefined
+      ? []
+      : [retireLine(r.noticesWorkspace)]),
   ];
 }
 
