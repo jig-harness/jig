@@ -24,6 +24,7 @@
  *
  * The marker is the one thing the dispatcher writes to the forge.
  */
+import { localWriter } from "../../../shared/records/writer.ts";
 import { admittedVendor, type Slots } from "../accounts.ts";
 import { holding } from "../holding.ts";
 import { sessionIdFor } from "../session.ts";
@@ -163,7 +164,14 @@ async function claim(
   ctx: FollowupContext,
   record: LaunchRecord & { pr: number },
 ): Promise<string | null> {
-  const posted = await postMarker(repo.slug, record.pr, tickMarker(record.id));
+  const posted = await postMarker(
+    repo.slug,
+    record.pr,
+    tickMarker(record.id, {
+      pr: record.pr,
+      writer: localWriter("forge", ctx.login),
+    }),
+  );
   if (typeof posted === "string") {
     dropRecord(state, record);
     return `the follow-up marker could not be posted: ${posted}`;

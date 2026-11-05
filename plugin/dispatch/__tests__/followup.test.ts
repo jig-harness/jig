@@ -13,7 +13,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { forgeComment } from "../../skills/drive-pr/__tests__/ledger-forge-fixtures.ts";
-import { manualMarker, MARKER, tickMarker } from "../lib/followup-marker.ts";
+import {
+  manualMarker,
+  MARKER,
+  markerRun,
+  tickMarker,
+} from "../lib/followup-marker.ts";
 import { readOutcomes } from "../lib/followup-outcomes.ts";
 import { readRecord } from "../lib/launches.ts";
 import { existingStateDb } from "../lib/state.ts";
@@ -78,6 +83,12 @@ function comments(w: World): Comment[] {
 const markers = (w: World) =>
   comments(w).filter((c) => c.body.startsWith(MARKER));
 
+/** Who posts the markers this suite seeds: on PR #9, from one host. */
+const POST = { pr: 9, writer: { host: "sha256:0123456789abcdef" } };
+
+/** What each marker on PR #9 says. */
+const runs = (w: World) => markers(w).map((m) => markerRun(m.body, 9));
+
 const launches = (r: TickReceipt) => r.repos[0]?.launches ?? [];
 const quiet = (r: TickReceipt) => r.repos[0]?.quiet ?? [];
 
@@ -117,7 +128,10 @@ describe("jig dispatch --apply follows up a merge", () => {
       marker: marker.id,
     });
     expect(typeof record.passTimeoutSec).toBe("number");
-    expect(marker.body).toBe(tickMarker(id));
+    expect(runs(w)).toEqual([{ kind: "tick", record: id }]);
+    expect(marker.body.split("\n").at(-1)).toBe(
+      `jig dispatch follow-up · record: ${id}`,
+    );
 
     await waitFor("the pass", () => claudeRuns(w).length === 1);
     const [run] = claudeRuns(w);
@@ -267,7 +281,7 @@ describe("jig dispatch --apply follows up a merge", () => {
 
   it("holds a follow-up a person's run claimed until that run marks it done", async () => {
     const { w } = fixture();
-    w.setComments(9, [forgeComment(901, manualMarker(false))]);
+    w.setComments(9, [forgeComment(901, manualMarker(false, POST))]);
     const held = await report(w);
     expect(held.repos[0]?.actions).toEqual([]);
     expect(quiet(held)).toContainEqual(
@@ -284,16 +298,31 @@ describe("jig dispatch --apply follows up a merge", () => {
       SLUG,
     ]);
     expectSpawnExit(done, 0);
-    expect(markers(w)[0]?.body).toBe(manualMarker(true));
+    expect(runs(w)).toEqual([{ kind: "manual", done: true }]);
     expect(quiet(await report(w))).toContainEqual(
       expect.objectContaining({ target: "PR #9", class: "followup-done" }),
+    );
+  });
+
+  it("holds a follow-up claimed by a marker in the line form written before the envelope", async () => {
+    const { w } = fixture();
+    w.setComments(9, [
+      forgeComment(
+        906,
+        `${MARKER}\njig dispatch follow-up · run: manual · outcome: running`,
+      ),
+    ]);
+    const held = await report(w);
+    expect(held.repos[0]?.actions).toEqual([]);
+    expect(quiet(held)).toContainEqual(
+      expect.objectContaining({ target: "PR #9", class: "followup-held" }),
     );
   });
 
   it("reads a marker whose comment was saved with CRLF line endings", async () => {
     const { w } = fixture();
     w.setComments(9, [
-      forgeComment(905, manualMarker(false).replace(/\n/g, "\r\n")),
+      forgeComment(905, manualMarker(false, POST).replace(/\n/g, "\r\n")),
     ]);
     const held = await report(w);
     expect(held.repos[0]?.actions).toEqual([]);
@@ -305,7 +334,11 @@ describe("jig dispatch --apply follows up a merge", () => {
   it("notifies a failed follow-up when the tick's marker names a record this machine no longer has", async () => {
     const { w } = fixture();
     w.setComments(9, [
-      forgeComment(902, tickMarker("20261030T200000Z-aaaaaaaa"), "drive-bot"),
+      forgeComment(
+        902,
+        tickMarker("20261030T200000Z-aaaaaaaa", POST),
+        "drive-bot",
+      ),
     ]);
     const r = await report(w);
     expect(r.repos[0]?.actions).toEqual([
@@ -320,7 +353,7 @@ describe("jig dispatch --apply follows up a merge", () => {
   it("ignores a marker from someone who cannot write, and names it", async () => {
     const { w } = fixture();
     w.setComments(9, [
-      forgeComment(903, manualMarker(true), "passer-by", "NONE"),
+      forgeComment(903, manualMarker(true, POST), "passer-by", "NONE"),
     ]);
     const [action] = (await report(w)).repos[0]?.actions ?? [];
     expect(action?.stage).toBe("followup");
@@ -331,7 +364,7 @@ describe("jig dispatch --apply follows up a merge", () => {
 
   it("stands a manual claim down behind an earlier marker, deleting its own", async () => {
     const { w } = fixture();
-    w.setComments(9, [forgeComment(904, manualMarker(false))]);
+    w.setComments(9, [forgeComment(904, manualMarker(false, POST))]);
     const r = await w.dispatch(["marker", "claim", "9", "--repo", SLUG]);
     expectSpawnExit(r, 3);
     expect(r.stderr).toContain("comment 904");
@@ -343,7 +376,7 @@ describe("jig dispatch --apply follows up a merge", () => {
     const claimed = await w.dispatch(["marker", "claim", "9", "--repo", SLUG]);
     expectSpawnExit(claimed, 0);
     const { comment } = JSON.parse(claimed.stdout) as { comment: number };
-    expect(markers(w).map((m) => m.body)).toEqual([manualMarker(false)]);
+    expect(runs(w)).toEqual([{ kind: "manual", done: false }]);
     const check = [
       "marker",
       "check",
@@ -355,7 +388,10 @@ describe("jig dispatch --apply follows up a merge", () => {
     ];
     expectSpawnExit(await w.dispatch(check), 0);
     // A marker that a lagging read hid, earlier than this one, stops the run.
-    w.setComments(9, [forgeComment(50, manualMarker(false)), ...comments(w)]);
+    w.setComments(9, [
+      forgeComment(50, manualMarker(false, POST)),
+      ...comments(w),
+    ]);
     expectSpawnExit(await w.dispatch(check), 3);
   });
 });

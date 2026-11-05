@@ -200,6 +200,44 @@ in place from a local marketplace leaves that folder untouched, records the
 skip in the receipt and still runs the job, and a pinned machine or one with
 `upgrade: off` runs no upgrade.
 
+### 37. Records: one envelope, one registry, records shared across hosts
+
+The execution line's parts coordinate through the records each leaves
+behind, and most families of records have their own envelope, their own
+writer identity and their own versioning: the drive's state file carries no
+version, the takeover claim none, the dispatcher's database a schema
+version. A host keeps its launches and follow-up outcomes to itself, so a
+second host cannot see what another holds or finished.
+[design/records.md](records.md) has how it works: every record carries one
+envelope (`kind`, `v`, `key`, `writer`, `at`, `generation`) through one
+codec for a file and a hidden marker on the forge; a registry lists every
+kind and a gate keeps it complete; one identity and lease module
+(`plugin/shared/liveness.ts`); the machine records in SQLite through
+`plugin/shared/records/db.ts`, one database per component, with additive
+migrations and a minimum-reader version, the mailbox and handoff staying
+files in the working tree; one forge-claims module whose one rule is that
+the earliest trusted comment per key and generation wins, every outward act
+re-checking it; a `SharedRecords` interface, forge-backed first, so a
+second host sees who holds a launch and whether a follow-up ended, with one
+owner host per repository for the board, notifications and history rows;
+and the dispatcher reading the drive's exit codes from its terminal-state
+registry, one round counter, and mailbox directives addressed to a driver
+generation. No daemon or bus coordinates them
+([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). Built in the
+design's order; the first step (the envelope, the registry and its gate,
+the ledger and the follow-up marker carrying the envelope,
+[plugin/RECORDS.md](../plugin/RECORDS.md)) is built.
+
+Done when every record kind the plugin keeps is registered and the gate
+fails an unregistered marker, state file or table; the identity read by a
+launch claim, a drive lease and a worktree hook comes from one module; the
+drive's machine state lives in its own SQLite database that an older plugin
+refuses only when a migration requires it; the ledger, the takeover claim
+and the follow-up marker are arbitrated by one rule; a second host reading
+the forge refuses to launch a pull request another host holds and does not
+start a follow-up another host finished; and the dispatcher names no drive
+exit code of its own.
+
 ### 3. The kickoff family
 
 The greenfield kickoff becomes a living skill instead of a frozen seed, with

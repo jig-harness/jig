@@ -5,11 +5,21 @@
  * hand posts one saying so (`run: manual`) and edits it to `outcome: done`
  * once its last act succeeded.
  *
- *   <!-- jig-dispatch-followup -->
- *   jig dispatch follow-up · record: <launch record id>
+ * From its second line the marker holds its record in the records codec's
+ * marker form (`shared/records/envelope.ts`): the envelope (kind
+ * `dispatch-followup`, the pull request as its key, the writer and the time)
+ * beside the run, then one line a person reads.
  *
  *   <!-- jig-dispatch-followup -->
- *   jig dispatch follow-up · run: manual · outcome: running|done
+ *   <!-- jig-dispatch-followup-data
+ *   {"kind":"dispatch-followup","v":1,"key":"<PR>",…,"run":"tick","record":"<launch record id>"}
+ *   -->
+ *   jig dispatch follow-up · record: <launch record id>
+ *
+ * A manual run's record carries `"run":"manual"` and its `outcome`,
+ * `running` or `done`. A marker posted before the envelope, whose second
+ * line is `jig dispatch follow-up · record: <id>` or
+ * `jig dispatch follow-up · run: manual · outcome: running|done`, still reads.
  *
  * A marker counts only when written by the dispatcher's own login or by an
  * owner, member or collaborator, as the drive trusts a ledger; of two
@@ -18,6 +28,8 @@
  * it could not.
  */
 import { isRecord } from "../../shared/guards.ts";
+import { decodeMarker, encodeMarker } from "../../shared/records/envelope.ts";
+import type { Writer } from "../../shared/records/writer.ts";
 import { TRUSTED_ASSOCIATIONS } from "../../shared/trusted-authors.ts";
 import { forge } from "../../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { isRecordId } from "./launches.ts";
@@ -25,19 +37,86 @@ import type { FollowupMarker } from "./types.ts";
 
 export const MARKER = "<!-- jig-dispatch-followup -->";
 
+/** The marker's kind in the records registry (`shared/records/registry.ts`). */
+export const FOLLOWUP_KIND = "dispatch-followup";
+
+/** The version of the marker's record this version writes. */
+export const FOLLOWUP_VERSION = 1;
+
+/** The hidden marker its record is written in. */
+const DATA = "jig-dispatch-followup-data";
+
+/** Who posts a marker, on which pull request, and when. */
+export interface MarkerPost {
+  pr: number;
+  writer: Writer;
+  at?: string;
+}
+
+function markerBody(
+  post: MarkerPost,
+  run: Record<string, unknown>,
+  line: string,
+): string {
+  const envelope = {
+    kind: FOLLOWUP_KIND,
+    v: FOLLOWUP_VERSION,
+    key: String(post.pr),
+    writer: post.writer,
+    at: post.at ?? new Date().toISOString(),
+  };
+  return [
+    MARKER,
+    encodeMarker(DATA, envelope, run),
+    `jig dispatch follow-up · ${line}`,
+  ].join("\n");
+}
+
 /** A tick's marker, naming the launch record it starts the follow-up under. */
-export function tickMarker(record: string): string {
-  return `${MARKER}\njig dispatch follow-up · record: ${record}`;
+export function tickMarker(record: string, post: MarkerPost): string {
+  return markerBody(post, { run: "tick", record }, `record: ${record}`);
 }
 
 /** A manual run's marker, carrying its own outcome. */
-export function manualMarker(done: boolean): string {
-  return `${MARKER}\njig dispatch follow-up · run: manual · outcome: ${done ? "done" : "running"}`;
+export function manualMarker(done: boolean, post: MarkerPost): string {
+  const outcome = done ? "done" : "running";
+  return markerBody(
+    post,
+    { run: "manual", outcome },
+    `run: manual · outcome: ${outcome}`,
+  );
 }
 
-/** What a marker's body says, or why it does not read. */
-function parseMarker(body: string): FollowupMarker["run"] {
+function unreadable(reason: string): FollowupMarker["run"] {
+  return { kind: "unreadable", reason };
+}
+
+/** What a marker's record says about pull request `pr`, or why it does not read. */
+function recordRun(body: string, pr: number): FollowupMarker["run"] {
+  const read = decodeMarker(body, DATA, FOLLOWUP_KIND);
+  if (!read.ok)
+    return unreadable(`its record does not read: ${read.failure.reason}`);
+  const { envelope, payload } = read.value;
+  if (envelope.key !== String(pr))
+    return unreadable(`its record names pull request #${envelope.key}`);
+  if (
+    payload.run === "tick" &&
+    typeof payload.record === "string" &&
+    isRecordId(payload.record)
+  )
+    return { kind: "tick", record: payload.record };
+  if (
+    payload.run === "manual" &&
+    (payload.outcome === "running" || payload.outcome === "done")
+  )
+    return { kind: "manual", done: payload.outcome === "done" };
+  return unreadable("its record is neither a tick's nor a manual run's");
+}
+
+/** What a marker on pull request `pr` says, or why it does not read. */
+export function markerRun(body: string, pr: number): FollowupMarker["run"] {
   const line = body.split("\n")[1]?.trim() ?? "";
+  if (line === `<!-- ${DATA}`) return recordRun(body, pr);
   const tick = /^jig dispatch follow-up · record: (\S+)$/.exec(line);
   if (tick !== null && isRecordId(tick[1] as string))
     return { kind: "tick", record: tick[1] as string };
@@ -46,10 +125,9 @@ function parseMarker(body: string): FollowupMarker["run"] {
       line,
     );
   if (manual !== null) return { kind: "manual", done: manual[1] === "done" };
-  return {
-    kind: "unreadable",
-    reason: `its body does not read as a marker: ${JSON.stringify(line.slice(0, 80))}`,
-  };
+  return unreadable(
+    `its body does not read as a marker: ${JSON.stringify(line.slice(0, 80))}`,
+  );
 }
 
 function text(value: unknown): string {
@@ -70,7 +148,11 @@ function authorOf(
   };
 }
 
-function markerOf(c: unknown, self: string | null): FollowupMarker | null {
+function markerOf(
+  c: unknown,
+  self: string | null,
+  pr: number,
+): FollowupMarker | null {
   if (!isRecord(c) || typeof c.id !== "number") return null;
   const body = text(c.body).replace(/\r\n/g, "\n");
   if (!body.startsWith(`${MARKER}\n`) && body !== MARKER) return null;
@@ -78,7 +160,7 @@ function markerOf(c: unknown, self: string | null): FollowupMarker | null {
     id: c.id,
     ...authorOf(c, self),
     createdAt: text(c.created_at),
-    run: parseMarker(body),
+    run: markerRun(body, pr),
   };
 }
 
@@ -106,7 +188,7 @@ export async function readMarkers(
     if (!Array.isArray(page))
       return { unreadable: "the comment listing is not a list" };
     for (const c of page) {
-      const marker = markerOf(c, self);
+      const marker = markerOf(c, self, pr);
       if (marker !== null) out.push(marker);
     }
   }
