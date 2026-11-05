@@ -1946,13 +1946,16 @@ make, use the entry's term instead.
   request and item it reads, in one column each (coming, picking up,
   driven, needs you, ready to merge, merged), placed again from the records
   at every *tick*, so work moves in any direction and is never moved by
-  hand. **Ready to merge** holds the converged pull requests one person's
-  act from the merge: the drive converged at the head it verified, the
+  hand. **Ready to merge** groups converged pull requests by the next known
+  act: the drive converged at the head it verified, the
   forge itself witnesses a review of that head (a reviewer app's check run,
   or a person's approval where none is configured; a pull request still
   owed that approval waits in approve first), it does not conflict, is
-  not a draft, has no unresolved review thread, and branch protection lets
-  it merge, or would once a person approves it or updates its branch.
+  not a draft, and has no unresolved review thread. Merge now confirms
+  branch protection permits merging; approve first identifies a known
+  approval need and requested reviewers, with other protection rules unread
+  and further requirements possible. Update next identifies the next branch
+  to update, with any known approval need shown.
   Planned: [ROADMAP.md](ROADMAP.md) item 36.
 - **Ready episode** — one unbroken period a pull request spends in the
   *dispatch board*'s Ready to merge column at one verified head. A pull

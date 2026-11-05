@@ -24,9 +24,10 @@ measured first ([Build order](#build-order)): the outcome log already holds
 the re-drives of converged pull requests that went stale, with their cause.
 
 With this built, a **Ready to merge** list leads the page: the converged
-pull requests one person's act from the merge, in lanes named for that act
+pull requests grouped by the next known act
 (merge now, with a merge command pinned to the head the drive verified;
-approve first, naming who must approve; update next). Every pull request
+approve first, naming requested reviewers and unread protection rules;
+update next). Only merge now confirms merge readiness. Every pull request
 carries the same status row (conflicts, checks with the failing ones named,
 unresolved threads, and the derived merge state with its conditions as a
 checklist), and every card says whether it settles by waiting or waits on a
@@ -68,7 +69,7 @@ passes through them:
 | Picking up | an item a pickup session is working on, with no pull request yet | the pickup's launch record and the assigned items the tick already reads; no tracker read of its own |
 | Driven | a pull request whose drive runs: its ledger says running, on any machine | the ledger (`driven`, and `silent` marked as such) |
 | Needs you | a pull request or item stopped on something only a person settles: a park, a drive stopped on a failure, a stalled pickup, a double claim, a converged pull request the forge refuses to merge for a reason no drive fixes | the needs the line holds today, and the board read |
-| Ready to merge | a converged pull request one person's act from the merge ([§ Ready, exactly](#ready-exactly)) | the ledger and the board read |
+| Ready to merge | a converged pull request grouped by its next known act, with merge readiness confirmed only in merge now ([§ Ready, exactly](#ready-exactly)) | the ledger and the board read |
 | Merged | a pull request merged since the start of the host's day, with its follow-up's state | the merged listing, the follow-up's launch record and marker |
 
 A drive a person stopped (`stopped-by-person`), and a pull request a person
@@ -185,7 +186,7 @@ this order:
 The rows are first match, and every row that names a blocker other than an
 approval (a failed or running check, a thread, an unread or behind branch)
 comes before the approval rows, with a confirmed failure ahead of a pending
-check, so a pull request is announced as waiting only on an approval once
+check, so a pull request enters approve first only once
 the other conditions the board reads are established. The board reads no
 signature or deployment requirement, and `REVIEW_REQUIRED` with `BLOCKED`
 does not rule one out, so an approve-first card never says approval is the

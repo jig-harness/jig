@@ -130,7 +130,8 @@ one predicate, `plugin/skills/drive-pr/scripts/lib/merge-ready.ts`, which
 the tick and `announce-merge-ready.ts` both call, places a converged pull
 request in a lane of Ready to merge (merge now, with a merge command pinned
 to the verified head and built only from values of a strict form; approve
-first, naming who must approve or that nobody was asked; update next, one
+first, naming requested reviewers or that nobody was asked and saying other
+protection rules remain unread; update next, one
 per repository) or says why not, and merge now never rests on the ledger
 alone: the forge must witness a review of the head (the reviewer app's
 check, or a person's approval), and an outside author's pull request needs
@@ -151,7 +152,9 @@ on the page, then the board's placement, a design round and the board view.
 Done when, on a host running Orca, a converged pull request whose review the
 forge witnesses and that the forge lets merge is in merge now with its
 pinned command within one interval and reaches a person's phone once, one
-blocked on a required review is in approve first naming who must approve,
+blocked on a required review is in approve first naming requested reviewers
+or saying nobody was asked, with unread protection rules explicit and no
+claim that approval alone permits merging,
 one whose ledger claims a head its reviewer never checked is in Needs you,
 one whose base then conflicts leaves Ready to merge with its cause, a
 failing board read leaves the tick's launches as they were, a drive a

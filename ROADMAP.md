@@ -51,10 +51,10 @@ with others through the same interface.
 
 The dispatch dashboard leads with a Ready to merge list of the converged
 pull requests a person can merge now. Each has a merge command that refuses
-a pull request changed since its review. A pull request that needs only an
-approval stands beside them, naming who must approve or that nobody was
-asked. A pull request is ready only when the forge itself confirms its
-review, and an outside contributor's always needs a person's approval. Every
+a pull request changed since its review. A pull request with a known approval
+need stands beside them, naming requested reviewers or saying nobody was asked.
+Its card says other merge rules remain unread and the forge may require more.
+A pull request is ready only when the forge itself confirms its review, and an outside contributor's always needs a person's approval. Every
 pull request shows the same status at a glance: conflicts, checks with the
 failing ones named, unresolved review threads, and whether it is ready, with
 the reason when not. Every card says whether it settles by waiting or waits
