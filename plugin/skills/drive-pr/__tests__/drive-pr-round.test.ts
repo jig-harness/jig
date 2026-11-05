@@ -137,45 +137,33 @@ describe("announce-merge-ready.ts", () => {
     // dedicated negative probe below omits it deliberately.
     writeVerifiedSha(stateDir, f.head ?? HEAD);
     if (paginateFails) writeFileSync(join(dir, "paginate-fails"), "");
-    if (opts.raceAfterPost) writeFileSync(join(dir, "race-after-post"), "");
-    if (opts.staleAnnouncementFor) {
-      writeFileSync(join(dir, "stale-announcement"), opts.staleAnnouncementFor);
+    // Each option the fixture reads becomes a file of the same purpose: a
+    // flag is an empty file, a counter or a head holds its value.
+    const flagFiles: Array<[boolean | undefined, string]> = [
+      [opts.raceAfterPost, "race-after-post"],
+      [opts.dirtyOnDelete, "dirty-on-delete"],
+      [
+        opts.malformedIsDraftOnLiveStateReads,
+        "malformed-isdraft-on-live-state-reads",
+      ],
+      [opts.dirtyOnPost, "dirty-on-post"],
+    ];
+    const valueFiles: Array<[string | number | undefined, string]> = [
+      [opts.staleAnnouncementFor, "stale-announcement"],
+      [opts.dirtyAfterSweeps, "dirty-after-sweeps"],
+      [opts.failSweepsAfter, "fail-sweeps-after"],
+      [opts.dirtyAfterReads, "dirty-after-reads"],
+      [opts.commitAfterReads, "commit-after-reads"],
+      [opts.draftAfterLiveStateReads, "draft-after-live-state-reads"],
+    ];
+    for (const [on, name] of flagFiles) {
+      if (on) writeFileSync(join(dir, name), "");
     }
-    if (opts.dirtyAfterSweeps !== undefined) {
-      writeFileSync(
-        join(dir, "dirty-after-sweeps"),
-        String(opts.dirtyAfterSweeps),
-      );
+    for (const [value, name] of valueFiles) {
+      if (value !== undefined && value !== "") {
+        writeFileSync(join(dir, name), String(value));
+      }
     }
-    if (opts.failSweepsAfter !== undefined) {
-      writeFileSync(
-        join(dir, "fail-sweeps-after"),
-        String(opts.failSweepsAfter),
-      );
-    }
-    if (opts.dirtyOnDelete) writeFileSync(join(dir, "dirty-on-delete"), "");
-    if (opts.dirtyAfterReads !== undefined) {
-      writeFileSync(
-        join(dir, "dirty-after-reads"),
-        String(opts.dirtyAfterReads),
-      );
-    }
-    if (opts.commitAfterReads !== undefined) {
-      writeFileSync(
-        join(dir, "commit-after-reads"),
-        String(opts.commitAfterReads),
-      );
-    }
-    if (opts.draftAfterLiveStateReads !== undefined) {
-      writeFileSync(
-        join(dir, "draft-after-live-state-reads"),
-        String(opts.draftAfterLiveStateReads),
-      );
-    }
-    if (opts.malformedIsDraftOnLiveStateReads) {
-      writeFileSync(join(dir, "malformed-isdraft-on-live-state-reads"), "");
-    }
-    if (opts.dirtyOnPost) writeFileSync(join(dir, "dirty-on-post"), "");
     let entryScript = join(SCRIPTS, "announce-merge-ready.ts");
     if (opts.deleteAssociationBeforeLoad !== undefined) {
       entryScript = join(dir, "announce-mutation-wrapper.ts");
