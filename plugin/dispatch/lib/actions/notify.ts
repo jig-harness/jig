@@ -30,6 +30,9 @@
  *   at that record and keyed by the same facts; a cause about a stage this
  *   machine launched has its ended row instead.
  *
+ * Once they are sent, the notices workspace is removed when its job is done
+ * (`retire-notices.ts`).
+ *
  * The answer to a park stays a comment on the pull request (`answer <key>:
  * …`), which the next tick reads as a re-armable ledger: nothing comes back
  * through the notification.
@@ -62,6 +65,7 @@ import type {
   RepoTarget,
 } from "../types.ts";
 import { type ApplyState, openWithinBudget, outOfTime } from "./launch.ts";
+import { retireNotices } from "./retire-notices.ts";
 
 /** The branch of a repository's notices workspace. */
 const NOTICES_BRANCH = "jig-dispatch-notices";
@@ -458,15 +462,44 @@ function eventRow(repo: string, cause: Cause, at: string): LogRow {
   };
 }
 
-/** `--apply` for one repository's notifications. */
+/** `--apply` for one repository's notifications, then its notices workspace. */
 export async function applyNotices(
   state: ApplyState,
   repo: RepoTarget,
   report: RepoReport,
   sessions: SessionsReport,
+  lingerMs: number,
 ): Promise<void> {
   const root = state.root ?? stateRoot();
   const causes = report.actions.filter(isCause);
+  const written = await sendNotices(state, repo, report, sessions, {
+    causes,
+    root,
+  });
+  if (!sessions.ok) return;
+  const notices =
+    sessions.workspaces.find((w) => w.branch === NOTICES_BRANCH) ?? null;
+  await retireNotices(state, report, {
+    repo: repo.slug,
+    workspace: notices,
+    takesComment: notices !== null && takesComment(notices),
+    written,
+    causes: causes.map((c) => c.notice.key),
+    records: [...readSuppressions(repo.slug, root).values()],
+    lingerMs,
+    nowMs: Date.now(),
+    root,
+  });
+}
+
+/** The tick's notifications, sent; the workspaces it wrote or opened. */
+async function sendNotices(
+  state: ApplyState,
+  repo: RepoTarget,
+  report: RepoReport,
+  sessions: SessionsReport,
+  { causes, root }: { causes: Cause[]; root: string },
+): Promise<Set<string>> {
   const sent = readSuppressions(repo.slug, root);
   prune(report, new Set(causes.map((c) => c.notice.key)), sent, root);
   const due = causes.filter((c) => !sent.has(c.notice.key));
@@ -477,11 +510,11 @@ export async function applyNotices(
       outcomeFor(c, "suppressed", earlier.workspace, `sent ${earlier.at}`),
     );
   }
-  if (due.length === 0) return;
+  if (due.length === 0) return new Set();
   if (!sessions.ok) {
     for (const c of due)
       report.notifications.push(outcomeFor(c, "waits", null, sessions.reason));
-    return;
+    return new Set();
   }
   const suppressed = (c: Cause, workspace: string) => {
     const at = new Date().toISOString();
@@ -518,4 +551,5 @@ export async function applyNotices(
     report.notifications.push(
       ...(await sendTo(state, workspace, mine, suppressed)),
     );
+  return new Set(groups.keys());
 }

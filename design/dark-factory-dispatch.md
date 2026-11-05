@@ -506,6 +506,7 @@ The tick reaches the runtime only through these methods:
 | `launch(workspace, stage, account, key, sessionId?)` | a session in the workspace that runs the stage, billed to the account; for an interactive session, its receipt names the agent's id. `key` is the launch record's token: a second call with a key already launched starts no second session. `sessionId`, given for an interactive session, is the vendor session id the tick minted and keeps on the launch record (see Control), distinct from the agent's id and the key; a launch that cannot carry it records no wall and gets no nudge |
 | `notify(target, message)` | a message that reaches a person; its receipt carries the target's comment as written |
 | `steer(session, nudge)` | one of the closed set of nudges (see Control) sent to a session the runtime reports waiting, its screen and attachment re-read in the same call just before the send |
+| `retire(workspace, expected)` | the repository's notices workspace removed with its terminals and branch, once a re-read just before, under the comment lock, finds the comment and unread mark the tick decided on |
 
 Each returns the runtime's receipt, and each, a terminal-screen read for
 `steer` included, runs under a deadline and is cancelled past it: its
@@ -585,7 +586,16 @@ implementation:
   local workspace, a pickup whose agent never started) it is a
   notification workspace the dispatcher keeps per repository, on the
   default branch, into which it never launches an agent, its comment
-  naming the item or pull request the message is about;
+  naming the item or pull request the message is about. A new one has its
+  first terminal closed (`orca terminal close --all`). Once a tick's
+  messages are sent, the tick removes it (`orca worktree rm
+  --delete-branch`) when it has stayed read for `dispatch.notices_linger`
+  (one hour by default; the first tick that finds it read records when),
+  or is still unread with every cause it carries gone, on a tick that read
+  every record whole; never one written that tick, nor one holding a
+  comment that is not the dispatcher's, an agent, changes git reports or a
+  commit no remote branch holds. The next message that needs it opens it
+  again; a cause already sent is not sent again;
 - `steer` as the nudge's text sent to the session's terminal, after the
   terminal's screen is read for the checks in Control. Orca reaches a
   running agent's terminal by the id `orca worktree ps --json` reports:

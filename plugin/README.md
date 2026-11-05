@@ -402,7 +402,13 @@ which Orca's phone app shows; a target with no workspace that can take a
 comment (none, or one whose comment may still be its agent's kickoff
 prompt) goes to the repository's notices workspace, a branch of the default
 branch (`jig-dispatch-notices`), named `⚙ dispatched · notices`, into which
-no agent is launched. A message
+no agent is launched and whose first terminal is closed. The notices
+workspace stays only while it has a job: once it has been read for
+`dispatch.notices_linger` (an hour by default), or every cause it carries
+is gone while it is still unread, the next tick removes it with its branch,
+unless it holds something of a person's (a comment of their own, an agent,
+changes or a commit of their own); the next message that needs it opens it
+again. A message
 counts as sent only once the workspace's comment, read back, carries its key
 line (`[jig dispatch: …]`), and is never sent again while its cause stands;
 while a workspace is still unread, a new message is appended to its comment

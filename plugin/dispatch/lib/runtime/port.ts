@@ -213,6 +213,19 @@ export interface SessionRuntime {
    * so nothing was sent.
    */
   steer(session: string, nudge: Nudge): Promise<RuntimeReceipt>;
+  /**
+   * Remove the repository's notices workspace, its terminals and its branch,
+   * once the runtime reads it again just before, under the comment lock
+   * `notify` holds, with the comment and the unread mark the tick decided
+   * on: a message written or read since stops it. Its receipt: `ok` when it
+   * is gone; `ok: false` with `lost` when the removal's answer is lost;
+   * `ok: false` without `lost` when the re-read differs or a call refused,
+   * so nothing was removed.
+   */
+  retire(
+    workspace: { id: string; path: string },
+    expected: { comment: string; unread: boolean },
+  ): Promise<RuntimeReceipt>;
 }
 
 /**

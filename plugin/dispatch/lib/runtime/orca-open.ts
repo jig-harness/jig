@@ -31,6 +31,7 @@ import {
   withLimit,
 } from "../../../shared/orca-workspace/runner.ts";
 import { failureText } from "../text.ts";
+import { call } from "./orca-comment.ts";
 import type {
   Dispatched,
   ItemTarget,
@@ -88,18 +89,47 @@ export function openPullRequestWorkspace(
 /**
  * The repository's notices workspace: its branch, cut from the
  * repository's base when new, with nothing linked. The dispatcher writes
- * only its comment and never launches an agent into it.
+ * only its comment and never launches an agent into it, so the first
+ * terminal Orca gives a new workspace is closed (`orca terminal close
+ * --all`): the card is its comment, not an idle shell. A close that fails
+ * leaves the workspace opened, the failure in the receipt's detail.
  */
-export function openNoticesWorkspace(
+export async function openNoticesWorkspace(
   repo: { id: string; path: string },
   target: NoticesTarget,
   timeoutMs: number,
 ): Promise<RuntimeReceipt> {
-  return open(
+  const started = Date.now();
+  const opened = await open(
     repo,
     { branch: target.notices, dispatched: target.dispatched, createFlags: [] },
     timeoutMs,
   );
+  if (!opened.ok || opened.workspace === undefined || opened.reattached)
+    return withoutReattached(opened);
+  const closed = await call(
+    [
+      "terminal",
+      "close",
+      "--worktree",
+      `path:${opened.workspace.path}`,
+      "--all",
+    ],
+    Math.max(1, timeoutMs - (Date.now() - started)),
+  );
+  return withoutReattached({
+    ...opened,
+    detail: closed.ok
+      ? `${opened.detail}, its terminals closed`
+      : `${opened.detail}; its terminals were not closed: ${closed.why}`,
+  });
+}
+
+function withoutReattached(
+  receipt: RuntimeReceipt & { reattached?: boolean },
+): RuntimeReceipt {
+  const { reattached: _, ...rest } = receipt;
+  return rest;
 }
 
 /** An item's workspace: its branch, from the repository's base when new, its issue linked. */
@@ -123,7 +153,7 @@ async function open(
   repo: { id: string; path: string },
   options: { branch: string; dispatched: Dispatched; createFlags: string[] },
   timeoutMs: number,
-): Promise<RuntimeReceipt> {
+): Promise<RuntimeReceipt & { reattached?: boolean }> {
   const lines: string[] = [];
   const ctx = withLimit(
     localContext((line) => lines.push(line)),
@@ -142,6 +172,7 @@ async function open(
       ok: true,
       detail: `${opened.reattached ? "reattached" : "opened"} ${opened.worktree.path}${opened.hookRan ? ", create hook ran" : ""}`,
       workspace: { id: opened.worktree.id, path: opened.worktree.path },
+      reattached: opened.reattached,
     };
   } catch (error) {
     return {

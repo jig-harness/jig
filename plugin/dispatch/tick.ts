@@ -560,7 +560,13 @@ async function applyStages(
   // The nudges first: a nudge that went unanswered is notified in the same tick.
   if (enabled.has("steer")) await applySteers(apply, repo.slug, report);
   if (enabled.has("notify"))
-    await applyNotices(apply, repo, report, inputs.sessions);
+    await applyNotices(
+      apply,
+      repo,
+      report,
+      inputs.sessions,
+      section.noticesLingerMs,
+    );
 }
 
 /** This machine's launch records, the ones this tick writes included. */
