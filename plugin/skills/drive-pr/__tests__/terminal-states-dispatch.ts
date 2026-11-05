@@ -2,8 +2,9 @@
  * The dispatcher's part of the terminal-state drift check: the plugin files
  * outside drive-pr that classify `drive.ts`'s exits read them from
  * `scripts/lib/status/terminal-states.ts` (`DRIVE_EXIT` and the sets beside
- * it) and never restate one as a number, and the exit codes their prose
- * pairs with a state name are the codes the table gives that state.
+ * it) and never restate one as a number, and the exit codes their prose,
+ * and the plugin README's table of outcome classes (`DISPATCH_PROSE`), pair
+ * with a state name are the codes the table gives that state.
  *
  * A file in `DISPATCH_FILES` fails the check when:
  *
@@ -57,6 +58,9 @@ export const DISPATCH_FILES: readonly DispatchFile[] = [
   { path: "dispatch/lib/sources/ledgers.ts", importsRegistry: true },
   { path: "shared/orca-tabs.ts", importsRegistry: false },
 ];
+
+/** Prose about the dispatcher that pairs a drive state with its exit, checked by `findInlinePairMismatches` alone. */
+const DISPATCH_PROSE: readonly string[] = ["README.md"];
 
 /** Every exit `drive.ts` ends with. */
 const DRIVE_EXIT_CODES: ReadonlySet<number> = new Set(
@@ -138,58 +142,84 @@ function collectionSource(
     : null;
 }
 
+/** A restated exit one node of the tree carries. */
+interface NodeFinding {
+  at: ts.Node;
+  value: number;
+  where: string;
+}
+
+/** Record `at` as a finding when it resolves to one of `codes`. */
+type Note = (
+  at: ts.Expression,
+  codes: ReadonlySet<number>,
+  where: string,
+) => void;
+
+/** An equality whose one side is an `exit` or a `code`. */
+function noteEquality(node: ts.Node, note: Note): void {
+  if (!ts.isBinaryExpression(node) || !EQUALITY.has(node.operatorToken.kind))
+    return;
+  for (const [side, other] of [
+    [node.left, node.right],
+    [node.right, node.left],
+  ] as const) {
+    const name = exitOperand(side);
+    if (name !== null) note(other, codesFor(name), `compared with \`${name}\``);
+  }
+}
+
+/** The elements of a `new Set(...)`, the keys of a `new Map(...)`. */
+function noteCollection(node: ts.Node, note: Note): void {
+  const collection = collectionSource(node);
+  if (collection === null) return;
+  for (const element of collection.elements) {
+    const key =
+      collection.kind === "Set"
+        ? element
+        : ts.isArrayLiteralExpression(element)
+          ? element.elements[0]
+          : undefined;
+    if (key !== undefined)
+      note(key, DRIVE_EXIT_CODES, `in a new ${collection.kind}`);
+  }
+}
+
+/** A `case` of a `switch` on an `exit` or a `code`. */
+function noteCase(node: ts.Node, note: Note): void {
+  if (!ts.isCaseClause(node) || !ts.isSwitchStatement(node.parent.parent))
+    return;
+  const name = exitOperand(node.parent.parent.expression);
+  if (name !== null)
+    note(node.expression, codesFor(name), `as a case of \`${name}\``);
+}
+
+/** A numeric property name of an object literal that is a drive exit. */
+function objectKey(node: ts.Node): NodeFinding | null {
+  if (!ts.isPropertyAssignment(node) || !ts.isNumericLiteral(node.name))
+    return null;
+  const value = Number(node.name.text);
+  return DRIVE_EXIT_CODES.has(value)
+    ? { at: node.name, value, where: "as an object key" }
+    : null;
+}
+
 /** The restated exits one node of the tree carries, by the positions the header names. */
 function nodeFindings(
   node: ts.Node,
   checker: FileChecker,
   tools: AstTools,
-): Array<{ at: ts.Node; value: number; where: string }> {
-  const found: Array<{ at: ts.Node; value: number; where: string }> = [];
-  const note = (
-    at: ts.Expression,
-    codes: ReadonlySet<number>,
-    where: string,
-  ) => {
+): NodeFinding[] {
+  const found: NodeFinding[] = [];
+  const note: Note = (at, codes, where) => {
     const value = restated(at, checker, codes, tools);
     if (value !== null) found.push({ at, value, where });
   };
-  if (ts.isBinaryExpression(node) && EQUALITY.has(node.operatorToken.kind)) {
-    for (const [side, other] of [
-      [node.left, node.right],
-      [node.right, node.left],
-    ] as const) {
-      const name = exitOperand(side);
-      if (name !== null)
-        note(other, codesFor(name), `compared with \`${name}\``);
-    }
-  }
-  const collection = collectionSource(node);
-  if (collection !== null)
-    for (const element of collection.elements) {
-      const key =
-        collection.kind === "Set"
-          ? element
-          : ts.isArrayLiteralExpression(element)
-            ? element.elements[0]
-            : undefined;
-      if (key !== undefined)
-        note(key, DRIVE_EXIT_CODES, `in a new ${collection.kind}`);
-    }
-  if (
-    ts.isPropertyAssignment(node) &&
-    ts.isNumericLiteral(node.name) &&
-    DRIVE_EXIT_CODES.has(Number(node.name.text))
-  )
-    found.push({
-      at: node.name,
-      value: Number(node.name.text),
-      where: "as an object key",
-    });
-  if (ts.isCaseClause(node) && ts.isSwitchStatement(node.parent.parent)) {
-    const name = exitOperand(node.parent.parent.expression);
-    if (name !== null)
-      note(node.expression, codesFor(name), `as a case of \`${name}\``);
-  }
+  noteEquality(node, note);
+  noteCollection(node, note);
+  noteCase(node, note);
+  const key = objectKey(node);
+  if (key !== null) found.push(key);
   return found;
 }
 
@@ -264,29 +294,44 @@ function filesToCheck(): Array<{ path: string; importsRegistry: boolean }> {
     });
 }
 
+/** What drifted in the plugin README's outcome classes, unless a test names its own files. */
+function proseProblems(): string[] {
+  if (process.env.DRIVE_PR_TERMINAL_STATES_TEST_DISPATCH_FILES !== undefined)
+    return [];
+  return DISPATCH_PROSE.flatMap((doc) =>
+    findInlinePairMismatches(
+      readFileSync(resolve(PLUGIN_ROOT, doc), "utf8"),
+    ).map((f) => `${doc}:${f.line}  ${f.what}`),
+  );
+}
+
+/** What drifted in one dispatcher file. */
+async function fileProblems(
+  file: { path: string; importsRegistry: boolean },
+  tools: AstTools,
+): Promise<string[]> {
+  const shown = relative(PLUGIN_ROOT, file.path);
+  if (!existsSync(file.path))
+    return [
+      `${shown}: missing — a file that moved leaves DISPATCH_FILES stale`,
+    ];
+  const source = readFileSync(file.path, "utf8");
+  const unread =
+    file.importsRegistry && !importsRegistry(source)
+      ? [`${shown}: imports nothing from drive-pr's terminal-states.ts`]
+      : [];
+  const restatements = [
+    ...(await findDispatchExitLiterals(source, file.path, tools)),
+    ...findInlinePairMismatches(source),
+  ].map((f) => `${shown}:${f.line}  ${f.what}`);
+  return [...unread, ...restatements];
+}
+
 /** The dispatcher's part of `runCheck`: 0 when every file reads the registry, else 1 with what drifted. */
 export async function checkDispatchFiles(tools: AstTools): Promise<number> {
-  const problems: string[] = [];
-  const files = filesToCheck();
-  for (const file of files) {
-    const shown = relative(PLUGIN_ROOT, file.path);
-    if (!existsSync(file.path)) {
-      problems.push(
-        `${shown}: missing — a file that moved leaves DISPATCH_FILES stale`,
-      );
-      continue;
-    }
-    const source = readFileSync(file.path, "utf8");
-    if (file.importsRegistry && !importsRegistry(source))
-      problems.push(
-        `${shown}: imports nothing from drive-pr's terminal-states.ts`,
-      );
-    for (const f of [
-      ...(await findDispatchExitLiterals(source, file.path, tools)),
-      ...findInlinePairMismatches(source),
-    ])
-      problems.push(`${shown}:${f.line}  ${f.what}`);
-  }
+  const problems = proseProblems();
+  for (const file of filesToCheck())
+    problems.push(...(await fileProblems(file, tools)));
   if (problems.length === 0) return 0;
   console.error(
     "A dispatcher file restates a drive exit instead of reading it from drive-pr's terminal-state registry:\n",

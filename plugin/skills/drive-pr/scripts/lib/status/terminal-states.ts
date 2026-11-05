@@ -82,6 +82,8 @@
  * same way it already does for `drive.ts`'s driver-only exits.
  */
 
+import { Defect } from "../../../../../shared/errors.ts";
+
 export type TerminalStateCategory =
   | "state"
   | "class-label"
@@ -574,7 +576,7 @@ const DRIVE_EXIT_NAMES: readonly DriveExitName[] = [
 function driveExitCode(name: DriveExitName): number {
   const entry = TERMINAL_STATES[name];
   if (entry === undefined) {
-    throw new Error(
+    throw new Defect(
       `driveExitCode(): '${name}' has no TERMINAL_STATES entry — the dispatcher and terminal-states.ts have drifted`,
     );
   }

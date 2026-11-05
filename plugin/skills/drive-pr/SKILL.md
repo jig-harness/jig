@@ -163,7 +163,7 @@ consumer polling `--json` for one of these states will never see it there.
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
 | `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are. The driver **restarts** from a witnessed kill, leaving what the pass left in the tree for the next pass, up to `drive.pass_deadline_retries` (default 2) per drive (§ Running it); this exit is the deadline recurring past that budget, and says so, or a kill that could not be witnessed, which exits here at once with the locks held and spends no budget |
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so read what the stop lists the pass left (the uncommitted paths and the unpushed commits, or that there are none) before re-arming. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
-| `MAILBOX_STOPPED` | 18 | A mailbox `stop` ended `drive.ts` at a round boundary, after any running pass completed. Resume the stop directive before re-arming |
+| `MAILBOX_STOPPED` | 18 | A mailbox `stop` for this driver (one naming its generation, or one naming none) ended `drive.ts` at a round boundary, after any running pass completed; the outbox carries its `ack`. A stop naming no generation stops every later driver too: resume it before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
 | `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
@@ -542,14 +542,15 @@ outlives the session that spawned it, so its console is not where you look:
   for machines. Each row's `repository` names the owner/repository of the drive's remote,
   falling back to the clone's Git common directory when that remote is unavailable
   or yields no plain owner/repository pair; the remote's URL is never printed.
-  `--stop <PR>` requests that a live driver stop its pass
-  tree and then release its locks. Process identity is verified through the
-  platform process table (`ps` on POSIX, PowerShell on Windows), and a
-  cooperative stop request lets a Windows driver run its own cleanup.
-  Confirmed cleanup publishes a receipt for that acquisition before releasing
-  claims. A matching receipt and disappearance of captured identities can
-  confirm shutdown after a temporary cancellation marker made the registry
-  uncertain; registry disappearance alone cannot.
+  `--stop <PR>` asks a live driver to stop its pass
+  tree and then release its locks, by a mailbox `stop` addressed to the
+  driver generation its claim names (§ The drive mailbox). Process identity is
+  verified through the platform process table (`ps` on POSIX, PowerShell on
+  Windows), and the driver polls its mailbox for the stop, so a Windows
+  driver runs its own cleanup. Confirmed cleanup appends an `ack` of the stop
+  to the outbox before releasing claims. That `ack` and disappearance of
+  captured identities can confirm shutdown after a temporary cancellation
+  marker made the registry uncertain; registry disappearance alone cannot.
   `--expect-started <ISO>` stops only the claim acquired at that time and
   exits `3` for any other holder.
   A stale lock stays the next acquire's to recover.
@@ -626,7 +627,7 @@ outlives the session that spawned it, so its console is not where you look:
   the clone (`<clone-key>`, a SHA-256 hash of a persisted per-clone
   identifier in `--git-common-dir`, so two worktrees of one clone share it
   and two separate clones never collide). It holds the drive state, the
-  locks, the leases, the claims, the stop requests and the driver record;
+  locks, the leases, the claims, the review round record and the driver record;
   the clone's directory beside it (`resolveStateDir()`, `lib/state/store.ts`)
   keeps the driver log and the files handed to a pass. A database a newer
   plugin needs a newer reader for stops a command with exit 2, naming both
@@ -3488,13 +3489,14 @@ is the whole tree: a nested script's own `spawnSync` grandchild dies with it.
 **judgment** — Choose the authorized note/directive for the situation; directive enforcement and the exact CLI forms are fixed.
 
 `lib/state/mailbox.ts` and its CLI (`mailbox.ts`) are a small, one-way-per-file
-channel from a live session — a human, or the orchestrating session that
-spawned this drive — toward a running `drive.ts`, in the same working tree.
-It is the only way to get a message *into* a running headless drive short of
-`bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop` (which also stops the active pass). Append-only JSON Lines logs live
+channel from a live session — a human, the orchestrating session that
+spawned this drive, or `drives.ts`'s stop — toward a running `drive.ts`, in
+the same working tree: the one way to steer or stop a running headless drive.
+Append-only JSON Lines logs live
 under the gitignored `.context/drive-mailbox/`: `inbox.jsonl` (any sender may
-append a `note` or a `directive`) and `outbox.jsonl` (the driver alone appends
-acks and responses to it). `drive.ts` folds directive state at round
+append a `note` or a `directive`) and `outbox.jsonl` (the drive's side appends
+acknowledgements and responses to it, and the driver an `ack` of each
+directive it acted on). `drive.ts` folds directive state at round
 boundaries. Notes stay in the inbox until a pass chooses to read them with
 `bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" check` (§ below); they do not control the drive.
 
@@ -3534,7 +3536,13 @@ bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" send <pr> --kind directive --from <
 **`pause` and `stop` control the driver's round loop, from `drive.ts` itself.**
 `pause` holds the driver's locks and heartbeat while it polls for
 `resume --target pause`; `stop` takes precedence and exits at the next
-checkpoint. A running pass is allowed to complete, including its post-round
+checkpoint. A `stop` may name a **driver generation**: the number each
+driver draws at its start, prints (`driver generation <n>`) and carries in
+its lock's claim, which `drives.ts` lists. A stop naming a generation ends
+that driver alone, and a later driver ignores it. A stop naming none ends
+every later driver in the tree too, until `resume --target stop`, which also
+withdraws every addressed stop. The driver appends an `ack` of the stop or
+pause it acted on to the outbox, which the `outbox` command below prints. A running pass is allowed to complete, including its post-round
 Ready transition, before the next checkpoint — the driver checks before a
 status gate, after that gate, immediately before any pass dispatch, during a
 quota wait, after every completed pass regardless of its outcome (including a
@@ -3545,8 +3553,19 @@ remain one in-flight phase; use `hold-push` for a push gate. An unreadable
 mailbox stops the drive with exit `1`, never treating unknown directives as
 clear. The pause wait is bounded by `$DRIVE_PR_PAUSE_MAX_SEC` (default 1800
 seconds, valid range 1–86400); on expiry the drive exits `19` and releases its
-locks. A graceful stop exits `18`. `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop <PR>` requests immediate cancellation of the active
-pass, followed by lock release only once termination is witnessed.
+locks. A graceful stop exits `18`. `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop <PR>` sends the live driver a `stop` addressed to
+its generation and marked `now`: the driver cancels its active pass at once,
+acknowledges the stop, and releases its locks only once termination is
+witnessed.
+
+**exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" send <pr> --kind directive --from <you> --command stop --generation <n>
+bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" send <pr> --kind directive --from <you> --command stop
+bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" send <pr> --kind directive --from <you> --command resume --target stop
+bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" outbox <pr>
+```
 
 A pass may run `bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" check <pr>` to read unseen notes — optional,
 advisory, and never a reason to change what a round does on its own; it

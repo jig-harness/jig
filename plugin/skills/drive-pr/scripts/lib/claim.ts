@@ -17,6 +17,7 @@
  * and nothing that decides liveness or recovery reads them.
  */
 
+import { definedFields } from "../../../../shared/defined-fields.ts";
 import {
   SESSION_LEASE_MIN,
   sameHost,
@@ -52,6 +53,9 @@ export interface ClaimDiag {
   /** The permission mode each pass runs in (`pass-args.ts`); `null` when
    * the pass command chooses its own, absent from a claim that predates it. */
   permissionMode?: string | null;
+  /** The driver generation (`state/mailbox-stop.ts`) a mailbox `stop`
+   * addresses; absent from a claim that predates it. */
+  generation?: number;
 }
 
 /**
@@ -149,17 +153,25 @@ export function parseDiagText(rest: string): ClaimDiag | null {
   const account =
     "account" in o ? parseAccount(o.account) : PRE_STAMPING_ACCOUNT;
   if (account === null) return null;
-  const model = claimLabel(o.model);
-  const permissionMode = claimLabel(o.permissionMode);
   return {
     pr,
     worktree,
     log,
     started,
     account,
-    ...(model === undefined ? {} : { model }),
-    ...(permissionMode === undefined ? {} : { permissionMode }),
+    ...definedFields({
+      model: claimLabel(o.model),
+      permissionMode: claimLabel(o.permissionMode),
+      generation: claimGeneration(o.generation),
+    }),
   };
+}
+
+/** A claim's driver generation: absent when the claim has none, or one that is not a positive whole number. */
+function claimGeneration(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? value
+    : undefined;
 }
 
 /**
@@ -188,6 +200,7 @@ export function diagLines(diag: ClaimDiag): string[] {
     `    account:  ${formatAccountIdentity(diag.account)}`,
     `    model:    ${formatLabel(diag.model, "model")}`,
     `    permissions: ${formatLabel(diag.permissionMode, "permission mode")}`,
+    `    generation: ${diag.generation ?? "unknown (claim predates driver generations)"}`,
   ];
 }
 

@@ -66,7 +66,7 @@ const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
 const DISPATCH_DB = 4;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
-const DRIVE_DB = 2;
+const DRIVE_DB = 3;
 const RRC = "skills/resolve-review-comments/scripts/";
 const REFLECT = "skills/reflect/scripts/";
 
@@ -128,7 +128,9 @@ const DRIVE_STATE: RecordKind[] = [
   driveTable("drive-pr-lease", `${STATE}lease-admission.ts`, "leases"),
   driveTable("drive-tree-lease", `${STATE}lease-tree.ts`, "tree_leases"),
   driveTable("drive-claim", `${STATE}claims.ts`, "claims"),
-  driveTable("drive-stop", `${DRIVE}lib/stop-request.ts`, "stops"),
+  // No longer written: kept in the schema so an earlier release still opens
+  // the database. A stop is now a mailbox directive (`drive-mailbox`).
+  driveTable("drive-stop", `${STATE}db.ts`, "stops"),
   driveTable(
     "drive-ledger-driver",
     `${DRIVE}lib/ledger-stop.ts`,
@@ -136,6 +138,11 @@ const DRIVE_STATE: RecordKind[] = [
   ),
   driveTable("drive-state-import", `${STATE}import.ts`, "imports"),
   driveTable("drive-counter", `${STATE}db.ts`, "counters"),
+  driveTable(
+    "review-round-counter",
+    `${STATE}review-rounds.ts`,
+    "review_rounds",
+  ),
   driveFile(
     "drive-log",
     `${DRIVE}lib/driver-log.ts`,
@@ -450,13 +457,6 @@ const TREE: RecordKind[] = [
     "driven-tree",
     "shared/driven-tree.ts",
     "<git dir>/jig-driven-pr.json",
-    0,
-  ),
-  plain(
-    "tree",
-    "review-round-counter",
-    `${RRC}await-round.ts`,
-    "<git dir>/resolve-review-rounds-<PR>, and .head",
     0,
   ),
   plain(

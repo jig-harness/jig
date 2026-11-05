@@ -205,7 +205,6 @@ export {
   drainDriverRegistrations,
   finishDriverPassRegistrations,
   installDriverLifecycle,
-  driverStopCompletionCleanup,
 } from "./lib/driver/lifecycle.ts";
 
 /**

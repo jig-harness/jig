@@ -70,7 +70,7 @@ describe("a stopped ledger's class", () => {
       ["PASS_DEADLINE", "needs-person"],
     ];
     for (const [name, cls] of cases)
-      expect([name, ledgerClass(name)]).toEqual([name, cls]);
+      expect<[string, string]>([name, ledgerClass(name)]).toEqual([name, cls]);
   });
 
   it("reads the pull request beside CONVERGED and PR_CONFLICTING, and the parks beside HITL_PARKED", () => {
@@ -109,7 +109,7 @@ describe("an ended drive's outcome class", () => {
       ["PASS_DEADLINE", "gates failed"],
     ];
     for (const [name, cls] of cases)
-      expect([name, logClass(name)]).toEqual([name, cls]);
+      expect<[string, string]>([name, logClass(name)]).toEqual([name, cls]);
   });
 
   it("reads PR_NOT_OPEN beside whether the pull request merged", () => {

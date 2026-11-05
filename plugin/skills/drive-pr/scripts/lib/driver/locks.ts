@@ -14,7 +14,6 @@ import {
   renewLockRow,
   takeLockRow,
 } from "./../state/lock.ts";
-import { clearDriverStopRequest } from "./../stop-request.ts";
 
 // ── Single-instance locking ─────────────────────────────────────────────────
 
@@ -222,13 +221,11 @@ export function processRegistryDir(lock: DriveLock): string | null {
 /**
  * Release ONLY the acquisition this process took, and leave the slot free:
  * the row goes only while it still carries this acquisition's token, so a
- * successor's lock is never removed. Its stop request and process registry
- * go with it; a stop's completion outlives it.
+ * successor's lock is never removed. Its process registry goes with it.
  */
 export function release(lock: DriveLock): void {
   if (lock.nonce === undefined) return;
   const registry = processRegistryDir(lock);
   if (registry !== null) rmSync(registry, { recursive: true, force: true });
-  clearDriverStopRequest(lock.stateDir, lock.name, lock.nonce);
   releaseLockRow(driveDb(lock.stateDir), lock.name, lock.nonce);
 }

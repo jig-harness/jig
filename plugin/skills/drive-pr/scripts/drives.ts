@@ -16,8 +16,8 @@
  * protocol built around exactly one (`drive.ts` § Single-instance locking).
  * Locks are interpreted by exactly the rule recovery uses — `lib/claim.ts`,
  * shared with the writer — so this listing can never call a lock live that
- * recovery would take over, or vice versa. `--stop` writes a stop request
- * addressed to the lock's acquisition; it never removes the lock.
+ * recovery would take over, or vice versa. `--stop` sends the driver a
+ * mailbox `stop` addressed to its generation; it never removes the lock.
  *
  * Modes:
  *   drives.ts                list every drive lock (human-readable); a LIVE
@@ -58,10 +58,15 @@
  *                            its silence must only ever mean "checked, and
  *                            clear", never "could not check".
  *   drives.ts --stop <PR>    Verify the live driver's creation identity,
- *                            then write a generation-addressed stop request.
- *                            The driver stops its pass tree and releases its
- *                            locks. After a 30s grace, force only captured
- *                            process identities and witness the tree's exit.
+ *                            then send it a mailbox `stop` addressed to the
+ *                            driver generation its claim names, marked `now`
+ *                            (`lib/state/mailbox-stop.ts`). The driver stops
+ *                            its pass tree at once, acknowledges the stop in
+ *                            the outbox and releases its locks; a later
+ *                            driver ignores the stop. A claim that names no
+ *                            generation gets no stop, only the force below.
+ *                            After a 30s grace, force only captured process
+ *                            identities and witness the tree's exit.
  *                            Foreign PID namespaces,
  *                            unreadable tables and unbindable locks are refused. With
  *                            --expect-started ISO, only the claim acquired
@@ -94,13 +99,8 @@ import {
   forceIdentityTargetsAndWitness,
   identityTargetsGone,
 } from "../../../shared/process-tree.ts";
-import {
-  requestDriverStop,
-  driverStopCompleted,
-  consumeDriverStopCompletion,
-  takeExpectStarted,
-  requireStopForExpectStarted,
-} from "./lib/stop-request.ts";
+import { appendDirective } from "./lib/state/mailbox.ts";
+import { directiveAcked, driverMailboxDir } from "./lib/state/mailbox-stop.ts";
 import * as ledgerStop from "./lib/ledger-stop.ts";
 import { existsSync } from "node:fs";
 import { driveRepository } from "./lib/drive-repository.ts";
@@ -1012,19 +1012,10 @@ async function stop(
     return 1;
   }
   const v = await verifyDriverClaim(row, pid);
-  const code =
-    "code" in v
-      ? v.code
-      : consumeStopResult(row, await stopVerifiedDriver(row, v.owner));
+  const code = "code" in v ? v.code : await stopVerifiedDriver(row, v.owner);
   // Witnessed gone, or already gone with nothing witnessing its pass.
   if (code === 0)
     await ledgerStop.settleStop(stateDir, pr, row, !("code" in v));
-  return code;
-}
-
-function consumeStopResult(row: LockRow, code: number): number {
-  if (code === 0 && row.nonce !== null)
-    consumeDriverStopCompletion(row.stateDir, row.name, row.nonce);
   return code;
 }
 
@@ -1097,25 +1088,47 @@ async function verifyDriverClaim(
   return { owner };
 }
 
+/** Where a stop sent to a driver lands, and its directive's id once sent. */
+interface SentStop {
+  dir: string;
+  pr: string;
+  id: string | null;
+}
+
+/**
+ * Send the driver a mailbox `stop` addressed to its generation, marked `now`.
+ * `false` when it could not be written; a claim naming no generation (an
+ * earlier release's driver) or no working tree is sent nothing and left to
+ * the grace and force.
+ */
 async function requestVerifiedDriverStop(
   row: LockRow,
   owner: ProcessRow,
+  sent: SentStop,
 ): Promise<boolean> {
   const pid = owner.pid;
-  if (row.nonce === null) {
+  const generation = row.diag?.generation;
+  if (generation === undefined || sent.dir === "") {
     console.log(
-      `cannot request stop of driver pid ${pid}: its lock names no acquisition to address the request to.`,
+      `driver pid ${pid}'s claim names no ${generation === undefined ? "driver generation" : "working tree"}, so no stop can be addressed to it; forcing its captured process identities after the grace.`,
     );
-    return false;
+    return true;
   }
   try {
-    requestDriverStop(row.stateDir, row.name, row.nonce);
+    const directive = await appendDirective(
+      sent.dir,
+      sent.pr,
+      "drives.ts --stop",
+      "stop",
+      { generation, now: true },
+    );
+    sent.id = directive.id;
   } catch (error) {
     console.log(`cannot request stop of driver pid ${pid}: ${String(error)}`);
     return false;
   }
   console.log(
-    `requested stop of driver pid ${pid} — it stops its pass tree, then releases its locks…`,
+    `requested stop of driver pid ${pid} (generation ${generation}, directive ${sent.id}) — it stops its pass tree, then releases its locks…`,
   );
   return true;
 }
@@ -1142,9 +1155,13 @@ async function stopVerifiedDriver(
       ? join(row.stateDir, `${row.name}.processes.${row.nonce}`)
       : null;
   const registryState: WindowsTreeState = { root: owner, targets };
+  const sent: SentStop = {
+    dir: driverMailboxDir(row.diag?.worktree ?? ""),
+    pr: row.diag?.pr ?? "",
+    id: null,
+  };
   const completed = () =>
-    row.nonce !== null &&
-    driverStopCompleted(row.stateDir, row.name, row.nonce, owner.pid);
+    sent.id !== null && directiveAcked(sent.dir, sent.pr, sent.id);
   const refreshRegistered = registryCompletionTracker(
     registry,
     registryState,
@@ -1155,7 +1172,7 @@ async function stopVerifiedDriver(
       `driver pid ${pid}'s registry is incomplete; requesting cleanup while retaining its known process identities.`,
     );
   }
-  if (!(await requestVerifiedDriverStop(row, owner))) return 1;
+  if (!(await requestVerifiedDriverStop(row, owner, sent))) return 1;
   const graceSec = testPacing("DRIVE_PR_STOP_GRACE_SEC", 30, 1);
   const deadline = Date.now() + graceSec * 1000;
   while (Date.now() < deadline) {
@@ -1261,6 +1278,26 @@ export async function forceStopDriver(
     `stopped: driver pid ${owner.pid} and its captured pass tree exited; abandoned locks are recovered by the next drive.`,
   );
   return 0;
+}
+
+/**
+ * Remove `--expect-started ISO` from `argv` and return ISO (`''` when
+ * absent): the acquisition a `--stop` is bound to.
+ */
+function takeExpectStarted(argv: string[]): string {
+  const at = argv.indexOf("--expect-started");
+  if (at < 0) return "";
+  const [, value = ""] = argv.splice(at, 2);
+  if (value === "") fail(2, "--expect-started takes a time");
+  return value;
+}
+
+function requireStopForExpectStarted(
+  expectStarted: string,
+  stopPr: string,
+): void {
+  if (expectStarted !== "" && stopPr === "")
+    fail(2, "--expect-started only qualifies --stop");
 }
 
 /** `--report` is a mode of its own; every other mode is the fleet's. */
