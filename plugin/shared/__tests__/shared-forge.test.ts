@@ -254,6 +254,51 @@ return { answer: brief(a), released: released.ok };`,
   });
 });
 
+describe("a held launch's claim after a replay or a takeover", () => {
+  it("republishes the change a replay acts on, with the ones it moved on from, before it launches", async () => {
+    const first = { ...drive(HOST_A, RECORD_A), change: "head one" };
+    const forge = fakeForge([launchComment(50, first, 1)], {
+      login: "drive-bot",
+    });
+    const out = await probe(
+      forge,
+      `return brief(await shared.claim(pr, { ...drive(${JSON.stringify(HOST_A)}, ${JSON.stringify(RECORD_A)}), change: "head two", earlier: ["head one"] }, fast));`,
+    );
+    expect(out).toEqual({ kind: "holds", id: 50, attempt: 1, by: null });
+    expect(forge.comments()).toHaveLength(1);
+    const body = String(forge.comments()[0]?.body);
+    expect(body).toContain("head two");
+    expect(body).toContain("head one");
+  });
+
+  it("reads an earlier attempt's claim as lost once a takeover holds a later one", async () => {
+    const forge = fakeForge(
+      [
+        launchComment(50, drive("sha256:cccccccccccccccc", RECORD_A), 1),
+        launchComment(60, drive(HOST_B, RECORD_B, "takeover"), 2),
+      ],
+      { login: "drive-bot" },
+    );
+    const out = await probe(
+      forge,
+      `const r = await shared.check(pr, "drive", 50); return r.ok ? { verdict: r.value.verdict, winner: r.value.winner?.id ?? null } : { failed: r.failure.reason };`,
+    );
+    expect(out).toEqual({ verdict: "lost-to", winner: 60 });
+  });
+
+  it("reads an ended claim as no longer holding the launch", async () => {
+    const forge = fakeForge(
+      [launchComment(50, drive("sha256:cccccccccccccccc", RECORD_A), 1, ENDED)],
+      { login: "drive-bot" },
+    );
+    const out = await probe(
+      forge,
+      `const r = await shared.check(pr, "drive", 50); return r.ok ? { verdict: r.value.verdict } : { failed: r.failure.reason };`,
+    );
+    expect(out).toEqual({ verdict: "lost" });
+  });
+});
+
 describe("the read-back while the forge's listing lags", () => {
   it("hide-ids: reads again while the listing does not show the claim, and then holds it", async () => {
     const forge = fakeForge([], { login: "drive-bot" });

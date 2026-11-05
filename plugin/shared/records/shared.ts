@@ -90,6 +90,8 @@ export interface ClaimSays {
   facts: string | null;
   /** For a re-drive: the change it acts on, which is re-driven once. */
   change: string | null;
+  /** For a re-drive: the changes an earlier launch of the same record acted on, which are not re-driven either. */
+  earlier?: string[];
   /** For a re-drive of a drive that stopped on a conflict with its base. */
   conflictStop: boolean;
   /** How the launch ended; `null` while it has not, as far as its host has written. */
@@ -124,6 +126,7 @@ export interface LaunchDraft {
   owner: boolean | null;
   facts?: string | null;
   change?: string | null;
+  earlier?: string[];
   conflictStop?: boolean;
   writer: Writer;
 }
@@ -206,12 +209,13 @@ export interface SharedRecords {
     stage: SharedStage,
     own: number,
   ): Promise<Outcome<CheckAnswer, "unreadable">>;
-  /** Write how a launch ended onto the caller's own claim `own`. */
+  /** Write how a launch ended onto the caller's own claim `own`; `host` names the caller on a follow-up marker written before markers named their host. */
   end(
     target: SharedTarget,
     stage: SharedStage,
     own: number,
     end: LaunchEnd,
+    host?: string,
   ): Promise<Outcome<void, "unreadable" | "not-own" | "not-written">>;
   /** Withdraw the caller's own claim `own`. */
   release(
@@ -258,6 +262,14 @@ export function current(claims: readonly SharedClaim[]): ReadClaim | null {
 /** The attempt a new launch claims: the one after the latest any trusted claim names. */
 export function nextAttempt(claims: readonly SharedClaim[]): number {
   return Math.max(0, ...readable(claims).map((c) => c.says.value.attempt)) + 1;
+}
+
+/** Every change a claim's re-drive acted on: the one it names now and the ones a replay moved on from. */
+export function changesOf(says: ClaimSays): string[] {
+  return [
+    ...(says.change === null ? [] : [says.change]),
+    ...(says.earlier ?? []),
+  ];
 }
 
 /** Whether a claim's launch has no end yet, as its host has written. */

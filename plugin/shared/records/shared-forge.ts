@@ -50,6 +50,7 @@ import {
   endedClaim,
   FOLLOWUP_KEY,
   kindOf,
+  launchClaim,
   saysOf,
 } from "./launch-claims.ts";
 import {
@@ -203,6 +204,36 @@ function checkAnswer(
   };
 }
 
+/**
+ * A drive claim holds the launch only while it is the pull request's current
+ * claim and has no end: the re-check weighs the claim on its own attempt, so
+ * an earlier attempt's claim still reads as holding after a takeover won a
+ * later one, and an ended claim still wins its attempt. Anything else is
+ * `lost-to` the current claim, or `lost` when none is open.
+ */
+function stillCurrent(
+  answer: CheckAnswer,
+  own: number,
+  claims: readonly SharedClaim[],
+): CheckAnswer {
+  if (answer.verdict !== "holds" || claims.length === 0) return answer;
+  const now = current(claims);
+  if (now !== null && now.id === own && open(now)) return answer;
+  if (now !== null && now.id !== own && open(now))
+    return {
+      ...answer,
+      verdict: "lost-to",
+      winner: now,
+      reason: `a later launch claim (comment ${now.id}, attempt ${now.says.value.attempt}) holds the launch`,
+    };
+  return {
+    ...answer,
+    verdict: "lost",
+    winner: null,
+    reason: `the claim (comment ${own}) no longer holds the launch: it has an end or no open claim is current`,
+  };
+}
+
 /** What is left of the forge's core budget, as `gh api rate_limit` reports it, or why it does not read. */
 async function readBudget(): Promise<Outcome<SharedBudget, "unreadable">> {
   const r = await ghCall(["api", "rate_limit"], { stderr: "pipe" });
@@ -265,8 +296,42 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
     const bad = damaged(listing.value);
     if (bad !== null) return failed("unreadable", bad);
     const held = holder(listing.value, draft);
-    if (held !== null) return ok(held);
+    if (held !== null) return republished(target, listing.value, draft, held);
     return post(target, draft, nextAttempt(listing.value), rule);
+  }
+
+  /**
+   * The answer a held launch gives, once its own open claim names the changes
+   * the draft acts on now: a replay that moved to a newer change publishes it
+   * and the ones it moved on from before it launches, which other hosts
+   * deduplicate against. A claim that cannot be rewritten holds nothing.
+   */
+  async function republished(
+    target: SharedTarget,
+    claims: readonly SharedClaim[],
+    draft: LaunchDraft,
+    held: ClaimAnswer,
+  ): Promise<Outcome<ClaimAnswer, ClaimCode>> {
+    if (held.kind !== "holds") return ok(held);
+    const own = claims.find((c) => c.id === held.id);
+    if (own === undefined || !own.says.ok) return ok(held);
+    const wanted = [draft.change ?? null, ...(draft.earlier ?? [])];
+    const says = own.says.value;
+    const have = [says.change, ...(says.earlier ?? [])];
+    if (wanted.join("\n") === have.join("\n")) return ok(held);
+    const r = await amend(
+      targetOf(target),
+      kindOf("drive"),
+      held.id,
+      launchClaim(draft, held.attempt, says.at === "" ? undefined : says.at),
+    );
+    note("claim", named(target), r.ok);
+    return r.ok
+      ? ok(held)
+      : failed(
+          "not-posted",
+          `the claim (comment ${held.id}) could not be rewritten with the change it acts on: ${r.failure.reason}`,
+        );
   }
 
   async function post(
@@ -303,23 +368,37 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
       kindOf(stage),
       stage === "drive" ? DRIVE_KEY : FOLLOWUP_KEY,
       own,
-      { self, ...attempt.value },
+      { self, ...(attempt.value.attempt ?? {}) },
     );
     note("check", named(target), seen.ok);
-    return seen.ok ? ok(checkAnswer(stage, target.pr, seen.value)) : seen;
+    if (!seen.ok) return seen;
+    const answer = checkAnswer(stage, target.pr, seen.value);
+    return ok(
+      stage === "drive"
+        ? stillCurrent(answer, own, attempt.value.claims)
+        : answer,
+    );
   }
 
-  /** The attempt the caller's own drive claim names, which its re-check weighs it on; none for a follow-up, which has one claim. */
+  /** The attempt the caller's own drive claim names, which its re-check weighs it on, and the claims read; none for a follow-up, which has one claim. */
   async function ownAttempt(
     target: SharedTarget,
     stage: SharedStage,
     own: number,
-  ): Promise<Outcome<{ generation?: number }, "unreadable">> {
-    if (stage !== "drive") return ok({});
+  ): Promise<
+    Outcome<
+      { attempt?: { generation?: number }; claims: SharedClaim[] },
+      "unreadable"
+    >
+  > {
+    if (stage !== "drive") return ok({ claims: [] });
     const listing = await list(target, "drive");
     if (!listing.ok) return listing;
     const mine = listing.value.find((c) => c.id === own);
-    return ok(mine?.says.ok ? { generation: mine.says.value.attempt } : {});
+    return ok({
+      attempt: mine?.says.ok ? { generation: mine.says.value.attempt } : {},
+      claims: listing.value,
+    });
   }
 
   async function end(
@@ -327,6 +406,7 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
     stage: SharedStage,
     own: number,
     ended: LaunchEnd,
+    host?: string,
   ): Promise<Outcome<void, "unreadable" | "not-own" | "not-written">> {
     const listing = await listClaims(targetOf(target), kindOf(stage), self);
     note("list", named(target), listing.ok);
@@ -347,6 +427,7 @@ export function forgeShared(opts: ForgeSharedOptions): SharedRecords {
         target.pr,
         ended,
         localWriter("forge", self),
+        host,
       ),
     );
     note("end", named(target), r.ok);

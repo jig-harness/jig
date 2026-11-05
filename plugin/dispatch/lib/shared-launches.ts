@@ -31,6 +31,7 @@ import { databaseInstance } from "../../shared/records/db.ts";
 import {
   type ClaimAnswer,
   type ClaimSays,
+  changesOf,
   type LaunchDraft,
   type LaunchEnd,
   open,
@@ -238,7 +239,7 @@ function armedOrRedriven(
   }
   const change = pr.class === "stale" ? pr.stale?.change : undefined;
   if (change === undefined) return null;
-  const done = theirs.findLast((c) => c.says.value.change === change);
+  const done = theirs.findLast((c) => changesOf(c.says.value).includes(change));
   return done === undefined
     ? null
     : {
@@ -363,6 +364,7 @@ function launchDraft(ctx: SharedContext, record: LaunchRecord): LaunchDraft {
     owner: ctx.owner,
     facts: record.facts,
     change: record.redrive?.change ?? null,
+    earlier: record.redrive?.earlier ?? [],
     conflictStop: record.redrive?.conflictStop === true,
     writer: localWriter("forge", ctx.login),
   };
@@ -424,12 +426,13 @@ export async function settleOwnClaims(
   const ends = [
     ...driveEnds(claims, ctx.host, byId, nowIso),
     ...merged.flatMap((pr) =>
-      ownOpenMarkers(pr, ctx.host).flatMap((m) =>
+      ownOpenMarkers(pr, ctx.host, byId).flatMap((m) =>
         owed(
           pr.number,
           "followup",
           m.id,
           markerEnd(m.run.record, outcomes.get(pr.number), byId, nowIso),
+          m.run.host === undefined ? ctx.host : undefined,
         ),
       ),
     ),
@@ -441,6 +444,7 @@ export async function settleOwnClaims(
       o.stage,
       o.id,
       o.end,
+      o.host,
     );
     if (!r.ok)
       failures.push(
@@ -456,6 +460,8 @@ interface OwedEnd {
   stage: "drive" | "followup";
   id: number;
   end: LaunchEnd;
+  /** The host to name on a marker that names none. */
+  host?: string;
 }
 
 const owed = (
@@ -463,7 +469,9 @@ const owed = (
   stage: OwedEnd["stage"],
   id: number,
   end: LaunchEnd | null,
-): OwedEnd[] => (end === null ? [] : [{ pr, stage, id, end }]);
+  host?: string,
+): OwedEnd[] =>
+  end === null ? [] : [{ pr, stage, id, end, ...(host ? { host } : {}) }];
 
 /** This host's own claims that read and have no end yet. */
 function ownOpen(
@@ -499,14 +507,23 @@ type TickMarker = FollowupMarker & {
   run: Extract<FollowupMarker["run"], { kind: "tick" }>;
 };
 
-/** This host's own markers on a merged pull request that carry no answer yet. */
-function ownOpenMarkers(pr: MarkedPr, host: string): TickMarker[] {
+/**
+ * This host's own markers on a merged pull request that carry no answer yet:
+ * those naming this host, and those posted before markers named a host whose
+ * launch record is on this machine.
+ */
+function ownOpenMarkers(
+  pr: MarkedPr,
+  host: string,
+  byId: ReadonlyMap<string, ReadRecord>,
+): TickMarker[] {
   if ("unreadable" in pr.markers) return [];
   return pr.markers.filter(
     (m): m is TickMarker =>
       m.trusted &&
       m.run.kind === "tick" &&
-      m.run.host === host &&
+      (m.run.host === host ||
+        (m.run.host === undefined && byId.has(m.run.record))) &&
       m.run.outcome === undefined,
   );
 }

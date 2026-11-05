@@ -49,6 +49,30 @@ export function openShared(slug: string, owner: boolean): TickShared {
 }
 
 /**
+ * A drive that ended and whose pull request has since merged or closed is no
+ * longer in the open population, yet its claim still owes its end: read the
+ * claims of each pull request this host's own launch records name that the
+ * open drives do not cover.
+ */
+async function addEndedLaunches(
+  ctx: SharedContext,
+  forge: ForgeRead,
+  records: readonly ReadRecord[],
+  claims: DriveClaims,
+): Promise<void> {
+  const open = new Set(forge.drives.map((d) => d.number));
+  const extra = new Set<number>();
+  for (const r of records) {
+    if (r.record.repo !== ctx.slug || r.record.action === "followup") continue;
+    const pr = Number(r.record.pr);
+    if (Number.isInteger(pr) && !open.has(pr)) extra.add(pr);
+  }
+  if (extra.size === 0) return;
+  const read = await ctx.records.listRepository(ctx.slug, [...extra], "drive");
+  for (const [pr, listing] of read) claims.set(pr, listing);
+}
+
+/**
  * Read the launch claims of every drive the forge gave, and settle each
  * drive's stop on a conflict by this host's records and then by another
  * host's claims.
@@ -61,6 +85,7 @@ export async function readDriveClaims(
   const claims: DriveClaims = forge.ok
     ? await readSharedDrives(ctx, forge.drives)
     : new Map();
+  if (forge.ok) await addEndedLaunches(ctx, forge, records, claims);
   forge.drives = settleSharedConflictStops(
     settleConflictStops(
       forge.drives,

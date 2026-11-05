@@ -323,6 +323,12 @@ const LAUNCH_FIELDS: ReadonlyArray<
   [(p) => isText(p.facts), "it names no ledger facts"],
   [(p) => p.change === undefined || isText(p.change), "its change is not text"],
   [
+    (p) =>
+      p.earlier === undefined ||
+      (Array.isArray(p.earlier) && p.earlier.every(isText)),
+    "its earlier changes are not a list of text",
+  ],
+  [
     (p) => p.owner === undefined || flagOrNull(p.owner) !== null,
     "its owner is neither true nor false",
   ],
@@ -360,6 +366,9 @@ function launchPayload(draft: LaunchDraft): Record<string, unknown> {
     ...(draft.owner === null ? {} : { owner: draft.owner }),
     facts: draft.facts ?? "",
     ...(draft.change == null ? {} : { change: draft.change }),
+    ...(draft.earlier === undefined || draft.earlier.length === 0
+      ? {}
+      : { earlier: draft.earlier }),
     ...(draft.conflictStop === true ? { conflictStop: true } : {}),
   };
 }
@@ -394,6 +403,7 @@ function launchSays(r: ClaimRecord, pr: number): ClaimSays {
     owner: flagOrNull(p.owner),
     facts: String(p.facts),
     change: textOrNull(p.change),
+    ...(Array.isArray(p.earlier) ? { earlier: p.earlier.filter(isText) } : {}),
     conflictStop: p.conflictStop === true,
     end: endOf(p.end),
     legacy: r.legacy,
@@ -433,7 +443,8 @@ export function draftClaim(draft: LaunchDraft, attempt: number): ClaimDraft {
 /**
  * The claim `r` on pull request `pr` rewritten with the launch's end, keeping
  * its key, attempt, time and payload, and its writer where it named one
- * (`writer` otherwise).
+ * (`writer` otherwise). A follow-up marker that names no host (posted before
+ * markers named theirs) takes `host`, the host ending it.
  */
 export function endedClaim(
   stage: SharedStage,
@@ -441,6 +452,7 @@ export function endedClaim(
   pr: number,
   end: LaunchEnd,
   writer: ClaimDraft["writer"],
+  host?: string,
 ): ClaimDraft {
   const keep = {
     key: stage === "drive" ? DRIVE_KEY : FOLLOWUP_KEY,
@@ -467,7 +479,12 @@ export function endedClaim(
     end.state === "ended" && end.outcome !== null ? end.outcome : "failed";
   return {
     ...keep,
-    payload: { ...p, outcome, endedAt: end.at },
+    payload: {
+      ...p,
+      ...(p.host === undefined && host !== undefined ? { host } : {}),
+      outcome,
+      endedAt: end.at,
+    },
     text: `jig dispatch follow-up · record: ${String(p.record)} · outcome: ${outcome}`,
   };
 }

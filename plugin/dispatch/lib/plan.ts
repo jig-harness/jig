@@ -425,8 +425,11 @@ function planDrive(
   const hold = driveHold(pr, launches);
   if (placedByHold(target, hold, plan)) return;
   const takeover = hold.kind === "takeover" ? hold.record.record.id : null;
-  const foreign = takeover === null ? planForeign(input, pr, plan) : null;
-  if (foreign === true) return;
+  // Another host's open takeover on these ledger facts holds the drive even
+  // where this host's own record would take it over.
+  const placed = planForeign(input, pr, plan);
+  if (placed === true) return;
+  const foreign = takeover === null ? placed : null;
   if (QUIET.has(pr.class) && takeover === null && foreign === null) {
     plan.quiet.push({ target, class: pr.class, why: pr.why });
     return;

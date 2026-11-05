@@ -97,18 +97,20 @@ async function retryPending(
 }
 
 /**
- * A record never launched (a tick stopped between writing it and its
- * launch) may never have been claimed where another host reads it either:
- * it claims now, which is a no-op when its claim was posted, and a claim
- * refused gives the record back. Why it must not be replayed; `null` when it
- * may.
+ * A pending record's claim is checked where another host reads it before
+ * every replay: a record never launched (a tick stopped between writing it
+ * and its launch) may never have been claimed, and one that was launched
+ * without an answer may have lost its claim since, to another host's or to a
+ * person's deletion. It claims now, which is a no-op while its own claim
+ * holds the launch, and a claim refused gives the record back. Why it must
+ * not be replayed; `null` when it may.
  */
 async function unclaimed(
   state: ApplyState,
   record: LaunchRecord,
   claimer: LaunchClaimer | undefined,
 ): Promise<string | null> {
-  if (claimer === undefined || record.attempts.length > 0) return null;
+  if (claimer === undefined) return null;
   const taken = await claimer.claim(record);
   if (!("refused" in taken)) return null;
   dropRecord(state, record);

@@ -21,7 +21,9 @@
  * | this host's, naming a record for anything else | reports it, starts nothing |
  *
  * A tick's marker names the host that posted it; one that names none was
- * posted before markers named their host, and is read as this host's. This
+ * posted before markers named their host, and is read as this host's; the
+ * host whose launch record it names writes its own host onto it when it ends
+ * it. This
  * host's own marker is read through its launch record and outcome record,
  * and through the answer written on the marker once both are gone.
  *
