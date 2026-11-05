@@ -185,6 +185,8 @@ export type CiHoldState =
     }
   | {
       phase: "held";
+      /** A pre-existing label must survive failed pushes, including retries. */
+      adopted?: boolean;
       eventId: string;
       addedAtHead: string;
       actor: string;
@@ -194,6 +196,7 @@ export type CiHoldState =
     }
   | {
       phase: "releasing";
+      adopted?: boolean;
       heldEventId: string;
       addedAtHead: string;
       heldActor: string;

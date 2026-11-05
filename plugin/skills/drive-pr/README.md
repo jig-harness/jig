@@ -230,8 +230,9 @@ head only on required checks that started after the removal. The label is a
 CI cost setting, not a way to steer the drive: a label the drive has no
 record of, because an earlier run lost track of it, a drive that died left
 it, or someone else added it, is adopted and removed at convergence like its
-own. To stop a drive, run `bun "<skill-dir>/scripts/drives.ts" --stop <PR>`,
-or stand the dispatcher down with its `jig:hold` label. When someone else removes the label, the
+own. To stop a running drive, run `bun "<skill-dir>/scripts/drives.ts" --stop <PR>`.
+The dispatcher's `jig:hold` label prevents new launches and re-arms.
+When someone else removes the CI hold label, the
 drive accepts only checks that started strictly after that removal; GitHub
 records the removal to the second, so a run that started in the same second
 has to be rerun. A pull request that conflicts with its base runs no
@@ -240,7 +241,10 @@ not completed and GitHub reports the conflict, the drive pushes the
 conflict resolution without the label, and the push that clears the conflict
 runs full CI. A mergeability GitHub has not computed or the drive cannot
 read keeps the wait. A drive that dies mid-round leaves the label
-behind; the next drive on the pull request adopts it, and
+behind; the next drive on the pull request adopts it. Adoption needs no
+check runs and remains recorded across retries, so failed pushes retain the
+adopted label. Release captures its own check-run watermark before removal.
+The
 [§ The exit states](#the-exit-states--what-you-do-now) has the recovery
 when no drive will run again.
 

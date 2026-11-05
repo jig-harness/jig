@@ -262,10 +262,12 @@ is handled before that read.
 The hold label is a CI cost setting, not a signal to the drive. A live label
 this drive holds no record of (one an earlier run lost track of, a drive that
 died left, or anyone else added) is adopted: `ensure` records its newest
-`labeled` event as the drive's own and prints `adopted`, and the push goes
-ahead under it. A person stops a drive with
-`bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop <PR>`, or stands the
-dispatcher down with its `jig:hold` label, never with the CI hold label.
+`labeled` event as the drive's own and prints `adopted` on retries too.
+Adoption needs no check runs; release captures its own watermark. The push goes
+ahead under it. A person stops a running drive with
+`bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop <PR>`.
+The dispatcher's `jig:hold` label prevents new launches and re-arms;
+the CI hold label only saves CI.
 The repository's synchronize workflows are expected to honour the label: they
 skip their expensive jobs while a required check fails or is cancelled, so the
 held head is visibly non-green rather than falsely mergeable; the posting

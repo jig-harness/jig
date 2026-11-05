@@ -90,8 +90,8 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    run: it skips the heavy jobs, cancels no run, and its `gates` waits for the
    newest real run on the head and repeats its result, holding a runner while
    it waits. The label only saves CI: a drive adopts one it did not add, and
-   a person stops a drive with `jig:hold` or `drives.ts --stop`, not with
-   the label. A drive that
+   a person stops a running drive with `drives.ts --stop`. The dispatcher's
+   `jig:hold` label prevents new launches and re-arms. A drive that
    stopped for good can leave the label behind; remove it by hand
    (`gh pr edit <PR> --remove-label ci:hold`), never by rerunning the held
    run.

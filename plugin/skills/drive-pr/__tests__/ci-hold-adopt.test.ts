@@ -169,7 +169,16 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
   it("keeps an adopted label when the push fails, since this push did not add it", async () => {
     const r = await finishRound({
       fixture: { threads: [], ciHeld: true },
-      seedState: async ({ fixtureDir }) => {
+      seedState: async ({ fixtureDir, cwd }) => {
+        const viewPath = join(fixtureDir, "pr-view.json");
+        const view = readJson<Record<string, unknown>>(viewPath);
+        const parent = Bun.spawnSync(["git", "rev-parse", "HEAD~1"], {
+          cwd,
+          env: gitCleanEnv(),
+        });
+        expectSpawnExit(parent, 0);
+        view.headRefOid = parent.stdout.toString().trim();
+        writeFileSync(viewPath, JSON.stringify(view));
         writeFileSync(join(fixtureDir, "push-fails"), "");
         writeFileSync(
           join(fixtureDir, "timeline.json"),
@@ -180,6 +189,41 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
       },
     });
     expectSpawnExit(r, 1);
+    const retry = await finishRound({
+      repo: r.repo,
+      fixtureDir: r.fixtureDir,
+      stateDir: r.stateDir,
+    });
+    expectSpawnExit(retry, 1);
+    expect(retry.report.state).toBe("PUSH_FAILED");
+    expect(retry.stderr).not.toContain("released the CI hold label");
+    const recovery = await finishRound({
+      repo: r.repo,
+      fixtureDir: r.fixtureDir,
+      stateDir: r.stateDir,
+      seedState: async ({ stateDir }) => {
+        const statePath = join(stateDir, "drive-pr-999.json");
+        const state = readJson<Record<string, unknown>>(statePath);
+        const held = state.ciHold as Record<string, unknown>;
+        state.ciHold = {
+          phase: "releasing",
+          adopted: held.adopted,
+          heldEventId: held.eventId,
+          addedAtHead: held.addedAtHead,
+          heldActor: held.actor,
+          heldCreatedAt: held.createdAt,
+          head: held.addedAtHead,
+          actor: "drive-user",
+          createdAt: "2026-09-10T10:00:00Z",
+          checkRunWatermark: 10_000,
+        };
+        writeFileSync(statePath, JSON.stringify(state));
+      },
+    });
+    expectSpawnExit(recovery, 1);
+    expect(recovery.report.state).toBe("PUSH_FAILED");
+    expect(recovery.stderr).not.toContain("released the CI hold label");
+    expect(ciHoldOf(r.stateDir)).toMatchObject({ adopted: true });
     expect(r.report.state).toBe("PUSH_FAILED");
     expect(r.stderr).not.toContain("released the CI hold label");
     const view = readJson<{ labels: { name: string }[] }>(
@@ -189,6 +233,32 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     expect(
       readJson<unknown[]>(join(r.fixtureDir, "timeline.json")),
     ).toHaveLength(1);
+  });
+
+  it("adopts a live label before any check runs have registered", async () => {
+    const r = await finishRound({
+      fixture: { threads: [], ciHeld: true },
+      seedState: async ({ fixtureDir }) => {
+        writeFileSync(join(fixtureDir, "push-fails"), "");
+        writeFileSync(
+          join(fixtureDir, "check-runs.json"),
+          JSON.stringify({ check_runs: [] }),
+        );
+        writeFileSync(
+          join(fixtureDir, "timeline.json"),
+          JSON.stringify([
+            labeled("LE_1", "human-user", "2026-09-10T09:59:00Z"),
+          ]),
+        );
+      },
+    });
+    expectSpawnExit(r, 1);
+    expect(r.report.state).toBe("PUSH_FAILED");
+    expect(r.stderr).toContain("adopted 'ci:hold'");
+    expect(ciHoldOf(r.stateDir)).toMatchObject({
+      phase: "held",
+      eventId: "LE_1",
+    });
   });
 
   it("still waits while the timeline does not show the live label being added", async () => {

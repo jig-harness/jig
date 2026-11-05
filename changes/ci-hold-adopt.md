@@ -13,5 +13,5 @@ release: patch
   adopts the label: it pushes under it and removes it at convergence, then
   waits for fresh full CI as before. A failed push does not remove an
   adopted label. The label only saves CI. To stop a drive, use
-  `drives.ts`'s `--stop`, or put the dispatcher's `jig:hold` label on the
-  pull request.
+  `drives.ts`'s `--stop`. Put the dispatcher's `jig:hold` label on the
+  pull request to prevent new launches and re-arms.

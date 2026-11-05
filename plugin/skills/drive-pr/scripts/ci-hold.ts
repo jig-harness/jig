@@ -49,6 +49,7 @@ import {
 import { lockHeartbeatMs } from "./lib/state/lock.ts";
 import {
   adopt,
+  confirmLiveHold,
   checkRuns,
   headWatermark,
   readCiState,
@@ -215,28 +216,6 @@ async function assertRecordedHoldMatchesLabel(pr: string): Promise<void> {
     );
 }
 
-/** A live hold label is this drive's (`owned`), or becomes it (`adopted`). */
-async function confirmLiveHold(
-  pr: string,
-  head: string,
-  persisted: CiHoldState | null,
-  latest: LabelTransition | null,
-): Promise<number> {
-  if (ownsHeldTransition(persisted, latest)) {
-    process.stdout.write("owned\n");
-    return 0;
-  }
-  if ((await adopt(pr, head, latest, holdLabel())) !== null) {
-    process.stdout.write("adopted\n");
-    return 0;
-  }
-  await writeCiState(pr, null);
-  console.error(
-    `ci-hold: '${holdLabel()}' is present but the timeline does not show it being added yet; retrying later`,
-  );
-  return 4;
-}
-
 async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   const local = await git(["rev-parse", "HEAD"], {
     stderr: "ignore",
@@ -278,6 +257,7 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     if (live.held && latest?.id === persisted.heldEventId) {
       persisted = {
         phase: "held",
+        adopted: persisted.adopted === true,
         eventId: persisted.heldEventId,
         addedAtHead: persisted.addedAtHead,
         actor: persisted.heldActor,
@@ -383,7 +363,8 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     }
   }
 
-  if (live.held) return await confirmLiveHold(pr, head, persisted, latest);
+  if (live.held)
+    return await confirmLiveHold(pr, head, persisted, latest, holdLabel());
 
   if (
     latest?.event === "unlabeled" &&
@@ -552,6 +533,7 @@ async function release(pr: string, head: string): Promise<number> {
     ) {
       persisted = {
         phase: "held",
+        adopted: persisted.adopted === true,
         eventId: persisted.heldEventId,
         addedAtHead: persisted.addedAtHead,
         actor: persisted.heldActor,
@@ -642,6 +624,7 @@ async function release(pr: string, head: string): Promise<number> {
   const watermark = await headWatermark(head, "before the unlabel");
   await writeCiState(pr, {
     phase: "releasing",
+    adopted: persisted.adopted === true,
     heldEventId: persisted.eventId,
     addedAtHead: persisted.addedAtHead,
     heldActor: persisted.actor,
@@ -1036,6 +1019,7 @@ async function rollback(pr: string, expectedPushHead: string): Promise<number> {
   if (live.head === expectedPushHead) return 4;
   if (
     persisted?.phase !== "held" ||
+    persisted.adopted === true ||
     live.head !== persisted.addedAtHead ||
     !live.held
   )

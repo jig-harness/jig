@@ -10,6 +10,7 @@ import {
   checkRunWatermark,
   type LabelTransition,
   parseCheckRuns,
+  ownsHeldTransition,
 } from "./ci-hold.ts";
 import { fail } from "./cli.ts";
 import { ghCall } from "./proc.ts";
@@ -75,15 +76,45 @@ export async function adopt(
   if (latest?.event !== "labeled") return null;
   const held: HeldState = {
     phase: "held",
+    adopted: true,
     eventId: latest.id,
     addedAtHead: head,
     actor: latest.actor,
     createdAt: latest.createdAt,
-    checkRunWatermark: await headWatermark(head, "to adopt"),
+    // Adoption adds no label and needs no pre-add check evidence. Release
+    // captures its own watermark immediately before removing the label.
+    checkRunWatermark: 0,
   };
   await writeCiState(pr, held);
   console.error(
     `ci-hold: adopted '${label}', added by ${latest.actor} at ${latest.createdAt}; the drive removes it at convergence`,
   );
   return held;
+}
+
+/** A live hold label is this drive's (`owned`), or becomes it (`adopted`). */
+export async function confirmLiveHold(
+  pr: string,
+  head: string,
+  persisted: CiHoldState | null,
+  latest: LabelTransition | null,
+  label: string,
+): Promise<number> {
+  if (ownsHeldTransition(persisted, latest)) {
+    process.stdout.write(
+      persisted?.phase === "held" && persisted.adopted === true
+        ? "adopted\n"
+        : "owned\n",
+    );
+    return 0;
+  }
+  if ((await adopt(pr, head, latest, label)) !== null) {
+    process.stdout.write("adopted\n");
+    return 0;
+  }
+  await writeCiState(pr, null);
+  console.error(
+    `ci-hold: '${label}' is present but the timeline does not show it being added yet; retrying later`,
+  );
+  return 4;
 }
