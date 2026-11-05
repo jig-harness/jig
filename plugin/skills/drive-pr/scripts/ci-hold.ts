@@ -2,9 +2,12 @@
 import { retryAttempts } from "../../../shared/retry.ts";
 
 /**
- * Own the repository's temporary CI-hold label (`ci.hold_label`) without ever
- * deleting another actor's transition. The GitHub timeline event id is the
- * compare-and-set token. A repository without a hold label has nothing to
+ * Own the repository's temporary CI-hold label (`ci.hold_label`). The GitHub
+ * timeline event id is the compare-and-set token: the drive removes only the
+ * transition it recorded. The label is a CI cost setting, not a signal to the
+ * drive, so a live label the drive holds no record of (one an earlier run
+ * lost track of, a dead drive left, or anyone else added) is adopted
+ * (`adopted`), never a reason to stop. A repository without a hold label has nothing to
  * own: `ensure`, `release` and `rollback` print `disabled` and succeed, and
  * `final-ready` proves the required checks on the exact head directly.
  * A conflicting PR runs no CI, so there `ensure` holds nothing (`conflicting`).
@@ -30,7 +33,6 @@ import {
   mutationProven,
   ownsHeldTransition,
   type PrSnapshot,
-  parseCheckRuns,
   parsePrSnapshot,
   reportsConflict,
   requiredCiStartedAt,
@@ -45,8 +47,15 @@ import {
   resolveFenceContext,
 } from "./lib/state/lease.ts";
 import { lockHeartbeatMs } from "./lib/state/lock.ts";
+import {
+  adopt,
+  confirmLiveHold,
+  checkRuns,
+  headWatermark,
+  readCiState,
+  writeCiState,
+} from "./lib/ci-hold-state.ts";
 import { type CiHoldState, LEGACY_CI_HOLD_LABEL } from "./lib/state/schema.ts";
-import { openStore } from "./lib/state/store.ts";
 import {
   attributeStatuses,
   checkRunsFor,
@@ -115,43 +124,122 @@ async function transitions(pr: string): Promise<LabelTransition[] | null> {
 const latestOf = (values: readonly LabelTransition[]): LabelTransition | null =>
   values.at(-1) ?? null;
 
+/** Where the transitions after `previousId` begin, or null when it is not in the timeline. */
+function firstIndexAfter(
+  values: readonly LabelTransition[],
+  previousId: string | null,
+): number | null {
+  if (previousId === null) return 0;
+  const index = values.findIndex((transition) => transition.id === previousId);
+  return index < 0 ? null : index + 1;
+}
+
 function exactSuccessor(
   values: readonly LabelTransition[],
   previousId: string | null,
 ): LabelTransition | null {
-  const index =
-    previousId === null
-      ? -1
-      : values.findIndex((transition) => transition.id === previousId);
-  if (previousId !== null && index < 0) return null;
-  return values.length === index + 2 ? (values.at(-1) ?? null) : null;
+  const start = firstIndexAfter(values, previousId);
+  return start !== null && values.length === start + 1
+    ? (values.at(-1) ?? null)
+    : null;
 }
 
 function transitionsFollowing(
   values: readonly LabelTransition[],
   previousId: string | null,
 ): LabelTransition[] | null {
-  const index =
-    previousId === null
-      ? -1
-      : values.findIndex((transition) => transition.id === previousId);
-  if (previousId !== null && index < 0) return null;
-  return values.slice(index + 1);
+  const start = firstIndexAfter(values, previousId);
+  return start === null ? null : values.slice(start);
 }
 
-async function checkRuns(head: string) {
-  const result = await ghCall([
-    "api",
-    "--paginate",
-    "--slurp",
-    `repos/{owner}/{repo}/commits/${head}/check-runs?per_page=100`,
-  ]);
-  if (result.code !== 0) return null;
-  try {
-    return parseCheckRuns(JSON.parse(result.stdout) as unknown);
-  } catch {
-    return null;
+type HeldState = Extract<CiHoldState, { phase: "held" }>;
+type ReleasingState = Extract<CiHoldState, { phase: "releasing" }>;
+type ReleasedState = Extract<CiHoldState, { phase: "released" }>;
+
+/** The released record a removal transition proves. */
+const releasedBy = (
+  transition: LabelTransition,
+  head: string,
+  checkRunWatermark: number,
+  source: ReleasedState["source"],
+): ReleasedState => ({
+  phase: "released",
+  eventId: transition.id,
+  head,
+  actor: transition.actor,
+  createdAt: transition.createdAt,
+  checkRunWatermark,
+  source,
+});
+
+/** The removal following a recorded release intent is ours when its actor made it. */
+const exactReleaseOf = (
+  successor: LabelTransition,
+  head: string,
+  persisted: ReleasingState,
+): ReleasedState =>
+  releasedBy(
+    successor,
+    head,
+    persisted.checkRunWatermark,
+    successor.actor === persisted.actor ? "drive" : "external",
+  );
+
+/** The held record an interrupted release leaves standing while the label is still live. */
+const heldAgain = (persisted: ReleasingState): HeldState => ({
+  phase: "held",
+  adopted: persisted.adopted === true,
+  eventId: persisted.heldEventId,
+  addedAtHead: persisted.addedAtHead,
+  actor: persisted.heldActor,
+  createdAt: persisted.heldCreatedAt,
+  checkRunWatermark: persisted.checkRunWatermark,
+});
+
+type SettledRelease =
+  | { outcome: "held"; persisted: HeldState }
+  | { outcome: "released" | "adopt" | "invisible" };
+
+/**
+ * What the live label and the newest transition say about an interrupted
+ * release that no exact successor explains: the hold still stands, a removal
+ * we cannot attribute to this drive proves an external release (persisted so
+ * fresh full CI can authorize another hold), another transition followed and
+ * the live label is adopted by the caller, or the timeline has not caught up.
+ */
+async function settleInterruptedRelease(
+  pr: string,
+  persisted: ReleasingState,
+  live: NonNullable<Awaited<ReturnType<typeof snapshot>>>,
+  latest: LabelTransition | null,
+  head: string,
+  sameHead: boolean,
+): Promise<SettledRelease> {
+  if (live.held && sameHead && latest?.id === persisted.heldEventId) {
+    const held = heldAgain(persisted);
+    await writeCiState(pr, held);
+    return { outcome: "held", persisted: held };
   }
+  if (!live.held && latest?.event === "unlabeled") {
+    await writeCiState(
+      pr,
+      releasedBy(latest, head, persisted.checkRunWatermark, "external"),
+    );
+    return { outcome: "released" };
+  }
+  return { outcome: live.held ? "adopt" : "invisible" };
+}
+
+/** The authenticated actor and the live state just before a label mutation. */
+async function readBeforeMutation(pr: string) {
+  const login = await viewer();
+  if (login === null)
+    fail(1, "ci-hold: cannot identify the authenticated GitHub actor");
+  return {
+    login,
+    live: await snapshot(pr),
+    timeline: await transitions(pr),
+  };
 }
 
 async function transitionAfter(
@@ -181,18 +269,6 @@ async function transitionAfter(
     }
   }
   return null;
-}
-
-async function writeCiState(
-  pr: string,
-  state: CiHoldState | null,
-): Promise<void> {
-  const store = await openStore(pr);
-  await store.update((current) => ({ ...current, ciHold: state }));
-}
-
-async function readCiState(pr: string): Promise<CiHoldState | null> {
-  return (await openStore(pr)).read().state.ciHold;
 }
 
 /** The label transition a recorded hold names, if its phase names one. */
@@ -258,56 +334,33 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
   if (persisted?.phase === "releasing") {
     const successor = exactSuccessor(timeline, persisted.heldEventId);
     if (!live.held && successor?.event === "unlabeled") {
-      await writeCiState(pr, {
-        phase: "released",
-        eventId: successor.id,
-        head,
-        actor: successor.actor,
-        createdAt: successor.createdAt,
-        checkRunWatermark: persisted.checkRunWatermark,
-        source: successor.actor === persisted.actor ? "drive" : "external",
-      });
+      await writeCiState(pr, exactReleaseOf(successor, head, persisted));
       console.error(
         "ci-hold: recovered an interrupted completed release; waiting for its full CI before another hold can be acquired",
       );
       return 4;
     }
-    if (live.held && latest?.id === persisted.heldEventId) {
-      persisted = {
-        phase: "held",
-        eventId: persisted.heldEventId,
-        addedAtHead: persisted.addedAtHead,
-        actor: persisted.heldActor,
-        createdAt: persisted.heldCreatedAt,
-        checkRunWatermark: persisted.checkRunWatermark,
-      };
-      await writeCiState(pr, persisted);
-    } else if (!live.held && latest?.event === "unlabeled") {
-      // More than one transition followed the intent (for example our
-      // removal, a human re-add, then another human removal). We can no
-      // longer attribute the final removal to this drive, but the live state
-      // and newest event do prove an external release. Persist that evidence
-      // so fresh full CI can eventually authorize another hold.
-      await writeCiState(pr, {
-        phase: "released",
-        eventId: latest.id,
-        head,
-        actor: latest.actor,
-        createdAt: latest.createdAt,
-        checkRunWatermark: persisted.checkRunWatermark,
-        source: "external",
-      });
+    const settled = await settleInterruptedRelease(
+      pr,
+      persisted,
+      live,
+      latest,
+      head,
+      true,
+    );
+    if (settled.outcome === "released") {
       console.error(
         "ci-hold: recovered an interrupted release with intervening transitions; waiting for fresh full CI",
       );
       return 4;
-    } else {
-      if (live.held) await writeCiState(pr, null);
+    }
+    if (settled.outcome === "invisible") {
       console.error(
-        "ci-hold: interrupted release ownership changed; preserving the live label state",
+        "ci-hold: interrupted release is not visible in the timeline yet; retrying later",
       );
       return 4;
     }
+    persisted = settled.outcome === "held" ? settled.persisted : null;
   }
 
   if (persisted?.phase === "acquiring") {
@@ -347,15 +400,10 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
       // is no longer attributable, but treating the newest removal as an
       // external release avoids a permanent refusal: all required checks
       // must start after this event before ensure may acquire again.
-      await writeCiState(pr, {
-        phase: "released",
-        eventId: latest.id,
-        head,
-        actor: latest.actor,
-        createdAt: latest.createdAt,
-        checkRunWatermark: persisted.checkRunWatermark,
-        source: "external",
-      });
+      await writeCiState(
+        pr,
+        releasedBy(latest, head, persisted.checkRunWatermark, "external"),
+      );
       console.error(
         "ci-hold: recovered an interrupted acquisition followed by an external removal; waiting for fresh full CI",
       );
@@ -365,11 +413,10 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
       afterIntent.length > 0 ||
       (!live.held && successor === null)
     ) {
+      // Ownership of the interrupted acquisition cannot be proven: drop the
+      // record, so a live label is adopted below and an absent one acquired.
       await writeCiState(pr, null);
-      console.error(
-        `ci-hold: could not reconcile an interrupted label acquisition; preserving the live label state`,
-      );
-      return 4;
+      persisted = null;
     } else {
       console.error(
         `ci-hold: interrupted label acquisition is not visible in the timeline yet; retrying later`,
@@ -378,17 +425,8 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     }
   }
 
-  if (live.held) {
-    if (ownsHeldTransition(persisted, latest)) {
-      process.stdout.write("owned\n");
-      return 0;
-    }
-    await writeCiState(pr, null);
-    console.error(
-      `ci-hold: '${holdLabel()}' is present but its latest transition is not owned by this drive; leaving it untouched`,
-    );
-    return 4;
-  }
+  if (live.held)
+    return await confirmLiveHold(pr, head, persisted, latest, holdLabel());
 
   if (
     latest?.event === "unlabeled" &&
@@ -451,14 +489,14 @@ async function ensure(pr: string, expectedPushHead: string): Promise<number> {
     );
     return 4;
   }
-  const login = await viewer();
-  if (login === null)
-    fail(1, "ci-hold: cannot identify the authenticated GitHub actor");
   // Refresh immediately before the mutation while the PR-wide mutation fence
   // is held. A same-login human action through another client remains an API
   // limitation; any observable intervening transition is refused below.
-  const beforeLive = await snapshot(pr);
-  const beforeTimeline = await transitions(pr);
+  const {
+    login,
+    live: beforeLive,
+    timeline: beforeTimeline,
+  } = await readBeforeMutation(pr);
   if (
     beforeLive === null ||
     beforeTimeline === null ||
@@ -538,56 +576,29 @@ async function release(pr: string, head: string): Promise<number> {
       persisted.head === head &&
       successor?.event === "unlabeled"
     ) {
-      await writeCiState(pr, {
-        phase: "released",
-        eventId: successor.id,
-        head,
-        actor: successor.actor,
-        createdAt: successor.createdAt,
-        checkRunWatermark: persisted.checkRunWatermark,
-        source: successor.actor === persisted.actor ? "drive" : "external",
-      });
+      await writeCiState(pr, exactReleaseOf(successor, head, persisted));
       process.stdout.write("removed\n");
       return 0;
     }
-    if (
-      live.held &&
-      persisted.head === head &&
-      latest?.id === persisted.heldEventId
-    ) {
-      persisted = {
-        phase: "held",
-        eventId: persisted.heldEventId,
-        addedAtHead: persisted.addedAtHead,
-        actor: persisted.heldActor,
-        createdAt: persisted.heldCreatedAt,
-        checkRunWatermark: persisted.checkRunWatermark,
-      };
-      await writeCiState(pr, persisted);
-    } else if (!live.held && latest?.event === "unlabeled") {
-      await writeCiState(pr, {
-        phase: "released",
-        eventId: latest.id,
-        head,
-        actor: latest.actor,
-        createdAt: latest.createdAt,
-        checkRunWatermark: persisted.checkRunWatermark,
-        source: "external",
-      });
+    const settled = await settleInterruptedRelease(
+      pr,
+      persisted,
+      live,
+      latest,
+      head,
+      persisted.head === head,
+    );
+    if (settled.outcome === "released") {
       process.stdout.write("absent\n");
       return 0;
-    } else if (live.held) {
-      await writeCiState(pr, null);
-      console.error(
-        `ci-hold: could not reconcile an interrupted label release; preserving the live label state`,
-      );
-      return 4;
-    } else {
+    }
+    if (settled.outcome === "invisible") {
       console.error(
         `ci-hold: interrupted label release is not visible in the timeline yet; retrying later`,
       );
       return 4;
     }
+    persisted = settled.outcome === "held" ? settled.persisted : null;
   }
 
   if (!live.held) {
@@ -603,15 +614,7 @@ async function release(pr: string, head: string): Promise<number> {
       // The absent label and newest removal establish an external release
       // even if local ownership was lost or never existed. No pre-event
       // watermark is available, so every required check must start after it.
-      await writeCiState(pr, {
-        phase: "released",
-        eventId: latest.id,
-        head,
-        actor: latest.actor,
-        createdAt: latest.createdAt,
-        checkRunWatermark: 0,
-        source: "external",
-      });
+      await writeCiState(pr, releasedBy(latest, head, 0, "external"));
       process.stdout.write("absent\n");
       return 0;
     }
@@ -621,19 +624,22 @@ async function release(pr: string, head: string): Promise<number> {
   }
 
   if (!ownsHeldTransition(persisted, latest)) {
-    await writeCiState(pr, null);
-    console.error(
-      `ci-hold: '${holdLabel()}' no longer matches this drive's labelled event; leaving it untouched`,
-    );
-    return 4;
+    persisted = await adopt(pr, head, latest, holdLabel());
+    if (persisted === null) {
+      await writeCiState(pr, null);
+      console.error(
+        `ci-hold: '${holdLabel()}' is present but the timeline does not show it being added yet; retrying later`,
+      );
+      return 4;
+    }
   }
   if (persisted === null || persisted.phase !== "held") return 4;
 
-  const login = await viewer();
-  if (login === null)
-    fail(1, "ci-hold: cannot identify the authenticated GitHub actor");
-  const beforeLive = await snapshot(pr);
-  const beforeTimeline = await transitions(pr);
+  const {
+    login,
+    live: beforeLive,
+    timeline: beforeTimeline,
+  } = await readBeforeMutation(pr);
   if (
     beforeLive === null ||
     beforeTimeline === null ||
@@ -643,13 +649,16 @@ async function release(pr: string, head: string): Promise<number> {
     !ownsHeldTransition(persisted, latestOf(beforeTimeline))
   )
     return 4;
-  const beforeRuns = await checkRuns(head);
-  const watermark =
-    beforeRuns === null ? null : checkRunWatermark(beforeRuns, head);
-  if (watermark === null)
-    fail(1, "ci-hold: cannot establish the pre-unlabel check-run watermark");
+  const watermark = await headWatermark(head, "before the unlabel");
+  if (watermark === null) {
+    console.error(
+      "ci-hold: no check run is registered on this head yet; retrying later",
+    );
+    return 4;
+  }
   await writeCiState(pr, {
     phase: "releasing",
+    adopted: persisted.adopted === true,
     heldEventId: persisted.eventId,
     addedAtHead: persisted.addedAtHead,
     heldActor: persisted.actor,
@@ -1044,6 +1053,7 @@ async function rollback(pr: string, expectedPushHead: string): Promise<number> {
   if (live.head === expectedPushHead) return 4;
   if (
     persisted?.phase !== "held" ||
+    persisted.adopted === true ||
     live.head !== persisted.addedAtHead ||
     !live.held
   )

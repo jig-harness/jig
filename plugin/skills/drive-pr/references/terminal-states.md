@@ -155,13 +155,15 @@ the repair path, which leaves the review round's own quota handling intact.
 `drive-status.ts` exit 3 is the review verdict described below. The unattended
 `drive.ts` deliberately has a stronger exit-0 contract: every required check
 must have completed on the exact head, and if it applied the repository's CI
-hold label during intermediate rounds, it must still own the newest labelled
-timeline event, remove that label, and observe successful exact-head required
+hold label during intermediate rounds, it must own the newest labelled
+timeline event (adopting one it holds no record of), remove that label, and observe successful exact-head required
 checks whose runs started after the `unlabeled` event and whose ids exceed the
 pre-unlabel watermark, plus an overall green non-reviewer-CI verdict. Until
 then the PR remains visibly held/non-green and
-the PR-global `verifiedSha` does not advance. A human remove/re-add makes the
-new event externally owned; the driver never removes it.
+the PR-global `verifiedSha` does not advance. A label re-added by anyone is
+adopted and removed the same way: the label is a CI cost setting, and a
+person stops a drive with `bun "<skill-dir>/scripts/drives.ts" --stop <PR>`,
+not with it.
 
 All of these, simultaneously (1 and 2 only where the repository names an AI
 reviewer, [below](#the-reviewer-is-identified-by-app-slug-not-by-check-name)):
