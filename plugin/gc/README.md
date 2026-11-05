@@ -147,7 +147,7 @@ alone:
 | -------- | --------- | ------------------------ |
 | Linux | `$HOME/.local/state/jig/orca-guard/` | `path.join(os.homedir(), ".local", "state", "jig", "orca-guard")`; `os.homedir()` is `$HOME` |
 | macOS | `$HOME/.local/state/jig/orca-guard/` (not under `~/Library`) | the same; `os.homedir()` is `$HOME` |
-| Windows | `%USERPROFILE%\.local\state\jig\orca-guard\` | the same; Node's `os.homedir()` reads `USERPROFILE` and, in a worker without it, asks Windows for the profile directory. Do not use `HOME`: Git for Windows and MSYS shells set it to another directory, and Jig does not read it on Windows |
+| Windows | `%USERPROFILE%\.local\state\jig\orca-guard\` | the same; Node's `os.homedir()` reads `USERPROFILE` and, in a worker without it, asks Windows for the profile directory. Do not use `HOME`: a Unix-style shell on Windows may set it to another directory, and Jig does not read it on Windows |
 
 Jig honours no `XDG_STATE_HOME` here, so neither may the plugin. A plugin
 setting that overrides the directory must name the one Jig uses.
@@ -175,7 +175,7 @@ In Node, `crypto.createHash("sha256").update(path).digest("hex")`.
 [record envelope](../RECORDS.md#the-registry-and-the-envelope): `kind`, `v`
 (the schema version, `1` for all three), `key`, `writer` (an object with at
 least `host`, a non-empty string, and optionally `pid`, `bootId`, `start` and
-`login`) and `at` (an ISO 8601 time, as `Date.prototype.toISOString` writes
+`login`) and `at` (a UTC time as `Date.prototype.toISOString` writes
 it), then the kind's own fields. A writer may add no other envelope field
 (`generation` is unused here). gc writes the JSON on one line followed by a
 newline, with every `<` and `>` inside a string escaped as `\u003c` and
