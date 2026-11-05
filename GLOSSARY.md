@@ -2199,8 +2199,11 @@ make, use the entry's term instead.
   heartbeat. The plugin reads it to refuse a launch into a worktree gc is
   removing.
 - **Admission** — gc's claim on one worktree in the *guard record* while it
-  makes its last checks and removes it; released on every exit, and judged
-  abandoned when its owner is no longer alive.
+  makes its last checks and removes it. One not yet submitted for removal is
+  released on every exit and judged abandoned when its owner is no longer
+  alive; one submitted to Orca stays until the removal is known to have
+  settled, since the owner dying or the call failing does not say whether
+  Orca finished.
 
 ## External precondition
 
