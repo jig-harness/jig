@@ -5,16 +5,17 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { existsSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
-
-import { join } from "node:path";
-
-import { claimPathFor, newClaimToken } from "../scripts/lib/state/claims";
+import {
+  claimCreate,
+  claimRefFor,
+  newClaimToken,
+} from "../scripts/lib/state/claims";
 
 import { ACTOR, useDrivePrSuite } from "./drive-pr-harness.ts";
 
 import { createStateDurabilityFixtures } from "./drive-pr-state-durability-fixtures.ts";
 import { createStateProvenanceFixtures } from "./drive-pr-state-provenance-fixtures.ts";
+import { claimRow, heldClaims, putClaim, writeState } from "./state-rows.ts";
 
 useDrivePrSuite();
 describe("drive-state.ts durability", () => {
@@ -188,7 +189,7 @@ describe("drive-state.ts durability", () => {
       expect(claim.exitCode).toBe(1);
       expect(claim.stderr).toContain("is not the push recorded against");
       // The mutex must be given back on this path, not left holding the key:
-      // a refusal that leaked its claim file would block the legitimate claim
+      // a refusal that leaked its claim would block the legitimate claim
       // below for a whole staleness window.
       drive(a, env, ["stamp-held", "999", "--sha", A_PUSH]);
       const ok = drive(a, env, [
@@ -209,7 +210,7 @@ describe("drive-state.ts durability", () => {
       // The reachability argument for the tier-3 probes above, run for real.
       //
       // Two worktrees cannot drive one PR at the same time — so if that were
-      // the only way two actors' holds could land in one state file,
+      // the only way two actors' holds could land in one PR's state,
       // per-hold provenance would be guarding an impossible state and
       // could be deleted. It is not. A hold deliberately OUTLIVES its driver
       // (SKILL.md § 6), so the state arrives sequentially: A holds and its
@@ -308,10 +309,8 @@ describe("drive-state.ts durability", () => {
       expect(r.exitCode).toBe(2);
       expect(r.stderr).toContain("requires --pushed-sha");
       // And it refused BEFORE taking the mutex — a usage error that left a
-      // claim file behind would block the corrected retry.
-      expect(
-        readdirSync(d).filter((f) => f.includes("held-claim")),
-      ).toHaveLength(0);
+      // claim behind would block the corrected retry.
+      expect(heldClaims(d, "999")).toHaveLength(0);
     });
 
     it("re-holding a key CLEARS its stamp, so an earlier push cannot answer a later promise", async () => {
@@ -441,55 +440,50 @@ describe("drive-state.ts durability", () => {
     });
 
     it("refuses a held entry with no actor at all, rather than reading it as unowned", async () => {
-      // A hand-edited or older file. An unattributable hold is one
+      // A hand-edited or older state. An unattributable hold is one
       // `stamp-held` has no basis to skip, so tolerating it would mean
       // falling back to vouching for everything — the PR-global behaviour this
-      // closes. Backward compatibility is deferred pre-GA, so the file is
+      // closes. Backward compatibility is deferred pre-GA, so the state is
       // refused, never silently migrated.
       const d = stateDirFor("provenance-actorless-refused");
-      writeFileSync(
-        join(d, "drive-pr-999.json"),
-        JSON.stringify({
-          pr: 999,
-          lastEscalatedRound: 0,
-          lastEscalatedInvariant: "",
-          roundPaths: [],
-          lastProgressAt: "",
-          quotaPark: null,
-          rounds: 1,
-          lastCountedHead: "aaa",
-          attempts: 0,
-          attemptsHead: "",
-          lastReflectedRound: 0,
-          lastReflectedAttempts: 0,
-          verifiedSha: A_PUSH,
-          phase: "",
-          parked: [],
-          held: [
-            {
-              key: "PRRT_a",
-              kind: "thread",
-              outcome: "accepted",
-              round: 1,
-              commentUrl: "https://example.invalid/legacy",
-            },
-          ],
-        }),
-      );
+      writeState(d, "999", {
+        pr: 999,
+        lastEscalatedRound: 0,
+        lastEscalatedInvariant: "",
+        roundPaths: [],
+        lastProgressAt: "",
+        quotaPark: null,
+        rounds: 1,
+        lastCountedHead: "aaa",
+        attempts: 0,
+        attemptsHead: "",
+        lastReflectedRound: 0,
+        lastReflectedAttempts: 0,
+        verifiedSha: A_PUSH,
+        phase: "",
+        parked: [],
+        held: [
+          {
+            key: "PRRT_a",
+            kind: "thread",
+            outcome: "accepted",
+            round: 1,
+            commentUrl: "https://example.invalid/legacy",
+          },
+        ],
+      });
       const r = await state(d, ["held-keys", "999"]);
       expect(r.exitCode).toBe(3);
       expect(r.stdout).toBe("");
     });
 
-    it("re-holding a FINDING breaks its own STALE claim file, so the fresh record is stampable again", async () => {
-      // The gap: `hold` inserts a fresh `.held` record
-      // carrying no `verifiedSha`, but a finding's claim is a SEPARATE
-      // filesystem file `hold` never touched — so a prior dispatch's claim
-      // file, left behind by the interrupted-dispatch scenario the test above
-      // covers, would make `stamp-held`'s own
-      // `existsSync(claimPathFor(...))` check refuse to stamp the fresh
-      // record forever, defeating the "re-hold via SKILL.md § 3" recovery
-      // this command exists to provide.
+    it("re-holding a FINDING breaks its own STALE claim, so the fresh record is stampable again", async () => {
+      // `hold` inserts a fresh `.held` record carrying no `verifiedSha`, but
+      // a finding's claim is a SEPARATE row — so a prior dispatch's claim,
+      // left behind by the interrupted-dispatch scenario, would make
+      // `stamp-held`'s own claim-exists check refuse to stamp the fresh
+      // record forever unless `hold` breaks it, defeating the "re-hold via
+      // SKILL.md § 3" recovery this command exists to provide.
       const SHA_OLD = "5555555555555555555555555555555555555555";
       const SHA_NEW = "6666666666666666666666666666666666666666";
       const d = stateDirFor("rehold-finding-breaks-stale-claim");
@@ -520,17 +514,21 @@ describe("drive-state.ts durability", () => {
         SHA_OLD,
       ]);
       expect(claim.exitCode).toBe(0);
-      // The dispatch "died" here without releasing — the claim file is left
-      // on disk, backdated past the staleness window (matching every other
-      // stale-claim probe in this file).
-      const claimFile = readdirSync(d).find((f) =>
-        f.startsWith("drive-pr-999.held-claim.f00dstale."),
-      );
-      if (!claimFile) throw new Error("claim file was not created");
+      // The dispatch "died" here without releasing — the claim is left
+      // behind, backdated past the staleness window (matching every other
+      // stale-claim probe).
+      expect(claimRow(d, "999", "held", "f00dstale")?.token).toBe(claim.stdout);
       const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
-      utimesSync(join(d, claimFile), twentyMinutesAgo, twentyMinutesAgo);
+      putClaim(
+        d,
+        "999",
+        "held",
+        "f00dstale",
+        claim.stdout,
+        twentyMinutesAgo.toISOString(),
+      );
 
-      // Re-hold, per SKILL.md § 3 — this must break the now-stale claim file
+      // Re-hold, per SKILL.md § 3 — this must break the now-stale claim
       // as part of creating the fresh record.
       await state(
         d,
@@ -547,7 +545,7 @@ describe("drive-state.ts durability", () => {
         {},
         "confirmed fixed in def5678",
       );
-      expect(existsSync(join(d, claimFile))).toBe(false);
+      expect(claimRow(d, "999", "held", "f00dstale")).toBeNull();
 
       // The push that carries the RE-held promise now stamps successfully...
       await state(d, ["stamp-held", "999", "--sha", SHA_NEW]);
@@ -555,7 +553,7 @@ describe("drive-state.ts durability", () => {
         JSON.parse((await state(d, ["held", "999"])).stdout),
       ).toMatchObject([{ key: "f00dstale", verifiedSha: SHA_NEW }]);
       // ...and the recovery actually completes: a fresh claim against that
-      // push succeeds, where before this fix it would have refused forever.
+      // push succeeds, where a claim left standing would refuse it forever.
       const reclaim = await state(d, [
         "claim-held",
         "999",
@@ -600,10 +598,8 @@ describe("drive-state.ts durability", () => {
       ]);
       expect(claim.exitCode).toBe(0);
       // No backdating this time — the claim is fresh, i.e. genuinely live.
-      const claimFile = readdirSync(d).find((f) =>
-        f.startsWith("drive-pr-999.held-claim.f00dlive."),
-      );
-      if (!claimFile) throw new Error("claim file was not created");
+      const live = claimRow(d, "999", "held", "f00dlive");
+      expect(live?.token).toBe(claim.stdout);
 
       const rehold = await state(
         d,
@@ -622,30 +618,29 @@ describe("drive-state.ts durability", () => {
       );
       expect(rehold.exitCode).toBe(1);
       expect(rehold.stderr).toContain("has a LIVE claim");
-      // Refused, not silently swallowed: the live claim file is untouched,
+      // Refused, not silently swallowed: the live claim is untouched,
       // and the ORIGINAL held record (still stamped SHA_OLD) still stands.
-      expect(existsSync(join(d, claimFile))).toBe(true);
+      expect(claimRow(d, "999", "held", "f00dlive")).toEqual(live);
       expect(
         JSON.parse((await state(d, ["held", "999"])).stdout),
       ).toMatchObject([{ key: "f00dlive", verifiedSha: SHA_OLD }]);
     });
 
-    it("stamp-held stamps an UNSTAMPED finding even while a concurrent (about-to-fail) claim-held attempt has a claim file open on it", async () => {
-      // The race: `claimFinding` creates its claim file BEFORE acquiring the
+    it("stamp-held stamps an UNSTAMPED finding even while a concurrent (about-to-fail) claim-held attempt has a claim open on it", async () => {
+      // The race: `claimFinding` creates its claim BEFORE acquiring the
       // state lock and validating anything (deliberate — see claims.ts's own
-      // doc comment on why the claim precedes the check). If a driver's
-      // FIRST-EVER `stamp-held` for a brand-new hold lands while that raw,
-      // unvalidated claim file happens to exist, the OLD guard treated mere
-      // file existence as "already dispatched" and skipped stamping — even
-      // though a claim over an unstamped item can only ever be a claim still
-      // in flight (claim-held refuses whenever item.verifiedSha !==
-      // --pushed-sha, and an absent stamp can never satisfy that), never a
-      // completed dispatch. Simulated directly rather than via a real
-      // concurrent claim-held call: a real one would validate-and-fail-and-
-      // clean-up in one synchronous pass, never leaving the file behind long
-      // enough to race — the raw file is exactly the state a REAL race
-      // leaves mid-flight, for the instant between claimCreate and the
-      // failing claimant's own lock acquisition.
+      // doc comment on why the claim precedes the check). A driver's
+      // FIRST-EVER `stamp-held` for a brand-new hold can land while that raw,
+      // unvalidated claim exists. Reading mere existence as "already
+      // dispatched" would skip stamping — but a claim over an unstamped item
+      // can only ever be a claim still in flight (claim-held refuses
+      // whenever item.verifiedSha !== --pushed-sha, and an absent stamp can
+      // never satisfy that), never a completed dispatch. Simulated directly
+      // rather than via a real concurrent claim-held call: a real one would
+      // validate-and-fail-and-clean-up in one synchronous pass, never leaving
+      // the claim behind long enough to race — the raw claim is exactly the
+      // state a REAL race leaves mid-flight, for the instant between
+      // claimCreate and the failing claimant's own lock acquisition.
       const SHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
       const d = stateDirFor("stamp-held-stamps-through-unvalidated-claim");
       await state(
@@ -664,8 +659,9 @@ describe("drive-state.ts durability", () => {
         "fixed in abc1234",
       );
       // No stamp-held yet — this hold has never been stamped.
-      const racingClaimPath = claimPathFor(d, "999", "f00drace");
-      writeFileSync(racingClaimPath, newClaimToken(), { flag: "wx" });
+      expect(
+        claimCreate(claimRefFor(d, "999", "f00drace"), newClaimToken()),
+      ).toBe(true);
 
       await state(d, ["stamp-held", "999", "--sha", SHA]);
 

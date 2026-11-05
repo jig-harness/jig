@@ -22,36 +22,19 @@
  * wrong one here: two independent senders racing the same temp name would
  * have one's rename clobber the other's message.
  *
- * ── Why every append IS lock-guarded, despite the name of this section ──
+ * ── Why every append is locked ──
  *
- * Originally: a plain `write(2)` in `a`-mode, no lock — the kernel does not
- * interleave two `write` calls on an append-mode fd against the same file, so
- * concurrent appends from independent processes were safe without one, and a
- * lock file per append (`lib/state/lock.ts`'s mutex) would have bought
- * correctness this channel did not need. That reasoning held only as long as an
- * append WAS a single `write(2)` call with no decision attached to it.
- *
- * The self-healing fix (below) broke that premise: healing a prior interrupted
- * write means READING the file, DECIDING whether to prepend a delimiter, and
- * THEN writing — a multi-step span, not one atomic syscall. Two concurrent
- * appenders can interleave across that span (sender A's read observes a clean
- * file; sender B's own interrupted write leaves an undelimited tail before A's
- * write lands; A's healthy record ends up glued to B's garbage anyway), and
- * `repairInbox` then drops the combined, unparsable line WHOLESALE —
- * permanently losing A's record, not merely poisoning the fold.
- * `MAILBOX_LINE_MAX_BYTES` closes a DIFFERENT gap (a high-level `writeFileSync`
- * is not contractually one `write(2)` syscall even for content under the cap)
- * that this same lock also closes as a side effect: while it is held, no other
- * process's append can even begin, so a short-write retry inside
- * `writeFileSync` can never have another writer's bytes land in the gap.
- *
- * So every append (`appendLine`, below) and every `repairInbox` run now
- * holds the SAME per-file lock (`lib/state/lock.ts`'s `createLock`, keyed
- * on the target path) for its entire read-decide-write span, making all of
- * them fully mutually exclusive against each other. Traffic here is still
- * human-rate (a handful of messages an hour, not a queue), so the lock's
- * cost is negligible in practice; what changed is that self-healing made
- * "no lock needed" genuinely false, not merely conservative.
+ * Appending is not one `write(2)`: healing a prior interrupted write means
+ * READING the file, DECIDING whether to prepend a delimiter, and THEN
+ * writing. Two appenders interleaving across that span could glue one's
+ * healthy record to the other's torn tail, which `repairInbox` then drops
+ * whole. So every append (`appendLine`, below) and every `repairInbox` run
+ * holds the SAME per-file lock (`file-lock.ts`'s `fileLock`, keyed on the
+ * target path) for its entire read-decide-write span. While it is held no
+ * other process's append can begin, so a short-write retry inside
+ * `writeFileSync` cannot have another writer's bytes land in the gap either.
+ * Traffic here is human-rate, a handful of messages an hour, and a released
+ * lock leaves no file behind.
  *
  * ── Absent vs unreadable, and which callers may treat them alike ───────
  *
@@ -146,7 +129,7 @@ import {
   fsyncDirectoryBestEffort,
   writeAllSync,
 } from "./fsutil.ts";
-import { createLock } from "./lock.ts";
+import { fileLock } from "./file-lock.ts";
 
 export const MAILBOX_DIRNAME = "drive-mailbox";
 
@@ -410,7 +393,7 @@ async function appendLine(path: string, line: string): Promise<void> {
   // for why it is not, on its own, a safe basis for deciding whether to
   // fsync at all.
   const firstCreatedDir = mkdirSync(dirname(path), { recursive: true });
-  const lock = createLock(path, "mailbox.ts (append)", "mailbox");
+  const lock = fileLock(path, "mailbox.ts (append)");
   await lock.acquire();
   try {
     const existing = readMailboxFile(path);
@@ -585,7 +568,6 @@ async function appendLine(path: string, line: string): Promise<void> {
     }
   } finally {
     lock.release();
-    lock.dispose();
   }
 }
 
@@ -1066,10 +1048,10 @@ export function holdAbortUnmarkedSentinel(nonce: string): string {
  * one delimited append under it, so a read here observes either the whole
  * line or none of it — never a torn tail, which `foldGateState` would
  * (correctly) fail closed on and abort a push over a hold nobody intended.
- * `mkdirSync` mirrors `appendLine`'s own non-recursive-lock-needs-its-parent
- * requirement — harmless on a fresh worktree that never sent anything, since
- * an empty mailbox directory is equivalent to no mailbox everywhere else in
- * this module.
+ * `mkdirSync` mirrors `appendLine`'s: the lock file needs its directory —
+ * harmless on a fresh worktree that never sent anything, since an empty
+ * mailbox directory is equivalent to no mailbox everywhere else in this
+ * module.
  */
 export async function readPushHoldUnderLock(
   dir: string,
@@ -1078,13 +1060,12 @@ export async function readPushHoldUnderLock(
 ): Promise<{ blocked: boolean; reason: string }> {
   const path = inboxPath(dir);
   mkdirSync(dirname(path), { recursive: true });
-  const lock = createLock(path, label, "mailbox");
+  const lock = fileLock(path, label);
   await lock.acquire();
   try {
     return isPushHeld(dir, pr);
   } finally {
     lock.release();
-    lock.dispose();
   }
 }
 
@@ -1193,16 +1174,9 @@ export async function repairInbox(
 ): Promise<RepairResult> {
   const path = inboxPath(dir);
   // If the mailbox directory doesn't exist at all, the inbox is unambiguously
-  // absent — report that without ever touching the filesystem. This is not just
-  // an optimization: unconditionally `mkdirSync`-ing the directory here (a
-  // first attempt at fixing `createLock`'s own non-recursive `mkdirSync(lock)`
-  // needing the parent to exist) made `repairInbox(dir, true)` — `--dry-run`,
-  // documented as "reports without writing" — silently CREATE the mailbox
-  // directory on a fresh worktree, contradicting its own contract.
-  // Short-circuiting before any filesystem write closes both problems at once:
-  // dry-run never mutates anything, and a real repair against a directory that
-  // doesn't exist never reaches `lock.acquire()` at all, so there is nothing
-  // for its own non-recursive `mkdirSync(lock)` to fail against.
+  // absent — report that without ever touching the filesystem: a dry run
+  // ("reports without writing") must not create the mailbox directory, and a
+  // real repair against a directory that doesn't exist has nothing to lock.
   //
   // `existsSync` collapses EVERY lookup error to `false` — not just `ENOENT`,
   // but also an inaccessible directory (e.g. its own parent lacking search
@@ -1232,16 +1206,10 @@ export async function repairInbox(
     };
   }
   // `lstatSync(dir)` succeeding only means SOMETHING exists at `dir` — not
-  // that it's a directory. `dir` existing as a regular FILE used to sail
-  // past this check and, on the real (non-dry-run) path below, reach
-  // `lock.acquire()`; its `mkdirSync(inbox.jsonl.lock)` then fails with
-  // ENOTDIR on every attempt (a path component, `dir` itself, is the wrong
-  // type), which the lock treats as ordinary contention and eventually
-  // reports as "another driver is updating state" — a misdiagnosis that
-  // sends an operator chasing a nonexistent rival driver instead of the
-  // actual broken path. Caught here, before either the dry-run or the
-  // locking branch, so both report the same `ok: false` a broken location
-  // deserves.
+  // that it's a directory. `dir` as a regular FILE would make the lock's
+  // creation fail with ENOTDIR on the real path below. Caught here, before
+  // either the dry-run or the locking branch, so both report the same
+  // `ok: false` a broken location deserves.
   //
   // The type check itself uses `statSync`, not `dirStat` (the earlier
   // `lstatSync`): `lstat` does not follow a symlink, so a mailbox
@@ -1273,12 +1241,9 @@ export async function repairInbox(
     // A dry run never writes, so it needs no coordination against a
     // concurrent WRITER — only against reading a torn write mid-flight,
     // which only affects a REPORT here, never a decision (the write
-    // itself, below, still goes through the lock). Acquiring the
-    // mutating per-file lock anyway broke this command's own "reports
-    // without writing" contract: it creates
-    // .lock.stale.*/.lock.recovering.stale.* tombstone directories as a
-    // side effect and fails outright against a genuinely read-only
-    // mailbox directory.
+    // itself, below, still goes through the lock). Taking the lock would
+    // write its file, which "reports without writing" rules out, and would
+    // fail outright against a read-only mailbox directory.
     const r = readAndClassifyInbox(path);
     if (!r.ok) return { ok: false, path, why: r.why };
     return {
@@ -1298,7 +1263,7 @@ export async function repairInbox(
   // append fully mutually exclusive, so an appender either completes
   // entirely before repair starts, or waits until repair (and its
   // `atomicWrite`) has finished.
-  const lock = createLock(path, "mailbox.ts (repair)", "mailbox");
+  const lock = fileLock(path, "mailbox.ts (repair)");
   await lock.acquire();
   try {
     const before = readAndClassifyInbox(path);
@@ -1347,6 +1312,5 @@ export async function repairInbox(
     };
   } finally {
     lock.release();
-    lock.dispose();
   }
 }

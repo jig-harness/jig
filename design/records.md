@@ -20,12 +20,15 @@ keeps other records in the inventory. The machine records sit in one database
 per component with migrations a reader can check; and what a second host needs
 travels on the forge, through one interface.
 
-This is the design of [plan.md](plan.md) item 37. Its first step is built:
-the envelope and its codec (`plugin/shared/records/envelope.ts`), the
-registry (`plugin/shared/records/registry.ts`), the gate that checks those
-forms (`scripts/check-records-registry.ts`), the drive ledger
-and the follow-up marker carrying the envelope, and the view by record,
-[plugin/RECORDS.md](../plugin/RECORDS.md). Why there is no daemon or bus is
+This is the design of [plan.md](plan.md) item 37. Its first three steps
+are built: the envelope and its codec (`plugin/shared/records/envelope.ts`),
+the registry (`plugin/shared/records/registry.ts`), the gate that checks
+those forms (`scripts/check-records-registry.ts`), the drive ledger and the
+follow-up marker carrying the envelope, and the view by record,
+[plugin/RECORDS.md](../plugin/RECORDS.md); one identity and lease module,
+`plugin/shared/liveness.ts`; and the machine's records in SQLite through
+`plugin/shared/records/db.ts`, the dispatcher's database and the drive's.
+Why there is no daemon or bus is
 [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md).
 
 ## How it works
@@ -75,16 +78,37 @@ it the same question and gets the same three answers.
 
 ### The machine's records in SQLite
 
-The drive's state directory moves into SQLite through a shared
-`plugin/shared/records/db.ts`, which the dispatcher's database
-(`plugin/dispatch/lib/state.ts`) also opens through: additive migrations only, a
-schema version, and a minimum-reader version, so an older plugin refuses a
-database a newer one changed incompatibly and reads one that only gained
-columns or tables. There is one database per component (the drive's, the
-dispatcher's, collection's), never one shared by all, so a component's
-migration never waits on another's. A record the working tree holds stays
-a file there: the mailbox, which any sender appends to, and the handoff
-file, which a person reads.
+Every component that keeps machine records opens its own SQLite database
+through `plugin/shared/records/db.ts`: write-ahead log, a busy wait,
+foreign keys, owner-only permissions, migrations that only move forward, a
+schema version, and a minimum-reader version. Each migration says whether
+it is additive (it adds a table, an index or a column with a default); the
+minimum reader is the version of the last one that was not, so an older
+plugin keeps reading a database a newer one changed only additively and
+refuses one that needs a newer reader, naming both versions. A database
+also carries a random instance id, which tells a database apart from one
+deleted and created again at the same path. There is one database per
+component (the drive's, the dispatcher's), never one shared by all, so a
+component's migration never waits on another's.
+
+The drive's state lives in `~/.local/state/jig/drive-pr/state.sqlite`, one
+database per machine, every row keyed by the clone (the clone key in the
+Git common directory): the drive state as a JSON column with its version,
+the locks (the store's per-PR lock, the driver locks, the remote-mutation
+lock, the tree-lease guard), the session and tree leases with the shared
+process identity and lease shape and a generation that only grows, the
+held-item and Ready-mark claims, the stop requests, and the driver record.
+A lock's release deletes its row, so nothing is left behind. The clone's
+state directory beside the database keeps what nothing queries: the driver
+log, the kept answers, the long pass notice and the arm output. The ledger
+names its clone by the clone key and a digest of the host.
+
+A clone's state directory written by an earlier release is imported once,
+at the first open of the database for that clone; the import is recorded,
+the files are left where they were, and the reaper removes them a month
+later. A record the working tree holds stays a file there: the mailbox,
+which any sender appends to under a file lock that leaves nothing behind,
+and the handoff file, which a person reads.
 
 ### One forge-claims module
 
@@ -127,13 +151,14 @@ One pull request each, in this order; each is usable on its own.
    the follow-up marker carrying the envelope with their earlier forms
    still readable, [plugin/RECORDS.md](../plugin/RECORDS.md) and
    [ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md).
-2. **One identity and lease module**: `plugin/shared/liveness.ts`, with the
-   launch claim, the drive's leases and locks and the worktree hooks moved
-   onto it.
-3. **The machine's records in SQLite**: `plugin/shared/records/db.ts`, the
-   dispatcher's database opened through it, then the drive's state
-   directory moved into its own database, its files still read for one
-   release.
+2. **One identity and lease module** (built): `plugin/shared/liveness.ts`,
+   with the launch claim, the drive's leases and locks and the worktree
+   hooks moved onto it.
+3. **The machine's records in SQLite** (built): `plugin/shared/records/db.ts`
+   with its minimum reader, the dispatcher's database opened through it,
+   and the drive's machine state in its own database, a clone's earlier
+   state directory imported once at the first open rather than read for a
+   release, and left in place.
 4. **One forge-claims module**: the ledger, the takeover claim and the
    follow-up marker arbitrated by its one rule.
 5. **Records a second host reads**: `SharedRecords` on the forge, the

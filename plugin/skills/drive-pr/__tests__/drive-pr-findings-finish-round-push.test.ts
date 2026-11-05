@@ -33,6 +33,8 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 
 import { createFindingsFinishRoundFixtures } from "./drive-pr-findings-finish-round-fixtures.ts";
 
+import { readState, writeState } from "./state-rows.ts";
+
 useDrivePrSuite();
 describe("finish-round.ts", () => {
   const findingsFinishRoundFixtures = createFindingsFinishRoundFixtures();
@@ -274,9 +276,9 @@ describe("finish-round.ts", () => {
     });
     expect(r.exitCode).toBe(0);
     expect(r.pushed).not.toBe("");
-    const state = JSON.parse(
-      readFileSync(join(r.stateDir, "drive-pr-999.json"), "utf8"),
-    ) as { ciHold: { phase: string; eventId: string } };
+    const state = readState(r.stateDir, "999") as {
+      ciHold: { phase: string; eventId: string };
+    };
     expect(state.ciHold).toMatchObject({ phase: "held", eventId: "LE_3" });
   });
 
@@ -355,9 +357,9 @@ describe("finish-round.ts", () => {
       readFileSync(join(r.fixtureDir, "timeline.json"), "utf8"),
     ) as unknown[];
     expect(timeline).toHaveLength(2);
-    const state = JSON.parse(
-      readFileSync(join(r.stateDir, "drive-pr-999.json"), "utf8"),
-    ) as { ciHold: Record<string, unknown> };
+    const state = readState(r.stateDir, "999") as {
+      ciHold: Record<string, unknown>;
+    };
     expect(state.ciHold).toMatchObject({ phase: "released", eventId: "LE_2" });
   });
 
@@ -401,9 +403,7 @@ describe("finish-round.ts", () => {
     expect(
       JSON.parse(readFileSync(join(r.fixtureDir, "timeline.json"), "utf8")),
     ).toEqual([]);
-    const state = JSON.parse(
-      readFileSync(join(r.stateDir, "drive-pr-999.json"), "utf8"),
-    ) as { ciHold: unknown };
+    const state = readState(r.stateDir, "999") as { ciHold: unknown };
     expect(state.ciHold).toBeNull();
   });
 
@@ -433,11 +433,7 @@ describe("finish-round.ts", () => {
           "--check-run-watermark",
           "10000",
         ]);
-        const statePath = join(stateDir, "drive-pr-999.json");
-        const state = JSON.parse(readFileSync(statePath, "utf8")) as Record<
-          string,
-          unknown
-        >;
+        const state = readState(stateDir, "999") as Record<string, unknown>;
         state.ciHold = {
           phase: "acquiring",
           previousEventId: null,
@@ -446,7 +442,7 @@ describe("finish-round.ts", () => {
           createdAt: "2026-09-10T09:59:00Z",
           checkRunWatermark: 10_000,
         };
-        writeFileSync(statePath, JSON.stringify(state));
+        writeState(stateDir, "999", state);
         writeFileSync(
           join(fixtureDir, "timeline.json"),
           JSON.stringify([
@@ -470,9 +466,9 @@ describe("finish-round.ts", () => {
     });
     expect(r.exitCode).toBe(4);
     expect(r.pushed).toBe("");
-    const state = JSON.parse(
-      readFileSync(join(r.stateDir, "drive-pr-999.json"), "utf8"),
-    ) as { ciHold: Record<string, unknown> };
+    const state = readState(r.stateDir, "999") as {
+      ciHold: Record<string, unknown>;
+    };
     expect(state.ciHold).toMatchObject({
       phase: "released",
       eventId: "LE_2",
@@ -507,11 +503,7 @@ describe("finish-round.ts", () => {
           "--check-run-watermark",
           "10000",
         ]);
-        const statePath = join(stateDir, "drive-pr-999.json");
-        const state = JSON.parse(readFileSync(statePath, "utf8")) as Record<
-          string,
-          unknown
-        >;
+        const state = readState(stateDir, "999") as Record<string, unknown>;
         state.ciHold = {
           phase: "acquiring",
           previousEventId: null,
@@ -520,14 +512,14 @@ describe("finish-round.ts", () => {
           createdAt: "2026-09-10T09:59:00Z",
           checkRunWatermark: 10_000,
         };
-        writeFileSync(statePath, JSON.stringify(state));
+        writeState(stateDir, "999", state);
       },
     });
     expect(r.exitCode).toBe(4);
     expect(r.pushed).toBe("");
-    const state = JSON.parse(
-      readFileSync(join(r.stateDir, "drive-pr-999.json"), "utf8"),
-    ) as { ciHold: Record<string, unknown> };
+    const state = readState(r.stateDir, "999") as {
+      ciHold: Record<string, unknown>;
+    };
     expect(state.ciHold).toMatchObject({
       phase: "acquiring",
       head: PREV,
@@ -561,11 +553,7 @@ describe("finish-round.ts", () => {
           "--check-run-watermark",
           "10000",
         ]);
-        const statePath = join(stateDir, "drive-pr-999.json");
-        const state = JSON.parse(readFileSync(statePath, "utf8")) as Record<
-          string,
-          unknown
-        >;
+        const state = readState(stateDir, "999") as Record<string, unknown>;
         state.ciHold = {
           phase: "releasing",
           heldEventId: "LE_1",
@@ -577,7 +565,7 @@ describe("finish-round.ts", () => {
           createdAt: "2026-09-10T09:59:00Z",
           checkRunWatermark: 10_000,
         };
-        writeFileSync(statePath, JSON.stringify(state));
+        writeState(stateDir, "999", state);
         writeFileSync(
           join(fixtureDir, "timeline.json"),
           JSON.stringify([
@@ -615,9 +603,9 @@ describe("finish-round.ts", () => {
     });
     expect(r.exitCode).toBe(4);
     expect(r.pushed).toBe("");
-    const state = JSON.parse(
-      readFileSync(join(r.stateDir, "drive-pr-999.json"), "utf8"),
-    ) as { ciHold: Record<string, unknown> };
+    const state = readState(r.stateDir, "999") as {
+      ciHold: Record<string, unknown>;
+    };
     expect(state.ciHold).toMatchObject({
       phase: "released",
       eventId: "LE_4",
@@ -790,7 +778,7 @@ describe("finish-round.ts", () => {
           ],
           "the extractor now bounds the retry, as asked.",
         );
-        // The claim succeeds against GOOD state; the state file only becomes
+        // The claim succeeds against GOOD state; the stored state only becomes
         // unreadable as a side effect of the gh stub's own POST — i.e. AFTER
         // the claim, so this exercises the release step's own exit-3
         // handling, not the claim step's (already-covered) one.

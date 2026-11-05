@@ -332,7 +332,7 @@ export async function roundBase(
   // a legitimate empty response does: `cumulativeBase()` almost always
   // succeeds (`git merge-base` rarely fails), so silently routing a broken
   // `drive-state.ts verified` read through it would let `checkUntriagedThreads`
-  // proceed on a state file it never actually managed to read — exactly the
+  // proceed on a stored state it never actually managed to read — exactly the
   // input-read failure this guard's own contract says must fail closed.
   // Return an empty
   // `base` directly, with no `git merge-base` fallback attempt, so the
@@ -349,7 +349,7 @@ export async function roundBase(
     return cumulativeBase("no green-verified SHA recorded yet");
   }
 
-  // A corrupted state file can still pass the shape check in `schema.ts`
+  // A corrupted stored state can still pass the shape check in `schema.ts`
   // while carrying a symbolic ref (e.g. `HEAD`) instead of a 40-character
   // SHA. `cat-file -e` and
   // `merge-base --is-ancestor` both resolve `HEAD` successfully — it moves

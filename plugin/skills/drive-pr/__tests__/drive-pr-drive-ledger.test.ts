@@ -24,6 +24,7 @@ import {
   writeFixture,
 } from "./drive-pr-harness.ts";
 import { runDriveIn, state } from "./drive-loop-harness.ts";
+import { writeState } from "./state-rows.ts";
 
 useDrivePrSuite();
 
@@ -149,14 +150,11 @@ describe("drive.ts seeds its state from the ledger", () => {
         { prState: "MERGED" },
         [comment(500, body(ledger(5, 4)))],
       );
-      writeFileSync(
-        join(stateDir, "drive-pr-999.json"),
-        JSON.stringify({
-          ...freshState(999),
-          rounds: 7,
-          ledgerGeneration: local,
-        }),
-      );
+      writeState(stateDir, "999", {
+        ...freshState(999),
+        rounds: 7,
+        ledgerGeneration: local,
+      });
       const r = await runDriveIn(dir, stateDir, PASS, tree, LEDGER_ON);
       expectSpawnExit({ ...r, stdout: null }, 5);
       expect((await stateOf(stateDir, tree)).rounds).toBe(expected);

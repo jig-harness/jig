@@ -371,16 +371,23 @@ development and shipped as a version.
 - **Deterministic.** `skills/drive-pr/scripts/drive.ts` is the loop
   control: it starts one pass per round, reads the result, and stops in
   exactly one [terminal state](skills/drive-pr/README.md#the-exit-states--what-you-do-now)
-  with its exit code. Its state lives in a per-clone folder,
-  `~/.local/state/jig/drive-pr/<clone>/`
-  (`skills/drive-pr/scripts/lib/state/store.ts`): rounds, the verified head,
-  parked and held items, locks and
-  [leases](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). A
-  driver lock's claim (`skills/drive-pr/scripts/lib/claim.ts`) names its
-  holder by the shared
+  with its exit code. Its machine state lives in one SQLite database per
+  machine, `~/.local/state/jig/drive-pr/state.sqlite`
+  (`skills/drive-pr/scripts/lib/state/db.ts`, opened through
+  `shared/records/db.ts`), every row keyed by the clone: rounds, the
+  verified head, parked and held items as one JSON document per pull
+  request, and the locks, [leases](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  and claims as rows. A lock or lease names its holder by the shared
   [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   (`shared/liveness.ts`), whose host id is compared before the host name, so
-  a renamed machine still knows its own driver. The
+  a renamed machine still knows its own driver, and a lock whose holder is
+  judged dead is recovered at once; a release deletes the row and leaves
+  nothing behind. A lease's generation only grows, so a command admitted on
+  one generation is refused at the moment it mutates once another session
+  took the lease. The clone's folder beside the database,
+  `~/.local/state/jig/drive-pr/<clone>/`, keeps the driver log and the
+  files a pass is handed; a folder an earlier release wrote is read into the
+  database once, at its first open, and left in place. The
   [drive ledger](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   mirrors its resumable part as one comment on the pull request, written by
   the driver at each round boundary, park,

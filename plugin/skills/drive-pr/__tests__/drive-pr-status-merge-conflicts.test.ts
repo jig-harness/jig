@@ -10,7 +10,7 @@ import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exi
 
 import { join, delimiter } from "node:path";
 
-import { claimWasTakenOver, roundFingerprint } from "../scripts/drive";
+import { roundFingerprint } from "../scripts/drive";
 
 import {
   SCRIPTS,
@@ -668,39 +668,5 @@ describe("roundFingerprint — what counts as evidence of sameness", () => {
     expect(
       roundFingerprint(gate(measured, { parkedKeys: ["b", "a"] })),
     ).not.toBe(roundFingerprint(gate(measured, { parkedKeys: ["a", "b"] })));
-  });
-});
-
-describe("claimWasTakenOver — coexistence, a full successor-only transition, AND a vanished claim set", () => {
-  // The real race this decides is a microsecond window between a
-  // `renameSync` and the `inspect()` call that follows it — nothing in a
-  // single-process test can land inside it (see drive.ts's own comment on
-  // this function). Testing the DECISION directly, rather than racing the
-  // real filesystem, is what makes this actually mutation-provable: an
-  // earlier revision of this fix (`afterRewrite.claimNames.length > 1` alone)
-  // passed every existing subprocess-based test because none of them ever
-  // reached the sole-foreign-claim shape at all.
-  it("is false when the sole claim is ours", () => {
-    expect(claimWasTakenOver(["claim.ours"], "claim.ours")).toBe(false);
-  });
-
-  it("is true when nothing is there at all — a contender can remove our claim before installing its own successor, and that gap must read as loss too", () => {
-    expect(claimWasTakenOver([], "claim.ours")).toBe(true);
-  });
-
-  it("is true for coexistence — our claim plus a resurrected/foreign one", () => {
-    expect(claimWasTakenOver(["claim.ours", "claim.ghost"], "claim.ours")).toBe(
-      true,
-    );
-  });
-
-  it("is true for a full successor-only transition — exactly one claim, and it is not ours", () => {
-    expect(claimWasTakenOver(["claim.successor01"], "claim.ours")).toBe(true);
-  });
-
-  it("is order-independent for coexistence", () => {
-    expect(claimWasTakenOver(["claim.ghost", "claim.ours"], "claim.ours")).toBe(
-      true,
-    );
   });
 });

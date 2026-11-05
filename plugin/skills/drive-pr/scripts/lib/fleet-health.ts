@@ -876,7 +876,7 @@ function unparsedBlocks(
 
 /**
  * Where one signal stands, read from the comments on its epic. The tracker is the
- * store — durable, cross-worktree, visible to a human — so no local state file
+ * store — durable, cross-worktree, visible to a human — so no local stored state
  * can disagree with what the epic's owner sees.
  *
  * The latest of {sensor presentation, diagnosis} for this `kind` decides. A

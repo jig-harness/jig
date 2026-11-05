@@ -11,12 +11,13 @@
  * the longest prefix of its working directory winning), else `FAKE_GH_REPO`.
  */
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
-import { hostname, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { putLock } from "./state-rows.ts";
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
 const ATTACH = join(SCRIPTS, "attach-pr.ts");
@@ -255,14 +256,9 @@ export function branchOf(clone: Clone, tree: string): string {
   return r.exitCode === 0 ? r.stdout.trim() : "";
 }
 
-/** Plant a live driver's claim on the lock `name` in the clone's state. */
+/** Plant the driver lock `name` in the clone's state, held by this live process. */
 export function plantLiveLock(clone: Clone, name: string): void {
-  const lock = join(clone.env.DRIVE_PR_STATE_DIR as string, name);
-  mkdirSync(lock, { recursive: true });
-  writeFileSync(
-    join(lock, "claim.live0001"),
-    `${process.pid} ${hostname()} ${process.platform}\n`,
-  );
+  putLock(clone.env.DRIVE_PR_STATE_DIR as string, name, { token: "live0001" });
 }
 
 /** The worktree lock's name for `tree`, as `drive.ts` there computes it. */

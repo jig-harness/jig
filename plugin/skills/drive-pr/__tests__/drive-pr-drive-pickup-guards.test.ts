@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
@@ -236,11 +236,13 @@ describe("drive.ts --take-over admits and refuses by the holder", () => {
     const owner = fakeDriver();
     try {
       const { dir, stateDir } = await merged();
-      plantPrLock(stateDir, owner.pid, scratchClean.dir);
       // An old heartbeat makes the lock stale while its process still runs.
-      const claim = join(stateDir, "pr-drive-999.lock", "claim.feedc0de");
-      const old = (Date.now() - 10 * 60_000) / 1000;
-      utimesSync(claim, old, old);
+      plantPrLock(
+        stateDir,
+        owner.pid,
+        scratchClean.dir,
+        new Date(Date.now() - 10 * 60_000).toISOString(),
+      );
       await progressAt(stateDir, new Date().toISOString());
       const r = await runDriveIn(
         dir,

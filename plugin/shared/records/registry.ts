@@ -61,9 +61,12 @@ const PR_NUMBER = /^[1-9]\d*$/;
 const DRIVE = "skills/drive-pr/scripts/";
 const STATE = `${DRIVE}lib/state/`;
 const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
+const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
 const DISPATCH_DB = 4;
+/** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
+const DRIVE_DB = 1;
 const RRC = "skills/resolve-review-comments/scripts/";
 const REFLECT = "skills/reflect/scripts/";
 
@@ -95,6 +98,18 @@ function driveFile(
   };
 }
 
+/** A table of the drive's database. */
+function driveTable(name: string, owner: string, table: string): RecordKind {
+  return {
+    name,
+    medium: "machine",
+    owner,
+    at: DRIVE_DB_FILE,
+    table,
+    version: DRIVE_DB,
+  };
+}
+
 /** A table of the dispatcher's database. */
 function dispatchTable(name: string, owner: string, table: string): RecordKind {
   return {
@@ -107,32 +122,20 @@ function dispatchTable(name: string, owner: string, table: string): RecordKind {
   };
 }
 
-const DRIVE_STATE_DIR: RecordKind[] = [
-  driveFile("drive-state", `${STATE}store.ts`, "drive-pr-<PR>.json", "state"),
-  driveFile(
-    "drive-pr-lease",
-    `${STATE}lease-admission.ts`,
-    "pr-drive-lease-<PR>-wt-<16 hex>.json",
-    "pr-lease",
+const DRIVE_STATE: RecordKind[] = [
+  driveTable("drive-state", `${STATE}store.ts`, "drive_state"),
+  driveTable("drive-lock", `${STATE}lock.ts`, "locks"),
+  driveTable("drive-pr-lease", `${STATE}lease-admission.ts`, "leases"),
+  driveTable("drive-tree-lease", `${STATE}lease-tree.ts`, "tree_leases"),
+  driveTable("drive-claim", `${STATE}claims.ts`, "claims"),
+  driveTable("drive-stop", `${DRIVE}lib/stop-request.ts`, "stops"),
+  driveTable(
+    "drive-ledger-driver",
+    `${DRIVE}lib/ledger-stop.ts`,
+    "driver_records",
   ),
-  driveFile(
-    "drive-tree-lease",
-    `${STATE}lease-tree.ts`,
-    "drive-tree-lease-wt-<16 hex>.json",
-    "tree-lease",
-  ),
-  driveFile(
-    "drive-remote-lock",
-    `${STATE}lease-files.ts`,
-    "drive-pr-remote-lock-<PR>.lock/",
-    "remote-mutation-lock",
-  ),
-  driveFile(
-    "drive-stop-completion",
-    `${DRIVE}lib/stop-request.ts`,
-    "drive-pr-<PR>.stop-complete.<24 hex>.json",
-    "stop-completion",
-  ),
+  driveTable("drive-state-import", `${STATE}import.ts`, "imports"),
+  driveTable("drive-counter", `${STATE}db.ts`, "counters"),
   driveFile(
     "drive-log",
     `${DRIVE}lib/driver-log.ts`,
@@ -140,20 +143,8 @@ const DRIVE_STATE_DIR: RecordKind[] = [
     "log",
   ),
   driveFile(
-    "drive-ready-claim",
-    `${STATE}claims.ts`,
-    "drive-pr-<PR>.ready-claim",
-    "ready-claim",
-  ),
-  driveFile(
-    "drive-held-claim",
-    `${STATE}claims.ts`,
-    "drive-pr-<PR>.held-claim.<key>.<16 hex>",
-    "held-claim",
-  ),
-  driveFile(
     "drive-arm-output",
-    `${STATE}state-file-patterns.ts`,
+    `${STATE}artifacts.ts`,
     "drive-arm-<PR>.out",
     "arm-output",
   ),
@@ -162,47 +153,6 @@ const DRIVE_STATE_DIR: RecordKind[] = [
     `${STATE}pass-handoff.ts`,
     "drive-pr-<PR>.answers.json, drive-pr-<PR>.notice.md",
     "pass-handoff",
-  ),
-  driveFile(
-    "drive-orphan-marker",
-    `${STATE}orphans.ts`,
-    ".drive-pr-<PR>.orphan-warned",
-    "orphan-marker",
-  ),
-  driveFile(
-    "drive-reaper-snapshot",
-    `${DRIVE}reap-state.ts`,
-    ".reap-state-snapshot.json",
-    "reaper-snapshot",
-  ),
-  driveFile(
-    "drive-reaper-lock",
-    `${DRIVE}reap-state.ts`,
-    ".reap-state-delete.lock/",
-    "reaper-delete-lock",
-  ),
-  driveFile(
-    "drive-legacy-migration",
-    `${STATE}legacy-state.ts`,
-    ".migrated-from-legacy",
-    "legacy-migration-marker",
-  ),
-  driveFile(
-    "drive-pr-lock",
-    `${DRIVE}lib/driver/locks.ts`,
-    "pr-drive-<PR>.lock/",
-    "driver-pr-lock",
-  ),
-  driveFile(
-    "drive-worktree-lock",
-    `${DRIVE}lib/driver/locks.ts`,
-    "pr-drive-worktree-<16 hex>.lock/",
-    "driver-worktree-lock",
-  ),
-  driveFile(
-    "drive-ledger-driver",
-    `${DRIVE}lib/ledger-stop.ts`,
-    "ledger-driver-<PR>.json",
   ),
   driveFile(
     "drive-report-memory",
@@ -288,6 +238,14 @@ const DISPATCHER: RecordKind[] = [
 ];
 
 const MACHINE: RecordKind[] = [
+  {
+    name: "db-meta",
+    medium: "machine",
+    owner: "shared/records/db.ts",
+    at: "every component's database (the drive's and the dispatcher's): its instance id and minimum reader",
+    table: "db_meta",
+    version: 1,
+  },
   plain(
     "machine",
     "gc-receipt",
@@ -386,13 +344,14 @@ const MACHINE: RecordKind[] = [
     "~/.cache/jig/gh-cache/<hash>.json",
     1,
   ),
-  plain(
-    "machine",
-    "process-registry",
-    "shared/process-registry.ts",
-    "<tmp>/jig-processes-<id>/<entry>.json",
-    0,
-  ),
+  {
+    name: "process-registry",
+    medium: "machine",
+    owner: "shared/process-registry.ts",
+    at: "<tmp>/jig-processes-<id>/<entry>.json; a driver's on Windows, ~/.local/state/jig/drive-pr/<clone>/pr-drive-<PR>.processes.<token>/",
+    stateFamily: "process-registry",
+    version: 0,
+  },
   plain(
     "machine",
     "resource-lock",
@@ -706,7 +665,7 @@ const TRACKER: RecordKind[] = [
 
 /** Every kind of record the plugin keeps, on every medium. */
 export const RECORD_KINDS: readonly RecordKind[] = [
-  ...DRIVE_STATE_DIR,
+  ...DRIVE_STATE,
   ...DISPATCHER,
   ...MACHINE,
   ...TREE,

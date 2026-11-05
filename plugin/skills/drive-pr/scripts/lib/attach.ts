@@ -34,7 +34,7 @@
  * Every git and `gh` call is bounded; the fetch by `DRIVE_PR_FETCH_TIMEOUT`.
  */
 import { mkdirSync, realpathSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import {
   type DrivenTree,
   detachedTreeRecord,
@@ -51,6 +51,7 @@ import {
   acquire,
   type DriveLock,
   liveHolder,
+  prLockName,
   release,
 } from "./driver/locks.ts";
 import {
@@ -447,10 +448,10 @@ async function currentOf(tree: string): Promise<Current> {
 /** Why a live driver keeps the attach from moving this tree, or `null`. */
 async function liveDriver(pr: string): Promise<string | null> {
   const stateDir = await resolveStateDir();
-  const tree = liveHolder(join(stateDir, await worktreeLockName()));
+  const tree = liveHolder(stateDir, await worktreeLockName());
   if (tree !== null)
     return `a live driver${tree.diag ? ` of PR #${tree.diag.pr}` : ""} holds this working tree`;
-  const holder = liveHolder(join(stateDir, `pr-drive-${pr}.lock`));
+  const holder = liveHolder(stateDir, prLockName(pr));
   return holder === null
     ? null
     : `a live driver already holds PR #${pr}${holder.diag?.worktree ? ` in ${holder.diag.worktree}` : ""}`;
@@ -534,8 +535,8 @@ async function staysInPlace(
 async function takeDriverLocks(pr: string): Promise<DriveLock[]> {
   const stateDir = await resolveStateDir();
   const locks: DriveLock[] = [
-    { dir: join(stateDir, await worktreeLockName()), what: "worktree" },
-    { dir: join(stateDir, `pr-drive-${pr}.lock`), what: `PR #${pr}` },
+    { stateDir, name: await worktreeLockName(), what: "worktree" },
+    { stateDir, name: prLockName(pr), what: `PR #${pr}` },
   ];
   const taken: DriveLock[] = [];
   try {

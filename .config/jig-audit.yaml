@@ -1101,7 +1101,7 @@ criteria:
   M15/migration-discipline-written:   # lite, requires convention
     # Where the repository has database migrations, the discipline is written beside them or in the instruction file: a merged migration is never edited, renamed or deleted and is corrected by a new one, a migration changes structure only, each migration's ledger entry lands with it, and a migration's commit carries a review marker (expected-absent where the repository has no database migrations).
     score: expected-absent
-    evidence: "Jig has no database and no migrations: no migrations directory, SQL file, journal or revision chain is tracked (plugin/skills/drive-pr/scripts/migrate-state-dir.ts moves a skill's state files and touches no database), so there is no discipline to write beside one"
+    evidence: "Jig tracks no migrations directory, SQL file, journal or revision chain; its components' SQLite stores (the dispatcher's and the drive's) migrate through ordered in-code lists that plugin/shared/records/db.ts applies, whose header states that an entry a released plugin ran is never edited, so there is no migration file for a discipline to sit beside"
   M15/applied-migrations-immutable:   # standard, requires mechanical
     # A gate in CI fails a change that modifies, renames or deletes a migration file the base branch already holds, allowing only a restoration to content the file held before on that branch, and the migration runner records each file's hash when it applies it and refuses to run while an applied file's hash differs or the file is gone (expected-absent where the repository has no database migrations).
     score: expected-absent

@@ -1,25 +1,20 @@
 /**
- * The claim-file FORMAT of drive.ts's single-instance locks, and the liveness
- * rule that interprets one — shared with `drives.ts`, the read-only operator
- * surface, so the writer and the reader cannot drift apart. The
- * PROTOCOL (staging + rename, retire-by-name, recovery) stays in `drive.ts`:
- * this module knows what one claim file says and whether its owner counts as
- * live, never what taking or retiring one means.
+ * The diagnostics a drive.ts driver lock carries, and the liveness rule that
+ * interprets a lock's holder, shared with `drives.ts`, the read-only
+ * operator surface, so the writer and the reader cannot drift apart. The
+ * PROTOCOL (take, renew, recover, release) is `driver/locks.ts`'s: this
+ * module knows what a lock's diagnostics say and whether its holder counts
+ * as live, never what taking or recovering one means.
  *
- * A claim is `claim.<nonce>` inside the lock directory. Line 1 is
- * `<pid> <hostname> <platform> <host id>` — the liveness identity, and
- * everything the protocol ever reads. The pid, host name and host id are the
- * shared process identity's (`shared/liveness.ts`), and a host is compared by
- * its id first, so a claim this machine wrote under an earlier host name is
- * still this host's; a claim written before host ids ends at the platform and
- * is compared by name. Line 2, when present, is one JSON object of OPERATOR
- * DIAGNOSTICS: which PR the owner is driving, from which worktree, since when, and where its
- * durable log is. Diagnostics are advisory by design: a claim with no second
- * line (or an unparsable one) is a valid claim whose owner has nothing to show
- * — never a protocol error — so refusals and listings degrade to pid/host, and
- * nothing that decides liveness or recovery reads line 2. Line 2 exists so an
- * exit-11 refusal can name not only its holder but what that holder is doing;
- * with pid/host alone that is an ambiguity a human has to resolve by hand.
+ * A driver lock is a row of the drive database's `locks` table. Its holder
+ * is the shared process identity (`shared/liveness.ts`), compared by host id
+ * first, so a lock this machine wrote under an earlier host name is still
+ * this host's. Its `detail` is one JSON object of OPERATOR DIAGNOSTICS:
+ * which PR the holder is driving, from which worktree, since when, and where
+ * its durable log is. Diagnostics are advisory by design: a lock without them
+ * (or with unparsable ones) is a valid lock whose holder has nothing to show,
+ * never a protocol error, so refusals and listings degrade to pid and host,
+ * and nothing that decides liveness or recovery reads them.
  */
 
 import {
@@ -34,12 +29,6 @@ import {
   formatAccountIdentity,
 } from "./identity.ts";
 import { pidAlive } from "./proc.ts";
-
-export const CLAIM_PREFIX = "claim.";
-
-export function claimName(nonce: string): string {
-  return `${CLAIM_PREFIX}${nonce}`;
-}
 
 /** The diagnostics line — every field required, either a string or (for
  * `account`) a shape-checked nested object, except `model` and
@@ -63,37 +52,6 @@ export interface ClaimDiag {
   /** The permission mode each pass runs in (`pass-args.ts`); `null` when
    * the pass command chooses its own, absent from a claim that predates it. */
   permissionMode?: string | null;
-}
-
-export interface ClaimRecord {
-  pid: number;
-  host: string;
-  platform: string | null;
-  /** The writer's host id; absent from a claim written before host ids. */
-  hostId?: string;
-  diag: ClaimDiag | null;
-}
-
-/**
- * Serialize a claim. The diagnostics object is written compactly on one line,
- * so line 1 stays the whole identity. Older parsers still read the first two
- * tokens as pid and host; new readers also bind the PID namespace and the
- * host id.
- */
-export function formatClaim(
-  pid: number,
-  host: string,
-  diag?: ClaimDiag,
-  hostId = "",
-): string {
-  const head = `${pid} ${host} ${process.platform}${hostId === "" ? "" : ` ${hostId}`}\n`;
-  return diag === undefined ? head : `${head}${JSON.stringify(diag)}\n`;
-}
-
-/** This process's claim, its identity read from the shared module. */
-export function ownClaim(diag?: ClaimDiag): string {
-  const here = thisHost();
-  return formatClaim(process.pid, here.host, diag, here.hostId);
 }
 
 /**
@@ -168,11 +126,11 @@ function parseAccount(value: unknown): AccountIdentity | null {
 }
 
 /**
- * Shape-check the diagnostics JSON. Fails to `null`, never throws: a torn
- * write, a field of the wrong type, or a future format are all "nothing to
- * show", not errors — the identity on line 1 stands on its own.
+ * Shape-check a lock's diagnostics JSON. Fails to `null`, never throws: a
+ * field of the wrong type, or a future format, is "nothing to show", not an
+ * error: the lock's holder stands on its own.
  */
-function parseDiag(rest: string): ClaimDiag | null {
+export function parseDiagText(rest: string): ClaimDiag | null {
   const text = rest.trim();
   if (text === "") return null;
   let value: unknown;
@@ -231,38 +189,6 @@ export function diagLines(diag: ClaimDiag): string[] {
     `    model:    ${formatLabel(diag.model, "model")}`,
     `    permissions: ${formatLabel(diag.permissionMode, "permission mode")}`,
   ];
-}
-
-/**
- * Parse a claim file's text, or `null` when it does not name an owner at all.
- * Line 1 must carry a pid that could belong to a real process — a POSITIVE
- * safe integer; the host may be absent (host-less debris predating the host
- * field reads as "this host", same as `pidAlive`).
- *
- * The positivity check is load-bearing, not pedantry: no process has pid 0,
- * and `kill(0, sig)` addresses the CALLER's entire process group — so a
- * `0 <host>` claim read as live would let `drives.ts --stop` SIGTERM the
- * operator's own session. Refused here,
- * at the one parse boundary every claim reader shares, so no liveness probe
- * or signal can ever be aimed at it.
- */
-export function parseClaimText(text: string): ClaimRecord | null {
-  const nl = text.indexOf("\n");
-  const head = nl === -1 ? text : text.slice(0, nl);
-  const rest = nl === -1 ? "" : text.slice(nl + 1);
-  const [rawPid, rawHost = "", platform = null, hostId = ""] = head
-    .trim()
-    .split(/\s+/);
-  if (!isDigits(rawPid ?? "")) return null;
-  const pid = Number.parseInt(rawPid as string, 10);
-  if (pid < 1 || !Number.isSafeInteger(pid)) return null;
-  return {
-    pid,
-    host: rawHost,
-    platform,
-    ...(hostId === "" ? {} : { hostId }),
-    diag: parseDiag(rest),
-  };
 }
 
 /** The host a claim was written on, as the shared identity compares it. */
@@ -338,55 +264,4 @@ export function claimLive(
     pidAlive(record.pid, "") &&
     (record.ageMs === null || record.ageMs <= heartbeatStaleMs())
   );
-}
-
-/**
- * How long a staging directory may sit unpublished, on THIS host, before its
- * named owner counts as abandoned. Staging cannot fall back to a heartbeat the
- * way a held claim does — it is meant to exist for a few synchronous syscalls
- * and is never refreshed — so this is a short, syscall-scale window rather than
- * `heartbeatStaleMs()`'s multi-minute floor. Shared by `drive.ts`'s own
- * `sweepStaleStaging` and `migrate-state-dir.ts`'s `lockClaim`, so both apply
- * exactly one staging-liveness policy rather than two independently maintained
- * copies.
- */
-export const STAGING_STALE_MS = 5 * 60_000;
-
-/**
- * Is a staging directory's named owner still live, by the two-tier age
- * policy `drive.ts`'s `sweepStaleStaging` reclaims by: a dead pid is dead
- * however young the directory; a live LOCAL pid ages out after
- * `STAGING_STALE_MS`; a foreign host's pid is not checked here at all
- * (unanswerable, not confirmed-alive), so it ages out only after the
- * much longer `heartbeatStaleMs()` — bounding cross-host residue without
- * guessing at clock skew. `ageMs === null` stays alive, same as `claimLive`.
- *
- * Deliberately NOT `claimLive`, which never expires a foreign-host record at
- * all — the right rule for a HELD lock (a live owner keeps refreshing it
- * forever) but wrong for staging, which nothing ever refreshes and which
- * this age fallback exists to bound.
- */
-export function stagingLive(
-  record: ClaimHost & {
-    pid: number;
-    platform?: string | null;
-    ageMs: number | null;
-  },
-): boolean {
-  const foreign = !onThisHost(record);
-  if (!foreign && !samePidNamespace(record)) return true;
-  if (!foreign && !pidAlive(record.pid, "")) return false;
-  const staleAfter = foreign ? heartbeatStaleMs() : STAGING_STALE_MS;
-  return record.ageMs === null || record.ageMs <= staleAfter;
-}
-
-/** New staging names bind their namespace before the directory is published. */
-export function parseStagingHost(token: string): {
-  host: string;
-  platform: string | null;
-} {
-  const at = token.lastIndexOf("@");
-  return at === -1
-    ? { host: token, platform: null }
-    : { host: token.slice(0, at), platform: token.slice(at + 1) };
 }

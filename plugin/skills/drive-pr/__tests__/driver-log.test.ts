@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DRIVER_LOG_MAX_BYTES, DriverLog } from "../scripts/lib/driver-log.ts";
-import { PLAIN_ENTRIES } from "../scripts/lib/state/state-file-patterns.ts";
+import { cloneFile } from "../scripts/lib/state/artifacts.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "driver-log-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -67,8 +67,7 @@ describe("the driver log", () => {
 
   test("rotates at 10 MiB by default, and the rotated file stays in the log family", () => {
     expect(DRIVER_LOG_MAX_BYTES).toBe(10 * 1024 * 1024);
-    const family = (name: string) =>
-      PLAIN_ENTRIES.find((entry) => entry.re.test(name))?.family;
+    const family = (name: string) => cloneFile(name)?.family;
     expect(family("drive-pr-12.log")).toBe("log");
     expect(family("drive-pr-12.log.1")).toBe("log");
     expect(family("drive-pr-12.log.2")).toBeUndefined();

@@ -7,7 +7,6 @@
 
 import { describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { hostname } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -27,6 +26,7 @@ import {
   scratchLockName,
   state,
 } from "./drive-loop-harness.ts";
+import { putLock } from "./state-rows.ts";
 
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
   rawFixture(f, scratchClean.dir);
@@ -298,15 +298,13 @@ describe("drive.ts loop control", () => {
 
   it("enriches the exit-11 refusal with the holder claim’s diagnostics", async () => {
     const { dir, stateDir } = writeFixture({ threads: [] });
-    // The claim is planted as LITERAL bytes, not through formatClaim: the
-    // refusal must read the wire format a real driver writes, and a
-    // round-trip through the serializer would keep passing if both sides
-    // drifted together.
-    const lockDir = join(stateDir, await scratchLockName());
-    mkdirSync(lockDir, { recursive: true });
-    writeFileSync(
-      join(lockDir, "claim.feedfacefeedface"),
-      `${process.pid} ${hostname()}\n${JSON.stringify({
+    // The diagnostics are planted as the literal JSON object a real driver
+    // writes into its lock row, not through the driver's own serializer, so a
+    // drift between writer and reader cannot keep this passing.
+    putLock(stateDir, await scratchLockName(), {
+      token: "feedfacefeedface",
+      label: "drive.ts",
+      diag: {
         pr: "123",
         worktree: "/elsewhere/tree",
         log: "/elsewhere/drive-pr-123.log",
@@ -317,8 +315,8 @@ describe("drive.ts loop control", () => {
           provenance: "oauthAccount",
           reason: null,
         },
-      })}\n`,
-    );
+      },
+    });
     const r = await runDriveIn(dir, stateDir, [
       "--no-head-sync",
       "--",
@@ -338,14 +336,12 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).not.toContain("RAN_THE_PASS");
   });
 
-  it("an older claim (pid/host only) still refuses, degraded to its owner", async () => {
+  it("a lock with no diagnostics still refuses, degraded to its owner", async () => {
     const { dir, stateDir } = writeFixture({ threads: [] });
-    const lockDir = join(stateDir, await scratchLockName());
-    mkdirSync(lockDir, { recursive: true });
-    writeFileSync(
-      join(lockDir, "claim.cafecafecafecafe"),
-      `${process.pid} ${hostname()}\n`,
-    );
+    putLock(stateDir, await scratchLockName(), {
+      token: "cafecafecafecafe",
+      label: "drive.ts",
+    });
     const r = await runDriveIn(dir, stateDir, [
       "--no-head-sync",
       "--",
@@ -368,17 +364,16 @@ describe("drive.ts loop control", () => {
     // here would make `--stop` refuse a live in-flight driver and reproduce the
     // stand-down bug for its own pass).
     const { dir, stateDir } = writeFixture({ threads: [] });
-    const lockDir = join(stateDir, await scratchLockName());
-    mkdirSync(lockDir, { recursive: true });
-    writeFileSync(
-      join(lockDir, "claim.deadbeefdeadbeef"),
-      `${process.pid} ${hostname()}\n${JSON.stringify({
+    putLock(stateDir, await scratchLockName(), {
+      token: "deadbeefdeadbeef",
+      label: "drive.ts",
+      diag: {
         pr: "123",
         worktree: "/elsewhere/tree",
         log: "/elsewhere/drive-pr-123.log",
         started: "2026-08-15T00:00:00.000Z",
-      })}\n`,
-    );
+      },
+    });
     const r = await runDriveIn(dir, stateDir, [
       "--no-head-sync",
       "--",
