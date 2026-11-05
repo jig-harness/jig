@@ -91,6 +91,8 @@ export interface IssueOptions {
   links?: Array<{ type: string; outward?: string; inward?: string }>;
   created?: string;
   updated?: string;
+  /** Further fields, such as custom fields, by id. */
+  fields?: Record<string, unknown>;
 }
 
 /** The status categories, as Jira names them. */
@@ -160,6 +162,7 @@ export function issue(given: IssueOptions): Record<string, unknown> {
       issuelinks: o.links.map(linkOf),
       created: o.created,
       updated: o.updated,
+      ...o.fields,
     },
   };
 }

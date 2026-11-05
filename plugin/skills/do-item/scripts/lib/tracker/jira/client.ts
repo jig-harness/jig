@@ -2,8 +2,8 @@
  * The Jira adapter's requests: one issue, a JQL listing, an issue's comments
  * and changelog, and the resolvers that turn a configured or given name into
  * the one Jira resource it names (a fix version, a priority, a link type, an
- * issue type, a user). `tracker.ts`, `reports.ts` and `assigner.ts` build
- * the port on these.
+ * issue type, a field read as labels, a user). `tracker.ts`, `reports.ts`
+ * and `assigner.ts` build the port on these.
  *
  * A name that resolves to no resource, or to several, is refused before
  * anything is written. Timestamps are read in Jira's `+0000` form and given
@@ -16,6 +16,7 @@ import { TrackerRequestError } from "../port.ts";
 import { adfToMarkdown } from "./adf.ts";
 import {
   FIELDS,
+  type FieldLabel,
   iso,
   type JiraIssue,
   optStr,
@@ -29,6 +30,7 @@ import { KEY, ORDER, OPEN } from "./jql.ts";
 import type { JiraModel } from "./model.ts";
 import type { JiraSettings, LinkedRelation } from "./settings.ts";
 import {
+  abortedError,
   JiraApiError,
   type JiraTransport,
   offsetPages,
@@ -101,6 +103,13 @@ export interface Client {
   linkTypes(): Promise<Record<LinkedRelation, LinkType>>;
   /** The project's issue types, with their hierarchy level. */
   issueTypes(): Promise<IssueTypeMeta[]>;
+  /**
+   * The fields `issue_tracker.jira.field_labels` names, each resolved to
+   * exactly one field of the site; read once, and without a request when
+   * none is configured. An aborted `signal` ends the wait, not the shared
+   * read other callers may be waiting on.
+   */
+  fieldLabels(signal?: AbortSignal): Promise<FieldLabel[]>;
   /** The account id an identity (account id, email or display name) names. */
   accountId(identity: string): Promise<string>;
   /** Whether the account can be assigned issues in the project; cached. */
@@ -177,6 +186,51 @@ async function searchAccount(get: Get, who: string): Promise<string> {
   );
 }
 
+/** A field's JQL clause name: `cf[10050]` for `customfield_10050`, else its id. */
+function clauseOf(id: string): string {
+  const custom = /^customfield_(\d+)$/.exec(id);
+  return custom === null ? id : `cf[${custom[1]}]`;
+}
+
+/** Whether the schema is a multiline custom field, the description or the environment: Jira returns them as ADF documents. */
+function holdsRichText(schema: unknown): boolean {
+  if (!isRecord(schema)) return false;
+  const { custom, system } = schema;
+  return (
+    (typeof custom === "string" && custom.endsWith(":textarea")) ||
+    system === "description" ||
+    system === "environment"
+  );
+}
+
+/**
+ * How JQL matches one value of a field of this schema exactly, or a refusal
+ * for a type whose values do not read as labels (a user, a date, a
+ * cascading select).
+ */
+function matchOf(
+  schema: unknown,
+  at: string,
+  name: string,
+): FieldLabel["match"] {
+  const type = isRecord(schema) ? schema.type : undefined;
+  const items = isRecord(schema) ? schema.items : undefined;
+  if (holdsRichText(schema))
+    throw new TrackerConfigError(
+      at,
+      `${at}: the field '${name}' holds rich text, which does not read as a label; only single-line text, number, select, checkbox and labels fields do`,
+    );
+  if (type === "string") return null;
+  if (type === "number") return "number";
+  if (type === "option") return "string";
+  if (type === "array" && (items === "option" || items === "string"))
+    return "string";
+  throw new TrackerConfigError(
+    at,
+    `${at}: the field '${name}' is of type ${JSON.stringify(type)}${items === undefined ? "" : ` of ${JSON.stringify(items)}`}; only single-line text, number, select, checkbox and labels fields read as labels`,
+  );
+}
+
 /** The page size of a user search. */
 const USERS_PAGE = 50;
 
@@ -191,6 +245,17 @@ export interface ClientOptions {
   transport: JiraTransport;
 }
 
+/** `promise`, or a refusal as soon as `signal` aborts; the promise itself runs on. */
+function until<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(abortedError(signal));
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(resolve, reject).finally(() => {
+      signal.removeEventListener("abort", abort);
+    });
+  });
+}
+
 export function jiraClient(opts: ClientOptions): Client {
   const { project, site, model, settings, transport } = opts;
   const get = (path: string, query?: Record<string, string | number>) =>
@@ -202,6 +267,7 @@ export function jiraClient(opts: ClientOptions): Client {
 
   let links: Promise<Record<LinkedRelation, LinkType>> | undefined;
   let types: Promise<IssueTypeMeta[]> | undefined;
+  let labelFields: Promise<FieldLabel[]> | undefined;
   let zone: Promise<string> | undefined;
   let me: Promise<Record<string, unknown>> | undefined;
   const assignables = new Map<string, Promise<boolean>>();
@@ -230,6 +296,11 @@ export function jiraClient(opts: ClientOptions): Client {
     return matches[0] as T;
   }
 
+  /** The fields every issue read asks for, with those read as labels. */
+  async function fieldsToRead(signal?: AbortSignal): Promise<string[]> {
+    return [...FIELDS, ...(await client.fieldLabels(signal)).map((f) => f.id)];
+  }
+
   const client: Client = {
     project,
     site,
@@ -238,13 +309,16 @@ export function jiraClient(opts: ClientOptions): Client {
     transport,
 
     async issue(key, signal) {
+      // Resolved before the issue's own 404 handler: a failed field read is
+      // not a missing issue.
+      const read = (await fieldsToRead(signal)).join(",");
       let raw: unknown;
       try {
         raw = await transport(
           {
             method: "GET",
             path: `issue/${encodeURIComponent(key)}`,
-            query: { fields: FIELDS.join(",") },
+            query: { fields: read },
           },
           signal,
         );
@@ -252,7 +326,7 @@ export function jiraClient(opts: ClientOptions): Client {
         if (err instanceof JiraApiError && err.notFound) return null;
         throw err;
       }
-      return parseIssue(raw, site);
+      return parseIssue(raw, site, await client.fieldLabels(signal));
     },
 
     async mustIssue(key, signal) {
@@ -265,9 +339,11 @@ export function jiraClient(opts: ClientOptions): Client {
       return found;
     },
 
-    async search(jql, where, signal, fields = FIELDS) {
-      return (await searchPages(transport, jql, fields, where, signal)).map(
-        (i) => parseIssue(i, site),
+    async search(jql, where, signal, fields) {
+      const extra = await client.fieldLabels(signal);
+      const read = fields ?? (await fieldsToRead(signal));
+      return (await searchPages(transport, jql, read, where, signal)).map((i) =>
+        parseIssue(i, site, extra),
       );
     },
 
@@ -418,6 +494,49 @@ export function jiraClient(opts: ClientOptions): Client {
         types = undefined;
       });
       return types;
+    },
+
+    fieldLabels(signal) {
+      const configured = Object.entries(settings.fieldLabels);
+      if (configured.length === 0) return Promise.resolve([]);
+      if (signal?.aborted === true) return Promise.reject(abortedError(signal));
+      labelFields ??= (async () => {
+        const raw = await get("field");
+        if (!Array.isArray(raw))
+          throw new JiraApiError("fields of the site: expected a list");
+        const all = raw.map((f, i) => {
+          const r = record(f, `fields[${i}]`);
+          return {
+            id: str(r.id, `fields[${i}].id`),
+            name: str(r.name, `fields[${i}].name`),
+            schema: r.schema,
+          };
+        });
+        return configured.map(([name, prefix]) => {
+          const at = `issue_tracker.jira.field_labels.${name}`;
+          const byId = all.filter((f) => f.id === name);
+          const matches =
+            byId.length > 0 ? byId : all.filter((f) => same(f.name, name));
+          if (matches.length !== 1)
+            throw new TrackerConfigError(
+              at,
+              `${at}: '${name}' matches ${matches.length} fields of the site${matches.length > 1 ? ` (${matches.map((f) => f.id).join(", ")}); name the field by its id` : ""}, expected exactly 1`,
+            );
+          const f = matches[0] as (typeof all)[number];
+          return {
+            configured: name,
+            id: f.id,
+            name: f.name,
+            clause: clauseOf(f.id),
+            prefix,
+            match: matchOf(f.schema, at, f.name),
+          };
+        });
+      })();
+      labelFields.catch(() => {
+        labelFields = undefined;
+      });
+      return signal === undefined ? labelFields : until(labelFields, signal);
     },
 
     accountId(identity) {

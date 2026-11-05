@@ -1851,6 +1851,10 @@ make, use the entry's term instead.
   text in (issue descriptions, comments). Jig's Jira adapter converts it to
   Markdown when it reads and from Markdown when it writes, so the skills
   only ever handle Markdown.
+- **JQL (Jira Query Language)** — the query language Jira searches issues
+  with (`project = ENG AND labels in ("a")`). Jig's Jira adapter builds
+  every listing as one JQL query; a label read from a field
+  (`issue_tracker.jira.field_labels`) becomes a clause on that field.
 - **Batch** — several small, independent issues from one area of the code
   closed by one pull request, with one commit for each issue, so the review
   is paid once instead of once per issue

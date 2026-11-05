@@ -8,6 +8,7 @@
  *     priorities: { urgent: Highest, high: High, medium: Medium, low: Low }
  *     resolutions: { done: Done, canceled: Won't Do, duplicate: Duplicate }
  *     link_types: { blocks: Blocks, related: Relates, duplicate: Duplicate }
+ *     field_labels: { Size: "size:" }   # a field's values read as labels
  *
  * The section is parsed whatever the adapter, so a mistyped field is refused
  * before the adapter is chosen; only the Jira adapter requires `site`.
@@ -37,6 +38,8 @@ export interface JiraSettings {
   priorities: Record<PriorityName, string>;
   resolutions: Record<ResolvedState, string>;
   linkTypes: Record<LinkedRelation, string>;
+  /** A field's name or id → the prefix of the labels its values become. */
+  fieldLabels: Record<string, string>;
 }
 
 const FIELDS = [
@@ -46,6 +49,7 @@ const FIELDS = [
   "priorities",
   "resolutions",
   "link_types",
+  "field_labels",
 ];
 
 /** The issue type a new issue gets when none is configured. */
@@ -145,6 +149,50 @@ function namesOf<K extends string>(
   return out;
 }
 
+/** A label prefix: no whitespace, since a Jira label holds none. */
+const PREFIX = /^\S{1,100}$/;
+
+/**
+ * `field_labels`: each field, by name or id, to the prefix its values carry
+ * as labels. A field named twice, or a prefix that begins another, would
+ * make a label's field ambiguous, so either is refused.
+ */
+function fieldLabelsOf(v: unknown): Record<string, string> {
+  const at = field("field_labels");
+  if (v === undefined || v === null) return {};
+  if (!isRecord(v))
+    throw new TrackerConfigError(
+      at,
+      `${at} must be a mapping from a field's name or id to a label prefix`,
+    );
+  const out: Record<string, string> = {};
+  for (const [name, prefix] of Object.entries(v)) {
+    const key = name.trim();
+    const where = `${at}.${key}`;
+    if (key === "")
+      throw new TrackerConfigError(at, `${at} names an empty field`);
+    if (Object.keys(out).some((k) => k.toLowerCase() === key.toLowerCase()))
+      throw new TrackerConfigError(where, `${at} names '${key}' twice`);
+    if (typeof prefix !== "string" || !PREFIX.test(prefix))
+      throw new TrackerConfigError(
+        where,
+        `${where} must be a label prefix without whitespace, such as "size:"`,
+      );
+    const clash = Object.entries(out).find(
+      ([, p]) =>
+        p.toLowerCase().startsWith(prefix.toLowerCase()) ||
+        prefix.toLowerCase().startsWith(p.toLowerCase()),
+    );
+    if (clash !== undefined)
+      throw new TrackerConfigError(
+        where,
+        `${where} is '${prefix}', which overlaps '${clash[1]}' (${at}.${clash[0]}); a label would belong to both`,
+      );
+    out[key] = prefix;
+  }
+  return out;
+}
+
 /** Validate `issue_tracker.jira`. */
 export function parseJiraSettings(raw: unknown): JiraSettings {
   const section = sectionOf(raw);
@@ -176,6 +224,7 @@ export function parseJiraSettings(raw: unknown): JiraSettings {
       LINKED_RELATIONS,
       DEFAULT_LINK_TYPES,
     ),
+    fieldLabels: fieldLabelsOf(section.field_labels),
   };
 }
 

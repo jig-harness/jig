@@ -88,7 +88,7 @@ function cancelled(signal: AbortSignal | undefined): signal is AbortSignal {
   return signal?.aborted === true;
 }
 
-function abortedError(signal: AbortSignal): JiraApiError {
+export function abortedError(signal: AbortSignal): JiraApiError {
   const reason: unknown = signal.reason;
   return new JiraApiError(
     `Jira request cancelled: ${reason instanceof Error ? reason.message : String(reason)}`,

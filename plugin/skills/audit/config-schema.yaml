@@ -563,6 +563,11 @@ fields:
     keys: [blocks, related, duplicate]
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
     since: 0.111.0
+  issue_tracker.jira.field_labels:
+    type: map
+    values_type: string
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch, dispatch]
+    since: next
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch]
