@@ -48,6 +48,9 @@ const unlabeled = (id: string, actor: string, createdAt: string) => ({
 const readJson = <T>(path: string): T =>
   JSON.parse(readFileSync(path, "utf8")) as T;
 
+const writeTimeline = (fixtureDir: string, events: unknown[]) =>
+  writeFileSync(join(fixtureDir, "timeline.json"), JSON.stringify(events));
+
 const ciHoldOf = (stateDir: string) => readState(stateDir, "999")?.ciHold;
 
 const headOf = (cwd: string) =>
@@ -108,19 +111,36 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     ).toHaveLength(1);
   });
 
-  it("adopts a label re-added after the drive's own removal", async () => {
+  /** A held label the drive added at LE_1, then removed and a human re-added as LE_3. */
+  const adoptsReAddedLabel = async (
+    removedBy: string,
+    interruptRelease: boolean,
+  ) => {
     const r = await finishRound({
       fixture: { threads: [], ciHeld: true },
       seedState: async ({ stateDir, fixtureDir, cwd }) => {
         await seedHeld(stateDir, fixtureDir, cwd, "LE_1");
-        writeFileSync(
-          join(fixtureDir, "timeline.json"),
-          JSON.stringify([
-            labeled("LE_1", "drive-user", "2026-09-10T09:58:00Z"),
-            unlabeled("LE_2", "human-user", "2026-09-10T09:59:00Z"),
-            labeled("LE_3", "human-user", "2026-09-10T09:59:30Z"),
-          ]),
-        );
+        if (interruptRelease) {
+          const state = readState(stateDir, "999");
+          assert(state, "the fixture must have seeded the drive state");
+          state.ciHold = {
+            phase: "releasing",
+            heldEventId: "LE_1",
+            addedAtHead: headOf(cwd),
+            heldActor: "drive-user",
+            heldCreatedAt: "2026-09-10T09:58:00Z",
+            head: headOf(cwd),
+            actor: "drive-user",
+            createdAt: "2026-09-10T09:59:00Z",
+            checkRunWatermark: 10_000,
+          };
+          writeState(stateDir, "999", state);
+        }
+        writeTimeline(fixtureDir, [
+          labeled("LE_1", "drive-user", "2026-09-10T09:58:00Z"),
+          unlabeled("LE_2", removedBy, "2026-09-10T09:59:00Z"),
+          labeled("LE_3", "human-user", "2026-09-10T09:59:30Z"),
+        ]);
       },
     });
     expectSpawnExit(r, 0);
@@ -129,44 +149,13 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
       phase: "held",
       eventId: "LE_3",
     });
-  });
+  };
 
-  it("adopts the live label when an interrupted release cannot be reconciled", async () => {
-    const r = await finishRound({
-      fixture: { threads: [], ciHeld: true },
-      seedState: async ({ stateDir, fixtureDir, cwd }) => {
-        await seedHeld(stateDir, fixtureDir, cwd, "LE_1");
-        const state = readState(stateDir, "999");
-        assert(state, "the fixture must have seeded the drive state");
-        state.ciHold = {
-          phase: "releasing",
-          heldEventId: "LE_1",
-          addedAtHead: headOf(cwd),
-          heldActor: "drive-user",
-          heldCreatedAt: "2026-09-10T09:58:00Z",
-          head: headOf(cwd),
-          actor: "drive-user",
-          createdAt: "2026-09-10T09:59:00Z",
-          checkRunWatermark: 10_000,
-        };
-        writeState(stateDir, "999", state);
-        writeFileSync(
-          join(fixtureDir, "timeline.json"),
-          JSON.stringify([
-            labeled("LE_1", "drive-user", "2026-09-10T09:58:00Z"),
-            unlabeled("LE_2", "drive-user", "2026-09-10T09:59:00Z"),
-            labeled("LE_3", "human-user", "2026-09-10T09:59:30Z"),
-          ]),
-        );
-      },
-    });
-    expectSpawnExit(r, 0);
-    expect(r.pushed).not.toBe("");
-    expect(ciHoldOf(r.stateDir)).toMatchObject({
-      phase: "held",
-      eventId: "LE_3",
-    });
-  });
+  it("adopts a label re-added after the drive's own removal", () =>
+    adoptsReAddedLabel("human-user", false));
+
+  it("adopts the live label when an interrupted release cannot be reconciled", () =>
+    adoptsReAddedLabel("drive-user", true));
 
   it("keeps an adopted label when the push fails, since this push did not add it", async () => {
     const r = await finishRound({
@@ -276,16 +265,17 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
     expect(r.stderr).toContain("does not show it being added yet");
   });
 
-  it("release adopts a label someone else added and removes it at convergence", async () => {
+  /** Runs `ci-hold.ts release` over a fixture whose only label event is a human's add. */
+  const runRelease = async (checkRuns?: unknown) => {
     const repo = scratchWithOrigin();
     const { dir, stateDir } = writeFixture(
       { threads: [], ciHeld: true, head: repo.head },
       repo.dir,
     );
-    writeFileSync(
-      join(dir, "timeline.json"),
-      JSON.stringify([labeled("LE_1", "human-user", "2026-09-10T09:59:00Z")]),
-    );
+    writeTimeline(dir, [labeled("LE_1", "human-user", "2026-09-10T09:59:00Z")]);
+    if (checkRuns !== undefined) {
+      writeFileSync(join(dir, "check-runs.json"), JSON.stringify(checkRuns));
+    }
     const proc = Bun.spawn(
       scriptArgv(
         join(SCRIPTS, "ci-hold.ts"),
@@ -310,6 +300,11 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
       new Response(proc.stderr).text(),
       proc.exited,
     ]);
+    return { dir, stateDir, exitCode, stdout, stderr };
+  };
+
+  it("release adopts a label someone else added and removes it at convergence", async () => {
+    const { dir, stateDir, exitCode, stdout, stderr } = await runRelease();
     expectSpawnExit({ exitCode, stdout, stderr }, 0);
     expect(stdout.trim()).toBe("removed");
     const view = readJson<{ labels: { name: string }[] }>(
@@ -324,43 +319,9 @@ describe("ci-hold.ts adopts a hold label it holds no record of", () => {
   });
 
   it("release waits, leaving the adopted label, while no check run is registered yet", async () => {
-    const repo = scratchWithOrigin();
-    const { dir, stateDir } = writeFixture(
-      { threads: [], ciHeld: true, head: repo.head },
-      repo.dir,
-    );
-    writeFileSync(
-      join(dir, "timeline.json"),
-      JSON.stringify([labeled("LE_1", "human-user", "2026-09-10T09:59:00Z")]),
-    );
-    writeFileSync(
-      join(dir, "check-runs.json"),
-      JSON.stringify({ check_runs: [] }),
-    );
-    const proc = Bun.spawn(
-      scriptArgv(
-        join(SCRIPTS, "ci-hold.ts"),
-        "release",
-        "999",
-        "--expect-head",
-        repo.head,
-      ),
-      {
-        cwd: repo.dir,
-        env: {
-          ...stateEnv(stateDir, dir),
-          PATH: `${binDir}${delimiter}${process.env.PATH}`,
-          DRIVE_PR_FIXTURES: dir,
-        },
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
+    const { dir, stateDir, exitCode, stdout, stderr } = await runRelease({
+      check_runs: [],
+    });
     expectSpawnExit({ exitCode, stdout, stderr }, 4);
     expect(stderr).toContain("no check run is registered");
     const view = readJson<{ labels: { name: string }[] }>(
