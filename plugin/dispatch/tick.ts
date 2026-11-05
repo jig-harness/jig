@@ -29,9 +29,15 @@
  * every stage off a pull request and `drive` asks for an arm, and, last,
  * each managed pull request's state label is set from its ledger
  * (lib/actions/labels.ts). With them off, no label is read or written.
+ *
+ * Another host may dispatch the same repository: every host's launch claims
+ * and their ends are read beside this host's records, and with `--apply`
+ * this host claims its own launches there and writes their ends
+ * (lib/shared-launches.ts, lib/tick-shared.ts). Only the host that owns the
+ * repository (`owner` in the machine file) notifies, writes the labels and
+ * the history rows of what it did not launch.
  */
 import { passTimeoutSeconds } from "../skills/drive-pr/scripts/lib/driver/settings.ts";
-import { resolveLogin } from "../skills/drive-pr/scripts/lib/state/ledger-forge.ts";
 import { parseTrackerConfig } from "../skills/do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../skills/do-item/scripts/lib/tracker/index.ts";
 import {
@@ -41,10 +47,8 @@ import {
 import {
   defaultBranchConfig,
   mergedNotClosed,
-  mergedSince,
   openPullRequest,
   pullRequestLabels,
-  openPullRequests,
   repoTarget,
 } from "./lib/forge.ts";
 import {
@@ -66,7 +70,6 @@ import {
   applyDrives,
   type FreshDrive,
 } from "./lib/actions/drive.ts";
-import { settleConflictStops } from "./lib/actions/drive-hold.ts";
 import { applyFollowups } from "./lib/actions/followup.ts";
 import { accountsReport, outOfTime, rotated } from "./lib/actions/launch.ts";
 import {
@@ -80,7 +83,6 @@ import { applyNotices } from "./lib/actions/notify.ts";
 import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
 import { hostCodexOptIn, lastAccount, slotTable } from "./lib/accounts.ts";
-import { readMarkers } from "./lib/followup-marker.ts";
 import { readOutcomes, settleFollowups } from "./lib/followup-outcomes.ts";
 import { readIdle, updateIdle } from "./lib/idle.ts";
 import type { RepoLineInput } from "./lib/line.ts";
@@ -90,7 +92,11 @@ import {
   readLaunches,
   type ReadRecord,
 } from "./lib/launches.ts";
-import { type MachineConfig, machineRepository } from "./lib/machine-config.ts";
+import {
+  type MachineConfig,
+  type MachineRepository,
+  machineRepository,
+} from "./lib/machine-config.ts";
 import { holdBack, type PlanInput, planTick } from "./lib/plan.ts";
 import { orcaRuntime } from "./lib/runtime/orca.ts";
 import type {
@@ -99,17 +105,28 @@ import type {
   SessionsReport,
 } from "./lib/runtime/port.ts";
 import { branchPattern, readSection } from "./lib/section.ts";
+import {
+  heldElsewhere,
+  launchClaimer,
+  type SharedContext,
+} from "./lib/shared-launches.ts";
 import { observeContention } from "./lib/sources/contention.ts";
 import { readDrives } from "./lib/sources/ledgers.ts";
-import { adoptionNote, adoptionOf } from "./lib/adopt.ts";
+import { adoptionOf } from "./lib/adopt.ts";
 import { readPickups } from "./lib/sources/tracker.ts";
+import { type ForgeRead, readForge } from "./lib/tick-forge.ts";
 import { copyLog, lineInputOf, writeTickLine } from "./lib/tick-line.ts";
+import {
+  endOwnClaims,
+  openShared,
+  readDriveClaims,
+  sharedReport,
+} from "./lib/tick-shared.ts";
 import { failureText } from "./lib/text.ts";
 import type {
   ClaimedItem,
   DispatchSection,
   MarkedPr,
-  MergedPr,
   RepoReport,
   RepoTarget,
   WantedItem,
@@ -163,11 +180,27 @@ function emptyReport(path: string, refused: string): RepoReport {
   };
 }
 
-async function gatherRepo(
+/** A repository opened for its tick: its target, its dispatch section, its machine-file entry and the report the tick fills. */
+interface OpenedRepo {
+  repo: RepoTarget;
+  values: Record<string, unknown>;
+  section: DispatchSection;
+  /** Where the dispatch section was read from. */
+  where: string;
+  report: RepoReport;
+  /** The stages the machine file enables for it. */
+  stages: Set<string>;
+  /** Whether the machine file lists it, and whether this host owns it there. */
+  listed: boolean;
+  owner: boolean;
+}
+
+/** Open a repository for its tick; the report that refuses it when its target or its dispatch section does not read. */
+async function openRepo(
   path: string,
   context: TickContext,
-): Promise<RepoReport> {
-  const { options, runtime, nowMs } = context;
+): Promise<OpenedRepo | RepoReport> {
+  const { options, nowMs } = context;
   const entry = machineRepository(options.machine ?? null, path);
   let repo: RepoTarget;
   try {
@@ -197,36 +230,42 @@ async function gatherRepo(
     refused: null,
     slug: repo.slug,
     section,
-    followupSince:
-      options.followupSince ??
-      entry?.followupSince ??
-      previousFollowupSince(path) ??
-      new Date(nowMs).toISOString(),
+    followupSince: followupStart(options, entry, path, nowMs),
   };
+  return { repo, values, section, where, report, ...entryFacts(entry) };
+}
 
-  const tracked = await readTracker(values, repo, section, report, where);
-  const { keys } = tracked;
-
-  // The forge: the open pull requests and their ledgers, and the merges.
-  const labels = section.labels.enabled ? section.labels : null;
-  const forge = await readForge(repo, report, section, labels, nowMs);
-  forge.drives = settleConflictStops(
-    forge.drives,
-    allRecords(context).filter((r) => r.record.repo === repo.slug),
+/** When the follow-up stage started for a repository: the run's override, the machine file's, the previous receipt's, else now. */
+function followupStart(
+  options: TickOptions,
+  entry: MachineRepository | null,
+  path: string,
+  nowMs: number,
+): string {
+  return (
+    options.followupSince ??
+    entry?.followupSince ??
+    previousFollowupSince(path) ??
+    new Date(nowMs).toISOString()
   );
-  const { open, drives, merged, login } = forge;
+}
 
-  // The runtime: which of them a session holds.
-  const join: JoinTargets = {
-    keys,
-    branchPattern: branchPattern(values),
-    pullRequests: [
-      ...open.map((p) => ({ number: p.number, head: p.headRefName })),
-      ...merged.map((p) => ({ number: p.number, head: p.head })),
-    ],
-  };
-  const sessions = await readSessions(runtime, repo, join);
-  report.records.push({
+/** What a repository's machine-file entry says of it: its stages, whether it is listed, whether this host owns it. */
+function entryFacts(
+  entry: MachineRepository | null,
+): Pick<OpenedRepo, "stages" | "listed" | "owner"> {
+  if (entry === null) return { stages: new Set(), listed: false, owner: true };
+  return { stages: new Set(entry.stages), listed: true, owner: entry.owner };
+}
+
+/** What the runtime's answer reads as on the report. */
+function runtimeRead(
+  runtime: SessionRuntime,
+  repo: RepoTarget,
+  sessions: SessionsReport,
+  section: DispatchSection,
+): RepoReport["records"][number] {
+  return {
     record: "runtime",
     source: `${runtime.name}: ${sessions.source}`,
     ok: sessions.ok,
@@ -235,7 +274,54 @@ async function gatherRepo(
         ? `${sessions.workspaces.length} workspace(s) of ${repo.slug}`
         : sessions.reason
     }${bindingNote(runtime, section)}`,
-  });
+  };
+}
+
+/** Which workspace a session runtime joins to which item or pull request. */
+function joinTargets(
+  keys: IssueKeys | null,
+  values: Record<string, unknown>,
+  forge: ForgeRead,
+): JoinTargets {
+  return {
+    keys,
+    branchPattern: branchPattern(values),
+    pullRequests: [
+      ...forge.open.map((p) => ({ number: p.number, head: p.headRefName })),
+      ...forge.merged.map((p) => ({ number: p.number, head: p.head })),
+    ],
+  };
+}
+
+async function gatherRepo(
+  path: string,
+  context: TickContext,
+): Promise<RepoReport> {
+  const opened = await openRepo(path, context);
+  if (!("repo" in opened)) return opened;
+  const { repo, values, section, where, report } = opened;
+  const { runtime, nowMs } = context;
+  const tracked = await readTracker(values, repo, section, report, where);
+
+  // The forge: the open pull requests and their ledgers, the merges, and the launch claims of every host.
+  const labels = section.labels.enabled ? section.labels : null;
+  const shared = openShared(repo.slug, opened.owner);
+  const forge = await readForge(
+    repo,
+    report,
+    section,
+    labels,
+    nowMs,
+    shared.records,
+  );
+  const ctx = shared.context(forge.login);
+  const claims = await readDriveClaims(ctx, forge, allRecords(context));
+  const { open, drives, merged, login } = forge;
+
+  // The runtime: which of them a session holds.
+  const join = joinTargets(tracked.keys, values, forge);
+  const sessions = await readSessions(runtime, repo, join);
+  report.records.push(runtimeRead(runtime, repo, sessions, section));
 
   const { created } = forge;
   const threads = tickThreadReader(repo.slug);
@@ -252,13 +338,18 @@ async function gatherRepo(
     repo,
     values,
     report,
-    forge,
+    {
+      ...forge,
+      heldElsewhere: heldElsewhere(claims),
+      owner: ctx.owner,
+    },
     allRecords(context),
     nowMs,
     threads,
   );
   const held = heldPullRequests(labels, [...open, ...merged]);
   const { inScope } = forge;
+  const onlyLabeled = labels?.onlyLabeled === true;
   planRepo(context, repo.slug, report, {
     slug: repo.slug,
     section,
@@ -270,12 +361,20 @@ async function gatherRepo(
     created,
     held,
     serialized,
-    ...(labels?.onlyLabeled === true ? { inScope } : {}),
+    shared: { host: ctx.host, drives: claims },
+    ...(onlyLabeled ? { inScope } : {}),
   });
-  if (labels?.onlyLabeled === true) report.inScope = [...inScope];
+  if (onlyLabeled) report.inScope = [...inScope];
   await logRepo(context, repo.slug, report, drives);
-  if (context.apply !== null)
-    await applyStages(context.apply, new Set(entry?.stages ?? []), report, {
+  if (context.apply !== null) {
+    await endOwnClaims(ctx, report, {
+      claims,
+      forge,
+      records: allRecords(context),
+      outcomes: readOutcomes(repo.slug),
+      nowMs,
+    });
+    await applyStages(context.apply, opened.stages, report, {
       repo,
       runtime,
       section,
@@ -284,160 +383,18 @@ async function gatherRepo(
       merged,
       join,
       sessions,
+      shared: ctx,
     });
+  }
+  // The labels are the owner's to write, as its board, notifications and history rows are.
   await projectLabels(context, repo.slug, report, labels, {
     ...forge,
-    listed: entry !== null,
+    listed: opened.listed && ctx.owner,
     serialized,
   });
+  report.shared = await sharedReport(shared, ctx, claims, forge);
   context.lineInputs.set(path, lineInputOf(drives, forge, tracked, sessions));
   return report;
-}
-
-/** What the forge gave one repository's tick. */
-interface ForgeRead {
-  /** Whether the pull requests read in full. */
-  ok: boolean;
-  open: Awaited<ReturnType<typeof openPullRequests>>;
-  /** The open pull requests read for a ledger: under `only_labeled`, the labelled ones. */
-  read: Set<number>;
-  /** Under `only_labeled`, the pull requests in scope this tick: the only ones anything is done on, whatever a launch record says. */
-  inScope: Set<number>;
-  /** Under `only_labeled`, the pull requests whose scope this tick's listings disagree on: unplaced, nothing done or written on them. */
-  disputed: Set<number>;
-  /** When each pull request was created, from every observation of it, in scope or not: pickup bookkeeping reads it. */
-  created: Map<number, string>;
-  drives: Awaited<ReturnType<typeof readDrives>>;
-  merged: MarkedPr[];
-  login: string | null;
-}
-
-/**
- * The forge's part of a repository's tick: the open pull requests (with
- * their labels where `labels` is on, in the same listing) and their ledgers,
- * and the merges. Under `only_labeled`, a pull request that carries no
- * label of the set is never read for a ledger, and a merge that carries
- * none wants no follow-up; the scope itself is decided once, by
- * `decideScope`.
- */
-async function readForge(
-  repo: RepoTarget,
-  report: RepoReport,
-  section: DispatchSection,
-  labels: LabelConfig | null,
-  nowMs: number,
-): Promise<ForgeRead> {
-  const read = { labels: labels !== null };
-  const managed = <T extends { labels?: string[] }>(prs: T[]): T[] =>
-    labels?.onlyLabeled === true
-      ? prs.filter((p) => carriesSet(labels, p.labels ?? []))
-      : prs;
-  const out: ForgeRead = {
-    ok: false,
-    open: [],
-    read: new Set(),
-    inScope: new Set(),
-    disputed: new Set(),
-    created: new Map(),
-    drives: [],
-    merged: [],
-    login: null,
-  };
-  const remember = (prs: readonly { number: number; createdAt?: string }[]) => {
-    for (const p of prs)
-      if (p.createdAt !== undefined) out.created.set(p.number, p.createdAt);
-  };
-  try {
-    out.open = await openPullRequests(repo.slug, read);
-    remember(out.open);
-    out.login = await resolveLogin();
-    const toRead = managed(out.open);
-    const unlabeled = out.open.length - toRead.length;
-    const adoption = adoptionOf(section, out.login);
-    out.drives = await readDrives(
-      repo.slug,
-      out.login,
-      toRead,
-      nowMs,
-      labels,
-      adoption,
-    );
-    const since = report.followupSince as string;
-    out.read = new Set(toRead.map((p) => p.number));
-    const listed =
-      section.followupCommand === null
-        ? []
-        : await mergedSince(repo.slug, since, read);
-    remember(listed);
-    out.merged = await withMarkers(repo.slug, out.login, managed(listed));
-    if (labels?.onlyLabeled === true)
-      decideScope(out, report, labels, [out.open, listed]);
-    out.ok = true;
-    report.records.push({
-      record: "forge",
-      source: `gh ${repo.slug}`,
-      ok: true,
-      detail: `${out.open.length} open pull request(s), ${out.drives.length} with a drive ledger${labelNote(labels, unlabeled)}${adoptionNote(adoption, out.drives)}; ${
-        section.followupCommand === null
-          ? "no dispatch.followup_command: no follow-ups"
-          : `${out.merged.length} merged since ${since}`
-      }`,
-    });
-  } catch (error) {
-    report.records.push({
-      record: "forge",
-      source: `gh ${repo.slug}`,
-      ok: false,
-      detail: `the pull requests cannot be read: ${failureText(error)}`,
-    });
-    out.drives = [];
-    out.merged = [];
-    out.inScope = new Set();
-    out.disputed = new Set();
-  }
-  return out;
-}
-
-/**
- * Under `only_labeled`, the scope is decided once per tick, from the
- * listings that hold each pull request (the open one, the merged one): a
- * pull request is in scope when each of them finds a label of the set on
- * it. One they disagree on is unplaced for this tick, as any record the
- * tick cannot place: reported, no action and no label written on it, its
- * notice records kept, and read again at the next tick. A launch's fresh
- * read is the observation that launch acts on, so it decides again there.
- */
-function decideScope(
-  out: ForgeRead,
-  report: RepoReport,
-  labels: LabelConfig,
-  listings: ReadonlyArray<ReadonlyArray<{ number: number; labels?: string[] }>>,
-): void {
-  const seen = new Map<number, Set<boolean>>();
-  for (const listing of listings)
-    for (const p of listing) {
-      const views = seen.get(p.number) ?? new Set<boolean>();
-      views.add(carriesSet(labels, p.labels ?? []));
-      seen.set(p.number, views);
-    }
-  for (const [n, views] of seen) {
-    if (views.size > 1) {
-      out.disputed.add(n);
-      report.unplaced.push({
-        target: `PR #${n}`,
-        record: "forge",
-        reason:
-          "the open and the merged listing disagree on whether it carries a dispatch label, so whether it is in scope cannot be told this tick",
-      });
-    } else if (views.has(true)) out.inScope.add(n);
-  }
-}
-
-function labelNote(labels: LabelConfig | null, unlabeled: number): string {
-  if (labels === null) return "";
-  return labels.onlyLabeled
-    ? ` (dispatch labels on, only labelled pull requests: ${unlabeled} carry no label of the set and are not read)`
-    : " (dispatch labels on)";
 }
 
 /**
@@ -490,6 +447,7 @@ interface ApplyInputs {
   merged: MarkedPr[];
   join: JoinTargets;
   sessions: SessionsReport;
+  shared: SharedContext;
 }
 
 /**
@@ -528,6 +486,7 @@ async function applyStages(
       return again ?? null;
     },
     held: (pr) => labels !== null && hasCommand(labels, pr.labels, "hold"),
+    claimer: launchClaimer(inputs.shared),
   };
   const stages = [
     async () => {
@@ -552,6 +511,7 @@ async function applyStages(
           login,
           merged: inputs.merged,
           sessions: fresh,
+          shared: inputs.shared,
           ...(labels === null
             ? {}
             : {
@@ -570,7 +530,8 @@ async function applyStages(
   for (const stage of rotated(apply, stages, "stages")) await stage();
   // The nudges first: a nudge that went unanswered is notified in the same tick.
   if (enabled.has("steer")) await applySteers(apply, repo.slug, report);
-  if (enabled.has("notify"))
+  // A host that does not own the repository never notifies for it: the owner does, once.
+  if (enabled.has("notify") && inputs.shared.owner)
     await applyNotices(apply, repo, report, inputs.sessions);
 }
 
@@ -635,18 +596,6 @@ async function logRepo(
       record: "runtime",
       reason,
     });
-}
-
-/** Each merged pull request with its follow-up markers; a pull request whose comments do not read carries why. */
-async function withMarkers(
-  slug: string,
-  login: string | null,
-  merged: MergedPr[],
-): Promise<MarkedPr[]> {
-  const out: MarkedPr[] = [];
-  for (const pr of merged)
-    out.push({ ...pr, markers: await readMarkers(slug, pr.number, login) });
-  return out;
 }
 
 /** What the tracker gives one repository's tick. */

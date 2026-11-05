@@ -65,6 +65,8 @@ const PR_NUMBER = /^[1-9]\d*$/;
 const TAKEOVER_KEY = /^takeover:\d+$/;
 /** A follow-up claim's key; one written before claims (version 1) is its pull request's number. */
 const FOLLOWUP_KEY = /^(?:followup|[1-9]\d*)$/;
+/** A launch claim's key: a launch of the drive of the pull request it is on; its generation is the attempt. */
+const LAUNCH_KEY = /^drive$/;
 const MERGE_READY_KEY = /^merge-ready:[0-9a-f]{7,64}$/;
 
 const DRIVE = "skills/drive-pr/scripts/";
@@ -73,7 +75,7 @@ const STATE_DIR = "~/.local/state/jig/drive-pr/<clone>/";
 const DRIVE_DB_FILE = "~/.local/state/jig/drive-pr/state.sqlite";
 const DISPATCH_DIR = "~/.local/state/jig/dispatch/";
 /** The dispatcher's database schema version (`dispatch/lib/state.ts`'s `SCHEMA_VERSION`). */
-const DISPATCH_DB = 4;
+const DISPATCH_DB = 5;
 /** The drive's database schema version (`skills/drive-pr/scripts/lib/state/db.ts`'s `DRIVE_DB_VERSION`). */
 const DRIVE_DB = 3;
 const RRC = "skills/resolve-review-comments/scripts/";
@@ -215,6 +217,11 @@ const DISPATCHER: RecordKind[] = [
     "dispatch-tick-line",
     "dispatch/lib/line-store.ts",
     "tick_line",
+  ),
+  dispatchTable(
+    "dispatch-settled-end",
+    "dispatch/lib/launches.ts",
+    "settled_ends",
   ),
   plain(
     "machine",
@@ -513,11 +520,20 @@ const FORGE: RecordKind[] = [
   {
     name: "dispatch-followup",
     medium: "forge",
-    owner: "dispatch/lib/followup-marker.ts",
-    at: "a claim comment on the merged pull request (`forge-claims.ts`)",
+    owner: "shared/records/launch-claims.ts",
+    at: "a claim comment on the merged pull request (`forge-claims.ts`), a shared record (`shared.ts`)",
     markers: ["jig-dispatch-followup", "jig-dispatch-followup-data"],
     version: 2,
     key: FOLLOWUP_KEY,
+  },
+  {
+    name: "dispatch-launch-claim",
+    medium: "forge",
+    owner: "shared/records/launch-claims.ts",
+    at: "a claim comment on the pull request per drive launch (`forge-claims.ts`), a shared record (`shared.ts`)",
+    markers: ["jig-dispatch-launch-claim", "jig-dispatch-launch-claim-data"],
+    version: 1,
+    key: LAUNCH_KEY,
   },
   {
     name: "drive-merge-ready",

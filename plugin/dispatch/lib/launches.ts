@@ -55,6 +55,7 @@ import {
   thisHost,
 } from "../../shared/liveness.ts";
 import { type ProcessRow, processTable } from "../../shared/process-table.ts";
+import { LAUNCH_RECORD_ID } from "../../shared/records/launch-claims.ts";
 import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
@@ -213,7 +214,8 @@ export interface ReadRecord {
   result: SessionResult | null;
 }
 
-const ID = /^\d{8}T\d{6}Z-[a-f\d]{8}$/;
+/** A launch record id: the time it was made, and a random suffix. */
+const ID = LAUNCH_RECORD_ID;
 
 /** Whether `id` has a launch record id's shape. */
 export function isRecordId(id: string): boolean {
@@ -851,18 +853,48 @@ export function pruneLaunches(
   const db = stateDb(root);
   const remove = db.query("DELETE FROM launches WHERE id = ?");
   const removeNudges = db.query("DELETE FROM nudges WHERE record = ?");
+  const removeSettled = db.query("DELETE FROM settled_ends WHERE record = ?");
   inTransaction(db, () => {
     for (const id of removed) {
       remove.run(id);
       removeNudges.run(id);
+      removeSettled.run(id);
     }
   });
   return removed;
 }
 
+/** The launch records whose claim ends are all written on the forge, so their pull requests need no read to be ended. */
+export function settledEnds(root = stateRoot()): Set<string> {
+  const rows = stateDb(root).query("SELECT record FROM settled_ends").all() as {
+    record: string;
+  }[];
+  return new Set(rows.map((r) => r.record));
+}
+
+/** Record that these launch records owe no claim end any more. */
+export function settleEnds(
+  ids: readonly string[],
+  at: string,
+  root = stateRoot(),
+): void {
+  if (ids.length === 0) return;
+  const db = stateDb(root);
+  const insert = db.query(
+    "INSERT OR IGNORE INTO settled_ends (record, at) VALUES (?, ?)",
+  );
+  inTransaction(db, () => {
+    for (const id of ids) insert.run(id, at);
+  });
+}
+
 /** Remove a record: one the runtime answered it started nothing for, or one a person cleared. */
 export function removeRecord(id: string, root = stateRoot()): void {
-  stateDb(root).query("DELETE FROM launches WHERE id = ?").run(id);
+  const db = stateDb(root);
+  inTransaction(db, () => {
+    db.query("DELETE FROM launches WHERE id = ?").run(id);
+    db.query("DELETE FROM settled_ends WHERE record = ?").run(id);
+  });
 }
 
 /** A row as `inspectRow` read it: what a conditional removal compares against. */
