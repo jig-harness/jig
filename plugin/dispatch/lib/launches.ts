@@ -890,7 +890,11 @@ export function settleEnds(
 
 /** Remove a record: one the runtime answered it started nothing for, or one a person cleared. */
 export function removeRecord(id: string, root = stateRoot()): void {
-  stateDb(root).query("DELETE FROM launches WHERE id = ?").run(id);
+  const db = stateDb(root);
+  inTransaction(db, () => {
+    db.query("DELETE FROM launches WHERE id = ?").run(id);
+    db.query("DELETE FROM settled_ends WHERE record = ?").run(id);
+  });
 }
 
 /** A row as `inspectRow` read it: what a conditional removal compares against. */

@@ -13,6 +13,7 @@ import {
   pruneLaunches,
   readLaunches,
   recordExit,
+  removeRecord,
   settledEnds,
   settleEnds,
   type ReadRecord,
@@ -158,6 +159,24 @@ describe("settled claim ends", () => {
     expect(settled([{ ...claim(1, null), says: { ok: false } }])).toEqual([]);
   });
 
+  it("keeps a record unsettled while a trusted claim on its pull request does not read", () => {
+    const bad = { ...claim(2, null), says: { ok: false } };
+    expect(settled([claim(1, { at: "x" }), bad])).toEqual([]);
+  });
+
+  it("settles a record old enough to predate shared claims without one", () => {
+    const later = (nowIso: string) =>
+      settledRecords(
+        new Map([[7, { ok: true, value: [] }]]) as never,
+        HOST,
+        [rec],
+        new Set(),
+        nowIso,
+      );
+    expect(later("2026-01-02T00:00:00.000Z")).toEqual([]);
+    expect(later("2026-02-01T00:00:00.000Z")).toEqual([rec.record.id]);
+  });
+
   it("keeps a record unsettled while any of its claims still has no confirmed end", () => {
     expect(settled([claim(1, { at: "x" }), claim(2, null)])).toEqual([]);
   });
@@ -177,6 +196,19 @@ describe("retention", () => {
     settleEnds([a.record.id], "2026-01-03T00:00:00.000Z", dir);
     expect([...settledEnds(dir)]).toEqual([a.record.id]);
     pruneLaunches([a], Date.parse("2027-01-01"), 7, dir);
+    expect([...settledEnds(dir)]).toEqual([]);
+  });
+
+  it("forgets a settled claim end when its record is removed", () => {
+    const dir = root();
+    const a = ended(
+      record("20260101T000000Z-aaaaaaaa"),
+      0,
+      "2026-01-01T00:00:00.000Z",
+    );
+    writeRecord(a.record, dir);
+    settleEnds([a.record.id], "2026-01-02T00:00:00.000Z", dir);
+    removeRecord(a.record.id, dir);
     expect([...settledEnds(dir)]).toEqual([]);
   });
 

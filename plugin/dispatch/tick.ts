@@ -340,7 +340,7 @@ async function gatherRepo(
     report,
     {
       ...forge,
-      heldElsewhere: heldElsewhere(claims, ctx.host),
+      heldElsewhere: heldElsewhere(claims),
       owner: ctx.owner,
     },
     allRecords(context),

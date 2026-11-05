@@ -274,14 +274,18 @@ export function settleSharedConflictStops(
   });
 }
 
-/** The pull requests another host's current claim with no end holds: a drive in progress there. */
-export function heldElsewhere(claims: DriveClaims, host: string): Set<number> {
+/**
+ * The pull requests a current claim with no end holds: a drive in progress.
+ * This host's own open claim counts too: a launch that ended here before its
+ * end was published still holds the pull request for every other host, so it
+ * must for this one, or two hosts order the same pull requests differently.
+ */
+export function heldElsewhere(claims: DriveClaims): Set<number> {
   const held = new Set<number>();
   for (const [pr, read] of claims) {
     if (!read.ok) continue;
     const cur = winners(read.value).at(-1);
-    if (cur !== undefined && cur.says.value.host !== host && open(cur))
-      held.add(pr);
+    if (cur !== undefined && open(cur)) held.add(pr);
   }
   return held;
 }
@@ -479,11 +483,18 @@ export async function settleOwnClaims(
   return failures;
 }
 
+/** How long a finished record may owe a claim end that never reads: past it, a listing that omits the claim is a record that never had one. */
+const CLAIMLESS_SETTLE_MS = 3 * 86_400_000;
+
 /**
  * The finished drive records whose end is positively confirmed: this host's
  * own claims for the record all read with their end, or their end was written
  * this tick. A listing that omits the claim (it lags) or one the claim is
  * unreadable in confirms nothing, so that record's pull request is read again.
+ * A trusted claim that does not read could conceal another obligation, so any
+ * such claim on the pull request keeps every record on it unsettled. A record
+ * old enough that no lagging listing explains a missing claim predates shared
+ * claims: it owes no end and settles without one.
  */
 export function settledRecords(
   claims: DriveClaims,
@@ -499,11 +510,17 @@ export function settledRecords(
         return false;
       const read = claims.get(Number(r.record.pr));
       if (read === undefined || !read.ok) return false;
+      if (unreadable(read.value).length > 0) return false;
       const own = readable(read.value).filter(
         (c) =>
           c.says.value.host === host && c.says.value.record === r.record.id,
       );
-      return own.length > 0 && own.every((c) => written.has(c.id) || !open(c));
+      if (own.length === 0)
+        return (
+          Date.parse(nowIso) - Date.parse(r.record.createdAt) >=
+          CLAIMLESS_SETTLE_MS
+        );
+      return own.every((c) => written.has(c.id) || !open(c));
     })
     .map((r) => r.record.id);
 }
