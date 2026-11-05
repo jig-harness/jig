@@ -407,7 +407,10 @@ head and this tree would switch to it (a tree already on the branch keeps
 its commits ahead of the head, and the drive pushes them); when this is the clone's primary checkout on another branch; when
 the drive's remote is another repository; and when the PR comes from a fork, whose head
 the drive cannot push to. It moves nothing while a live driver holds the tree
-or the PR, or an interactive session holds the tree. A dry run attaches
+or the PR, or an interactive session holds the tree, unless it runs in a pass
+of the driver that holds both: under the environment its driver hands it, a
+pass attaches as the driver's own attach does, and `--place` tells it it is a
+pass rather than arming another drive (exit `4`). A dry run attaches
 nothing, and `DRIVE_PR_ATTACH=off` drives the tree as it stands, for a
 harness that prepares its own trees: placement (below) still chooses the
 tree, and attaches nothing.

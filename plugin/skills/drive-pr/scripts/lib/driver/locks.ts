@@ -130,13 +130,10 @@ export function claimAlive(claim: Claim): boolean {
   });
 }
 
-/** The diagnostics of the live driver holding lock `name`, else `null`. */
-export function liveHolder(
-  stateDir: string,
-  name: string,
-): { diag: ClaimDiag | null } | null {
+/** The claim of the live driver holding lock `name`, else `null`. */
+export function liveHolder(stateDir: string, name: string): Claim | null {
   const claim = inspectLock(stateDir, name);
-  return claim !== null && claimAlive(claim) ? { diag: claim.diag } : null;
+  return claim !== null && claimAlive(claim) ? claim : null;
 }
 
 /** Take the lock over `seen` (or a free slot); whether this process now holds it. */

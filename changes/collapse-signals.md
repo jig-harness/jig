@@ -44,3 +44,13 @@ mailbox stop can address one driver.
   terminal-state registry, so the two cannot disagree on a code. The outcome
   log's reasons for exits `7`, `12` and `15` name what happened (reviewer
   failed, worktree unclean, pass deadline) instead of repeating the code.
+
+### Fixed
+
+- A drive's pass that takes the arm step by mistake and runs
+  `attach-pr.ts <PR> --place` for its own pull request is told it is a pass
+  of that running drive (exit `4`) and to work the round, instead of
+  meeting its own driver as a rival (exit `11`) and standing down until the
+  drive stalls. `attach-pr.ts <PR>` run by a pass, under the environment its
+  driver hands it, attaches under that driver's locks as the driver's own
+  attach does.

@@ -45,6 +45,7 @@ import {
 import { consumerRoot, remoteName } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { fetchTimeoutSeconds } from "./base-drift.ts";
+import { ownParentDriver } from "./claim.ts";
 import { fail } from "./cli.ts";
 import { setDrivenRemoteRef } from "./driven-branch.ts";
 import {
@@ -445,6 +446,25 @@ async function currentOf(tree: string): Promise<Current> {
   };
 }
 
+/**
+ * Whether this process is a pass of the driver holding both this tree's lock
+ * and the PR's (`ownParentDriver`: `$DRIVE_PR_SESSION` and its acquisition,
+ * `$DRIVE_PR_SESSION_STARTED`). That driver attached the tree at its start
+ * and holds the locks for its passes, so a pass attaches under them, as the
+ * driver's own attach does, rather than meeting its parent as a rival.
+ */
+async function heldForThisPass(pr: string): Promise<boolean> {
+  const stateDir = await resolveStateDir();
+  const tree = liveHolder(stateDir, await worktreeLockName());
+  const holder = liveHolder(stateDir, prLockName(pr));
+  return (
+    tree !== null &&
+    holder !== null &&
+    ownParentDriver(tree) &&
+    ownParentDriver(holder)
+  );
+}
+
 /** Why a live driver keeps the attach from moving this tree, or `null`. */
 async function liveDriver(pr: string): Promise<string | null> {
   const stateDir = await resolveStateDir();
@@ -553,8 +573,8 @@ async function takeDriverLocks(pr: string): Promise<DriveLock[]> {
 
 /**
  * Attach PR `pr` to the working tree the process runs in. A live driver of
- * this tree (unless the caller holds its lock) or of the PR leaves it as it
- * is and says so in `skipped`.
+ * this tree (unless the caller holds its lock, or is that driver's pass) or of
+ * the PR leaves it as it is and says so in `skipped`.
  *
  * The tree is read only once it is owned: alone, the attach takes both driver
  * locks; then, after the fetch, the tree's session-lease fence; and only then
@@ -586,7 +606,7 @@ export async function attachPr(
     worktree: tree,
     created: opts.created === true,
   };
-  const locksHeld = opts.locksHeld === true;
+  const locksHeld = opts.locksHeld === true || (await heldForThisPass(number));
   const live = locksHeld ? null : await liveDriver(number);
   if (live !== null) {
     const symbolic = await g(tree, ["symbolic-ref", "--quiet", "HEAD"]);

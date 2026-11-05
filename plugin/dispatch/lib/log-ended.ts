@@ -6,6 +6,7 @@
  * written has its row, and one without is ended and logged by the next
  * tick that reads it.
  */
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { failureText } from "./text.ts";
 import { isDrive, type ReadRecord, writeRecord } from "./launches.ts";
 import { endedRow, endTime, hasEnded, insertRow } from "./log.ts";
@@ -42,7 +43,7 @@ export async function logEnded(
     try {
       const exit = r.state.kind === "ended" ? r.state.exit.code : null;
       const merged =
-        isDrive(record) && exit === 5 && record.pr !== null
+        isDrive(record) && exit === DRIVE_EXIT.PR_NOT_OPEN && record.pr !== null
           ? await ctx.merged(record.pr)
           : null;
       const takenOver = ctx.all.some((x) => x.record.replaces === record.id);

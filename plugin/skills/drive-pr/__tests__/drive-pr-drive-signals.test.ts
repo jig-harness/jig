@@ -153,7 +153,7 @@ describe("a mailbox stop and the driver generation it names", () => {
   const generationOf = (stderr: string) =>
     Number(/driver generation (\d+)/.exec(stderr)?.[1]);
 
-  it("reads any acknowledgement of the generation as its stop having taken effect", async () => {
+  it("reads only an acknowledged immediate stop of the generation as its stop having taken effect", async () => {
     const tree = makeScratchRepo("signals-ack").dir;
     const { dir } = writeFixture(WORK, tree);
     const mailbox = join(dir, "mailbox");
@@ -165,9 +165,30 @@ describe("a mailbox stop and the driver generation it names", () => {
         status: "ack",
         generation,
       });
-    await ack("m-first", 2);
+    // Two operators' stops of generation 2: the driver acknowledges the one
+    // it acted on, and both read it as done.
+    const first = await appendDirective(mailbox, "999", "a", "stop", {
+      generation: 2,
+      now: true,
+    });
+    await appendDirective(mailbox, "999", "b", "stop", {
+      generation: 2,
+      now: true,
+    });
+    await ack(first.id, 2);
     expect(generationAcked(mailbox, "999", 2)).toBe(true);
     expect(generationAcked(mailbox, "999", 3)).toBe(false);
+    // A pause is acknowledged as the driver starts holding, before any
+    // cleanup, and a round boundary's stop before the driver exits: neither
+    // proves a stop's cleanup was witnessed.
+    const pause = await appendDirective(mailbox, "999", "a", "pause");
+    await ack(pause.id, 4);
+    const boundary = await appendDirective(mailbox, "999", "a", "stop", {
+      generation: 5,
+    });
+    await ack(boundary.id, 5);
+    expect(generationAcked(mailbox, "999", 4)).toBe(false);
+    expect(generationAcked(mailbox, "999", 5)).toBe(false);
   });
 
   it("ends only the generation it names, while one naming none ends every later driver", async () => {

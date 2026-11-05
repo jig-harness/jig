@@ -28,6 +28,7 @@ import {
   type GateState,
   mailboxDir,
   outboxRecordsForPr,
+  readInboxMessages,
 } from "./mailbox.ts";
 
 /** Draw the next driver generation of `pr` in this clone: 1 for its first driver here. */
@@ -121,20 +122,40 @@ export function directiveAcked(dir: string, pr: string, id: string): boolean {
 }
 
 /**
- * Whether driver `generation` acknowledged any stop: it acts on the first it
- * finds and exits, so a second operator's concurrent stop is never
- * acknowledged under its own id, and the driver having stopped is what both
- * wait for.
+ * Whether driver `generation` acknowledged an immediate stop addressed to it
+ * (`drives.ts --stop`'s, marked `now`): it acts on the first it finds and
+ * exits, so a second operator's concurrent stop is never acknowledged under
+ * its own id, and the driver having stopped is what both wait for. Only that
+ * acknowledgement counts, because only it is appended once the driver's
+ * cooperative cleanup is witnessed (`lib/driver/lifecycle.ts`): a pause's is
+ * appended as the driver starts holding, and a round boundary's stop's before
+ * the driver exits, so neither proves its registered work ended.
  */
 export function generationAcked(
   dir: string,
   pr: string,
   generation: number,
 ): boolean {
+  const immediate = new Set(
+    readInboxMessages(dir, pr)
+      .messages.filter(
+        (m) =>
+          m.kind === "directive" &&
+          m.command === "stop" &&
+          m.generation === generation &&
+          m.now === true,
+      )
+      .map((m) => m.id),
+  );
   const out = outboxRecordsForPr(dir, pr);
   return (
     out.ok &&
-    out.records.some((r) => r.status === "ack" && r.generation === generation)
+    out.records.some(
+      (r) =>
+        r.status === "ack" &&
+        r.generation === generation &&
+        immediate.has(r.id),
+    )
   );
 }
 

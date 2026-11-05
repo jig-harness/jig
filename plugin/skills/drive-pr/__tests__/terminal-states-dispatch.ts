@@ -56,6 +56,9 @@ export const DISPATCH_FILES: readonly DispatchFile[] = [
   { path: "dispatch/lib/actions/drive-hold.ts", importsRegistry: true },
   { path: "dispatch/lib/log.ts", importsRegistry: true },
   { path: "dispatch/lib/sources/ledgers.ts", importsRegistry: true },
+  { path: "dispatch/lib/log-ended.ts", importsRegistry: true },
+  { path: "dispatch/lib/labels.ts", importsRegistry: true },
+  { path: "dispatch/lib/contention.ts", importsRegistry: true },
   { path: "shared/orca-tabs.ts", importsRegistry: false },
 ];
 

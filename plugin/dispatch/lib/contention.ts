@@ -30,6 +30,7 @@
  * on it, and it is read again at the next tick. The tick never adds an
  * area: what is serialized is the catalog's to say, through a person.
  */
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
   loadCatalogText,
   matchesGlob,
@@ -149,7 +150,7 @@ function memberOf(
   const round = pr.evidence.round;
   return {
     pr,
-    mergeable: pr.class === "done" && pr.evidence.exit === 0,
+    mergeable: pr.class === "done" && pr.evidence.exit === DRIVE_EXIT.CONVERGED,
     driving: pr.class === "driven" || pr.class === "silent" || recordHolds,
     rounds: typeof round === "number" ? round : 0,
     createdAt: input.created.get(pr.number) ?? null,
