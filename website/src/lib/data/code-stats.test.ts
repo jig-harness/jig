@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   areaRows,
   commitOf,
@@ -13,13 +17,55 @@ import {
   topLanguages,
 } from "./code-stats.ts";
 
+test("the counting subprocess uses only repository configuration", () => {
+  const root = mkdtempSync(join(tmpdir(), "stats-config-"));
+  try {
+    const scripts = join(root, "plugin/skills/code-stats/scripts");
+    mkdirSync(scripts, { recursive: true });
+    writeFileSync(
+      join(root, ".env"),
+      "JIG__CODE_STATS__DEFAULT_AREA=dotenv-area\n",
+    );
+    writeFileSync(
+      join(scripts, "code-stats.ts"),
+      "process.stdout.write(JSON.stringify(process.env));",
+    );
+    const adapter = new URL("./code-stats.ts", import.meta.url).href;
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        "--eval",
+        `import { runCodeStats } from ${JSON.stringify(adapter)}; const r = runCodeStats(${JSON.stringify(root)}); process.stdout.write(r.stdout); process.stderr.write(r.stderr); process.exit(r.status ?? 1);`,
+      ],
+      {
+        env: {
+          ...process.env,
+          JIG_USER_LAYER: "on",
+          JIG_OVERLAY: "/other.yaml",
+          JIG__CODE_STATS__DEFAULT_AREA: "wrong",
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expectSpawnExit(child, 0);
+    const env = JSON.parse(child.stdout.toString());
+    expect(env.JIG_USER_LAYER).toBe("off");
+    expect(env.JIG_OVERLAY).toBe(join(root, ".config/jig.yaml"));
+    expect(env.JIG_CONSUMER_ROOT).toBe(root);
+    expect(env.JIG__CODE_STATS__DEFAULT_AREA).toBeUndefined();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 const bucket = (code: number, files = 1) => ({
   files,
   bytes: code * 10,
-  raw: code + 2,
+  raw: code + 2 * files,
   code,
-  comment: 1,
-  blank: 1,
+  comment: files,
+  blank: files,
 });
 
 /** A `code-stats/v1` report in the shape the skill prints. */
@@ -31,11 +77,11 @@ const FIXTURE = {
   branch: "main",
   totals: {
     files: 6,
-    bytes: 1000,
-    rawLines: 160,
+    bytes: 1500,
+    rawLines: 162,
     codeLines: 150,
     commentLines: 6,
-    blankLines: 4,
+    blankLines: 6,
   },
   unclassified: {
     files: 0,
@@ -54,24 +100,24 @@ const FIXTURE = {
     { name: "empty", description: "Nothing yet", default: false },
   ],
   byArea: { docs: bucket(20), production: bucket(130, 5) },
-  byKind: { code: bucket(80), test: bucket(50), docs: bucket(20) },
+  byKind: { code: bucket(80, 3), test: bucket(50, 2), docs: bucket(20) },
   byLanguage: {
     Markdown: bucket(20),
-    TypeScript: bucket(120),
+    TypeScript: bucket(120, 2),
     Python: bucket(5),
     Shell: bucket(5),
     "binary (png)": bucket(0),
   },
   byModule: {
     "<root>": bucket(10),
-    "lib/a": bucket(100),
+    "lib/a": bucket(100, 3),
     "lib/b": bucket(30),
     docs: bucket(10),
   },
   byAreaKind: {
     "docs/docs": bucket(20),
-    "production/code": bucket(80),
-    "production/test": bucket(50),
+    "production/code": bucket(80, 3),
+    "production/test": bucket(50, 2),
   },
 };
 
@@ -79,6 +125,55 @@ const text = (over: Record<string, unknown> = {}) =>
   JSON.stringify({ ...FIXTURE, ...over });
 
 describe("parseCodeStats", () => {
+  test("refuses missing dimensions and inconsistent area-kind relationships", () => {
+    for (const dimension of [
+      "byArea",
+      "byKind",
+      "byLanguage",
+      "byModule",
+      "byAreaKind",
+    ]) {
+      expect(() => parseCodeStats(text({ [dimension]: {} }))).toThrow();
+    }
+    expect(() =>
+      parseCodeStats(
+        text({
+          byAreaKind: {
+            "docs/code": bucket(20),
+            "production/docs": bucket(80, 3),
+            "production/test": bucket(50, 2),
+          },
+        }),
+      ),
+    ).toThrow();
+  });
+
+  test("refuses degraded reports and malformed diagnostics", () => {
+    expect(() => parseCodeStats(text({ missingFromWorkingTree: 1 }))).toThrow(
+      "missingFromWorkingTree",
+    );
+    expect(() =>
+      parseCodeStats(text({ missingFromWorkingTree: undefined })),
+    ).toThrow("missingFromWorkingTree");
+    expect(() =>
+      parseCodeStats(
+        text({
+          testRunners: {
+            unreadable: [
+              {
+                reader: "vitest",
+                path: "vitest.config.ts",
+                why: "invalid config",
+              },
+            ],
+          },
+        }),
+      ),
+    ).toThrow("vitest.config.ts");
+    expect(() =>
+      parseCodeStats(text({ testRunners: { unreadable: "none" } })),
+    ).toThrow("testRunners.unreadable");
+  });
   test("reads a code-stats/v1 report", () => {
     const r = parseCodeStats(text());
     expect(r.totals.codeLines).toBe(150);

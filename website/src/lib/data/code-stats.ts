@@ -78,13 +78,26 @@ export interface Run {
 /** Runs the skill's script with `--json` on the repository at `root`. */
 export function runCodeStats(root: string): Run {
   const bun = process.versions.bun ? process.execPath : "bun";
-  const res = spawnSync(bun, [join(root, CODE_STATS_SCRIPT), "--json"], {
-    cwd: root,
-    env: { ...process.env, JIG_CONSUMER_ROOT: root, NO_COLOR: "1" },
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: 120_000,
-  });
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("JIG__")),
+  );
+  const res = spawnSync(
+    bun,
+    ["--no-env-file", join(root, CODE_STATS_SCRIPT), "--json"],
+    {
+      cwd: root,
+      env: {
+        ...env,
+        JIG_CONSUMER_ROOT: root,
+        JIG_USER_LAYER: "off",
+        JIG_OVERLAY: join(root, ".config/jig.yaml"),
+        NO_COLOR: "1",
+      },
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: 120_000,
+    },
+  );
   return {
     status: res.status,
     stdout: res.stdout ?? "",
@@ -176,7 +189,94 @@ export function parseCodeStats(text: string): CodeStats {
     throw new CodeStatsReportError(
       "code-stats: the report names no single default area",
     );
+  validateDimensions(report);
+  const missing = count(r.missingFromWorkingTree, "missingFromWorkingTree");
+  if (missing > 0)
+    throw new CodeStatsReportError(
+      `code-stats: missingFromWorkingTree: ${missing} tracked files are missing`,
+    );
+  const runners = record(r.testRunners, "testRunners");
+  if (!Array.isArray(runners.unreadable))
+    throw new CodeStatsReportError(
+      "code-stats: testRunners.unreadable is not a list",
+    );
+  const unreadable = runners.unreadable.map((v, i) => {
+    const item = record(v, `testRunners.unreadable[${i}]`);
+    return `${text_(item.reader, "unreadable.reader")}: ${text_(item.path, "unreadable.path")} (${text_(item.why, "unreadable.why")})`;
+  });
+  if (unreadable.length)
+    throw new CodeStatsReportError(
+      `code-stats: testRunners.unreadable: ${unreadable.join("; ")}`,
+    );
   return report;
+}
+
+/** Every dimension partitions the same files; area-kind also partitions each area and kind. */
+function validateDimensions(report: CodeStats): void {
+  const t = report.totals;
+  const expected: Bucket = {
+    files: t.files,
+    bytes: t.bytes,
+    raw: t.rawLines,
+    code: t.codeLines,
+    comment: t.commentLines,
+    blank: t.blankLines,
+  };
+  const sum = (values: Bucket[]): Bucket => {
+    const result = empty();
+    for (const b of values) for (const f of BUCKET_FIELDS) result[f] += b[f];
+    return result;
+  };
+  const equal = (actual: Bucket, wanted: Bucket, name: string) => {
+    for (const f of BUCKET_FIELDS)
+      if (actual[f] !== wanted[f])
+        throw new CodeStatsReportError(
+          `code-stats: ${name}.${f} disagrees with its totals`,
+        );
+  };
+  for (const name of [
+    "byArea",
+    "byKind",
+    "byLanguage",
+    "byModule",
+    "byAreaKind",
+  ] as const)
+    equal(sum(Object.values(report[name])), expected, name);
+  const areaNames = new Set(report.areas.map((a) => a.name));
+  if (
+    areaNames.size !== report.areas.length ||
+    Object.keys(report.byArea).some((a) => !areaNames.has(a))
+  )
+    throw new CodeStatsReportError("code-stats: areas disagree with byArea");
+  const areas = new Map<string, Bucket[]>();
+  const kinds = new Map<string, Bucket[]>();
+  for (const [key, b] of Object.entries(report.byAreaKind)) {
+    const split = key.lastIndexOf("/");
+    const area = key.slice(0, split);
+    const kind = key.slice(split + 1);
+    if (
+      split < 0 ||
+      !areaNames.has(area) ||
+      !Object.hasOwn(report.byKind, kind)
+    )
+      throw new CodeStatsReportError(
+        `code-stats: byAreaKind.${key} names an unknown area or kind`,
+      );
+    const areaBuckets = areas.get(area) ?? [];
+    areaBuckets.push(b);
+    areas.set(area, areaBuckets);
+    const kindBuckets = kinds.get(kind) ?? [];
+    kindBuckets.push(b);
+    kinds.set(kind, kindBuckets);
+  }
+  for (const area of areaNames)
+    equal(
+      sum(areas.get(area) ?? []),
+      report.byArea[area] ?? empty(),
+      `byAreaKind.${area}`,
+    );
+  for (const [kind, b] of Object.entries(report.byKind))
+    equal(sum(kinds.get(kind) ?? []), b, `byAreaKind.${kind}`);
 }
 
 function record(v: unknown, what: string): Record<string, unknown> {

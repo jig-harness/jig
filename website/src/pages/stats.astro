@@ -34,7 +34,7 @@ const languages = topLanguages(report, 12);
 const mods = moduleRows(report);
 const parents = moduleParents(mods);
 const maxModule = Math.max(1, ...mods.map((m) => m.code));
-const width = (part: number, whole: number) => `--w:${whole ? ((part / whole) * 100).toFixed(2) : 0}%`;
+const width = (part: number, whole: number) => `--w:${whole ? ((part / whole) * 100).toFixed(2) : 0}%;--min:${part > 0 && whole > 0 ? 2 : 0}px`;
 
 /** A glossary term's anchor; a term the glossary lacks fails the build. */
 const term = (name: string) => {
@@ -521,7 +521,7 @@ const config = `${REPO_URL}/blob/main/.config/jig.yaml`;
     display: block;
     height: 100%;
     width: var(--w);
-    min-width: 2px;
+    min-width: var(--min);
     background: var(--accent);
     border-radius: 0 4px 4px 0;
   }
