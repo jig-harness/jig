@@ -17,6 +17,9 @@ afterEach(() => {
 const CHILD = `
 import { retireNotices } from ${JSON.stringify(new URL("../lib/actions/retire-notices.ts", import.meta.url).pathname)};
 const [path, root, budget] = process.argv.slice(1);
+// Keep setup time out of the simulated tick age; the probe's process timer stays real.
+const now = Date.now();
+if (budget === "bounded") Date.now = () => now;
 const report = { records: [{ ok: true }] };
 await retireNotices({
   machine: { runtimeTimeoutMs: 100 },
