@@ -21,7 +21,13 @@ record the line already acts on. An operator skill turns a person's
 sentence into those commands. No agent stays resident to hold an
 address, and no new store holds what is said to one.
 
-This is the design of [plan.md](plan.md) item 39. Nothing of it is built.
+This is the design of [plan.md](plan.md) item 39. Step 1 of the build
+order is built: `jig ask`, with `--thread` and `--waiting`, in
+`plugin/ask/` and `plugin/shared/address.ts`
+([plugin/README.md § Asking a station where it stands](../plugin/README.md#asking-a-station-where-it-stands)),
+the outcome log's key column, and the rule it rests on,
+[ADR-0014](../docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md).
+The other steps are open.
 
 ## How it works
 
@@ -81,6 +87,15 @@ record, starts no session and makes no change on the forge or the tracker.
 | `last` | the last ended launch: its class from the outcome log's closed list, and when | the launch claims' ends; the launch records; the outcome log |
 | `sources` | every record kind the answer consulted, whether it was read, the reason when it was not, and how many forge and tracker calls the answer made | the reads themselves |
 
+A drive's stop is placed by the dispatcher's own classifier of its ledger,
+so `waitsOn` means what the tick does with it: a stop the tick re-arms or
+re-drives waits on that (`waiting`) where a dispatcher is known to read the
+pull request (this machine dispatches the repository, or a launch claim is
+on it), and on a person's re-arm where none is. Until item 36's predicate
+exists, a converged drive at its verified head waits on a person's merge,
+and the answer says it has not read whether an approval or an update of the
+branch must come first.
+
 **What it reads, and what that costs.** `ask` reads only the records its
 station names: a `drive` or a `followup` never calls the tracker. On the
 forge it needs the pull request and its comments, read once and shared by
@@ -104,9 +119,17 @@ is alive are that machine's to know, and `sources` says the launch records
 were not read.
 
 **A drive nobody dispatched** has no launch record and may have no ledger
-yet. `drive@repository#key` then reads the drive's own record on the
-machine and asks the drive's doctor about that one drive, and prints the
-recovery command as the doctor gives it. It never runs that command.
+yet. `drive@repository#key` then reads the drive's own listing in a
+checkout of the repository on the machine (`drives.ts --json`), which
+classifies each driver lock as the doctor does without the recovery that
+`--doctor` writes, and prints the doctor's verdict and the recovery command
+as it gives them. It never runs that command. A drive that left state but
+no driver lock is not in that listing, and is read from its ledger alone.
+
+**A pick-up's key** has its tracker's form, which the repository's
+configuration names, so a `pickup` address is answered on a machine with a
+checkout of the repository (the one it runs in, or one the dispatch file
+lists) and refused elsewhere as a usage error naming why.
 
 **What waits on a person.** `jig ask --waiting` lists every address that
 waits on a person, with the act each waits for, across the repositories the
@@ -171,19 +194,27 @@ session that reads it.
   "v": 1,
   "address": "drive@jig-harness/jig#456",
   "holder": "none",
-  "state": "parked",
-  "waitsOn": { "person": "answer" },
+  "state": "HITL_PARKED",
+  "waitsOn": { "person": "answer", "why": "…" },
   "thread": [
     { "at": "2026-01-12T08:02:11Z", "kind": "launch", "from": "dispatcher",
       "to": "drive@jig-harness/jig#456", "text": "rearm",
       "record": { "kind": "dispatch-launch-claim", "url": "…" } },
     { "at": "2026-01-12T09:40:03Z", "kind": "question",
-      "from": "drive@jig-harness/jig#456", "to": "@maintainer",
+      "from": "drive@jig-harness/jig#456", "to": "a person",
       "text": "Keep the old flag for one release?",
       "record": { "kind": "drive-ledger", "url": "…" } }
   ]
 }
 ```
+
+Until step 5 names whom a park waits on, a question's `to` is `a person`.
+Beside these, the answer carries `title` and `url` (the pull request or
+item as the forge or tracker names it), `stateDetail` (why the state reads
+so), `holder.local` (the account, the session, the launch record and the
+workspace, which only this machine knows), `sources` as `records` with
+`forgeCalls` and `trackerCalls`, and with the thread `threadOmitted`, how
+many earlier entries the window left out.
 
 The thread is part of `ask` so that the command line and every interface
 show the same one. An interface that draws threads reads `jig ask --thread

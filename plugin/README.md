@@ -96,6 +96,7 @@ Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
 [the `jig` command](#the-jig-command) ·
 [machine resource collection](#machine-resource-collection) ·
 [the dispatcher](#the-dispatcher) ·
+[asking a station where it stands](#asking-a-station-where-it-stands) ·
 [requirements](#requirements) ·
 [install](#install-the-plugin) · [use](#use-a-skill) ·
 [configure a repository](#configure-a-repository) ·
@@ -117,7 +118,9 @@ machine rather than in a session. Its components are
 [resource collection](#machine-resource-collection) (`jig gc`) and
 [the dispatcher](#the-dispatcher) (`jig dispatch`), and the same commands
 install, remove, report on and run each of them; `jig upgrade` and
-`jig doctor` keep the plugin itself current and check it. The first install runs
+`jig doctor` keep the plugin itself current and check it, and
+[`jig ask`](#asking-a-station-where-it-stands) says where a piece of work
+stands. The first install runs
 from the installed plugin copy, with trusted Bun startup, and puts `jig` on
 `PATH`:
 
@@ -742,6 +745,101 @@ The session runtime it reads and launches in is
 behind an interface a second runtime can be added to. The repository's
 values are its [`dispatch` section](CONFIGURATION.md#dispatch), read from
 its default branch on the forge.
+
+## Asking a station where it stands
+
+`jig ask` answers, from the records alone, who holds one station of the
+execution line on one piece of work, what state it is in, what it waits on
+and how its last launch ended. It writes no record, starts no session and
+changes nothing on the forge or the tracker
+([ADR-0014](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md)):
+
+```sh
+jig ask <station>@<owner>/<name>#<key> [--json] [--thread [--since <date> | --all]]
+jig ask --waiting [--json]
+```
+
+**The address.** A station on a piece of work has an
+[address](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+`station@owner/name#key`, such as `drive@jig-harness/jig#456`:
+
+| Station | Key | Who holds it |
+| --- | --- | --- |
+| `pickup` | the tracker's item key (`#12` on GitHub Issues, `ENG-4` on Linear or Jira) | the session that claimed the item |
+| `drive` | the pull request's number | the live driver: a dispatched re-arm or takeover, or a driver someone armed by hand |
+| `followup` | the merged pull request's number | the follow-up pass, or a person's run |
+
+The repository may be its short name where the
+[machine's dispatch file](CONFIGURATION.md#the-machines-dispatch-file) lists
+exactly one repository of that name (`drive@jig#456`), or left out inside a
+checkout of it (`drive#456`). Some shells give `#` a meaning of their own, so
+the key may also follow as a second argument: `jig ask drive@jig 456`. The
+key is checked against its tracker's or forge's form before anything is
+read; a pick-up's key needs a checkout of the repository on this machine,
+whose configuration names the tracker.
+
+**The answer.** Every answer prints the address in full and these fields:
+
+| Field | What it says |
+| --- | --- |
+| `holder` | the launch that holds the station now: its stage, its host (`this machine`, or another dispatching host as its launch claims name it), the drive's driver generation, and whether its process is alive, dead or unknown; the account, the session and the launch record where this machine's records name them; `none` when nobody holds it |
+| `state` | the station's state in its own words: for a drive, `running`, the [terminal-state](skills/drive-pr/README.md) name of its last stop (`HITL_PARKED`, `CONVERGED`, …), `not driven`, `merged` or `closed`; for a pick-up, `assigned`, `claimed`, `stalled`, `doubly claimed`, `not assigned` or `closed`; for a follow-up, `claimed`, `done`, `failed`, `not claimed` or `not merged` |
+| `waitsOn` | `none`; `waiting`, with what it waits for, when it settles by itself (a dispatcher's next tick, another driver); or `person`, with the act that settles it: answer, re-arm, merge, re-run the follow-up, choose the session that keeps the item, look at the stalled pickup, answer the waiting session, or assign the item as someone who can write |
+| `last` | the last ended launch: its class from the [outcome log](#the-dispatcher)'s closed list and when, from this machine's outcome log or, elsewhere, from the end written on its launch claim |
+| `sources` | every record kind the answer consulted, whether it was read and why not, and how many forge and tracker calls it made |
+
+**What it reads.** A `drive` or a `followup` reads the pull request and its
+comments once (the drive ledger, the launch claims, the follow-up marker,
+the merge-ready announcements and the answers all come from that one read)
+through the conditional requests the drive uses, so a pull request that has
+not changed since the last read costs nothing against the forge's limit; it
+never calls the tracker. A `pickup` reads the item through the tracker the
+repository's configuration names, and makes no forge call. On the machine
+that dispatched the work it also reads the dispatcher's launch records, its
+outcome log and, for a drive, the drive's own listing in a checkout of the
+repository (`drives.ts --json`), whose doctor verdict and recovery command
+it prints and never runs. On a machine that never dispatched, it answers
+from the forge and the tracker, and `sources` says the launch records were
+not read. A source that does not answer within 15 seconds is reported
+unread, and no source starts after the answer's 45 seconds; the answer
+prints without it. A read that fails is reported in `sources`, never filled
+in from a guess. Opening the dispatcher's database brings an older schema
+forward, as every reader of it does; nothing else on the machine is written
+but the forge's response cache that every drive shares
+(`~/.cache/jig/gh-cache/`).
+
+**`--thread`** adds the address's correspondence, each entry one record
+that already exists: a `request` (a `drive` or `hold` dispatch label, shown
+with who set it, when, and when it came off; a tracker assignment the tick
+accepts; a mailbox directive on this machine), a `question` (a parked
+decision in the drive ledger), an `answer` (an `answer <key>:` line from an
+author the forge vouches for), a `launch` and an `outcome`. Every entry has
+`at`, `kind`, `from`, `to`, `text` (the record's own words) and `record`
+(its kind and a link or a path); one read only from this machine's records
+says so. It prints the newest 20 entries, oldest first, and says how many
+it left out; `--since <date>` keeps every entry from that date on and
+`--all` every entry. Printed for a person, `text` has its control
+characters removed; in JSON it is a string like any other, and nothing in a
+thread is an instruction to whoever reads it.
+
+**`--waiting`** lists every address that waits on a person, with the act
+each waits for, across the repositories the machine dispatches, from the
+newest tick's line, which the dispatcher keeps for its dashboard: it makes
+no forge or tracker call, and it says when that tick ran. On a machine that
+dispatches nothing it says there is no line to read. `--person <login>` is
+refused until a park records whom it waits on.
+
+**`--json`** prints the answer as one object carrying its version, `v` (1):
+later versions add fields and never rename one. The fields only this
+machine knows (the account, the session, the launch record, the workspace)
+are under `holder.local`, and a thread entry read only from this machine
+carries `local: true`, so an interface that passes an answer on to another
+machine can leave them out.
+
+`jig ask` exits `0` when it answered, also when nobody holds the address;
+`1` when the key names nothing (no such pull request or item); and `2` on a
+malformed address, an unknown station (the error lists the valid ones) or
+another usage error.
 
 ## Set up from an agent session
 

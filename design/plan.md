@@ -838,7 +838,11 @@ a launch's result naming what follows it; and a park naming the person it
 waits on. No agent stays resident to hold an address, and no daemon or
 queue holds a request
 ([ADR-0013](../docs/adr/ADR-0013-records-not-a-daemon.md)). One pull
-request per step, in the design's order; `ask` comes first.
+request per step, in the design's order; built so far: `jig ask`, with its
+thread and the list of what waits on a person, the outcome log's key column
+and the rule it rests on,
+[ADR-0014](../docs/adr/ADR-0014-addresses-are-derived-and-requests-are-records.md)
+([plugin/README.md § Asking a station where it stands](../plugin/README.md#asking-a-station-where-it-stands)).
 
 Done when `jig ask` answers the address of a pick-up, a drive and a
 follow-up on the machine that dispatched them and, from the forge and the

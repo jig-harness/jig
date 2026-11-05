@@ -592,6 +592,16 @@ export const DRIVE_EXIT: Readonly<Record<DriveExitName, number>> =
   );
 
 /**
+ * The state a `drive.ts` exit names, as this table gives it: the first state
+ * in `DRIVE_EXIT_NAMES` order with that code, so `0` is `CONVERGED`, `4` the
+ * `NOT_SETTLED` class and `11` the driver's own `SINGLE_INSTANCE_LOCK`;
+ * `null` for a code `drive.ts` never exits with.
+ */
+export function driveExitName(code: number): DriveExitName | null {
+  return DRIVE_EXIT_NAMES.find((name) => DRIVE_EXIT[name] === code) ?? null;
+}
+
+/**
  * `drive.ts`'s refusals of a second driver: this clone's lock is held,
  * another working tree drives the pull request, or another clone took the
  * drive over. Each is the stage's answer while the ledger's facts hold.

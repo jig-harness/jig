@@ -207,21 +207,31 @@ export interface CommentLike {
   body: string;
 }
 
-/** A pull-request comment answers a parked key only with a line `answer <key>:`. */
-export function answersKey(body: string, key: string): boolean {
-  const prefix = `answer ${key}:`.toLowerCase();
+/**
+ * The lines of a comment outside every fenced block: a fenced block is an
+ * example or a quote, never the answer itself.
+ */
+export function linesOutsideFences(body: string): string[] {
   // The open fence's marker run (```` ```` ````, `~~~`, …); `''` outside one.
   let fence = "";
+  const out: string[] = [];
   for (const raw of body.split("\n")) {
     const line = raw.trim();
-    // A fenced block is an example or a quote, never the answer itself.
     const marker = /^(`{3,}|~{3,})/.exec(line)?.[1] ?? "";
     if (fence === "") {
       if (marker !== "") fence = marker;
-      else if (isAnswerLine(raw, line, prefix)) return true;
+      else out.push(raw);
     } else if (closesFence(line, marker, fence)) fence = "";
   }
-  return false;
+  return out;
+}
+
+/** A pull-request comment answers a parked key only with a line `answer <key>:`. */
+export function answersKey(body: string, key: string): boolean {
+  const prefix = `answer ${key}:`.toLowerCase();
+  return linesOutsideFences(body).some((raw) =>
+    isAnswerLine(raw, raw.trim(), prefix),
+  );
 }
 
 /**
@@ -229,7 +239,11 @@ export function answersKey(body: string, key: string): boolean {
  * after it, indented less than an indented code block (four spaces or a tab),
  * which is an example too.
  */
-function isAnswerLine(raw: string, line: string, prefix: string): boolean {
+export function isAnswerLine(
+  raw: string,
+  line: string,
+  prefix: string,
+): boolean {
   return (
     !/^( {4}|\t)/.test(raw.replace(/^ {0,3}(?=\t)/, "")) &&
     line.toLowerCase().startsWith(prefix) &&
@@ -251,7 +265,7 @@ function closesFence(line: string, marker: string, open: string): boolean {
 }
 
 /** A comment a person wrote after the park, not one the drive wrote. */
-function isAnswer(c: CommentLike, after: number): boolean {
+export function isAnswer(c: CommentLike, after: number): boolean {
   return (
     TRUSTED_ASSOCIATIONS.has(c.association) &&
     Date.parse(c.at) > after &&

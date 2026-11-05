@@ -75,13 +75,23 @@ export interface DoctorContext {
   job: InstalledJob | null;
 }
 
-export interface Component<A = unknown> {
-  /** Its command's name (`jig gc`) and its name to the verbs (`jig install gc`). */
+/**
+ * A command of `jig` that runs and exits, with no job for a timer and
+ * nothing to install (`jig ask`): `jig.ts` registers it beside the
+ * components, and the lifecycle verbs never act on it.
+ */
+export interface CommandComponent<A = unknown> {
+  /** Its command's name (`jig ask`). */
   readonly name: string;
   /** Its own command, `jig <name> …`, as an Optique parser. */
   readonly command: Parser<"sync", A, unknown>;
   /** Runs what its own command parsed. */
   main(args: A, script: string): Promise<number>;
+}
+
+export interface Component<A = unknown> extends CommandComponent<A> {
+  /** Its command's name (`jig gc`) and its name to the verbs (`jig install gc`). */
+  readonly name: string;
   /**
    * A stricter parser for the same command, for a check that only the winning
    * value of a repeated option has to meet; with `strictArguments`.
