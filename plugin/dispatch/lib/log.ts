@@ -32,6 +32,7 @@ import type { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stateRoot } from "../receipts.ts";
 import {
   isDrive,
@@ -39,6 +40,7 @@ import {
   type ReadRecord,
   targetOf,
 } from "./launches.ts";
+import { questionOf } from "./session.ts";
 import { existingStateDb, stateDb } from "./state.ts";
 
 /**
@@ -212,47 +214,54 @@ export function rowsOf(selected: Array<{ row: string }>): LogRow[] {
     .filter((r): r is LogRow => r !== null);
 }
 
-/** `drive.ts`'s exits, by the class the closed list places them in (all but `5`, which reads the pull request). */
+/**
+ * `drive.ts`'s exits, by the class the closed list places them in (all but
+ * `PR_NOT_OPEN`, which reads the pull request), named from drive-pr's
+ * terminal-state registry.
+ */
 const DRIVE_EXITS: ReadonlyMap<number, [OutcomeClass, string]> = new Map([
-  [0, ["converged", "converged"]],
-  [16, ["quota wall", "quota-parked"]],
-  [8, ["parked for a person", "parked"]],
-  [14, ["stalled", "stalled"]],
-  [6, ["stalled", "round limit"]],
-  [2, ["refused", "usage"]],
-  [4, ["refused", "not judgeable yet"]],
-  [11, ["refused", "another driver holds it"]],
-  [13, ["refused", "another driver holds it"]],
-  [18, ["refused", "a mailbox stop"]],
-  [19, ["refused", "a mailbox pause"]],
-  [20, ["refused", "taken over by another clone"]],
-  [1, ["gates failed", "failed"]],
-  [7, ["gates failed", "exit 7"]],
-  [9, ["gates failed", "exit 9"]],
-  [12, ["gates failed", "exit 12"]],
-  [15, ["gates failed", "exit 15"]],
+  [DRIVE_EXIT.CONVERGED, ["converged", "converged"]],
+  [DRIVE_EXIT.QUOTA_PARKED, ["quota wall", "quota-parked"]],
+  [DRIVE_EXIT.HITL_PARKED, ["parked for a person", "parked"]],
+  [DRIVE_EXIT.STALLED, ["stalled", "stalled"]],
+  [DRIVE_EXIT.MAX_ROUNDS, ["stalled", "round limit"]],
+  [DRIVE_EXIT.UNSUPPORTED_CLI, ["refused", "usage"]],
+  [DRIVE_EXIT.NOT_SETTLED, ["refused", "not judgeable yet"]],
+  [DRIVE_EXIT.SINGLE_INSTANCE_LOCK, ["refused", "another driver holds it"]],
+  [
+    DRIVE_EXIT.DRIVE_HELD_BY_OTHER_WORKTREE,
+    ["refused", "another driver holds it"],
+  ],
+  [DRIVE_EXIT.MAILBOX_STOPPED, ["refused", "a mailbox stop"]],
+  [DRIVE_EXIT.MAILBOX_PAUSE_TIMEOUT, ["refused", "a mailbox pause"]],
+  [DRIVE_EXIT.TAKEN_OVER, ["refused", "taken over by another clone"]],
+  [DRIVE_EXIT.INDETERMINATE, ["gates failed", "failed"]],
+  [DRIVE_EXIT.REVIEWER_FAILED, ["gates failed", "reviewer failed"]],
+  [DRIVE_EXIT.PR_CONFLICTING, ["gates failed", "conflicting with its base"]],
+  [DRIVE_EXIT.WORKTREE_UNCLEAN, ["gates failed", "worktree unclean"]],
+  [DRIVE_EXIT.PASS_DEADLINE, ["gates failed", "pass deadline"]],
 ]);
 
 /** What the classifier needs beyond the record: whether a takeover replaced it, and a merged-or-closed drive's pull request state. */
 export interface EndFacts {
   takenOver: boolean;
-  /** For a drive that stopped `5`: true when its pull request merged, false when it was closed, `null` when that could not be read. */
+  /** For a drive that stopped `PR_NOT_OPEN`: true when its pull request merged, false when it was closed, `null` when that could not be read. */
   merged: boolean | null;
 }
 
-/** The class of a drive's exit, as the closed list places it (`5` reads as closed when `merged` is false). */
+/** The class of a drive's exit, as the closed list places it (`PR_NOT_OPEN` reads as closed when `merged` is false). */
 export function driveClass(
   code: number,
   merged: boolean | null,
 ): { class: OutcomeClass; reason: string } {
-  if (code === 5) {
-    if (merged === true) return { class: "merged", reason: "exit 5 (merged)" };
+  if (code === DRIVE_EXIT.PR_NOT_OPEN) {
+    if (merged === true)
+      return { class: "merged", reason: `exit ${code} (merged)` };
     if (merged === false)
-      return { class: "refused", reason: "exit 5 (closed)" };
+      return { class: "refused", reason: `exit ${code} (closed)` };
     return {
       class: "unknown",
-      reason:
-        "exit 5, and whether the pull request merged or closed could not be read",
+      reason: `exit ${code}, and whether the pull request merged or closed could not be read`,
     };
   }
   const placed = DRIVE_EXITS.get(code);
@@ -272,12 +281,25 @@ function wallAtEnd(r: ReadRecord, endedAt: string): string | null {
     : null;
 }
 
-/** An interactive session's class: its recorded result, else how it ended. */
+/** How a record whose wrapper left no exit ended, with why its process counts as gone. */
+function goneWithoutExit(s: ReadRecord["state"]): string {
+  return s.kind === "died"
+    ? `its wrapper is gone without an exit (${s.reason})`
+    : "its wrapper is gone without an exit";
+}
+
+/** A pickup's session's or a follow-up pass's class: its recorded result, a question it stopped on, else how it ended. */
 function sessionClass(
   r: ReadRecord,
   endedAt: string,
 ): { class: OutcomeClass; reason: string } {
   if (r.result === "done") return { class: "converged", reason: "result done" };
+  const question = questionOf(r.state);
+  if (question !== null)
+    return {
+      class: "parked for a person",
+      reason: `stopped on a question: ${question}`,
+    };
   if (r.result === "failed")
     return { class: "gates failed", reason: "result failed" };
   const s = r.state;
@@ -286,7 +308,7 @@ function sessionClass(
       ? s.agent === undefined
         ? `its session exited ${s.exit.code ?? s.exit.signal ?? "without a code"}`
         : `its agent finished ${s.agent}`
-      : "its wrapper is gone without an exit";
+      : goneWithoutExit(s);
   const wall = wallAtEnd(r, endedAt);
   return wall === null
     ? { class: "died", reason: `no result recorded; ${how}` }
@@ -306,7 +328,7 @@ export function classifyEnded(
         ? s.exit.code === null
           ? `signal ${s.exit.signal ?? "unknown"}`
           : `exit ${s.exit.code}`
-        : "its wrapper is gone without an exit";
+        : goneWithoutExit(s);
     if (facts.takenOver)
       return { class: "stalled", reason: `taken over (${answer})` };
     if (s.kind === "ended" && s.exit.code !== null)
@@ -335,11 +357,15 @@ export function endedRow(
 ): EndedRow {
   const { record } = r;
   const placed = classifyEnded(r, endedAt, facts);
-  // A re-drive ends like any re-arm; its reason also names why the drive was stale.
+  // A re-drive ends like any re-arm; its reason also names why it was launched.
+  const redriven =
+    record.redrive?.conflictStop === true
+      ? "a drive that stopped on a conflict"
+      : "a stale converged pull request";
   const reason =
     record.redrive == null
       ? placed.reason
-      : `${placed.reason}; re-drive of a stale converged pull request: ${record.redrive.cause}`;
+      : `${placed.reason}; re-drive of ${redriven}: ${record.redrive.cause}`;
   const duration = Date.parse(endedAt) - Date.parse(record.createdAt);
   const start = record.round ?? null;
   return {

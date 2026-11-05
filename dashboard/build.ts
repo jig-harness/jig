@@ -28,6 +28,8 @@ const ROOT = resolve(import.meta.dir, "..");
 const SOURCE = "dashboard/src";
 export const PAGE_DIR = "plugin/dispatch/dashboard-page";
 const COMMAND = "bun dashboard/build.ts";
+/** Jig's square mark, the one that follows the reader's theme: the site's favicon too. */
+const MARK = "website/public/brand/jig-mark-adaptive.svg";
 const LICENCE_NAMES = [
   "LICENSE",
   "LICENSE.md",
@@ -51,6 +53,12 @@ function inlineScript(code: string): string {
   return code.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");
 }
 
+/** The mark as an address the page holds itself. */
+function icon(): string {
+  const svg = readFileSync(join(ROOT, MARK), "utf8").trim();
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 function document(title: string, styles: string, body: string): string {
   return [
     "<!doctype html>",
@@ -60,8 +68,8 @@ function document(title: string, styles: string, body: string): string {
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     '<meta name="referrer" content="no-referrer">',
     // A browser asks for an icon by itself, without the token, and is refused;
-    // naming an empty one means it does not ask.
-    '<link rel="icon" href="data:,">',
+    // an icon the page holds inline means it does not ask.
+    `<link rel="icon" href="${icon()}">`,
     `<title>${title}</title>`,
     `<style>${styles}</style>`,
     "</head>",

@@ -495,7 +495,7 @@ every night, where Windows leaves out only the suites listed in
 | Developing Jig (`bun run gates`) | yes | yes | yes, without the launcher's, the Herdr tool's and the Orca tool's suites | — |
 
 The supervision code finds and stops Windows processes from native snapshots
-and a polled stop request. Batch command shims run through `cmd.exe`; skill
+and a stop the driver polls its mailbox for. Batch command shims run through `cmd.exe`; skill
 instructions use Bun commands with plain arguments. The `fix-ci` setup command
 runs through Bun's native shell; its external tools belong to the consumer.
 The complete authenticated pickup, draft pull request, drive round and stop

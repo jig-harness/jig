@@ -64,12 +64,9 @@ import {
 import { reviewerExpected, reviewerLabel, reviewsDrafts } from "../overlay.ts";
 import { ghCall, git, run, tsArgv } from "../proc.ts";
 import {
+  type CiReport,
   checkRunsFor,
-  ciVerdictOf,
-  commitStatusesFor,
-  failingCheckRunNames,
-  failingNames,
-  failingStatusNames,
+  ciReportFor,
   type ReviewerSticky,
   reviewedShaFromComments,
   reviewerRun,
@@ -87,7 +84,7 @@ import {
 import { terminal } from "./terminal-states.ts";
 import type { WaitingEvaluationCache } from "./waiting-cache.ts";
 
-export interface StatusReport {
+export interface StatusReport extends CiReport {
   state: string;
   reason: string;
   apiHead: string;
@@ -168,35 +165,6 @@ export interface StatusReport {
    * evidence.
    */
   openThreadPaths: string[] | null;
-  ci: string;
-  /**
-   * The structured counterpart to `ci` — the individual failing check-run and
-   * commit-status names, unparsed. A consumer that needs to test one of these
-   * names for exact membership in a known set must read this field rather than
-   * re-splitting `ci` on `,`/`;`, which cannot round-trip a name that itself
-   * contains either delimiter. `null` mirrors `ci`'s own `unknown:` cases.
-   */
-  failingCheckNames: string[] | null;
-  /**
-   * The check-run-only subset of `failingCheckNames` — never legacy commit
-   * statuses. A consumer deciding whether a required-named failure is merely
-   * "possibly stale" (unconfirmed check-run freshness, `finalCi.code === 4`)
-   * must intersect against THIS field, not `failingCheckNames`: the freshness
-   * ambiguity only ever applies to a check-run, never to a commit status.
-   * `null` mirrors `failingCheckNames`'s own `runsUnreadable` case.
-   */
-  failingCheckRunNames: string[] | null;
-  /**
-   * The legacy-commit-status-only complement of `failingCheckRunNames` — the
-   * two together partition `failingCheckNames`'s merged, provenance-free output
-   * back by source. A consumer exempting a required-named failure as "possibly
-   * stale" must also confirm the SAME name is absent from here:
-   * `failingCheckRunNames.includes(name)` alone cannot tell a purely
-   * check-run-sourced failure from one that ALSO has a fresh, unambiguous
-   * commit-status occurrence sharing that name. `null` mirrors
-   * `failingCheckNames`'s own `statuses === null` case.
-   */
-  failingStatusNames: string[] | null;
 }
 
 export interface EvaluateContext {
@@ -247,6 +215,7 @@ export function emptyReport(): StatusReport {
     failingCheckNames: null,
     failingCheckRunNames: null,
     failingStatusNames: null,
+    failingRuns: null,
   };
 }
 
@@ -1053,15 +1022,16 @@ async function evaluateFresh(
 
   const awaitReviewer = reviewerGatesApply(conflicting);
 
-  // An unreadable status API is UNKNOWN, never an empty (therefore clean)
-  // set: a timeout or a 403 reading as "no legacy statuses exist" would let
-  // announce-merge-ready post that every non-reviewer check is green over a
-  // status context nobody could see.
-  const statuses = await commitStatusesFor(ctx.owner, ctx.repo, report.apiHead);
-  report.ci = ciVerdictOf(runs, statuses, runsUnreadable, report.apiHead);
-  report.failingCheckNames = failingNames(runs, statuses, runsUnreadable);
-  report.failingCheckRunNames = failingCheckRunNames(runs, runsUnreadable);
-  report.failingStatusNames = failingStatusNames(statuses);
+  Object.assign(
+    report,
+    await ciReportFor(
+      ctx.owner,
+      ctx.repo,
+      report.apiHead,
+      runs,
+      runsUnreadable,
+    ),
+  );
 
   // A conflicting head SKIPS every reviewer gate below. Each of them returns
   // AWAITING_REVIEWER (exit 4, "becomes something else with time"), and on a
@@ -1439,10 +1409,8 @@ async function evaluateFresh(
   // when the state says so.
   //
   // drive-state's stderr is PASSED THROUGH: it writes there only what a human
-  // must act on (a malformed state file, or the ONE-TIME warning about a
-  // worktree-private state file the git-dir migration orphaned, guarded by a
-  // durable marker). This first drive-state call of an evaluation would
-  // otherwise consume that single showing invisibly.
+  // must act on (a malformed state, a database a newer plugin needs a newer
+  // reader for).
   const parked = await readParkedSets(ctx);
   if (parked === null) {
     return terminal(

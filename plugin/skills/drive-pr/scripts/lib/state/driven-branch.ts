@@ -8,7 +8,7 @@
  * by the pull request. `created` says the attach made the tree for the drive
  * (`attach-pr.ts --place`).
  *
- * Optional in a stored state: a state file written before the field existed
+ * Optional in a stored state: a stored state written before the field existed
  * reads as `null`, since nothing about a drive in progress changes when the
  * field appears. A value that is present must be well-formed.
  */

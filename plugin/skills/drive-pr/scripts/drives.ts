@@ -7,18 +7,17 @@
  * running fleet is invisible by default: the locks name a pid, the pid has no
  * pane, and the refusal a second start meets ("another driver already holds
  * the … lock") names a process the operator has no window into. This command
- * is that window. Scope is ONE clone's state universe — the same
- * `resolveStateDir` every driver shares (keyed per clone), so
- * every Conductor worktree of a clone sees the same fleet; a different clone
- * has a fleet of its own.
+ * is that window. Scope is ONE clone's rows of the drive's database — the
+ * same clone key every driver shares, so every linked worktree of a clone
+ * sees the same fleet; a different clone has a fleet of its own.
  *
  * READ-ONLY over lock state, by design: a stale lock is the next `acquire`'s
- * to recover, a contested one is a human's, and a listing that also swept
- * would be a second writer to a protocol built around exactly one
- * (`drive.ts` § Single-instance locking). Claims are interpreted by exactly
- * the rule recovery uses — `lib/claim.ts`, shared with the writer — so this
- * listing can never call a claim live that recovery would retire, or vice
- * versa. `--stop` writes a stop request beside the claim; it never removes the claim.
+ * to recover, and a listing that also swept would be a second writer to a
+ * protocol built around exactly one (`drive.ts` § Single-instance locking).
+ * Locks are interpreted by exactly the rule recovery uses — `lib/claim.ts`,
+ * shared with the writer — so this listing can never call a lock live that
+ * recovery would take over, or vice versa. `--stop` sends the driver a
+ * mailbox `stop` addressed to its generation; it never removes the lock.
  *
  * Modes:
  *   drives.ts                list every drive lock (human-readable); a LIVE
@@ -30,7 +29,7 @@
  *                            also carries `doctor: {verdict, reason,
  *                            recovery}`, the same classification `--doctor`
  *                            prints in human form. Same POPULATION as the plain
- *                            listing: lock directories only, which is what a
+ *                            listing: locks only, which is what a
  *                            status board polling this mode consumes.
  *   drives.ts --doctor       one classified verdict per drive in the state
  *                            universe — HEALTHY, WEDGED,
@@ -41,15 +40,14 @@
  *
  *                            A WIDER POPULATION than the two modes above,
  *                            and that difference is the point: `drive.ts`
- *                            `rmdir`s its lock slot on every normal exit,
+ *                            releases its locks on every normal exit,
  *                            INCLUDING both quota-park exits and the HITL
- *                            park, so a parked drive has no lock directory
- *                            left while its `drive-pr-<N>.json` — carrying
- *                            the `quotaPark` and `parked` this sweep exists
- *                            to report — survives. This mode's population is
- *                            therefore lock dirs UNION state files; a
- *                            state-file-only drive appears as a `state:
- *                            'empty'` row with no `diag`. Combines with
+ *                            park, so a parked drive has no lock left while
+ *                            its state — carrying the `quotaPark` and
+ *                            `parked` this sweep exists to report —
+ *                            survives. This mode's population is therefore
+ *                            locks UNION states; a state-only drive appears
+ *                            as a `state: 'empty'` row with no `diag`. Combines with
  *                            --json, which then carries that same wider
  *                            population; mutually exclusive with
  *                            --here/--stop like they are with each other.
@@ -60,13 +58,17 @@
  *                            its silence must only ever mean "checked, and
  *                            clear", never "could not check".
  *   drives.ts --stop <PR>    Verify the live driver's creation identity,
- *                            then write a generation-addressed stop request.
- *                            The driver stops its pass tree and releases its
- *                            locks. After a 30s grace, force only captured
- *                            process identities and witness the tree's exit.
- *                            Older POSIX drivers receive SIGTERM instead.
- *                            Foreign PID namespaces, unreadable tables and
- *                            unbindable claims are refused. With
+ *                            then send it a mailbox `stop` addressed to the
+ *                            driver generation its claim names, marked `now`
+ *                            (`lib/state/mailbox-stop.ts`). The driver stops
+ *                            its pass tree at once, acknowledges the stop in
+ *                            the outbox and releases its locks; a later
+ *                            driver ignores the stop. A claim that names no
+ *                            generation gets no stop, only the force below.
+ *                            After a 30s grace, force only captured process
+ *                            identities and witness the tree's exit.
+ *                            Foreign PID namespaces,
+ *                            unreadable tables and unbindable locks are refused. With
  *                            --expect-started ISO, only the claim acquired
  *                            then is stopped; another holder exits 3.
  *   drives.ts --report [--since <time>] [--json]
@@ -80,9 +82,7 @@
  *      comment in `main`)
  *   1  --stop found nothing live to stop, refused (foreign host, unreadable
  *      claim, unverifiable or non-driver pid), or the driver outlived the
- *      wait; OR --doctor's sweep could not even ENUMERATE the state universe
- *      (the state dir itself could not be read — the same failure `listRows`
- *      already treats as fatal for the plain listing)
+ *      wait; OR the drive's database could not be read
  *   2  usage
  *   3  --stop --expect-started: the lock is held by another acquisition
  */
@@ -97,29 +97,24 @@ import {
   type WindowsTreeState,
   type ProcessTreeControl,
   forceIdentityTargetsAndWitness,
-  signalIdentityTargets,
   identityTargetsGone,
 } from "../../../shared/process-tree.ts";
+import { appendDirective } from "./lib/state/mailbox.ts";
 import {
-  requestDriverStop,
-  driverStopCompleted,
-  consumeDriverStopCompletion,
-  takeExpectStarted,
-  requireStopForExpectStarted,
-} from "./lib/stop-request.ts";
+  directiveAcked,
+  driverMailboxDir,
+  generationAcked,
+} from "./lib/state/mailbox-stop.ts";
 import * as ledgerStop from "./lib/ledger-stop.ts";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { hostname } from "node:os";
+import { existsSync } from "node:fs";
 import { driveRepository } from "./lib/drive-repository.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  CLAIM_PREFIX,
   type ClaimDiag,
-  claimLive,
   diagLines,
+  ownParentDriver,
   samePidNamespace,
-  parseClaimText,
 } from "./lib/claim.ts";
 import { fail, isDigits, runMain, sleep, testPacing } from "./lib/cli.ts";
 import {
@@ -145,18 +140,21 @@ import {
   pidAlive,
   unconcludedGitOpMarker,
 } from "./lib/proc.ts";
-import { legacyFootprint } from "./lib/state/legacy-state.ts";
 import { liveDrives, reportMain } from "./lib/morning-report.ts";
 import { type DriveState, isUsableState } from "./lib/state/schema.ts";
+import { claimAlive, inspectLock, lockLabel } from "./lib/driver/locks.ts";
+import { dbPathFor, driveDb } from "./lib/state/db.ts";
+import { lockRows } from "./lib/state/lock.ts";
 import {
   peekResolvedStateDir,
-  resolveLegacyStateDir,
+  readStateRow,
   resolveStateDir,
+  stateNumbers,
   worktreeLockName,
 } from "./lib/state/store.ts";
 
-const PR_LOCK = /^pr-drive-(\d+)\.lock$/;
-const WORKTREE_LOCK = /^pr-drive-worktree-([0-9a-f]+)\.lock$/;
+const PR_LOCK = /^pr-drive-(\d+)$/;
+const WORKTREE_LOCK = /^pr-drive-worktree-([0-9a-f]+)$/;
 /**
  * What a real driver's command line looks like in the process table —
  * `drive.ts` as its own path token. Deliberately does NOT match `drives.ts`,
@@ -185,6 +183,11 @@ interface LockRow {
   kind: "pr" | "worktree";
   /** The PR number, or the worktree hash. */
   key: string;
+  /** The clone's state directory, beside the database the lock is in. */
+  stateDir: string;
+  /** The lock's name in the drive's database. */
+  name: string;
+  /** Where the lock is, for a person: its name and the database. */
   dir: string;
   /**
    * `live`/`stale` are the two verdicts a readable single claim gets, by
@@ -196,6 +199,7 @@ interface LockRow {
   state: "live" | "stale" | "empty" | "contested" | "unreadable";
   pid: number | null;
   host: string | null;
+  hostId?: string | undefined;
   platform: string | null;
   nonce: string | null;
   refreshAgeSec: number | null;
@@ -225,85 +229,29 @@ interface LockRow {
   doctor: DoctorRow | null;
 }
 
-/**
- * Is this claim's owner the driver that spawned ME? `drive.ts` exports
- * $DRIVE_PR_SESSION as its own pid before spawning each round's agent, so a
- * pass finding a live holder with that exact pid is looking at its own parent,
- * never a competing driver — and the second-driver rule (SKILL.md § 6) does not
- * apply to it.
- *
- * Pid equality is only meaningful on the host that wrote the claim, so a
- * differing or absent host answers false — failing toward the safe reading
- * (a foreign driver), never toward "proceed". An unset $DRIVE_PR_SESSION means
- * the reader is not a pass at all, which answers false for the same reason.
- *
- * A pid is REUSED, though, and that is the gap this function closes second: a
- * dead driver's still-fresh claim whose pid the OS handed to this pass's own
- * parent reads live to `claimLive` and matches $DRIVE_PR_SESSION, so pid+host
- * alone would grant `self` over a lock the parent never took. `drive.ts`
- * therefore exports its claim's own acquisition token as
- * $DRIVE_PR_SESSION_STARTED, and when the claim carries a `started` of its own
- * the two must be EQUAL — the same instance-token correlation this file already
- * uses to tie a worktree lock to a PR lock.
- *
- * The token is required whenever THIS process's environment supplies one — not
- * only when the on-disk claim also happens to carry one. `drive.ts` always
- * exports both together, so a pass holding $DRIVE_PR_SESSION_STARTED is
- * necessarily a pass whose own parent writes diagnostics into every claim it
- * takes; a live claim matching pid+host but carrying no `started` at all is
- * therefore proven to be a DIFFERENT process's claim — the exact pid-recycling
- * case this token exists to catch — and must answer false, not fall back to the
- * legacy heuristic (the prior `token !== '' && diag !== null` guard let a
- * diagnostics-free claim ride pid+host to `self` even with a token present).
- * Only a harness opting in by hand (`DRIVE_PR_SESSION=<agent pid>`, SKILL.md §
- * 6), which exports no token at all, still falls back to pid+host — demanding a
- * token there would answer false for every pass under that configuration, which
- * is the stand-down bug this whole mechanism exists to prevent, in the one
- * direction that is silent.
- *
- * That fallback is narrower than "no token on our side", though: it is
- * sanctioned ONLY for the genuine older legacy case, which by construction
- * writes a diagnostics-free claim of its own — so the fallback must
- * additionally require `diag === null`. A claim that DOES carry diagnostics can
- * never be that harness's own write (only `drive.ts`'s `acquire` stamps
- * diagnostics, and it always exports the token alongside them), so a
- * diagnostics-bearing claim matching pid+host while OUR OWN env carries no
- * token is proof of an unrelated process — most plausibly a modern,
- * still-diagnosed claim from a dead driver whose pid got recycled — and must
- * answer false rather than silently trusting pid+host over evidence that
- * contradicts it.
- */
-function ownParentDriver(
-  pid: number | null,
-  host: string | null,
-  diag: ClaimDiag | null,
-): boolean {
-  const session = process.env.DRIVE_PR_SESSION ?? "";
-  if (
-    pid === null ||
-    session === "" ||
-    String(pid) !== session ||
-    host === null ||
-    host !== hostname()
-  ) {
-    return false;
-  }
-  const token = process.env.DRIVE_PR_SESSION_STARTED ?? "";
-  if (token !== "") return diag !== null && diag.started === token;
-  return diag === null;
-}
-
 function rowName(kind: "pr" | "worktree", key: string): string {
   return kind === "pr" ? `PR #${key}` : `worktree ${key.slice(0, 8)}…`;
 }
 
-/** Interpret one lock directory. Never throws; failures become row states. */
-function readLock(dir: string, kind: "pr" | "worktree", key: string): LockRow {
+/** The lock name of a row's kind and key. */
+function lockName(kind: "pr" | "worktree", key: string): string {
+  return kind === "pr" ? `pr-drive-${key}` : `pr-drive-worktree-${key}`;
+}
+
+/** Interpret one driver lock of the clone. A lock nobody holds is `empty`. */
+function readLock(
+  stateDir: string,
+  kind: "pr" | "worktree",
+  key: string,
+  name = lockName(kind, key),
+): LockRow {
   const row: LockRow = {
     lock: rowName(kind, key),
     kind,
     key,
-    dir,
+    stateDir,
+    name,
+    dir: lockLabel({ stateDir, name }),
     state: "empty",
     pid: null,
     host: null,
@@ -314,72 +262,34 @@ function readLock(dir: string, kind: "pr" | "worktree", key: string): LockRow {
     self: false,
     doctor: null,
   };
-  let names: string[];
-  try {
-    names = readdirSync(dir);
-  } catch (e) {
-    // Vanished between the state-dir listing and here = released mid-listing:
-    // positively free. Anything else is a lock that exists but cannot be
-    // read, which must not read as free.
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return row;
-    row.state = "unreadable";
-    return row;
-  }
-  const claims = names.filter(
-    (n) => n.startsWith(CLAIM_PREFIX) && n.length > CLAIM_PREFIX.length,
-  );
-  if (claims.length === 0) return row; // empty: retired/released, not yet reused
-  if (claims.length > 1) {
-    row.state = "contested";
-    return row;
-  }
-  const claimPath = join(dir, claims[0] as string);
-  let record: ReturnType<typeof parseClaimText>;
-  let ageMs: number | null;
-  try {
-    record = parseClaimText(readFileSync(claimPath, "utf8"));
-    ageMs = Date.now() - statSync(claimPath).mtimeMs;
-  } catch {
-    row.state = "unreadable";
-    return row;
-  }
-  if (record === null) {
-    row.state = "unreadable";
-    return row;
-  }
-  row.pid = record.pid;
-  row.host = record.host;
-  row.platform = record.platform;
-  row.nonce = (claims[0] as string).slice(CLAIM_PREFIX.length);
-  row.diag = record.diag;
-  row.self =
-    samePidNamespace(record) &&
-    ownParentDriver(record.pid, record.host, record.diag);
-  row.refreshAgeSec = Math.max(0, Math.round(ageMs / 1000));
-  row.state = claimLive({ ...record, ageMs }) ? "live" : "stale";
+  const claim = inspectLock(stateDir, name);
+  if (claim === null) return row;
+  const ageMs = Date.now() - Date.parse(claim.renewedAt);
+  row.pid = claim.pid;
+  row.host = claim.host;
+  row.hostId = claim.hostId === "" ? undefined : claim.hostId;
+  row.platform = claim.platform;
+  row.nonce = claim.nonce;
+  row.diag = claim.diag;
+  row.self = ownParentDriver(claim);
+  row.refreshAgeSec = Number.isFinite(ageMs)
+    ? Math.max(0, Math.round(ageMs / 1000))
+    : null;
+  row.state = claimAlive(claim) ? "live" : "stale";
   return row;
 }
 
+/** Every driver lock of the clone whose state directory is `stateDir`. */
 function listRows(stateDir: string): LockRow[] {
-  let entries: string[];
-  try {
-    entries = readdirSync(stateDir);
-  } catch {
-    // A state dir that cannot be read has verified nothing — say so rather than
-    // return an empty fleet.
-    fail(1, `drives.ts: cannot read the state dir ${stateDir}`);
-  }
   const rows: LockRow[] = [];
-  for (const entry of entries) {
-    const pr = PR_LOCK.exec(entry);
+  for (const { name } of lockRows(driveDb(stateDir))) {
+    const pr = PR_LOCK.exec(name);
     if (pr !== null) {
-      rows.push(readLock(join(stateDir, entry), "pr", pr[1] as string));
+      rows.push(readLock(stateDir, "pr", pr[1] as string));
       continue;
     }
-    const wt = WORKTREE_LOCK.exec(entry);
-    if (wt !== null) {
-      rows.push(readLock(join(stateDir, entry), "worktree", wt[1] as string));
-    }
+    const wt = WORKTREE_LOCK.exec(name);
+    if (wt !== null) rows.push(readLock(stateDir, "worktree", wt[1] as string));
   }
   rows.sort((a, b) =>
     a.kind === b.kind
@@ -391,28 +301,24 @@ function listRows(stateDir: string): LockRow[] {
   return rows;
 }
 
-const STATE_FILE = /^drive-pr-(\d+)\.json$/;
-
 /**
  * `--doctor`-ONLY extension of the sweep population beyond `listRows`'s lock
  * census.
  *
- * `drive.ts` `rmdir`s its lock slot on EVERY normal process exit
- * (`release`, run from `releaseAll` on `process.on('exit')`) — including
+ * `drive.ts` releases its locks on EVERY normal process exit — including
  * both the quota-park exit (`QUOTA_PARKED_EXIT`) and the HITL-park exit,
  * neither of which is a crash. A drive that parked (for a quota wall or for
- * a human) and then exited normally therefore has NO lock directory left at
- * all, while its `drive-pr-<PR>.json` — carrying the exact
- * `quotaPark`/`parked` record `--doctor` exists to surface — survives
- * untouched. A sweep that reads only lock directories reports "no drive
- * locks" for precisely the two verdicts (`QUOTA_PARKED` after the exiting
- * park, `NEEDS_HUMAN` once every remaining item is parked) this feature was
- * built to answer.
+ * a human) and then exited normally therefore has NO lock left at all, while
+ * its state — carrying the exact `quotaPark`/`parked` record `--doctor`
+ * exists to surface — survives untouched. A sweep that reads only locks
+ * reports "no drive locks" for precisely the two verdicts (`QUOTA_PARKED`
+ * after the exiting park, `NEEDS_HUMAN` once every remaining item is parked)
+ * this feature was built to answer.
  *
  * Deliberately scoped to `--doctor` (and `--doctor --json`) only, NOT the plain
  * listing or plain `--json` — a considered choice, not an oversight: the plain
  * listing's own stated purpose is "list every drive LOCK" (see the module
- * header), and a state-file-only row has no lock to report — showing one there
+ * header), and a state-only row has no lock to report — showing one there
  * would be new information arriving through a surface that never promised to
  * carry it, and a status board polling plain `--json` has no use for a row it
  * would immediately filter out (it only reads `state === 'live'`). `--doctor`
@@ -422,7 +328,7 @@ const STATE_FILE = /^drive-pr-(\d+)\.json$/;
  * Returns ONLY the rows `listRows` did not already report — a PR with a live
  * (or stale, or contested…) lock is represented by `listRows`'s own row, not
  * a duplicate here, however this function's population is computed — and,
- * among those, only the ones with something to say: a state file that reads
+ * among those, only the ones with something to say: a state that reads
  * cleanly and carries neither a park nor a parked item is skipped, while an
  * UNREADABLE one is always reported. See the inline comment on that guard for
  * the measurement that forced it and why it is not a fail-open.
@@ -438,53 +344,24 @@ export function listStateOnlyRows(
   const alreadyLocked = new Set(
     lockRows.filter((r) => r.kind === "pr").map((r) => r.key),
   );
-  let entries: string[];
-  try {
-    entries = readdirSync(stateDir);
-  } catch (e) {
-    // `listRows` above already read (or fatally failed on) this exact directory
-    // moments ago, so ENOENT here means it vanished in the narrow TOCTOU window
-    // between that read and this one — positively benign, matching `readLock`'s
-    // own ENOENT-is-not-an-error stance, and "no extra rows" is the correct
-    // answer for a directory that is genuinely gone. Anything else (a transient
-    // permission, descriptor, or I/O error) is NOT that case, and treating it
-    // identically would silently convert a read failure into an empty
-    // population — hiding exactly the quota-parked and human-parked drives
-    // whose normal exit already removed their lock directories, which is the
-    // entire reason this second census exists (fail closed on input the gate
-    // cannot read).
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
-    fail(
-      1,
-      `drives.ts: cannot read the state dir ${stateDir} for --doctor's state-only census`,
-    );
-  }
   const rows: LockRow[] = [];
-  for (const entry of entries) {
-    const m = STATE_FILE.exec(entry);
-    if (m === null) continue;
-    const pr = m[1] as string;
+  for (const pr of stateNumbers(stateDir)) {
     if (alreadyLocked.has(pr)) continue;
-    // A lock-less state file earns a row only when it has something to SAY.
+    // A lock-less stored state earns a row only when it has something to SAY.
     //
-    // Measured before this guard existed: one ordinary clone's state dir held
-    // 237 `drive-pr-*.json` files, so `--doctor` printed 238 rows — every one
-    // of them `UNKNOWN`. A sweep whose first run buries its findings under
-    // two hundred lines of "insufficient evidence" is a sweep nobody reads,
-    // which defeats the whole feature. The files accumulate per PR ever
-    // driven in the clone and are bounded only by `reap-state.ts`'s weekly
-    // lifecycle pass, so this is a STEADY-STATE property, not a one-off from
-    // the older files that happen to dominate the count today.
+    // A clone keeps a state for every PR it ever drove, hundreds over time,
+    // and a sweep whose first run buries its findings under two hundred
+    // lines of `UNKNOWN` is a sweep nobody reads.
     //
     // The filter is not a fail-open. Failing closed is about input the gate
-    // CANNOT READ, and an UNREADABLE state file is still reported — that is the
-    // `!snapshot.ok` arm below, and it is exactly the "your state dir is full
-    // of files this version refuses" signal an operator needs. What is dropped
-    // is the opposite case: a file read SUCCESSFULLY, which positively says
+    // CANNOT READ, and an UNREADABLE state is still reported — that is the
+    // `!snapshot.ok` arm below, and it is exactly the "this clone holds
+    // states this version refuses" signal an operator needs. What is dropped
+    // is the opposite case: a state read SUCCESSFULLY, which positively says
     // there is no park and nothing parked. Those are the only two verdicts a
     // lock-less row can ever carry — `DEAD_WITH_LEFTOVERS` needs a worktree
     // path, and a row with no claim has no `diag` to supply one — so a
-    // readable, park-free, nothing-parked state file has no reachable finding
+    // readable, park-free, nothing-parked state has no reachable finding
     // to hide. Reporting it as `UNKNOWN` would not be caution; it would be
     // noise asserted with the same word this classifier uses for genuine
     // uncertainty.
@@ -505,7 +382,9 @@ export function listStateOnlyRows(
       lock: rowName("pr", pr),
       kind: "pr",
       key: pr,
-      dir: join(stateDir, entry),
+      stateDir,
+      name: lockName("pr", pr),
+      dir: `the drive state of PR #${pr} in ${dbPathFor(stateDir)}`,
       state: "empty",
       pid: null,
       host: null,
@@ -538,21 +417,20 @@ const stopHint = (pr: string): string => formatStopCommand(SELF, pr);
 // treating a failed read as "nothing to report".
 
 /**
- * Read `drive-pr-<pr>.json` DIRECTLY — no `openStore`, no lock. This command
- * is read-only over lock state by design (see the module header); the same
+ * Read a PR's state DIRECTLY — no `openStore`, no lock. This command is
+ * read-only over lock state by design (see the module header); the same
  * reasoning extends to state: taking the state lock here would make a
- * diagnostic sweep a second writer contending with an actual driver for the
- * one thing single-instance locking exists to serialize, over a file this
- * function only ever reads. `isUsableState` is the SAME shape predicate
- * `store.read()` uses, so a file this rejects is one `store.read()` would
- * refuse too — never a false positive relative to the real reader.
+ * diagnostic sweep a second writer contending with an actual driver.
+ * `isUsableState` is the SAME shape predicate `store.read()` uses, so a
+ * state this rejects is one `store.read()` would refuse too.
  */
 function readStateSnapshot(
   stateDir: string,
   pr: string,
 ): { ok: true; state: DriveState } | { ok: false } {
   try {
-    const raw = readFileSync(join(stateDir, `drive-pr-${pr}.json`), "utf8");
+    const raw = readStateRow(stateDir, pr)?.text;
+    if (raw === undefined) return { ok: false };
     const parsed: unknown = JSON.parse(raw);
     if (!isUsableState(parsed, Number.parseInt(pr, 10))) return { ok: false };
     return { ok: true, state: parsed };
@@ -652,7 +530,7 @@ async function gatherDoctorInput(
       ? Date.now() - Date.parse(snapshot.state.lastProgressAt)
       : null;
   // A FUTURE `lastProgressAt` (clock skew between the machine that stamped it
-  // and this one, or a corrupted/hand-edited state file) makes the subtraction
+  // and this one, or a corrupted/hand-edited stored state) makes the subtraction
   // go negative, which reads as "definitely not stale" and — combined with a
   // `passChild` this machine has no way to confirm — reaches `HEALTHY`. `null`
   // is the honest answer: this classifier has no basis for believing progress
@@ -670,10 +548,7 @@ async function gatherDoctorInput(
     row.diag?.worktree === undefined || row.diag.worktree === ""
       ? null
       : row.diag.worktree;
-  const isLocal = samePidNamespace({
-    host: row.host ?? "",
-    platform: row.platform,
-  });
+  const isLocal = samePidNamespace(row);
   // `passChild` is a pure walk over the shared snapshot — no subprocess of its
   // own, so it costs nothing to compute for every row. Gated on `isLocal`: a
   // foreign-host claim's `pid` is a number in a DIFFERENT machine's process
@@ -948,11 +823,7 @@ async function here(stateDir: string): Promise<number> {
     );
     return 0;
   }
-  const row = readLock(
-    join(stateDir, await worktreeLockName()),
-    "worktree",
-    "this",
-  );
+  const row = readLock(stateDir, "worktree", "this", await worktreeLockName());
   if (row.state === "empty" || row.state === "stale") return 0;
   if (row.state !== "live") {
     console.log(
@@ -1047,7 +918,7 @@ async function stop(
   pr: string,
   expectStarted: string,
 ): Promise<number> {
-  const row = readLock(join(stateDir, `pr-drive-${pr}.lock`), "pr", pr);
+  const row = readLock(stateDir, "pr", pr);
   if (row.state === "empty" || row.state === "stale") {
     console.log(
       row.state === "empty"
@@ -1072,26 +943,17 @@ async function stop(
     return 3;
   }
   const pid = row.pid as number;
-  if (!samePidNamespace({ host: row.host ?? "", platform: row.platform })) {
+  if (!samePidNamespace(row)) {
     console.log(
       `PR #${pr}'s driver runs on ${row.host} (${row.platform ?? "unknown platform"}) — stop it from that PID namespace (pid ${pid}).`,
     );
     return 1;
   }
   const v = await verifyDriverClaim(row, pid);
-  const code =
-    "code" in v
-      ? v.code
-      : consumeStopResult(row, await stopVerifiedDriver(row, v.owner));
+  const code = "code" in v ? v.code : await stopVerifiedDriver(row, v.owner);
   // Witnessed gone, or already gone with nothing witnessing its pass.
   if (code === 0)
     await ledgerStop.settleStop(stateDir, pr, row, !("code" in v));
-  return code;
-}
-
-function consumeStopResult(row: LockRow, code: number): number {
-  if (code === 0 && row.nonce !== null)
-    consumeDriverStopCompletion(row.dir, row.nonce);
   return code;
 }
 
@@ -1164,29 +1026,48 @@ async function verifyDriverClaim(
   return { owner };
 }
 
+/** Where a stop sent to a driver lands, and its directive's id once sent. */
+interface SentStop {
+  dir: string;
+  pr: string;
+  id: string | null;
+}
+
+/**
+ * Send the driver a mailbox `stop` addressed to its generation, marked `now`.
+ * `false` when it could not be written; a claim naming no generation (an
+ * earlier release's driver) or no working tree is sent nothing and left to
+ * the grace and force.
+ */
 async function requestVerifiedDriverStop(
   row: LockRow,
   owner: ProcessRow,
+  sent: SentStop,
 ): Promise<boolean> {
   const pid = owner.pid;
-  if (row.platform !== null && row.nonce !== null) {
-    try {
-      requestDriverStop(row.dir, row.nonce);
-    } catch (error) {
-      console.log(`cannot request stop of driver pid ${pid}: ${String(error)}`);
-      return false;
-    }
+  const generation = row.diag?.generation;
+  if (generation === undefined || sent.dir === "") {
     console.log(
-      `requested stop of driver pid ${pid} — it stops its pass tree, then releases its locks…`,
+      `driver pid ${pid}'s claim names no ${generation === undefined ? "driver generation" : "working tree"}, so no stop can be addressed to it; forcing its captured process identities after the grace.`,
     );
-  } else {
-    // Existing POSIX drivers predate the file channel. Their signal handler
-    // provides the same cleanup; untagged claims on Windows were refused above.
-    if (!(await signalIdentityTargets([owner], "SIGTERM"))) return false;
-    console.log(
-      `sent SIGTERM to driver pid ${pid} — it stops its pass tree, then releases its locks…`,
-    );
+    return true;
   }
+  try {
+    const directive = await appendDirective(
+      sent.dir,
+      sent.pr,
+      "drives.ts --stop",
+      "stop",
+      { generation, now: true },
+    );
+    sent.id = directive.id;
+  } catch (error) {
+    console.log(`cannot request stop of driver pid ${pid}: ${String(error)}`);
+    return false;
+  }
+  console.log(
+    `requested stop of driver pid ${pid} (generation ${generation}, directive ${sent.id}) — it stops its pass tree, then releases its locks…`,
+  );
   return true;
 }
 
@@ -1208,12 +1089,21 @@ async function stopVerifiedDriver(
     return 1;
   }
   const registry =
-    process.platform === "win32" && row.platform !== null && row.nonce !== null
-      ? join(row.dir, `processes.${row.nonce}`)
+    process.platform === "win32" && row.nonce !== null
+      ? join(row.stateDir, `${row.name}.processes.${row.nonce}`)
       : null;
   const registryState: WindowsTreeState = { root: owner, targets };
+  const sent: SentStop = {
+    dir: driverMailboxDir(row.diag?.worktree ?? "", row.diag?.mailbox ?? ""),
+    pr: row.diag?.pr ?? "",
+    id: null,
+  };
+  const generation = row.diag?.generation;
   const completed = () =>
-    row.nonce !== null && driverStopCompleted(row.dir, row.nonce, owner.pid);
+    sent.id !== null &&
+    (directiveAcked(sent.dir, sent.pr, sent.id) ||
+      (generation !== undefined &&
+        generationAcked(sent.dir, sent.pr, generation)));
   const refreshRegistered = registryCompletionTracker(
     registry,
     registryState,
@@ -1224,7 +1114,7 @@ async function stopVerifiedDriver(
       `driver pid ${pid}'s registry is incomplete; requesting cleanup while retaining its known process identities.`,
     );
   }
-  if (!(await requestVerifiedDriverStop(row, owner))) return 1;
+  if (!(await requestVerifiedDriverStop(row, owner, sent))) return 1;
   const graceSec = testPacing("DRIVE_PR_STOP_GRACE_SEC", 30, 1);
   const deadline = Date.now() + graceSec * 1000;
   while (Date.now() < deadline) {
@@ -1332,6 +1222,26 @@ export async function forceStopDriver(
   return 0;
 }
 
+/**
+ * Remove `--expect-started ISO` from `argv` and return ISO (`''` when
+ * absent): the acquisition a `--stop` is bound to.
+ */
+function takeExpectStarted(argv: string[]): string {
+  const at = argv.indexOf("--expect-started");
+  if (at < 0) return "";
+  const [, value = ""] = argv.splice(at, 2);
+  if (value === "") fail(2, "--expect-started takes a time");
+  return value;
+}
+
+function requireStopForExpectStarted(
+  expectStarted: string,
+  stopPr: string,
+): void {
+  if (expectStarted !== "" && stopPr === "")
+    fail(2, "--expect-started only qualifies --stop");
+}
+
 /** `--report` is a mode of its own; every other mode is the fleet's. */
 async function entry(): Promise<number> {
   const argv = process.argv.slice(2);
@@ -1384,12 +1294,11 @@ async function main(argv: string[]): Promise<number> {
   // look like. Every other mode keeps the loud failure.
   //
   // `peekResolvedStateDir()`, never the mutating `resolveStateDir()`: this
-  // runs on every session's own SessionStart hook, so merely opening an
-  // otherwise-unused repository was minting a clone identity, creating the
-  // state directory, and writing the migration marker purely to answer a
-  // read-only banner check.
+  // runs on every session's own SessionStart hook, and merely opening an
+  // otherwise-unused repository must not mint a clone identity to answer a
+  // read-only banner check. A clone with no identity has no drive.
   if (hereMode) {
-    let stateDir: string;
+    let stateDir: string | null;
     try {
       stateDir = await peekResolvedStateDir();
     } catch {
@@ -1398,33 +1307,22 @@ async function main(argv: string[]): Promise<number> {
       );
       return 0;
     }
-    return here(stateDir);
+    return stateDir === null ? 0 : here(stateDir);
   }
-  if (stopPr !== "") {
-    // `resolveStateDir()` refuses while an unmigrated legacy footprint exists,
-    // most likely the lock of the very older driver `--stop` must reach (the
-    // case `migrate-legacy-state.ts`'s refusal points here for), so that
-    // refusal falls back to the legacy directory.
-    let stateDir: string;
-    try {
-      stateDir = await resolveStateDir();
-    } catch (e) {
-      // Only that refusal, which needs a legacy footprint: any other failure
-      // (a relative override, no git repository) is re-thrown, not masked.
-      const legacyDir = await resolveLegacyStateDir().catch(() => null);
-      if (legacyDir === null || legacyFootprint(legacyDir).length === 0) {
-        throw e;
-      }
-      stateDir = legacyDir;
-    }
-    return stop(stateDir, stopPr, expectStarted);
-  }
+  if (stopPr !== "")
+    return stop(await resolveStateDir(), stopPr, expectStarted);
 
   // Read-only listing, same reasoning as --here above: this must not mint a
-  // clone identity or create/mark the state directory merely to enumerate it.
+  // clone identity merely to enumerate it.
   const stateDir = await peekResolvedStateDir();
+  if (stateDir === null) {
+    if (json)
+      console.log(JSON.stringify({ stateDir: null, rows: [] }, null, 2));
+    else console.log("no drive locks: this clone has never been driven");
+    return 0;
+  }
   const lockRows = listRows(stateDir);
-  // `--doctor`'s population is lock dirs ∪ state files; the plain listing and
+  // `--doctor`'s population is locks ∪ states; the plain listing and
   // plain `--json` stay lock rows only (`listStateOnlyRows` says why).
   const rows = doctorMode ? await doctorRows(stateDir, lockRows) : lockRows;
   // Classified in every mode: `--json` always carries the verdict, and the

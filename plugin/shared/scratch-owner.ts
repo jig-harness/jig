@@ -3,11 +3,7 @@ import { GcError } from "./gc-error.ts";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping } from "./config-layers.ts";
-import { swallow } from "./errors.ts";
-import {
-  parsePosixProcessTable,
-  parseWindowsProcessTable,
-} from "./process-table.ts";
+import { ownIdentity } from "./liveness.ts";
 
 export const SCRATCH_OWNER_FILE = ".jig-scratch-owner.json";
 /**
@@ -22,50 +18,12 @@ export interface ScratchOwner {
   createdAt: string;
 }
 let captured: ScratchOwner | undefined;
-function processStart(): string | null {
-  const windows = process.platform === "win32";
-  const args = windows
-    ? [
-        "powershell.exe",
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        `$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process -Filter 'ProcessId = ${process.pid}' | Select-Object ProcessId, ParentProcessId, @{Name='CreationDate';Expression={$_.CreationDate.ToUniversalTime().ToString('o')}}, CommandLine | ConvertTo-Json -Compress`,
-      ]
-    : [
-        "ps",
-        "-p",
-        String(process.pid),
-        "-o",
-        "pid=,ppid=,pgid=,lstart=,stat=,args=",
-      ];
-  let result: ReturnType<typeof Bun.spawnSync>;
-  try {
-    result = Bun.spawnSync(args, {
-      env: { ...process.env, LC_ALL: "C" },
-      timeout: 5000,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-  } catch (error) {
-    swallow(error, "scratch owner: no process table to read");
-    return null;
-  }
-  const rows =
-    result.exitCode === 0 && result.stdout
-      ? (windows ? parseWindowsProcessTable : parsePosixProcessTable)(
-          result.stdout.toString(),
-        )
-      : null;
-  return rows?.find((item) => item.pid === process.pid)?.start || null;
-}
-/** Captured once per process, an unavailable identity included. */
+/** Captured once per process, from the shared process identity, an unavailable start time included. */
 function scratchOwner(): ScratchOwner {
   captured ??= {
     version: 1,
     pid: process.pid,
-    start: processStart(),
+    start: ownIdentity().start || null,
     createdAt: new Date().toISOString(),
   };
   return captured;

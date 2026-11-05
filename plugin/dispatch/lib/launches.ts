@@ -11,22 +11,24 @@
  *   random token, the workspace, the dispatched mark its workspace carries
  *   and the runtime's answer to each launch;
  * - `claim`, the wrapper's (`run.ts`): the process identity it ran under
- *   (host, boot id, process id and the process's start time), set by an
- *   update that only fills an empty column, so exactly one wrapper ever
- *   claims a record;
+ *   (`shared/liveness.ts`: host id and name, boot id, process id and the
+ *   process's start time), set by an update that only fills an empty column,
+ *   so exactly one wrapper ever claims a record;
  * - `exit`, the wrapper's again: the stage's exit, once it ended; the first
  *   one written stands;
- * - `result`, an interactive session's own answer (`done` or `failed`),
- *   written once by `jig dispatch result` under the record's token.
+ * - `result`, a pickup's session's or a follow-up pass's own answer
+ *   (`done` or `failed`), written once by `jig dispatch result` under the
+ *   record's token.
  *
- * A record's state is read from those columns and the process table:
+ * A record's state is read from those columns and the process table, the
+ * claim judged by the shared rules (`shared/liveness.ts`):
  *
  * | Columns | State |
  * | --- | --- |
  * | an exit | ended, with the stage's exit |
  * | a claim whose process is alive under the same identity | alive |
- * | a claim from another host or boot, or an unreadable process table | unknown |
- * | a claim whose process is gone, and no exit | died |
+ * | a claim from another host, or an unreadable process table | unknown |
+ * | a claim whose process is gone, or from before this host last restarted, and no exit | died, with why |
  * | no claim | pending |
  *
  * Pending, alive and unknown records hold their stage and their account's
@@ -43,16 +45,22 @@
  * `waiting_episodes` table), and, once it ended, the time its outcome row
  * carries (`endedAt`), written in the same transaction as that row.
  */
-import { readFileSync } from "node:fs";
-import { hostname } from "node:os";
 import { isMapping } from "../../shared/config-layers.ts";
 import { swallow } from "../../shared/errors.ts";
+import {
+  decodeIdentity,
+  type HostIdentity,
+  judge,
+  type ProcessIdentity,
+  thisHost,
+} from "../../shared/liveness.ts";
 import { type ProcessRow, processTable } from "../../shared/process-table.ts";
+import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import { stateRoot } from "../receipts.ts";
 import { existingStateDb, inTransaction, stateDb, statePath } from "./state.ts";
 import type { StaleCause } from "./types.ts";
 
-/** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up session. */
+/** What a launch starts: a re-arm of a stopped drive, a takeover of a wedged one, a pickup's `do-item` session, or a merge's follow-up pass. */
 export type LaunchAction = "rearm" | "takeover" | "pickup" | "followup";
 
 /** Whether a record starts a drive's headless pass, whose exit is its answer. */
@@ -60,12 +68,12 @@ export function isDrive(record: Pick<LaunchRecord, "action">): boolean {
   return record.action === "rearm" || record.action === "takeover";
 }
 
-/** Whether a record starts an interactive session (a pickup's, a follow-up's), whose agent ends it. */
+/** Whether a record starts an interactive session (a pickup's), whose agent ends it. A follow-up is a headless pass, which its exit ends. */
 export function isInteractive(record: Pick<LaunchRecord, "action">): boolean {
-  return !isDrive(record);
+  return record.action === "pickup";
 }
 
-/** An interactive session's own answer, recorded through `jig dispatch result`. */
+/** A pickup's session's or a follow-up pass's own answer, recorded through `jig dispatch result`. */
 export type SessionResult = "done" | "failed";
 
 /** The runtime's answer to one `launch` call for the record. */
@@ -94,8 +102,10 @@ export interface LaunchRecord {
   configDir: string;
   /** The machine file's `wall_backoff` when the record was written, for a wall with no known reset. */
   wallBackoffMs: number;
-  /** For a drive: the pass deadline, in seconds (`0` for none), it was admitted under and runs under (`drive.ts --pass-timeout`); absent on a record written before it was kept. */
+  /** For a drive or a follow-up pass: the pass deadline, in seconds (`0` for none), it was admitted under and runs under (`drive.ts --pass-timeout`, or the wrapper's own deadline on a follow-up pass); absent on a record written before it was kept. */
   passTimeoutSec?: number | null;
+  /** For a drive or a follow-up pass: whether the tick admitted it on a host opted in to Codex's bypass. A Codex pass carries the bypass only when this is `true`; the wrapper does not read the setting itself, since it can read another user layer from the tick's. */
+  codexBypass?: boolean;
   /** For a takeover: the record whose driver it replaces, whose slot it takes. */
   replaces: string | null;
   /** The ledger facts the launch acted on: the same facts after a refusal are never launched again. */
@@ -110,15 +120,15 @@ export interface LaunchRecord {
   effort: string | null;
   /** A pickup's ended record no longer holds its item: the item left the dispatch states since. */
   released: boolean;
-  /** The command a follow-up's session starts (the repository's `dispatch.followup_command`); `null` for any other record. */
+  /** The command a follow-up pass runs (the repository's `dispatch.followup_command`); `null` for any other record. */
   command: string | null;
   /** The id of the follow-up marker comment the tick posted for it; `null` until posted, and for any other record. */
   marker: number | null;
   /** A drive's ledger round when it was launched, which its outcome row's rounds count from; `null` when unknown. */
   round?: number | null;
-  /** For a re-arm of a stale converged drive: why it was stale, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
+  /** For a re-drive: why it was launched, for its outcome row, and the change it re-drove, which is never re-driven twice; `null` for any other record. */
   redrive?: StaleCause | null;
-  /** The vendor session id the tick minted for an interactive session and passed to its agent; `null` when none was. */
+  /** The vendor session id the tick minted for a Claude Code session or follow-up pass and passed to its agent; `null` when none was. */
   sessionId?: string | null;
   /**
    * The dispatched mark the launch's workspace was named and marked with
@@ -161,13 +171,8 @@ export interface WaitingEpisode {
   readAt: string;
 }
 
-/** The wrapper's process identity, as `drives.ts` captures a driver's. */
-export interface ProcessIdentity {
-  host: string;
-  bootId: string;
-  pid: number;
-  /** The process's start time as the process table reports it. */
-  start: string;
+/** The wrapper's process identity (`shared/liveness.ts`), and when it claimed the record. */
+export interface LaunchClaim extends ProcessIdentity {
   claimedAt: string;
 }
 
@@ -178,23 +183,25 @@ export interface LaunchExit {
   signal: string | null;
   /** Set when the stage ended on the account's wall and the wrapper could not record that wall. */
   wallUnrecorded?: true;
+  /** For a follow-up pass that ended without recording done: the last `Question:` line of its output, the question it stopped on. */
+  said?: string;
 }
 
 export type LaunchState =
   | { kind: "pending" }
-  | { kind: "alive"; process: ProcessIdentity }
+  | { kind: "alive"; process: LaunchClaim }
   | {
       kind: "unknown";
       reason: string;
-      process: ProcessIdentity;
+      process: LaunchClaim;
       /** It ended on its account's wall, which was never written: the whole account stays closed. */
       wallUnrecorded?: true;
     }
-  | { kind: "died"; process: ProcessIdentity }
+  | { kind: "died"; reason: string; process: LaunchClaim }
   | {
       kind: "ended";
       exit: LaunchExit;
-      process: ProcessIdentity | null;
+      process: LaunchClaim | null;
       /** An interactive session whose wrapper still runs: the state its agent finished in. */
       agent?: string;
     };
@@ -202,7 +209,7 @@ export type LaunchState =
 export interface ReadRecord {
   record: LaunchRecord;
   state: LaunchState;
-  /** An interactive session's recorded answer; `null` when none. */
+  /** A pickup's session's or a follow-up pass's recorded answer; `null` when none. */
   result: SessionResult | null;
 }
 
@@ -338,6 +345,8 @@ function optionalFields(value: Record<string, unknown>): boolean {
       (v) => v === undefined || v === null || typeof v === "number",
     ) &&
     optionalSeconds(value.passTimeoutSec) &&
+    (value.codexBypass === undefined ||
+      typeof value.codexBypass === "boolean") &&
     optionalTime(value.endedAt) &&
     optionalTime(value.openedAt) &&
     isRedrive(value.redrive)
@@ -351,8 +360,16 @@ function isRedrive(value: unknown): boolean {
     value === null ||
     (isMapping(value) &&
       typeof value.cause === "string" &&
-      typeof value.change === "string")
+      typeof value.change === "string" &&
+      (value.earlier === undefined ||
+        (Array.isArray(value.earlier) &&
+          value.earlier.every((c) => typeof c === "string"))))
   );
+}
+
+/** Every change a re-drive record counts as acted on: the one it names now and the ones a replay moved on from. */
+export function redrivenChanges(redrive: StaleCause): string[] {
+  return [redrive.change, ...(redrive.earlier ?? [])];
 }
 
 /** A record as this version reads it: the fields an earlier version did not write, at their defaults. */
@@ -407,15 +424,14 @@ function isAttempt(value: unknown): value is LaunchAttempt {
   );
 }
 
-function isIdentity(value: unknown): value is ProcessIdentity {
-  return (
-    isMapping(value) &&
-    typeof value.host === "string" &&
-    typeof value.bootId === "string" &&
-    typeof value.pid === "number" &&
-    typeof value.start === "string" &&
-    typeof value.claimedAt === "string"
-  );
+/** A claim as written, one from before host ids included; `null` when it is not one. */
+function asClaim(value: unknown): LaunchClaim | null {
+  const identity = decodeIdentity(value);
+  return identity === null ||
+    !isMapping(value) ||
+    typeof value.claimedAt !== "string"
+    ? null
+    : { ...identity, claimedAt: value.claimedAt };
 }
 
 function isExit(value: unknown): value is LaunchExit {
@@ -519,7 +535,7 @@ export function readRecord(
 }
 
 /**
- * Record an interactive session's answer: true when this call wrote it,
+ * Record a session's or a follow-up pass's answer: true when this call wrote it,
  * false when the record already had one, which stands.
  */
 export function recordResult(
@@ -548,34 +564,10 @@ export function readResult(
 }
 
 /** A row's claim: `undefined` when none, `null` when it does not read. */
-export function claimOf(row: LaunchRow): ProcessIdentity | null | undefined {
+export function claimOf(row: LaunchRow): LaunchClaim | null | undefined {
   const value = parseJson(row.claim, `the claim of launch record ${row.id}`);
   if (value === undefined) return undefined;
-  return isIdentity(value) ? value : null;
-}
-
-/** This boot's id: Linux's `boot_id`; elsewhere, empty (the start time still tells a reused pid apart). */
-export function bootId(): string {
-  try {
-    return readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
-  } catch (error) {
-    swallow(error, "no boot id on this platform");
-    return "";
-  }
-}
-
-/** This process's identity, from the process table; `null` when the table cannot be read. */
-export async function ownIdentity(): Promise<ProcessIdentity | null> {
-  const rows = await processTable();
-  const row = rows?.find((r) => r.pid === process.pid);
-  if (row === undefined || row.start === "") return null;
-  return {
-    host: hostname(),
-    bootId: bootId(),
-    pid: process.pid,
-    start: row.start,
-    claimedAt: new Date().toISOString(),
-  };
+  return asClaim(value);
 }
 
 /**
@@ -584,7 +576,7 @@ export async function ownIdentity(): Promise<ProcessIdentity | null> {
  */
 export function claimRecord(
   id: string,
-  identity: ProcessIdentity,
+  identity: LaunchClaim,
   root = stateRoot(),
 ): boolean {
   const done = stateDb(root)
@@ -604,36 +596,18 @@ export function recordExit(
     .run(JSON.stringify(exit), id);
 }
 
-/** Whether a claimed process is the one running now under its pid. */
+/** Whether a claimed process is the one running now under its pid, by the shared rules. */
 function claimState(
-  identity: ProcessIdentity,
+  claim: LaunchClaim,
   rows: ProcessRow[] | null,
-  boot: string,
+  here: HostIdentity,
 ): LaunchState {
-  if (identity.host !== hostname())
-    return {
-      kind: "unknown",
-      reason: `claimed on host ${identity.host}, not this one`,
-      process: identity,
-    };
-  if (identity.bootId !== boot)
-    return {
-      kind: "unknown",
-      reason: "claimed before this host's last boot",
-      process: identity,
-    };
-  if (rows === null)
-    return {
-      kind: "unknown",
-      reason: "the process table cannot be read",
-      process: identity,
-    };
-  const row = rows.find((r) => r.pid === identity.pid);
-  const alive =
-    row !== undefined && row.start === identity.start && !/^Z/.test(row.stat);
-  return alive
-    ? { kind: "alive", process: identity }
-    : { kind: "died", process: identity };
+  const verdict = judge(claim, rows, here);
+  if (!verdict.ok)
+    return { kind: "unknown", reason: verdict.failure.reason, process: claim };
+  return verdict.value.state === "alive"
+    ? { kind: "alive", process: claim }
+    : { kind: "died", reason: verdict.value.reason, process: claim };
 }
 
 /** A row's exit, when it has one that reads. */
@@ -660,7 +634,8 @@ export function unrecordedWalls(ids: string[], root = stateRoot()): string[] {
   return found;
 }
 
-const NO_PROCESS: ProcessIdentity = {
+const NO_PROCESS: LaunchClaim = {
+  hostId: "",
   host: "",
   bootId: "",
   pid: 0,
@@ -672,7 +647,7 @@ const NO_PROCESS: ProcessIdentity = {
 function stateOf(
   row: LaunchRow,
   rows: ProcessRow[] | null,
-  boot = bootId(),
+  here: HostIdentity,
 ): LaunchState {
   const exit = exitOf(row);
   const claim = claimOf(row);
@@ -697,11 +672,14 @@ function stateOf(
       reason: "its claim does not read",
       process: NO_PROCESS,
     };
-  return claimState(claim, rows, boot);
+  return claimState(claim, rows, here);
 }
 
-/** Every record with its state, oldest first; a row that does not read is left out and named. */
-export async function readLaunches(root = stateRoot()): Promise<{
+/** Every record with its state as judged from `here`, oldest first; a row that does not read is left out and named. */
+export async function readLaunches(
+  root = stateRoot(),
+  here: HostIdentity = thisHost(),
+): Promise<{
   records: ReadRecord[];
   unreadable: string[];
 }> {
@@ -709,7 +687,6 @@ export async function readLaunches(root = stateRoot()): Promise<{
     .query("SELECT id, record, claim, exit, result FROM launches ORDER BY id")
     .all() as LaunchRow[];
   const rows = all.length === 0 ? [] : await processTable();
-  const boot = bootId();
   const control = controlRows(root);
   const records: ReadRecord[] = [];
   const unreadable: string[] = [];
@@ -721,15 +698,12 @@ export async function readLaunches(root = stateRoot()): Promise<{
     }
     records.push({
       record,
-      state: stateOf(row, rows, boot),
+      state: stateOf(row, rows, here),
       result: asResult(row.result),
     });
   }
   return { records, unreadable };
 }
-
-/** `drive.ts`'s refusals of a second driver, which end a record without a wall. */
-export const DRIVER_REFUSALS: ReadonlySet<number> = new Set([11, 13, 20]);
 
 /** The states that hold their stage and their account's slot. */
 export function holds(state: LaunchState): boolean {
@@ -773,7 +747,7 @@ function latestRefusals(records: ReadRecord[]): Set<string> {
     if (
       state.kind === "ended" &&
       state.exit.code !== null &&
-      DRIVER_REFUSALS.has(state.exit.code)
+      DRIVER_REFUSAL_EXITS.has(state.exit.code)
     )
       ids.add(record.id);
   return ids;
@@ -785,11 +759,19 @@ function latestRefusals(records: ReadRecord[]): Set<string> {
  * change a pull request has been re-driven for keeps one.
  */
 function latestRedrives(records: ReadRecord[]): Set<string> {
-  return latestIdsBy(records, (r) =>
-    isDrive(r.record) && r.record.redrive
-      ? `${r.record.repo}#${String(r.record.pr)}\0${r.record.redrive.change}`
-      : null,
-  );
+  // One pass: the newest record naming each change, over its whole history.
+  const latest = new Map<string, ReadRecord>();
+  for (const r of records) {
+    if (!isDrive(r.record) || !r.record.redrive) continue;
+    const prefix = `${r.record.repo}#${String(r.record.pr)}\0`;
+    for (const c of redrivenChanges(r.record.redrive)) {
+      const key = prefix + c;
+      const seen = latest.get(key);
+      if (seen === undefined || r.record.createdAt >= seen.record.createdAt)
+        latest.set(key, r);
+    }
+  }
+  return new Set([...latest.values()].map((r) => r.record.id));
 }
 
 /** The ids of the latest record under each key `keyOf` gives; a record it gives `null` is not kept. */
@@ -903,7 +885,7 @@ export async function inspectRow(
   const rows = await processTable();
   return {
     record: recordOf(row, root),
-    state: stateOf(row, rows),
+    state: stateOf(row, rows, thisHost()),
     claim: row.claim,
     exit: row.exit,
   };

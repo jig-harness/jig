@@ -34,6 +34,17 @@ export interface DispatchSection {
   followupWithinMs: number;
   /** The dispatch labels (`dispatch.labels`): off by default. */
   labels: LabelConfig;
+  /** The adoption rule (`dispatch.adopt`): off by default. */
+  adopt: AdoptRule;
+}
+
+/** `dispatch.adopt`: which open pull requests with no drive ledger the tick drives as if labelled `drive`. */
+export interface AdoptRule {
+  enabled: boolean;
+  /** The authors it adopts; `null` for the login the dispatcher reads the forge as. */
+  authors: string[] | null;
+  /** How recently a pull request must have been updated. */
+  withinMs: number;
 }
 
 /** One repository as the tick dispatches for it. */
@@ -92,13 +103,19 @@ export interface WaitingPark {
 }
 
 /**
- * Why a converged drive is stale: `cause` in words, for the report and the
- * outcome log; `change` names the pull request's state that made it so (its
- * head and whether it conflicts), for which a re-drive is launched once.
+ * Why a drive's stop no longer settles its pull request: `cause` in words, for
+ * the report and the outcome log; `change` names the state that made it so,
+ * for which a re-drive is launched once: for a converged drive its head and
+ * whether it conflicts, for a stop on a conflict (`conflictStop`) its head and
+ * its base branch's head.
  */
 export interface StaleCause {
   cause: string;
   change: string;
+  /** The drive stopped `9`: a re-drive that leaves it so at this change is a person's to settle. */
+  conflictStop?: true;
+  /** Changes an earlier launch of the same record may have acted on before a replay moved `change` on; each counts as re-driven. */
+  earlier?: string[];
 }
 
 /** One open pull request whose comments hold a drive ledger. */
@@ -113,7 +130,7 @@ export interface DrivenPr {
   evidence: Evidence;
   /** For a `parked` ledger: the decisions still unanswered. */
   waiting?: WaitingPark[];
-  /** For a `stale` ledger: what its stop does not fix. */
+  /** For a `stale` ledger: what its stop does not settle. */
   stale?: StaleCause;
   /** Its labels, read only where the repository turns dispatch labels on. */
   labels?: string[];
@@ -199,7 +216,7 @@ export interface Action {
   facts?: string;
   /** For a takeover: the launch record whose driver it replaces. */
   takeover?: string;
-  /** For a re-drive of a stale converged drive: why it is stale. */
+  /** For a re-drive: why the drive's stop no longer settles its pull request. */
   redrive?: StaleCause;
   /** For a notification: its cause. */
   cause?: NotifyCause;

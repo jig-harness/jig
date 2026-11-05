@@ -100,15 +100,18 @@ export function stopNotice(slug: string, pr: DrivenPr): Notice {
   );
 }
 
-/** A follow-up the tick started that failed, or whose record and outcome are gone. */
+/** A follow-up the tick started that failed, stopped on a question for a person (`question`), or whose record and outcome are gone. */
 export function followupFailedNotice(
   slug: string,
   pr: { number: number; url: string },
   marker: number,
   why: string,
+  question: string | null = null,
 ): Notice {
   return notice(`${slug} PR #${pr.number} follow-up failed, marker ${marker}`, [
-    `The follow-up of merged PR #${pr.number} failed: ${why}.`,
+    question === null
+      ? `The follow-up of merged PR #${pr.number} failed: ${why}.`
+      : `The follow-up of merged PR #${pr.number} stopped on a question for a person: ${question}`,
     "Delete its marker comment on the pull request: the marker holds the claim, so a run by hand stops behind it. Then run the follow-up by hand, or leave it for the next tick to start again. The tick never starts it again by itself.",
     pr.url,
   ]);

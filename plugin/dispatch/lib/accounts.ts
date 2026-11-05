@@ -18,7 +18,12 @@
  * machine file, reported, and never admitted. A vendor whose pass has no
  * turn cap of its own (Codex) is admitted for a drive's pass only while the
  * pass deadline the launch runs under is positive, since nothing else would
- * bound a pass that runs on.
+ * bound a pass that runs on. A Codex account is admitted for any launch only
+ * on a host that set `drive.codex_bypass`: a pass needs that bypass to push
+ * and write its worktree's git directory, a pickup's session goes on to arm
+ * such a pass, and the dispatcher starts them with nobody there to approve.
+ * The tick reads that setting once, and a drive's launch record keeps what
+ * was judged, so its wrapper never reads it again.
  *
  * Before a launch the tick resolves, with the drive's own resolver, the
  * identity the wrapper's environment yields for the admitted account
@@ -26,7 +31,13 @@
  * mismatch, or an identity that does not resolve, starts nothing.
  */
 import { resolve } from "node:path";
-import { isMapping } from "../../shared/config-layers.ts";
+import {
+  isMapping,
+  sourceOf,
+  userConfigPath,
+  valueAt,
+} from "../../shared/config-layers.ts";
+import { layeredConfig } from "../../shared/consumer.ts";
 import { Defect } from "../../shared/errors.ts";
 import { run } from "../../shared/proc.ts";
 import type { AccountVendor } from "../../skills/drive-pr/scripts/lib/identity.ts";
@@ -76,10 +87,41 @@ export function passEnvironment(
   return env;
 }
 
-/** What a launch starts: a drive's headless pass under its deadline (seconds, `0` for none), or an interactive session. */
-export type LaunchKind =
+/** Whether this host opted in to Codex's bypass, and why not when it did not. */
+export type CodexOptIn = { on: true } | { on: false; why: string };
+
+/**
+ * This host's opt-in: `drive.codex_bypass` in its user file or the tick's
+ * environment, read without any repository's file. A value that cannot be
+ * read is no opt-in, and says why.
+ */
+export function hostCodexOptIn(env: Env = process.env): CodexOptIn {
+  try {
+    const config = layeredConfig(process.cwd(), env, null);
+    const value = valueAt(config.values, "drive.codex_bypass");
+    if (value === true) return { on: true };
+    return value === undefined || value === null || value === false
+      ? {
+          on: false,
+          why: `this host has not opted in to Codex's bypass (drive.codex_bypass: true in ${userConfigPath(env)}), and without it an unattended Codex session cannot push or write its git directory and has nobody to approve`,
+        }
+      : {
+          on: false,
+          why: `drive.codex_bypass must be true or false: ${sourceOf(config, "drive.codex_bypass")}`,
+        };
+  } catch (error) {
+    return {
+      on: false,
+      why: `drive.codex_bypass could not be read: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/** What a launch starts, on a host's opt-in: a drive's headless pass under its deadline (seconds, `0` for none), or an interactive session. */
+export type LaunchKind = { codex: CodexOptIn } & (
   | { kind: "pass"; deadlineSec: number }
-  | { kind: "interactive" };
+  | { kind: "interactive" }
+);
 
 /**
  * Why an account of `vendor` is never admitted for `launch`, whatever its
@@ -88,6 +130,8 @@ export type LaunchKind =
 function vendorRefusal(vendor: string, launch: LaunchKind): string | null {
   if (!isPassVendor(vendor))
     return `the drive documents no pass command for its vendor ${vendor}, so it is accepted and not admitted`;
+  if (vendor === "codex" && !launch.codex.on)
+    return `${launch.codex.why}: not admitted`;
   if (
     launch.kind === "pass" &&
     launch.deadlineSec === 0 &&
@@ -114,15 +158,17 @@ export interface NotAdmitted {
   reason: string;
 }
 
-/** The accounts a drive's pass under the pass deadline `deadlineSec` is never admitted on. */
+/** The accounts a drive's pass under the pass deadline `deadlineSec`, on this host's opt-in, is never admitted on. */
 export function notAdmitted(
   accounts: MachineAccount[],
   deadlineSec: number,
+  codex: CodexOptIn,
 ): NotAdmitted[] {
   return accounts.flatMap((account) => {
     const reason = vendorRefusal(account.vendor, {
       kind: "pass",
       deadlineSec,
+      codex,
     });
     return reason === null
       ? []
@@ -290,21 +336,20 @@ export function admitRearm(
   };
 }
 
-/** The slot a takeover runs in under the pass deadline `deadlineSec`: the replaced record's, on its account. */
+/** The slot a takeover runs in under the pass deadline `deadlineSec`, on this host's opt-in: the replaced record's, on its account. */
 export function admitTakeover(
   table: Slots[],
   replaced: ReadRecord,
   deadlineSec: number,
+  codex: CodexOptIn,
 ): Admission {
   const slots = slotsOf(table, replaced.record);
   if (slots === undefined)
     return {
       waits: `the record it replaces bills ${replaced.record.account}, which the machine file no longer lists`,
     };
-  const refused = vendorRefusal(slots.account.vendor, {
-    kind: "pass",
-    deadlineSec,
-  });
+  const launch: LaunchKind = { kind: "pass", deadlineSec, codex };
+  const refused = vendorRefusal(slots.account.vendor, launch);
   if (refused !== null) return { waits: `${slots.account.name}: ${refused}` };
   if (slots.wallUnrecorded)
     return {
@@ -317,7 +362,7 @@ export function admitTakeover(
   // A record that no longer holds its slot gave it back: the takeover needs a free one.
   if (!holds(replaced.state) && slots.held >= slots.account.maxPerAccount)
     return {
-      waits: `no free slot on ${describeSlots([slots], { kind: "pass", deadlineSec })}`,
+      waits: `no free slot on ${describeSlots([slots], launch)}`,
     };
   return { admitted: slots };
 }

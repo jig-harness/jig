@@ -6,8 +6,9 @@
  * `--apply` a tick starts nothing: it reports what it would start, and why.
  * With it, the re-arms and takeovers a repository's machine-file entry
  * enables are launched within each account's cap (actions/drive.ts), its
- * pickups and follow-ups too where the runtime binds an interactive session
- * to its account (actions/pickup.ts, actions/followup.ts), its nudges are
+ * follow-ups as headless passes the same way (actions/followup.ts), its
+ * pickups where the runtime binds an interactive session to its account
+ * (actions/pickup.ts), its nudges are
  * sent once per waiting episode (actions/steer.ts), and its notifications
  * are sent once per cause (actions/notify.ts); everything else is still
  * reported.
@@ -65,8 +66,9 @@ import {
   applyDrives,
   type FreshDrive,
 } from "./lib/actions/drive.ts";
+import { settleConflictStops } from "./lib/actions/drive-hold.ts";
 import { applyFollowups } from "./lib/actions/followup.ts";
-import { outOfTime, rotated } from "./lib/actions/launch.ts";
+import { accountsReport, outOfTime, rotated } from "./lib/actions/launch.ts";
 import {
   heldPullRequests,
   planLabels,
@@ -77,12 +79,7 @@ import { carriesSet, hasCommand, type LabelConfig } from "./lib/labels.ts";
 import { applyNotices } from "./lib/actions/notify.ts";
 import { applyPickups } from "./lib/actions/pickup.ts";
 import { releaseEnded, settleAgents } from "./lib/actions/pickup-hold.ts";
-import {
-  lastAccount,
-  type NotAdmitted,
-  notAdmitted,
-  slotTable,
-} from "./lib/accounts.ts";
+import { hostCodexOptIn, lastAccount, slotTable } from "./lib/accounts.ts";
 import { readMarkers } from "./lib/followup-marker.ts";
 import { readOutcomes, settleFollowups } from "./lib/followup-outcomes.ts";
 import { readIdle, updateIdle } from "./lib/idle.ts";
@@ -101,9 +98,10 @@ import type {
   SessionRuntime,
   SessionsReport,
 } from "./lib/runtime/port.ts";
-import { readSection } from "./lib/section.ts";
+import { branchPattern, readSection } from "./lib/section.ts";
 import { observeContention } from "./lib/sources/contention.ts";
 import { readDrives } from "./lib/sources/ledgers.ts";
+import { adoptionNote, adoptionOf } from "./lib/adopt.ts";
 import { readPickups } from "./lib/sources/tracker.ts";
 import { copyLog, lineInputOf, writeTickLine } from "./lib/tick-line.ts";
 import { failureText } from "./lib/text.ts";
@@ -125,9 +123,6 @@ import {
   takeTickLock,
   writeReceipt,
 } from "./receipts.ts";
-
-/** `pull_requests.branch_name`'s default, the branch form of an item. */
-const BRANCH_PATTERN = "{key_lower}-{slug}";
 
 export interface TickOptions {
   repos: string[];
@@ -166,17 +161,6 @@ function emptyReport(path: string, refused: string): RepoReport {
     notifications: [],
     quiet: [],
   };
-}
-
-function branchPattern(values: Record<string, unknown>): string {
-  const prs = values.pull_requests;
-  const pattern =
-    typeof prs === "object" && prs !== null
-      ? (prs as Record<string, unknown>).branch_name
-      : undefined;
-  return typeof pattern === "string" && pattern !== ""
-    ? pattern
-    : BRANCH_PATTERN;
 }
 
 async function gatherRepo(
@@ -226,6 +210,10 @@ async function gatherRepo(
   // The forge: the open pull requests and their ledgers, and the merges.
   const labels = section.labels.enabled ? section.labels : null;
   const forge = await readForge(repo, report, section, labels, nowMs);
+  forge.drives = settleConflictStops(
+    forge.drives,
+    allRecords(context).filter((r) => r.record.repo === repo.slug),
+  );
   const { open, drives, merged, login } = forge;
 
   // The runtime: which of them a session holds.
@@ -365,7 +353,15 @@ async function readForge(
     out.login = await resolveLogin();
     const toRead = managed(out.open);
     const unlabeled = out.open.length - toRead.length;
-    out.drives = await readDrives(repo.slug, out.login, toRead, nowMs, labels);
+    const adoption = adoptionOf(section, out.login);
+    out.drives = await readDrives(
+      repo.slug,
+      out.login,
+      toRead,
+      nowMs,
+      labels,
+      adoption,
+    );
     const since = report.followupSince as string;
     out.read = new Set(toRead.map((p) => p.number));
     const listed =
@@ -381,7 +377,7 @@ async function readForge(
       record: "forge",
       source: `gh ${repo.slug}`,
       ok: true,
-      detail: `${out.open.length} open pull request(s), ${out.drives.length} with a drive ledger${labelNote(labels, unlabeled)}; ${
+      detail: `${out.open.length} open pull request(s), ${out.drives.length} with a drive ledger${labelNote(labels, unlabeled)}${adoptionNote(adoption, out.drives)}; ${
         section.followupCommand === null
           ? "no dispatch.followup_command: no follow-ups"
           : `${out.merged.length} merged since ${since}`
@@ -527,6 +523,7 @@ async function applyStages(
         [listed],
         Date.now(),
         labels,
+        adoptionOf(section, login),
       );
       return again ?? null;
     },
@@ -717,7 +714,7 @@ function planRepo(
 ): void {
   const { nowMs } = context;
   const records = settleRecords(context, repo, input.sessions, nowMs);
-  // A follow-up whose agent finished this tick keeps its outcome past its record.
+  // A follow-up that ended keeps its outcome past its record.
   settleFollowups(records);
   const plan = planTick({
     ...input,
@@ -902,6 +899,7 @@ function applyState(
     table: slotTable(machine.accounts, records, nowMs),
     last: lastAccount(records),
     passDeadlineSec: passTimeoutSeconds(),
+    codexOptIn: hostCodexOptIn(),
     startedAt: Date.now(),
     tick,
     repos: options.repos.length,
@@ -915,22 +913,6 @@ function defaultRuntime(machine: MachineConfig | null): SessionRuntime {
         runtimeTimeoutMs: machine.runtimeTimeoutMs,
         workspaceTimeoutMs: machine.workspaceTimeoutMs,
       });
-}
-
-/**
- * The machine file's accounts a drive's pass is never admitted on, for the
- * receipt: a vendor with no documented pass command, or a Codex account
- * while the pass deadline this run reads is `0`.
- */
-function accountsReport(
-  machine: MachineConfig | null,
-  apply: ApplyState | null,
-): { accountsNotAdmitted?: NotAdmitted[] } {
-  if (machine === null) return {};
-  const deadline =
-    apply === null ? passTimeoutSeconds() : apply.passDeadlineSec;
-  const refused = notAdmitted(machine.accounts, deadline);
-  return refused.length === 0 ? {} : { accountsNotAdmitted: refused };
 }
 
 export async function runTick(options: TickOptions): Promise<TickResult> {
@@ -990,6 +972,7 @@ export async function runTick(options: TickOptions): Promise<TickResult> {
       repos: options.repos,
       records: allRecords(context),
       inputs: context.lineInputs,
+      codexOptIn: apply?.codexOptIn ?? hostCodexOptIn(),
     });
     const path = writeReceipt(receipt);
     pruneReceipts(Date.now(), undefined, days);

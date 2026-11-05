@@ -15,12 +15,14 @@ This page maps Jig **by mechanism**. For each part it names the
 that owns it (the script, where its state lives, what it refuses), the
 [reasoned parts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 that use it and what they are trusted to decide there, and who notices a
-failure and who is asked to fix it. It is the third view of the same
+failure and who is asked to fix it. It is a view of the same
 system: the
 [lifecycle map](https://github.com/jig-harness/jig/blob/main/docs/LIFECYCLE.md)
-walks it by stage, with the skill that owns each, and
+walks it by stage, with the skill that owns each,
 [FACTORY.md](https://github.com/jig-harness/jig/blob/main/FACTORY.md) walks it
-by station.
+by station, and [RECORDS.md](RECORDS.md) lists it by record: every file,
+table, comment and label the parts below share, where it lives, who writes
+it and what guards it.
 
 **How paths are written.** A path in the plugin is written in full from the
 plugin directory (`dispatch/lib/launches.ts`,
@@ -112,7 +114,7 @@ dispatcher's [tick](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 scheduled jobs run (`runtime/launcher.ts`), and the drive's loop control
 (`skills/drive-pr/scripts/drive.ts`). They start sessions and read how they
 ended. The only reasoning is inside the sessions they start: a drive pass,
-a pickup's `do-item` session, a follow-up session. Those sessions read
+a pickup's `do-item` session, a follow-up pass. Those sessions read
 Jig's `SKILL.md` files and run Jig's scripts, but what they write is the
 repository's own code, replies and records. The plugin they run is an
 installed copy, and a change to it reaches a machine only as a released
@@ -230,12 +232,24 @@ development and shipped as a version.
 - **Deterministic.** `gc/` inventories the leftovers a repository declares
   (scratch folders, tool state, worktrees) and reports, with the evidence,
   which of them it could collect ([resource collection](gc/README.md)).
-  Today those kinds are report-only: collection stays off for each until
-  every process that creates them takes part in its admission protocol. The
-  one kind it removes is its own receipts past their retention. State: one
-  receipt per run under `~/.local/state/jig/gc/<date>/`. Refuses: an
+  Scratch folders and tool state are report-only: collection stays off for
+  each until every process that creates them takes part in its admission
+  protocol. A worktree Orca manages is eligible for collection when the machine entry
+  names Orca's command, and an eligible one is removed only in a collecting
+  run (`--collect`, or `--scheduled` on the configured weekday or under disk pressure) once its proof of death
+  holds; an ordinary run reports it as `would-collect` and removes nothing.
+  Orca's registry stands in for the admission the opener does not hold, the
+  base branch's copy of the remove hook runs, the unsent reflection findings
+  are parked, and `orca worktree rm` removes it
+  ([worktrees Orca manages](gc/README.md#worktrees-orca-manages)); every
+  other worktree is reported. It also removes its own receipts past their
+  retention. State: one receipt per run under `~/.local/state/jig/gc/<date>/`. Refuses: an
   unreadable process identity or forge answer keeps the resource, and an
   abandoned admission token blocks collection rather than being taken over.
+  Each admission token holds its creator's
+  [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  (`shared/liveness.ts`), and the refusal names a stale one's creator and why
+  it counts as gone, for a person to remove.
 - **Reasoned.** None. Sessions only take part as owners: a scratch creator
   holds shared admission while it creates its folder (`shared/gc-lock.ts`).
 - **If it fails.** Exit 1 and a receipt that records the failure.
@@ -261,9 +275,17 @@ development and shipped as a version.
   the session to the admitted account: for a drive it starts
   `skills/drive-pr/scripts/drive.ts`, whose passes run with no person at a
   terminal, and writes the account's wall on a usage-limit
-  stop (exit 16); for a pickup or a follow-up it starts the account's agent
-  as an interactive session on `/jig:do-item <key>` or the follow-up
-  command. It records the exit either way. Refuses: a record it cannot read
+  stop (`QUOTA_PARKED`, exit 16); for a follow-up it starts the account's agent as a
+  headless pass on the follow-up command, with the host's `drive.pass_args`
+  and under the pass deadline; for a pickup it starts the account's agent
+  as an interactive session on `/jig:do-item <key>`. It records the exit
+  every way, with the last question of a follow-up pass that stopped short
+  of done. The claim is the wrapper's
+  [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+  recorded and judged by `shared/liveness.ts`: a record claimed on this host
+  before it last restarted has died, and its outcome row says so; one claimed
+  on another host, or whose process table cannot be read, is unknown and
+  holds its slot until a person clears it. Refuses: a record it cannot read
   or a target it cannot place is reported and never planned; an account
   whose configuration directory does not resolve to the identity the
   machine file names starts nothing (`dispatch/lib/accounts.ts`); a launch
@@ -273,13 +295,21 @@ development and shipped as a version.
   and each tab it opens as the dispatcher's, and keeps the
   [dispatched mark](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   in the workspace's comment and on the launch record, by one convention
-  every runtime takes (`dispatch/lib/runtime/port.ts`). Where a repository turns
+  every runtime takes (`dispatch/lib/runtime/port.ts`). The wrapper, the
+  launch records, the outcome log and the ledger classifier read every exit
+  of a drive by its name in drive-pr's terminal-state registry
+  (`skills/drive-pr/scripts/lib/status/terminal-states.ts`'s `DRIVE_EXIT` and
+  the sets beside it), never as a number of their own, and the registry's
+  consistency test fails a dispatcher file that restates one. Where a repository turns
   [dispatch labels](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   on, the tick reads the pull requests' labels with them, reads `drive`
   and `hold` as a person's commands, and last sets each managed pull
   request's state label from its ledger (`dispatch/lib/labels.ts`,
   `dispatch/lib/actions/labels.ts`); it never reads a state label to
-  decide what to start.
+  decide what to start. Where a repository turns its
+  [adoption rule](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  on, the tick arms a pull request with no ledger that the rule's author
+  and window match as it arms a labelled one (`dispatch/lib/adopt.ts`).
 - **Reasoned.** None inside the tick. It starts reasoned parts: a drive's
   passes (through `drive.ts`), a pickup's `/jig:do-item` session, and the
   repository's `dispatch.followup_command`. Its one keystroke into a
@@ -331,16 +361,22 @@ development and shipped as a version.
 - **Deterministic.** The
   [follow-up marker](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), a
   hidden-marker comment on a merged pull request, claims its follow-up
-  (`dispatch/lib/followup-marker.ts`). The tick posts one naming its launch
+  (`dispatch/lib/followup-marker.ts`). It is a
+  [forge claim](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) of
+  the shared module `shared/records/forge-claims.ts`, which posts it, reads
+  it back (again a few times while the listing does not show it yet) and
+  decides it by the claims' one rule. The tick posts one naming its launch
   record before it starts the session. A run by hand uses
   `jig dispatch marker claim`, `check` before each act outside the pull
   request, and `done` at the end (`dispatch/marker.ts`). A marker counts only
   when the dispatcher's own login or an owner, member or collaborator wrote
   it. Of two trusted markers the commands stand down for the earlier
-  comment; the dispatcher instead reports a conflict and plans no follow-up
-  until a person settles the duplicate (`dispatch/lib/plan-followups.ts`).
-  Refuses: exit 3 when an earlier marker holds the follow-up, exit 2 for a
-  comment that is not a trusted marker.
+  comment; the dispatcher instead reports a conflict, naming the earlier,
+  and plans no follow-up until a person settles the duplicate
+  (`dispatch/lib/plan-followups.ts`). Refuses: exit 3 when an earlier marker
+  holds the follow-up, exit 2 for a comment that is not a trusted marker,
+  exit 1 when the markers cannot be read or the read-back never lists the
+  marker it posted.
 - **Reasoned.** The follow-up session decides what the merge still owes and
   does it; it calls the marker commands at the points its instructions name.
 - **If it fails.** The follow-up session stops on any non-zero exit. A
@@ -352,11 +388,26 @@ development and shipped as a version.
 - **Deterministic.** `skills/drive-pr/scripts/drive.ts` is the loop
   control: it starts one pass per round, reads the result, and stops in
   exactly one [terminal state](skills/drive-pr/README.md#the-exit-states--what-you-do-now)
-  with its exit code. Its state lives in a per-clone folder,
-  `~/.local/state/jig/drive-pr/<clone>/`
-  (`skills/drive-pr/scripts/lib/state/store.ts`): rounds, the verified head,
-  parked and held items, locks and
-  [leases](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). The
+  with its exit code. Its machine state lives in one SQLite database per
+  machine, `~/.local/state/jig/drive-pr/state.sqlite`
+  (`skills/drive-pr/scripts/lib/state/db.ts`, opened through
+  `shared/records/db.ts`), every row keyed by the clone: the verified head,
+  parked and held items as one JSON document per pull request, the review
+  round record (`review_rounds`, `skills/drive-pr/scripts/lib/state/review-rounds.ts`),
+  one row per head counted, which a hand-driven review loop counts into too,
+  so the drive's rounds, its ledger and `current-round.ts` read one number, and
+  the locks, [leases](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  and claims as rows. A lock or lease names its holder by the shared
+  [process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+  (`shared/liveness.ts`), whose host id is compared before the host name, so
+  a renamed machine still knows its own driver, and a lock whose holder is
+  judged dead is recovered at once; a release deletes the row and leaves
+  nothing behind. A lease's generation only grows, so a command admitted on
+  one generation is refused at the moment it mutates once another session
+  took the lease. The clone's folder beside the database,
+  `~/.local/state/jig/drive-pr/<clone>/`, keeps the driver log and the
+  files a pass is handed; a folder an earlier release wrote is read into the
+  database once, at its first open, and left in place. The
   [drive ledger](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   mirrors its resumable part as one comment on the pull request, written by
   the driver at each round boundary, park,
@@ -365,6 +416,15 @@ development and shipped as a version.
   (`skills/drive-pr/scripts/lib/state/ledger.ts`,
   `skills/drive-pr/scripts/lib/state/ledger-forge.ts`); a ledger counts only
   when the drive's own login or an owner, member or collaborator wrote it.
+  A takeover is a
+  [forge claim](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+  read back and decided by `shared/records/forge-claims.ts`: per ledger
+  generation the earliest trusted claim wins, with the lease window as its
+  lapse window. So is the merge-ready announcement
+  (`skills/drive-pr/scripts/announce-merge-ready.ts`, through
+  `skills/drive-pr/scripts/lib/announce.ts`): one per pull request and head,
+  posted only while the head's merge readiness holds, and of two the earlier
+  stands and the later is withdrawn.
   A round's finish is one script,
   `skills/drive-pr/scripts/finish-round.ts`, which sequences the CI hold,
   the push (`skills/drive-pr/scripts/guarded-push.ts`, which re-checks the
@@ -406,7 +466,16 @@ development and shipped as a version.
   where the repository runs it last in its pre-push hook, catches a hold
   sent while that hook runs; `pause` holds the driver at its next check,
   and ends it with exit 19 after `DRIVE_PR_PAUSE_MAX_SEC` (30 minutes by
-  default); `stop` ends it at the next round boundary with exit 18. An
+  default); `stop` ends it at the next round boundary with exit 18. A `stop`
+  may name a driver generation, the number each driver draws at its start,
+  prints and carries in its lock's claim (`skills/drive-pr/scripts/lib/state/mailbox-stop.ts`):
+  it ends that driver alone, and a later driver ignores it; a `stop` naming
+  none ends every later driver in the tree until `resume --target stop`.
+  `skills/drive-pr/scripts/drives.ts --stop` is a send of the same directive,
+  addressed to the live driver's generation and marked `now`: the driver
+  reads its mailbox for it every quarter second and cancels its active pass
+  at once. The driver appends an `ack` of each directive it acted on to the
+  outbox, so a sender sees it took effect. An
   unreadable mailbox stops the drive with exit 1. The
   [CI hold](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a label
   (`ci.hold_label`) the drive puts on the pull request between rounds so
@@ -418,8 +487,10 @@ development and shipped as a version.
   directive or a note; a pass may read the notes (`mailbox.ts check`), and
   they never change what a round does. No reasoned part touches the CI hold
   label.
-- **If it fails.** The drive's exit names the directive. Whoever sent it
-  resumes it (`resume --target <directive>`) before the drive is re-armed. A
+- **If it fails.** The drive's exit names the directive, and the outbox its
+  `ack`. A `pause`, or a `stop` naming no generation, is resumed by whoever
+  sent it (`resume --target <directive>`) before the drive is re-armed; a
+  `stop` addressed to one generation needs nothing. A
   drive that stopped can leave the CI hold label behind; a person removes
   it by hand.
 
@@ -649,11 +720,10 @@ stops a model. A team that runs passes unattended should know which:
 - **Comments a script trusts by their author.** A ledger and a takeover
   claim count when the drive's own login or an owner, member or
   collaborator wrote them; a follow-up marker when the dispatcher's own
-  login or one of those wrote it; an answer to a thread or a parked
-  question when an owner, member or collaborator wrote it
-  (`shared/trusted-authors.ts`,
-  `skills/drive-pr/scripts/lib/state/ledger-forge.ts`,
-  `dispatch/lib/followup-marker.ts`,
+  login or one of those wrote it; a merge-ready announcement, an answer to a
+  thread or a parked question when an owner, member or collaborator wrote it
+  (`shared/trusted-authors.ts`, `shared/records/forge-claims.ts`,
+  `skills/drive-pr/scripts/lib/state/ledger.ts`,
   `skills/drive-pr/scripts/lib/driver/rearm.ts`). A pass signed in as the
   same login as the person can therefore post a comment those scripts would
   trust; only the instructions say it must not.
@@ -674,6 +744,13 @@ stops a model. A team that runs passes unattended should know which:
   Under `bypassPermissions` only the runtime's own deny rules and hooks
   still stop a command
   ([permission mode](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)).
+  A pass runs in that mode only on the host's say: the configuration reader
+  refuses the setting in a repository's file
+  (`shared/config-layers.ts`), and the dispatcher admits a Codex account only
+  on a host that opted in to its bypass (`dispatch/lib/accounts.ts`). A
+  checkout's own `.claude/settings.json` is outside that check, and a pull
+  request can edit it
+  ([a host's opt-in](CONFIGURATION.md#a-hosts-opt-in-to-bypass)).
   In Jig, `main`'s ruleset requires the gates and resolved threads but no
   approving review.
 - **A loosened ratchet.** The ratchet accepts a `Ratchet-Loosen` trailer in

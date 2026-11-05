@@ -5,13 +5,14 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 
 import { join } from "node:path";
 
 import { ACTOR, useDrivePrSuite } from "./drive-pr-harness.ts";
 
 import { createStateDurabilityFixtures } from "./drive-pr-state-durability-fixtures.ts";
+import { editState } from "./state-rows.ts";
 
 useDrivePrSuite();
 describe("drive-state.ts durability", () => {
@@ -19,13 +20,13 @@ describe("drive-state.ts durability", () => {
   const { stateDirFor, state } = stateDurabilityFixtures;
 
   describe("claim-held — atomic compare-and-delete", () => {
-    // resolve-held-thread.ts used to read `held` and `rounds` as two separate,
-    // unlocked calls and only decide afterwards whether to resolve — a window
-    // in which a concurrent driver could change either. `claim-held --kind
-    // thread` folds the whole predicate (kind, round, verifiedSha) and the
-    // removal into ONE lock hold, so these probes exercise it directly —
-    // including a forced concurrent overlap, since sequential calls prove
-    // nothing about the mutex itself.
+    // Reading `held` and `rounds` as two separate, unlocked calls and only
+    // deciding afterwards whether to resolve leaves a window in which a
+    // concurrent driver could change either. `claim-held --kind thread`
+    // folds the whole predicate (kind, round, verifiedSha) and the removal
+    // into ONE lock hold, so these probes exercise it directly — including a
+    // forced concurrent overlap, since sequential calls prove nothing about
+    // the mutex itself.
 
     it("removes a matching held thread and returns it", async () => {
       const d = stateDirFor("claim-happy");
@@ -80,13 +81,13 @@ describe("drive-state.ts durability", () => {
     it("a SECOND claim on the same key fails — proven with a FORCED concurrent overlap", async () => {
       // Two calls merely launched close together race real process-scheduling
       // jitter — on a fast/idle machine the first can finish entirely before
-      // the second even starts its own `mkdir`, so a bug that dropped the
-      // lock ENTIRELY would still pass a "launch both, await both" test (the
-      // gap a sequential-await version of this test leaves). Proving the mutex
+      // the second even asks for the lock, so a bug that dropped the lock
+      // ENTIRELY would still pass a "launch both, await both" test (the gap a
+      // sequential-await version of this test leaves). Proving the mutex
       // itself needs a deterministically FORCED overlap: process A signals the
       // instant it holds the lock, this test waits for that signal before
       // starting process B, and A is told to hold the lock open for another
-      // 500ms — so B's `mkdir` is guaranteed to contend for a lock A still
+      // 500ms — so B's acquire is guaranteed to contend for a lock A still
       // holds, not merely scheduled near it.
       const d = stateDirFor("claim-race");
       await state(d, ["bump-round", "999", "--head", "aaa"]);
@@ -138,8 +139,8 @@ describe("drive-state.ts durability", () => {
       }
 
       // A is now DEFINITELY holding the lock and will for another ~0.5s — B's
-      // own acquire_lock call below is forced to wait on A's mkdir, exercising
-      // the real contention path rather than an accident of ordering.
+      // own acquire below is forced to wait on A's lock row, exercising the
+      // real contention path rather than an accident of ordering.
       const second = await state(d, claimArgs);
       const first = await firstPromise;
 
@@ -190,7 +191,7 @@ describe("drive-state.ts durability", () => {
       expect(r.exitCode).toBe(1);
       expect(r.stderr).toContain("is not the push recorded against");
       // Names the stamp it DID find, not just that something mismatched — a
-      // refusal a reader cannot act on sends them to the state file by hand.
+      // refusal a reader cannot act on sends them to the stored state by hand.
       expect(r.stderr).toContain("a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1");
       // Refused, not consumed — a legitimate retry with the right SHA must
       // still find it.
@@ -211,10 +212,10 @@ describe("drive-state.ts durability", () => {
         "--sha",
         "ffffffffffffffffffffffffffffffffffffffff",
       ]);
-      const statePath = join(d, "drive-pr-999.json");
-      const seeded = JSON.parse(readFileSync(statePath, "utf8"));
-      seeded.verifiedSha = "ffffffffffffffffffffffffffffffffffffffff";
-      writeFileSync(statePath, JSON.stringify(seeded));
+      editState(d, "999", (s) => ({
+        ...s,
+        verifiedSha: "ffffffffffffffffffffffffffffffffffffffff",
+      }));
       await state(d, [
         "hold",
         "999",
@@ -295,9 +296,9 @@ describe("drive-state.ts durability", () => {
       // The interrupted-dispatch scenario the finding describes: this actor
       // claims a finding (right before dispatching `answer-summary-
       // finding.ts`, per SKILL.md § 6) — which locks it with a SEPARATE
-      // claim FILE rather than removing it from `held` — the dispatch POSTs
+      // claim row rather than removing it from `held` — the dispatch POSTs
       // successfully, and the process dies before `release-held`. The claim
-      // file is still there; nothing removed it. This SAME working tree
+      // is still there; nothing removed it. This SAME working tree
       // later pushes UNRELATED work and calls `stamp-held` again. Blindly
       // advancing the stamp would let a later `claim-held --pushed-sha
       // SHA_NEW` accept an entry whose actual posted marker sits at SHA_OLD,
@@ -329,8 +330,8 @@ describe("drive-state.ts durability", () => {
       ).toMatchObject([{ key: "f00dfeed", verifiedSha: SHA_OLD }]);
 
       // Claim it, exactly as a real dispatch pass would right before calling
-      // `answer-summary-finding.ts` — this leaves a claim file on disk
-      // WITHOUT removing the entry from `held` (unlike a thread's claim).
+      // `answer-summary-finding.ts` — this leaves a claim row WITHOUT
+      // removing the entry from `held` (unlike a thread's claim).
       const claim = await state(d, [
         "claim-held",
         "999",
@@ -357,20 +358,19 @@ describe("drive-state.ts durability", () => {
     });
 
     it("advances an UNCLAIMED held item's stamp on a later push from the same actor — an ordinary pending hold must not wedge, on both a thread AND an unclaimed finding", async () => {
-      // The counterweight to the fix above: preserving EVERY held item's
+      // The counterweight to the test above: preserving EVERY held item's
       // stamp unconditionally would strand ordinary pending/restored holds
       // the moment their frozen SHA stops being the PR's live head, since a
       // later verified push is normally a descendant commit that still
       // contains the fix. Only a FINDING with an outstanding claim (the test
       // above) has a real duplicate-dispatch risk to protect against.
       //
-      // A version of this test that only constructed a THREAD — which never
-      // touches the finding-only `existsSync( claimPathFor(...))` branch at all
-      // (a thread's claim always removes it from `held` atomically, so this
-      // whole code path is unreachable for one), so it never actually proved an
-      // UNCLAIMED finding advances. A mutation that preserved every finding's
-      // old stamp unconditionally would have left this test green. Both kinds
-      // are constructed below.
+      // A THREAD alone never reaches the finding-only claim-exists branch (a
+      // thread's claim always removes it from `held` atomically, so that
+      // path is unreachable for one), so it cannot prove an UNCLAIMED
+      // finding advances: a mutation that preserved every finding's old
+      // stamp unconditionally would leave a thread-only test green. Both
+      // kinds are constructed below.
       const SHA_OLD = "7777777777777777777777777777777777777777";
       const SHA_NEW = "8888888888888888888888888888888888888888";
       const d = stateDirFor("stamp-held-advances-unclaimed-hold");

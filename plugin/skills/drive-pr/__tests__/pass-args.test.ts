@@ -7,11 +7,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import {
-  diagLines,
-  formatClaim,
-  parseClaimText,
-} from "../scripts/lib/claim.ts";
+import { diagLines, parseDiagText } from "../scripts/lib/claim.ts";
 import { armCommand } from "../scripts/lib/driver/rearm.ts";
 import {
   effectivePassArgs,
@@ -57,6 +53,35 @@ describe("parsePassArgsFlag", () => {
       "auto",
     ]);
   });
+
+  it.each([
+    "--permission-mode",
+    "--settings",
+    "--allowedTools",
+    "--allowed-tools",
+    "--disallowedTools",
+    "--tools",
+    "--mcp-config",
+    "--add-dir",
+    "--plugin-dir",
+    "--agents",
+    "--system-prompt-file",
+    "--max-turns",
+    "-n",
+  ])("refuses a list ending in %s, naming drive.pass_args", (option) => {
+    expect(() => parsePassArgsFlag(`--verbose ${option}`)).toThrow(
+      "drive.pass_args",
+    );
+    expect(parsePassArgsFlag(`${option} value`)).toEqual([option, "value"]);
+    expect(parsePassArgsFlag(`${option}=value`)).toEqual([`${option}=value`]);
+  });
+
+  it.each(["--dangerously-skip-permissions", "--verbose", "--bare", "-d"])(
+    "keeps a list ending in %s, which leaves the drive's -p alone",
+    (flag) => {
+      expect(parsePassArgsFlag(flag)).toEqual([flag]);
+    },
+  );
 });
 
 describe("withPassArgs", () => {
@@ -169,7 +194,7 @@ describe("effectivePassArgs", () => {
   });
 
   it("reads a Codex pass command's permission from its own words", () => {
-    const documented = passCommand("codex", 7);
+    const documented = passCommand("codex", 7, true);
     const pass = effectivePassArgs(documented, undefined, configured);
     expect(pass.argv).toEqual(documented);
     expect(pass.permission).toEqual({
@@ -237,11 +262,11 @@ describe("the drives listing", () => {
   };
 
   it("names the permission mode a claim records", () => {
-    const claim = parseClaimText(
-      formatClaim(1, "h", { ...diag, permissionMode: "bypassPermissions" }),
+    const recorded = parseDiagText(
+      JSON.stringify({ ...diag, permissionMode: "bypassPermissions" }),
     );
-    expect(claim?.diag?.permissionMode).toBe("bypassPermissions");
-    expect(diagLines(claim?.diag ?? diag)).toContain(
+    expect(recorded?.permissionMode).toBe("bypassPermissions");
+    expect(diagLines(recorded ?? diag)).toContain(
       "    permissions: bypassPermissions",
     );
     expect(diagLines(diag)).toContain(

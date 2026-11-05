@@ -1,6 +1,4 @@
-import { writeFileSync } from "node:fs";
-
-import { join } from "node:path";
+import { writeState } from "./state-rows.ts";
 
 export function createStatusConvergenceFixtures() {
   /**
@@ -12,29 +10,26 @@ export function createStatusConvergenceFixtures() {
    * or bumps it indirectly through a real round.
    */
   function seedRounds(stateDir: string, rounds: number) {
-    writeFileSync(
-      join(stateDir, "drive-pr-999.json"),
-      JSON.stringify({
-        pr: 999,
-        rounds,
-        lastCountedHead: "",
-        attempts: 0,
-        attemptsHead: "",
-        lastReflectedRound: 0,
-        lastReflectedAttempts: 0,
-        verifiedSha: "",
-        phase: "",
-        readyMarkedRound: 0,
-        ciHold: null,
-        parked: [],
-        held: [],
-        lastEscalatedRound: 0,
-        lastEscalatedInvariant: "",
-        roundPaths: [],
-        lastProgressAt: "",
-        quotaPark: null,
-      }),
-    );
+    writeState(stateDir, "999", {
+      pr: 999,
+      rounds,
+      lastCountedHead: "",
+      attempts: 0,
+      attemptsHead: "",
+      lastReflectedRound: 0,
+      lastReflectedAttempts: 0,
+      verifiedSha: "",
+      phase: "",
+      readyMarkedRound: 0,
+      ciHold: null,
+      parked: [],
+      held: [],
+      lastEscalatedRound: 0,
+      lastEscalatedInvariant: "",
+      roundPaths: [],
+      lastProgressAt: "",
+      quotaPark: null,
+    });
   }
   return { seedRounds };
 }

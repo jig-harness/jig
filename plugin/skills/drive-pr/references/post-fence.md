@@ -14,11 +14,12 @@ not, are what follows. Take the guarantee as conditional and read on; do not
 quote the first sentence on its own.
 
 The guarantee is also scoped to the fenced callers below and
-not to every drive-authored post: `announce-merge-ready.ts` posts and deletes
-its own announcement comment directly, with no fence — it is gated on
-convergence, CI and a clean tree instead, and its comment is one this repo's
-own tooling withdraws rather than an unrepairable entry in the
-reviewer-scoring sample. Extending the fence to it is a separate question this
+not to every drive-authored post: `announce-merge-ready.ts` posts and
+withdraws its own announcement as a claim of the shared forge-claims module
+(`shared/records/forge-claims.ts`), with no lease fence — it is gated on
+convergence, CI, a clean tree and the claim's read-back instead, and its
+comment is one this repo's own tooling withdraws rather than an
+unrepairable entry in the reviewer-scoring sample. Extending the fence to it is a separate question this
 page does not decide. The fenced callers meet it differently, and that is the
 whole subject of this page:
 
@@ -242,6 +243,6 @@ compare the *shared* export set symbol by symbol; none exists.
 None of that changes the decision above — it argues for it. The reason to keep
 the lease reader out of `resolve-review-comments` is precisely that a hand-ported
 copy drifts, and the copy that drifted here is the cheap one, whose contract
-belongs to the runtime. A copy of `drive-pr`'s lease file format would be the
+belongs to the runtime. A copy of `drive-pr`'s lease rows' format would be the
 expensive one, and its drift would be silent in the direction that posts.
 This decision introduces no new copy, so it adds no gate.

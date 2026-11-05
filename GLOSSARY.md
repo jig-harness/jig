@@ -1187,7 +1187,10 @@ make, use the entry's term instead.
   forge reports it in conflict with its base, or its head moved past the head
   the drive verified. It starts once per head, and the drive merges the base
   in or reviews the new head. A converged pull request its base merely moved
-  past, still mergeable at the verified head, is left alone.
+  past, still mergeable at the verified head, is left alone. A drive that
+  stopped on a conflict it could not repair is re-driven too, once for each
+  pair of its pull request's head and its base branch's head, and a person is
+  told only if that re-drive stops the same way.
 - **Permission mode (of a pass)** — the setting of an agent tool that
   decides which of its actions ask a person first. Claude Code's
   `default` mode asks before most edits and commands; a pass of a *PR
@@ -1199,9 +1202,12 @@ make, use the entry's term instead.
   before removing critical paths still apply, so an unattended call can
   still be denied. It trades the prompts for the instructions the drive
   gives the pass (its push script, its bots-only rule), which steer it but
-  do not stop it; only Claude Code's deny rules and hooks still do. A repository chooses it for its passes with
-  `drive.pass_args`
-  ([configuration](plugin/CONFIGURATION.md#drive)).
+  do not stop it; only Claude Code's deny rules and hooks still do. A pass
+  can then do anything the account running it can, so a host chooses it for
+  its own passes, after checking what that account reaches, with
+  `drive.pass_args` in its user file
+  ([configuration](plugin/CONFIGURATION.md#a-hosts-opt-in-to-bypass)); a
+  repository's file cannot set it.
 - **Drive ledger** — the resumable part of a *PR drive loop*'s saved state
   (its round, what it parked for a person and why, what it replied to and
   pushed, who drove it and when it last wrote), kept as one hidden-marker
@@ -1272,10 +1278,29 @@ make, use the entry's term instead.
 - **Drive mailbox** — the one way to reach a running *PR drive loop* from
   outside it: append-only files in the working tree into which a person, or
   the session that started the drive, writes a note or a directive, and
-  which only the driver answers. A note is context a pass may read; a
+  which only the drive answers. A note is context a pass may read; a
   directive (hold the push, pause, stop) is enforced by the drive's own
-  scripts, whatever a pass does
+  scripts, whatever a pass does, and the driver acknowledges each directive
+  it acted on. A stop may name a *driver generation*, and then ends that
+  driver alone
   ([drive-pr](plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)).
+- **Driver generation** — the number a *PR drive loop*'s driver draws when it
+  starts, one more than the last driver of the same pull request in that
+  clone, which it prints and records in its lock. A *drive mailbox* stop that
+  names it ends that driver and no later one
+  ([drive-pr](plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)).
+- **Review round record** — the one count of a pull request's review rounds,
+  one round per distinct head reviewed, kept in the drive's database and
+  counted into by a *PR drive loop* and by a review loop run by hand alike, so
+  the drive's round budget, its *drive ledger* and the decline ladder's round
+  read one number ([records](plugin/RECORDS.md#on-the-machine)).
+- **Mirror run** — the run a continuous-integration workflow makes for an
+  event of a pull-request label other than the *CI hold*'s, where labels
+  change too often for each event to run real CI: it skips the expensive
+  jobs, cancels no other run, and its required check repeats the result of
+  the newest real run on the same commit, failing whenever it cannot show
+  that result passed
+  ([M13](modules/M13-pipeline-economy/README.md#7-hold)).
 - **Held-head check** — the step of a required check that fails, or cancels
   its own run, while a pull request carries the *CI hold* label, so a held
   head is visibly not mergeable from the moment the label lands until the
@@ -1289,12 +1314,24 @@ make, use the entry's term instead.
   session currently owns a piece of work, such as a pull request's review
   threads. Other sessions read it and stand back; a lease whose holder died
   expires instead of blocking forever.
-- **Directory fence** — a nonempty directory retained at the path reserved
-  for one lock acquisition after its release or recovery. A delayed process
-  trying to move that same acquisition there cannot replace the nonempty
-  directory, so it cannot remove a newer holder's lock. Windows retains this
-  shape because a directory move there can replace an ordinary file.
-  *Avoid*: directory guard.
+- **Process identity** — what a component records so another process can
+  later tell whether the recorded one still runs: the machine's **host id**
+  (an id that survives a rename and a restart), its host name, the boot it
+  ran in, the process id and the process's start time. Judged from the same
+  machine, a process recorded before the machine last restarted has ended,
+  and so has one whose process id now belongs to a process started at another
+  time; one recorded on another machine cannot be checked from here. One
+  shared module records and judges it for the *dispatcher*'s *launch
+  records*, resource collection's admission tokens and the machine-wide
+  locks (the one heavy test runs wait on, and the one over an Orca workspace
+  card's comment) and the drive's locks and leases.
+  *Avoid*: a bare process id as proof that a holder still runs.
+- **Minimum reader** — the lowest schema version a program must know to use
+  a database, recorded in the database beside its own version. A change that
+  only adds (a table, a column with a default) leaves it where it was, so a
+  copy of the program one release behind keeps using a database a newer copy
+  changed; a change that alters or removes what older copies read raises it,
+  and an older copy then refuses the database and names both versions.
 - **Control channel** — the way a person, or the session that started it,
   reaches an agent running unattended without killing it, kept with that
   agent's worktree (in its *worktree scratch*, or in the runner that started
@@ -1557,6 +1594,32 @@ make, use the entry's term instead.
 - **Command-line boundary** — the one wrapper around a script's entry point
   that turns its result or failure into an exit code and a message, so every
   script reports failures the same way.
+- **Record envelope** — the fields a record Jig keeps carries to say what
+  it is, whatever its medium (a file on the machine, a file in the working
+  tree, a hidden comment on the forge or the tracker): its kind, its kind's
+  schema version, its key (what it is about), who wrote it, when, and for a
+  record rewritten in place its generation. A reader checks the envelope
+  against a strict form before it reads the rest, which is data and never a
+  command
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Records registry** — the one list of every kind of record the plugin
+  keeps, with where each lives, who writes it and its schema version
+  (`plugin/shared/records/registry.ts`). A gate fails a hidden marker, a
+  tagged drive state family or a SQLite table declaration the code names
+  that the registry does not hold. Review keeps arbitrary file-backed
+  records and dynamically assembled names in the inventory
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
+- **Forge claim** — a comment a script posts on a pull request to say "this
+  is mine to do" (a driver taking over a drive, a run following up a merge,
+  a driver announcing a head safe to merge), carrying a *record envelope*
+  whose key names what it claims. Every kind is posted, read back and
+  decided by one module (`plugin/shared/records/forge-claims.ts`) under one
+  rule: of the trusted claims on one key, the earliest comment wins (a
+  takeover claim whose owner never acted lapses after the lease window), and
+  a later claimant stands down. The forge cannot create
+  a comment only if none exists, so the claim is read back after posting and
+  checked again before each act it guards
+  ([plugin/RECORDS.md](plugin/RECORDS.md)).
 - **Component (of the `jig` command)** — one of the machine-level tools the
   plugin's `jig` command joins into one command line: resource collection
   (`jig gc`) and the *dispatcher* (`jig dispatch`). Each defines its command
@@ -1824,8 +1887,8 @@ make, use the entry's term instead.
 - **Launch record** — the *dispatcher*'s record of one session it started,
   written before the launch: what it starts, on which pull request or item,
   on which subscription account, and a random token. The wrapper that runs
-  the session adds the process it runs as and, when it ends, the stage's
-  exit. A launch whose answer is lost still has its record, so it holds its
+  the session adds the *process identity* it runs as and, when it ends, the
+  stage's exit. A launch whose answer is lost still has its record, so it holds its
   stage and its account's *slot*, and is never followed by a second launch.
 - **Slot** — one session the *dispatcher* may hold on a subscription
   account at once. Each account has a cap of slots (two by default); a
@@ -1857,7 +1920,7 @@ make, use the entry's term instead.
   still holds for another one. The dispatcher reports it and starts
   nothing for it.
 - **Follow-up marker** — a hidden-marker comment on a merged pull request
-  that claims its follow-up, so one run settles the merge: the
+  that claims its follow-up (a *forge claim*), so one run settles the merge: the
   *dispatcher* posts one before it starts the follow-up's session, and a
   follow-up a person runs by hand posts one too and marks it done when it
   succeeds. Of two, the earlier comment wins, and the later run stands
@@ -1893,6 +1956,11 @@ make, use the entry's term instead.
   commands: `drive` asks the dispatcher to drive a pull request that has
   no drive yet, and `hold` stands it down from a pull request until the
   person removes the label.
+- **Adoption rule** — a repository's opt-in (`dispatch.adopt`) under which
+  the *dispatcher* drives its own recent pull requests without anyone
+  labelling them: an open pull request with no drive ledger, opened by one
+  of the rule's authors and updated within its window, is armed as if a
+  person had put the `drive` label on it.
 - **Serialized area** — an area of a *change-area catalog* marked
   `serialize: true`: its pull requests conflict with each other whenever
   two of them move at once (a migrations folder, a schema), so the
@@ -1905,6 +1973,29 @@ make, use the entry's term instead.
   and, with *dispatch labels* on, labels it `held`. A drive a person arms
   on it still runs. Not the same as a person's `hold` label, which stands
   the dispatcher down from a pull request altogether.
+- **Dispatch board** — the *dispatcher*'s dashboard view of every pull
+  request and item it reads, in one column each (coming, picking up,
+  driven, needs you, ready to merge, merged), placed again from the records
+  at every *tick*, so work moves in any direction and is never moved by
+  hand. **Ready to merge** groups converged pull requests by the next known
+  act: the drive converged at the head it verified, the
+  forge itself witnesses a review of that head (a reviewer app's check run,
+  or a person's approval where none is configured; a pull request still
+  owed that approval waits in approve first), it does not conflict, is
+  not a draft, and has no unresolved review thread. Merge now confirms
+  branch protection permits merging; approve first identifies a known
+  approval need and requested reviewers, with other protection rules unread
+  and further requirements possible. Update next identifies the next branch
+  to update, with any known approval need shown.
+  Planned: [ROADMAP.md](ROADMAP.md) item 36.
+- **Ready episode** — one unbroken period a pull request spends in the
+  *dispatch board*'s Ready to merge column at one verified head. A pull
+  request that leaves (a check fails, a thread opens, a hold is added) and
+  re-enters at the same head starts a new episode, so each period's wait
+  is counted on its own and its event rows share one key: the pull
+  request, the head and the tick that saw it enter. Not the once-per-head
+  `ready` notification record, which keeps a person from being told twice
+  about the same head however many episodes it has.
 - **Outcome log** — the *dispatcher*'s permanent record of how each session
   it started ended, a table of its state database with a text copy of one
   file per month: one row per session with its stage, repository,

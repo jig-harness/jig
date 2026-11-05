@@ -87,7 +87,10 @@ that a skill hands a narrow job to):
 Which of these parts are scripts with no model in them, which are a model
 deciding, who owns each record the skills share and who notices when one
 fails is mapped in [MECHANISMS.md](MECHANISMS.md), by mechanism rather than
-by stage.
+by stage. Every record the plugin keeps, on the machine, in the working
+tree, on the forge and on the tracker, with where it lives, who writes it
+and what keeps two writers apart, is listed in [RECORDS.md](RECORDS.md), by
+record.
 
 Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
 [the `jig` command](#the-jig-command) ·
@@ -239,7 +242,7 @@ assigned to the repository's factory identity, a re-arm for a drive its
 ledger shows stopped on a mechanical state (a usage limit, an answered
 park), a re-drive for a converged drive gone stale (its pull request now
 conflicts with its base, or its head moved past the head the drive
-verified), a follow-up for a merge, a notification for a drive only a
+verified) or for a drive that stopped on a conflict, a follow-up for a merge, a notification for a drive only a
 person can settle. A converged pull request its base merely moved past,
 still mergeable at the verified head, is left alone, and one whose
 mergeability the forge is still computing is reported and waits for a
@@ -270,12 +273,19 @@ so a launch whose answer is lost
 holds its slot and is retried only under its own record. A refusal
 `drive.ts` gives (another driver holds the pull request) is the stage's
 answer and is not launched again on the same ledger facts. A re-drive is
-launched once per change (the pull request's head, conflicting or not):
-the drive merges the base in through its conflict-resolve round, or
-reviews the new head in its ordinary rounds, and a conflict its repair
-budget cannot settle stops it for a person, as any conflict does. A record whose
-process cannot be checked (another host or boot) holds its slot until a
-person clears it:
+launched once per change: the drive merges the base in through its
+conflict-resolve round, or reviews the new head in its ordinary rounds. A
+converged drive's change is its pull request's head, conflicting or not. A
+drive that stopped on a conflict (exit `9`) is re-driven once per pair of its
+pull request's head and its base branch's head, whatever the forge reports of
+it by then, and a person is told only when that re-drive leaves it stopped `9`
+at the same pair; a head or a base that moves is a new attempt. A record
+claimed on this host before it last restarted has died, since a restart ends
+every process, and its outcome row says so; hosts are told apart by the
+[process identity](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s
+host id, so a renamed host is still this one. A record whose process cannot
+be checked (claimed on another host, or the process table cannot be read)
+holds its slot until a person clears it:
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch clear <record>
@@ -305,9 +315,12 @@ route. Every drive runs under the pass deadline the run read
 (`DRIVE_PR_PASS_TIMEOUT` in its environment, else the drive's 90 minutes),
 written on its launch record and handed to `drive.ts` as `--pass-timeout`.
 A Codex pass has no turn cap of its own, so a `codex` account is not
-admitted for a drive while that deadline is `0`; an account of any other
+admitted for a drive while that deadline is `0`. A `codex` account is admitted
+for any launch only on a host that set
+[`drive.codex_bypass`](CONFIGURATION.md#a-hosts-opt-in-to-bypass): a pass needs
+that bypass to push, and nobody is there to approve. An account of any other
 vendor, which the drive documents no pass command for, is accepted by the
-machine file and never admitted. Each run reports both at its top
+machine file and never admitted. Each run reports these at its top
 (`accepted, not admitted`, with the reason) and in its receipt
 (`accountsNotAdmitted`). The `review-arbiter` agent and the turn-budget
 hook stay Claude Code's ([Codex notes](#codex-notes)).
@@ -354,14 +367,22 @@ once both are settled.
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch result <record> <token> done|failed
 ```
 
-**Follow-ups** (the `followup` stage) start one session per pull request
-merged since the stage was switched on (`followup_since`), running the
-repository's `dispatch.followup_command` on it (`/followup` in Jig) in the
-pull request's workspace. A hidden-marker comment on the merged pull
-request is the claim: the dispatcher posts one naming its launch record
-before it starts the session, reads the markers back, and stands down when
-an earlier one is there. A follow-up a person runs by hand claims the same
-way, and marks its marker done once it succeeded:
+**Follow-ups** (the `followup` stage) start one headless pass per pull
+request merged since the stage was switched on (`followup_since`), running
+the repository's `dispatch.followup_command` on it (`/followup` in Jig) in
+the pull request's workspace. The pass runs as a drive's pass does: in a
+terminal tab running the dispatcher's wrapper, as the account's vendor's
+non-interactive command (`claude -p`, `codex exec`), bound to the admitted
+account through its configuration directory, under the pass deadline, and
+with the host's own permission settings (`drive.pass_args`, and
+`drive.codex_bypass` for a Codex account; see
+[a host's opt-in](CONFIGURATION.md#a-hosts-opt-in-to-bypass)), never with
+one the dispatcher adds. So it starts on Orca, which cannot yet bind an
+interactive session to an account. A hidden-marker comment on the merged
+pull request is the claim: the dispatcher posts one naming its launch
+record before it starts the pass, reads the markers back, and stands down
+when an earlier one is there. A follow-up a person runs by hand claims the
+same way, and marks its marker done once it succeeded:
 
 ```sh
 bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatch marker claim <PR> [--repo owner/name]
@@ -372,12 +393,13 @@ bun --no-env-file --config=<plugin>/dispatch/bunfig.toml <plugin>/jig.ts dispatc
 `claim` exits `3` when an earlier marker holds the follow-up, and `check`
 does when one has appeared since, so the run stops before it acts. Only a
 marker written by the dispatcher's own login or by an owner, member or
-collaborator counts. When a dispatched follow-up's session ends, its result
+collaborator counts. When a dispatched follow-up's pass ends, its result
 is kept in an outcome record per pull request that never expires; a
 follow-up that failed, or whose marker names a launch record this machine no
 longer has, is notified once and never started again: delete its marker to
-have it run again. A follow-up is an interactive session, so with Orca it is
-reported and nothing is posted or started, as a pickup is.
+have it run again. A pass that cannot finish without a person stops and
+ends its output with a line starting `Question:`; the notification carries
+that question, and the outcome log counts it as parked for a person.
 
 **Notifications** (the `notify` stage) reach a person once per cause: a drive
 parked with a decision unanswered, carrying the drive's framed decision for
@@ -440,6 +462,16 @@ dispatch --repo <path>` lists the missing ones beside the timer, and with
 with the command a person runs. A label write the forge refuses is reported in the receipt,
 and the run does not fail.
 
+**Adoption** (`dispatch.adopt` in the repository's
+[configuration](CONFIGURATION.md#dispatch), off by default) drives the
+repository's own recent pull requests without a label: an open pull
+request with no drive ledger, opened by one of the rule's authors (by
+default the login the dispatcher reads the forge as) and updated within
+its window (a week by default), draft or not, is armed as if it carried
+`jig:drive`, once per head commit. A bot's pull request is adopted only
+when the rule names the bot, and one carrying `jig:hold` never is. Each
+run reports every pull request the rule adopted, with the reason.
+
 **Serialized areas.** Some pull requests conflict with each other whenever
 two move at once: two migrations, two edits to one schema. An area of the
 repository's [change-area catalog](skills/change-areas/README.md#the-catalog)
@@ -475,14 +507,14 @@ the recorded result, or the last state):
 
 | Class | What ended there |
 | --- | --- |
-| converged | a drive's convergence (exit `0`); a pickup's or follow-up's result `done` |
-| merged | a drive whose pull request merged while it ran (exit `5`) |
-| quota wall | a usage limit: exit `16`, or a session that ended with no result while its wall stood |
-| parked for a person | a park (exit `8`) |
-| stalled | the drive's stall (exit `14`) or its round limit (`6`); a driver replaced by a takeover |
+| converged | a drive's convergence, `CONVERGED` (`0`); a pickup's or follow-up's result `done` |
+| merged | a drive whose pull request merged while it ran, `PR_NOT_OPEN` (`5`) |
+| quota wall | a usage limit, `QUOTA_PARKED` (`16`), or a session that ended with no result while its wall stood |
+| parked for a person | a park, `HITL_PARKED` (`8`); a follow-up pass that stopped on a question |
+| stalled | the drive's stall, `STALLED` (`14`), or its round limit, `MAX_ROUNDS` (`6`); a driver replaced by a takeover |
 | died | a process gone without an exit; a session that ended with no result |
-| refused | a stage's own refusal or a stop it was given (exits `2`, `4`, `11`, `13`, `18`, `19`, `20`; `5` on a closed pull request) |
-| gates failed | a stage that ran to its end without achieving it (exits `1`, `7`, `9`, `12`, `15`; a result `failed`) |
+| refused | a stage's own refusal or a stop it was given: `UNSUPPORTED_CLI` (`2`), `NOT_SETTLED` (`4`), `SINGLE_INSTANCE_LOCK` (`11`), `DRIVE_HELD_BY_OTHER_WORKTREE` (`13`), `MAILBOX_STOPPED` (`18`), `MAILBOX_PAUSE_TIMEOUT` (`19`), `TAKEN_OVER` (`20`), and `PR_NOT_OPEN` on a closed pull request |
+| gates failed | a stage that ran to its end without achieving it: `INDETERMINATE` (`1`), `REVIEWER_FAILED` (`7`), `PR_CONFLICTING` (`9`), `WORKTREE_UNCLEAN` (`12`), `PASS_DEADLINE` (`15`); a result `failed` |
 | double claim | an item more than one session joins to (an event row) |
 | unknown | anything else, with its last state |
 
@@ -550,25 +582,35 @@ running: start it from a terminal on the host (Orca's phone app reaches one),
 open the URL on the phone, and stop it with Ctrl-C.
 
 The page reads two things, every minute and when it comes back into focus, and
-writes nothing:
+writes nothing to the host:
 
-- **The line**, as the newest tick found it: the parks, stops and stalled
+- **What the newest tick found**, on the Now view: the parks, stops and stalled
   pickups waiting on a person, with the question and the recommendation in
   place and the whole decision one tap away; each account's slots and the
   sessions in them, with their evidence; what comes next and why. Each tick that
   reads every repository the machine file lists writes it to the state database
-  beside its receipt. So every panel says which tick it is as of, a stopped timer
-  shows as one, and a host may serve the page from a copy of that database, with
-  no other read. A tick for one repository leaves it as it was.
-- **The outcome log**, filtered by time (today, yesterday, seven or thirty days,
-  or a range), repository, stage, account, class and reason, counting each class
-  over the window and naming each bad class that recurs on a repository. A
-  question about yesterday is the Yesterday filter, and the filter is the page's
-  address, so a view on a phone is a link a laptop opens.
+  beside its receipt (the `tick_line` record). So the strip says how old that
+  tick is, a stopped timer shows as one, and a host may serve the page from a
+  copy of that database, with no other read. A tick for one repository leaves
+  it as it was.
+- **The outcome log**, on the History view, filtered by time (today, yesterday,
+  seven or thirty days, or a range), repository, stage, account, class and
+  reason, counting each class over the window and naming each bad class that
+  recurs on a repository. A question about yesterday is the Yesterday filter,
+  and the view and the filter are the page's address, so a view on a phone is a
+  link a laptop opens.
+
+The Help view says what the page's words, stages and marks mean; a chip, a
+dotted word or the `?` beside a heading says it in place, on hover, tap or
+focus. The theme follows the device until the switch in the strip picks light
+or dark.
 
 The page acts on nothing: it links to the pull request a decision is answered on
-and copies what cannot open, such as a workspace path or an answer line. When
-the server stops answering, it keeps what it last read and says when that was.
+and copies what cannot open, such as a workspace path or an answer line. Beside
+a parked decision a person can draft the reply, which stays in that browser
+only; Copy answer then takes `answer <key>: <reply>`, ready to paste as a
+comment on the pull request. When the server stops answering, it keeps what it
+last read and says when that was.
 
 **When a class recurs.** The tick tunes none of its own dials. A class that
 keeps showing on the dashboard (quota walls at the same hour, pickups that
@@ -821,7 +863,9 @@ committed: no copy of the skill, no install script, no generated files.
 
    Values that are yours rather than the repository's go in `~/.jig/jig.yaml`,
    which every repository on the machine reads below its own file; an
-   environment variable overrides both for one run. The
+   environment variable overrides both for one run. How far this host trusts
+   a drive's passes is only yours to say: a repository's file refuses
+   [those fields](CONFIGURATION.md#a-hosts-opt-in-to-bypass). The
    [configuration layers](CONFIGURATION.md#configuration-layers) section
    explains the order, and
    `bun <plugin>/skills/resolve-review-comments/scripts/jig-config.ts` shows
@@ -914,7 +958,6 @@ drive:
   max_rounds: 10              # default round budget of a drive-pr run; --max-rounds overrides; default 10
   pass_deadline_retries: 2    # passes killed at their deadline one drive restarts from, across re-arms; default 2
   pass_model: sonnet          # model each pass runs on: a model id, a Claude Code alias or a routing tier; default sonnet
-  pass_args: []               # extra words for a claude pass before -p; [--permission-mode, bypassPermissions] skips its permission prompts; default none
 ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
   hold_label: ci:hold         # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)
@@ -971,12 +1014,14 @@ review rounds (see the [drive-pr README](skills/drive-pr/README.md#ci-hold)).
 
 **Where a drive keeps its state.** A drive records its rounds, locks and
 leases (a [lease](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a short-lived claim that one session owns the pull
-request's threads) outside the repository, in a per-clone folder:
-`~/.local/state/jig/drive-pr/<clone>/` by default. Set
-`DRIVE_PR_STATE_DIR` to relocate its parent root, retaining one `<clone>/`
-subdirectory per clone. Existing flat overrides refuse until their artifacts'
-owners are established and their state explicitly relocated. To move existing state into another folder,
-run `bun <skill-dir>/scripts/migrate-state-dir.ts --from <old-dir>` (see the
+request's threads) outside the repository, in one SQLite database per
+machine, `~/.local/state/jig/drive-pr/state.sqlite` by default, keyed by
+clone, with a per-clone folder beside it for its logs:
+`~/.local/state/jig/drive-pr/<clone>/`. Set `DRIVE_PR_STATE_DIR` to relocate
+that root. A clone's folder an earlier release filled with state files is
+read into the database once and left in place. Existing flat overrides
+refuse until their artifacts' owners are established. To move the root, stop
+every drive, move it whole and export the new one (see the
 [drive-pr README](skills/drive-pr/README.md#relocating-the-state-dir)). The
 [verification-fit](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) log (the agent's recorded verdicts on whether each round's
 required validation was worth its cost) defaults to the Jig state
@@ -1079,9 +1124,11 @@ them together.
   file.
 - **The drive has a pass command for each.** Claude Code's
   (`claude -p "/jig:drive-pr <PR>"`) is the default; Codex's
-  (`codex exec --dangerously-bypass-approvals-and-sandbox "Use the
-  jig:drive-pr skill: /jig:drive-pr <PR>"`) is the one a drive armed from a
-  Codex session runs, and the one the dispatcher runs on a Codex account
+  (`codex exec "Use the jig:drive-pr skill: /jig:drive-pr <PR>"`, with
+  `--dangerously-bypass-approvals-and-sandbox` on a host that set
+  [`drive.codex_bypass`](CONFIGURATION.md#a-hosts-opt-in-to-bypass)) is the one
+  a drive armed from a Codex session runs, and the one the dispatcher runs on a
+  Codex account
   ([start command](skills/drive-pr/README.md#how-to-start-it)). A Codex
   pass runs on the execution tier of `routing.models.codex`, else Codex's
   own configured model; `--pass-model` overrides it with a model or a tier
@@ -1384,11 +1431,13 @@ ignored without a notice, so each of them has to be moved by hand:
    `claude plugin marketplace remove groundwork`, and for Codex
    `codex plugin remove groundwork@groundwork` and
    `codex plugin marketplace remove groundwork`.
-3. To keep the history of the drives' state, move it:
-   `bun <drive-pr skill>/scripts/migrate-state-dir.ts --from ~/.local/state/groundwork/drive-pr`.
-   An override already containing per-clone directories needs no move for this
-   rename. A flat `DRIVE_PR_STATE_DIR` still needs the explicit relocation in
-   the [drive-pr README](skills/drive-pr/README.md#relocating-the-state-dir).
+3. To keep the history of the drives' state, move each per-clone directory
+   under `~/.local/state/groundwork/drive-pr/` to
+   `~/.local/state/jig/drive-pr/` before the first drive runs; the database
+   reads each one in at its first open. An override already containing
+   per-clone directories needs no move for this rename. A flat
+   `DRIVE_PR_STATE_DIR` still needs the explicit relocation in the
+   [drive-pr README](skills/drive-pr/README.md#relocating-the-state-dir).
 4. Rename any `GROUNDWORK_*` variables in shell profiles, launch agents and
    CI configuration to `JIG_*`.
 

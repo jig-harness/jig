@@ -1,9 +1,14 @@
 import { expect, test } from "bun:test";
 import { type Cause, fitting } from "../lib/actions/notify.ts";
 import type { Workspace } from "../lib/runtime/port.ts";
-import { listsOwn, readBack } from "../lib/followup-marker.ts";
+import { failed, ok } from "../../shared/outcome.ts";
+import {
+  type ListedClaim,
+  standing,
+} from "../../shared/records/forge-claims.ts";
+import { FOLLOWUP_CLAIM, markerStanding } from "../lib/followup-marker.ts";
 import { parkNotice } from "../lib/notices.ts";
-import type { DrivenPr, FollowupMarker } from "../lib/types.ts";
+import type { DrivenPr } from "../lib/types.ts";
 
 function parked(lines: string[][]): DrivenPr {
   return {
@@ -25,49 +30,66 @@ test("a park message cut to its bound keeps the answer instructions and the URL"
 });
 
 const TICK = { kind: "tick", record: "r1" } as const;
+const AT = "2026-11-04T09:30:00.000Z";
 
-test("a read-back that lacks the posted marker does not list it", () => {
-  const other = { id: 5, trusted: true, run: TICK } as FollowupMarker;
-  expect(listsOwn([other], 7, TICK)).toBe(false);
+/** A trusted follow-up marker, as the forge-claims module lists one; `null` for one whose record does not read. */
+function marker(id: number, payload: Record<string, unknown> | null) {
+  return {
+    id,
+    login: "drive-bot",
+    association: "MEMBER",
+    createdAt: AT,
+    trusted: true,
+    record:
+      payload === null
+        ? failed("unreadable", "its record does not read")
+        : ok({
+            key: "followup",
+            at: AT,
+            payload: { pr: 9, ...payload },
+            legacy: false,
+          }),
+  } satisfies ListedClaim;
+}
+
+/** How marker 7, just posted, stands in `listing`. */
+const seen = (listing: ListedClaim[]) =>
+  ok(standing(FOLLOWUP_CLAIM, listing, { id: 7, key: "followup", at: AT }));
+
+const tick = (record: string) => ({ run: "tick", record });
+const manual = (outcome: string) => ({ run: "manual", outcome });
+
+test("a read-back that lacks the posted marker reports it missing", () => {
+  expect(markerStanding(seen([marker(9, tick("r1"))]), TICK).kind).toBe(
+    "missing",
+  );
   expect(
-    listsOwn(
-      [other, { id: 7, trusted: true, run: TICK } as FollowupMarker],
-      7,
-      TICK,
-    ),
-  ).toBe(true);
+    markerStanding(seen([marker(7, tick("r1")), marker(9, tick("r2"))]), TICK)
+      .kind,
+  ).toBe("stands");
+});
+
+test("an earlier trusted marker wins, whatever its record says", () => {
+  const back = markerStanding(
+    seen([marker(5, null), marker(7, tick("r1"))]),
+    TICK,
+  );
+  expect(back.kind === "earlier" && back.marker.id).toBe(5);
 });
 
 test("a posted marker edited to another body is not the claim", () => {
-  const edited = {
-    id: 7,
-    trusted: true,
-    run: { kind: "unreadable", reason: "x" },
-  } as FollowupMarker;
-  const other = {
-    id: 7,
-    trusted: true,
-    run: { kind: "tick", record: "r2" },
-  } as FollowupMarker;
-  expect(listsOwn([edited], 7, TICK)).toBe(false);
-  expect(listsOwn([other], 7, TICK)).toBe(false);
-  expect(readBack([edited], 7, TICK).kind).toBe("altered");
+  expect(markerStanding(seen([marker(7, null)]), TICK).kind).toBe("altered");
+  expect(markerStanding(seen([marker(7, tick("r2"))]), TICK).kind).toBe(
+    "altered",
+  );
 });
 
 test("a manual claim marked done between the post and the read-back is kept, not altered", () => {
-  const running = {
-    id: 7,
-    trusted: true,
-    run: { kind: "manual", done: false },
-  } as FollowupMarker;
-  const done = {
-    id: 7,
-    trusted: true,
-    run: { kind: "manual", done: true },
-  } as FollowupMarker;
-  expect(readBack([running], 7, { kind: "manual" }).kind).toBe("stands");
-  expect(readBack([done], 7, { kind: "manual" }).kind).toBe("done");
-  expect(readBack([done], 7, TICK).kind).toBe("altered");
+  const running = [marker(7, manual("running"))];
+  const done = [marker(7, manual("done"))];
+  expect(markerStanding(seen(running), { kind: "manual" }).kind).toBe("stands");
+  expect(markerStanding(seen(done), { kind: "manual" }).kind).toBe("done");
+  expect(markerStanding(seen(done), TICK).kind).toBe("altered");
 });
 
 test("a notice key longer than its bound is cut and still tells two keys apart", () => {

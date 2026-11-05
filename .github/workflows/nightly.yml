@@ -72,12 +72,12 @@ jobs:
       # fail here when it is missing instead of being skipped with a warning.
       JIG_REQUIRE_BROWSER: "1"
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The ratchet and fallow's audit compare against the merge base
           # with main, which a shallow checkout does not have.
           fetch-depth: 0
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
       - name: Create the /tmp directory Git Bash expects
         if: matrix.os == 'windows'
         shell: pwsh
@@ -107,12 +107,12 @@ jobs:
     # A shard takes up to about 3 minutes.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The summary-findings tests position a reviewer against real commits
           # of this repository, which a shallow checkout does not have.
           fetch-depth: 0
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
       - name: Install locked dependencies, scripts off
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Run this shard of the drive-pr suite
@@ -129,12 +129,12 @@ jobs:
     # each test retains the test runner's independent deadline.
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The summary-findings tests position a reviewer against real commits
           # of this repository, which a shallow checkout does not have.
           fetch-depth: 0
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
       - name: Create the /tmp directory Git Bash expects
         shell: pwsh
         run: New-Item -ItemType Directory -Force -Path "C:\Program Files\Git\tmp" | Out-Null
@@ -165,8 +165,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
       - name: Install locked dependencies, scripts off
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Install the website's locked dependencies, scripts off

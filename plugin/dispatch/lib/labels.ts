@@ -22,6 +22,7 @@
  * the labels make the tick read, and what must change on a pull request
  * whose labels disagree. `actions/labels.ts` writes the changes.
  */
+import { DRIVE_EXIT } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import type { DrivenPr, LedgerClass } from "./types.ts";
 
 /** A repository's `dispatch.labels`. */
@@ -67,7 +68,7 @@ const MEANINGS: Record<StateName | CommandName, string> = {
   converged: "The drive converged at the pull request's head: a person merges",
   parked: "The drive stopped on something only a person settles",
   stale:
-    "The drive converged, then the pull request conflicted or moved: the dispatcher re-drives it",
+    "Its drive converged then went stale, or stopped on a conflict: the dispatcher re-drives it",
   held: "Waits its turn in a serialized change area: the dispatcher drives it once it leads",
   "followed-up": "Merged, and its follow-up is done",
   drive: "A person asks the dispatcher to drive this pull request",
@@ -149,16 +150,16 @@ const BY_CLASS: Record<
 /**
  * The state an open pull request's ledger maps to; `undefined` is a pull
  * request read for a ledger that carries none. A `done` ledger is
- * converged when it stopped `0` and driven by another clone when it
- * stopped `20`; one that stopped `5` on a pull request open again is left
- * as it is.
+ * converged when it stopped `CONVERGED` (`0`) and driven by another clone
+ * when it stopped `TAKEN_OVER` (`20`); one that stopped `PR_NOT_OPEN` (`5`)
+ * on a pull request open again is left as it is.
  */
 export function stateOf(drive: DrivenPr | undefined): Projected {
   if (drive === undefined) return { state: null };
   if (drive.class === "done") {
     const exit = drive.evidence.exit;
-    if (exit === 0) return { state: "converged" };
-    if (exit === 20) return { state: "driving" };
+    if (exit === DRIVE_EXIT.CONVERGED) return { state: "converged" };
+    if (exit === DRIVE_EXIT.TAKEN_OVER) return { state: "driving" };
     return "unknown";
   }
   const mapped = BY_CLASS[drive.class];

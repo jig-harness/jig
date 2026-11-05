@@ -4,15 +4,17 @@
  *
  * - a record that holds its stage (pending, alive, unknown) holds the
  *   pull request: nothing else is launched for it;
- * - a record that ended on a refusal `drive.ts` gives a second driver (`11`,
- *   `13`, `20`), on the same ledger facts as now, is the stage's answer and
- *   is never fought: the pull request is reported, not launched again. A
- *   refusal `16` is the account's wall instead (see walls.ts), which keeps
- *   that account out of admission until its reset;
- * - a `stale` ledger this machine already re-drove for the same change (the
- *   same head, conflicting or not), however that launch ended, is reported,
- *   not launched again: a re-drive is launched once per change, so a drive
- *   that converges again without settling it does not start a loop;
+ * - a record that ended on a refusal `drive.ts` gives a second driver
+ *   (`DRIVER_REFUSAL_EXITS` in drive-pr's terminal-state registry), on the
+ *   same ledger facts as now, is the stage's answer and is never fought: the
+ *   pull request is reported, not launched again. A `QUOTA_PARKED` stop is
+ *   the account's wall instead (see walls.ts), which keeps that account out
+ *   of admission until its reset;
+ * - a `stale` ledger this machine already re-drove for the same change, however
+ *   that launch ended, is not launched again: a re-drive is launched once per
+ *   change, so a drive that stops the same way again does not start a loop. A
+ *   converged one is reported; one that stopped on a conflict is a person's to
+ *   settle (`settleConflictStops`);
  * - a pull request with no ledger that its `drive` label asks to arm, which
  *   this machine already armed at the same head commit, is reported, not
  *   armed again: an arm that ended without leaving a ledger would otherwise
@@ -27,11 +29,12 @@
  *   first, so a lost launch stays visible and a takeover in flight is not
  *   stacked on.
  */
+import { DRIVER_REFUSAL_EXITS } from "../../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
-  DRIVER_REFUSALS,
   holds,
   isDrive,
   type ReadRecord,
+  redrivenChanges,
   UNARMED_FACTS,
 } from "../launches.ts";
 import type { DrivenPr } from "../types.ts";
@@ -63,10 +66,18 @@ function describe(r: ReadRecord): string {
   return what;
 }
 
+/** How a record that no longer holds its stage ended, in words. */
+function endOf(r: ReadRecord): string {
+  const s = r.state;
+  if (s.kind === "died") return `died (${s.reason})`;
+  if (s.kind !== "ended") return `is ${s.kind}`;
+  return `ended ${String(s.exit.code ?? s.exit.signal)}`;
+}
+
 function refusalOf(r: ReadRecord): number | null {
   if (r.state.kind !== "ended") return null;
   const code = r.state.exit.code;
-  return code !== null && DRIVER_REFUSALS.has(code) ? code : null;
+  return code !== null && DRIVER_REFUSAL_EXITS.has(code) ? code : null;
 }
 
 /**
@@ -152,13 +163,10 @@ function armed(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
   const facts = factsOf(pr);
   const earlier = mine.findLast((r) => r.record.facts === facts);
   if (earlier === undefined) return null;
-  const s = earlier.state;
-  const ended =
-    s.kind === "ended" ? `ended ${String(s.exit.code)}` : `is ${s.kind}`;
   return {
     kind: "armed",
     record: earlier,
-    why: `launch record ${earlier.record.id} armed it at this head and ${ended} without a drive ledger; it is not armed again until its head moves`,
+    why: `launch record ${earlier.record.id} armed it at this head and ${endOf(earlier)} without a drive ledger; it is not armed again until its head moves`,
   };
 }
 
@@ -167,7 +175,9 @@ function redriven(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
   const stale = pr.class === "stale" ? pr.stale : undefined;
   if (stale === undefined) return null;
   const earlier = mine.findLast(
-    (r) => r.record.redrive?.change === stale.change,
+    (r) =>
+      r.record.redrive != null &&
+      redrivenChanges(r.record.redrive).includes(stale.change),
   );
   return earlier === undefined
     ? null
@@ -176,4 +186,31 @@ function redriven(pr: DrivenPr, mine: ReadRecord[]): DriveHold | null {
         record: earlier,
         why: `stale (${stale.cause}), and launch record ${earlier.record.id} already re-drove it for this change; it is not launched again until its head or its mergeability changes`,
       };
+}
+
+/**
+ * Each drive as the plan and the labels read it once this machine's launch
+ * records are read beside it: a ledger that stopped `PR_CONFLICTING`, this
+ * machine already having re-driven the change it shows now, is a person's to
+ * settle, however
+ * that re-drive ended (a stop of its own, or a refusal or a crash that left the
+ * older stop standing), since nothing else will drive it until its head or its
+ * base moves. While a record still holds it, or another driver's refusal
+ * stands, it reads as the ledger alone says.
+ */
+export function settleConflictStops(
+  drives: readonly DrivenPr[],
+  records: ReadRecord[],
+): DrivenPr[] {
+  return drives.map((pr) => {
+    if (pr.stale?.conflictStop !== true) return pr;
+    const hold = driveHold(pr, records);
+    if (hold.kind !== "redriven") return pr;
+    const { stale: _settled, ...rest } = pr;
+    return {
+      ...rest,
+      class: "needs-person",
+      why: `stopped 9, and launch record ${hold.record.record.id} already re-drove it for this change and ${endOf(hold.record)}: only a person settles it until its head or its base moves (see the drive's handoff)`,
+    };
+  });
 }

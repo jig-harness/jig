@@ -384,6 +384,354 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.140.2] - 2026-11-05
+
+### Fixed
+
+- `drive-pr` no longer stops when the CI hold label (`ci.hold_label`) is on a
+  pull request but the drive did not add it. That happened when an earlier
+  run of the drive lost track of its own label, when a drive died and left
+  the label behind, or when someone else added it. `ci-hold.ts ensure` used to
+  refuse the push (`CI_HOLD_WAIT`) on every round until the drive stalled or
+  parked, and `release` left the label on at convergence. The drive now
+  adopts the label: it pushes under it and removes it at convergence, then
+  waits for fresh full CI as before. A failed push does not remove an
+  adopted label. The label only saves CI. To stop a drive, use
+  `drives.ts`'s `--stop`. Put the dispatcher's `jig:hold` label on the
+  pull request to prevent new launches and re-arms.
+
+## [0.140.1] - 2026-11-05
+
+### Changed
+
+- Refresh the dashboard's dependencies and bundled YAML parser, and update the
+  changelog workflow template to use checkout v7.
+
+### Fixed
+
+- Keep the structured-artifact comparison gate's rejection of numeric overflow
+  when the YAML parser would otherwise retain the literal as a string.
+- Exercise scheduler upgrade checks with the host's supported schedulers, and
+  limit the separate service-and-timer check to systemd hosts.
+
+## [0.140.0] - 2026-11-05
+
+A signal the drive and the dispatcher share is kept in one place: the
+dispatcher reads a drive's exit codes from drive-pr's own registry, a pull
+request's review rounds are one record every review loop counts into, and a
+mailbox stop can address one driver.
+
+### Added
+
+- A drive mailbox `stop` can name the driver it is for:
+  `mailbox.ts send <PR> --kind directive --command stop --generation <n>`
+  ends only the driver of that generation, at its next round boundary, and a
+  later driver ignores it. Each driver prints its generation as it starts
+  (`driver generation <n>`), and `drives.ts` lists it. A `stop` without
+  `--generation` keeps its meaning: it stops every later driver in the
+  working tree until `resume --target stop`, which now also withdraws every
+  addressed stop.
+- The driver appends an `ack` record to the mailbox outbox for each `stop`
+  or `pause` it acted on, naming its generation, so a sender sees the
+  directive took effect (`mailbox.ts outbox <PR>`).
+
+### Changed
+
+- `/jig:resolve-review-comments`'s `await-round.ts` counts review rounds in
+  the drive's database (`~/.local/state/jig/drive-pr/state.sqlite`), one
+  record per pull request and head that a drive counts into too, whether or
+  not a drive runs, instead of the `resolve-review-rounds-<PR>` file and its
+  `.head` file in the working tree's Git directory. On the first run after
+  the upgrade the count starts again at the current head: rounds counted in
+  the Git directory are not carried over, and those two files can be
+  deleted. `current-round.ts` prints this one record, the round a drive's
+  ledger carries; convergence settles a loop's rounds for its reflection
+  prompt without lowering it. A drive's `--max-rounds` budget now counts the
+  rounds a hand-driven loop counted on the same pull request in that clone.
+  The skill installed without `/jig:drive-pr` beside it keeps no count.
+- `drives.ts --stop <PR>` sends the live driver a mailbox `stop` addressed to
+  its generation and marked to act at once; the driver cancels its active
+  pass, acknowledges the stop and releases its locks, as before. A driver an
+  earlier release started records no generation: `--stop` sends it nothing
+  and forces its process tree after the 30-second grace.
+- The dispatcher reads every exit of a drive by its name in drive-pr's
+  terminal-state registry, so the two cannot disagree on a code. The outcome
+  log's reasons for exits `7`, `12` and `15` name what happened (reviewer
+  failed, worktree unclean, pass deadline) instead of repeating the code.
+
+### Fixed
+
+- A drive's pass that takes the arm step by mistake and runs
+  `attach-pr.ts <PR> --place` for its own pull request is told it is a pass
+  of that running drive (exit `4`) and to work the round, instead of
+  meeting its own driver as a rival (exit `11`) and standing down until the
+  drive stalls. `attach-pr.ts <PR>` run by a pass, under the environment its
+  driver hands it, attaches under that driver's locks as the driver's own
+  attach does.
+
+## [0.139.1] - 2026-11-05
+
+### Fixed
+
+- The `jig dispatch dashboard` tab shows Jig's mark as its icon, in the
+  colours of the reader's light or dark theme, instead of a blank one. The
+  page holds the icon itself, so the browser still never asks the server
+  for a file without the page's token.
+
+## [0.139.0] - 2026-11-05
+
+### Added
+
+- One module for every claim Jig makes on a pull request:
+  `plugin/shared/records/forge-claims.ts` posts a
+  [forge claim](GLOSSARY.md), reads it back, decides it, re-checks it
+  before an act and withdraws it. The takeover claim, the follow-up marker
+  and the merge-ready announcement are its kinds, under one rule: of
+  the trusted claims on one key the earliest comment wins, with the lease
+  window as the takeover's lapse window. Who is trusted is one rule too:
+  the reading script's own login, or an owner, member or collaborator.
+
+### Changed
+
+- A claim's read-back that does not list the comment just posted now reads
+  again up to three times, two seconds apart, and then treats the claim as lost
+  instead of counting a comment it never saw. A takeover whose claim is
+  never listed refuses the drive with exit `1`, as one whose read-back
+  fails; a re-arm from the same clone drives by that claim once the
+  comments read. `jig dispatch marker claim` keeps its exit codes.
+- The merge-ready announcement is a claim per pull request and head: it is
+  posted only while its merge-readiness checks hold, of two announcements of
+  one head the earlier stands and the later driver withdraws its own, and
+  an announcement whose read-back never lists it is withdrawn and the
+  script exits `1`. Its record now sits in a hidden block after the first
+  line; it still ends with the head marker, so an earlier version still
+  reads it, and an announcement written by an earlier version still reads.
+  A trusted announcement whose record and head marker name different heads
+  stays visible: the script refuses to announce over it and to withdraw
+  around it, and asks for it to be removed by hand.
+- The takeover claim carries the record envelope. An earlier version still
+  reads the new claim, and a claim written by an earlier version still
+  reads.
+- The follow-up marker's record moves to version 2, which names the claim
+  `followup` and the pull request beside the run. A marker written by an
+  earlier version still reads. An earlier version reads the new form as a
+  marker it cannot read, so it plans no follow-up for that pull request and
+  reports it: update every machine that dispatches a repository, and every
+  machine a follow-up is run from by hand, together.
+- When a merged pull request carries two trusted follow-up markers, the
+  dispatcher's report names the earlier one, which holds the follow-up for
+  the marker commands.
+
+## [0.138.0] - 2026-11-05
+
+### Added
+
+- An adoption rule for the dispatcher, `dispatch.adopt`, off unless a
+  repository turns it on (and needs the dispatch labels on): an open pull request with no drive ledger, opened
+  by one of the rule's `authors` (by default the login the dispatcher reads
+  the forge as) and updated within its `within` window (a week by
+  default), draft or not, is armed as if a person had labelled it
+  `jig:drive`, once per head commit. A bot's pull request is adopted only
+  when the rule names the bot, and one carrying `jig:hold` never is. Each
+  run reports the pull requests the rule adopted, with the reason
+  ([CONFIGURATION.md](plugin/CONFIGURATION.md#dispatch)).
+
+### Changed
+
+- The dispatcher's `followup` stage now starts each follow-up as a headless
+  pass instead of reporting it: the account's non-interactive command
+  (`claude -p`, `codex exec`) runs the repository's
+  `dispatch.followup_command` on the merged pull request in its workspace,
+  through the same wrapper as a drive's pass, bound to the admitted account
+  by its configuration directory, under the pass deadline and with the
+  host's own `drive.pass_args` or `drive.codex_bypass`. The marker claim,
+  the launch record and the per-account caps are unchanged. A pass that
+  needs a person stops and ends its output with a `Question:` line, and the
+  failed follow-up's notification carries that question. Pickups are still
+  reported and not started on Orca
+  ([CONFIGURATION.md](plugin/CONFIGURATION.md#the-machines-dispatch-file)).
+
+## [0.137.0] - 2026-11-05
+
+The drive keeps its machine state in one SQLite database per machine instead of a folder of files per clone, and a clone's earlier folder is imported once, at the first open, and left in place.
+
+### Changed
+
+- **Breaking:** `drive-pr` keeps its machine state in `~/.local/state/jig/drive-pr/state.sqlite` (under `$DRIVE_PR_STATE_DIR` when it is set), one database per machine with every row keyed by the clone: the drive state of each pull request, the store's lock, the driver locks, the session and tree leases, the remote-mutation lock, the held-item and Ready-mark claims, the stop requests and the driver record. A lock's release deletes its row, so nothing is left behind and the state no longer grows a tombstone per lock. The first drive command a clone runs reads that clone's earlier folder, `~/.local/state/jig/drive-pr/<clone>/`, into the database once, records the import, and leaves every file in place; stop running drives before upgrading, since a drive still on the earlier release keeps writing files the database no longer reads (its ledger on the pull request still carries its progress). The folder keeps the driver log, the kept answers, the long pass notice and the arm output. To move the state root, stop every drive, move the root whole and export the new `$DRIVE_PR_STATE_DIR` ([drive-pr README](plugin/skills/drive-pr/README.md#relocating-the-state-dir)).
+- A lock or a lease records its holder's process identity (host id, boot, process and start time), so a holder that died, or whose process id now belongs to another process, is recovered at once rather than after its heartbeat ages out (on Windows, which records no start time or boot id, a reused process id keeps its lock until the heartbeat ages out); a lease's generation only grows, so a command admitted before a takeover is still refused when it comes to mutate, and a pass whose lease was taken over is still refused its post.
+- The drive ledger names its clone by the clone key and a digest of the host's id (`<clone>@<host>`), so a reader can tell which host claims a drive; a ledger an earlier release wrote still seeds.
+- `reap-state.ts` removes only files: a merged pull request's logs, answers, notices and arm output, and an earlier release's files 30 days after the import. Its JSON report drops the lock-compaction counts, and resource collection's `tool-state` kind reads the shorter report.
+- The dispatcher's database opens through the shared `shared/records/db.ts`, which also records a database's minimum reader: a copy one release behind keeps using a database a newer copy changed only by adding tables or columns, and refuses one that needs a newer reader, naming both versions.
+- The drive mailbox's append lock is a file created exclusively beside the mailbox file and removed on release, leaving nothing behind; breaking a stale one and releasing one are serialized by a second short-lived file, so neither can remove a lock another process just took.
+- `reap-state.ts` in its dry run no longer creates, migrates or imports into the database, and it keeps the files an import could not read when it retires the rest. An earlier release's state file that cannot be read stops the import (nothing is recorded, and the next open tries again) instead of starting that pull request's state afresh.
+
+### Removed
+
+- `migrate-state-dir.ts`, `migrate-legacy-state.ts` and `portable.ts recover-state`: the database's one-time import replaces them. State a much older release kept inside `.git` is not imported; a drive starting there seeds from its ledger.
+
+## [0.136.0] - 2026-11-05
+
+### Added
+
+- Every record the plugin keeps is now listed in one place,
+  [plugin/RECORDS.md](plugin/RECORDS.md): on the machine, in the working
+  tree, on the forge and on the tracker, each with where it lives, its
+  format, who writes it and what keeps two writers apart. Behind it is a
+  [records registry](GLOSSARY.md) checked for unregistered hidden-marker
+  literals, tagged drive state families and SQLite table declarations;
+  review keeps other records in the inventory.
+- A [record envelope](GLOSSARY.md): the fields a record carries to say
+  what it is, its version, what it is about, who wrote it and when. The
+  drive ledger on a pull request and the dispatcher's follow-up marker carry
+  it first.
+
+### Changed
+
+- The drive ledger's data now carries the record envelope beside its own
+  fields. A ledger written by an earlier version still reads, and an
+  earlier version still reads the new ledger. On the forge the writer's
+  host and boot are written as digests, so a pull request comment names no
+  machine.
+- The follow-up marker's record now sits in a hidden block from its second
+  line, with a line a person reads after it. A marker written by an earlier
+  version still reads. An earlier version reads the new form as a marker it
+  cannot read, so it plans no follow-up for that pull request and reports
+  it: update every machine that dispatches a repository together.
+
+## [0.135.0] - 2026-11-05
+
+The dispatch dashboard is split into views and explains itself in place.
+
+### Added
+
+- Views with tabs in the strip: Now (what needs you, what is running,
+  what is coming), History (the window and the outcome log) and Help (what the
+  page's words, stages and marks mean). The view is part of the address, so a
+  link opens the same one. The Now tab shows how many items need a person.
+- A theme switch in the strip: the device's theme, light or dark. The choice
+  stays in the browser and in the link's `theme`.
+- A reply box beside each parked decision. The draft stays in this browser
+  only, and Copy answer takes `answer <key>: <reply>`, ready to paste as a
+  comment on the pull request.
+- Hints that open on hover, tap or keyboard focus: each stage chip (`rearm`,
+  `pickup`, …), each queue source chip, each account's slot squares, the terms
+  above the accounts, and a `?` beside every panel heading.
+
+### Changed
+
+- How old the data is is now one short line in the strip ("Updated 2 min
+  ago"), turning into a warning when the timer is overdue or the server stops
+  answering. Hovering or tapping it says which tick the page shows, when the
+  next tick is due and when the page last read. The "as of the 16:45 tick" line
+  on every panel is gone.
+- "The line" panel is now called "What is running".
+- A list showing its first two items (What needs you, What is coming) has its
+  Show all / Show fewer button in the panel's heading too, so closing a long
+  list needs no scroll to its end.
+
+## [0.134.0] - 2026-11-04
+
+A label change no longer has to cost a full CI run, or cancel one, in a
+repository that holds CI between review rounds.
+
+### Added
+
+- M13's CI hold can answer an event for any label but the hold's with a
+  mirror run: the heavy jobs skip, the run takes a concurrency group of its
+  own so it cancels nothing, and the required check repeats the newest real
+  run's result on the same commit, failing whenever it cannot show that result
+  passed. A repository whose labels change often, such as one running the
+  dispatcher's labels, wants it: one change there removes one label and adds
+  another, each its own event, and each event used to start a full run that
+  cancelled the one before. M13's piece 7
+  says why the run cannot simply skip, and `mappings.md` gives its shape on
+  GitHub Actions. A repository whose workflows run real CI on every label
+  event needs no change.
+- The workflow-convention lint's `ci-hold-mirror` rule checks a workflow that
+  skips on other labels' events: its own concurrency group, a `run-name` that
+  marks the mirror run, a required job that runs and repeats the real result,
+  and every heavy job skipped.
+
+### Changed
+
+- **Breaking** for a workflow of the hold whose job conditions read the event
+  outside the pull request's own state: the lint's `ci-hold-guard` now fails a
+  job whose `if:` reads `github.event` other than through
+  `github.event.pull_request` (its action, its label, its sender, the whole
+  event), other than the mirror's skip term, since a job skipped on some events
+  and not others can turn a failing head into a passing one. Read the pull
+  request's state instead, and test its label set for the hold, as the hold
+  asks; a workflow that already does is unaffected.
+- The audit's `ci-hold-fails-held-heads` and `ci-hold-shape-linted` criteria
+  accept the mirror run beside real CI on every label event.
+
+## [0.133.0] - 2026-11-04
+
+The dispatcher, resource collection and the two machine-wide locks now record the same process identity and judge it by the same rules, and the drive's locks share its host comparison, so a restart or a renamed machine no longer leaves work waiting for a person.
+
+### Added
+
+- One shared [process identity](GLOSSARY.md) (`plugin/shared/liveness.ts`): the machine's host id, which survives a rename and a restart (read from the system's machine id, or created once in `~/.local/state/jig/host-id` where there is none), its host name, the boot, the process id and the process's start time, with one set of rules for judging a recorded holder: dead after its host restarted or once its process id belongs to another process, unknown on another machine.
+
+### Changed
+
+- `jig dispatch`: a launch record claimed on this host before it last restarted now reads as died, frees its account's slot, and its outcome row says the host restarted; before, it held the slot as unknown until a person ran `jig dispatch clear`. A record claimed on another host, or read while the process table cannot be, still holds its slot as unknown. A record written before host ids is compared by its host name.
+- `drive-pr`'s driver locks and `jig dispatch` compare hosts by host id before host name, so a machine whose host name changed (as a laptop's can between networks) still recognises its own driver and its own launches, and a claim from another machine is never judged by this one's process table. A driver lock's claim gains the host id after its platform; a claim without one is compared by name as before.
+- `jig gc`: each admission token and the collector's own lock file hold their process identity, and a collection that meets a stale token names the token's creator and why it counts as gone. A stale token is still never removed by gc. Tokens and lock files in their earlier forms are read as before.
+- The resource lock (`with-resource-lock.ts`, which `jig gc` and heavy test runs wait on) records its holder's identity beside the lock and, on Linux and macOS, reclaims a lock whose process id now belongs to a process that started later instead of waiting out `LOCK_TIMEOUT`. A reclaim, and a wait that runs out, say whose lock it was. The lock itself still names only the process id, so an earlier version keeps excluding this one ([M12](modules/M12-parallel-agent-ergonomics/reference/resource-lock/README.md)).
+- The Orca card lock holds its owner's identity, reclaims a lock whose process id now belongs to another process, and warns whose lock it took over.
+
+## [0.132.0] - 2026-11-04
+
+A drive's permission bypass is now a host's choice: a host opts in from its own user file once it has checked what its account can reach, and a repository's file can neither ask for it nor cancel it.
+
+### Fixed
+
+- The plugin's mechanisms page said every kind `jig gc` inventories is
+  report-only. It now says what holds: scratch folders and tool state are
+  reported, a worktree Orca manages is eligible for collection through Orca when
+  the machine entry names Orca's command, and is removed only in a collecting
+  run, while every other worktree is reported
+  ([MECHANISMS.md](plugin/MECHANISMS.md#resource-collection-jig-gc)).
+- A pass-argument list that ends in an option that needs a value, such as `[--permission-mode]` or `[--settings]`, stops the drive naming `drive.pass_args`, from the field and from `--pass-args`. `--permission-mode` alone was refused before; the others took the drive's `-p` as their value. `[--permission-mode, default]` still works.
+- The audit reports a repository's file that sets `clones`, `drive.pass_args` or `drive.codex_bypass` as an error rather than judging its value or calling it a field the skills ignore, and warns when this machine's user file holds a value a drive would stop on (`fact:user-layer-invalid`).
+- `drive-pr` no longer spends its CI-repair passes on a cancelled check. A check
+  concluded `cancelled` reads as `cancelled: …`: an absence of evidence. Other
+  failed jobs in a cancelled run remain failures. The drive waits for a run to replace it, on
+  `DRIVE_PR_FINAL_CI_WITNESS_POLLS`, and once a run of the same workflow on the
+  head has completed with a result the cancelled run's checks no longer count,
+  except that an unsuccessful check stays when the replacing runs report its
+  name only as skipped. With nothing to replace it the drive exits
+  `4`. A cancelled check never reads as passing, so a required check a held run
+  cancelled still blocks.
+- A workflow run being re-run keeps its unsuccessful jobs pending until it
+  completes; another run's success cannot clear that obligation from run-level
+  timestamps that may belong to a partial rerun.
+- A `drive-pr` CI-repair pass is told which runs failed, in
+  `DRIVE_PR_ROUND_FAILED_RUNS`, and re-runs those rather than a cancelled sibling
+  on the same head. A run created under the CI hold's label is left out, since a
+  re-run replays that event.
+
+### Security
+
+- **Breaking.** `drive.pass_args` is honoured only from the host's side: its user file, one run's environment variable, or `--pass-args` for one drive. A repository's own file that sets the field, an empty list included, or a file `JIG_OVERLAY` names, is refused with an error naming the field, and so is a `drive` section there that is not a mapping (`drive: null`, or `drive:` with nothing under it), since it would replace the host's whole section. A drive reads that file from the pull request's own checkout, so a pull request could give its own passes bypass. The whole field is refused because other options widen a pass as well (`--settings`, `--allowedTools`, `--mcp-config`). What a host adds to `~/.jig/jig.yaml`: `drive: { pass_args: [--permission-mode, bypassPermissions] }`, or the words it used. [A host's opt-in](plugin/CONFIGURATION.md#a-hosts-opt-in-to-bypass) says what that risks: a pass can then do anything the host's account can.
+- **Breaking.** A Codex pass no longer carries `--dangerously-bypass-approvals-and-sandbox` on every host. The new `drive.codex_bypass: true`, in the user file or one run's environment and refused in a repository's file the same way, turns it on. Without it a Codex pass command carries no bypass and Codex's own configuration decides; a hand-armed Codex drive still starts and its log says `inherited`. The dispatcher admits no Codex account on such a host, for a drive or for a pickup or follow-up session, and each run says why under `accepted, not admitted`. A launch record keeps what the tick admitted it under, and the launched wrapper does that without reading the setting again. What a host adds to `~/.jig/jig.yaml`: `drive: { codex_bypass: true }`.
+- **Order, before taking this release.** First add those lines to `~/.jig/jig.yaml` on each host that relied on a repository's file or on the Codex bypass; earlier releases already read `drive.pass_args` from there and ignore `drive.codex_bypass`, so this changes nothing until the release arrives. Then remove `drive.pass_args`, and any empty `drive:`, from each repository's `.config/jig.yaml`, and merge that into every open branch: every Jig script running in a checkout whose file still sets the field stops with the error, a drive on that branch included.
+
+## [0.131.0] - 2026-11-04
+
+The dispatcher no longer leaves a pull request that stopped on a conflict
+waiting for a person it may not need.
+
+### Changed
+
+- `jig dispatch` re-drives a drive that stopped with exit `9` (still conflicting with its base once its conflict-repair budget is spent), on any admitted account, once for each pair of the pull request's head and its base branch's head, whether the forge still reports it conflicting or now reports it mergeable. It tells a person only when that re-drive leaves the ledger stopped `9` at the same pair; a head or a base that moves is a new attempt. The tick reads the base branch's head for such a ledger only, and a head or a mergeability that does not read leaves the pull request unplaced for that tick. A headless Claude pass can commit only where its approval source allows it, such as a permission mode `drive.pass_args` names: see that field in [CONFIGURATION.md](plugin/CONFIGURATION.md#drive).
+- An outcome row for exit `9` now reads `exit 9 (conflicting with its base)`, still under the class `gates failed`.
+
+### Fixed
+
+- A `conflict-resolve` pass that stopped short of concluding its merge (its commit refused, its deadline reached) left the merge open in the tree, where the stop's own `Fix:` command, `base-sync.ts`, `finish-round.ts`, convergence and an attach over a moved head all refused it. `drive.ts` now aborts a merge the pass started and did not conclude before it re-gates or stops, and the driver log lists what the merge held. A merge the tree already held when the pass started is left to the pass, which `drive-pr`'s `SKILL.md` § 0 now tells to finish it or start it over, and the stop names it if it does neither.
+
 ## [0.130.0] - 2026-11-04
 
 `jig dispatch dashboard` is now the page that answers what needs you, what is
@@ -4948,7 +5296,20 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.130.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.140.2...HEAD
+[0.140.2]: https://github.com/jig-harness/jig/compare/v0.140.1...v0.140.2
+[0.140.1]: https://github.com/jig-harness/jig/compare/v0.140.0...v0.140.1
+[0.140.0]: https://github.com/jig-harness/jig/compare/v0.139.1...v0.140.0
+[0.139.1]: https://github.com/jig-harness/jig/compare/v0.139.0...v0.139.1
+[0.139.0]: https://github.com/jig-harness/jig/compare/v0.138.0...v0.139.0
+[0.138.0]: https://github.com/jig-harness/jig/compare/v0.137.0...v0.138.0
+[0.137.0]: https://github.com/jig-harness/jig/compare/v0.136.0...v0.137.0
+[0.136.0]: https://github.com/jig-harness/jig/compare/v0.135.0...v0.136.0
+[0.135.0]: https://github.com/jig-harness/jig/compare/v0.134.0...v0.135.0
+[0.134.0]: https://github.com/jig-harness/jig/compare/v0.133.0...v0.134.0
+[0.133.0]: https://github.com/jig-harness/jig/compare/v0.132.0...v0.133.0
+[0.132.0]: https://github.com/jig-harness/jig/compare/v0.131.0...v0.132.0
+[0.131.0]: https://github.com/jig-harness/jig/compare/v0.130.0...v0.131.0
 [0.130.0]: https://github.com/jig-harness/jig/compare/v0.129.2...v0.130.0
 [0.129.2]: https://github.com/jig-harness/jig/compare/v0.129.1...v0.129.2
 [0.129.1]: https://github.com/jig-harness/jig/compare/v0.129.0...v0.129.1

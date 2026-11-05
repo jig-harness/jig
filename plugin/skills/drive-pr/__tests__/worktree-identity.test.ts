@@ -3,18 +3,13 @@ import {
   mkdtempSync,
   mkdirSync,
   realpathSync,
-  renameSync,
   rmSync,
-  statSync,
   symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { worktreePathKey } from "../scripts/lib/state/actor.ts";
-import {
-  parseDirIdentityToken,
-  stateDirIdentityToken,
-} from "../scripts/lib/state/lease.ts";
+import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
 import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
@@ -65,31 +60,15 @@ test("an alternate drive-letter spelling keeps the worktree key", () => {
   expect(worktreePathKey(alternate)).toBe(worktreePathKey(root));
 });
 
-test("runtime directory identities survive transport and distinguish replacement", () => {
-  const directory = join(root, "identity");
-  mkdirSync(directory);
-  const before = statSync(directory, { bigint: true });
-  expect(before.ino).not.toBe(0n);
-  expect(stateDirIdentityToken(directory)).toStartWith(
-    `${before.dev}:${before.ino}:`,
-  );
-  renameSync(directory, `${directory}-old`);
-  mkdirSync(directory);
-  const after = statSync(directory, { bigint: true });
-  expect(`${after.dev}:${after.ino}`).not.toBe(`${before.dev}:${before.ino}`);
-  expect(stateDirIdentityToken(directory)).toStartWith(
-    `${after.dev}:${after.ino}:`,
-  );
-});
-
-test("zero inode tokens cannot certify a directory identity", () => {
-  expect(parseDirIdentityToken("0:0")).toEqual({ kind: "bad" });
-  expect(parseDirIdentityToken("12:0")).toEqual({ kind: "bad" });
-  // A zero device identifier can still carry a usable filesystem inode.
-  expect(parseDirIdentityToken("0:42")).toEqual({
-    kind: "ok",
-    id: { dev: 0n, ino: 42n },
-  });
+test("a database's identity is stable, and a database created again has another", () => {
+  const directory = join(root, "identity", "0123456789abcdef");
+  mkdirSync(directory, { recursive: true });
+  const before = stateDirIdentityToken(directory);
+  expect(before).toMatch(/^[0-9a-f-]{36}$/);
+  expect(stateDirIdentityToken(directory)).toBe(before);
+  for (const suffix of ["", "-wal", "-shm"])
+    rmSync(join(root, "identity", `state.sqlite${suffix}`), { force: true });
+  expect(stateDirIdentityToken(directory)).not.toBe(before);
 });
 
 test("the driver runs its entry point through a directory alias", () => {

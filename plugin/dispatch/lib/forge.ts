@@ -2,9 +2,10 @@
  * The forge reads a tick makes for one repository, through the signed-in
  * `gh` command-line client and under its deadline: which repository a
  * checkout is, the repository's `.config/jig.yaml` and change-area catalog
- * on its default branch, its open pull requests (each with its head commit
- * and its mergeability with its base, read with it) and the files each one
- * changes, the pull requests merged since a date, and, for Control and
+ * on its default branch, its open pull requests (each with its head commit,
+ * its base branch and its mergeability with that base, read with it) and the
+ * files each one changes, the head of a base branch, the pull requests merged
+ * since a date, and, for Control and
  * serialization, a pull request's unresolved review threads and whether a
  * closed one merged. Where the repository turns dispatch labels on, each listing
  * and view carries the pull requests' labels too, and a pull request's
@@ -163,10 +164,18 @@ interface ListedPr {
   mergedAt?: string;
   /** An open pull request's head commit, as the forge reports it. */
   headRefOid?: string;
+  /** An open pull request's base branch. */
+  baseRefName?: string;
   /** An open pull request's mergeability with its base: `MERGEABLE`, `CONFLICTING`, or `UNKNOWN` while the forge computes it. */
   mergeable?: string;
   /** Its labels' names, when the read asked for them. */
   labels?: string[];
+  /** An open pull request's author, as the forge reports it. */
+  author?: { login: string; bot: boolean };
+  /** Whether an open pull request is a draft. */
+  isDraft?: boolean;
+  /** When an open pull request was last updated. */
+  updatedAt?: string;
 }
 
 /** Whether a read carries the pull requests' labels: only where the repository turns dispatch labels on. */
@@ -179,8 +188,24 @@ const NO_LABELS: LabelRead = { labels: false };
 /** The fields every listing reads. */
 const LISTED = ["number", "url", "title", "headRefName", "createdAt"];
 
-/** What an open pull request adds: its head commit and its mergeability. */
-const OPEN_FIELDS = ["headRefOid", "mergeable"];
+/** What an open pull request adds: its head commit, its base branch, its mergeability, and what the adoption rule reads (its author, whether it is a draft, its last update). */
+const OPEN_FIELDS = [
+  "headRefOid",
+  "baseRefName",
+  "mergeable",
+  "author",
+  "isDraft",
+  "updatedAt",
+];
+
+/** A pull request's author as the listing gives it (`{ login, is_bot }`); nothing when it does not read. */
+function authorOf(value: unknown): {
+  author?: { login: string; bot: boolean };
+} {
+  if (!isRecord(value) || typeof value.login !== "string" || value.login === "")
+    return {};
+  return { author: { login: value.login, bot: value.is_bot === true } };
+}
 
 /** A pull request's label names, or why they do not read. */
 function labelNames(value: unknown, what: string): string[] {
@@ -210,7 +235,11 @@ function listedPr(p: unknown, what: string, read = NO_LABELS): ListedPr {
     ...text("createdAt"),
     ...text("mergedAt"),
     ...text("headRefOid"),
+    ...text("baseRefName"),
     ...text("mergeable"),
+    ...text("updatedAt"),
+    ...authorOf(p.author),
+    ...(typeof p.isDraft === "boolean" ? { isDraft: p.isDraft } : {}),
     ...(read.labels ? { labels: labelNames(p.labels, what) } : {}),
   };
 }
@@ -291,6 +320,26 @@ export async function openPullRequest(
   if (state !== "OPEN")
     throw new ForgeReadError(`PR #${pr} reads ${String(state)}`);
   return listedPr(out, `PR #${pr}'s view`, read);
+}
+
+/**
+ * The commit a branch of the repository is at now. A pull request's own
+ * `baseRefOid` is not it: the forge records that commit when the pull request
+ * last moved, and it stays put while the base branch moves on.
+ */
+export async function branchHead(
+  slug: string,
+  branch: string,
+): Promise<string> {
+  const ref = branch.split("/").map(encodeURIComponent).join("/");
+  const out = parsed(
+    await gh(["api", `repos/${slug}/git/ref/heads/${ref}`]),
+    `branch ${branch}'s ref`,
+  );
+  const sha = field(field(out, "object"), "sha");
+  if (typeof sha !== "string" || sha === "")
+    throw new ForgeReadError(`branch ${branch}'s ref names no commit`);
+  return sha;
 }
 
 /** One pull request's label names, read now whatever state it is in; throws when they do not read. */

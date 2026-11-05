@@ -112,8 +112,11 @@ tracker questions are then reported as unchecked, never as passing.
 It judges the repository's file alone: the user file (`~/.jig/jig.yaml`) and
 `JIG__*` variables belong to whoever runs the audit. What they add on this
 machine is reported as facts (`fact:user-layer`, `fact:environment-layer`),
-and a user file that sets a field only a repository may set is a warning
-(`fact:user-layer-refused`). The tracker check is the exception: it probes the
+a user file that sets a field only a repository may set is a warning
+(`fact:user-layer-refused`), and so is one whose `drive.pass_args` or
+`drive.codex_bypass` a drive would stop on (`fact:user-layer-invalid`). A
+repository's file that sets a field only the host may is an error, whatever it
+sets it to (`user-only:<field>`). The tracker check is the exception: it probes the
 tracker the skills here select, so it reads all three layers, and layers that
 cannot be loaded are an error, since every skill here refuses them too.
 

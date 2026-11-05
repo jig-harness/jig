@@ -23,8 +23,9 @@
  *   --pass-args "W"  extra arguments for a `claude` pass, for this run: one
  *                    value split on whitespace, put before `-p` unless the
  *                    pass command already carries them; empty for none.
- *                    Default: `drive.pass_args`, added only to a pass
- *                    command without arguments of its own
+ *                    Default: `drive.pass_args`, which only the host's user
+ *                    file or one run's environment may set, added only to a
+ *                    pass command without arguments of its own
  *                    (`lib/pass-args.ts`); the driver log and `drives.ts`
  *                    name the permission mode the pass runs in.
  *   --handoff-at V   the context-economy dial: hand off at V% of the pass's
@@ -174,7 +175,8 @@ import { runMain } from "./lib/cli.ts";
 import { span } from "../../../shared/trace.ts";
 import { main } from "./lib/driver/main.ts";
 import { driverRuntime } from "./lib/driver/runtime.ts";
-import { driveExitClosesTab, endOwnTab } from "../../../shared/orca-tabs.ts";
+import { endOwnTab } from "../../../shared/orca-tabs.ts";
+import { driveExitClosesTab } from "./lib/status/terminal-states.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { ExitError } from "../../../shared/cli.ts";
 export {
@@ -197,14 +199,12 @@ export {
   conflictRepairRounds,
   type RepairTask,
 } from "./lib/driver/settings.ts";
-export { inspect, claimWasTakenOver } from "./lib/driver/locks.ts";
 export {
   driverStopExitCode,
   installStopControls,
   drainDriverRegistrations,
   finishDriverPassRegistrations,
   installDriverLifecycle,
-  driverStopCompletionCleanup,
 } from "./lib/driver/lifecycle.ts";
 
 /**

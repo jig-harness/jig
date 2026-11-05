@@ -114,6 +114,14 @@ if (args[0] === "label" && args[1] === "create") {
   fs.writeFileSync(F + "/labels-repo.json", JSON.stringify(have));
   out("");
 }
+if (args[0] === "api" && /^repos\\/[^/]+\\/[^/]+\\/git\\/ref\\/heads\\//.test(args[1] ?? "")) {
+  // The head of the base branch, as base-head holds it; base-head-next replaces it after this read, for a base that moves between two reads.
+  fs.appendFileSync(F + "/base-reads.log", args[1] + "\\n");
+  if (!fs.existsSync(F + "/base-head")) { process.stderr.write("gh: Not Found (HTTP 404)\\n"); process.exit(1); }
+  const sha = fs.readFileSync(F + "/base-head", "utf8");
+  if (fs.existsSync(F + "/base-head-next")) fs.renameSync(F + "/base-head-next", F + "/base-head");
+  out({ ref: "refs/heads/main", object: { sha, type: "commit" } });
+}
 const files = args[0] === "api" ? /^repos\\/[^/]+\\/[^/]+\\/pulls\\/(\\d+)\\/files\\?per_page=(\\d+)&page=(\\d+)$/.exec(args[1] ?? "") : null;
 if (files !== null) {
   // The files files-<pr>.json lists, one page at a time; refused while files-<pr>-fail exists.
@@ -257,7 +265,13 @@ while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(5
 process.exit(0);
 `;
 
-/** The Claude Code a pickup's wrapper starts in tests: it records how it was started and runs until \`claude-exit\` appears. */
+/**
+ * The Claude Code a wrapper starts in tests: it records how it was started
+ * and runs until \`claude-exit\` appears, then prints \`claude-said\` when
+ * there is one and exits with the code \`claude-exit\` holds (0 when empty).
+ * With \`claude-stubborn\` present it ignores SIGTERM and leaves a tool
+ * command running, whose pid it writes to \`claude-tool-pid\`.
+ */
 const FAKE_CLAUDE = `#!/usr/bin/env bun
 const fs = require("node:fs");
 const F = process.env.DISPATCH_FAKE_DIR;
@@ -267,9 +281,24 @@ fs.appendFileSync(F + "/claude-runs.jsonl", JSON.stringify({
   configDir: process.env.CLAUDE_CONFIG_DIR ?? null,
   token: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? null,
 }) + "\\n");
+if (fs.existsSync(F + "/claude-stubborn")) {
+  process.on("SIGTERM", () => {});
+  const tool = require("node:child_process").spawn("sleep", ["300"], { stdio: "ignore" });
+  fs.writeFileSync(F + "/claude-tool-pid", String(tool.pid));
+}
 const until = Date.now() + 60000;
 while (!fs.existsSync(F + "/claude-exit") && Date.now() < until) Bun.sleepSync(50);
-process.exit(0);
+if (fs.existsSync(F + "/claude-said")) {
+  const said = fs.readFileSync(F + "/claude-said");
+  // With \`claude-split\` present, the first multi-byte character is cut between two writes.
+  const cut = fs.existsSync(F + "/claude-split") ? said.findIndex((b) => b >= 0xc0) + 1 : 0;
+  if (cut > 0) {
+    process.stdout.write(said.subarray(0, cut));
+    Bun.sleepSync(300);
+  }
+  process.stdout.write(said.subarray(cut));
+}
+process.exit(Number(fs.existsSync(F + "/claude-exit") ? fs.readFileSync(F + "/claude-exit", "utf8") : 0) || 0);
 `;
 
 export interface OrcaAgent {
@@ -295,17 +324,21 @@ export interface OrcaRow {
 /** The head commit an open pull request reports unless a test names another. */
 export const HEAD_SHA = "a".repeat(40);
 
+/** The head commit of the base branch unless a test names another. */
+export const BASE_SHA = "c".repeat(40);
+
 /** An open pull request as `gh pr list --json` returns it: at `HEAD_SHA` and mergeable, unless `extra` says otherwise. */
 export const openPr = (
   number: number,
   head: string,
-  extra: { headRefOid?: string; mergeable?: string } = {},
+  extra: { headRefOid?: string; mergeable?: string; baseRefName?: string } = {},
 ) => ({
   number,
   url: `https://github.com/${SLUG}/pull/${number}`,
   title: `Pull request ${number}`,
   headRefName: head,
   headRefOid: HEAD_SHA,
+  baseRefName: "main",
   mergeable: "MERGEABLE",
   labels: [] as Array<{ name: string }>,
   ...extra,
@@ -364,6 +397,8 @@ export interface World {
   setAssigner(number: number, login: string, permission: string): void;
   setPrs(state: "open" | "merged", prs: unknown[]): void;
   setComments(pr: number, comments: unknown[]): void;
+  /** The head of the base branch; `null` for a branch that does not read. With `next`, the head after the next read of it. */
+  setBaseHead(sha: string | null, next?: string): void;
   setWorkspaces(rows: OrcaRow[]): void;
   setConfig(yaml: string | null): void;
   /** The files a pull request changes, as the forge lists them. */
@@ -402,6 +437,7 @@ export function world(): World {
     );
   write("prs-open.json", []);
   write("prs-merged.json", []);
+  write("base-head", BASE_SHA);
   write("orca-repos.json", {
     repos: [
       {
@@ -531,6 +567,11 @@ export function world(): World {
     },
     setPrs: (state, prs) => write(`prs-${state}.json`, prs),
     setComments: (pr, comments) => write(`comments-${pr}.json`, comments),
+    setBaseHead: (sha, next) => {
+      if (sha === null) rmSync(join(dir, "base-head"), { force: true });
+      else write("base-head", sha);
+      if (next !== undefined) write("base-head-next", next);
+    },
     setWorkspaces: (rows) =>
       write("orca-ps.json", {
         worktrees: rows.map((r, i) => ({

@@ -86,9 +86,15 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    resolved. Between rounds the drive holds CI with the `ci:hold` label
    (`ci.hold_label`, [M13's hold](modules/M13-pipeline-economy/README.md#7-hold)):
    while it is on, the `gates` check fails without running the jobs, and
-   removing it runs them in full. A drive that stopped can leave the label
-   behind; remove it by hand (`gh pr edit <PR> --remove-label ci:hold`),
-   never by rerunning the held run.
+   removing it runs them in full. Any other label's event starts a mirror
+   run: it skips the heavy jobs, cancels no run, and its `gates` waits for the
+   newest real run on the head and repeats its result, holding a runner while
+   it waits. The label only saves CI: a drive adopts one it did not add, and
+   a person stops a running drive with `drives.ts --stop`. The dispatcher's
+   `jig:hold` label prevents new launches and re-arms. A drive that
+   stopped for good can leave the label behind; remove it by hand
+   (`gh pr edit <PR> --remove-label ci:hold`), never by rerunning the held
+   run.
 4. The pull request may merge once a round after Ready has settled: every
    reviewer has reported on the current head, no thread or summary finding is
    left unanswered, and the required checks are green. A person merges; an
@@ -100,6 +106,17 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    consumer repositories, and cleanup. Its fixes go in one follow-up pull
    request. A contributor's pull request owes nothing here; the maintainer
    who merges it runs this step.
+
+**A host that drives Jig opts in.** Jig's pull requests edit its own skills
+under `.claude/skills/**`, and a pass started without a terminal is denied every
+write there unless its permission prompts are off. So a host that drives Jig
+sets `drive: { pass_args: [--permission-mode, bypassPermissions] }` in its own
+user file once it has checked what its account can reach, and `codex_bypass: true`
+beside it for a Codex account
+([a host's opt-in](plugin/CONFIGURATION.md#a-hosts-opt-in-to-bypass)). This
+repository's own file sets neither, since every Jig script refuses a
+repository's file that does. To drive one pull request on a host that has not
+opted in, arm it with `--pass-args "--permission-mode bypassPermissions"`.
 
 ## Jig's own skills
 
@@ -239,7 +256,10 @@ design. Run all with one command: `bun run gates`. The set, cheapest first:
    no origin references; plugin code reaching Linear only through the
    tracker interface (`scripts/check-tracker-boundary.ts`, with the files
    that still bypass it, each under its reason, in
-   `scripts/tracker-boundary-allow.txt`); the licence files and NOTICE complete
+   `scripts/tracker-boundary-allow.txt`); every hidden marker, drive state
+   family and table the plugin's code names held by the
+   [records registry](GLOSSARY.md), and every registry entry still named
+   (`scripts/check-records-registry.ts`); the licence files and NOTICE complete
    (`scripts/check-licences.ts`); no workflow that runs a fork's code with
    secrets (M7's PR-target safety lint); the workflows meeting M13's pipeline
    conventions (the workflow-convention lint, with its heavy suites in

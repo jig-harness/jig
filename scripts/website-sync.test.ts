@@ -322,7 +322,6 @@ test("a commit that changed the record and the site is an earlier update", () =>
   commit("chore(website): site checked", {
     [RECORD]: record,
     "site/page.astro": "p\n",
-    "changes/website-update.md": "### Changed\n\n- a page\n",
   });
   git("update-ref", "refs/remotes/origin/main", "refs/heads/main");
   expect(plan(root, "main").commits.map((c) => c.kind)).toEqual(["update"]);

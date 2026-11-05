@@ -72,6 +72,7 @@ export async function runConvergencePhase(
       finalCi,
       reviewedHead,
       finalCiSignals,
+      finalStatus.failingRuns,
     );
     if (stage !== null) return stage;
   }

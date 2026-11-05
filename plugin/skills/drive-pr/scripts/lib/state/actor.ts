@@ -1,5 +1,5 @@
 /**
- * Who "this driver" is, for the state file's purposes.
+ * Who "this driver" is, for the stored state's purposes.
  *
  * `drive-state.ts` is shared by every driver working one PR: the store lives in
  * one directory per clone (by default `store.ts`'s
@@ -18,14 +18,14 @@
  * in.
  *
  * Sound CONCURRENTLY, not across time, and the difference is worth stating
- * because the state file outlives worktrees — being clone-wide is the premise
+ * because the stored state outlives worktrees — being clone-wide is the premise
  * of the whole bug. A Conductor workspace deleted and recreated at the same
  * path is routine, and derives the same key, so a genuinely new driver inherits
  * its dead predecessor's identity and its `stamp-held` will stamp that
  * predecessor's leftover holds. Round equality is the remaining guard there
  * (§ 3's reconciliation normally clears such an entry long before), and closing
  * it properly would mean a per-process id that no longer survives the crash
- * recovery this state file exists for — the wrong trade for a residual whose
+ * recovery this stored state exists for — the wrong trade for a residual whose
  * blast radius is one stale hold in a tree nobody is driving from any more.
  *
  * `hold` and `stamp-held` derive this and accept no override: an identity
@@ -171,7 +171,7 @@ async function resolveWorktreeRoot(): Promise<string> {
 /**
  * The actor id stamped onto a hold and matched by `stamp-held`.
  *
- * Prefixed rather than a bare hash so a human reading the state file or the
+ * Prefixed rather than a bare hash so a human reading the stored state or the
  * handoff can tell what kind of thing it identifies without consulting this
  * module.
  */

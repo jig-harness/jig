@@ -1,6 +1,6 @@
 /**
- * What every `--apply` launch shares, a drive's pass or an interactive
- * session (a pickup's, a follow-up's):
+ * What every `--apply` launch shares, a headless pass (a drive's, a
+ * follow-up's) or a pickup's interactive session:
  * the state carried across a tick's repositories, the account admitted
  * afresh against its walls and the identity check, the launch record
  * written before the runtime's `launch` and the slot it holds, and the
@@ -10,7 +10,11 @@ import {
   admitRearm,
   admitTakeover,
   checkIdentity,
+  type CodexOptIn,
+  hostCodexOptIn,
   type IdentityCheck,
+  type NotAdmitted,
+  notAdmitted,
   refreshWalls,
   type Slots,
   slotsOf,
@@ -38,6 +42,7 @@ import {
   type SessionRuntime,
   tabTitle,
 } from "../runtime/port.ts";
+import { passTimeoutSeconds } from "../../../skills/drive-pr/scripts/lib/driver/settings.ts";
 import { PICKUP_SKILL } from "../session.ts";
 import { failureText } from "../text.ts";
 import type {
@@ -57,13 +62,19 @@ export interface ApplyState {
   /** The account of the most recent launch record, where the turn resumes. */
   last: string | null;
   /**
-   * The pass deadline every drive this tick launches runs under, in seconds
-   * (`0` for none): the one the tick reads (`DRIVE_PR_PASS_TIMEOUT`, else
-   * the drive's default), written on the launch record and handed to
-   * `drive.ts` as `--pass-timeout`, so the deadline admission judged is the
-   * one the pass gets.
+   * The pass deadline every headless pass this tick launches runs under, in
+   * seconds (`0` for none): the one the tick reads (`DRIVE_PR_PASS_TIMEOUT`,
+   * else the drive's default), written on the launch record and handed to
+   * `drive.ts` as `--pass-timeout` (a follow-up pass's wrapper enforces it
+   * itself), so the deadline admission judged is the one the pass gets.
    */
   passDeadlineSec: number;
+  /**
+   * This host's opt-in to Codex's bypass, read once for the tick: admission
+   * judges a Codex account by it, and a headless pass's launch record keeps
+   * it, so the pass command does what was judged.
+   */
+  codexOptIn: CodexOptIn;
   /** The workspaces this tick has opened so far, within `OPENS_PER_TICK`. */
   opened?: number;
   /** When the tick began, for its overall deadline. */
@@ -73,6 +84,25 @@ export interface ApplyState {
   /** How many repositories the tick walks, the radix the stages' and targets' turns count in. */
   repos?: number;
   root?: string;
+}
+
+/**
+ * The machine file's accounts a drive's pass is never admitted on, for the
+ * receipt: a vendor with no documented pass command, or a Codex account
+ * while the pass deadline this run reads is `0` or the host has not opted in
+ * to its bypass.
+ */
+export function accountsReport(
+  machine: MachineConfig | null,
+  apply: ApplyState | null,
+): { accountsNotAdmitted?: NotAdmitted[] } {
+  if (machine === null) return {};
+  const refused = notAdmitted(
+    machine.accounts,
+    apply?.passDeadlineSec ?? passTimeoutSeconds(),
+    apply?.codexOptIn ?? hostCodexOptIn(),
+  );
+  return refused.length === 0 ? {} : { accountsNotAdmitted: refused };
 }
 
 /**
@@ -207,7 +237,7 @@ function markOf(record: LaunchRecord): string {
   );
 }
 
-/** What the runtime starts for a record: a drive's headless pass, or a pickup's or a follow-up's interactive session. */
+/** What the runtime starts for a record: a pickup's interactive session, or a headless pass (a drive's, a follow-up's). */
 function stageOf(record: LaunchRecord): LaunchStage {
   const named = {
     title: tabTitle(record.action, nameKey(record)),
@@ -223,16 +253,6 @@ function stageOf(record: LaunchRecord): LaunchStage {
       model: record.model,
       effort: record.effort,
     };
-  if (record.action === "followup")
-    return {
-      kind: "interactive",
-      ...named,
-      record: record.id,
-      skill: record.command ?? "",
-      target: String(record.pr),
-      model: record.model,
-      effort: record.effort,
-    };
   return { kind: "headless", ...named, record: record.id };
 }
 
@@ -244,6 +264,8 @@ async function callLaunch(
   const workspace = record.workspace as { id: string; path: string };
   // A record an older plugin wrote has no mark; the launch marks its workspace, so the record keeps the same one.
   record.mark = markOf(record);
+  // Persist before the runtime is called: a tick that dies awaiting its answer must still find what this launch acts on (a replay's change history included).
+  writeRecord(record, state.root);
   let receipt: RuntimeReceipt;
   try {
     receipt = await state.runtime.launch(
@@ -329,9 +351,9 @@ export function waits(
 }
 
 /**
- * Report every wanted interactive launch, and start none, when the runtime
- * cannot bind an interactive session to the account it bills; true when it
- * reported them.
+ * Report every wanted interactive launch (a pickup's), and start none, when
+ * the runtime cannot bind an interactive session to the account it bills;
+ * true when it reported them.
  */
 export function reportedUnbound(
   state: ApplyState,
@@ -459,6 +481,8 @@ export async function accountBlocked(
     slots.account.configDir !== record.configDir
   )
     return `${slots.account.name} no longer has the vendor and directory the launch was recorded with`;
+  if (record.vendor === "codex" && !state.codexOptIn.on)
+    return `${slots.account.name}: ${state.codexOptIn.why}`;
   if (slots.wallUnrecorded)
     return `${slots.account.name} ended on a wall that was not recorded`;
   if (slots.wall !== null)
@@ -472,24 +496,26 @@ function admission(
   action: Action,
   excluded: ReadonlySet<string>,
 ) {
-  if (action.stage === "pickup" || action.stage === "followup")
+  const codex = state.codexOptIn;
+  if (action.stage === "pickup")
     return admitRearm(
       state.table,
       state.last,
-      { kind: "interactive" },
+      { kind: "interactive", codex },
       excluded,
     );
+  // A follow-up is a headless pass, admitted as a drive's pass is: under the pass deadline it runs under.
   if (action.takeover === undefined)
     return admitRearm(
       state.table,
       state.last,
-      { kind: "pass", deadlineSec: state.passDeadlineSec },
+      { kind: "pass", deadlineSec: state.passDeadlineSec, codex },
       excluded,
     );
   const replaced = state.records.find((r) => r.record.id === action.takeover);
   return replaced === undefined
     ? { waits: `the launch record ${action.takeover} it replaces is gone` }
-    : admitTakeover(state.table, replaced, state.passDeadlineSec);
+    : admitTakeover(state.table, replaced, state.passDeadlineSec, codex);
 }
 
 /**

@@ -11,12 +11,13 @@
  * the longest prefix of its working directory winning), else `FAKE_GH_REPO`.
  */
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
-import { hostname, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { putLock } from "./state-rows.ts";
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
 const ATTACH = join(SCRIPTS, "attach-pr.ts");
@@ -214,6 +215,30 @@ export function makeClone(): Clone {
   return clone;
 }
 
+/**
+ * Leave `tree`, on the PR's head branch, as a conflict-resolve pass refused its
+ * commit leaves it: the base's conflicting commit merged, resolved and staged,
+ * never concluded. Its `MERGE_HEAD` stands, and its HEAD is still the PR's head.
+ */
+export function leaveStagedMerge(c: Clone, tree: string): void {
+  writeFileSync(join(c.primary, "feature.txt"), "the base's\n");
+  c.git(c.primary, "add", "-A");
+  c.git(c.primary, "commit", "-qm", "the base conflicts");
+  c.git(c.primary, "push", "-q", "origin", "HEAD:main");
+  c.git(tree, "fetch", "-q", "origin", "main");
+  const merge = spawn(tree, ["git", "merge", "origin/main"], c.env);
+  expectSpawnExit(merge, 1, "git merge origin/main");
+  writeFileSync(join(tree, "feature.txt"), "resolved\n");
+  c.git(tree, "add", "feature.txt");
+  c.git(tree, "rev-parse", "-q", "--verify", "MERGE_HEAD");
+}
+
+/** Whether a merge is open in `tree`. */
+export function mergeOpenIn(c: Clone, tree: string): boolean {
+  const argv = ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"];
+  return spawn(tree, argv, c.env).exitCode === 0;
+}
+
 /** The drive state of PR #42 as the clone at `cwd` reads it. */
 export function driveState(clone: Clone, cwd: string): Record<string, unknown> {
   const r = clone.script(cwd, "drive-state.ts", "get", "42");
@@ -231,14 +256,9 @@ export function branchOf(clone: Clone, tree: string): string {
   return r.exitCode === 0 ? r.stdout.trim() : "";
 }
 
-/** Plant a live driver's claim on the lock `name` in the clone's state. */
+/** Plant the driver lock `name` in the clone's state, held by this live process. */
 export function plantLiveLock(clone: Clone, name: string): void {
-  const lock = join(clone.env.DRIVE_PR_STATE_DIR as string, name);
-  mkdirSync(lock, { recursive: true });
-  writeFileSync(
-    join(lock, "claim.live0001"),
-    `${process.pid} ${hostname()} ${process.platform}\n`,
-  );
+  putLock(clone.env.DRIVE_PR_STATE_DIR as string, name, { token: "live0001" });
 }
 
 /** The worktree lock's name for `tree`, as `drive.ts` there computes it. */

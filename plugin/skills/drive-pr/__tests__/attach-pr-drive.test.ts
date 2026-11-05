@@ -14,6 +14,8 @@ import {
   type Clone,
   driveState,
   makeClone,
+  leaveStagedMerge,
+  mergeOpenIn,
   plantLiveLock,
   worktreeLock,
 } from "./attach-pr-fixtures.ts";
@@ -44,6 +46,34 @@ describe("drive.ts attaches under both its locks", () => {
     expect(r.stderr).toContain("uncommitted changes");
   });
 
+  test("and reaches its rounds over a merge left staged at the PR's head", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    c.git(tree, "switch", "-q", "feature");
+    leaveStagedMerge(c, tree);
+    const r = drive(c, tree);
+    // Past the attach: the fake forge answers nothing a gate asks.
+    expect(r.stderr).toContain("attach: PR #42 on 'feature'");
+    expect(r.stderr).not.toContain("uncommitted changes");
+    expect(mergeOpenIn(c, tree)).toBe(true);
+  });
+
+  test("and stops on a merge left staged behind a head that has moved on", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    c.git(tree, "switch", "-q", "feature");
+    leaveStagedMerge(c, tree);
+    const pusher = c.tree("pusher");
+    c.git(pusher, "fetch", "-q", "origin", "feature");
+    c.git(pusher, "checkout", "-q", "--detach", "FETCH_HEAD");
+    c.commit(pusher, "pushed.txt");
+    c.git(pusher, "push", "-q", "origin", "HEAD:feature");
+    const r = drive(c, tree);
+    expectSpawnExit(r, 2, "drive.ts");
+    expect(r.stderr).toContain("uncommitted changes");
+    expect(mergeOpenIn(c, tree)).toBe(true);
+  });
+
   test("never moving a tree another PR's live driver holds", () => {
     const c = fresh();
     const tree = c.tree("wt1");
@@ -58,7 +88,7 @@ describe("drive.ts attaches under both its locks", () => {
     const c = fresh();
     const tree = c.tree("wt1");
     const before = c.git(tree, "rev-parse", "HEAD");
-    plantLiveLock(c, "pr-drive-42.lock");
+    plantLiveLock(c, "pr-drive-42");
     const r = drive(c, tree);
     expectSpawnExit(r, 11, "drive.ts");
     // The PR's lock refuses before the attach runs.
@@ -130,7 +160,7 @@ describe("drive.ts attaches under both its locks", () => {
     const c = fresh();
     const tree = c.tree("wt1");
     const before = c.git(tree, "rev-parse", "HEAD");
-    plantLiveLock(c, "pr-drive-42.lock");
+    plantLiveLock(c, "pr-drive-42");
     // GitHub reads `042` as #42; a lock keyed `042` would not exclude #42's
     // live driver.
     const r = c.script(tree, "drive.ts", "042", "--", "true", "042");
@@ -141,12 +171,40 @@ describe("drive.ts attaches under both its locks", () => {
   });
 });
 
+describe("base-sync.ts over a merge left open", () => {
+  /** A tree on the PR's head branch holding a staged merge, and `base-sync.ts` run in it. */
+  function baseSync(env: Record<string, string>) {
+    const c = fresh();
+    c.pr({ baseRefName: "main" });
+    Object.assign(c.env, { FAKE_GH_REPO: "example/app", ...env });
+    const tree = c.tree("wt1");
+    c.git(tree, "switch", "-q", "feature");
+    leaveStagedMerge(c, tree);
+    const r = c.script(tree, "base-sync.ts", "42");
+    expect(mergeOpenIn(c, tree)).toBe(true);
+    return r;
+  }
+
+  test("sends a conflict-resolve round to finish or restart it", () => {
+    const r = baseSync({ DRIVE_PR_ROUND_TASK: "conflict-resolve" });
+    expectSpawnExit(r, 3, "base-sync.ts");
+    expect(r.stderr).toContain("unconcluded git operation (MERGE_HEAD)");
+    expect(r.stderr).toContain("finish that merge, or abort it and start over");
+  });
+
+  test("tells any other caller to conclude or abort it", () => {
+    const r = baseSync({});
+    expectSpawnExit(r, 3, "base-sync.ts");
+    expect(r.stderr).toContain("Conclude or abort it first");
+  });
+});
+
 describe("DRIVE_PR_ATTACH", () => {
   test("off drives the tree as it stands", () => {
     const c = fresh();
     const tree = c.tree("wt1");
     writeFileSync(join(tree, "scratch.txt"), "left over\n");
-    plantLiveLock(c, "pr-drive-42.lock");
+    plantLiveLock(c, "pr-drive-42");
     const r = drive(c, tree, { DRIVE_PR_ATTACH: "off" });
     // No attach refusal over the dirty tree: the PR lock is what stops it.
     expectSpawnExit(r, 11, "drive.ts");

@@ -47,6 +47,24 @@ Orca is its first session runtime
 ([ADR-0011](docs/adr/ADR-0011-the-dispatcher-targets-orca-first.md)),
 with others through the same interface.
 
+### 36. The dispatch board: what is driven and what is ready to merge
+
+The dispatch dashboard leads with a Ready to merge list of the converged
+pull requests a person can merge now. Each has a merge command that refuses
+a pull request changed since its review. A pull request with a known approval
+need stands beside them, naming requested reviewers or saying nobody was asked.
+Its card says other merge rules remain unread and the forge may require more.
+A pull request is ready only when the forge itself confirms its review, and an outside contributor's always needs a person's approval. Every
+pull request shows the same status at a glance: conflicts, checks with the
+failing ones named, unresolved review threads, and whether it is ready, with
+the reason when not. Every card says whether it settles by waiting or waits
+on a person. A person is told once when a pull request becomes ready, and
+the history shows how long ready work waited and how much was lost to
+waiting. Then a board view shows every piece of work the dispatcher knows,
+whoever drives it, in one column: coming, picking up, driven, needs you,
+ready to merge, or merged. Work moves in any direction, and a pull request
+that was ready and moved back says why. Merging stays a person's.
+
 ### 35. One jig command line
 
 The plugin's machine-level tools become one `jig` command on `PATH`, with
@@ -61,6 +79,21 @@ on its channel's newest version with nobody at the keyboard; a pinned
 machine receives nothing. Help for every command and shell completion come
 from the same definitions that parse the command line, and the jobs a
 machine already installed keep running unchanged.
+
+### 37. Records every part of the line can read
+
+Jig's parts never share a process. They work together through what each
+leaves behind: a drive's state on the machine, its ledger on the pull
+request, the dispatcher's launch records. Every record says what it is,
+what it is about, who wrote it and when, in the same fields: its
+[record envelope](GLOSSARY.md). One list names every record, and Jig's
+checks catch unregistered hidden-marker literals, tagged drive state
+families and SQLite table declarations; review keeps other records in the list. Each tool keeps its
+machine records in a database of its own, which an older version reads
+unless a change requires the newer one. A second machine reads from the
+pull request who holds a session and whether a follow-up finished, so two
+machines do not start the same work. No resident service coordinates them,
+since every message has to outlive its sender anyway.
 
 ### 3. The kickoff family
 
@@ -254,6 +287,14 @@ dispatcher will read each account's usage from Orca's command line once
 Orca offers it, and a small plugin Orca loads will run a dispatcher tick
 the moment an agent stops or waits. The plugin is Orca-bound.
 
+### 38. One look for Jig's pages
+
+The pages Jig's tooling draws will share one look: the dispatch dashboard,
+the decision, explainer and audit sheets, and the code-stats report. Each
+will follow the reader's light or dark setting and carry Jig's mark as its
+icon. Every text colour will meet WCAG AA, the Web Content Accessibility
+Guidelines' minimum contrast, in both modes.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** A reusable reconciler for
@@ -263,6 +304,9 @@ the moment an agent stops or waits. The plugin is Orca-bound.
 
 - **Jira store for reflections.** Reflections kept as Jira issues, for a team
   that tracks its work in Jira.
+- **A repository's theme.** A team gives its pages an accent colour and a
+  mark of its own. Jig derives the other colours, so the pages stay
+  readable in light and dark.
 - **More skills.** `scaffolding-update`, which keeps agent instruction files
   in step with decisions and audits them
   ([M0](modules/M0-instruction-architecture/README.md)), and a review skill

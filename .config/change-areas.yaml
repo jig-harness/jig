@@ -75,6 +75,7 @@ areas:
           - "bun.lock"
           - "mise.toml"
           - "dashboard/**"
+          - "website/public/brand/jig-mark-adaptive.svg"
           - "plugin/dispatch/lib/dashboard-contract.ts"
         command: "bun dashboard/build.ts"
         check: "bun dashboard/build.ts --check"

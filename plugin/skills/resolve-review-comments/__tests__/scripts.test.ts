@@ -21,7 +21,8 @@
  * (`pnpm skill-scripts:test` does).
  *
  * The thread writers have their own file (scripts-thread-writes.test.ts), and
- * so do `run()`'s cancellation and kill paths (scripts-proc.test.ts); the stub
+ * so do `run()`'s cancellation and kill paths (scripts-proc.test.ts) and the
+ * review round counting (scripts-rounds.test.ts); the stub
  * `gh` and the fixture helpers all three share are in scripts-harness.ts.
  */
 
@@ -47,8 +48,6 @@ import {
 } from "../scripts/reply-to-thread.ts";
 import {
   SCRIPTS,
-  HEAD_A,
-  HEAD_B,
   tmpRoot,
   binDir,
   repoDir,
@@ -58,7 +57,7 @@ import {
   thread,
   writeFixture,
   runScript,
-  roundsFile,
+  rounds,
   useStubForge,
   copySkillScripts,
 } from "./scripts-harness.ts";
@@ -713,205 +712,6 @@ describe.skipIf(process.platform === "win32")(
       ).toBe(3);
     });
 
-    it("counts a round per distinct head, not per invocation", () => {
-      const fix = writeFixture({ threads: [thread("PRRT_a")] });
-      runScript("await-round.ts", [fix.pr, "--once"], fix);
-      expect(readFileSync(roundsFile(fix.pr), "utf8").trim()).toBe("1");
-      // A retry on the same head is a driver retry, not a reviewer round.
-      runScript("await-round.ts", [fix.pr, "--once"], fix);
-      expect(readFileSync(roundsFile(fix.pr), "utf8").trim()).toBe("1");
-      // A new push IS a new round.
-      writeFileSync(join(fix.dir, "head"), `${HEAD_B}\n`);
-      runScript("await-round.ts", [fix.pr, "--once"], fix);
-      expect(readFileSync(roundsFile(fix.pr), "utf8").trim()).toBe("2");
-    });
-
-    // The counter and its head key are two separate writes, so the ORDER decides
-    // which way an interruption between them falls. Head first: the round is
-    // lost, which only delays the decline-only cutoff. Count first — the
-    // previous order — left a valid count paired with a stale head, so the next
-    // call re-counted the SAME round and could arm the cutoff early.
-    //
-    // Reproducing the intermediate state by hand proves nothing: the script
-    // behaves identically given either state, and the fix changes which state is
-    // REACHABLE. So make the second write fail instead — a directory where the
-    // counter file belongs — and read which file exists afterwards. Under the
-    // old order the counter write is first and throws, leaving no `.head`;
-    // under this one the head is already on disk when it throws.
-    it("writes the head key before the count, so an interrupted bump cannot strand one", () => {
-      const fix = writeFixture({ threads: [thread("PRRT_a")] });
-      mkdirSync(roundsFile(fix.pr));
-      runScript("await-round.ts", [fix.pr, "--once"], fix);
-      expect(existsSync(`${roundsFile(fix.pr)}.head`)).toBe(true);
-      expect(readFileSync(`${roundsFile(fix.pr)}.head`, "utf8").trim()).toBe(
-        HEAD_A,
-      );
-    });
-
-    // An unresolved head used to increment anyway AND leave `.head` unwritten,
-    // so the dedup above could not fire and every retry counted again — a
-    // retried round 3 arriving as round 4. Harmless for the advisory nudge,
-    // not harmless now that the ordinal decides disposition.
-    it("does not count a round when the head cannot be resolved", () => {
-      const fix = writeFixture({ threads: [thread("PRRT_a")] });
-      // One real round first, so the probe distinguishes "refused to bump" from
-      // "never bumped at all".
-      runScript("await-round.ts", [fix.pr, "--once"], fix);
-      expect(readFileSync(roundsFile(fix.pr), "utf8").trim()).toBe("1");
-      rmSync(join(fix.dir, "head"), { force: true });
-      runScript("await-round.ts", [fix.pr, "--once"], fix);
-      runScript("await-round.ts", [fix.pr, "--once"], fix);
-      expect(readFileSync(roundsFile(fix.pr), "utf8").trim()).toBe("1");
-    });
-
-    it("--no-count inspects without counting", () => {
-      const fix = writeFixture({ threads: [thread("PRRT_a")] });
-      runScript("await-round.ts", [fix.pr, "--once", "--no-count"], fix);
-      expect(existsSync(roundsFile(fix.pr))).toBe(false);
-    });
-
-    it("nudges structural escalation on every counted round past the threshold", () => {
-      const fix = writeFixture({ threads: [thread("PRRT_a")] });
-      const r = runScript("await-round.ts", [fix.pr, "--once"], fix, {
-        env: { REFLECT_THRESHOLD: "0" },
-      });
-      expect(r.code).toBe(0);
-      expect(r.stderr).toContain("stop patching variants");
-    });
-
-    it("an empty REFLECT_THRESHOLD takes the documented default", () => {
-      // `?? '3'` keeps `''`, which isDigits rejects — so a variable exported
-      // empty by optional templating turned a documented default into a usage
-      // exit 2 in both entry points.
-      // Default 3 means one counted round must NOT nudge; '0' above proves the
-      // nudge still fires when the threshold really is 0, so this is not merely
-      // asserting silence.
-      const fix = writeFixture({ threads: [thread("PRRT_a")] });
-      const r = runScript("await-round.ts", [fix.pr, "--once"], fix, {
-        env: { REFLECT_THRESHOLD: "" },
-      });
-      expect({
-        code: r.code,
-        nudged: r.stderr.includes("stop patching variants"),
-      }).toEqual({ code: 0, nudged: false });
-
-      // converge.ts validates the same variable up front, and regressed the same
-      // way. Empty must reach the round loop rather than fail as a usage error.
-      const cfix = writeFixture({ threads: [] });
-      const c = runScript(
-        "converge.ts",
-        [cfix.pr, "--", process.execPath, "-e", "process.exit(0)", cfix.pr],
-        cfix,
-        { env: { REFLECT_THRESHOLD: "" } },
-      );
-      expect(c.code).toBe(0);
-
-      // A genuine typo still refuses, in both.
-      expect(
-        runScript("await-round.ts", [fix.pr, "--once"], fix, {
-          env: { REFLECT_THRESHOLD: "x" },
-        }).code,
-      ).toBe(2);
-      expect(
-        runScript(
-          "converge.ts",
-          [cfix.pr, "--", process.execPath, "-e", "process.exit(0)", cfix.pr],
-          cfix,
-          { env: { REFLECT_THRESHOLD: "x" } },
-        ).code,
-      ).toBe(2);
-    });
-
-    it("with reflection on, notes the round count and asks for /jig:reflect at wind-down, and resets the counter", () => {
-      const fix = writeFixture({ threads: [] });
-      writeFileSync(roundsFile(fix.pr), "5\n");
-      const journal = join(fix.dir, "journal.jsonl");
-      const r = runScript("await-round.ts", [fix.pr, "--once"], fix, {
-        env: {
-          JIG__REFLECTION__ENABLED: "true",
-          JIG__REFLECTION__JOURNAL: journal,
-        },
-      });
-      expect(r.code).toBe(3);
-      expect(r.stderr).toContain("converged after 5 rounds");
-      expect(r.stderr).toContain("/jig:reflect");
-      expect(existsSync(roundsFile(fix.pr))).toBe(false);
-      const noted = JSON.parse(readFileSync(journal, "utf8").trim());
-      expect(noted).toMatchObject({
-        type: "finding",
-        class: "review-took-many-rounds",
-        change: { pull_request: Number(fix.pr) },
-        title: `Pull request #${fix.pr} took 5 review rounds to converge`,
-      });
-      expect(noted.session.skills).toEqual(["resolve-review-comments"]);
-
-      // Another long review of the same pull request is a new measurement.
-      writeFileSync(roundsFile(fix.pr), "7\n");
-      const again = runScript("await-round.ts", [fix.pr, "--once"], fix, {
-        env: {
-          JIG__REFLECTION__ENABLED: "true",
-          JIG__REFLECTION__JOURNAL: journal,
-        },
-      });
-      expect(again.code).toBe(3);
-      const titles = readFileSync(journal, "utf8")
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line).title);
-      expect(titles).toEqual([
-        `Pull request #${fix.pr} took 5 review rounds to converge`,
-        `Pull request #${fix.pr} took 7 review rounds to converge`,
-      ]);
-    });
-
-    it("keeps the round count when the journal cannot take it, and says so", () => {
-      const fix = writeFixture({ threads: [] });
-      writeFileSync(roundsFile(fix.pr), "5\n");
-      // A directory where the journal file should be: the write fails.
-      const journal = join(fix.dir, "journal-dir");
-      mkdirSync(journal);
-      const r = runScript("await-round.ts", [fix.pr, "--once"], fix, {
-        env: {
-          JIG__REFLECTION__ENABLED: "true",
-          JIG__REFLECTION__JOURNAL: journal,
-        },
-      });
-      expect(r.code).toBe(3);
-      expect(r.stderr).toContain(
-        "could not be written to the reflection journal",
-      );
-      expect(r.stderr).not.toContain("is in the reflection journal");
-      expect(readFileSync(roundsFile(fix.pr), "utf8").trim()).toBe("5");
-      rmSync(roundsFile(fix.pr), { force: true });
-      rmSync(`${roundsFile(fix.pr)}.head`, { force: true });
-    });
-
-    it("with reflection off, resets the counter without asking for a reflection", () => {
-      const fix = writeFixture({ threads: [] });
-      writeFileSync(roundsFile(fix.pr), "5\n");
-      const r = runScript("await-round.ts", [fix.pr, "--once"], fix);
-      expect(r.code).toBe(3);
-      expect(r.stderr).not.toContain("converged after 5 rounds");
-      expect(r.stderr).not.toContain("reflect");
-      expect(existsSync(roundsFile(fix.pr))).toBe(false);
-    });
-
-    it("a converged --no-count probe neither erases the counter nor fires the prompt", () => {
-      const fix = writeFixture({ threads: [] });
-      writeFileSync(roundsFile(fix.pr), "5\n");
-      const r = runScript(
-        "await-round.ts",
-        [fix.pr, "--once", "--no-count"],
-        fix,
-        { env: { JIG__REFLECTION__ENABLED: "true" } },
-      );
-      expect(r.code).toBe(3);
-      expect(r.stderr).not.toContain("reflect");
-      expect(readFileSync(roundsFile(fix.pr), "utf8").trim()).toBe("5");
-      rmSync(roundsFile(fix.pr), { force: true });
-      rmSync(`${roundsFile(fix.pr)}.head`, { force: true });
-    });
-
     it("exit 2: usage errors are usage errors", () => {
       const fix = writeFixture({});
       for (const args of [
@@ -1083,7 +883,7 @@ describe.skipIf(process.platform === "win32")(
         passRan: false,
       });
       expect(r.stderr).toContain("(dry-run) would run:");
-      expect(existsSync(roundsFile(fix.pr))).toBe(false);
+      expect(rounds(fix.pr).round).toBe(0);
     });
 
     it("exports the target PR and bot scope out-of-band to the pass", () => {
