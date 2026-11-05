@@ -39,7 +39,11 @@ Ask these of every `content` commit. One yes is enough to look closer.
 
 - **Home page** (`website/src/pages/index.astro`): the limits list (what Jig
   never does, each with its source), the line on modules under the hero,
-  the ladder paragraph, the day-one paragraph, the profile-graduation line.
+  the ladder paragraph, the day-one paragraph, the profile-graduation line,
+  and the dispatch dashboard's band (what the page answers, and what it never
+  does). The dashboard's shots (`website/public/shots/`) are taken from its
+  fixtures: a commit that changes the dashboard's page or its `loud` fixture
+  owes `bun run dashboard-shots` in `website/`.
   The recorded run (`website/src/data/walkthrough.yaml`) is copied by hand
   from one pull request and the dispatcher's records, and its parser checks
   station names, actors, required fields, valid dates and times,

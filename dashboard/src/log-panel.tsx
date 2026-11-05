@@ -7,7 +7,7 @@ import { useDebouncedCallback } from "@tanstack/react-pacer/debouncer";
 import { useContext, useEffect, useState } from "react";
 import type { RowsAnswer } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { CopyButton } from "./copy.tsx";
-import { Pips, PopupRoot } from "./fold.tsx";
+import { PanelHelp, Pips, PopupRoot } from "./fold.tsx";
 import { inputOf } from "./format.ts";
 import { LogTable } from "./log-table.tsx";
 import {
@@ -20,6 +20,7 @@ import {
 } from "./log-view.ts";
 import { Mark } from "./marks.tsx";
 import { type LogFilter, pageQuery, viewQuery } from "./search.ts";
+import { type Theme, themeSearch } from "./theme.ts";
 
 const REASON_WAIT_MS = 300;
 
@@ -200,6 +201,7 @@ function Recurring({
 }
 
 export function LogPanel({
+  theme,
   answer,
   filter,
   setFilter,
@@ -207,6 +209,7 @@ export function LogPanel({
   rowClock,
   forges,
 }: {
+  theme: Theme;
   answer: RowsAnswer | null;
   filter: LogFilter;
   setFilter: (patch: Partial<LogFilter>) => void;
@@ -224,6 +227,13 @@ export function LogPanel({
     <section className="panel" id="history" aria-labelledby="h-log">
       <div className="panelHead">
         <h2 id="h-log">How it went</h2>
+        <PanelHelp panel="How it went">
+          The outcome log: one row per ended launch, with its class and the
+          reason it gave. Filter by time, repository, stage, account, class and
+          reason; the filters are the page's address, so Copy link shares this
+          view. A class that recurs on a repository across nights is listed
+          above the rows.
+        </PanelHelp>
         <span className="sm mut">
           The outcome log, newest first. Tap a row for its whole reason.
         </span>
@@ -315,7 +325,7 @@ export function LogPanel({
               <span className="m path">{viewQuery(filter)}</span>
             </span>
             <CopyButton
-              text={`${location.origin}${location.pathname}${pageQuery(filter, location.search)}`}
+              text={`${location.origin}${location.pathname}${pageQuery(filter, themeSearch(location.search, theme))}`}
               idle="Copy link"
               aria="Copy the link to this view"
             />

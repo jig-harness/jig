@@ -3,12 +3,13 @@
  * it came from. The cap at the foot says items cannot be added here; it is never
  * a control.
  */
-import { useState } from "react";
 import type { LineSnapshot } from "../../plugin/dispatch/lib/dashboard-contract.ts";
 import { CopyButton } from "./copy.tsx";
+import { PanelHelp, SourceHint } from "./fold.tsx";
 import { Mark } from "./marks.tsx";
+import { MoreToggle, SHOWN_CLOSED, useShowAll } from "./more.tsx";
 import { type QueueItemView, queueGroups } from "./queue-view.ts";
-import { asOfOf, type Clock } from "./view.ts";
+import type { Clock } from "./view.ts";
 
 function QueueItem({ item, rest }: { item: QueueItemView; rest: boolean }) {
   return (
@@ -28,7 +29,7 @@ function QueueItem({ item, rest }: { item: QueueItemView; rest: boolean }) {
           </a>
         )}
         <span className="m sm mut">{item.repo}</span>
-        <span className="chip">{item.source}</span>
+        <SourceHint source={item.source} />
         {item.wait === null ? null : (
           <span className="m sm mut end nowrap">{item.wait}</span>
         )}
@@ -61,15 +62,26 @@ export function QueuePanel({
   line: LineSnapshot | null;
   clock: Clock;
 }) {
-  const [all, setAll] = useState(false);
+  const [all, setAll, panel] = useShowAll();
   const groups = line === null ? [] : queueGroups(line, clock);
   const total = groups.reduce((sum, g) => sum + g.items.length, 0);
   let seen = 0;
   return (
-    <section className="panel pQueue" id="queue" aria-labelledby="h-queue">
+    <section
+      className="panel pQueue"
+      id="queue"
+      aria-labelledby="h-queue"
+      ref={panel}
+    >
       <div className="panelHead">
         <h2 id="h-queue">What is coming</h2>
-        <span className="asof m">{asOfOf(line, clock.timeZone)}</span>
+        <PanelHelp panel="What is coming">
+          What the next ticks will do with each target, in the order it will
+          happen: started when an account has a free slot, held, reported
+          without starting, or never started. Hover a source to see where an
+          item came from.
+        </PanelHelp>
+        <MoreToggle count={total} all={all} setAll={setAll} where="head" />
       </div>
       {total > 0 ? null : (
         <p className="emptyLine">
@@ -88,22 +100,13 @@ export function QueuePanel({
               </p>
             )}
             {g.items.map((item) => {
-              const rest = seen >= 2;
+              const rest = seen >= SHOWN_CLOSED;
               seen++;
               return <QueueItem item={item} rest={rest} key={item.rowKey} />;
             })}
           </div>
         ))}
-        {total > 2 ? (
-          <button
-            className="moreBtn"
-            type="button"
-            aria-expanded={all}
-            onClick={() => setAll(!all)}
-          >
-            {all ? "Show only the first 2" : `Show all ${total}`}
-          </button>
-        ) : null}
+        <MoreToggle count={total} all={all} setAll={setAll} where="foot" />
       </div>
       <div className="ghost">
         <span className="mk plan" aria-hidden="true" />

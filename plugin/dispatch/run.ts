@@ -51,6 +51,7 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { swallow } from "../shared/errors.ts";
+import { captureIdentity } from "../shared/liveness.ts";
 import {
   driveExitClosesTab,
   endOwnTab,
@@ -68,7 +69,6 @@ import {
   claimRecord,
   isDrive,
   type LaunchRecord,
-  ownIdentity,
   readRecord,
   readResult,
   recordExit,
@@ -243,14 +243,13 @@ async function wrap(id: string, token: string): Promise<number> {
     console.error(`jig dispatch run: ${id} names no workspace`);
     return 2;
   }
-  const identity = await ownIdentity();
-  if (identity === null) {
-    console.error(
-      "jig dispatch run: the process table cannot be read; not starting",
-    );
+  const identity = await captureIdentity();
+  if (!identity.ok) {
+    console.error(`jig dispatch run: ${identity.failure.reason}; not starting`);
     return 2;
   }
-  if (!claimRecord(id, identity)) {
+  const claim = { ...identity.value, claimedAt: new Date().toISOString() };
+  if (!claimRecord(id, claim)) {
     console.error(
       `jig dispatch run: ${id} is already claimed; nothing started`,
     );

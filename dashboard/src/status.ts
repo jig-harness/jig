@@ -28,7 +28,7 @@ export const ROLES: Record<RoleKey, Role> = {
     word: "needs a person",
     glyph: "",
     rc: "r-needs",
-    meaning: "The line waits on a human and nothing else will move it.",
+    meaning: "The work waits on a person and nothing else will move it.",
   },
   working: {
     word: "working",
@@ -163,6 +163,77 @@ const STAGES: Record<string, string> = {
   notify: "*",
   steer: "^",
 };
+
+/** The words the running panel's readers need, each with what it means. */
+export const TERMS: Array<{ word: string; meaning: string }> = [
+  {
+    word: "slot",
+    meaning:
+      "One of an account’s concurrent-session places, held by a launch record that is pending, alive or unknown. A takeover and the record it replaces count as one. A parked drive holds none.",
+  },
+  {
+    word: "wall",
+    meaning:
+      "A subscription account’s usage limit, recorded once a session stops on it. The account is left out of every launch until the wall’s reset.",
+  },
+  {
+    word: "drifting",
+    meaning:
+      "A running stage outside its expectation: threads not falling, no pull request in time. Reported and notified, never acted on.",
+  },
+  {
+    word: "nudge",
+    meaning:
+      "The one fixed prompt the dispatcher may send by itself: “continue”, to a session waiting after a usage limit that has since reset.",
+  },
+];
+
+/** What each stage does, for the popover its chip opens. */
+const STAGE_MEANINGS: Record<string, string> = {
+  pickup:
+    "Starting a tracker item assigned to the factory identity: one workspace and one do-item session.",
+  rearm:
+    "Restarting a stopped drive, the unattended review loop on a pull request, on an account with a free slot.",
+  takeover:
+    "Replacing a wedged driver: a new session runs in the slot the old one held.",
+  followup:
+    "After a pull request merges, one session settles what the merge still owes.",
+  notify:
+    "Telling a person, once per cause, about a stop only a person can settle.",
+  steer:
+    "The one fixed prompt the dispatcher may send by itself: “continue”, to a session waiting after a usage limit that has since reset.",
+};
+
+/** What a stage does; a stage the page does not know says so. */
+export function stageMeaning(stage: string): string {
+  return Object.hasOwn(STAGE_MEANINGS, stage)
+    ? (STAGE_MEANINGS[stage] ?? "")
+    : "A stage this page has no description for.";
+}
+
+/** Where a queued target came from, for the popover its chip opens. */
+const SOURCE_MEANINGS: Record<string, string> = {
+  "re-armable":
+    "A drive that stopped in a way the dispatcher may restart by itself, such as on a usage limit or once every parked item is answered.",
+  "label drive":
+    "A pull request carrying the drive label, which asks the dispatcher to arm a drive on it.",
+  held: "Kept off by a hold label or behind a serialized leader: no stage starts on it while that stands.",
+  assigned:
+    "A tracker item assigned to the factory identity, waiting for a pickup.",
+  merged: "A merged pull request waiting for its follow-up session.",
+};
+
+/** Every source with what it means, for the help view. */
+export const SOURCE_LEGEND = Object.entries(SOURCE_MEANINGS).map(
+  ([name, meaning]) => ({ name, meaning }),
+);
+
+/** Where a queued target came from; a source the page does not know says so. */
+export function sourceMeaning(source: string): string {
+  return Object.hasOwn(SOURCE_MEANINGS, source)
+    ? (SOURCE_MEANINGS[source] ?? "")
+    : "A source this page has no description for.";
+}
 
 /** A recorded word's role; a word the mapping does not place is `unknown`. */
 export function roleOf(set: RecordedSet, value: string): Role {

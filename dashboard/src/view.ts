@@ -33,45 +33,64 @@ export function isOverdue(line: LineSnapshot, nowMs: number): boolean {
   );
 }
 
-export interface StripView {
-  main: string;
-  sub: string;
+/** How fresh what the page shows is: a few words for the strip, the facts for its hint. */
+export interface FreshView {
+  short: string;
+  /** One sentence per fact, for the hint the strip's words open. */
+  detail: string[];
   alarm: boolean;
 }
 
-/** The strip's one fact: when the newest tick ran, and what is known of the next. */
-export function stripOf(
+/** How old the newest tick is, and what is known of the next. */
+export function freshOf(
   line: LineSnapshot | null,
   clockNow: Clock,
   gone: boolean,
-): StripView {
+): FreshView {
   if (line === null)
     return gone
       ? {
-          main: "Newest tick not known",
-          sub: "server not answering",
+          short: "Not read",
+          detail: [
+            "The server is not answering, and no tick was read before it stopped.",
+          ],
           alarm: true,
         }
-      : { main: "No tick yet", sub: "no receipt on this host", alarm: false };
+      : {
+          short: "No tick yet",
+          detail: ["No tick has written what it found on this host yet."],
+          alarm: false,
+        };
   const { nowMs, timeZone } = clockNow;
   const tick = Date.parse(line.startedAt);
   const due = tick + line.intervalMs;
-  const main = `Tick ${clock(tick, timeZone)}, ${ago(tick, nowMs)} ago`;
-  if (gone) return { main, sub: "server not answering", alarm: true };
+  const shows = `The running, needs-you and queue panels show what the ${clock(tick, timeZone)} tick found, host time; the log is read on its own.`;
+  const age = `Updated ${ago(tick, nowMs)} ago`;
+  const next = `The next tick ${nowMs > due ? "was" : "is"} due ${clock(due, timeZone)}.`;
+  if (gone)
+    return {
+      short: `${age} · offline`,
+      detail: [
+        shows,
+        next,
+        "The server is not answering, so nothing newer can be read.",
+      ],
+      alarm: true,
+    };
   return isOverdue(line, nowMs)
     ? {
-        main,
-        sub: `next was due ${clock(due, timeZone)}, overdue ${ago(due, nowMs)}`,
+        short: `${age} · overdue`,
+        detail: [
+          shows,
+          `The next tick was due ${clock(due, timeZone)}; it is ${ago(due, nowMs)} overdue.`,
+        ],
         alarm: true,
       }
-    : { main, sub: `next due ${clock(due, timeZone)}`, alarm: false };
-}
-
-/** `as of the 16:45 tick`. */
-export function asOfOf(line: LineSnapshot | null, timeZone: string): string {
-  return line === null
-    ? "no tick yet"
-    : `as of the ${clock(Date.parse(line.startedAt), timeZone)} tick`;
+    : {
+        short: age,
+        detail: [shows, `The next tick is due ${clock(due, timeZone)}.`],
+        alarm: false,
+      };
 }
 
 /** The banner for a timer that has stopped ticking. */

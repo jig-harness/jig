@@ -1,0 +1,100 @@
+---
+// The dispatch dashboard as the plugin serves it, over the dashboard's own
+// sample data: the desk view framed, the phone view standing over its lower
+// corner. Each view is drawn in both themes by scripts/dashboard-shots.ts,
+// and the one matching the reader's theme shows; a narrow window shows the
+// phone alone.
+interface Props {
+  caption: string;
+}
+const { caption } = Astro.props;
+const DESK_ALT =
+  "The dispatch dashboard on a desk: the people it waits on first, each with the question and the recommended answer, beside each account's sessions and what starts next.";
+const PHONE_ALT = "The same dashboard on a phone, opening on what needs a person.";
+---
+
+<figure class="dash-shot">
+  <div class="dash-views">
+    <div class="dash-desk">
+      <img class="shot-light" src="/shots/dashboard-desk-light.webp" alt={DESK_ALT} width="1800" height="1200" loading="lazy" decoding="async" />
+      <img class="shot-dark" src="/shots/dashboard-desk-dark.webp" alt={DESK_ALT} width="1800" height="1200" loading="lazy" decoding="async" />
+    </div>
+    <div class="dash-phone">
+      <img class="shot-light" src="/shots/dashboard-phone-light.webp" alt={PHONE_ALT} width="600" height="1299" loading="lazy" decoding="async" />
+      <img class="shot-dark" src="/shots/dashboard-phone-dark.webp" alt={PHONE_ALT} width="600" height="1299" loading="lazy" decoding="async" />
+    </div>
+  </div>
+  <figcaption>{caption}</figcaption>
+</figure>
+
+<style>
+  .dash-shot {
+    margin: 0;
+  }
+  .dash-views {
+    position: relative;
+    padding: 0 clamp(48px, 9%, 110px) 40px 0;
+  }
+  .dash-views img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .dash-desk {
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-card);
+    overflow: hidden;
+    background: var(--card);
+    /* The page goes on below the shot: fade its cut edge into the frame. */
+    mask-image: linear-gradient(to bottom, #000 82%, transparent);
+  }
+  .dash-phone {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: clamp(150px, 27%, 230px);
+    /* A phone's bezel is dark in either theme; the outline keeps it off a dark page. */
+    border: 5px solid #1d1c19;
+    outline: 1px solid var(--line-strong);
+    border-radius: 26px;
+    overflow: hidden;
+    background: var(--card);
+    box-shadow: 0 18px 40px -18px rgb(0 0 0 / 0.45);
+  }
+  .dash-shot figcaption {
+    font-size: 13.5px;
+    color: var(--muted);
+    margin-top: 12px;
+    max-width: 76ch;
+  }
+  /* The shot that matches the theme in effect: the system's until the reader picks. */
+  .shot-dark,
+  :global([data-theme="dark"]) .shot-light {
+    display: none !important;
+  }
+  :global([data-theme="dark"]) .shot-dark {
+    display: block !important;
+  }
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme="light"])) .shot-light {
+      display: none !important;
+    }
+    :global(:root:not([data-theme="light"])) .shot-dark {
+      display: block !important;
+    }
+  }
+  /* A narrow window shows the phone alone, as a phone would open the page. */
+  @media (max-width: 699px) {
+    .dash-views {
+      padding: 0;
+    }
+    .dash-desk {
+      display: none;
+    }
+    .dash-phone {
+      position: static;
+      width: min(260px, 72%);
+      margin: 0 auto;
+    }
+  }
+</style>
