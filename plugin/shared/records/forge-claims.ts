@@ -430,6 +430,24 @@ function pagesOf(stdout: string): Outcome<unknown[], "unreadable"> {
   return ok(all.flat());
 }
 
+/**
+ * The comments of a listing already read (the forge's issue-comment
+ * objects) that open as a claim of `kind`, trusted or not, earliest first:
+ * for a reader that reads a pull request's comments once and shares them
+ * between several kinds.
+ */
+export function listedFrom(
+  kind: ClaimKind,
+  comments: readonly unknown[],
+  target: ClaimTarget,
+  self: string | null = null,
+): ListedClaim[] {
+  return comments
+    .map((c) => listed(kind, c, target, self))
+    .filter((c): c is ListedClaim => c !== null)
+    .sort((a, b) => a.id - b.id);
+}
+
 /** Every comment on `target` that opens as a claim of `kind`, trusted or not, earliest first; or why they could not be read. */
 export async function list(
   target: ClaimTarget,
@@ -454,12 +472,7 @@ export async function list(
     );
   const comments = pagesOf(r.value);
   if (!comments.ok) return comments;
-  return ok(
-    comments.value
-      .map((c) => listed(kind, c, target, self))
-      .filter((c): c is ListedClaim => c !== null)
-      .sort((a, b) => a.id - b.id),
-  );
+  return ok(listedFrom(kind, comments.value, target, self));
 }
 
 /**

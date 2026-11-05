@@ -27,3 +27,15 @@ export const pathValue: ValueParser<"sync", string> = {
       : { success: true, value: resolve(input) },
   format: (value) => value,
 };
+
+/** A date `Date.parse` reads, as the ISO timestamp a command compares with. */
+export const dateValue: ValueParser<"sync", string> = {
+  mode: "sync",
+  metavar: "DATE",
+  placeholder: "",
+  parse: (input) =>
+    Number.isFinite(Date.parse(input))
+      ? { success: true, value: new Date(input).toISOString() }
+      : { success: false, error: message`Expected a date, but got ${input}.` },
+  format: (value) => value,
+};

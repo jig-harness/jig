@@ -19,7 +19,7 @@
 import { basename, dirname } from "node:path";
 import { consumerRoot } from "../shared/consumer.ts";
 import { ExitError } from "../shared/cli.ts";
-import { pathValue } from "../shared/command-line.ts";
+import { dateValue, pathValue } from "../shared/command-line.ts";
 import {
   argument,
   choice,
@@ -60,18 +60,6 @@ import { runTick } from "./tick.ts";
 
 /** Exit when another tick holds the lock. */
 const LOCK_HELD_EXIT = 3;
-
-/** A date `Date.parse` reads, as the ISO timestamp the tick compares with. */
-const dateValue: ValueParser<"sync", string> = {
-  mode: "sync",
-  metavar: "DATE",
-  placeholder: "",
-  parse: (input) =>
-    Number.isFinite(Date.parse(input))
-      ? { success: true, value: new Date(input).toISOString() }
-      : { success: false, error: message`Expected a date, but got ${input}.` },
-  format: (value) => value,
-};
 
 /** A positive whole number: a pull request's, or a comment's id. */
 const countValue = (metavar: "PR" | "ID"): ValueParser<"sync", number> => ({

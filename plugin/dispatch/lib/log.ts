@@ -166,8 +166,8 @@ export function bucket(row: LogRow): string {
 export function insertRow(db: Database, row: LogRow): boolean {
   const done = db
     .query(
-      `INSERT INTO log (key, kind, at, at_ms, repo, stage, account, bucket, reason, row)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO log (key, kind, at, at_ms, repo, stage, account, bucket, reason, row, target)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (key) DO NOTHING`,
     )
     .run(
@@ -181,8 +181,46 @@ export function insertRow(db: Database, row: LogRow): boolean {
       bucket(row),
       row.reason,
       JSON.stringify(row),
+      row.target,
     );
   return done.changes === 1;
+}
+
+/**
+ * Every row about one piece of work of a repository (`target` as the rows
+ * name it: `PR #<n>`, or an item's key), in the order they were written;
+ * none before the database exists. One lookup through the `target` index,
+ * which also reads the rows a copy one release behind wrote without it
+ * (their target is in the row's own text).
+ */
+export function rowsFor(
+  repo: string,
+  target: string,
+  root = stateRoot(),
+): LogRow[] {
+  const db = existingStateDb(root);
+  if (db === null) return [];
+  const selected = db
+    .query(
+      "SELECT row FROM log WHERE repo = ? AND (target = ? OR (target IS NULL AND CASE WHEN json_valid(row) THEN json_extract(row, '$.target') END = ?)) ORDER BY seq",
+    )
+    .all(repo, target, target) as Array<{ row: string }>;
+  return rowsOf(selected).filter((r) => r.target === target);
+}
+
+/** The newest ended row among `stages` of one piece of work's rows (`rowsFor`); `null` when it has none. */
+export function lastEnded(
+  rows: readonly LogRow[],
+  stages: readonly string[],
+): EndedRow | null {
+  const ended = rows.filter(
+    (r): r is EndedRow => r.kind === "ended" && stages.includes(r.stage),
+  );
+  return ended.reduce<EndedRow | null>(
+    (newest, r) =>
+      newest === null || Date.parse(r.at) >= Date.parse(newest.at) ? r : newest,
+    null,
+  );
 }
 
 /** Write `row` on its own: true when this call wrote it. */
