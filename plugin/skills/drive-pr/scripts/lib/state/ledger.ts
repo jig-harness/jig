@@ -6,8 +6,9 @@
  *
  * This module is the pure half: the ledger's shape, how it is rendered into
  * a comment body within the forge's size limit and parsed back, the
- * append-only takeover claim, which comments are trusted, and how a ledger
- * seeds a clone's state. `ledger-forge.ts` reads and writes the comments;
+ * append-only takeover claim (a claim of the shared forge-claims module,
+ * `shared/records/forge-claims.ts`), which comments are trusted, and how a
+ * ledger seeds a clone's state. `ledger-forge.ts` reads and writes the comments;
  * `ledger-mirror.ts` writes the ledger from the state at each round boundary,
  * park and takeover; `lib/driver/ledger.ts` seeds, admits and arbitrates.
  *
@@ -21,25 +22,34 @@
  * the envelope still reads it, and a ledger written before the envelope (no
  * `kind`, `ledgerVersion: 1`) still reads here.
  *
- * A ledger is trusted only when its author is the drive's own login or
- * carries the owner, member or collaborator association GitHub computes from
- * repository permissions; any other comment opening with a marker is ignored
- * and reported. When two creations race, the lower comment id is canonical.
+ * A ledger or a claim is trusted only when its author is the drive's own
+ * login or carries the owner, member or collaborator association GitHub
+ * computes from repository permissions (`shared/trusted-authors.ts`); any
+ * other comment opening with a marker is ignored and reported. When two
+ * creations race, the lower comment id is canonical.
  */
-import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
+import { failed, ok, type Outcome } from "../../../../../shared/outcome.ts";
 import {
-  commentSafe,
   encode,
   markerText,
   readEnvelope,
 } from "../../../../../shared/records/envelope.ts";
 import {
+  arbitrate,
+  type Claim,
+  type ClaimKind,
+  type ClaimRecord,
+  type ClaimRule,
+  claimBody,
+  readClaim,
+} from "../../../../../shared/records/forge-claims.ts";
+import {
   localWriter,
   type Writer,
 } from "../../../../../shared/records/writer.ts";
+import { isTrustedAuthor } from "../../../../../shared/trusted-authors.ts";
 import { stallThresholdMs } from "../doctor.ts";
-import { TRUSTED_ASSOCIATIONS } from "../../summary-findings.ts";
 import {
   type DriveState,
   type HeldItem,
@@ -513,45 +523,95 @@ export function parseLedger(body: string): ParsedLedger | null {
   return { kind: "ledger", ledger: read.fields as unknown as Ledger };
 }
 
-/** The append-only takeover claim's comment body. */
-export function renderClaim(claim: TakeoverClaim): string {
-  return [
-    CLAIM_MARKER,
-    `**Drive claim** · \`drive-pr-takeover-claim\` · a driver in another clone claims the drive of this pull request: a takeover from a driver whose ledger heartbeat is older than the lease window, or a start where no driver of that clone held it. Of the claims on one ledger generation the earliest wins; a driver that finds a newer claim than its own stops at its next round boundary.`,
-    "",
-    `<!-- ${CLAIM_DATA}`,
-    commentSafe(JSON.stringify(claim)),
-    "-->",
-    "",
-  ].join("\n");
+/** The takeover claim's key: the ledger generation its claimant read. */
+export function takeoverKey(generation: number): string {
+  return `takeover:${generation}`;
 }
 
-export function parseClaim(body: string): TakeoverClaim | null {
-  if (!opensWith(body, CLAIM_MARKER)) return null;
+const CLAIM_TEXT =
+  "**Drive claim** · `drive-pr-takeover-claim` · a driver in another clone claims the drive of this pull request: a takeover from a driver whose ledger heartbeat is older than the lease window, or a start where no driver of that clone held it. Of the claims on one ledger generation the earliest wins; a driver that finds a newer claim than its own stops at its next round boundary.";
+
+/** Why a takeover claim's record is not one, or `null` when it is. */
+function takeoverFault(r: ClaimRecord): string | null {
+  const { actor, clone } = r.payload;
+  if (!isText(actor) || !isText(clone)) return "it names no actor and clone";
+  return isCount(r.generation) && r.key === takeoverKey(r.generation)
+    ? null
+    : `its key ${r.key} is not its generation's`;
+}
+
+/** A claim written before claims carried the envelope: its data block holds the claim alone. */
+function legacyClaim(body: string): Outcome<ClaimRecord, "unreadable"> | null {
   const raw = markerText(body, CLAIM_DATA);
   if (!raw.ok) return null;
   let v: unknown;
   try {
     v = JSON.parse(raw.value);
-  } catch (err) {
-    // A claim whose data does not parse claims nothing.
-    swallow(err, "a takeover claim's data is not JSON");
-    return null;
+  } catch {
+    return failed("unreadable", "a takeover claim's data is not JSON");
   }
-  if (
-    !isRecord(v) ||
-    !isText(v.actor) ||
-    !isText(v.clone) ||
-    !isCount(v.generation) ||
-    !isText(v.at)
-  )
-    return null;
-  return {
-    actor: v.actor,
-    clone: v.clone,
+  if (!isRecord(v) || !isCount(v.generation) || !isText(v.at)) return null;
+  const record = {
+    key: takeoverKey(v.generation),
     generation: v.generation,
     at: v.at,
+    payload: { actor: v.actor, clone: v.clone },
+    legacy: true,
   };
+  return takeoverFault(record) === null ? ok(record) : null;
+}
+
+/**
+ * The takeover claim as a kind of forge claim: the earliest trusted claim on
+ * a ledger generation wins, and one made more than the lease window after a
+ * winner whose owner never wrote the ledger replaces it (`claimRule`).
+ */
+export const TAKEOVER_CLAIM: ClaimKind = {
+  name: "drive-takeover-claim",
+  opens: CLAIM_MARKER,
+  data: `<!-- ${CLAIM_DATA}`,
+  shape: takeoverFault,
+  legacy: legacyClaim,
+};
+
+/** The rule the takeover claims are decided by: the lease window is the lapse window. */
+export function claimRule(): ClaimRule {
+  return { lapseMs: stallThresholdMs() };
+}
+
+/** The append-only takeover claim's comment body. `writer` is the envelope's. */
+export function renderClaim(
+  claim: TakeoverClaim,
+  writer: Writer = localWriter("forge"),
+): string {
+  return `${claimBody(TAKEOVER_CLAIM, {
+    key: takeoverKey(claim.generation),
+    generation: claim.generation,
+    writer,
+    at: claim.at,
+    payload: { actor: claim.actor, clone: claim.clone },
+    text: `\n${CLAIM_TEXT}`,
+  })}\n`;
+}
+
+/** The takeover claim a read claim record is. */
+export function takeoverOf(r: ClaimRecord): TakeoverClaim {
+  return {
+    actor: String(r.payload.actor),
+    clone: String(r.payload.clone),
+    generation: r.generation ?? 0,
+    at: r.at,
+  };
+}
+
+/** A trusted takeover claim the forge-claims module read, as the ledger carries it. */
+export function claimComment(c: Claim): ClaimComment {
+  return { id: c.id, claim: takeoverOf(c) };
+}
+
+export function parseClaim(body: string): TakeoverClaim | null {
+  const read = readClaim(TAKEOVER_CLAIM, body);
+  return read?.ok === true ? takeoverOf(read.value) : null;
 }
 
 /** One issue comment, as far as the ledger reads it. */
@@ -590,11 +650,8 @@ export interface LedgerSnapshot {
   maxGeneration: number;
 }
 
-export function isTrusted(c: ForgeComment, selfLogin: string | null): boolean {
-  return (
-    (selfLogin !== null && selfLogin !== "" && c.login === selfLogin) ||
-    TRUSTED_ASSOCIATIONS.has(c.association)
-  );
+function isTrusted(c: ForgeComment, selfLogin: string | null): boolean {
+  return isTrustedAuthor(c.login, c.association, selfLogin);
 }
 
 /** Which drive marker a comment opens with, from a trusted author or not. */
@@ -664,28 +721,25 @@ export function snapshotFrom(
 }
 
 /**
- * The claims in force: of the claims on one ledger generation, the earliest
- * (lowest id) wins and every later one has stood down, so it counts for
- * nothing. A winner whose owner never wrote the ledger past that generation
- * is abandoned (its seeding failed, or it died before its first write): a
- * claim on the same generation posted more than the lease window after it
- * (`stallThresholdMs`) wins in its place, so an abandoned claim never holds
- * the drive for good.
+ * The claims in force, by the forge-claims rule: of the claims on one ledger
+ * generation, the earliest (lowest id) wins and every later one has stood
+ * down, so it counts for nothing. A winner whose owner never wrote the ledger
+ * past that generation is abandoned (its seeding failed, or it died before
+ * its first write): a claim on the same generation posted more than the
+ * lease window after it (`stallThresholdMs`) wins in its place, so an
+ * abandoned claim never holds the drive for good.
  */
 export function effectiveClaims(
   claims: readonly ClaimComment[],
 ): ClaimComment[] {
-  const window = stallThresholdMs();
-  const byGeneration = new Map<number, ClaimComment>();
-  for (const c of [...claims].sort((a, b) => a.id - b.id)) {
-    const winner = byGeneration.get(c.claim.generation);
-    if (
-      winner === undefined ||
-      Date.parse(c.claim.at) - Date.parse(winner.claim.at) > window
-    )
-      byGeneration.set(c.claim.generation, c);
-  }
-  return [...byGeneration.values()].sort((a, b) => a.id - b.id);
+  const weighed = claims.map((c) => ({
+    id: c.id,
+    key: takeoverKey(c.claim.generation),
+    generation: c.claim.generation,
+    at: c.claim.at,
+    comment: c,
+  }));
+  return arbitrate(weighed, claimRule()).map((c) => c.comment);
 }
 
 /**
