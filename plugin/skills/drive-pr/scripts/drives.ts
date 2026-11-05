@@ -16,8 +16,8 @@
  * protocol built around exactly one (`drive.ts` § Single-instance locking).
  * Locks are interpreted by exactly the rule recovery uses — `lib/claim.ts`,
  * shared with the writer — so this listing can never call a lock live that
- * recovery would take over, or vice versa. `--stop` writes a stop request
- * addressed to the lock's acquisition; it never removes the lock.
+ * recovery would take over, or vice versa. `--stop` sends the driver a
+ * mailbox `stop` addressed to its generation; it never removes the lock.
  *
  * Modes:
  *   drives.ts                list every drive lock (human-readable); a LIVE
@@ -58,10 +58,15 @@
  *                            its silence must only ever mean "checked, and
  *                            clear", never "could not check".
  *   drives.ts --stop <PR>    Verify the live driver's creation identity,
- *                            then write a generation-addressed stop request.
- *                            The driver stops its pass tree and releases its
- *                            locks. After a 30s grace, force only captured
- *                            process identities and witness the tree's exit.
+ *                            then send it a mailbox `stop` addressed to the
+ *                            driver generation its claim names, marked `now`
+ *                            (`lib/state/mailbox-stop.ts`). The driver stops
+ *                            its pass tree at once, acknowledges the stop in
+ *                            the outbox and releases its locks; a later
+ *                            driver ignores the stop. A claim that names no
+ *                            generation gets no stop, only the force below.
+ *                            After a 30s grace, force only captured process
+ *                            identities and witness the tree's exit.
  *                            Foreign PID namespaces,
  *                            unreadable tables and unbindable locks are refused. With
  *                            --expect-started ISO, only the claim acquired
@@ -94,19 +99,23 @@ import {
   forceIdentityTargetsAndWitness,
   identityTargetsGone,
 } from "../../../shared/process-tree.ts";
+import { appendDirective } from "./lib/state/mailbox.ts";
 import {
-  requestDriverStop,
-  driverStopCompleted,
-  consumeDriverStopCompletion,
-  takeExpectStarted,
-  requireStopForExpectStarted,
-} from "./lib/stop-request.ts";
+  directiveAcked,
+  driverMailboxDir,
+  generationAcked,
+} from "./lib/state/mailbox-stop.ts";
 import * as ledgerStop from "./lib/ledger-stop.ts";
 import { existsSync } from "node:fs";
 import { driveRepository } from "./lib/drive-repository.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type ClaimDiag, diagLines, samePidNamespace } from "./lib/claim.ts";
+import {
+  type ClaimDiag,
+  diagLines,
+  ownParentDriver,
+  samePidNamespace,
+} from "./lib/claim.ts";
 import { fail, isDigits, runMain, sleep, testPacing } from "./lib/cli.ts";
 import {
   classifyDrive,
@@ -218,77 +227,6 @@ interface LockRow {
    * per-worktree `git` probe it does not need.
    */
   doctor: DoctorRow | null;
-}
-
-/**
- * Is this claim's owner the driver that spawned ME? `drive.ts` exports
- * $DRIVE_PR_SESSION as its own pid before spawning each round's agent, so a
- * pass finding a live holder with that exact pid is looking at its own parent,
- * never a competing driver — and the second-driver rule (SKILL.md § 6) does not
- * apply to it.
- *
- * Pid equality is only meaningful on the host that wrote the claim, compared
- * by host id first, so a differing or absent host answers false — failing
- * toward the safe reading (a foreign driver), never toward "proceed". An
- * unset $DRIVE_PR_SESSION means the reader is not a pass at all, which
- * answers false for the same reason.
- *
- * A pid is REUSED, though, and that is the gap this function closes second: a
- * dead driver's still-fresh claim whose pid the OS handed to this pass's own
- * parent reads live to `claimLive` and matches $DRIVE_PR_SESSION, so pid+host
- * alone would grant `self` over a lock the parent never took. `drive.ts`
- * therefore exports its claim's own acquisition token as
- * $DRIVE_PR_SESSION_STARTED, and when the claim carries a `started` of its own
- * the two must be EQUAL — the same instance-token correlation this file already
- * uses to tie a worktree lock to a PR lock.
- *
- * The token is required whenever THIS process's environment supplies one — not
- * only when the on-disk claim also happens to carry one. `drive.ts` always
- * exports both together, so a pass holding $DRIVE_PR_SESSION_STARTED is
- * necessarily a pass whose own parent writes diagnostics into every claim it
- * takes; a live claim matching pid+host but carrying no `started` at all is
- * therefore proven to be a DIFFERENT process's claim — the exact pid-recycling
- * case this token exists to catch — and must answer false, not fall back to the
- * legacy heuristic (the prior `token !== '' && diag !== null` guard let a
- * diagnostics-free claim ride pid+host to `self` even with a token present).
- * Only a harness opting in by hand (`DRIVE_PR_SESSION=<agent pid>`, SKILL.md §
- * 6), which exports no token at all, still falls back to pid+host — demanding a
- * token there would answer false for every pass under that configuration, which
- * is the stand-down bug this whole mechanism exists to prevent, in the one
- * direction that is silent.
- *
- * That fallback is narrower than "no token on our side", though: it is
- * sanctioned ONLY for the genuine older legacy case, which by construction
- * writes a diagnostics-free claim of its own — so the fallback must
- * additionally require `diag === null`. A claim that DOES carry diagnostics can
- * never be that harness's own write (only `drive.ts`'s `acquire` stamps
- * diagnostics, and it always exports the token alongside them), so a
- * diagnostics-bearing claim matching pid+host while OUR OWN env carries no
- * token is proof of an unrelated process — most plausibly a modern,
- * still-diagnosed claim from a dead driver whose pid got recycled — and must
- * answer false rather than silently trusting pid+host over evidence that
- * contradicts it.
- */
-function ownParentDriver(record: {
-  pid: number;
-  host: string;
-  hostId?: string | undefined;
-  platform?: string | null;
-  diag: ClaimDiag | null;
-}): boolean {
-  const { pid, host, diag } = record;
-  const session = process.env.DRIVE_PR_SESSION ?? "";
-  if (
-    session === "" ||
-    String(pid) !== session ||
-    host === "" ||
-    !samePidNamespace(record)
-  ) {
-    return false;
-  }
-  const token = process.env.DRIVE_PR_SESSION_STARTED ?? "";
-  if (token !== "") return diag !== null && diag.started === token;
-  return diag === null;
 }
 
 function rowName(kind: "pr" | "worktree", key: string): string {
@@ -1012,19 +950,10 @@ async function stop(
     return 1;
   }
   const v = await verifyDriverClaim(row, pid);
-  const code =
-    "code" in v
-      ? v.code
-      : consumeStopResult(row, await stopVerifiedDriver(row, v.owner));
+  const code = "code" in v ? v.code : await stopVerifiedDriver(row, v.owner);
   // Witnessed gone, or already gone with nothing witnessing its pass.
   if (code === 0)
     await ledgerStop.settleStop(stateDir, pr, row, !("code" in v));
-  return code;
-}
-
-function consumeStopResult(row: LockRow, code: number): number {
-  if (code === 0 && row.nonce !== null)
-    consumeDriverStopCompletion(row.stateDir, row.name, row.nonce);
   return code;
 }
 
@@ -1097,25 +1026,47 @@ async function verifyDriverClaim(
   return { owner };
 }
 
+/** Where a stop sent to a driver lands, and its directive's id once sent. */
+interface SentStop {
+  dir: string;
+  pr: string;
+  id: string | null;
+}
+
+/**
+ * Send the driver a mailbox `stop` addressed to its generation, marked `now`.
+ * `false` when it could not be written; a claim naming no generation (an
+ * earlier release's driver) or no working tree is sent nothing and left to
+ * the grace and force.
+ */
 async function requestVerifiedDriverStop(
   row: LockRow,
   owner: ProcessRow,
+  sent: SentStop,
 ): Promise<boolean> {
   const pid = owner.pid;
-  if (row.nonce === null) {
+  const generation = row.diag?.generation;
+  if (generation === undefined || sent.dir === "") {
     console.log(
-      `cannot request stop of driver pid ${pid}: its lock names no acquisition to address the request to.`,
+      `driver pid ${pid}'s claim names no ${generation === undefined ? "driver generation" : "working tree"}, so no stop can be addressed to it; forcing its captured process identities after the grace.`,
     );
-    return false;
+    return true;
   }
   try {
-    requestDriverStop(row.stateDir, row.name, row.nonce);
+    const directive = await appendDirective(
+      sent.dir,
+      sent.pr,
+      "drives.ts --stop",
+      "stop",
+      { generation, now: true },
+    );
+    sent.id = directive.id;
   } catch (error) {
     console.log(`cannot request stop of driver pid ${pid}: ${String(error)}`);
     return false;
   }
   console.log(
-    `requested stop of driver pid ${pid} — it stops its pass tree, then releases its locks…`,
+    `requested stop of driver pid ${pid} (generation ${generation}, directive ${sent.id}) — it stops its pass tree, then releases its locks…`,
   );
   return true;
 }
@@ -1142,9 +1093,17 @@ async function stopVerifiedDriver(
       ? join(row.stateDir, `${row.name}.processes.${row.nonce}`)
       : null;
   const registryState: WindowsTreeState = { root: owner, targets };
+  const sent: SentStop = {
+    dir: driverMailboxDir(row.diag?.worktree ?? "", row.diag?.mailbox ?? ""),
+    pr: row.diag?.pr ?? "",
+    id: null,
+  };
+  const generation = row.diag?.generation;
   const completed = () =>
-    row.nonce !== null &&
-    driverStopCompleted(row.stateDir, row.name, row.nonce, owner.pid);
+    sent.id !== null &&
+    (directiveAcked(sent.dir, sent.pr, sent.id) ||
+      (generation !== undefined &&
+        generationAcked(sent.dir, sent.pr, generation)));
   const refreshRegistered = registryCompletionTracker(
     registry,
     registryState,
@@ -1155,7 +1114,7 @@ async function stopVerifiedDriver(
       `driver pid ${pid}'s registry is incomplete; requesting cleanup while retaining its known process identities.`,
     );
   }
-  if (!(await requestVerifiedDriverStop(row, owner))) return 1;
+  if (!(await requestVerifiedDriverStop(row, owner, sent))) return 1;
   const graceSec = testPacing("DRIVE_PR_STOP_GRACE_SEC", 30, 1);
   const deadline = Date.now() + graceSec * 1000;
   while (Date.now() < deadline) {
@@ -1261,6 +1220,26 @@ export async function forceStopDriver(
     `stopped: driver pid ${owner.pid} and its captured pass tree exited; abandoned locks are recovered by the next drive.`,
   );
   return 0;
+}
+
+/**
+ * Remove `--expect-started ISO` from `argv` and return ISO (`''` when
+ * absent): the acquisition a `--stop` is bound to.
+ */
+function takeExpectStarted(argv: string[]): string {
+  const at = argv.indexOf("--expect-started");
+  if (at < 0) return "";
+  const [, value = ""] = argv.splice(at, 2);
+  if (value === "") fail(2, "--expect-started takes a time");
+  return value;
+}
+
+function requireStopForExpectStarted(
+  expectStarted: string,
+  stopPr: string,
+): void {
+  if (expectStarted !== "" && stopPr === "")
+    fail(2, "--expect-started only qualifies --stop");
 }
 
 /** `--report` is a mode of its own; every other mode is the fleet's. */
