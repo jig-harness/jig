@@ -177,13 +177,86 @@ function versionsOf(v: unknown, where: string): string[] {
   );
 }
 
+/** A field whose values read as labels (`field_labels`), resolved against the site. */
+export interface FieldLabel {
+  /** The field as `issue_tracker.jira.field_labels` names it. */
+  configured: string;
+  id: string;
+  name: string;
+  /** The field in JQL: `cf[10050]` for a custom field, else its id. */
+  clause: string;
+  prefix: string;
+  /**
+   * How JQL matches one value exactly: a quoted string (an option, a
+   * labels field), a number, or not at all (a text field, which JQL
+   * matches by words).
+   */
+  match: "string" | "number" | null;
+}
+
+/**
+ * A number without exponent notation, the form a JQL number literal takes:
+ * the shortest round-trip digits with the decimal point moved, never rounded.
+ */
+function numberText(n: number): string {
+  const plain = String(n);
+  const m = /^(-?)(\d+)(?:\.(\d+))?e([+-]\d+)$/i.exec(plain);
+  if (m === null) return plain;
+  const [, sign = "", whole = "", frac = "", exp = "0"] = m;
+  const digits = whole + frac;
+  const point = whole.length + Number(exp);
+  const body =
+    point <= 0
+      ? `0.${"0".repeat(-point)}${digits}`
+      : point >= digits.length
+        ? digits + "0".repeat(point - digits.length)
+        : `${digits.slice(0, point)}.${digits.slice(point)}`;
+  return sign + body;
+}
+
+/**
+ * The values of a field read as labels: strings, numbers and options, or a
+ * list of them. Each is trimmed, since a label holds no whitespace; an
+ * option whose value carries a space is still selected by its exact value
+ * in JQL, so a query by the trimmed label misses it.
+ */
+function fieldValues(v: unknown, where: string): string[] {
+  if (v === null || v === undefined) return [];
+  if (Array.isArray(v))
+    return v.flatMap((x, i) => fieldValues(x, `${where}[${i}]`));
+  if (typeof v === "number") return [numberText(v)];
+  const text = isRecord(v) ? v.value : v;
+  if (typeof text === "string") return text.trim() === "" ? [] : [text.trim()];
+  throw new JiraApiError(
+    `${where}: expected a string, a number or an option, as issue_tracker.jira.field_labels reads`,
+  );
+}
+
+/** The labels `fields` give an issue: each value behind its field's prefix. */
+function fieldLabelsOf(
+  f: Record<string, unknown>,
+  fields: ReadonlyArray<FieldLabel>,
+  at: (field: string) => string,
+): string[] {
+  return fields.flatMap((fl) =>
+    fieldValues(f[fl.id], at(fl.id)).map((v) => `${fl.prefix}${v}`),
+  );
+}
+
 /** The `name` of a named field (a priority, a resolution); `null` when unset. */
 function nameOf(v: unknown, where: string): string | null {
   return isRecord(v) ? str(v.name, `${where}.name`) : null;
 }
 
-/** A search result or an issue read as the adapter's record. */
-export function parseIssue(v: unknown, site: string): JiraIssue {
+/**
+ * A search result or an issue read as the adapter's record; the values of
+ * `fieldLabels` join its labels.
+ */
+export function parseIssue(
+  v: unknown,
+  site: string,
+  fieldLabels: ReadonlyArray<FieldLabel> = [],
+): JiraIssue {
   const raw = record(v, "issue");
   const key = str(raw.key, "issue.key");
   const at = (field: string) => `issue ${key}.${field}`;
@@ -202,7 +275,12 @@ export function parseIssue(v: unknown, site: string): JiraIssue {
       at("statuscategorychangedate"),
     ),
     priority: nameOf(f.priority, at("priority")),
-    labels: labelsOf(f.labels, at("labels")),
+    labels: [
+      ...new Set([
+        ...labelsOf(f.labels, at("labels")),
+        ...fieldLabelsOf(f, fieldLabels, at),
+      ]),
+    ],
     issueType: issueTypeOf(f.issuetype),
     parent: parentOf(f.parent, at("parent")),
     assignee: userOf(f.assignee, at("assignee")),
