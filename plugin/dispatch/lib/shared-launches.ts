@@ -49,8 +49,8 @@ import { factsOf } from "./actions/drive-hold.ts";
 import type { LaunchClaimer } from "./actions/launch.ts";
 import type { FollowupOutcome } from "./followup-outcomes.ts";
 import { outcomeOf } from "./followup-outcomes.ts";
+import { DRIVER_REFUSAL_EXITS } from "../../skills/drive-pr/scripts/lib/status/terminal-states.ts";
 import {
-  DRIVER_REFUSALS,
   holds,
   type LaunchRecord,
   type ReadRecord,
@@ -107,7 +107,7 @@ function refusal(s: ClaimSays): number | null {
   const end = s.end;
   return end?.state === "ended" &&
     end.exit !== null &&
-    DRIVER_REFUSALS.has(end.exit)
+    DRIVER_REFUSAL_EXITS.has(end.exit)
     ? end.exit
     : null;
 }
@@ -376,7 +376,7 @@ function launchDraft(
     earlier: record.redrive?.earlier ?? [],
     conflictStop: record.redrive?.conflictStop === true,
     ...(replay ? { replay } : {}),
-    refusals: [...DRIVER_REFUSALS],
+    refusals: [...DRIVER_REFUSAL_EXITS],
     writer: localWriter("forge", ctx.login),
   };
 }
