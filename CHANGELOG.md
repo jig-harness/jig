@@ -384,6 +384,89 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.135.0] - 2026-11-05
+
+The dispatch dashboard is split into views and explains itself in place.
+
+### Added
+
+- Views with tabs in the strip: Now (what needs you, what is running,
+  what is coming), History (the window and the outcome log) and Help (what the
+  page's words, stages and marks mean). The view is part of the address, so a
+  link opens the same one. The Now tab shows how many items need a person.
+- A theme switch in the strip: the device's theme, light or dark. The choice
+  stays in the browser and in the link's `theme`.
+- A reply box beside each parked decision. The draft stays in this browser
+  only, and Copy answer takes `answer <key>: <reply>`, ready to paste as a
+  comment on the pull request.
+- Hints that open on hover, tap or keyboard focus: each stage chip (`rearm`,
+  `pickup`, …), each queue source chip, each account's slot squares, the terms
+  above the accounts, and a `?` beside every panel heading.
+
+### Changed
+
+- How old the data is is now one short line in the strip ("Updated 2 min
+  ago"), turning into a warning when the timer is overdue or the server stops
+  answering. Hovering or tapping it says which tick the page shows, when the
+  next tick is due and when the page last read. The "as of the 16:45 tick" line
+  on every panel is gone.
+- "The line" panel is now called "What is running".
+- A list showing its first two items (What needs you, What is coming) has its
+  Show all / Show fewer button in the panel's heading too, so closing a long
+  list needs no scroll to its end.
+
+## [0.134.0] - 2026-11-04
+
+A label change no longer has to cost a full CI run, or cancel one, in a
+repository that holds CI between review rounds.
+
+### Added
+
+- M13's CI hold can answer an event for any label but the hold's with a
+  mirror run: the heavy jobs skip, the run takes a concurrency group of its
+  own so it cancels nothing, and the required check repeats the newest real
+  run's result on the same commit, failing whenever it cannot show that result
+  passed. A repository whose labels change often, such as one running the
+  dispatcher's labels, wants it: one change there removes one label and adds
+  another, each its own event, and each event used to start a full run that
+  cancelled the one before. M13's piece 7
+  says why the run cannot simply skip, and `mappings.md` gives its shape on
+  GitHub Actions. A repository whose workflows run real CI on every label
+  event needs no change.
+- The workflow-convention lint's `ci-hold-mirror` rule checks a workflow that
+  skips on other labels' events: its own concurrency group, a `run-name` that
+  marks the mirror run, a required job that runs and repeats the real result,
+  and every heavy job skipped.
+
+### Changed
+
+- **Breaking** for a workflow of the hold whose job conditions read the event
+  outside the pull request's own state: the lint's `ci-hold-guard` now fails a
+  job whose `if:` reads `github.event` other than through
+  `github.event.pull_request` (its action, its label, its sender, the whole
+  event), other than the mirror's skip term, since a job skipped on some events
+  and not others can turn a failing head into a passing one. Read the pull
+  request's state instead, and test its label set for the hold, as the hold
+  asks; a workflow that already does is unaffected.
+- The audit's `ci-hold-fails-held-heads` and `ci-hold-shape-linted` criteria
+  accept the mirror run beside real CI on every label event.
+
+## [0.133.0] - 2026-11-04
+
+The dispatcher, resource collection and the two machine-wide locks now record the same process identity and judge it by the same rules, and the drive's locks share its host comparison, so a restart or a renamed machine no longer leaves work waiting for a person.
+
+### Added
+
+- One shared [process identity](GLOSSARY.md) (`plugin/shared/liveness.ts`): the machine's host id, which survives a rename and a restart (read from the system's machine id, or created once in `~/.local/state/jig/host-id` where there is none), its host name, the boot, the process id and the process's start time, with one set of rules for judging a recorded holder: dead after its host restarted or once its process id belongs to another process, unknown on another machine.
+
+### Changed
+
+- `jig dispatch`: a launch record claimed on this host before it last restarted now reads as died, frees its account's slot, and its outcome row says the host restarted; before, it held the slot as unknown until a person ran `jig dispatch clear`. A record claimed on another host, or read while the process table cannot be, still holds its slot as unknown. A record written before host ids is compared by its host name.
+- `drive-pr`'s driver locks and `jig dispatch` compare hosts by host id before host name, so a machine whose host name changed (as a laptop's can between networks) still recognises its own driver and its own launches, and a claim from another machine is never judged by this one's process table. A driver lock's claim gains the host id after its platform; a claim without one is compared by name as before.
+- `jig gc`: each admission token and the collector's own lock file hold their process identity, and a collection that meets a stale token names the token's creator and why it counts as gone. A stale token is still never removed by gc. Tokens and lock files in their earlier forms are read as before.
+- The resource lock (`with-resource-lock.ts`, which `jig gc` and heavy test runs wait on) records its holder's identity beside the lock and, on Linux and macOS, reclaims a lock whose process id now belongs to a process that started later instead of waiting out `LOCK_TIMEOUT`. A reclaim, and a wait that runs out, say whose lock it was. The lock itself still names only the process id, so an earlier version keeps excluding this one ([M12](modules/M12-parallel-agent-ergonomics/reference/resource-lock/README.md)).
+- The Orca card lock holds its owner's identity, reclaims a lock whose process id now belongs to another process, and warns whose lock it took over.
+
 ## [0.132.0] - 2026-11-04
 
 A drive's permission bypass is now a host's choice: a host opts in from its own user file once it has checked what its account can reach, and a repository's file can neither ask for it nor cancel it.
@@ -4999,7 +5082,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.132.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.135.0...HEAD
+[0.135.0]: https://github.com/jig-harness/jig/compare/v0.134.0...v0.135.0
+[0.134.0]: https://github.com/jig-harness/jig/compare/v0.133.0...v0.134.0
+[0.133.0]: https://github.com/jig-harness/jig/compare/v0.132.0...v0.133.0
 [0.132.0]: https://github.com/jig-harness/jig/compare/v0.131.0...v0.132.0
 [0.131.0]: https://github.com/jig-harness/jig/compare/v0.130.0...v0.131.0
 [0.130.0]: https://github.com/jig-harness/jig/compare/v0.129.2...v0.130.0

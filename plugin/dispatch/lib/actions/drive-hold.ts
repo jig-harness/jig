@@ -68,6 +68,7 @@ function describe(r: ReadRecord): string {
 /** How a record that no longer holds its stage ended, in words. */
 function endOf(r: ReadRecord): string {
   const s = r.state;
+  if (s.kind === "died") return `died (${s.reason})`;
   if (s.kind !== "ended") return `is ${s.kind}`;
   return `ended ${String(s.exit.code ?? s.exit.signal)}`;
 }

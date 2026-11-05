@@ -10,7 +10,7 @@ import { dump } from "../../shared/yaml.ts";
 import {
   claimRecord,
   type LaunchRecord,
-  type ProcessIdentity,
+  type LaunchClaim,
   recordExit,
   writeRecord,
 } from "../lib/launches.ts";
@@ -112,7 +112,7 @@ export function earlierRecord(
 export function claimed(
   w: World,
   id: string,
-  identity: ProcessIdentity,
+  identity: LaunchClaim,
   exit?: number,
 ): void {
   claimRecord(id, identity, dispatchState(w));
@@ -149,9 +149,13 @@ export function driveRuns(w: World): Array<{
 }> {
   const path = join(w.dir, "drive-runs.jsonl");
   if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
-    .trim()
+  // The fake appends one line per run: a poll can land between the file's
+  // creation and its write, so only a newline-terminated line is a run.
+  const text = readFileSync(path, "utf8");
+  return text
+    .slice(0, text.lastIndexOf("\n") + 1)
     .split("\n")
+    .filter((line) => line !== "")
     .map((line) => JSON.parse(line));
 }
 

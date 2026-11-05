@@ -5,3 +5,6 @@ lefthook = "2.2.2"
 # (tools/plugin/changelog-workflow.test.ts), running shellcheck over their
 # scripts where it is installed.
 actionlint = "1.7.12"
+# The gates workflow's mirror step filters GitHub's answers with jq; its test
+# (scripts/gates-mirror.test.ts) applies those filters through it.
+jq = "1.8.1"

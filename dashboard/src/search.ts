@@ -1,7 +1,8 @@
 /**
- * The page's one query string: which window and filters the log shows, beside
- * the `token` and `theme` it was opened with, so a phone's view is a link a
- * laptop can open. A change replaces the address; it adds no history entry.
+ * The page's one query string: which view it shows and which window and filters
+ * the log shows, beside the `token` and `theme` it was opened with, so a phone's
+ * view is a link a laptop can open. A change replaces the address; it adds no
+ * history entry.
  */
 import { useCallback, useRef, useState } from "react";
 import { instantOf } from "./format.ts";
@@ -14,6 +15,15 @@ export const PRESETS = [
 ] as const;
 
 export type Preset = (typeof PRESETS)[number]["id"];
+
+/** The page's views: what is happening now, how it went, and how to read it. */
+export const VIEWS = [
+  { id: "now", label: "Now" },
+  { id: "history", label: "History" },
+  { id: "help", label: "Help" },
+] as const;
+
+export type ViewId = (typeof VIEWS)[number]["id"];
 
 /** A named window, or `range` when `from` or `to` names one. */
 export type WindowChoice = Preset | "range";
@@ -115,10 +125,12 @@ export function rowsQuery(filter: LogFilter, timeZone: string | null): string {
 /** The whole query string: what the page was opened with, then the filter. */
 export function pageQuery(filter: LogFilter, search: string): string {
   const params = new URLSearchParams(search);
-  const kept = ["token", "theme"].flatMap((name): Array<[string, string]> => {
-    const value = params.get(name);
-    return value === null ? [] : [[name, value]];
-  });
+  const kept = ["token", "theme", "view"].flatMap(
+    (name): Array<[string, string]> => {
+      const value = params.get(name);
+      return value === null ? [] : [[name, value]];
+    },
+  );
   return `?${queryOf([...kept, ...filterPairs(filter)])}`;
 }
 
@@ -127,10 +139,47 @@ export function tokenOf(search: string): string {
   return new URLSearchParams(search).get("token") ?? "";
 }
 
-/** The `color-scheme` the page asks for: a forced theme, or whatever the device follows. */
-export function schemeOf(search: string): string {
-  const theme = new URLSearchParams(search).get("theme");
-  return theme === "light" || theme === "dark" ? theme : "light dark";
+/** The view the address names; what it leaves out is Now. */
+export function viewOf(search: string): ViewId {
+  const named = new URLSearchParams(search).get("view");
+  return VIEWS.find((v) => v.id === named)?.id ?? "now";
+}
+
+/**
+ * The query string with one parameter set, or left out when `value` is `null`;
+ * every other pair stays as it was written.
+ */
+export function withParam(
+  search: string,
+  name: string,
+  value: string | null,
+): string {
+  const pairs = search
+    .replace(/^\?/, "")
+    .split("&")
+    .filter((pair) => pair !== "" && !new URLSearchParams(pair).has(name));
+  if (value !== null) pairs.push(`${name}=${encoded(value)}`);
+  return pairs.length === 0 ? "" : `?${pairs.join("&")}`;
+}
+
+/** Sets one parameter of the address in place, adding no history entry. */
+export function replaceParam(name: string, value: string | null): void {
+  history.replaceState(
+    null,
+    "",
+    `${location.pathname}${withParam(location.search, name, value)}`,
+  );
+}
+
+/** The view in the address, and how to change it. */
+export function useView(): [ViewId, (view: ViewId) => void] {
+  const [view, setView] = useState(() => viewOf(location.search));
+  const change = useCallback((next: ViewId) => {
+    setView(next);
+    replaceParam("view", next === "now" ? null : next);
+    window.scrollTo({ top: 0 });
+  }, []);
+  return [view, change];
 }
 
 /** The filter in the address, and how to change it. */

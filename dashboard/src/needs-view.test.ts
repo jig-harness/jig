@@ -9,6 +9,7 @@ import {
   answerBand,
   hasNeedRows,
   needRows,
+  needCount,
   needView,
   orderedNeeds,
 } from "./needs-view.ts";
@@ -68,8 +69,10 @@ describe("a park", () => {
     expect(view.goLabel).toBe("Answer on the pull request");
   });
 
-  it("gives the answer line with the option left blank", () => {
-    expect(needView(park, CLOCK).answerLine).toBe("answer PRRT_x1: ");
+  it("names each decision key a person answers, once", () => {
+    expect(needView(park, CLOCK).answerKeys).toEqual(["PRRT_x1"]);
+    const twice = { ...park, decisions: [FRAMED, FRAMED] };
+    expect(needView(twice, CLOCK).answerKeys).toEqual(["PRRT_x1"]);
   });
 
   it("joins each decision's lines for the fold, and Copy decision takes the same text", () => {
@@ -169,7 +172,7 @@ describe("a need's words", () => {
       "No tracker link: this repository has no tracker base. Look up WEB-1 in the tracker.",
     );
     expect(view.keyText).toBe("WEB-1");
-    expect(view.answerLine).toBeNull();
+    expect(view.answerKeys).toEqual([]);
   });
 
   it("words an assigner who cannot write", () => {
@@ -251,6 +254,23 @@ describe("the person's list", () => {
 });
 
 describe("whether What needs you exists", () => {
+  it("counts stuck records without building their presentation", () => {
+    const line = lineOf("quiet");
+    const session = line.sessions[0];
+    if (session === undefined) throw new Error("fixture needs a session");
+    const malformed = {
+      ...session,
+      launch: "unknown",
+      samples: null,
+    } as unknown as LineSession;
+    expect(needCount({ ...line, needs: [], sessions: [malformed] }, NOW)).toBe(
+      1,
+    );
+    expect(needCount(null, NOW)).toBe(0);
+    expect(needCount(lineOf("loud"), NOW)).toBe(
+      needRows(lineOf("loud"), CLOCK).filter((r) => r.type !== "head").length,
+    );
+  });
   it("does with a need, or with a session not moving", () => {
     expect(hasNeedRows(lineOf("loud"), NOW)).toBe(true);
     const line = lineOf("quiet");

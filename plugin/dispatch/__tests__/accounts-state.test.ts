@@ -31,6 +31,7 @@ const ON = { on: true } as const;
 const PASS = { kind: "pass", deadlineSec: 5400, codex: ON } as const;
 
 const process = {
+  hostId: "",
   host: "h",
   bootId: "b",
   pid: 1,
