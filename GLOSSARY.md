@@ -1933,7 +1933,9 @@ make, use the entry's term instead.
   at every *tick*, so work moves in any direction and is never moved by
   hand. **Ready to merge** holds the converged pull requests one person's
   act from the merge: the drive converged at the head it verified, the
-  forge itself witnesses a review of that head, it does not conflict, is
+  forge itself witnesses a review of that head (a reviewer app's check run,
+  or a person's approval where none is configured; a pull request still
+  owed that approval waits in approve first), it does not conflict, is
   not a draft, has no unresolved review thread, and branch protection lets
   it merge, or would once a person approves it or updates its branch.
   Planned: [ROADMAP.md](ROADMAP.md) item 36.
