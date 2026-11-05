@@ -824,8 +824,11 @@ before a workspace's removal; filed by a person, each with its pull request
 offered). One pull request per step, in the design's order.
 
 Done when a launch Orca makes into a worktree `jig gc` is collecting is
-refused by the plugin's guard while the plugin's heartbeat in the guard
-record is fresh, a launch the guard let through just before gc's admission
+refused by the plugin's guard whenever the hook runs and reads the record
+(a hook that throws, runs past its deadline or whose worker is down lets the
+launch through, and a fresh heartbeat does not promise otherwise; tests cover
+each of those cases and an admission abandoned after gc submitted its
+removal), a launch the guard let through just before gc's admission
 keeps that worktree, and with a stale heartbeat gc collects as before and
 its receipt says the collection was unguarded; the plugin's status bar
 flags a tick older than twice the interval; the panel's inbox lists the

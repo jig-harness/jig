@@ -114,9 +114,15 @@ launch that passed just before the admission even before Orca's registry
 lists it, and keeps that worktree. gc releases its admission on every
 exit: once `orca worktree rm` returns, and when a proof, a teardown step or
 the removal fails or throws. The admission names its owner by the
-machine-wide holder record, so a gc that crashed leaves one the hook and the
-next gc see is abandoned and ignore, while a live gc's admission still
-excludes. The hook decides before any awaited host call
+machine-wide holder record, and gc marks it submitted just before it calls
+`orca worktree rm`. A gc that crashed before that mark leaves an admission
+the hook and the next gc see is abandoned and ignore, while a live gc's
+admission still excludes. One that crashed after the mark leaves a removal
+Orca may still be carrying out, and owner liveness does not say whether it
+has finished: the hook keeps refusing launches into that worktree while its
+path exists, and the next gc reconciles it against the registry before it
+releases the claim, clearing it once the worktree is gone and releasing it
+once Orca lists the worktree intact with the removal settled. The hook decides before any awaited host call
 and within Orca's 2 s deadline, since an awaited call ahead of its refusal
 can fail or time out and let the launch through.
 
